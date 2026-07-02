@@ -1,0 +1,102 @@
+import { useState } from "react";
+import ProbabilityPlot from "./ProbabilityPlot.jsx";
+import Calculator from "./Calculator.jsx";
+import GoodnessOfFit from "./GoodnessOfFit.jsx";
+import Coefficients from "./Coefficients.jsx";
+import { distColor } from "../instrument.js";
+
+const DISTRIBUTION_TABS = [
+  { id: "plot", label: "Probability plot" },
+  { id: "calc", label: "Calculator" },
+  { id: "gof", label: "Goodness of fit" },
+];
+const REGRESSION_TABS = [
+  { id: "coef", label: "Coefficients" },
+  { id: "calc", label: "Calculator" },
+  { id: "gof", label: "Goodness of fit" },
+];
+
+const fmtGof = (v) =>
+  Math.abs(v) >= 1e-4 || v === 0 ? Number(v).toFixed(2) : Number(v).toExponential(2);
+
+// Presentational result panel for a fit (used for both fresh and saved models).
+export default function ResultView({ result }) {
+  const isRegression = result.kind === "regression";
+  const [tab, setTab] = useState(isRegression ? "coef" : "plot");
+
+  let tabs = isRegression ? REGRESSION_TABS : DISTRIBUTION_TABS;
+  if (!result.functions) tabs = tabs.filter((t) => t.id !== "calc");
+
+  const color = distColor(result.distribution);
+  const gof = result.gof || [];
+
+  return (
+    <>
+      <div className="result-head">
+        <span className="dpill">
+          <span className="dot" style={{ background: color }} />
+          {result.distribution}
+        </span>
+      </div>
+      <div className="params">
+        {result.params.map((p) => (
+          <div className="stat" key={p.name}>
+            <div className="value">{p.value.toPrecision(4)}</div>
+            <div className="name">{p.name}</div>
+          </div>
+        ))}
+        <div className="stat">
+          <div className="value">{result.n}</div>
+          <div className="name">observations</div>
+        </div>
+      </div>
+
+      <div className="tabs">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            className={"tab" + (tab === t.id ? " active" : "")}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="tab-panel">
+        {tab === "plot" && (
+          <div className="detail-panel">
+            <div className="plotwrap">
+              <div className="plottitle">{result.distribution} probability plot</div>
+              <ProbabilityPlot plot={result.plot} unit={result.unit} />
+            </div>
+            <div className="aside">
+              {gof.length > 0 && (
+                <div className="gof-card">
+                  <div className="gofh">Goodness of fit</div>
+                  {gof.map((g) => (
+                    <div className="gofr" key={g.id}>
+                      <span className="gk">{g.label}</span>
+                      <span className="gv">{fmtGof(g.value)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="detail-note">
+                Maximum-likelihood fit over <b>{result.n} observations</b>. The
+                line is the fitted model; points are the data on{" "}
+                {result.distribution} probability paper, with a 95% confidence
+                band.
+              </div>
+            </div>
+          </div>
+        )}
+        {tab === "calc" && (
+          <Calculator functions={result.functions} unit={result.unit} />
+        )}
+        {tab === "coef" && <Coefficients coefficients={result.coefficients} />}
+        {tab === "gof" && <GoodnessOfFit gof={result.gof} n={result.n} />}
+      </div>
+    </>
+  );
+}

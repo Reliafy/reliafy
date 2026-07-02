@@ -1,0 +1,21 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pandas
+numpy
+# SurPyval/RePyability from git: the PyPI releases are stale and miss the
+# proportional-hazards classes (GammaPH, …) and repyability.rbd.non_repairable_rbd
+# this app imports. Pinned to commit SHAs so builds are reproducible.
+# (Requires git at build time — see Dockerfile.)
+git+https://github.com/derrynknife/SurPyval.git@7e07e86e72d69a760988bc970a258d65b940ce14
+git+https://github.com/derrynknife/RePyability.git@84b91c0975b47043bb69d3234acc243a633bd66e
+# Transitive deps not declared by the above packages:
+joblib
+dd
+tqdm
+pydantic
+pymongo
+mongomock
+firebase-admin
+stripe
+httpx

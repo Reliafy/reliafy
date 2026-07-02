@@ -1,0 +1,33 @@
+# Self-hosted Reliafy: the app in single-user mode + a persistent MongoDB.
+#
+#   docker compose up --build
+#   open http://localhost:8000
+#
+# No account or login — the instance is yours. Data persists in the `mongo-data`
+# volume across restarts. Optional: set ANTHROPIC_API_KEY (or OPENAI_API_KEY +
+# AI_PROVIDER=openai) under the app service to enable the AI assistant with your
+# own provider key.
+services:
+  app:
+    build:
+      context: .
+      args:
+        VITE_AUTH_DISABLED: "true" # bake single-user mode into the frontend
+    ports:
+      - "8000:8000"
+    environment:
+      AUTH_DISABLED: "true" # single-user mode (backend)
+      MONGODB_URI: mongodb://mongo:27017
+      SEED_SAMPLES: "true" # start with sample datasets/models/RBDs
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    restart: unless-stopped
+
+volumes:
+  mongo-data:

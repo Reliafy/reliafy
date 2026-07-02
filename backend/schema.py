@@ -1,0 +1,62 @@
+"""Document models for saved datasets, models, and RBDs (stored in MongoDB).
+
+A *Dataset* is an immutable, content-addressed copy of an uploaded CSV (the raw
+bytes are stored inline). A *Model* is a saved fit: a small recipe (which
+dataset + how to fit it) plus a cached copy of the computed results so a reopen
+is instant. ``owner_id`` is present but unused in Phase 1 (single-user); it lets
+us add auth later without changing the core shape.
+
+These are plain pydantic models — the persistence layer (:mod:`backend.db`)
+maps them to/from MongoDB documents, using ``id`` as the document ``_id``.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Dataset(BaseModel):
+    id: str
+    name: str
+    owner_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=_now)
+    checksum: str = ""  # sha256 of the file (content-addressed)
+    n_rows: int = 0
+    columns: list = Field(default_factory=list)
+    data: bytes = b""  # raw CSV bytes (excluded from API responses)
+
+
+class Model(BaseModel):
+    id: str
+    name: str
+    owner_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+    dataset_id: str = ""
+
+    kind: str = "distribution"  # 'distribution' | 'regression'
+    distribution_id: str = ""
+    spec: dict = Field(default_factory=dict)
+    results: dict = Field(default_factory=dict)
+
+    surpyval_version: Optional[str] = None
+    status: str = "ready"  # 'ready' | 'error'
+    error: Optional[str] = None
+
+
+class Rbd(BaseModel):
+    """A saved reliability block diagram (the React Flow graph: nodes+edges)."""
+
+    id: str
+    name: str
+    owner_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+    graph: dict = Field(default_factory=dict)

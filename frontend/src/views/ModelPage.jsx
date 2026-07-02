@@ -1,0 +1,68 @@
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import ResultView from "../components/ResultView.jsx";
+import { getModel, deleteModel } from "../api.js";
+import { distColor } from "../instrument.js";
+
+// Reopen a saved model by id and render its cached results.
+export default function ModelPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [model, setModel] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setModel(null);
+    setError(null);
+    getModel(id)
+      .then(setModel)
+      .catch((err) => setError(err.message));
+  }, [id]);
+
+  const onDelete = async () => {
+    if (!window.confirm(`Delete “${model.name}”?`)) return;
+    await deleteModel(id);
+    navigate("/modelling/models");
+  };
+
+  return (
+    <div className="app">
+      <header>
+        <div>
+          <div className="crumb">
+            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/modelling/models")}>Models</button> /{" "}
+            <b>{model ? model.name : "Model"}</b>
+          </div>
+          <div className="title-row">
+            <h1>{model ? model.name : "Model"}</h1>
+            {model && (
+              <span className="dpill">
+                <span className="dot" style={{ background: distColor(model.results?.distribution) }} />
+                {model.results?.distribution}
+              </span>
+            )}
+          </div>
+          {model && (
+            <p>
+              Saved {new Date(model.created_at).toLocaleString()}
+              {model.unit ? ` · unit: ${model.unit}` : ""}
+            </p>
+          )}
+        </div>
+        {model && (
+          <button className="secondary" onClick={onDelete}>
+            Delete
+          </button>
+        )}
+      </header>
+
+      {error && <div className="card error">{error}</div>}
+      {model && (
+        <div className="card">
+          <ResultView result={model.results} />
+        </div>
+      )}
+    </div>
+  );
+}
