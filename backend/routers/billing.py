@@ -37,8 +37,13 @@ def _customer(stripe, session, user) -> str:
     acct = billing_service.account(session, user["uid"])
     if acct.get("stripe_customer_id"):
         return acct["stripe_customer_id"]
+    # Only pass an email Stripe will accept (e.g. the single-user mode's
+    # "dev@local" has no domain dot) — an odd email shouldn't block checkout.
+    email = user.get("email") or None
+    if email and ("@" not in email or "." not in email.split("@")[-1]):
+        email = None
     cust = stripe.Customer.create(
-        email=user.get("email") or None,
+        email=email,
         metadata={"uid": user["uid"]},
     )
     billing_service.set_customer(session, user["uid"], cust.id)
@@ -147,11 +152,17 @@ async def stripe_webhook(request: Request, session=Depends(get_session)) -> JSON
     payload = await request.body()
     event = None
     if config.STRIPE_WEBHOOK_SECRET:
+        import json
+
         import stripe
 
         sig = request.headers.get("stripe-signature", "")
         try:
-            event = stripe.Webhook.construct_event(payload, sig, config.STRIPE_WEBHOOK_SECRET)
+            # construct_event is used purely to VERIFY the signature; its return
+            # type varies across stripe-python versions (Event object vs dict),
+            # so once verified we parse the raw payload ourselves.
+            stripe.Webhook.construct_event(payload, sig, config.STRIPE_WEBHOOK_SECRET)
+            event = json.loads(payload)
         except Exception as exc:  # noqa: BLE001 - bad signature / parse
             logger.warning("Stripe webhook verification failed: %s", exc)
             return JSONResponse(status_code=400, content={"detail": "Invalid signature."})
