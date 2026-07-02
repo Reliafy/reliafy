@@ -12,6 +12,7 @@ export default function PublicNav() {
         <span className="brand-name">Reliafy</span>
       </Link>
       <nav className="landing-nav-actions">
+        <Link className="cta cta-ghost" to="/#pricing">Pricing</Link>
         <Link className="cta cta-ghost" to="/blog">Blog</Link>
         {user ? (
           <Link className="cta cta-solid" to="/modelling">Open the app</Link>

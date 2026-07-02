@@ -1,6 +1,13 @@
-import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
 import PublicNav from "../components/PublicNav.jsx";
 import { useAuth } from "../AuthProvider.jsx";
+
+const CheckIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 12.5l5 5L20 6.5" />
+  </svg>
+);
 
 // --- Hero illustration: a Weibull probability plot (the app's signature view).
 function HeroPlot() {
@@ -121,10 +128,64 @@ const FEATURES = [
   },
 ];
 
+// Pricing copy. Keep the numbers in sync with backend/config.py
+// (FREE_MAX_*, FREE_GRANT_CENTS, CREDIT_PACKS, PRO_MONTHLY_CREDIT_CENTS) and
+// the live Stripe price.
+const TIERS = (primaryHref) => [
+  {
+    name: "Open source",
+    price: "Free",
+    per: "self-hosted",
+    blurb: "Run Reliafy on your own hardware. Your data never leaves it.",
+    features: [
+      "The full toolkit: modelling, RBDs, strategy, datasets",
+      "Unlimited saves, single-user",
+      "One-command install (docker compose)",
+      "AGPL-3.0, source on GitHub",
+    ],
+    cta: { label: "View on GitHub", href: "https://github.com/Reliafy/reliafy", external: true, ghost: true },
+  },
+  {
+    name: "Cloud Free",
+    price: "$0",
+    per: "forever",
+    blurb: "The hosted app, ready in seconds. Everything you need to start.",
+    features: [
+      "3 saved datasets, 3 models, 1 RBD",
+      "Sample data and worked examples included",
+      "25 AI credits to try the assistant",
+      "Secure sign-in, private to your account",
+    ],
+    cta: { label: "Get started", href: primaryHref, ghost: true },
+  },
+  {
+    name: "Pro",
+    price: "US$19",
+    per: "per month",
+    blurb: "For working reliability engineers who live in their data.",
+    featured: true,
+    features: [
+      "Unlimited datasets, models, and RBDs",
+      "1,000 AI credits included every month",
+      "AI assistant: fits models and builds RBDs for you",
+      "Top-up credit packs from $5 — credits never expire",
+    ],
+    cta: { label: "Start with Pro", href: primaryHref },
+  },
+];
+
 export default function Landing() {
   const { user } = useAuth();
+  const location = useLocation();
   const primaryHref = user ? "/modelling" : "/login";
   const primaryLabel = user ? "Open the app" : "Get started";
+
+  // Support /#pricing links from other pages: scroll once the section exists.
+  useEffect(() => {
+    if (location.hash) {
+      document.querySelector(location.hash)?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [location.hash]);
 
   return (
     <div className="landing">
@@ -156,6 +217,41 @@ export default function Landing() {
             <p>{f.body}</p>
           </div>
         ))}
+      </section>
+
+      <section className="landing-pricing" id="pricing">
+        <div className="landing-pricing-head">
+          <div className="landing-eyebrow">Pricing</div>
+          <h2>Free to run yourself. Effortless in the cloud.</h2>
+          <p>The core is open source and always will be. The cloud adds accounts, the AI assistant, and zero setup.</p>
+        </div>
+        <div className="price-grid">
+          {TIERS(primaryHref).map((t) => (
+            <div key={t.name} className={"price-card" + (t.featured ? " featured" : "")}>
+              {t.featured && <span className="price-flag">Most popular</span>}
+              <h3>{t.name}</h3>
+              <div className="price-amount">
+                {t.price}
+                <span className="price-per">{t.per}</span>
+              </div>
+              <p className="price-blurb">{t.blurb}</p>
+              <ul className="price-list">
+                {t.features.map((f) => (
+                  <li key={f}><CheckIcon />{f}</li>
+                ))}
+              </ul>
+              {t.cta.external ? (
+                <a className={"cta lg " + (t.cta.ghost ? "cta-ghost" : "cta-solid")} href={t.cta.href} target="_blank" rel="noreferrer">
+                  {t.cta.label}
+                </a>
+              ) : (
+                <Link className={"cta lg " + (t.cta.ghost ? "cta-ghost" : "cta-solid")} to={t.cta.href}>
+                  {t.cta.label}
+                </Link>
+              )}
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="landing-band">
