@@ -53,8 +53,9 @@ def _customer(stripe, session, user) -> str:
 @router.get("/billing")
 def billing_status(session=Depends(get_session), user: dict = Depends(get_current_user)) -> dict:
     summary = billing_service.usage_summary(session, user["uid"])
-    if billing_service.is_admin_user(user):
-        summary["plan"] = "pro"  # operator account: full access, no caps
+    # Operator accounts keep their REAL plan (so they can still exercise the
+    # purchase flows) and carry an explicit admin flag for the UI instead.
+    summary["admin"] = billing_service.is_admin_user(user)
     summary["stripe_enabled"] = bool(config.STRIPE_API_KEY)
     summary["pro_available"] = bool(config.STRIPE_API_KEY and config.STRIPE_PRO_PRICE_ID)
     summary["pro_monthly_credit_cents"] = config.PRO_MONTHLY_CREDIT_CENTS

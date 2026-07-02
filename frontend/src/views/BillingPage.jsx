@@ -45,6 +45,8 @@ export default function BillingPage() {
   }
 
   const isPro = data.plan === "pro";
+  const isAdmin = !!data.admin;
+  const noCaps = isPro || isAdmin; // operators are exempt from caps too
   const caps = data.caps || {};
   const usage = data.usage || {};
 
@@ -68,12 +70,21 @@ export default function BillingPage() {
       <div className="bill-grid">
         {/* Plan */}
         <div className="card bill-card">
-          <div className="bill-head"><h2>Plan</h2><span className={"plan-badge " + (isPro ? "pro" : "free")}>{isPro ? "Pro" : "Free"}</span></div>
+          <div className="bill-head">
+            <h2>Plan</h2>
+            <span style={{ display: "inline-flex", gap: 6 }}>
+              {isAdmin && <span className="plan-badge admin">Operator</span>}
+              <span className={"plan-badge " + (isPro ? "pro" : "free")}>{isPro ? "Pro" : "Free"}</span>
+            </span>
+          </div>
+          {isAdmin && (
+            <p className="muted-line">Operator account — plan limits and AI charges don't apply to you.</p>
+          )}
           <ul className="bill-usage">
             {[["Datasets", "datasets"], ["Models", "models"], ["RBDs", "rbds"]].map(([label, key]) => (
               <li key={key}>
                 <span>{label}</span>
-                <span className="bill-usage-n">{usage[key] ?? 0}{isPro ? "" : ` / ${caps[key]}`}</span>
+                <span className="bill-usage-n">{usage[key] ?? 0}{noCaps ? "" : ` / ${caps[key]}`}</span>
               </li>
             ))}
           </ul>
