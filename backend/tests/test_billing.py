@@ -196,3 +196,63 @@ def test_webhook_grants_credits_and_sets_pro(session):
         "data": {"object": {"customer": "cus_1"}},
     })
     assert billing.account(session, U)["is_pro"] is False
+
+
+def test_admin_emails_bypass_caps_and_ai_credits(monkeypatch):
+    import mongomock
+    from fastapi.testclient import TestClient
+
+    from backend import config, db
+    from backend.auth import get_current_user
+    from backend.main import app
+    from backend.services import assistant as assistant_service
+    from backend.services import billing
+
+    monkeypatch.setattr(config, "AUTH_DISABLED", False)
+    monkeypatch.setattr(config, "BILLING_ENABLED", True)
+    monkeypatch.setattr(config, "FREE_MAX_DATASETS", 1)
+    monkeypatch.setattr(config, "ADMIN_EMAILS", {"derrynknife@gmail.com", "derryn.knife@gmail.com"})
+    monkeypatch.setattr(config, "AI_MODEL", "m")
+    monkeypatch.setattr(config, "TOKEN_PRICES", {"m": {"in": 3.0, "out": 15.0}})
+    test_db = mongomock.MongoClient()["reliafy_test"]
+    monkeypatch.setattr(db, "_db", test_db)
+    monkeypatch.setattr(db, "_simulated", True)
+    client = TestClient(app)
+
+    admin = {"uid": "admin-1", "email": "Derryn.Knife@gmail.com", "name": "D"}  # case-insensitive
+    assert billing.is_admin_user(admin) is True
+    assert billing.is_admin_user({"uid": "x", "email": "someone@else.com"}) is False
+
+    try:
+        app.dependency_overrides[get_current_user] = lambda: admin
+
+        # Caps don't apply: exceed FREE_MAX_DATASETS=1 freely.
+        for i in range(3):
+            r = client.post(
+                "/api/datasets",
+                files={"file": (f"a{i}.csv", f"t\n{i}1\n{i}2\n{i}3\n".encode(), "text/csv")},
+                data={"name": f"a{i}"},
+            )
+            assert r.status_code == 200, r.text
+
+        # Presented as pro, and billing status agrees.
+        assert client.get("/api/me").json()["plan"] == "pro"
+        assert client.get("/api/billing").json()["plan"] == "pro"
+
+        # AI: zero balance is fine and nothing is charged.
+        monkeypatch.setattr(assistant_service, "enabled", lambda: True)
+        monkeypatch.setattr(
+            assistant_service, "step",
+            lambda system, messages, tools: {
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "hi"}]},
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1000, "output_tokens": 1000},
+            },
+        )
+        r = client.post("/api/assistant/step", json={"system": "s", "messages": [], "tools": []})
+        assert r.status_code == 200
+        assert billing.account(test_db, "admin-1")["credit_cents"] >= 0  # never negative
+        # No charge was recorded for the admin.
+        assert test_db.credit_ledger.count_documents({"uid": "admin-1", "kind": "charge"}) == 0
+    finally:
+        app.dependency_overrides.clear()

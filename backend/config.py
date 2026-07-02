@@ -75,6 +75,14 @@ def _int(name: str, default: int) -> int:
 
 BILLING_ENABLED = _truthy(os.environ.get("BILLING_ENABLED"))
 
+# Operator/admin accounts: comma-separated emails with full access regardless
+# of payment — plan caps don't apply and AI usage isn't credit-checked/charged.
+ADMIN_EMAILS = {
+    e.strip().lower()
+    for e in os.environ.get("ADMIN_EMAILS", "").split(",")
+    if e.strip()
+}
+
 # Free-tier caps (owned items, excluding shared samples). Pro lifts them.
 FREE_MAX_DATASETS = _int("FREE_MAX_DATASETS", 3)
 FREE_MAX_MODELS = _int("FREE_MAX_MODELS", 3)

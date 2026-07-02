@@ -51,7 +51,7 @@ def save_rbd(
     # own, or forking a sample, is checked by whether you already own it).
     existing = rbds_service.get_rbd(session, id, user["uid"]) if id else None
     creating = existing is None or existing.owner_id != user["uid"]
-    if creating and billing_service.would_exceed_cap(session, user["uid"], "rbds"):
+    if creating and not billing_service.is_admin_user(user) and billing_service.would_exceed_cap(session, user["uid"], "rbds"):
         return JSONResponse(
             status_code=402,
             content={"detail": "You've reached the free-plan limit of 1 saved RBD. Upgrade to Pro for unlimited diagrams.", "code": "cap", "upgrade": True},

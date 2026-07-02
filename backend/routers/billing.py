@@ -53,6 +53,8 @@ def _customer(stripe, session, user) -> str:
 @router.get("/billing")
 def billing_status(session=Depends(get_session), user: dict = Depends(get_current_user)) -> dict:
     summary = billing_service.usage_summary(session, user["uid"])
+    if billing_service.is_admin_user(user):
+        summary["plan"] = "pro"  # operator account: full access, no caps
     summary["stripe_enabled"] = bool(config.STRIPE_API_KEY)
     summary["pro_available"] = bool(config.STRIPE_API_KEY and config.STRIPE_PRO_PRICE_ID)
     summary["ai"] = assistant_service.info()
