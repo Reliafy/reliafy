@@ -262,6 +262,11 @@ export default function Landing() {
 
       <footer className="landing-foot">
         <span>© Reliafy</span>
+        <span className="foot-links">
+          <Link to="/terms">Terms</Link>
+          <Link to="/privacy">Privacy</Link>
+          <a href="https://github.com/Reliafy/reliafy" target="_blank" rel="noreferrer">GitHub</a>
+        </span>
       </footer>
     </div>
   );

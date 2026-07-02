@@ -26,6 +26,8 @@ import Login from "./views/Login.jsx";
 import Landing from "./views/Landing.jsx";
 import Blog from "./views/Blog.jsx";
 import BlogPost from "./views/BlogPost.jsx";
+import TermsPage from "./views/TermsPage.jsx";
+import PrivacyPage from "./views/PrivacyPage.jsx";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
 import { ConfigProvider, useAppConfig } from "./ConfigProvider.jsx";
 import { AUTH_DISABLED } from "./firebase.js";
@@ -89,6 +91,8 @@ export default function App() {
             {!AUTH_DISABLED && <Route path="/" element={<Landing />} />}
             {!AUTH_DISABLED && <Route path="/blog" element={<Blog />} />}
             {!AUTH_DISABLED && <Route path="/blog/:slug" element={<BlogPost />} />}
+            {!AUTH_DISABLED && <Route path="/terms" element={<TermsPage />} />}
+            {!AUTH_DISABLED && <Route path="/privacy" element={<PrivacyPage />} />}
             {!AUTH_DISABLED && <Route path="/login" element={<Login />} />}
             <Route path="/*" element={<RequireAuth><AppShell /></RequireAuth>} />
           </Routes>

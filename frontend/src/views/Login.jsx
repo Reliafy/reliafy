@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Logo from "../components/Logo.jsx";
 import { useAuth } from "../AuthProvider.jsx";
 
@@ -12,24 +12,34 @@ const MESSAGES = {
   "auth/popup-closed-by-user": "Sign-in was cancelled.",
   "auth/unauthorized-domain": "This domain isn't authorised for sign-in yet.",
   "auth/operation-not-allowed": "Google sign-in isn't enabled yet — use email and password.",
+  "auth/user-not-found": "No account with that email.",
+  "auth/missing-email": "Enter your email first.",
 };
 
 export default function Login() {
-  const { signIn, signUp, signInWithGoogle } = useAuth();
+  const { signIn, signUp, signInWithGoogle, resetPassword } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState("signin"); // 'signin' | 'signup'
+  const [mode, setMode] = useState("signin"); // 'signin' | 'signup' | 'reset'
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
 
   const fail = (e) => setError(MESSAGES[e?.code] || e?.message || "Something went wrong.");
+  const switchMode = (m) => { setMode(m); setError(null); setNotice(null); };
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
+      if (mode === "reset") {
+        await resetPassword(email);
+        setNotice("Reset link sent — check your email (and spam folder).");
+        return;
+      }
       if (mode === "signin") await signIn(email, password);
       else await signUp(email, password);
       navigate("/modelling");
@@ -60,9 +70,16 @@ export default function Login() {
           <Logo size={34} />
           <span className="brand-name">Reliafy</span>
         </div>
-        <h1 className="login-h1">{mode === "signin" ? "Sign in" : "Create your account"}</h1>
-        <p className="login-sub">Fit reliability models and build RBDs — your work, private to you.</p>
+        <h1 className="login-h1">
+          {mode === "signin" ? "Sign in" : mode === "signup" ? "Create your account" : "Reset your password"}
+        </h1>
+        <p className="login-sub">
+          {mode === "reset"
+            ? "Enter your account email and we'll send you a reset link."
+            : "Fit reliability models and build RBDs — your work, private to you."}
+        </p>
 
+        {mode !== "reset" && (
         <button type="button" className="google-btn" onClick={onGoogle} disabled={busy}>
           <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
             <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z" />
@@ -72,8 +89,9 @@ export default function Login() {
           </svg>
           Continue with Google
         </button>
+        )}
 
-        <div className="login-or"><span>or</span></div>
+        {mode !== "reset" && <div className="login-or"><span>or</span></div>}
 
         <form onSubmit={onSubmit} className="login-form">
           <label className="login-field">
@@ -81,29 +99,42 @@ export default function Login() {
             <input type="email" value={email} autoComplete="email" required
               onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
           </label>
-          <label className="login-field">
-            <span>Password</span>
-            <input type="password" value={password}
-              autoComplete={mode === "signin" ? "current-password" : "new-password"} required
-              onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
-          </label>
+          {mode !== "reset" && (
+            <label className="login-field">
+              <span>Password</span>
+              <input type="password" value={password}
+                autoComplete={mode === "signin" ? "current-password" : "new-password"} required
+                onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+            </label>
+          )}
+          {mode === "signin" && (
+            <div className="login-forgot">
+              <button type="button" onClick={() => switchMode("reset")}>Forgot password?</button>
+            </div>
+          )}
           {error && <div className="error" style={{ marginTop: 0 }}>{error}</div>}
+          {notice && <div className="login-notice">{notice}</div>}
           <button type="submit" disabled={busy} style={{ width: "100%", justifyContent: "center" }}>
-            {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+            {busy ? "Please wait…" : mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
           </button>
         </form>
 
         <div className="login-toggle">
           {mode === "signin" ? (
             <>New to Reliafy?{" "}
-              <button type="button" onClick={() => { setMode("signup"); setError(null); }}>Create an account</button>
+              <button type="button" onClick={() => switchMode("signup")}>Create an account</button>
             </>
           ) : (
             <>Already have an account?{" "}
-              <button type="button" onClick={() => { setMode("signin"); setError(null); }}>Sign in</button>
+              <button type="button" onClick={() => switchMode("signin")}>Sign in</button>
             </>
           )}
         </div>
+
+        <p className="login-legal">
+          By continuing you agree to the <Link to="/terms">Terms of Service</Link> and{" "}
+          <Link to="/privacy">Privacy Policy</Link>.
+        </p>
       </div>
     </div>
   );

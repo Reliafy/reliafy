@@ -4038,3 +4038,19 @@ select:disabled {
   color: var(--acc);
 }
 .price-card .cta { text-align: center; justify-content: center; display: inline-flex; }
+
+/* Login: forgot-password, reset notice, legal line; landing footer links */
+.login-forgot { display: flex; justify-content: flex-end; margin-top: -6px; }
+.login-forgot button, .login-toggle button {
+  background: none; border: none; padding: 0; box-shadow: none;
+  color: var(--acc); font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline;
+}
+.login-notice {
+  background: #eef8f1; border: 1px solid #bfe3cd; color: #2f7a52;
+  border-radius: 8px; padding: 8px 11px; font-size: 13px;
+}
+.login-legal { margin: 14px 0 0; font-size: 11.5px; color: var(--faint); text-align: center; }
+.login-legal a { color: var(--muted); }
+.foot-links { display: inline-flex; gap: 16px; }
+.foot-links a { color: var(--faint); text-decoration: none; }
+.foot-links a:hover { color: var(--acc); }
