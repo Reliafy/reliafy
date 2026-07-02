@@ -136,6 +136,7 @@ env reference for operators:
 | `VITE_FIREBASE_*` | Public Firebase web config baked into the frontend build (`frontend/.env.production`). |
 | `BILLING_ENABLED`, `STRIPE__API_KEY`, `STRIPE__WEBHOOK_SECRET`, `STRIPE__PRICE_ID` | Plans, credit packs, and the Stripe webhook. |
 | `AI_PROVIDER`, `AI_MODEL`, `AI_MARKUP` | The metered assistant's provider/model/markup. |
+| `PRO_MONTHLY_CREDIT_CENTS` | AI credit included with each month of Pro (granted per paid invoice; default 1000). |
 | `ADMIN_EMAILS` | Comma-separated operator emails with full access regardless of payment (no plan caps, AI not credit-checked). |
 
 ## API (selected)

@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getBilling, buyCredits, subscribePro, billingPortal } from "../api.js";
 
-const fmt = (cents) => `$${((cents || 0) / 100).toFixed(2)}`;
+// AI usage is denominated in "credits" — users never see a dollar balance.
+// (Internally 1 credit == 1 cent; only pack purchase prices show as dollars.)
+const credits = (cents) => (cents || 0).toLocaleString();
 
 export default function BillingPage() {
   const location = useLocation();
@@ -86,13 +88,25 @@ export default function BillingPage() {
           ) : (
             <p className="muted-line">Pro plan coming soon.</p>
           )}
-          {!isPro && <p className="muted-line">Pro lifts the free-tier limits on saved datasets, models, and RBDs.</p>}
+          {!isPro && (
+            <p className="muted-line">
+              Pro lifts the free-tier limits on saved datasets, models, and RBDs
+              {data.pro_monthly_credit_cents > 0 &&
+                ` — and includes ${credits(data.pro_monthly_credit_cents)} AI credits every month`}
+              .
+            </p>
+          )}
+          {isPro && data.pro_monthly_credit_cents > 0 && (
+            <p className="muted-line">
+              Your plan includes {credits(data.pro_monthly_credit_cents)} AI credits each month.
+            </p>
+          )}
         </div>
 
         {/* Credits */}
         <div className="card bill-card">
-          <div className="bill-head"><h2>AI credits</h2><span className="bill-balance">{fmt(data.credit_cents)}</span></div>
-          <p className="muted-line">Top up your balance to use the AI assistant. Credits never expire.</p>
+          <div className="bill-head"><h2>AI credits</h2><span className="bill-balance">{credits(data.credit_cents)}<span className="bill-balance-unit">credits</span></span></div>
+          <p className="muted-line">The assistant draws on your credit balance as you use it. Credits never expire.</p>
           <div className="bill-packs">
             {(data.packs || []).map((p) => (
               <button
@@ -102,7 +116,7 @@ export default function BillingPage() {
                 onClick={() => go(p.id, () => buyCredits(p.id))}
               >
                 <span className="bill-pack-price">{p.label}</span>
-                <span className="bill-pack-credits">{fmt(p.grant_cents)} credits</span>
+                <span className="bill-pack-credits">{credits(p.grant_cents)} credits</span>
               </button>
             ))}
           </div>

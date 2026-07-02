@@ -100,6 +100,11 @@ CREDIT_PACKS = [
 # try-able without paying). USD cents.
 FREE_GRANT_CENTS = _int("FREE_GRANT_CENTS", 25)
 
+# AI credit included with each month of the Pro subscription (granted on every
+# paid subscription invoice, idempotently per invoice). Internally stored in
+# cents; users only ever see "credits" (1 credit == 1 cent, never shown as $).
+PRO_MONTHLY_CREDIT_CENTS = _int("PRO_MONTHLY_CREDIT_CENTS", 1000)
+
 # ---- Stripe (names match the pre-existing env_variables.yaml entries) ------
 STRIPE_API_KEY = os.environ.get("STRIPE__API_KEY") or os.environ.get("STRIPE_API_KEY")
 STRIPE_WEBHOOK_SECRET = (
@@ -116,7 +121,7 @@ STRIPE_PRO_PRICE_ID = (
 AI_PROVIDER = (os.environ.get("AI_PROVIDER") or "anthropic").strip().lower()
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-_DEFAULT_AI_MODEL = {"anthropic": "claude-sonnet-4-6", "openai": "gpt-4o-mini"}
+_DEFAULT_AI_MODEL = {"anthropic": "claude-sonnet-4-6", "openai": "gpt-5.5"}
 AI_MODEL = os.environ.get("AI_MODEL") or _DEFAULT_AI_MODEL.get(AI_PROVIDER, "")
 
 # Markup applied to the provider's token cost when charging credits.
@@ -129,13 +134,14 @@ except ValueError:
 # token usage into a credit charge; the markup absorbs drift. Unknown models
 # fall back to a deliberately not-too-cheap default so we never undercharge.
 TOKEN_PRICES = {
+    "gpt-5.5": {"in": 5.0, "out": 30.0},  # the one production model
     "claude-sonnet-4-6": {"in": 3.0, "out": 15.0},
     "claude-haiku-4-5-20251001": {"in": 0.8, "out": 4.0},
     "claude-opus-4-8": {"in": 15.0, "out": 75.0},
     "gpt-4o": {"in": 2.5, "out": 10.0},
     "gpt-4o-mini": {"in": 0.15, "out": 0.6},
 }
-TOKEN_PRICE_FALLBACK = {"in": 3.0, "out": 15.0}
+TOKEN_PRICE_FALLBACK = {"in": 5.0, "out": 30.0}
 # Firebase/GCP project whose ID tokens we accept. Cloud Run usually injects
 # GOOGLE_CLOUD_PROJECT; FIREBASE_PROJECT_ID overrides it if the Firebase project
 # differs from the GCP project.
