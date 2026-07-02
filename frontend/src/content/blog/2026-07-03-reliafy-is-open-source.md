@@ -68,30 +68,28 @@ There are no artificial limits in the self-hosted version — no capped model
 counts, no locked features, no nag screens. It runs in single-user mode: your
 instance, your data, your machine.
 
-One honest note on the AI assistant: the open-source build ships without it by
-default, because it needs a large-language-model behind it. If you drop your
-own OpenAI or Anthropic API key into the configuration, the assistant lights
-up on your instance too, talking to your key. Without one, the feature simply
-stays hidden.
-
 ## What the cloud version is for
 
 [Reliafy Cloud](https://reliafy-290759058830.australia-southeast1.run.app) is
-the same codebase, hosted and operated by us. It exists for teams and
-individuals who want zero setup, and it adds the things that only make sense
-hosted: user accounts, a metered AI assistant that works out of the box on
-prepaid credits (no API key required), a Pro plan with unlimited saves and
-1,000 AI credits included each month — and team workspaces, which are coming
-next.
+the same product, hosted and operated by us, for engineers and teams who want
+zero setup. It adds the things that only make sense hosted: user accounts,
+managed persistence, and the **AI assistant** — a chat panel that can fit
+models, save datasets, and build reliability block diagrams for you, with no
+API key or configuration on your side.
+
+AI usage on the cloud runs on **credits, included in the plans**. Every new
+account gets starter credits to try the assistant. The Pro plan (US$19/month)
+includes 1,000 AI credits every month on top of unlimited saved datasets,
+models, and RBDs; if you need more, top-up packs start at $5 and credits never
+expire. You'll never see a surprise bill — usage simply draws down a balance
+you can see at all times.
 
 We want to be straightforward about the model, because open-core projects
-sometimes aren't: **it's one repository.** The billing code, the AI metering,
-the account system — it's all in the open repo you can read, and all of it
-stays dormant unless configured with keys. The open-source version isn't a
+sometimes aren't: **it's one repository.** The open-source version isn't a
 stripped-down community edition maintained on the side; it's the same code we
-deploy to production, gated by nothing but environment variables. When we fix
-a bug in the cloud, the fix lands in the public repository, because they are
-the same place.
+deploy to production. When we fix a bug in the cloud, the fix lands in the
+public repository, because they are the same place. Team workspaces are next
+on the cloud roadmap.
 
 ## Why AGPL?
 
