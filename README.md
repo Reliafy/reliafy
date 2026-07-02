@@ -9,7 +9,7 @@ A **FastAPI** backend does the statistics with
 [RePyability](https://github.com/derrynknife/RePyability) and serves a
 **React** single-page frontend, so the whole app runs on a single port.
 
-<!-- TODO: docs/screenshot.png -->
+![Reliafy — Weibull probability plot with confidence bounds](docs/screenshot.png)
 
 ## Features
 

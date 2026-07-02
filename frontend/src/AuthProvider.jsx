@@ -4,6 +4,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithPopup,
   signOut as fbSignOut,
+  sendPasswordResetEmail,
   onAuthStateChanged,
 } from "firebase/auth";
 import { auth, googleProvider, AUTH_DISABLED } from "./firebase.js";
@@ -34,6 +35,7 @@ export function AuthProvider({ children }) {
       signIn: (email, password) => signInWithEmailAndPassword(auth, email, password),
       signUp: (email, password) => createUserWithEmailAndPassword(auth, email, password),
       signInWithGoogle: () => signInWithPopup(auth, googleProvider),
+      resetPassword: (email) => sendPasswordResetEmail(auth, email),
       signOut: () => (AUTH_DISABLED ? Promise.resolve() : fbSignOut(auth)),
     }),
     [user, loading]
