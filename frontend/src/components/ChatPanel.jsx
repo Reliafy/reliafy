@@ -20,7 +20,8 @@ const TOOL_LABEL = {
   navigate: "Opened a page",
 };
 
-const fmt = (cents) => `$${((cents || 0) / 100).toFixed(2)}`;
+// Users see AI usage as "credits", never dollars (1 credit == 1 cent internally).
+const credits = (cents) => (cents || 0).toLocaleString();
 
 // Right-side assistant. Runs on Reliafy's metered backend (no API key needed);
 // usage is billed against the signed-in user's AI credit balance.
@@ -137,7 +138,7 @@ export default function ChatPanel() {
         <div className="chat-head-actions">
           {showBalance && (
             <button className="chat-balance" title="AI credits — click to top up" onClick={() => navigate("/billing")}>
-              {fmt(balance)}
+              {credits(balance)} cr
             </button>
           )}
           <button className="chat-iconbtn" title="New chat" onClick={newChat}><NewIcon /></button>
@@ -161,7 +162,7 @@ export default function ChatPanel() {
                   ].map((s) => <button key={s} onClick={() => setInput(s)}>{s}</button>)}
                 </div>
                 {showBalance && (
-                  <p className="chat-credit-note">AI usage draws on your credit balance ({fmt(balance)}). <button className="linkish" onClick={() => navigate("/billing")}>Manage credits</button></p>
+                  <p className="chat-credit-note">AI usage draws on your credit balance ({credits(balance)} credits). <button className="linkish" onClick={() => navigate("/billing")}>Manage credits</button></p>
                 )}
               </>
             )}

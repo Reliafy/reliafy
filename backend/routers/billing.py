@@ -57,6 +57,7 @@ def billing_status(session=Depends(get_session), user: dict = Depends(get_curren
         summary["plan"] = "pro"  # operator account: full access, no caps
     summary["stripe_enabled"] = bool(config.STRIPE_API_KEY)
     summary["pro_available"] = bool(config.STRIPE_API_KEY and config.STRIPE_PRO_PRICE_ID)
+    summary["pro_monthly_credit_cents"] = config.PRO_MONTHLY_CREDIT_CENTS
     summary["ai"] = assistant_service.info()
     return summary
 
@@ -195,6 +196,11 @@ def _handle_event(session, event) -> None:
                 billing_service.grant_credits(session, uid, grant, "purchase", obj.get("id", ""))
         elif meta.get("kind") == "pro":
             billing_service.set_plan(session, uid, "pro", until=None, customer_id=obj.get("customer"))
+
+    elif etype == "invoice.paid":
+        # Every paid subscription invoice (first and each renewal) grants the
+        # Pro plan's included monthly AI credit — idempotent per invoice.
+        billing_service.grant_monthly_pro_credits(session, obj.get("customer"), obj.get("id"))
 
     elif etype in ("customer.subscription.deleted",):
         _downgrade_by_customer(session, obj.get("customer"))

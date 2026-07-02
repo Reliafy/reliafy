@@ -256,3 +256,42 @@ def test_admin_emails_bypass_caps_and_ai_credits(monkeypatch):
         assert test_db.credit_ledger.count_documents({"uid": "admin-1", "kind": "charge"}) == 0
     finally:
         app.dependency_overrides.clear()
+
+
+def test_invoice_paid_grants_monthly_pro_credit_idempotently(session, monkeypatch):
+    from backend import config
+    from backend.routers.billing import _handle_event
+    from backend.services import billing
+
+    monkeypatch.setattr(config, "PRO_MONTHLY_CREDIT_CENTS", 1000)
+    # A pro user whose Stripe customer id is known (set during checkout).
+    billing.set_plan(session, U, "pro", customer_id="cus_123")
+
+    inv = {"type": "invoice.paid", "data": {"object": {"id": "in_1", "customer": "cus_123"}}}
+    _handle_event(session, inv)
+    assert billing.account(session, U)["credit_cents"] == 1000
+
+    # Webhook retry / duplicate delivery: no double grant.
+    _handle_event(session, inv)
+    assert billing.account(session, U)["credit_cents"] == 1000
+
+    # Next month's invoice grants again.
+    _handle_event(session, {"type": "invoice.paid", "data": {"object": {"id": "in_2", "customer": "cus_123"}}})
+    assert billing.account(session, U)["credit_cents"] == 2000
+
+    # Unknown customer: no-op, no crash.
+    _handle_event(session, {"type": "invoice.paid", "data": {"object": {"id": "in_3", "customer": "cus_nope"}}})
+    assert billing.account(session, U)["credit_cents"] == 2000
+
+
+def test_gpt55_metering():
+    from backend import config
+    from backend.services import billing
+
+    # gpt-5.5 list price: $5/1M in, $30/1M out. With the default 1.3 markup a
+    # typical assistant step (2k in, 500 out) costs ceil((0.01 + 0.015)*1.3*100)
+    assert "gpt-5.5" in config.TOKEN_PRICES
+    cents = billing.ai_cost_cents("gpt-5.5", 2000, 500)
+    expected_usd = (2000 * 5.0 + 500 * 30.0) / 1_000_000
+    import math
+    assert cents == max(1, math.ceil(expected_usd * 100 * config.AI_MARKUP))

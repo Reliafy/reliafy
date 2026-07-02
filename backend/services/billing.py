@@ -106,6 +106,21 @@ def charge_credits(db, uid: str, cents: int, reason: str, ref: str = "") -> int:
     return bal
 
 
+def grant_monthly_pro_credits(db, customer_id: str | None, invoice_id: str | None) -> bool:
+    """Grant the Pro plan's included monthly AI credit for a paid subscription
+    invoice. Idempotent per invoice (webhook retries / duplicate events can't
+    double-grant). Returns True if a grant was made."""
+    if not customer_id or not invoice_id or config.PRO_MONTHLY_CREDIT_CENTS <= 0:
+        return False
+    doc = db.users.find_one({"stripe_customer_id": customer_id})
+    if doc is None:
+        return False
+    if db.credit_ledger.find_one({"ref": invoice_id, "kind": "grant"}) is not None:
+        return False  # already granted for this invoice
+    grant_credits(db, doc["_id"], config.PRO_MONTHLY_CREDIT_CENTS, "pro-monthly", invoice_id)
+    return True
+
+
 def set_plan(db, uid: str, plan: str, until=None, customer_id: str | None = None) -> None:
     fields = {"plan": plan, "plan_until": until}
     if customer_id:

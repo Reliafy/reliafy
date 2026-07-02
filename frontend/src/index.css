@@ -3902,6 +3902,7 @@ select:disabled {
 .plan-badge.pro { color: var(--acc); background: var(--acc-t); }
 
 .bill-balance { font-family: var(--mono); font-size: 20px; font-weight: 700; }
+.bill-balance-unit { font-size: 11px; font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0.05em; text-transform: uppercase; }
 
 .bill-usage { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .bill-usage li { display: flex; justify-content: space-between; font-size: 14px; padding: 6px 0; border-bottom: 1px solid var(--line); }
