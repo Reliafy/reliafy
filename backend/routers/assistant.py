@@ -45,7 +45,9 @@ def assistant_step(
         return JSONResponse(status_code=503, content={"detail": "The AI assistant isn't configured yet."})
 
     uid = user["uid"]
-    if config.BILLING_ENABLED:
+    # Operator accounts aren't credit-checked or charged.
+    admin = billing_service.is_admin_user(user)
+    if config.BILLING_ENABLED and not admin:
         if billing_service.account(session, uid)["credit_cents"] <= 0:
             return JSONResponse(
                 status_code=402,
@@ -60,7 +62,7 @@ def assistant_step(
     usage = result["usage"]
     cost = billing_service.ai_cost_cents(config.AI_MODEL, usage["input_tokens"], usage["output_tokens"])
     balance = billing_service.account(session, uid)["credit_cents"]
-    if config.BILLING_ENABLED:
+    if config.BILLING_ENABLED and not admin:
         balance = billing_service.charge_credits(session, uid, cost, "assistant")
 
     return JSONResponse(content={

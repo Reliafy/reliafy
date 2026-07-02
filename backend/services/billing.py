@@ -29,6 +29,16 @@ def _ledger(db, uid: str, kind: str, cents: int, reason: str, ref: str = "") -> 
     )
 
 
+def is_admin_user(user: dict) -> bool:
+    """Operator accounts (ADMIN_EMAILS env): full access regardless of payment.
+
+    ``user`` is the authenticated ``{uid, email, name}`` dict, so this works on
+    every request without a DB lookup.
+    """
+    email = (user.get("email") or "").strip().lower()
+    return bool(email) and email in config.ADMIN_EMAILS
+
+
 def is_pro(account: dict) -> bool:
     if account.get("plan") != "pro":
         return False

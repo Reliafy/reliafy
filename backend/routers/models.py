@@ -102,7 +102,7 @@ async def upload_dataset(
     """Store an uploaded CSV as a standalone dataset (no fit required)."""
     contents = await file.read()
     # Free-plan cap (new datasets only — re-uploading an existing file is fine).
-    if billing_service.would_exceed_cap(session, user["uid"], "datasets"):
+    if not billing_service.is_admin_user(user) and billing_service.would_exceed_cap(session, user["uid"], "datasets"):
         digest = storage.checksum(contents)
         if session.datasets.find_one({"checksum": digest, "owner_id": user["uid"]}) is None:
             return JSONResponse(status_code=402, content={"detail": _CAP_MSG, "code": "cap", "upgrade": True})
@@ -196,7 +196,7 @@ async def save_model(
 ) -> JSONResponse:
     """Fit and persist a model from a fit spec and either an uploaded CSV
     (``file``) or an existing saved dataset (``dataset_id``)."""
-    if billing_service.would_exceed_cap(session, user["uid"], "models"):
+    if not billing_service.is_admin_user(user) and billing_service.would_exceed_cap(session, user["uid"], "models"):
         return JSONResponse(status_code=402, content={"detail": _CAP_MSG, "code": "cap", "upgrade": True})
     mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}
     try:
