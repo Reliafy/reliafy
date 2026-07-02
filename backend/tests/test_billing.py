@@ -235,9 +235,12 @@ def test_admin_emails_bypass_caps_and_ai_credits(monkeypatch):
             )
             assert r.status_code == 200, r.text
 
-        # Presented as pro, and billing status agrees.
-        assert client.get("/api/me").json()["plan"] == "pro"
-        assert client.get("/api/billing").json()["plan"] == "pro"
+        # Reported as an operator with their REAL plan (so purchase flows
+        # stay testable), not masqueraded as pro.
+        me = client.get("/api/me").json()
+        assert me["admin"] is True and me["plan"] == "free"
+        bill = client.get("/api/billing").json()
+        assert bill["admin"] is True and bill["plan"] == "free"
 
         # AI: zero balance is fine and nothing is charged.
         monkeypatch.setattr(assistant_service, "enabled", lambda: True)

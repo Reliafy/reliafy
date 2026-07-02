@@ -29,6 +29,7 @@ def assistant_info(session=Depends(get_session), user: dict = Depends(get_curren
     return {
         **info,
         "billing_enabled": config.BILLING_ENABLED,
+        "admin": billing_service.is_admin_user(user),  # admins aren't charged
         "credit_cents": acct["credit_cents"],
     }
 

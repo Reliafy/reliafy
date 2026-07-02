@@ -82,7 +82,7 @@ export default function ChatPanel() {
       push({ role: "error", text: "The assistant isn't available yet." });
       return;
     }
-    if (conf.billing_enabled && (conf.credit_cents ?? 0) <= 0) {
+    if (conf.billing_enabled && !conf.admin && (conf.credit_cents ?? 0) <= 0) {
       push({ role: "error", text: "You're out of AI credits.", action: "billing" });
       return;
     }
@@ -129,7 +129,7 @@ export default function ChatPanel() {
     );
   }
 
-  const showBalance = info?.billing_enabled;
+  const showBalance = info?.billing_enabled && !info?.admin; // operators aren't charged
 
   return (
     <aside className="chat-panel">

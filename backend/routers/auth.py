@@ -20,5 +20,9 @@ def me(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> 
     """
     billing_service.ensure_starter_grant(session, user["uid"])
     acct = billing_service.account(session, user["uid"])
-    pro = acct["is_pro"] or billing_service.is_admin_user(user)
-    return {**user, "plan": "pro" if pro else "free", "credit_cents": acct["credit_cents"]}
+    return {
+        **user,
+        "plan": "pro" if acct["is_pro"] else "free",
+        "admin": billing_service.is_admin_user(user),
+        "credit_cents": acct["credit_cents"],
+    }
