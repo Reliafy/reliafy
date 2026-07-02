@@ -11,29 +11,7 @@ from __future__ import annotations
 import os
 
 
-def _mongo_uri() -> str | None:
-    """Resolve the MongoDB connection string.
-
-    Preference order:
-    1. ``MONGODB_URI`` — a full connection string (the usual case).
-    2. The legacy ``MDB_STRG`` template with ``MDB_USER`` / ``MDB_PASS`` filled
-       in (kept so existing deployment env files keep working).
-    """
-    uri = os.environ.get("MONGODB_URI")
-    if uri:
-        return uri
-    template = os.environ.get("MDB_STRG")
-    if template:
-        user = os.environ.get("MDB_USER", "")
-        pw = os.environ.get("MDB_PASS", "")
-        try:
-            return template.format(user=user, pw=pw)
-        except (KeyError, IndexError):
-            return template
-    return None
-
-
-MONGODB_URI = _mongo_uri()
+MONGODB_URI = os.environ.get("MONGODB_URI")
 MONGODB_DB = os.environ.get("MONGODB_DB", "reliafy")
 # Short server-selection timeout so the simulator fallback kicks in quickly
 # when Atlas is unreachable, rather than hanging on startup.
@@ -105,7 +83,9 @@ FREE_GRANT_CENTS = _int("FREE_GRANT_CENTS", 25)
 # cents; users only ever see "credits" (1 credit == 1 cent, never shown as $).
 PRO_MONTHLY_CREDIT_CENTS = _int("PRO_MONTHLY_CREDIT_CENTS", 1000)
 
-# ---- Stripe (names match the pre-existing env_variables.yaml entries) ------
+# ---- Stripe -----------------------------------------------------------------
+# The double-underscore names are kept for continuity with older deploy config;
+# the single-underscore forms work too.
 STRIPE_API_KEY = os.environ.get("STRIPE__API_KEY") or os.environ.get("STRIPE_API_KEY")
 STRIPE_WEBHOOK_SECRET = (
     os.environ.get("STRIPE__WEBHOOK_SECRET") or os.environ.get("STRIPE_WEBHOOK_SECRET")
