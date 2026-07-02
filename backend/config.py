@@ -113,13 +113,16 @@ except ValueError:
 # Approximate list prices, USD per 1M tokens (input, output). Used to convert
 # token usage into a credit charge; the markup absorbs drift. Unknown models
 # fall back to a deliberately not-too-cheap default so we never undercharge.
+# ``cached_in`` is the provider's discounted rate for cached/repeated prompt
+# tokens (OpenAI prompt caching / Anthropic cache reads). Models without a
+# cached_in entry bill cached tokens at the full input rate (never undercharge).
 TOKEN_PRICES = {
-    "gpt-5.5": {"in": 5.0, "out": 30.0},  # the one production model
-    "claude-sonnet-4-6": {"in": 3.0, "out": 15.0},
-    "claude-haiku-4-5-20251001": {"in": 0.8, "out": 4.0},
-    "claude-opus-4-8": {"in": 15.0, "out": 75.0},
-    "gpt-4o": {"in": 2.5, "out": 10.0},
-    "gpt-4o-mini": {"in": 0.15, "out": 0.6},
+    "gpt-5.5": {"in": 5.0, "cached_in": 0.5, "out": 30.0},  # the one production model
+    "claude-sonnet-4-6": {"in": 3.0, "cached_in": 0.3, "out": 15.0},
+    "claude-haiku-4-5-20251001": {"in": 0.8, "cached_in": 0.08, "out": 4.0},
+    "claude-opus-4-8": {"in": 15.0, "cached_in": 1.5, "out": 75.0},
+    "gpt-4o": {"in": 2.5, "cached_in": 1.25, "out": 10.0},
+    "gpt-4o-mini": {"in": 0.15, "cached_in": 0.075, "out": 0.6},
 }
 TOKEN_PRICE_FALLBACK = {"in": 5.0, "out": 30.0}
 # Firebase/GCP project whose ID tokens we accept. Cloud Run usually injects

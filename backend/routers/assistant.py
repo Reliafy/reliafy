@@ -60,15 +60,23 @@ def assistant_step(
         return JSONResponse(status_code=502, content={"detail": str(exc)})
 
     usage = result["usage"]
-    cost = billing_service.ai_cost_cents(config.AI_MODEL, usage["input_tokens"], usage["output_tokens"])
+    # Metered at millicent precision, with cached prompt tokens billed at the
+    # provider's cached rate — maps user charges tightly onto actual $ cost.
+    cost_mc = billing_service.ai_cost_millicents(
+        config.AI_MODEL,
+        usage["input_tokens"],
+        usage["output_tokens"],
+        usage.get("cached_input_tokens", 0),
+    )
     balance = billing_service.account(session, uid)["credit_cents"]
     if config.BILLING_ENABLED and not admin:
-        balance = billing_service.charge_credits(session, uid, cost, "assistant")
+        balance = billing_service.charge_millicents(session, uid, cost_mc, "assistant")
 
     return JSONResponse(content={
         "message": result["message"],
         "stop_reason": result.get("stop_reason"),
         "usage": usage,
-        "cost_cents": cost,
+        "cost_millicents": cost_mc,
+        "cost_cents": max(1, -(-cost_mc // 1000)),  # informational, whole credits
         "credit_cents": balance,
     })

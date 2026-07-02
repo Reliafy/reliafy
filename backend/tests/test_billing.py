@@ -295,3 +295,46 @@ def test_gpt55_metering():
     expected_usd = (2000 * 5.0 + 500 * 30.0) / 1_000_000
     import math
     assert cents == max(1, math.ceil(expected_usd * 100 * config.AI_MARKUP))
+
+
+def test_cached_tokens_billed_at_cached_rate(monkeypatch):
+    from backend import config
+    from backend.services import billing
+
+    monkeypatch.setattr(config, "AI_MARKUP", 1.0)
+    monkeypatch.setattr(config, "TOKEN_PRICES", {"m": {"in": 5.0, "cached_in": 0.5, "out": 30.0}})
+
+    # 1k full-rate in + 9k cached in: (1000*5 + 9000*0.5)/1e6 = $0.0095 -> 950mc
+    assert billing.ai_cost_millicents("m", 1000, 0, cached_input_tokens=9000) == 950
+    # Same tokens all at full rate would be 5x the input cost.
+    assert billing.ai_cost_millicents("m", 10000, 0) == 5000
+    # A model without a cached price bills cached tokens at the full rate.
+    monkeypatch.setattr(config, "TOKEN_PRICES", {"m": {"in": 5.0, "out": 30.0}})
+    assert billing.ai_cost_millicents("m", 1000, 0, cached_input_tokens=9000) == 5000
+
+
+def test_millicent_charges_accumulate_without_per_step_rounding(session):
+    from backend.services import billing
+
+    billing.grant_credits(session, U, 10, "test")  # 10 credits = 10,000 mc
+    # Five sub-cent charges of 600 mc (0.6 credits) each: old cent-metering
+    # would have taken 5 whole credits; millicents take exactly 3,000 mc.
+    for _ in range(5):
+        billing.charge_millicents(session, U, 600, "assistant")
+    acct = billing.account(session, U)
+    assert acct["credit_millicents"] == 7000
+    assert acct["credit_cents"] == 7
+
+
+def test_legacy_cents_balance_migrates_losslessly(session):
+    from backend.services import billing
+
+    # A pre-migration user doc holding only credit_cents.
+    session.users.insert_one({"_id": "legacy-1", "credit_cents": 500})
+    assert billing.account(session, "legacy-1")["credit_cents"] == 500
+
+    # First charge migrates to millicents without losing the balance.
+    bal = billing.charge_millicents(session, "legacy-1", 400, "assistant")
+    assert bal == 499
+    acct = billing.account(session, "legacy-1")
+    assert acct["credit_millicents"] == 499_600

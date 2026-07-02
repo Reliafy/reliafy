@@ -1,8 +1,11 @@
 """Credits, plans, and AI cost accounting.
 
-A user document carries a small ledger: ``credit_cents`` (prepaid AI balance,
-USD cents), ``plan`` ('free'|'pro') with ``plan_until``, and
-``stripe_customer_id``. Every grant/charge is also appended to the
+A user document carries a small ledger: ``credit_millicents`` (prepaid AI
+balance in thousandths of a cent, so per-call metering never loses precision
+to rounding), ``plan`` ('free'|'pro') with ``plan_until``, and
+``stripe_customer_id``. Older documents carry only ``credit_cents`` and are
+migrated lazily on first touch. The user-facing balance is whole credits
+(1 credit == 1 cent), floored. Every grant/charge is also appended to the
 ``credit_ledger`` collection for an audit trail.
 
 Everything here is dormant unless :data:`backend.config.BILLING_ENABLED` is set:
@@ -23,10 +26,36 @@ def _now():
     return datetime.now(timezone.utc)
 
 
-def _ledger(db, uid: str, kind: str, cents: int, reason: str, ref: str = "") -> None:
+def _ledger(db, uid: str, kind: str, millicents: int, reason: str, ref: str = "") -> None:
     db.credit_ledger.insert_one(
-        {"uid": uid, "kind": kind, "cents": cents, "reason": reason, "ref": ref, "ts": _now()}
+        {
+            "uid": uid,
+            "kind": kind,
+            "millicents": int(millicents),
+            "cents": round(millicents / 1000, 3),  # convenience for eyeballing
+            "reason": reason,
+            "ref": ref,
+            "ts": _now(),
+        }
     )
+
+
+def _ensure_millicents(db, uid: str) -> None:
+    """Lazily migrate a user doc to the millicent balance field.
+
+    Older docs hold only ``credit_cents``; $inc on a missing field would start
+    from 0 and silently drop that balance, so convert it exactly once first.
+    The ``$exists: False`` filter makes the migration race-safe (one writer
+    wins; the other's set is a no-op).
+    """
+    doc = db.users.find_one({"_id": uid})
+    if doc is None:
+        db.users.update_one({"_id": uid}, {"$setOnInsert": {"credit_millicents": 0}}, upsert=True)
+    elif "credit_millicents" not in doc:
+        db.users.update_one(
+            {"_id": uid, "credit_millicents": {"$exists": False}},
+            {"$set": {"credit_millicents": int(doc.get("credit_cents", 0) or 0) * 1000}},
+        )
 
 
 def is_admin_user(user: dict) -> bool:
@@ -56,10 +85,19 @@ def is_pro(account: dict) -> bool:
 
 
 def account(db, uid: str) -> dict:
-    """The user's billing snapshot (defaults when no doc/fields exist yet)."""
+    """The user's billing snapshot (defaults when no doc/fields exist yet).
+
+    ``credit_cents`` (the user-visible credit count) is derived from the
+    millicent balance, floored — sub-cent remainders stay in the ledger.
+    """
     doc = db.users.find_one({"_id": uid}) or {}
+    mc = doc.get("credit_millicents")
+    if mc is None:
+        mc = int(doc.get("credit_cents", 0) or 0) * 1000
+    mc = int(mc)
     acct = {
-        "credit_cents": int(doc.get("credit_cents", 0) or 0),
+        "credit_millicents": mc,
+        "credit_cents": mc // 1000,
         "plan": doc.get("plan", "free"),
         "plan_until": doc.get("plan_until"),
         "stripe_customer_id": doc.get("stripe_customer_id"),
@@ -72,38 +110,44 @@ def ensure_starter_grant(db, uid: str) -> None:
     """Grant the one-time free starter credit the first time we see a user."""
     if config.FREE_GRANT_CENTS <= 0:
         return
-    # Make sure the user doc exists, then grant once (no upsert on the
-    # conditional update, so a repeat call can't hit a duplicate-key insert).
-    db.users.update_one({"_id": uid}, {"$setOnInsert": {"credit_cents": 0}}, upsert=True)
+    _ensure_millicents(db, uid)
     res = db.users.update_one(
         {"_id": uid, "starter_granted": {"$ne": True}},
-        {"$set": {"starter_granted": True}, "$inc": {"credit_cents": config.FREE_GRANT_CENTS}},
+        {"$set": {"starter_granted": True}, "$inc": {"credit_millicents": config.FREE_GRANT_CENTS * 1000}},
     )
     if getattr(res, "modified_count", 0):
-        _ledger(db, uid, "grant", config.FREE_GRANT_CENTS, "starter")
+        _ledger(db, uid, "grant", config.FREE_GRANT_CENTS * 1000, "starter")
 
 
 def grant_credits(db, uid: str, cents: int, reason: str, ref: str = "") -> int:
-    """Add credit to a user (purchase/grant). Returns the new balance."""
-    db.users.update_one({"_id": uid}, {"$inc": {"credit_cents": int(cents)}}, upsert=True)
-    _ledger(db, uid, "grant", int(cents), reason, ref)
+    """Add credit to a user (purchase/grant, always whole cents). Returns the
+    new balance in cents."""
+    _ensure_millicents(db, uid)
+    db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": int(cents) * 1000}}, upsert=True)
+    _ledger(db, uid, "grant", int(cents) * 1000, reason, ref)
     return account(db, uid)["credit_cents"]
 
 
-def charge_credits(db, uid: str, cents: int, reason: str, ref: str = "") -> int:
-    """Deduct AI usage. Floors at zero (a single call can't push below 0 by more
-    than its own cost, since we require a positive balance to start). Returns the
-    new balance."""
-    cents = int(cents)
-    if cents <= 0:
+def charge_millicents(db, uid: str, millicents: int, reason: str, ref: str = "") -> int:
+    """Deduct metered AI usage at millicent precision. Floors at zero (a single
+    call can't push below 0 by more than its own cost, since a positive balance
+    is required to start). Returns the new balance in cents (floored)."""
+    millicents = int(millicents)
+    if millicents <= 0:
         return account(db, uid)["credit_cents"]
-    db.users.update_one({"_id": uid}, {"$inc": {"credit_cents": -cents}})
-    bal = account(db, uid)["credit_cents"]
-    if bal < 0:
-        db.users.update_one({"_id": uid}, {"$set": {"credit_cents": 0}})
-        bal = 0
-    _ledger(db, uid, "charge", cents, reason, ref)
-    return bal
+    _ensure_millicents(db, uid)
+    db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": -millicents}})
+    acct = account(db, uid)
+    if acct["credit_millicents"] < 0:
+        db.users.update_one({"_id": uid}, {"$set": {"credit_millicents": 0}})
+        acct = account(db, uid)
+    _ledger(db, uid, "charge", millicents, reason, ref)
+    return acct["credit_cents"]
+
+
+def charge_credits(db, uid: str, cents: int, reason: str, ref: str = "") -> int:
+    """Whole-cent convenience wrapper around :func:`charge_millicents`."""
+    return charge_millicents(db, uid, int(cents) * 1000, reason, ref)
 
 
 def grant_monthly_pro_credits(db, customer_id: str | None, invoice_id: str | None) -> bool:
@@ -134,13 +178,34 @@ def set_customer(db, uid: str, customer_id: str) -> None:
 
 # ---- AI cost -------------------------------------------------------------
 
-def ai_cost_cents(model: str, input_tokens: int, output_tokens: int) -> int:
-    """Credit charge for one model call: provider token cost x markup, in cents,
-    rounded up, with a 1-cent floor so every call costs something."""
+def ai_cost_millicents(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cached_input_tokens: int = 0,
+) -> int:
+    """Metered charge for one model call, in millicents (1/1000 cent).
+
+    Provider token cost x markup, rounded up at millicent precision — so the
+    per-call rounding overhead is at most 0.001 credits instead of a whole
+    credit. ``input_tokens`` are full-rate; ``cached_input_tokens`` are billed
+    at the provider's cached rate (models without a ``cached_in`` price bill
+    them at the full rate, so unknown models are never undercharged).
+    """
     price = config.TOKEN_PRICES.get(model, config.TOKEN_PRICE_FALLBACK)
-    usd = (input_tokens * price["in"] + output_tokens * price["out"]) / 1_000_000.0
-    cents = usd * 100.0 * config.AI_MARKUP
-    return max(1, math.ceil(cents))
+    cached_rate = price.get("cached_in", price["in"])
+    usd = (
+        input_tokens * price["in"]
+        + cached_input_tokens * cached_rate
+        + output_tokens * price["out"]
+    ) / 1_000_000.0
+    millicents = usd * 100_000.0 * config.AI_MARKUP
+    return max(1, math.ceil(millicents))
+
+
+def ai_cost_cents(model: str, input_tokens: int, output_tokens: int) -> int:
+    """Whole-cent view of :func:`ai_cost_millicents` (no cached tokens)."""
+    return max(1, math.ceil(ai_cost_millicents(model, input_tokens, output_tokens) / 1000))
 
 
 # ---- Plan caps -----------------------------------------------------------

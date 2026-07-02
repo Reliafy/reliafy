@@ -80,11 +80,15 @@ def _anthropic(system, messages, tools):
         raise AssistantError(_err(r, "Anthropic"))
     data = r.json()
     usage = data.get("usage", {})
+    # Normalised usage contract: input_tokens = FULL-RATE input; cached reads
+    # reported separately. Anthropic already reports cache reads outside
+    # input_tokens, so the fields map straight across.
     return {
         "message": {"role": "assistant", "content": data.get("content", [])},
         "stop_reason": data.get("stop_reason"),
         "usage": {
             "input_tokens": int(usage.get("input_tokens", 0)),
+            "cached_input_tokens": int(usage.get("cache_read_input_tokens", 0) or 0),
             "output_tokens": int(usage.get("output_tokens", 0)),
         },
     }
@@ -109,11 +113,17 @@ def _openai(system, messages, tools):
         raise AssistantError(_err(r, "OpenAI"))
     data = r.json()
     usage = data.get("usage", {})
+    # OpenAI's prompt_tokens INCLUDES cached tokens; split them out so
+    # input_tokens is the full-rate count (normalised contract).
+    details = usage.get("prompt_tokens_details") or {}
+    cached = int(details.get("cached_tokens", 0) or 0)
+    prompt = int(usage.get("prompt_tokens", 0))
     return {
         "message": data["choices"][0]["message"],
         "stop_reason": data["choices"][0].get("finish_reason"),
         "usage": {
-            "input_tokens": int(usage.get("prompt_tokens", 0)),
+            "input_tokens": max(0, prompt - cached),
+            "cached_input_tokens": min(cached, prompt),
             "output_tokens": int(usage.get("completion_tokens", 0)),
         },
     }
