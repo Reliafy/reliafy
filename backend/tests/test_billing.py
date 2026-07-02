@@ -211,7 +211,7 @@ def test_admin_emails_bypass_caps_and_ai_credits(monkeypatch):
     monkeypatch.setattr(config, "AUTH_DISABLED", False)
     monkeypatch.setattr(config, "BILLING_ENABLED", True)
     monkeypatch.setattr(config, "FREE_MAX_DATASETS", 1)
-    monkeypatch.setattr(config, "ADMIN_EMAILS", {"derrynknife@gmail.com", "derryn.knife@gmail.com"})
+    monkeypatch.setattr(config, "ADMIN_EMAILS", {"admin@example.com", "operator@example.com"})
     monkeypatch.setattr(config, "AI_MODEL", "m")
     monkeypatch.setattr(config, "TOKEN_PRICES", {"m": {"in": 3.0, "out": 15.0}})
     test_db = mongomock.MongoClient()["reliafy_test"]
@@ -219,7 +219,7 @@ def test_admin_emails_bypass_caps_and_ai_credits(monkeypatch):
     monkeypatch.setattr(db, "_simulated", True)
     client = TestClient(app)
 
-    admin = {"uid": "admin-1", "email": "Derryn.Knife@gmail.com", "name": "D"}  # case-insensitive
+    admin = {"uid": "admin-1", "email": "Admin@example.com", "name": "D"}  # case-insensitive
     assert billing.is_admin_user(admin) is True
     assert billing.is_admin_user({"uid": "x", "email": "someone@else.com"}) is False
 
