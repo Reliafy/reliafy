@@ -18,6 +18,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
+def _public_base(request: Request) -> str:
+    """The site origin for Stripe redirect URLs, with a trailing slash.
+
+    PUBLIC_BASE_URL wins (required behind the Firebase Hosting proxy, where the
+    request's own Host is the Cloud Run service, not the custom domain).
+    """
+    if config.PUBLIC_BASE_URL:
+        return config.PUBLIC_BASE_URL + "/"
+    return str(request.base_url)
+
+
 def _stripe():
     """Return the configured stripe module, or None if no key is set."""
     if not config.STRIPE_API_KEY:
@@ -77,7 +88,7 @@ def checkout(
     if pack is None:
         return JSONResponse(status_code=400, content={"detail": "Unknown credit pack."})
 
-    base = str(request.base_url)
+    base = _public_base(request)
     try:
         cs = stripe.checkout.Session.create(
             mode="payment",
@@ -110,7 +121,7 @@ def subscribe(
     stripe = _stripe()
     if stripe is None or not config.STRIPE_PRO_PRICE_ID:
         return JSONResponse(status_code=503, content={"detail": "The Pro plan is not configured."})
-    base = str(request.base_url)
+    base = _public_base(request)
     try:
         cs = stripe.checkout.Session.create(
             mode="subscription",
@@ -142,7 +153,7 @@ def portal(
     try:
         ps = stripe.billing_portal.Session.create(
             customer=acct["stripe_customer_id"],
-            return_url=f"{str(request.base_url)}billing",
+            return_url=f"{_public_base(request)}billing",
         )
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=502, content={"detail": f"Stripe error: {exc}"})

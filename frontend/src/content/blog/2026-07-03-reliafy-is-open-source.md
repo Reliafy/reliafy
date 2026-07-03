@@ -70,7 +70,7 @@ instance, your data, your machine.
 
 ## What the cloud version is for
 
-[Reliafy Cloud](https://reliafy-290759058830.australia-southeast1.run.app) is
+[Reliafy Cloud](https://reliafy.com) is
 the same product, hosted and operated by us, for engineers and teams who want
 zero setup. It adds the things that only make sense hosted: user accounts,
 managed persistence, and the **AI assistant** — a chat panel that can fit

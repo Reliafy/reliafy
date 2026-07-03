@@ -83,6 +83,12 @@ FREE_GRANT_CENTS = _int("FREE_GRANT_CENTS", 25)
 # cents; users only ever see "credits" (1 credit == 1 cent, never shown as $).
 PRO_MONTHLY_CREDIT_CENTS = _int("PRO_MONTHLY_CREDIT_CENTS", 1000)
 
+# The site's public origin (e.g. https://reliafy.com). Used for Stripe
+# redirect/return URLs so they don't depend on the Host header seen behind a
+# proxy (Firebase Hosting forwards to Cloud Run with the service host). Unset =
+# fall back to the request's own base URL.
+PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/") or None
+
 # ---- Stripe -----------------------------------------------------------------
 # The double-underscore names are kept for continuity with older deploy config;
 # the single-underscore forms work too.
