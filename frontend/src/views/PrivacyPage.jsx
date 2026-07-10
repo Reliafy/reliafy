@@ -69,7 +69,7 @@ export default function PrivacyPage() {
           <p>
             You can access and delete your content in the app at any time. To export
             everything, delete your account entirely, or ask what we hold about you,
-            email <a href="mailto:derrynknife@gmail.com">derrynknife@gmail.com</a> and
+            email <a href="mailto:hello@reliafy.com">hello@reliafy.com</a> and
             we'll action it promptly. If you're in a jurisdiction with specific data
             rights (GDPR, Australian Privacy Principles), we'll honour them.
           </p>
@@ -90,7 +90,7 @@ export default function PrivacyPage() {
           <h2>Contact</h2>
           <p>
             Privacy questions or requests:{" "}
-            <a href="mailto:derrynknife@gmail.com">derrynknife@gmail.com</a>.
+            <a href="mailto:hello@reliafy.com">hello@reliafy.com</a>.
           </p>
         </div>
       </article>

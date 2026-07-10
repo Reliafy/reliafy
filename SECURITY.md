@@ -4,7 +4,7 @@
 
 Please **do not open a public issue** for security vulnerabilities.
 
-Email **derrynknife@gmail.com** with a description of the issue, steps to
+Email **hello@reliafy.com** with a description of the issue, steps to
 reproduce, and the affected version/commit. You'll get an acknowledgement
 within a few days, and a fix will be prioritised.
 
