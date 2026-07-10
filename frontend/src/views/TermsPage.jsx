@@ -94,7 +94,7 @@ export default function TermsPage() {
 
           <h2>Contact</h2>
           <p>
-            Questions about these terms: <a href="mailto:derrynknife@gmail.com">derrynknife@gmail.com</a>.
+            Questions about these terms: <a href="mailto:hello@reliafy.com">hello@reliafy.com</a>.
             These terms are governed by the laws of Australia.
           </p>
         </div>
