@@ -27,6 +27,9 @@ import StrategyCompare from "./views/StrategyCompare.jsx";
 import StrategyFailureFinding from "./views/StrategyFailureFinding.jsx";
 import StrategyAnalyses from "./views/StrategyAnalyses.jsx";
 import StrategyAnalysisPage from "./views/StrategyAnalysisPage.jsx";
+import RcmDashboard from "./views/RcmDashboard.jsx";
+import RcmHome from "./views/RcmHome.jsx";
+import RcmStudyPage from "./views/RcmStudyPage.jsx";
 import Login from "./views/Login.jsx";
 import Landing from "./views/Landing.jsx";
 import Blog from "./views/Blog.jsx";
@@ -78,6 +81,9 @@ function AppShell() {
             <Route path="/strategy/failure-finding" element={<StrategyFailureFinding />} />
             <Route path="/strategy/analyses" element={<StrategyAnalyses />} />
             <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
+            <Route path="/rcm" element={<RcmDashboard />} />
+            <Route path="/rcm/studies" element={<RcmHome />} />
+            <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />
             {billing && <Route path="/billing" element={<BillingPage />} />}
             <Route path="*" element={<Navigate to="/modelling" replace />} />
           </Routes>

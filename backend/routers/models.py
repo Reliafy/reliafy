@@ -35,6 +35,9 @@ def _model_summary(model) -> dict:
         "created_at": model.created_at.isoformat(),
         "dataset_id": model.dataset_id,
         "is_sample": samples_service.is_sample(model.owner_id),
+        # Randomness verdict (weibull beta CI / exponential), used when picking
+        # RCM evidence for run-to-failure decisions.
+        "randomness": results.get("randomness"),
     }
 
 

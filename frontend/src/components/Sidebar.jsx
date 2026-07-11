@@ -43,6 +43,14 @@ const StrategyIcon = () => (
   </svg>
 );
 
+const RcmSectionIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="5" y="4" width="14" height="17" rx="2" />
+    <path d="M9 4V3h6v1" />
+    <path d="m8.5 12 2 2 4-4.5" />
+  </svg>
+);
+
 const DatasetsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <ellipse cx="12" cy="6" rx="8" ry="3" />
@@ -93,6 +101,12 @@ const ITEMS = [
       { to: "/strategy/failure-finding", label: "Failure finding" },
       { to: "/strategy/analyses", label: "Saved analyses" },
     ],
+  },
+  {
+    to: "/rcm",
+    label: "RCM",
+    icon: <RcmSectionIcon />,
+    children: [{ to: "/rcm/studies", label: "Studies" }],
   },
   {
     to: "/datasets",
