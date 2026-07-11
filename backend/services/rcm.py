@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from backend.config import SAMPLE_OWNER
+from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.schema import RcmStudy
 from backend.services import degradation as degradation_service
@@ -65,20 +65,20 @@ def create_study(db, name: str, system: str, description: str, owner_id: str) ->
     return study
 
 
-def list_studies(db, owner_id: str, hidden=frozenset()) -> list[RcmStudy]:
+def list_studies(db, owner_id: str | list[str], hidden=frozenset()) -> list[RcmStudy]:
     return [
         from_doc(RcmStudy, d)
         for d in db.rcm_studies.find(
-            {"owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+            {"owner_id": {"$in": access.owner_in(owner_id)}}
         ).sort("created_at", -1)
         if d["_id"] not in hidden
     ]
 
 
-def get_study(db, study_id: str, owner_id: str | None = None) -> RcmStudy | None:
+def get_study(db, study_id: str, owner_id: str | list[str] | None = None) -> RcmStudy | None:
     query = {"_id": study_id}
     if owner_id is not None:
-        query["owner_id"] = {"$in": [owner_id, SAMPLE_OWNER]}
+        query["owner_id"] = {"$in": access.owner_in(owner_id)}
     return from_doc(RcmStudy, db.rcm_studies.find_one(query))
 
 

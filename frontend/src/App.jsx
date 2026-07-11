@@ -37,8 +37,10 @@ import Blog from "./views/Blog.jsx";
 import BlogPost from "./views/BlogPost.jsx";
 import TermsPage from "./views/TermsPage.jsx";
 import PrivacyPage from "./views/PrivacyPage.jsx";
+import TeamSettingsPage from "./views/TeamSettingsPage.jsx";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
 import { ConfigProvider, useAppConfig } from "./ConfigProvider.jsx";
+import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider.jsx";
 import { AUTH_DISABLED } from "./firebase.js";
 
 // Gate the app shell behind authentication: while auth initialises show a
@@ -55,12 +57,15 @@ function AppShell() {
   // Deployment capabilities: hide the assistant and billing entirely when this
   // deployment can't offer them (e.g. an open-source self-hosted instance).
   const { ai, billing } = useAppConfig();
+  // Keying the routed content on the workspace remounts every view on switch,
+  // so all lists refetch under the new X-Workspace-Id without any per-view code.
+  const { workspace } = useWorkspace();
   return (
     <>
       <NavBar />
       <div className="layout">
         <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
-        <main className="content">
+        <main className="content" key={workspace}>
           <Routes>
             <Route path="/" element={<Navigate to="/modelling" replace />} />
             <Route path="/modelling" element={<ModellingDashboard />} />
@@ -87,6 +92,7 @@ function AppShell() {
             <Route path="/rcm" element={<RcmDashboard />} />
             <Route path="/rcm/studies" element={<RcmHome />} />
             <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />
+            <Route path="/team" element={<TeamSettingsPage />} />
             {billing && <Route path="/billing" element={<BillingPage />} />}
             <Route path="*" element={<Navigate to="/modelling" replace />} />
           </Routes>
@@ -113,7 +119,16 @@ export default function App() {
             {!AUTH_DISABLED && <Route path="/terms" element={<TermsPage />} />}
             {!AUTH_DISABLED && <Route path="/privacy" element={<PrivacyPage />} />}
             {!AUTH_DISABLED && <Route path="/login" element={<Login />} />}
-            <Route path="/*" element={<RequireAuth><AppShell /></RequireAuth>} />
+            <Route
+              path="/*"
+              element={
+                <RequireAuth>
+                  <WorkspaceProvider>
+                    <AppShell />
+                  </WorkspaceProvider>
+                </RequireAuth>
+              }
+            />
           </Routes>
         </AuthProvider>
       </ConfigProvider>

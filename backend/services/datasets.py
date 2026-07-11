@@ -8,7 +8,7 @@ import uuid
 import pandas as pd
 
 from backend import storage
-from backend.config import SAMPLE_OWNER
+from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.fitting import preview as _preview
 from backend.fitting import read_dataframe
@@ -43,7 +43,7 @@ def create_dataset(db, name: str, file_bytes: bytes, owner_id: str) -> Dataset:
     return dataset
 
 
-def get_dataset(db, dataset_id: str, owner_id: str | None = None) -> Dataset | None:
+def get_dataset(db, dataset_id: str, owner_id: str | list[str] | None = None) -> Dataset | None:
     """Fetch a dataset by id, optionally scoped to its owner.
 
     ``owner_id`` is optional so internal callers (the re-fit path) can fetch by
@@ -52,11 +52,11 @@ def get_dataset(db, dataset_id: str, owner_id: str | None = None) -> Dataset | N
     """
     query = {"_id": dataset_id}
     if owner_id is not None:
-        query["owner_id"] = {"$in": [owner_id, SAMPLE_OWNER]}
+        query["owner_id"] = {"$in": access.owner_in(owner_id)}
     return from_doc(Dataset, db.datasets.find_one(query))
 
 
-def list_datasets(db, owner_id: str, hidden=frozenset()) -> list[Dataset]:
+def list_datasets(db, owner_id: str | list[str], hidden=frozenset()) -> list[Dataset]:
     """The owner's datasets plus the shared samples, newest first.
 
     ``hidden`` is the set of sample ids this user has dismissed; they're left
@@ -65,7 +65,7 @@ def list_datasets(db, owner_id: str, hidden=frozenset()) -> list[Dataset]:
     return [
         from_doc(Dataset, d)
         for d in db.datasets.find(
-            {"owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+            {"owner_id": {"$in": access.owner_in(owner_id)}}
         ).sort("created_at", -1)
         if d["_id"] not in hidden
     ]
@@ -89,7 +89,7 @@ def models_for_dataset(db, dataset_id: str, owner_id: str, hidden=frozenset()) -
     return [
         from_doc(Model, m)
         for m in db.models.find(
-            {"dataset_id": dataset_id, "owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+            {"dataset_id": dataset_id, "owner_id": {"$in": access.owner_in(owner_id)}}
         ).sort("created_at", -1)
         if m["_id"] not in hidden
     ]

@@ -12,6 +12,8 @@ from backend.db import get_session
 from backend.fitting import read_dataframe
 from backend.services import samples as samples_service
 from backend.services import strategy as strategy_service
+from backend.services import access as access_service
+from backend.services.access import AccessCtx, get_access
 from backend.services import strategy_store
 from backend.services.strategy import StrategyError
 
@@ -119,13 +121,14 @@ def failure_finding_endpoint(
 
 # ---- Saved analyses ----------------------------------------------------------
 
-def _analysis_summary(doc) -> dict:
+def _analysis_summary(doc, ctx: AccessCtx) -> dict:
     return {
         "id": doc.id,
         "name": doc.name,
         "kind": doc.kind,
         "headline": strategy_store.headline(doc),
         "is_sample": samples_service.is_sample(doc.owner_id),
+        "read_only": not access_service.can_write(ctx, doc.owner_id),
         "created_at": doc.created_at.isoformat(),
         "updated_at": doc.updated_at.isoformat(),
     }
@@ -137,32 +140,35 @@ def save_analysis(
     kind: str = Body(...),
     inputs: dict = Body(default={}),
     session=Depends(get_session),
-    user: dict = Depends(get_current_user),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Persist a strategy analysis. Results are recomputed server-side from the
     inputs — clients never supply results (saved analyses are RCM evidence)."""
+    if ctx.frozen:
+        return JSONResponse(
+            status_code=402,
+            content={"detail": access_service.FROZEN_MSG, "code": "team_frozen", "upgrade": True},
+        )
     try:
-        doc = strategy_store.save_analysis(session, name, kind, inputs, user["uid"])
+        doc = strategy_store.save_analysis(session, name, kind, inputs, ctx.write_owner)
     except StrategyError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    return JSONResponse(content={**_analysis_summary(doc), "inputs": doc.inputs, "results": doc.results})
+    return JSONResponse(content={**_analysis_summary(doc, ctx), "inputs": doc.inputs, "results": doc.results})
 
 
 @router.get("/analyses")
-def list_analyses(session=Depends(get_session), user: dict = Depends(get_current_user)) -> dict:
-    hidden = samples_service.hidden_sample_ids(session, user["uid"])
-    return {"analyses": [_analysis_summary(d) for d in strategy_store.list_analyses(session, user["uid"], hidden)]}
+def list_analyses(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
+    return {"analyses": [_analysis_summary(d, ctx) for d in strategy_store.list_analyses(session, ctx.list_owners, ctx.hidden)]}
 
 
 @router.get("/analyses/{analysis_id}")
 def get_analysis(
-    analysis_id: str, session=Depends(get_session), user: dict = Depends(get_current_user)
+    analysis_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    hidden = samples_service.hidden_sample_ids(session, user["uid"])
-    doc = strategy_store.get_analysis(session, analysis_id, user["uid"])
-    if doc is None or doc.id in hidden:
+    doc = strategy_store.get_analysis(session, analysis_id, ctx.read_owners)
+    if doc is None or doc.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Analysis not found."})
-    return JSONResponse(content={**_analysis_summary(doc), "inputs": doc.inputs, "results": doc.results})
+    return JSONResponse(content={**_analysis_summary(doc, ctx), "inputs": doc.inputs, "results": doc.results})
 
 
 @router.patch("/analyses/{analysis_id}")
@@ -170,32 +176,36 @@ def rename_analysis(
     analysis_id: str,
     name: str = Body(..., embed=True),
     session=Depends(get_session),
-    user: dict = Depends(get_current_user),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    existing = strategy_store.get_analysis(session, analysis_id, user["uid"])
-    if existing is not None and samples_service.is_sample(existing.owner_id):
-        return JSONResponse(status_code=403, content={"detail": "Sample analyses are read-only."})
+    existing = strategy_store.get_analysis(session, analysis_id, ctx.read_owners)
+    if existing is not None:
+        denial = access_service.write_denial(ctx, existing.owner_id)
+        if denial:
+            status, payload = denial
+            return JSONResponse(status_code=status, content=payload)
     try:
-        doc = strategy_store.rename_analysis(session, analysis_id, name, user["uid"])
+        doc = strategy_store.rename_analysis(session, analysis_id, name, ctx.write_owner)
     except strategy_store.AnalysisNotFound:
         return JSONResponse(status_code=404, content={"detail": "Analysis not found."})
-    return JSONResponse(content=_analysis_summary(doc))
+    return JSONResponse(content=_analysis_summary(doc, ctx))
 
 
 @router.delete("/analyses/{analysis_id}")
 def delete_analysis(
-    analysis_id: str, session=Depends(get_session), user: dict = Depends(get_current_user)
+    analysis_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    uid = user["uid"]
-    hidden = samples_service.hidden_sample_ids(session, uid)
-    doc = strategy_store.get_analysis(session, analysis_id, uid)
-    if doc is None or doc.id in hidden:
+    doc = strategy_store.get_analysis(session, analysis_id, ctx.read_owners)
+    if doc is None or doc.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Analysis not found."})
-    if samples_service.is_sample(doc.owner_id):
-        samples_service.hide_sample(session, uid, analysis_id)
-        return JSONResponse(content={"ok": True})
-    try:
-        strategy_store.delete_analysis(session, analysis_id, uid)
-    except strategy_store.AnalysisNotFound:
-        return JSONResponse(status_code=404, content={"detail": "Analysis not found."})
+    if access_service.can_write(ctx, doc.owner_id):
+        try:
+            strategy_store.delete_analysis(session, analysis_id, ctx.write_owner)
+        except strategy_store.AnalysisNotFound:
+            return JSONResponse(status_code=404, content={"detail": "Analysis not found."})
+    elif samples_service.is_sample(doc.owner_id):
+        samples_service.hide_sample(session, ctx.uid, analysis_id)
+    else:
+        status, payload = access_service.write_denial(ctx, doc.owner_id)
+        return JSONResponse(status_code=status, content=payload)
     return JSONResponse(content={"ok": True})

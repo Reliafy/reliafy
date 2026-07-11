@@ -8,9 +8,35 @@ async function authHeaders(forceRefresh = false) {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// Active workspace ("personal" or a team id). Sent on every request so the
+// backend scopes reads/writes to the right principal.
+const WORKSPACE_KEY = "reliafy.workspace";
+// localStorage is absent during SSG prerendering (Node) — default to personal.
+const _storage = typeof localStorage === "undefined" ? null : localStorage;
+let workspaceId = _storage?.getItem(WORKSPACE_KEY) || "personal";
+
+export function getWorkspace() {
+  return workspaceId;
+}
+
+export function setWorkspace(id) {
+  workspaceId = id || "personal";
+  _storage?.setItem(WORKSPACE_KEY, workspaceId);
+}
+
+function workspaceHeaders() {
+  return workspaceId && workspaceId !== "personal"
+    ? { "X-Workspace-Id": workspaceId }
+    : {};
+}
+
 async function request(url, opts = {}) {
   const send = async (forceRefresh) => {
-    const headers = { ...(opts.headers || {}), ...(await authHeaders(forceRefresh)) };
+    const headers = {
+      ...(opts.headers || {}),
+      ...workspaceHeaders(),
+      ...(await authHeaders(forceRefresh)),
+    };
     return fetch(url, { ...opts, headers });
   };
   let res = await send(false);
@@ -456,4 +482,54 @@ export function putRcmTree(id, functions) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ functions }),
   });
+}
+
+// ---- Teams -------------------------------------------------------------------
+
+export function listTeams() {
+  return request("/api/teams");
+}
+
+export function createTeam(name) {
+  return request("/api/teams", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function getTeam(id) {
+  return request(`/api/teams/${id}`);
+}
+
+export function renameTeam(id, name) {
+  return request(`/api/teams/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteTeam(id) {
+  return request(`/api/teams/${id}`, { method: "DELETE" });
+}
+
+export function inviteTeamMember(id, email) {
+  return request(`/api/teams/${id}/members`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function removeTeamMember(id, uid) {
+  return request(`/api/teams/${id}/members/${uid}`, { method: "DELETE" });
+}
+
+export function removeTeamInvite(id, email) {
+  return request(`/api/teams/${id}/invites/${encodeURIComponent(email)}`, { method: "DELETE" });
+}
+
+export function leaveTeam(id) {
+  return request(`/api/teams/${id}/leave`, { method: "POST" });
 }

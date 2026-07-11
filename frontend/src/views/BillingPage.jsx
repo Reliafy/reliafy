@@ -88,6 +88,10 @@ export default function BillingPage() {
               </li>
             ))}
           </ul>
+          <p className="muted-line">
+            Usage shown is your personal workspace — team workspaces have
+            unlimited saves.
+          </p>
           {isPro ? (
             <button className="secondary" disabled={working === "portal"} onClick={() => go("portal", billingPortal)}>
               {working === "portal" ? "Opening…" : "Manage subscription"}

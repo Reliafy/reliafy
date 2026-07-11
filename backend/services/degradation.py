@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 import surpyval
 
 from backend import degradation as degradation_fit
-from backend.config import SAMPLE_OWNER
+from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.fitting import FitError
 from backend.schema import DegradationModelDoc, TrackedItem
@@ -72,20 +72,20 @@ def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> Degradation
     return doc
 
 
-def list_models(db, owner_id: str, hidden=frozenset()) -> list[DegradationModelDoc]:
+def list_models(db, owner_id: str | list[str], hidden=frozenset()) -> list[DegradationModelDoc]:
     return [
         from_doc(DegradationModelDoc, d)
         for d in db.degradation_models.find(
-            {"owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+            {"owner_id": {"$in": access.owner_in(owner_id)}}
         ).sort("created_at", -1)
         if d["_id"] not in hidden
     ]
 
 
-def get_model(db, model_id: str, owner_id: str | None = None) -> DegradationModelDoc | None:
+def get_model(db, model_id: str, owner_id: str | list[str] | None = None) -> DegradationModelDoc | None:
     query = {"_id": model_id}
     if owner_id is not None:
-        query["owner_id"] = {"$in": [owner_id, SAMPLE_OWNER]}
+        query["owner_id"] = {"$in": access.owner_in(owner_id)}
     return from_doc(DegradationModelDoc, db.degradation_models.find_one(query))
 
 
@@ -116,7 +116,7 @@ def _remember_live(model_id: str, cache_id: str) -> None:
         _LIVE.popitem(last=False)
 
 
-def get_live_model(db, model_id: str, owner_id: str):
+def get_live_model(db, model_id: str, owner_id: str | list[str]):
     """The live (fitted) SurPyval model for a saved id, re-fitting on a miss."""
     doc = get_model(db, model_id, owner_id)
     if doc is None:
@@ -189,12 +189,12 @@ def create_item(db, model_id: str, name: str, measurements, owner_id: str, meta:
     return item
 
 
-def list_items(db, model_id: str, owner_id: str, hidden=frozenset()) -> list[TrackedItem]:
+def list_items(db, model_id: str, owner_id: str | list[str], hidden=frozenset()) -> list[TrackedItem]:
     """The owner's items on this model, plus sample items, minus hidden ones."""
     return [
         from_doc(TrackedItem, d)
         for d in db.tracked_items.find(
-            {"model_id": model_id, "owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+            {"model_id": model_id, "owner_id": {"$in": access.owner_in(owner_id)}}
         ).sort("created_at", -1)
         if d["_id"] not in hidden
     ]
@@ -204,7 +204,7 @@ def get_item(db, model_id: str, item_id: str, owner_id: str) -> TrackedItem | No
     return from_doc(
         TrackedItem,
         db.tracked_items.find_one(
-            {"_id": item_id, "model_id": model_id, "owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+            {"_id": item_id, "model_id": model_id, "owner_id": {"$in": access.owner_in(owner_id)}}
         ),
     )
 

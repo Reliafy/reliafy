@@ -4302,3 +4302,35 @@ select:disabled {
   box-shadow: 0 0 0 3px var(--acc-t);
 }
 .decision-step textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+
+/* ---- Workspace switcher (teams) ---------------------------------------- */
+.workspace-switcher {
+  padding: 0 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workspace-switcher select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ink);
+  background: #fff;
+  cursor: pointer;
+}
+.workspace-switcher select:focus {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--acc-t);
+}
+.workspace-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+button.danger { color: #a23a3a; border-color: #f3c9c9; }
+button.danger:hover { background: #fdeeee; }
