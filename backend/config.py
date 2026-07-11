@@ -17,6 +17,19 @@ MONGODB_DB = os.environ.get("MONGODB_DB", "reliafy")
 # when Atlas is unreachable, rather than hanging on startup.
 MONGODB_TIMEOUT_MS = int(os.environ.get("MONGODB_TIMEOUT_MS", "3000"))
 
+# Upload ceiling for CSV datasets. Raw bytes are stored inside the Mongo
+# document, whose hard limit is 16MB — stay well under it.
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
+
+# Outbound transactional email (team invites, share notifications). Optional:
+# unset -> sends are logged no-ops. Works with any SMTP provider (Gmail app
+# password, Resend, Postmark, SES).
+SMTP_HOST = os.environ.get("SMTP_HOST")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER")
+SMTP_PASS = os.environ.get("SMTP_PASS")
+EMAIL_FROM = os.environ.get("EMAIL_FROM")
+
 
 def _truthy(value: str | None) -> bool:
     return (value or "").strip().lower() in ("1", "true", "yes", "on")

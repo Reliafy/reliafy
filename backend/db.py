@@ -1,11 +1,12 @@
 """MongoDB connection and document helpers.
 
-The app talks to MongoDB. When ``MONGODB_URI`` points at a reachable cluster
-(e.g. MongoDB Atlas) we use it; otherwise — no URI configured, or the cluster
-can't be reached within the timeout — we transparently fall back to an
-in-memory MongoDB simulator (``mongomock``) so the app still runs locally with
-zero external dependencies. The simulator is *not* persistent: its data is lost
-when the process exits, and a clear warning is logged on startup.
+The app talks to MongoDB. When ``MONGODB_URI`` points at a cluster (e.g.
+MongoDB Atlas) we use it — and a connection failure is fatal, because
+silently serving an empty in-memory database would look like data loss to
+users. With no URI configured (zero-config local dev), we fall back to an
+in-memory MongoDB simulator (``mongomock``). The simulator is *not*
+persistent: its data is lost when the process exits, and a clear warning is
+logged on startup.
 """
 
 from __future__ import annotations
@@ -25,32 +26,39 @@ T = TypeVar("T")
 
 
 def _connect():
-    """Connect to Atlas, or fall back to the in-memory simulator."""
+    """Connect to the configured cluster, or (no URI) the in-memory simulator.
+
+    When MONGODB_URI is set, a connection failure raises: crashing lets the
+    platform (Cloud Run, docker) retry or keep routing to healthy instances,
+    instead of an instance quietly serving an empty database whose "saved"
+    data vanishes at the next restart.
+    """
     global _db, _simulated
 
     uri = config.MONGODB_URI
     if uri:
-        try:
-            import pymongo
+        import pymongo
 
+        try:
             client = pymongo.MongoClient(
                 uri,
                 serverSelectionTimeoutMS=config.MONGODB_TIMEOUT_MS,
                 appname="reliafy",
             )
-            # Force server selection now so we fail fast and fall back.
+            # Force server selection now so we fail fast.
             client.admin.command("ping")
-            _db = client[config.MONGODB_DB]
-            _simulated = False
-            logger.info("Connected to MongoDB (database %r).", config.MONGODB_DB)
-            return _db
         except Exception as exc:  # pragma: no cover - network dependent
-            logger.warning(
-                "Could not reach MongoDB at the configured URI (%s). Falling back "
-                "to the in-memory simulator — data will NOT persist across "
-                "restarts. Set MONGODB_URI to a reachable cluster to persist.",
+            logger.error(
+                "Could not reach MongoDB at the configured URI (%s). Refusing to "
+                "fall back to the in-memory simulator while MONGODB_URI is set — "
+                "that would silently serve an empty database.",
                 exc,
             )
+            raise RuntimeError("MongoDB is configured (MONGODB_URI) but unreachable.") from exc
+        _db = client[config.MONGODB_DB]
+        _simulated = False
+        logger.info("Connected to MongoDB (database %r).", config.MONGODB_DB)
+        return _db
     else:
         logger.warning(
             "No MONGODB_URI configured; using the in-memory MongoDB simulator. "

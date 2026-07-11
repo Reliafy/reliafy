@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime, timezone
 
 from backend.services import access
+from backend.services import email as email_service
 
 ARTIFACT_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models",
@@ -90,8 +91,11 @@ def delete_team(db, team: dict) -> None:
     db.teams.delete_one({"_id": team["_id"]})
 
 
-def add_member_or_invite(db, team: dict, email: str) -> dict:
-    """Add a registered user as member, or stage an invite for an unknown email."""
+def add_member_or_invite(db, team: dict, email: str, inviter: dict | None = None) -> dict:
+    """Add a registered user as member, or stage an invite for an unknown email.
+
+    Either way the invitee gets an email (when SMTP is configured).
+    """
     email_lc = _norm_email(email)
     if not email_lc or "@" not in email_lc:
         raise TeamError("Enter a valid email address.", 422)
@@ -110,12 +114,22 @@ def add_member_or_invite(db, team: dict, email: str) -> dict:
             {"_id": team["_id"]},
             {"$push": {"members": member}, "$set": {"updated_at": _now()}},
         )
+        email_service.team_member_added(
+            member.get("email"),
+            (inviter or {}).get("name") or (inviter or {}).get("email") or "A teammate",
+            team["name"],
+        )
         return {"status": "added", "member": _public_member(member)}
 
     invite = {"email": email_lc, "invited_by": team["owner_uid"], "invited_at": _now()}
     db.teams.update_one(
         {"_id": team["_id"]},
         {"$push": {"invites": invite}, "$set": {"updated_at": _now()}},
+    )
+    email_service.team_invite_pending(
+        email_lc,
+        (inviter or {}).get("name") or (inviter or {}).get("email") or "A Reliafy user",
+        team["name"],
     )
     return {"status": "invited", "email": email_lc}
 

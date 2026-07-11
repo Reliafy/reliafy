@@ -12,7 +12,18 @@ import uuid
 from datetime import datetime, timezone
 
 from backend.services import access
+from backend.services import email as email_service
 from backend.services import samples as samples_service
+
+
+_LINK_PATHS = {
+    "datasets": "/datasets/d/{id}",
+    "models": "/modelling/m/{id}",
+    "rbds": "/rbds/b/{id}",
+    "degradation_models": "/modelling/degradation/{id}",
+    "strategy_analyses": "/strategy/analyses/{id}",
+    "rcm_studies": "/rcm/studies/{id}",
+}
 
 
 class ShareError(ValueError):
@@ -49,6 +60,7 @@ def create_share(db, collection: str, artifact_id: str, email: str, grantor: dic
     if recipient is None:
         raise ShareError("No Reliafy account exists for that email address.", 404)
 
+    link_path = _LINK_PATHS.get(collection, "/modelling").format(id=artifact_id)
     existing = db.shares.find_one({"artifact_id": artifact_id, "recipient_uid": recipient["_id"]})
     if existing is None:
         share = {
@@ -61,6 +73,12 @@ def create_share(db, collection: str, artifact_id: str, email: str, grantor: dic
             "created_at": _now(),
         }
         db.shares.insert_one(share)
+        email_service.artifact_shared(
+            recipient.get("email") or email_lc,
+            grantor.get("name") or grantor.get("email") or "A Reliafy user",
+            doc.get("name") or "an analysis",
+            link_path,
+        )
     else:
         share = existing
     # Re-sharing un-hides: a recipient who dismissed it gets it back.
