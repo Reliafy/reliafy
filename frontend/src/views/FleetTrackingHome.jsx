@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
-import { listDegradationModels } from "../api.js";
+import DegradationNewModal from "../components/DegradationNewModal.jsx";
+import DegradationResultView from "../components/DegradationResultView.jsx";
+import { listDegradationModels, saveDegradationModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 
+const PlusIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
 const OpenIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M7 17 17 7M9 7h8v8" />
@@ -39,6 +46,10 @@ export default function FleetTrackingHome() {
   const [models, setModels] = useState(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [pending, setPending] = useState(null); // { result, fit }
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const refresh = useCallback(() => {
     listDegradationModels()
@@ -48,6 +59,31 @@ export default function FleetTrackingHome() {
   useEffect(() => refresh(), [refresh]);
 
   const visible = (models || []).filter((m) => matches(query, m.name));
+
+  // Fit-and-save flow (same as Modelling → Degradation models), landing the
+  // user straight on the new fleet's tracking page to register items.
+  const onFitted = ({ result, fit }) => {
+    setPending({ result, fit });
+    const r = result.results;
+    setName(`Degradation — ${r.path_model.name.toLowerCase()} to ${r.threshold}${r.measurement_unit ? " " + r.measurement_unit : ""}`);
+    setError(null);
+    setModalOpen(false);
+  };
+
+  const onSave = async () => {
+    if (!name.trim() || !pending) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const { fit } = pending;
+      const saved = await saveDegradationModel(name.trim(), fit.file, fit);
+      navigate(`/fleet/tracking/${saved.id}`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="app">
@@ -62,20 +98,42 @@ export default function FleetTrackingHome() {
             Open one to see every item's remaining life and log inspections.
           </p>
         </div>
+        <button onClick={() => setModalOpen(true)}>
+          <PlusIcon /> New tracked fleet
+        </button>
       </header>
 
       {error && <div className="card error">{error}</div>}
 
-      {models === null ? (
+      {pending ? (
+        <div className="card">
+          <div className="save-bar">
+            <input
+              className="save-name"
+              type="text"
+              value={name}
+              placeholder="Fleet name"
+              onChange={(e) => setName(e.target.value)}
+            />
+            <button onClick={onSave} disabled={saving || !name.trim()}>
+              {saving ? "Saving…" : "Save & track items"}
+            </button>
+            <button className="secondary" onClick={() => setPending(null)}>Discard</button>
+          </div>
+          <DegradationResultView results={pending.result.results} />
+        </div>
+      ) : models === null ? (
         <div className="card empty">Loading…</div>
       ) : models.length === 0 ? (
         <div className="card empty">
           <h2>Nothing tracked yet</h2>
           <p>
-            Tracking needs a degradation model to predict against.{" "}
-            <Link to="/modelling/degradation">Fit one under Modelling → Degradation models</Link>,
-            then register the items you have in service.
+            Fit a degradation model from your inspection history, then
+            register the items you have in service.
           </p>
+          <button style={{ marginTop: "1rem" }} onClick={() => setModalOpen(true)}>
+            <PlusIcon /> New tracked fleet
+          </button>
         </div>
       ) : (
         <div className="lib">
@@ -124,6 +182,9 @@ export default function FleetTrackingHome() {
             </tbody>
           </table>
         </div>
+      )}
+      {modalOpen && (
+        <DegradationNewModal onClose={() => setModalOpen(false)} onFitted={onFitted} />
       )}
     </div>
   );
