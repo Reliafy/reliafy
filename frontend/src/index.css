@@ -271,6 +271,21 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+
+/* The name/email block must be allowed to shrink, or a long email pushes the
+   sign-out button over the sidebar border. */
+.side-foot .who {
+  flex: 1;
+  min-width: 0;
+}
+
+.side-foot .nm,
+.side-foot .rl {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .side-foot .ava {

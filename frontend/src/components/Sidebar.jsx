@@ -216,7 +216,7 @@ export default function Sidebar({ collapsed, onToggle }) {
       <div className="side-foot">
         <span className="ava">{initials(user)}</span>
         {!collapsed && (
-          <span className="who">
+          <span className="who" title={user?.email || undefined}>
             <span className="nm" style={{ display: "block" }}>
               {user?.displayName || user?.email || "Account"}
             </span>
