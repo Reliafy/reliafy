@@ -10,6 +10,19 @@ export default function RulChart({ item, threshold, unit, measurementUnit }) {
   const yTitle = measurementUnit ? `Measurement (${measurementUnit})` : "Measurement";
 
   const traces = [];
+  if (pred.projection?.lo && pred.projection?.hi) {
+    // 95% credible band around the projected path (posterior uncertainty).
+    traces.push({
+      x: [...pred.projection.x, ...[...pred.projection.x].reverse()],
+      y: [...pred.projection.hi, ...[...pred.projection.lo].reverse()],
+      fill: "toself",
+      fillcolor: "rgba(47, 109, 246, 0.10)",
+      line: { color: "rgba(0,0,0,0)" },
+      hoverinfo: "skip",
+      name: "95% credible band",
+      type: "scatter",
+    });
+  }
   if (pred.projection) {
     traces.push({
       x: pred.projection.x, y: pred.projection.y, mode: "lines", type: "scatter",
