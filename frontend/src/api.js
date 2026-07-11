@@ -45,6 +45,16 @@ async function request(url, opts = {}) {
   if (res.status === 401 && auth?.currentUser) {
     res = await send(true);
   }
+  // A 403 on the workspace header means the stored team no longer exists (or
+  // we were removed). Self-heal: fall back to the personal workspace and
+  // retry once instead of stranding every page on an error.
+  if (res.status === 403 && workspaceId !== "personal") {
+    const probe = await res.clone().json().catch(() => ({}));
+    if (String(probe.detail || "").includes("not a member")) {
+      setWorkspace("personal");
+      res = await send(false);
+    }
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(

@@ -17,7 +17,10 @@ const WorkspaceContext = createContext({
 export function WorkspaceProvider({ children }) {
   const { user } = useAuth();
   const [workspace, setWorkspaceState] = useState(getWorkspace());
-  const [teams, setTeams] = useState([]);
+  // null = not fetched yet; [] = fetched, no teams. The distinction matters:
+  // a stored workspace must be dropped even when the user has NO teams left
+  // (e.g. the team was deleted, or a fresh local database forgot it).
+  const [teams, setTeams] = useState(null);
 
   const refreshTeams = useCallback(() => {
     if (!user) return;
@@ -29,7 +32,7 @@ export function WorkspaceProvider({ children }) {
 
   // Drop a stored workspace the user no longer belongs to.
   useEffect(() => {
-    if (!user || workspace === "personal" || teams.length === 0) return;
+    if (!user || teams === null || workspace === "personal") return;
     if (!teams.some((t) => t.id === workspace)) {
       persistWorkspace("personal");
       setWorkspaceState("personal");
@@ -44,8 +47,8 @@ export function WorkspaceProvider({ children }) {
   const value = useMemo(() => ({
     workspace,
     setWorkspaceId,
-    teams,
-    activeTeam: teams.find((t) => t.id === workspace) || null,
+    teams: teams || [],
+    activeTeam: (teams || []).find((t) => t.id === workspace) || null,
     refreshTeams,
   }), [workspace, setWorkspaceId, teams, refreshTeams]);
 
