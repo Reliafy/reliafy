@@ -234,7 +234,7 @@ def get_access(
 
 SHARABLE_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models",
-    "strategy_analyses", "rcm_studies",
+    "strategy_analyses", "rcm_studies", "fleets",
 )
 
 # How much of the reference graph a share can pull in: an RCM study links
@@ -255,6 +255,8 @@ def refs_of(collection: str, doc: dict) -> list[tuple[str, str]]:
     refs: list[tuple[str, str]] = []
     if collection in ("models", "degradation_models") and doc.get("dataset_id"):
         refs.append(("datasets", doc["dataset_id"]))
+    elif collection == "fleets" and doc.get("model_id"):
+        refs.append(("models", doc["model_id"]))
     elif collection == "rcm_studies":
         type_to_coll = {
             "model": "models",

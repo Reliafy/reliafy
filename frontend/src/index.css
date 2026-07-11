@@ -4604,3 +4604,24 @@ button.danger:hover { background: #fdeeee; }
 }
 .sel-trigger.sel-embedded.open,
 .sel-trigger.sel-embedded:focus-visible { box-shadow: none; border-color: transparent; }
+
+/* Fleet forecast items table: inline editable cells */
+.cell-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+}
+.cell-input:hover:not(:disabled) { border-color: var(--line); }
+.cell-input:focus {
+  outline: none;
+  border-color: var(--acc);
+  background: #fff;
+  box-shadow: 0 0 0 3px var(--acc-t);
+}
+.cell-input::placeholder { color: var(--faint); font-size: 12px; }

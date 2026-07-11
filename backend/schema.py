@@ -136,3 +136,23 @@ class TrackedItem(BaseModel):
     meta: dict = Field(default_factory=dict)
     measurements: list = Field(default_factory=list)  # [{"t": float, "y": float}]
     prediction: Optional[dict] = None
+
+
+class Fleet(BaseModel):
+    """A fleet failure forecast: in-service items running against one saved
+    life model. Items and settings live in the document; the forecast itself
+    (expected failures over the horizon) is computed at read time from the
+    linked model — never stored — so it always reflects the current fit.
+    """
+
+    id: str
+    name: str
+    owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    model_id: str
+    # {periods, period_label, default_rate, method: "renewals"|"single"}
+    settings: dict = Field(default_factory=dict)
+    # [{id, name, current_use, rate|null, notes?}]
+    items: list = Field(default_factory=list)

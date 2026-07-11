@@ -25,6 +25,10 @@ import {
   getRcmStudy,
   putRcmTree,
   createShare,
+  listFleets,
+  getFleet,
+  createFleet,
+  putFleetItems,
 } from "./api.js";
 import { getRbdCanvas, waitForRbdCanvas } from "./rbdBridge.js";
 import { normalizeRbdGraph, compactGraph } from "./rbdGraph.js";
@@ -39,6 +43,7 @@ WHAT RELIAFY DOES:
 - Strategy: optimal preventive-replacement interval, head-to-head design comparison, failure-finding intervals for hidden failures, and degradation tracking of in-service items (remaining useful life). Calculations can be SAVED as analyses, which RCM studies cite as evidence.
 - Degradation & RUL: fit a degradation model (per-unit paths to a failure threshold -> pseudo failure times -> life model), then track individual in-service items and predict when each will cross the threshold.
 - RCM: Function -> Functional failure -> Failure mode worksheets where every maintenance decision links to the analysis that justifies it. Evidence is re-checked live: statuses are supported / contradicted / inconclusive / unevidenced / stale.
+- Fleet: degradation tracking (above) plus FAILURE FORECASTS — a fleet of in-service items against one saved life model; each item has its accumulated use, the fleet sets a horizon (periods x usage rate, per-item overrides) and the forecast predicts failures in that window. Two methods: "renewals" (failed items replaced, can fail again — spares demand) and "single" (each item fails at most once — risk ranking).
 - Datasets: uploaded CSVs reused across models.
 - Workspaces: the switcher in the top bar selects Personal or a team workspace. Every tool you call operates in the ACTIVE workspace automatically; team artifacts are co-owned by all members. Direct sharing (share_artifact) works on the user's own personal artifacts only.
 
@@ -62,7 +67,11 @@ TOOLS — you can act in the app, not just talk:
   - list_rcm_studies / get_rcm_study(id): studies with live evidence statuses and a rollup.
   - create_rcm_study(name, system?, description?): start a study.
   - set_rcm_tree(study_id, functions): replace the WHOLE worksheet tree (like set_current_rbd: fetch with get_rcm_study first when editing, send everything that should remain). Returns the tree with freshly resolved evidence statuses.
-- share_artifact(collection, artifact_id, email): share one of the user's own artifacts (view-only) with another Reliafy account. collection is one of datasets|models|rbds|degradation_models|strategy_analyses|rcm_studies. Confirm the email with the user before sharing.
+- Fleet forecasts:
+  - list_fleets / get_fleet_forecast(id): fleets with their computed forecasts (expected failures, P10-P90 interval, per-item and per-period breakdowns).
+  - create_fleet_forecast(name, model_id): start a fleet against a saved plain-distribution life model (not _ph models).
+  - set_fleet_items(fleet_id, settings, items): replace the fleet's settings and items; returns the recomputed forecast. settings = { periods (int), period_label ("months"), default_rate (model time-units per period), method: "renewals"|"single" }; items = [{ name, current_use, rate? (override) }, ...]. Preserve existing item ids when editing.
+- share_artifact(collection, artifact_id, email): share one of the user's own artifacts (view-only) with another Reliafy account. collection is one of datasets|models|rbds|degradation_models|strategy_analyses|rcm_studies|fleets. Confirm the email with the user before sharing.
 - navigate(path): move the user to a page in the app.
 
 EDITING AN RBD: to change what's already on the canvas, ALWAYS call get_current_rbd first, modify the returned nodes/edges (keep the ids you want to keep), then call set_current_rbd with the full updated nodes+edges. set_current_rbd replaces the whole canvas, so include everything that should remain — never send a partial diagram. After building or editing, you may validate_rbd to confirm it's solvable.
@@ -103,7 +112,7 @@ functions: [{ text, standard?, failures: [{ text, modes: [{ text, effects?, cons
 - Every function/failure/mode needs non-empty text. Omit node ids when creating; PRESERVE returned ids when editing so links survive.
 Recommended flow for "do an RCM study on X": create_rcm_study, then build the tree with the user (functions and failure modes first, then decisions), linking evidence that already exists — fit models or save analyses first when the evidence is missing. Report the returned statuses honestly, especially contradictions.
 
-NAVIGATION paths you may use: /modelling, /modelling/models, /modelling/compare, /modelling/degradation, /modelling/degradation/<id>, /modelling/m/<id>, /rbds, /rbds/list, /rbds/b, /rbds/b/<id>, /datasets, /datasets/list, /datasets/d/<id>, /strategy, /strategy/replacement, /strategy/compare, /strategy/failure-finding, /strategy/tracking, /strategy/tracking/<model id>, /strategy/analyses, /strategy/analyses/<id>, /rcm, /rcm/studies, /rcm/studies/<id>, /team.
+NAVIGATION paths you may use: /fleet, /fleet/tracking, /fleet/tracking/<model id>, /fleet/forecasts, /fleet/forecasts/<id>, /modelling, /modelling/models, /modelling/compare, /modelling/degradation, /modelling/degradation/<id>, /modelling/m/<id>, /rbds, /rbds/list, /rbds/b, /rbds/b/<id>, /datasets, /datasets/list, /datasets/d/<id>, /strategy, /strategy/replacement, /strategy/compare, /strategy/failure-finding, /strategy/tracking, /strategy/tracking/<model id>, /strategy/analyses, /strategy/analyses/<id>, /rcm, /rcm/studies, /rcm/studies/<id>, /team.
 
 STYLE: Be concise and practical. When you take an action with a tool, briefly say what you did and what the user should do next (e.g. offer to open the page). Confirm before creating something the user only vaguely asked for; act directly when the request is clear. Read-only/sample/shared artifacts can't be edited — say so rather than retrying.`;
 
@@ -429,6 +438,70 @@ export const TOOLS = [
     },
   },
   {
+    name: "list_fleets",
+    description: "List fleet failure forecasts with their computed headlines (expected failures over each fleet's horizon).",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "get_fleet_forecast",
+    description: "One fleet with its full computed forecast: expected failures, P10-P90 interval, per-item probabilities/expected counts, per-period breakdown.",
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_fleet_forecast",
+    description: "Create a fleet forecast against a saved plain-distribution life model (list_models first; _ph models aren't supported). Then set_fleet_items to add the items.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        model_id: { type: "string" },
+      },
+      required: ["name", "model_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_fleet_items",
+    description: "Replace a fleet's settings and items (whole set — include everything that should remain, preserving existing item ids). Returns the recomputed forecast.",
+    parameters: {
+      type: "object",
+      properties: {
+        fleet_id: { type: "string" },
+        settings: {
+          type: "object",
+          properties: {
+            periods: { type: "integer", description: "Horizon length in periods (1-120)." },
+            period_label: { type: "string", description: "What a period is, e.g. 'months'." },
+            default_rate: { type: "number", description: "Usage per period in the model's time unit, e.g. 400 (hours/month)." },
+            method: { type: "string", enum: ["renewals", "single"] },
+          },
+          additionalProperties: false,
+        },
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "Keep when editing an existing item." },
+              name: { type: "string" },
+              current_use: { type: "number", description: "Accumulated use in the model's time unit." },
+              rate: { type: "number", description: "Optional per-item usage-rate override." },
+            },
+            required: ["name", "current_use"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["fleet_id", "settings", "items"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "share_artifact",
     description: "Share one of the user's own artifacts (view-only) with another Reliafy account by email. Only works on personal artifacts the user owns — not samples, team artifacts, or things shared with them. Confirm the email with the user first.",
     parameters: {
@@ -456,7 +529,7 @@ export const TOOLS = [
 
 // Only let the assistant route to real in-app pages.
 const NAV_PREFIXES = [
-  "/modelling", "/rbds", "/datasets", "/strategy", "/rcm", "/team",
+  "/modelling", "/rbds", "/datasets", "/strategy", "/fleet", "/rcm", "/team",
 ];
 export function isAllowedPath(path) {
   return typeof path === "string" && path.startsWith("/") && NAV_PREFIXES.some(
@@ -696,6 +769,30 @@ export function makeExecutor({ navigate, onChange }) {
         const s = await putRcmTree(input.study_id, input.functions || []);
         onChange?.();
         return { id: s.id, rollup: s.rollup, functions: rcmTreeSummary(s.functions) };
+      }
+      case "list_fleets": {
+        const { fleets } = await listFleets();
+        return fleets.map((f) => ({
+          id: f.id, name: f.name, n_items: f.n_items,
+          headline: f.headline, is_sample: !!f.is_sample,
+        }));
+      }
+      case "get_fleet_forecast": {
+        const f = await getFleet(input.id);
+        return {
+          id: f.id, name: f.name, model_id: f.model_id, settings: f.settings,
+          items: f.items, forecast: f.forecast, read_only: !!f.read_only,
+        };
+      }
+      case "create_fleet_forecast": {
+        const f = await createFleet(input.name, input.model_id);
+        onChange?.();
+        return { id: f.id, name: f.name };
+      }
+      case "set_fleet_items": {
+        const f = await putFleetItems(input.fleet_id, input.settings || {}, input.items || []);
+        onChange?.();
+        return { id: f.id, forecast: f.forecast };
       }
       case "share_artifact": {
         const r = await createShare(input.collection, input.artifact_id, input.email);

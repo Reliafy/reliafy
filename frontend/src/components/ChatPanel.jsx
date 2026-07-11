@@ -21,6 +21,10 @@ const TOOL_LABEL = {
   set_current_rbd: "Updated the diagram",
   save_rbd: "Saved an RBD",
   validate_rbd: "Validated the diagram",
+  list_fleets: "Looked up fleets",
+  get_fleet_forecast: "Read a fleet forecast",
+  create_fleet_forecast: "Created a fleet forecast",
+  set_fleet_items: "Updated the fleet",
   navigate: "Opened a page",
 };
 
@@ -189,7 +193,7 @@ export default function ChatPanel() {
               <p>The AI assistant isn't available yet. Please check back soon.</p>
             ) : (
               <>
-                <p>I can help with reliability engineering and act in Reliafy — fit models, build RBDs, run replacement and failure-finding calculations, track degradation and remaining useful life, and build evidence-linked RCM studies.</p>
+                <p>I can help with reliability engineering and act in Reliafy — fit models, build RBDs, run replacement and failure-finding calculations, track degradation, forecast fleet failures, and build evidence-linked RCM studies.</p>
                 <div className="chat-suggest">
                   {[
                     "Fit a Weibull to the bearing sample",

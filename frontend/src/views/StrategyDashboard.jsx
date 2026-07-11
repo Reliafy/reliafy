@@ -1,5 +1,5 @@
 import DashboardSection from "../components/DashboardSection.jsx";
-import { CostIcon, CompareIcon, DegradeIcon, ListIcon, StrategyIcon } from "../components/icons.jsx";
+import { CostIcon, CompareIcon, ListIcon, StrategyIcon } from "../components/icons.jsx";
 
 export default function StrategyDashboard() {
   // The strategy tools work on data you provide; saved analyses persist their
@@ -24,13 +24,6 @@ export default function StrategyDashboard() {
       icon: <StrategyIcon />,
       title: "Failure finding",
       body: "Set the inspection interval that keeps a hidden protective function available.",
-      cta: "Open",
-    },
-    {
-      to: "/strategy/tracking",
-      icon: <DegradeIcon />,
-      title: "Degradation tracking",
-      body: "Monitor individual assets against a degradation model and predict remaining useful life.",
       cta: "Open",
     },
     {

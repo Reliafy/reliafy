@@ -223,6 +223,7 @@ def cap_for(kind: str) -> int:
         "degradation_models": config.FREE_MAX_DEGRADATION_MODELS,
         "tracked_items": config.FREE_MAX_TRACKED_ITEMS,
         "rcm_studies": config.FREE_MAX_RCM_STUDIES,
+        "fleets": config.FREE_MAX_FLEETS,
     }[kind]
 
 
@@ -249,6 +250,8 @@ def usage_summary(db, uid: str) -> dict:
             "degradation_models": config.FREE_MAX_DEGRADATION_MODELS,
             "tracked_items": config.FREE_MAX_TRACKED_ITEMS,
             "rcm_studies": config.FREE_MAX_RCM_STUDIES,
+            "fleets": config.FREE_MAX_FLEETS,
+        "fleets": config.FREE_MAX_FLEETS,
         },
         "usage": {
             "datasets": owned_count(db, uid, "datasets"),
@@ -257,6 +260,7 @@ def usage_summary(db, uid: str) -> dict:
             "degradation_models": owned_count(db, uid, "degradation_models"),
             "tracked_items": owned_count(db, uid, "tracked_items"),
             "rcm_studies": owned_count(db, uid, "rcm_studies"),
+            "fleets": owned_count(db, uid, "fleets"),
         },
         "packs": config.CREDIT_PACKS,
     }

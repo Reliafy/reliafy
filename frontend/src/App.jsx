@@ -5,6 +5,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useParams,
 } from "react-router-dom";
 import NavBar from "./components/NavBar.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
@@ -29,6 +30,9 @@ import StrategyCompare from "./views/StrategyCompare.jsx";
 import StrategyFailureFinding from "./views/StrategyFailureFinding.jsx";
 import StrategyAnalyses from "./views/StrategyAnalyses.jsx";
 import StrategyTracking from "./views/StrategyTracking.jsx";
+import FleetDashboard from "./views/FleetDashboard.jsx";
+import FleetForecasts from "./views/FleetForecasts.jsx";
+import FleetForecastPage from "./views/FleetForecastPage.jsx";
 import StrategyAnalysisPage from "./views/StrategyAnalysisPage.jsx";
 import RcmDashboard from "./views/RcmDashboard.jsx";
 import RcmHome from "./views/RcmHome.jsx";
@@ -62,6 +66,12 @@ function PageViews() {
     trackEvent("pageview");
   }, [pathname]);
   return null;
+}
+
+// Old bookmarks: /strategy/tracking/<model> -> /fleet/tracking/<model>.
+function TrackingRedirect() {
+  const { modelId } = useParams();
+  return <Navigate to={`/fleet/tracking/${modelId}`} replace />;
 }
 
 function AppShell() {
@@ -98,8 +108,13 @@ function AppShell() {
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
             <Route path="/strategy/failure-finding" element={<StrategyFailureFinding />} />
-            <Route path="/strategy/tracking" element={<StrategyTracking />} />
-            <Route path="/strategy/tracking/:modelId" element={<StrategyTracking />} />
+            <Route path="/strategy/tracking" element={<Navigate to="/fleet/tracking" replace />} />
+            <Route path="/strategy/tracking/:modelId" element={<TrackingRedirect />} />
+            <Route path="/fleet" element={<FleetDashboard />} />
+            <Route path="/fleet/tracking" element={<StrategyTracking />} />
+            <Route path="/fleet/tracking/:modelId" element={<StrategyTracking />} />
+            <Route path="/fleet/forecasts" element={<FleetForecasts />} />
+            <Route path="/fleet/forecasts/:id" element={<FleetForecastPage />} />
             <Route path="/strategy/analyses" element={<StrategyAnalyses />} />
             <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
             <Route path="/rcm" element={<RcmDashboard />} />
