@@ -2,8 +2,6 @@ import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
-import { useWorkspace } from "../WorkspaceProvider.jsx";
-import { createTeam } from "../api.js";
 import Modal from "./Modal.jsx";
 
 const SignOutIcon = () => (
@@ -119,97 +117,13 @@ const ITEMS = [
   },
 ];
 
-// Modal to create a team. Pro-gating happens server-side: a 402 shows an
-// upgrade nudge instead of the generic error.
-function CreateTeamModal({ onClose, onCreated }) {
-  const navigate = useNavigate();
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const [needsPro, setNeedsPro] = useState(false);
-
-  const onCreate = async () => {
-    if (!name.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const team = await createTeam(name.trim());
-      onCreated(team);
-    } catch (err) {
-      if (err.code === "pro_required") setNeedsPro(true);
-      else setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal
-      title="New team"
-      className="modal-sm"
-      locked={busy}
-      onClose={onClose}
-      footer={
-        <div style={{ display: "flex", gap: "0.6rem", marginLeft: "auto" }}>
-          <button className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-          {needsPro ? (
-            <button onClick={() => { onClose(); navigate("/billing"); }}>Upgrade to Pro</button>
-          ) : (
-            <button onClick={onCreate} disabled={busy || !name.trim()}>
-              {busy ? "Creating…" : "Create team"}
-            </button>
-          )}
-        </div>
-      }
-    >
-      {needsPro ? (
-        <p className="muted-line" style={{ margin: 0 }}>
-          Teams are a Pro feature: the team creator needs a Pro plan, and every
-          member — free accounts included — gets unlimited saves in the team
-          workspace.
-        </p>
-      ) : (
-        <>
-          <label className="login-field">
-            <span>Team name</span>
-            <input
-              type="text"
-              autoFocus
-              value={name}
-              placeholder="e.g. Reliability squad"
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && onCreate()}
-            />
-          </label>
-          <p className="muted-line">
-            Everyone you invite can view and edit everything in the team
-            workspace. Your personal workspace stays private.
-          </p>
-          {error && <div className="error">{error}</div>}
-        </>
-      )}
-    </Modal>
-  );
-}
-
 export default function Sidebar({ collapsed, onToggle }) {
   const { user, signOut } = useAuth();
   const { billing } = useAppConfig();
-  const { workspace, setWorkspaceId, teams, activeTeam, refreshTeams } = useWorkspace();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [creatingTeam, setCreatingTeam] = useState(false);
-
-  const onSwitch = (value) => {
-    if (value === "__create__") {
-      setCreatingTeam(true);
-      return;
-    }
-    setWorkspaceId(value);
-    if (pathname === "/team" && value === "personal") navigate("/modelling");
-  };
 
   const onSignOut = async () => {
     setSigningOut(true);
@@ -235,36 +149,6 @@ export default function Sidebar({ collapsed, onToggle }) {
           {collapsed ? "»" : "«"}
         </button>
       </div>
-      {!collapsed && (
-        <div className="workspace-switcher">
-          <select
-            value={workspace}
-            onChange={(e) => onSwitch(e.target.value)}
-            title="Active workspace"
-          >
-            <option value="personal">Personal</option>
-            {teams.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-            <option value="__create__">＋ New team…</option>
-          </select>
-          {activeTeam && (
-            <div className="workspace-meta">
-              <NavLink
-                to="/team"
-                className={({ isActive }) => "side-subitem" + (isActive ? " active" : "")}
-              >
-                Team settings
-              </NavLink>
-              {activeTeam.frozen && (
-                <span className="health-badge health-amber" title="The team owner's Pro plan has lapsed — the workspace is read-only until it's renewed.">
-                  read-only
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
       <nav className="sidebar-nav">
         {ITEMS.map((it) => {
           // Forthcoming sections (no route) render as a disabled "soon" item.
@@ -351,18 +235,6 @@ export default function Sidebar({ collapsed, onToggle }) {
           </button>
         )}
       </div>
-
-      {creatingTeam && (
-        <CreateTeamModal
-          onClose={() => setCreatingTeam(false)}
-          onCreated={(team) => {
-            setCreatingTeam(false);
-            refreshTeams();
-            setWorkspaceId(team.id);
-            navigate("/team");
-          }}
-        />
-      )}
 
       {confirmSignOut && (
         <Modal

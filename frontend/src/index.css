@@ -4303,35 +4303,38 @@ select:disabled {
 }
 .decision-step textarea { width: 100%; box-sizing: border-box; resize: vertical; }
 
-/* ---- Workspace switcher (teams) ---------------------------------------- */
-.workspace-switcher {
-  padding: 0 12px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* ---- Workspace switcher (teams, in the top bar) -------------------------- */
+.nav-workspace {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
-.workspace-switcher select {
-  width: 100%;
+.nav-workspace select {
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 7px 10px;
+  padding: 6px 10px;
   font-size: 13px;
   font-family: inherit;
   color: var(--ink);
   background: #fff;
   cursor: pointer;
+  max-width: 220px;
 }
-.workspace-switcher select:focus {
+.nav-workspace select:focus {
   outline: none;
   border-color: var(--acc);
   box-shadow: 0 0 0 3px var(--acc-t);
 }
-.workspace-meta {
-  display: flex;
+.nav-team-settings {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  color: var(--faint);
+  padding: 5px;
+  border-radius: 7px;
 }
+.nav-team-settings svg { width: 17px; height: 17px; }
+.nav-team-settings:hover { color: var(--acc); background: var(--acc-t); }
+.nav-team-settings.active { color: var(--acc); }
 button.danger { color: #a23a3a; border-color: #f3c9c9; }
 button.danger:hover { background: #fdeeee; }
 
