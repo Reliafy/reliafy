@@ -224,7 +224,15 @@ if FRONTEND_DIST.is_dir():
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str) -> FileResponse:
-        """Serve static files, falling back to index.html for SPA routing."""
+        """Serve static files, falling back to index.html for SPA routing.
+
+        Marketing pages (landing, blog, terms/privacy) may have prerendered
+        HTML under ``dist/static/<route>/index.html`` — generated at build
+        time for search indexing — which wins over the SPA shell there.
+        """
+        prerendered = FRONTEND_DIST / "static" / (full_path or ".") / "index.html"
+        if prerendered.is_file():
+            return FileResponse(prerendered)
         candidate = FRONTEND_DIST / full_path
         if full_path and candidate.is_file():
             return FileResponse(candidate)

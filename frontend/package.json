@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prerender": "vite build --config vite.ssr.config.js && node scripts/prerender.mjs"
   },
   "dependencies": {
     "firebase": "^11.10.0",

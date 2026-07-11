@@ -11,6 +11,10 @@ COPY frontend/ ./
 ARG VITE_AUTH_DISABLED=false
 ENV VITE_AUTH_DISABLED=${VITE_AUTH_DISABLED}
 RUN npm run build
+# Cloud builds also prerender the marketing pages (landing/blog/legal) to
+# static HTML for search indexing, plus sitemap.xml and robots.txt. Self-host
+# builds skip it — they have no marketing pages.
+RUN if [ "$VITE_AUTH_DISABLED" != "true" ]; then npm run prerender; fi
 
 # ---- Stage 2: Python backend serving the built frontend ----
 FROM python:3.11-slim
