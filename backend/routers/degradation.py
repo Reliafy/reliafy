@@ -201,16 +201,45 @@ async def save_model(
     return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": doc.results})
 
 
+def _health_of(prediction: dict | None) -> str:
+    """One item's health bucket — mirrors the frontend badge thresholds."""
+    if not prediction or prediction.get("method") == "error":
+        return "monitoring"
+    if (prediction.get("prob_never_fails") or 0) > 0.5:
+        return "monitoring"
+    p = prediction.get("prob_failed")
+    if p is None:
+        return "monitoring"
+    if p >= 0.5:
+        return "replace"
+    if p >= 0.05:
+        return "plan"
+    return "healthy"
+
+
+def _tracking_rollup(items) -> dict:
+    """Fleet-health summary for a model's tracked items."""
+    rollup = {"healthy": 0, "plan": 0, "replace": 0, "monitoring": 0}
+    next_crossing = None
+    for it in items:
+        rollup[_health_of(it.prediction)] += 1
+        ft = (it.prediction or {}).get("failure_time")
+        if ft is not None and (next_crossing is None or ft < next_crossing):
+            next_crossing = ft
+    return {**rollup, "next_crossing": next_crossing}
+
+
 @router.get("/degradation/models")
 def list_models(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
     shared_by = shares_service.shared_by_map(session, ctx.uid, "degradation_models") if ctx.is_personal else {}
     models = degradation_service.list_models(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
-    counts: dict[str, int] = {}
-    for m in models:
-        counts[m.id] = len(degradation_service.list_items(
-            session, m.id, [*ctx.read_owners, m.owner_id], ctx.hidden))
+    items_by_model = {
+        m.id: degradation_service.list_items(session, m.id, [*ctx.read_owners, m.owner_id], ctx.hidden)
+        for m in models
+    }
     return {"models": [
-        {**_model_summary(m, ctx, counts.get(m.id, 0)),
+        {**_model_summary(m, ctx, len(items_by_model[m.id])),
+         "tracking": _tracking_rollup(items_by_model[m.id]),
          **({"shared_by": shared_by[m.id]} if m.id in shared_by else {})}
         for m in models
     ]}

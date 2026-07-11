@@ -32,6 +32,7 @@ import StrategyAnalyses from "./views/StrategyAnalyses.jsx";
 import StrategyTracking from "./views/StrategyTracking.jsx";
 import FleetDashboard from "./views/FleetDashboard.jsx";
 import FleetForecasts from "./views/FleetForecasts.jsx";
+import FleetTrackingHome from "./views/FleetTrackingHome.jsx";
 import FleetForecastPage from "./views/FleetForecastPage.jsx";
 import StrategyAnalysisPage from "./views/StrategyAnalysisPage.jsx";
 import RcmDashboard from "./views/RcmDashboard.jsx";
@@ -111,7 +112,7 @@ function AppShell() {
             <Route path="/strategy/tracking" element={<Navigate to="/fleet/tracking" replace />} />
             <Route path="/strategy/tracking/:modelId" element={<TrackingRedirect />} />
             <Route path="/fleet" element={<FleetDashboard />} />
-            <Route path="/fleet/tracking" element={<StrategyTracking />} />
+            <Route path="/fleet/tracking" element={<FleetTrackingHome />} />
             <Route path="/fleet/tracking/:modelId" element={<StrategyTracking />} />
             <Route path="/fleet/forecasts" element={<FleetForecasts />} />
             <Route path="/fleet/forecasts/:id" element={<FleetForecastPage />} />

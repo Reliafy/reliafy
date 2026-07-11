@@ -26,14 +26,12 @@ export default function StrategyTracking() {
   const [measureError, setMeasureError] = useState(null);
 
   useEffect(() => {
+    if (!modelId) {
+      navigate("/fleet/tracking", { replace: true });
+      return;
+    }
     listDegradationModels()
-      .then((d) => {
-        const list = d.models || [];
-        setModels(list);
-        if (!modelId && list.length > 0) {
-          navigate(`/fleet/tracking/${list[0].id}`, { replace: true });
-        }
-      })
+      .then((d) => setModels(d.models || []))
       .catch((e) => setError(e.message));
   }, [modelId, navigate]);
 
@@ -85,7 +83,9 @@ export default function StrategyTracking() {
       <header>
         <div>
           <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/fleet")}>Fleet</button> / <b>Degradation tracking</b>
+            <button className="crumb-link" onClick={() => navigate("/fleet")}>Fleet</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/fleet/tracking")}>Degradation tracking</button> /{" "}
+            <b>{model ? model.name : "…"}</b>
           </div>
           <h1>Degradation tracking</h1>
           <p>
@@ -107,17 +107,7 @@ export default function StrategyTracking() {
 
       {error && <div className="card error">{error}</div>}
 
-      {models === null ? (
-        <div className="card empty">Loading…</div>
-      ) : models.length === 0 ? (
-        <div className="card empty">
-          <h2>No degradation models</h2>
-          <p>
-            Degradation tracking needs a degradation model to predict against.{" "}
-            <Link to="/modelling/degradation">Create one under Modelling → Degradation</Link>.
-          </p>
-        </div>
-      ) : !model ? (
+      {models === null || !model ? (
         <div className="card empty">Loading…</div>
       ) : (
         <>
