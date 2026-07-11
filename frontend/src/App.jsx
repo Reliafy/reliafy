@@ -26,6 +26,7 @@ import StrategyReplacement from "./views/StrategyReplacement.jsx";
 import StrategyCompare from "./views/StrategyCompare.jsx";
 import StrategyFailureFinding from "./views/StrategyFailureFinding.jsx";
 import StrategyAnalyses from "./views/StrategyAnalyses.jsx";
+import StrategyTracking from "./views/StrategyTracking.jsx";
 import StrategyAnalysisPage from "./views/StrategyAnalysisPage.jsx";
 import RcmDashboard from "./views/RcmDashboard.jsx";
 import RcmHome from "./views/RcmHome.jsx";
@@ -79,6 +80,8 @@ function AppShell() {
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
             <Route path="/strategy/failure-finding" element={<StrategyFailureFinding />} />
+            <Route path="/strategy/tracking" element={<StrategyTracking />} />
+            <Route path="/strategy/tracking/:modelId" element={<StrategyTracking />} />
             <Route path="/strategy/analyses" element={<StrategyAnalyses />} />
             <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
             <Route path="/rcm" element={<RcmDashboard />} />

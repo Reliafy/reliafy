@@ -2968,7 +2968,8 @@ select:disabled {
   color: var(--faint);
 }
 
-.login-field input {
+.login-field input,
+.login-field select {
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 10px 12px;
@@ -2978,7 +2979,8 @@ select:disabled {
   background: var(--bg);
 }
 
-.login-field input:focus {
+.login-field input:focus,
+.login-field select:focus {
   outline: none;
   border-color: var(--acc);
   box-shadow: 0 0 0 3px var(--acc-t);

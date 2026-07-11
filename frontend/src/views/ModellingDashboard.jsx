@@ -42,7 +42,7 @@ export default function ModellingDashboard() {
       to: "/modelling/degradation",
       icon: <DegradeIcon />,
       title: "Degradation & RUL",
-      body: "Model wear toward a failure threshold and predict each asset's remaining useful life.",
+      body: "Model wear toward a failure threshold — then monitor your fleet under Strategy → Item tracking.",
       cta: "Open",
     },
   ];
