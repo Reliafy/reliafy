@@ -147,3 +147,4 @@ data/
 env_vars.sh
 .DS_Store
 .claude/
+frontend/dist-ssr/

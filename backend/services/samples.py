@@ -286,6 +286,7 @@ def seed_samples(db) -> None:
             logger.warning("Failed to seed sample model %r: %s", spec["id"], exc)
 
     _seed_strategy_analyses(db)
+    _seed_rcm_study(db)
 
     for spec in SAMPLE_RBDS:
         try:
@@ -357,6 +358,122 @@ def seed_samples(db) -> None:
                 logger.info("Seeded sample tracked item %r.", it["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample degradation %r: %s", spec["id"], exc)
+
+
+def _seed_rcm_study(db) -> None:
+    """Sample RCM study wiring every sample artifact together as evidence.
+
+    One decision — the legacy run-to-failure plan on the wheel bearings — is
+    deliberately linked to a model that CONTRADICTS it (the bearing Weibull
+    fits wear-out, β ≈ 2.5): the study opens with a red badge that demos the
+    live evidence validation.
+    """
+    from backend.schema import RcmStudy
+
+    if db.rcm_studies.find_one({"_id": "sample-rcm-truck"}) is not None:
+        return
+    try:
+        functions = [
+            {
+                "id": "sample-rcm-f1",
+                "text": "Stop the vehicle within the rated distance",
+                "failures": [
+                    {
+                        "id": "sample-rcm-f1-ff1",
+                        "text": "Insufficient braking force",
+                        "modes": [
+                            {
+                                "id": "sample-rcm-m1",
+                                "text": "Brake pad wear beyond the 8 mm limit",
+                                "effects": "Extended stopping distance; risk of collision.",
+                                "consequence": "safety",
+                                "decision": {
+                                    "outcome": "on_condition",
+                                    "task": "Measure pad wear at each service; replace before the 8 mm threshold.",
+                                    "evidence": {"type": "degradation_model", "id": "sample-deg-brake-wear"},
+                                },
+                            },
+                            {
+                                "id": "sample-rcm-m2",
+                                "text": "Secondary hydraulic circuit failed (hidden until demanded)",
+                                "effects": "No redundancy on primary circuit failure.",
+                                "consequence": "hidden",
+                                "decision": {
+                                    "outcome": "failure_finding",
+                                    "task": "Function-test the secondary circuit.",
+                                    "evidence": {"type": "strategy_analysis", "id": "sample-strategy-ffi-brake-circuit"},
+                                },
+                            },
+                        ],
+                    },
+                ],
+            },
+            {
+                "id": "sample-rcm-f2",
+                "text": "Transmit drive to the wheels",
+                "failures": [
+                    {
+                        "id": "sample-rcm-f2-ff1",
+                        "text": "Wheel does not rotate freely",
+                        "modes": [
+                            {
+                                "id": "sample-rcm-m3",
+                                "text": "Wheel-bearing fatigue",
+                                "effects": "Vehicle immobilised; tow required.",
+                                "consequence": "operational",
+                                "decision": {
+                                    "outcome": "fixed_interval",
+                                    "task": "Replace wheel bearings preventively.",
+                                    "interval": 580,
+                                    "interval_unit": "hours",
+                                    "evidence": {"type": "strategy_analysis", "id": "sample-strategy-bearing-replacement"},
+                                },
+                            },
+                            {
+                                "id": "sample-rcm-m4",
+                                "text": "Wheel-bearing failure — legacy run-to-failure plan",
+                                "effects": "As above; inherited from the old maintenance plan.",
+                                "consequence": "operational",
+                                "decision": {
+                                    "outcome": "rtf",
+                                    "rtf_basis": "random",
+                                    "notes": "Legacy decision — kept to demonstrate live evidence validation.",
+                                    "evidence": {"type": "model", "id": "sample-model-bearings-weibull"},
+                                },
+                            },
+                            {
+                                "id": "sample-rcm-m5",
+                                "text": "Chassis cracking at the spring hanger",
+                                "effects": "Structural risk under load.",
+                                "consequence": "safety",
+                                "decision": {
+                                    "outcome": "redesign",
+                                    "notes": "No task can manage the risk — reinforcement redesign raised with engineering.",
+                                },
+                            },
+                        ],
+                    },
+                ],
+            },
+        ]
+        from backend.services import rcm as rcm_service
+
+        study = RcmStudy(
+            id="sample-rcm-truck",
+            name="Delivery truck — RCM demo (sample)",
+            system="Delivery truck (brakes + drivetrain)",
+            description=(
+                "A worked RCM study with every decision linked to its evidence. "
+                "Note the legacy run-to-failure decision flagged as CONTRADICTED — "
+                "its own life model shows wear-out, not random failure."
+            ),
+            owner_id=SAMPLE_OWNER,
+            functions=rcm_service.clean_tree(functions),
+        )
+        db.rcm_studies.insert_one(to_doc(study))
+        logger.info("Seeded sample RCM study 'sample-rcm-truck'.")
+    except Exception as exc:  # pragma: no cover - defensive; never block boot
+        logger.warning("Failed to seed sample RCM study: %s", exc)
 
 
 def _seed_strategy_analyses(db) -> None:

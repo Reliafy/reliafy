@@ -413,3 +413,47 @@ export function renameStrategyAnalysis(id, name) {
 export function deleteStrategyAnalysis(id) {
   return request(`/api/strategy/analyses/${id}`, { method: "DELETE" });
 }
+
+// ---- RCM ---------------------------------------------------------------------
+
+export function getRcmOptions() {
+  return request("/api/rcm/options");
+}
+
+export function listRcmStudies() {
+  return request("/api/rcm/studies");
+}
+
+export function createRcmStudy(name, system, description) {
+  return request("/api/rcm/studies", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, system: system || "", description: description || "" }),
+  });
+}
+
+export function getRcmStudy(id) {
+  return request(`/api/rcm/studies/${id}`);
+}
+
+export function renameRcmStudy(id, name) {
+  return request(`/api/rcm/studies/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteRcmStudy(id) {
+  return request(`/api/rcm/studies/${id}`, { method: "DELETE" });
+}
+
+// Replace the whole worksheet tree; returns the study with fresh evidence
+// statuses resolved.
+export function putRcmTree(id, functions) {
+  return request(`/api/rcm/studies/${id}/tree`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ functions }),
+  });
+}
