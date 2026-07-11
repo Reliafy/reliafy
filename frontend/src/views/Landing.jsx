@@ -105,6 +105,28 @@ const VizDatasets = () => (
   </svg>
 );
 
+const VizDegradation = () => (
+  <svg viewBox="0 0 280 78" className="viz" aria-hidden="true">
+    <line x1="14" y1="16" x2="270" y2="16" className="viz-dash" />
+    <path d="M14 66 C80 58 150 44 262 20" className="viz-band" />
+    <path d="M14 64 C80 56 150 42 262 18" className="viz-line" />
+    {[[30, 62], [78, 56], [126, 48]].map(([x, y], i) => (
+      <circle key={i} cx={x} cy={y} r="3.2" className="viz-dot" />
+    ))}
+    <line x1="238" y1="16" x2="238" y2="70" className="viz-dash" />
+  </svg>
+);
+const VizRcm = () => (
+  <svg viewBox="0 0 280 78" className="viz" aria-hidden="true">
+    <path d="M24 16 V62 M24 26 H44 M24 44 H44 M24 62 H44" className="viz-edge" />
+    <rect x="14" y="8" width="120" height="14" rx="4" className="viz-node" />
+    {[20, 38, 56].map((y, i) => <rect key={y} x="48" y={y} width="96" height="12" rx="4" className="viz-row-box" />)}
+    <rect x="170" y="20" width="66" height="12" rx="6" className="viz-ok" />
+    <rect x="170" y="38" width="66" height="12" rx="6" className="viz-ok" />
+    <rect x="170" y="56" width="66" height="12" rx="6" className="viz-bad" />
+  </svg>
+);
+
 const FEATURES = [
   {
     viz: <VizModelling />,
@@ -120,6 +142,16 @@ const FEATURES = [
     viz: <VizStrategy />,
     title: "Maintenance strategy",
     body: "Rank every candidate distribution against your data, compare two designs head-to-head, and find the cost-optimal preventive-replacement interval.",
+  },
+  {
+    viz: <VizDegradation />,
+    title: "Degradation & remaining useful life",
+    body: "Fit per-unit wear paths to a failure threshold, then track in-service items and predict when each will cross it — with credible intervals that tighten as inspections come in.",
+  },
+  {
+    viz: <VizRcm />,
+    title: "Evidence-linked RCM",
+    body: "Build Function → Failure → Mode worksheets where every maintenance decision cites the analysis that justifies it — and gets re-checked live when the data changes.",
   },
   {
     viz: <VizDatasets />,
@@ -215,7 +247,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="landing-features">
+      <section className="landing-features" id="features">
         {FEATURES.map((f) => (
           <div className="landing-card" key={f.title}>
             <div className="landing-card-viz">{f.viz}</div>
@@ -223,6 +255,77 @@ export default function Landing() {
             <p>{f.body}</p>
           </div>
         ))}
+      </section>
+
+      <section className="landing-spotlight">
+        <div className="spotlight-text">
+          <div className="landing-eyebrow">Reliability Centred Maintenance</div>
+          <h2>Maintenance decisions that prove themselves.</h2>
+          <p>
+            Every decision in an RCM study links to the analysis behind it: a
+            run-to-failure call cites the life model that shows failures are
+            random, a fixed interval cites the cost-optimal replacement
+            analysis, condition monitoring cites the degradation model.
+          </p>
+          <p>
+            And the links stay live — when new data shows a "random" failure
+            mode is actually wearing out, the study flags the decision as
+            <strong> contradicted</strong> instead of letting it quietly go
+            stale.
+          </p>
+        </div>
+        <div className="spotlight-shot">
+          <img src="/landing/rcm-worksheet.png" alt="An RCM worksheet with live evidence statuses, including a contradicted run-to-failure decision" loading="lazy" />
+        </div>
+      </section>
+
+      <section className="landing-spotlight reverse">
+        <div className="spotlight-text">
+          <div className="landing-eyebrow">Degradation &amp; RUL</div>
+          <h2>Know when it will fail — before it does.</h2>
+          <p>
+            Your inspection sheets already contain the failure dates of
+            equipment that hasn't failed yet. Fit a degradation model from
+            historical wear data, register the items you're running today, and
+            get a remaining-useful-life estimate for each one.
+          </p>
+          <p>
+            Every new reading tightens the prediction. Health badges turn from
+            healthy to plan-replacement to replace-now while there's still
+            time to act.
+          </p>
+        </div>
+        <div className="spotlight-shot">
+          <img src="/landing/rul-outlook.png" alt="A tracked item's remaining-useful-life outlook with a 95% credible band and predicted threshold crossing" loading="lazy" />
+        </div>
+      </section>
+
+      <section className="landing-trio">
+        <div className="trio-card">
+          <h3>Work as a team</h3>
+          <p>
+            Shared team workspaces where everyone sees the same models,
+            studies, and diagrams. Viewers are free; editing comes with Pro.
+            Or share a single analysis, view-only, with anyone.
+          </p>
+        </div>
+        <div className="trio-card">
+          <h3>An assistant that does the work</h3>
+          <p>
+            Ask in plain language and the assistant acts in the app: fits
+            models, builds RBDs, runs replacement calculations, tracks
+            degradation, and drafts RCM studies — with your data, on your
+            screen.
+          </p>
+        </div>
+        <div className="trio-card">
+          <h3>Open source at the core</h3>
+          <p>
+            The full toolkit is AGPL-licensed and self-hostable with one
+            command. Your data can stay on your hardware; the cloud adds
+            accounts, teams, and the assistant.
+          </p>
+        </div>
       </section>
 
       <section className="landing-pricing" id="pricing">

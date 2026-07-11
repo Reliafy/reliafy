@@ -4382,3 +4382,80 @@ button.danger:hover { background: #fdeeee; }
   width: 160px;
 }
 .search.live input::placeholder { color: var(--faint); }
+
+/* ---- Landing: quiet nav links ------------------------------------------- */
+.landing-nav-link {
+  text-decoration: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  font-weight: 500;
+  padding: 6px 11px;
+  border-radius: 7px;
+  transition: color 0.15s, background 0.15s;
+}
+.landing-nav-link:hover { color: var(--acc); background: var(--acc-t); }
+
+/* ---- Landing: product spotlights ----------------------------------------- */
+.landing-spotlight {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 72px 26px 24px;
+  display: grid;
+  grid-template-columns: 5fr 7fr;
+  gap: 48px;
+  align-items: center;
+}
+.landing-spotlight.reverse .spotlight-text { order: 2; }
+.landing-spotlight.reverse .spotlight-shot { order: 1; }
+.spotlight-text h2 {
+  font-size: 30px;
+  letter-spacing: -0.02em;
+  margin: 10px 0 14px;
+}
+.spotlight-text p {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.65;
+  margin: 0 0 12px;
+}
+.spotlight-shot img {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(20, 24, 32, 0.08);
+}
+@media (max-width: 860px) {
+  .landing-spotlight { grid-template-columns: 1fr; gap: 24px; padding-top: 48px; }
+  .landing-spotlight.reverse .spotlight-text { order: 1; }
+  .landing-spotlight.reverse .spotlight-shot { order: 2; }
+}
+
+/* ---- Landing: teams / assistant / open-source trio ------------------------ */
+.landing-trio {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 56px 26px 8px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+}
+.trio-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  padding: 26px 24px;
+}
+.trio-card h3 { margin: 0 0 8px; font-size: 17px; letter-spacing: -0.01em; }
+.trio-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+@media (max-width: 860px) {
+  .landing-trio { grid-template-columns: 1fr; }
+}
+
+/* Feature-grid additions for the RCM mini-viz */
+.viz-row-box { fill: var(--bg); stroke: var(--line); }
+.viz-ok { fill: #eef8f1; stroke: #bfe3cd; }
+.viz-bad { fill: #fdeeee; stroke: #f3c9c9; }
