@@ -156,7 +156,7 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
                   placeholder="Interval"
                   onChange={(e) => setInterval_(e.target.value)}
                 />
-                <select value={intervalUnit} onChange={(e) => setIntervalUnit(e.target.value)}>
+                <select value={intervalUnit} onChange={(e) => setIntervalUnit(e.target.value)} title="Use the same time unit as the linked analysis — a mismatch resolves as inconclusive.">
                   <option value="hours">hours</option>
                   <option value="days">days</option>
                   <option value="weeks">weeks</option>
@@ -168,6 +168,12 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
               </>
             )}
           </div>
+          {fields.includes("interval") && expectedEvidence && (
+            <p className="option-hint">
+              Use the same time unit as the linked analysis — mismatched units
+              resolve as inconclusive.
+            </p>
+          )}
         </div>
       )}
 

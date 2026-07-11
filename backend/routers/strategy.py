@@ -131,6 +131,7 @@ def _analysis_summary(doc, ctx: AccessCtx) -> dict:
         "headline": strategy_store.headline(doc),
         "is_sample": samples_service.is_sample(doc.owner_id),
         "read_only": not access_service.can_write(ctx, doc.owner_id),
+        "updated_by": (doc.updated_by or {}).get("name"),
         "created_at": doc.created_at.isoformat(),
         "updated_at": doc.updated_at.isoformat(),
     }
@@ -146,13 +147,13 @@ def save_analysis(
 ) -> JSONResponse:
     """Persist a strategy analysis. Results are recomputed server-side from the
     inputs — clients never supply results (saved analyses are RCM evidence)."""
-    if ctx.frozen:
-        return JSONResponse(
-            status_code=402,
-            content={"detail": access_service.FROZEN_MSG, "code": "team_frozen", "upgrade": True},
-        )
+    denied = access_service.workspace_write_denial(ctx)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
     try:
         doc = strategy_store.save_analysis(session, name, kind, inputs, ctx.write_owner)
+        access_service.stamp_editor(session, "strategy_analyses", doc.id, ctx)
     except StrategyError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return JSONResponse(content={**_analysis_summary(doc, ctx), "inputs": doc.inputs, "results": doc.results})
@@ -195,6 +196,7 @@ def rename_analysis(
             return JSONResponse(status_code=status, content=payload)
     try:
         doc = strategy_store.rename_analysis(session, analysis_id, name, ctx.write_owner)
+        access_service.stamp_editor(session, "strategy_analyses", doc.id, ctx)
     except strategy_store.AnalysisNotFound:
         return JSONResponse(status_code=404, content={"detail": "Analysis not found."})
     return JSONResponse(content=_analysis_summary(doc, ctx))

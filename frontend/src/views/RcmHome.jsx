@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import Modal from "../components/Modal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { listRcmStudies, createRcmStudy, deleteRcmStudy } from "../api.js";
+import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 
 const PlusIcon = () => (
@@ -26,6 +27,7 @@ const TrashIcon = () => (
 export default function RcmHome() {
   const navigate = useNavigate();
   const [studies, setStudies] = useState(null);
+  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [capHit, setCapHit] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -110,6 +112,10 @@ export default function RcmHome() {
         </div>
       ) : (
         <div className="lib">
+          <div className="tablebar">
+            <span className="grow" />
+            <ListSearch value={query} onChange={setQuery} placeholder="Search studies…" />
+          </div>
           <table className="lib-table">
             <thead>
               <tr>
@@ -121,7 +127,7 @@ export default function RcmHome() {
               </tr>
             </thead>
             <tbody>
-              {studies.map((s) => (
+              {studies.filter((s) => matches(query, s.name, s.system)).map((s) => (
                 <tr key={s.id} className="lib-row" onClick={() => navigate(`/rcm/studies/${s.id}`)}>
                   <td>
                     <div className="lib-name">

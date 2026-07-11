@@ -60,9 +60,9 @@ function CreateTeamModal({ onClose, onCreated }) {
     >
       {needsPro ? (
         <p className="muted-line" style={{ margin: 0 }}>
-          Teams are a Pro feature: the team creator needs a Pro plan, and every
-          member — free accounts included — gets unlimited saves in the team
-          workspace.
+          Teams are a Pro feature: creating a team and editing in its
+          workspace need a Pro plan. Free accounts can join and view
+          everything.
         </p>
       ) : (
         <>
@@ -78,8 +78,9 @@ function CreateTeamModal({ onClose, onCreated }) {
             />
           </label>
           <p className="muted-line">
-            Everyone you invite can view and edit everything in the team
-            workspace. Your personal workspace stays private.
+            Everyone you invite can view everything in the team workspace —
+            editing needs their own Pro plan. Your personal workspace stays
+            private.
           </p>
           {error && <div className="error">{error}</div>}
         </>
@@ -111,9 +112,14 @@ export default function NavBar() {
           <span className="brand-name">Reliafy</span>
         </NavLink>
         <div className="nav-workspace">
-          {activeTeam?.frozen && (
-            <span className="health-badge health-amber" title="The team owner's Pro plan has lapsed — the workspace is read-only until it's renewed.">
-              read-only
+          {activeTeam && (activeTeam.frozen || activeTeam.can_edit === false) && (
+            <span
+              className="health-badge health-amber"
+              title={activeTeam.frozen
+                ? "The team owner's Pro plan has lapsed — the workspace is read-only until it's renewed."
+                : "You can view everything in this team. Editing needs a Pro plan."}
+            >
+              view-only
             </span>
           )}
           <select

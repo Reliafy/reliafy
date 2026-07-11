@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { listStrategyAnalyses, deleteStrategyAnalysis } from "../api.js";
+import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 
 const KIND_LABEL = {
@@ -25,6 +26,7 @@ const TrashIcon = () => (
 export default function StrategyAnalyses() {
   const navigate = useNavigate();
   const [analyses, setAnalyses] = useState(null);
+  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
 
   const refresh = useCallback(() => {
@@ -52,8 +54,8 @@ export default function StrategyAnalyses() {
           </div>
           <h1>Saved analyses</h1>
           <p>
-            Persisted strategy calculations. Run a tool, hit "Save analysis",
-            and link the result as evidence in an RCM study.
+            Persisted strategy calculations. Replacement and failure-finding
+            analyses can be cited as evidence in RCM studies.
           </p>
         </div>
       </header>
@@ -69,6 +71,10 @@ export default function StrategyAnalyses() {
         </div>
       ) : (
         <div className="lib">
+          <div className="tablebar">
+            <span className="grow" />
+            <ListSearch value={query} onChange={setQuery} placeholder="Search analyses…" />
+          </div>
           <table className="lib-table">
             <thead>
               <tr>
@@ -80,7 +86,7 @@ export default function StrategyAnalyses() {
               </tr>
             </thead>
             <tbody>
-              {analyses.map((a) => (
+              {analyses.filter((a) => matches(query, a.name, a.kind, a.headline)).map((a) => (
                 <tr key={a.id} className="lib-row" onClick={() => navigate(`/strategy/analyses/${a.id}`)}>
                   <td>
                     <div className="lib-name">

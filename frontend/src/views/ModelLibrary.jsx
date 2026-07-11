@@ -1,3 +1,5 @@
+import { useState } from "react";
+import ListSearch, { matches } from "../components/ListSearch.jsx";
 import {
   distColor,
   seedFromString,
@@ -50,6 +52,7 @@ function summarise(models) {
 
 // List of saved models, rendered as the Instrument Models screen.
 export default function ModelLibrary({ models, loading, onOpen, onDelete }) {
+  const [query, setQuery] = useState("");
   if (loading) {
     return <div className="card empty">Loading…</div>;
   }
@@ -63,6 +66,7 @@ export default function ModelLibrary({ models, loading, onOpen, onDelete }) {
   }
 
   const s = summarise(models);
+  const visible = models.filter((m) => matches(query, m.name, m.distribution));
 
   return (
     <>
@@ -74,10 +78,9 @@ export default function ModelLibrary({ models, loading, onOpen, onDelete }) {
       </div>
 
       <div className="tablebar">
-        <span className="count">{models.length} models</span>
+        <span className="count">{visible.length} of {models.length} models</span>
         <span className="grow" />
-        <div className="search"><SearchIcon /><span>Search models…</span></div>
-        <div className="chip"><FilterIcon /> All distributions</div>
+        <ListSearch value={query} onChange={setQuery} placeholder="Search models…" />
       </div>
 
       <div className="lib">
@@ -93,7 +96,7 @@ export default function ModelLibrary({ models, loading, onOpen, onDelete }) {
             </tr>
           </thead>
           <tbody>
-            {models.map((m) => {
+            {visible.map((m) => {
               const color = distColor(m.distribution);
               const seed = seedFromString(m.id || m.name);
               return (

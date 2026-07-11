@@ -13,6 +13,14 @@ from backend.services import teams as teams_service
 router = APIRouter(prefix="/api")
 
 
+@router.post("/samples/restore")
+def restore_samples(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
+    """Un-hide every dismissed sample for this user (samples are shared and
+    read-only, so restoring is just clearing the per-user hide list)."""
+    session.users.update_one({"_id": user["uid"]}, {"$set": {"hidden_samples": []}})
+    return {"ok": True}
+
+
 @router.get("/me")
 def me(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
     """Return the signed-in user's profile (and upsert it on first login).
@@ -30,7 +38,7 @@ def me(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> 
         "admin": billing_service.is_admin_user(user),
         "credit_cents": acct["credit_cents"],
         "teams": [
-            teams_service.summary(session, t, user["uid"], billing_service)
+            teams_service.summary(session, t, user, billing_service)
             for t in access_service.user_teams(session, user["uid"])
         ],
     }

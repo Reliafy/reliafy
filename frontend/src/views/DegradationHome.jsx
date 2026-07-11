@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import DegradationNewModal from "../components/DegradationNewModal.jsx";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import { listDegradationModels, saveDegradationModel, deleteDegradationModel } from "../api.js";
+import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 
 const PlusIcon = () => (
@@ -26,6 +27,7 @@ const TrashIcon = () => (
 export default function DegradationHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
+  const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [pending, setPending] = useState(null); // { result, fit }
   const [name, setName] = useState("");
@@ -77,7 +79,7 @@ export default function DegradationHome() {
           <div className="crumb">
             <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> / <b>Degradation</b>
           </div>
-          <h1>Degradation &amp; RUL</h1>
+          <h1>Degradation models</h1>
           <p>
             Model how your assets wear toward a failure threshold. Individual
             items are monitored under Strategy → Degradation tracking.
@@ -119,6 +121,10 @@ export default function DegradationHome() {
         </div>
       ) : (
         <div className="lib">
+          <div className="tablebar">
+            <span className="grow" />
+            <ListSearch value={query} onChange={setQuery} placeholder="Search models…" />
+          </div>
           <table className="lib-table">
             <thead>
               <tr>
@@ -132,7 +138,7 @@ export default function DegradationHome() {
               </tr>
             </thead>
             <tbody>
-              {models.map((m) => (
+              {models.filter((m) => matches(query, m.name, m.path_model)).map((m) => (
                 <tr key={m.id} className="lib-row" onClick={() => navigate(`/modelling/degradation/${m.id}`)}>
                   <td>
                     <div className="lib-name">

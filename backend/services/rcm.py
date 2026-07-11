@@ -42,6 +42,45 @@ OUTCOMES = ("on_condition", "fixed_interval", "rtf", "failure_finding", "redesig
 RTF_BASES = ("random", "uneconomic")
 EVIDENCE_TYPES = ("model", "strategy_analysis", "degradation_model")
 
+# Common aliases so "hr", "hrs" and "hours" agree. Unmapped units compare
+# case-insensitively as-is.
+_UNIT_ALIASES = {
+    "h": "hours", "hr": "hours", "hrs": "hours", "hour": "hours",
+    "d": "days", "day": "days",
+    "wk": "weeks", "wks": "weeks", "week": "weeks",
+    "mo": "months", "month": "months",
+    "y": "years", "yr": "years", "yrs": "years", "year": "years",
+    "cycle": "cycles", "cyc": "cycles",
+    "kilometre": "km", "kilometres": "km", "kilometer": "km", "kilometers": "km",
+    "mile": "miles", "mi": "miles",
+    "operating hours": "hours", "op hrs": "hours",
+}
+
+
+def _norm_unit(unit) -> str:
+    u = str(unit or "").strip().lower()
+    return _UNIT_ALIASES.get(u, u)
+
+
+def _unit_mismatch(decision: dict, evidence_unit) -> dict | None:
+    """Inconclusive result when the task interval's unit contradicts the
+    evidence's time unit. Units are free text, so only a definite
+    disagreement (both present, different after normalisation) trips this —
+    a missing unit on either side passes.
+    """
+    task_unit = _norm_unit(decision.get("interval_unit"))
+    ev_unit = _norm_unit(evidence_unit)
+    if task_unit and ev_unit and task_unit != ev_unit:
+        return {
+            "status": "inconclusive",
+            "reason": (
+                f"Unit mismatch: the task interval is in {decision.get('interval_unit')} "
+                f"but the linked analysis is in {evidence_unit}. Align the units to validate this decision."
+            ),
+        }
+    return None
+
+
 # What each outcome expects as evidence (None = default action, no evidence).
 EXPECTED_EVIDENCE = {
     "on_condition": "degradation_model",
@@ -212,10 +251,14 @@ def clean_tree(functions) -> list[dict]:
     return out
 
 
-def replace_tree(db, study_id: str, functions, owner_id: str) -> RcmStudy:
+def replace_tree(db, study_id: str, functions, owner_id: str,
+                 expected_updated_at: str | None = None) -> RcmStudy:
     study = get_study(db, study_id, owner_id)
     if study is None or study.owner_id != owner_id:
         raise StudyNotFound(study_id)
+    if expected_updated_at and study.updated_at is not None:
+        if not access.timestamps_match(study.updated_at, expected_updated_at):
+            raise access.EditConflict()
     study.functions = clean_tree(functions)
     study.updated_at = _now()
     db.rcm_studies.update_one(
@@ -316,8 +359,14 @@ def _resolve_decision(decision: dict, fetch) -> dict:
     if outcome == "rtf":  # uneconomic
         return {**base, **_check_replacement(artifact, want_beneficial=False)}
     if outcome == "fixed_interval":
+        mismatch = _unit_mismatch(decision, (artifact.results or {}).get("unit"))
+        if mismatch:
+            return {**base, **mismatch}
         return {**base, **_check_replacement(artifact, want_beneficial=True)}
     if outcome == "on_condition":
+        mismatch = _unit_mismatch(decision, (artifact.results or {}).get("unit"))
+        if mismatch:
+            return {**base, **mismatch}
         if artifact.status == "ready":
             r = artifact.results or {}
             unit = f" {r['measurement_unit']}" if r.get("measurement_unit") else ""
@@ -329,6 +378,9 @@ def _resolve_decision(decision: dict, fetch) -> dict:
             return {**base, "status": "inconclusive",
                     "reason": "The linked analysis isn't a failure-finding interval."}
         r = artifact.results or {}
+        mismatch = _unit_mismatch(decision, r.get("unit"))
+        if mismatch:
+            return {**base, **mismatch}
         interval = r.get("interval")
         if interval is not None:
             unit = f" {r['unit']}" if r.get("unit") else ""

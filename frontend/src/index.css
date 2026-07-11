@@ -4370,3 +4370,15 @@ button.danger:hover { background: #fdeeee; }
   text-align: center;
   margin-bottom: 1.4rem;
 }
+
+/* Live list search (replaces the old inert placeholder) */
+.search.live input {
+  border: none;
+  background: none;
+  outline: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  width: 160px;
+}
+.search.live input::placeholder { color: var(--faint); }

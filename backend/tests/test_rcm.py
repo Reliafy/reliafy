@@ -281,3 +281,29 @@ def test_sample_study_seeds_with_contradicted_demo(session, monkeypatch):
         assert client.get("/api/rcm/studies/sample-rcm-truck").status_code == 200
     finally:
         app.dependency_overrides.clear()
+
+
+def test_unit_mismatch_blocks_support(session):
+    """A task interval in a different unit than its evidence resolves
+    inconclusive — units are free text, so only definite disagreement trips."""
+    analysis = _make_replacement(session, A, beneficial=True)  # unit: hours
+
+    def status_for(interval_unit):
+        return _status(session, A, {
+            "outcome": "fixed_interval", "task": "replace", "interval": 500,
+            "interval_unit": interval_unit,
+            "evidence": {"type": "strategy_analysis", "id": analysis.id},
+        })
+
+    # Definite mismatch -> inconclusive with a unit-specific reason.
+    bad = status_for("km")
+    assert bad["status"] == "inconclusive" and "Unit mismatch" in bad["reason"]
+    # Aliases of the same unit agree.
+    assert status_for("hrs")["status"] == "supported"
+    assert status_for("hours")["status"] == "supported"
+    # Missing unit on the decision passes (can't prove a contradiction).
+    ok = _status(session, A, {
+        "outcome": "fixed_interval", "task": "replace",
+        "evidence": {"type": "strategy_analysis", "id": analysis.id},
+    })
+    assert ok["status"] == "supported"

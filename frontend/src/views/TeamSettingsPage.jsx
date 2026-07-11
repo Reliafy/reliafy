@@ -135,7 +135,7 @@ export default function TeamSettingsPage() {
           <h1>{team.name}</h1>
           <p>
             {team.members.length} member{team.members.length === 1 ? "" : "s"} — everyone
-            can view and edit everything in this workspace.
+            sees everything in this workspace; editing needs a Pro plan.
           </p>
           {team.frozen && (
             <p className="muted-line" style={{ color: "#9a6b0c" }}>
@@ -194,7 +194,14 @@ export default function TeamSettingsPage() {
               <tr key={m.uid} className="lib-row">
                 <td><div className="lib-name">{m.name || "—"}{m.uid === user?.uid ? " (you)" : ""}</div></td>
                 <td className="lib-date">{m.email || "—"}</td>
-                <td className="lib-date">{m.role}</td>
+                <td className="lib-date">
+                  {m.role}
+                  {m.can_edit === false && (
+                    <span className="health-badge health-grey" style={{ marginLeft: 8 }} title="Free account — can view the workspace; editing needs Pro.">
+                      view-only
+                    </span>
+                  )}
+                </td>
                 <td className="lib-actions">
                   {isOwner && m.role !== "owner" && (
                     <div className="lib-acts">

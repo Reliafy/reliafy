@@ -179,20 +179,29 @@ def _public_member(m: dict) -> dict:
     return {"uid": m["uid"], "email": m.get("email"), "name": m.get("name"), "role": m.get("role")}
 
 
-def summary(db, team: dict, uid: str, billing_service) -> dict:
+def summary(db, team: dict, user: dict, billing_service) -> dict:
     return {
         "id": team["_id"],
         "name": team["name"],
-        "role": role_of(team, uid),
+        "role": role_of(team, user["uid"]),
         "frozen": access.team_frozen(db, team, billing_service),
+        # Whether THIS member may edit in the team workspace (Pro/admin).
+        "can_edit": access.member_can_edit(db, user, billing_service),
         "member_count": len(team.get("members", [])),
         "pending_invites": len(team.get("invites", [])),
     }
 
 
-def detail(db, team: dict, uid: str, billing_service) -> dict:
+def detail(db, team: dict, user: dict, billing_service) -> dict:
+    members = []
+    for m in team.get("members", []):
+        member_user = {"uid": m["uid"], "email": m.get("email")}
+        members.append({
+            **_public_member(m),
+            "can_edit": access.member_can_edit(db, member_user, billing_service),
+        })
     return {
-        **summary(db, team, uid, billing_service),
-        "members": [_public_member(m) for m in team.get("members", [])],
+        **summary(db, team, user, billing_service),
+        "members": members,
         "invites": [{"email": i["email"]} for i in team.get("invites", [])],
     }

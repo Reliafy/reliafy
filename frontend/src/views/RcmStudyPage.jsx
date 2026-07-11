@@ -52,6 +52,7 @@ export default function RcmStudyPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [editTarget, setEditTarget] = useState(null); // { fnId, failId, mode }
+  const [conflict, setConflict] = useState(false);
 
   useEffect(() => {
     getRcmStudy(id)
@@ -87,15 +88,29 @@ export default function RcmStudyPage() {
     setSaving(true);
     setError(null);
     try {
-      const fresh = await putRcmTree(id, functions);
+      const fresh = await putRcmTree(id, functions, study.updated_at);
       setStudy(fresh);
       setFunctions(fresh.functions || []);
       setDirty(false);
     } catch (err) {
-      setError(err.message);
+      if (err.code === "conflict") {
+        setError(err.message + " Use Reload below to fetch the latest version (your unsaved edits will be lost).");
+        setConflict(true);
+      } else {
+        setError(err.message);
+      }
     } finally {
       setSaving(false);
     }
+  };
+
+  const onReload = () => {
+    setConflict(false);
+    setError(null);
+    setDirty(false);
+    getRcmStudy(id)
+      .then((s) => { setStudy(s); setFunctions(s.functions || []); })
+      .catch((e) => setError(e.message));
   };
 
   const onRename = async () => {
@@ -133,6 +148,11 @@ export default function RcmStudyPage() {
             <p>{[study.system, study.description].filter(Boolean).join(" — ")}</p>
           )}
           <RollupBadges rollup={study.rollup} />
+          {study.updated_by && (
+            <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>
+              Last edited by {study.updated_by}
+            </p>
+          )}
         </div>
         <div className="head-actions">
           <ShareButton
@@ -155,7 +175,16 @@ export default function RcmStudyPage() {
         </div>
       </header>
 
-      {error && <div className="card error">{error}</div>}
+      {error && (
+        <div className="card error">
+          {error}
+          {conflict && (
+            <div style={{ marginTop: "0.6rem" }}>
+              <button className="secondary" onClick={onReload}>Reload latest version</button>
+            </div>
+          )}
+        </div>
+      )}
       {readOnly && study.is_sample && (
         <div className="card note">
           This is a shared sample — explore how decisions link to evidence

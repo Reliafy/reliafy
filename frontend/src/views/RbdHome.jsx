@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listRbds, deleteRbd } from "../api.js";
+import { listRbds, deleteRbd, renameRbd } from "../api.js";
 import ShareDialog from "../components/ShareDialog.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
+import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 
 const PlusIcon = () => (
@@ -13,6 +14,11 @@ const PlusIcon = () => (
 const OpenIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M7 17 17 7M9 7h8v8" />
+  </svg>
+);
+const PencilIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
   </svg>
 );
 const ShareIcon = () => (
@@ -59,6 +65,7 @@ function summarise(rbds) {
 export default function RbdHome() {
   const navigate = useNavigate();
   const [rbds, setRbds] = useState(null);
+  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(null); // rbd being shared
   const { workspace } = useWorkspace();
@@ -130,6 +137,10 @@ export default function RbdHome() {
           </div>
 
           <div className="lib">
+            <div className="tablebar">
+              <span className="grow" />
+              <ListSearch value={query} onChange={setQuery} placeholder="Search diagrams…" />
+            </div>
             <table className="lib-table">
               <thead>
                 <tr>
@@ -142,7 +153,7 @@ export default function RbdHome() {
                 </tr>
               </thead>
               <tbody>
-                {rbds.map((r) => (
+                {rbds.filter((r) => matches(query, r.name)).map((r) => (
                   <tr key={r.id} className="lib-row" onClick={() => open(r.id)}>
                     <td><div className="lib-name">{r.name}{r.is_sample && <span className="sample-tag">Sample</span>}{r.shared_by && <span className="sample-tag shared" title={`Shared by ${r.shared_by}`}>Shared</span>}</div></td>
                     <td className="lib-n">{(r.n_nodes ?? 0).toLocaleString()}</td>
@@ -154,6 +165,18 @@ export default function RbdHome() {
                         <button className="act" title="Open" onClick={(e) => { e.stopPropagation(); open(r.id); }}>
                           <OpenIcon />
                         </button>
+                        {!r.read_only && (
+                          <button className="act" title="Rename" onClick={async (e) => {
+                            e.stopPropagation();
+                            const name = window.prompt("Diagram name", r.name);
+                            if (name && name.trim() && name.trim() !== r.name) {
+                              await renameRbd(r.id, name.trim());
+                              refresh();
+                            }
+                          }}>
+                            <PencilIcon />
+                          </button>
+                        )}
                         {!r.read_only && workspace === "personal" && (
                           <button className="act" title="Share" onClick={(e) => { e.stopPropagation(); setSharing(r); }}>
                             <ShareIcon />

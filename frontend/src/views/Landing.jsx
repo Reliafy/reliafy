@@ -152,8 +152,9 @@ const TIERS = (primaryHref) => [
     blurb: "The hosted app, ready in seconds. Everything you need to start.",
     features: [
       "3 saved datasets, 3 models, 1 RBD",
-      "Degradation & RUL: 1 model, 3 tracked assets",
+      "Degradation tracking: 1 model, 3 tracked assets",
       "1 RCM study with live evidence validation",
+      "Join team workspaces free (view-only)",
       "Sample data and worked examples included",
       "25 AI credits to try the assistant",
       "Secure sign-in, private to your account",
@@ -171,6 +172,7 @@ const TIERS = (primaryHref) => [
       "1,000 AI credits included every month",
       "Unlimited fleet monitoring (degradation & RUL)",
       "Unlimited evidence-linked RCM studies",
+      "Team workspaces: create teams and edit together",
       "AI assistant: fits models and builds RBDs for you",
       "Top-up credit packs from $5 — credits never expire",
     ],

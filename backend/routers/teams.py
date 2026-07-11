@@ -49,7 +49,7 @@ def create_team(
         team = teams_service.create_team(session, name, user)
     except teams_service.TeamError as exc:
         return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
-    return JSONResponse(content=teams_service.summary(session, team, user["uid"], billing_service))
+    return JSONResponse(content=teams_service.summary(session, team, user, billing_service))
 
 
 @router.get("")
@@ -58,7 +58,7 @@ def list_teams(session=Depends(get_session), user: dict = Depends(get_current_us
 
     return {
         "teams": [
-            teams_service.summary(session, t, user["uid"], billing_service)
+            teams_service.summary(session, t, user, billing_service)
             for t in access.user_teams(session, user["uid"])
         ]
     }
@@ -71,7 +71,7 @@ def get_team(
     team, err = _team_or_404(session, team_id, user["uid"])
     if err:
         return err
-    return JSONResponse(content=teams_service.detail(session, team, user["uid"], billing_service))
+    return JSONResponse(content=teams_service.detail(session, team, user, billing_service))
 
 
 @router.patch("/{team_id}")
@@ -90,7 +90,7 @@ def rename_team(
         team = teams_service.rename_team(session, team, name)
     except teams_service.TeamError as exc:
         return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
-    return JSONResponse(content=teams_service.summary(session, team, user["uid"], billing_service))
+    return JSONResponse(content=teams_service.summary(session, team, user, billing_service))
 
 
 @router.delete("/{team_id}")

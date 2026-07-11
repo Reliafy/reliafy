@@ -221,11 +221,19 @@ export function getRbd(id) {
   return request(`/api/rbds/${id}`);
 }
 
-export function saveRbd(name, graph, id) {
+export function saveRbd(name, graph, id, expectedUpdatedAt) {
   return request("/api/rbds", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, graph, id: id || null }),
+    body: JSON.stringify({ name, graph, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
+  });
+}
+
+export function renameRbd(id, name) {
+  return request(`/api/rbds/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
   });
 }
 
@@ -476,11 +484,11 @@ export function deleteRcmStudy(id) {
 
 // Replace the whole worksheet tree; returns the study with fresh evidence
 // statuses resolved.
-export function putRcmTree(id, functions) {
+export function putRcmTree(id, functions, expectedUpdatedAt) {
   return request(`/api/rcm/studies/${id}/tree`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ functions }),
+    body: JSON.stringify({ functions, expected_updated_at: expectedUpdatedAt || null }),
   });
 }
 
@@ -555,4 +563,9 @@ export function revokeShare(shareId) {
 // Operator-only stats (403 for regular accounts).
 export function getAdminStats() {
   return request("/api/admin/stats");
+}
+
+// Un-hide all dismissed sample artifacts.
+export function restoreSamples() {
+  return request("/api/samples/restore", { method: "POST" });
 }

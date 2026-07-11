@@ -150,7 +150,7 @@ def test_membership_and_invites(client):
 
 def test_team_workspace_scoping(client):
     _make_pro(client.db, A)
-    _register(client.db, B)
+    _make_pro(client.db, B)
     client.act_as(A)
     tid = _create_team(client)
     client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
@@ -199,20 +199,18 @@ def test_team_workspace_is_uncapped(client, monkeypatch):
     monkeypatch.setattr(config, "FREE_MAX_MODELS", 1)
     monkeypatch.setattr(config, "FREE_MAX_DATASETS", 10)
     _make_pro(client.db, A)
-    _register(client.db, B)
+    _make_pro(client.db, B)
     client.act_as(A)
     tid = _create_team(client)
     client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
 
-    # A free member saves past the free cap in the team workspace...
+    # A member saves without limits in the team workspace...
     client.act_as(B)
     assert _save_model(client, tid, name="t1").status_code == 200
     assert _save_model(client, tid, name="t2").status_code == 200
-    # ...team artifacts don't count against their personal cap...
-    assert _save_model(client, name="p1").status_code == 200
-    # ...and the personal cap still bites in the personal workspace.
-    r = _save_model(client, name="p2")
-    assert r.status_code == 402 and r.json()["code"] == "cap"
+    # ...and team artifacts don't count against their personal caps (Pro
+    # accounts are uncapped anyway; the owner_id scoping is what matters).
+    assert client.db.models.count_documents({"owner_id": B}) == 0
 
 
 # ---- Frozen team ------------------------------------------------------------------
@@ -311,3 +309,46 @@ def test_team_delete_cascades(client):
     assert client.get("/api/teams").json()["teams"] == []
     # The workspace header is now invalid.
     assert client.get("/api/models", headers=h).status_code == 403
+
+
+# ---- Pro-only editing --------------------------------------------------------------
+
+def test_free_members_are_view_only(client):
+    _make_pro(client.db, A)
+    _register(client.db, B)  # B stays free
+    client.act_as(A)
+    tid = _create_team(client)
+    client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
+    mid = _save_model(client, tid).json()["id"]
+
+    client.act_as(B)
+    h = {"X-Workspace-Id": tid}
+    # Reads work, flagged view-only.
+    listed = client.get("/api/models", headers=h).json()["models"]
+    assert listed[0]["read_only"] is True
+    assert client.get("/api/teams").json()["teams"][0]["can_edit"] is False
+    # Writes are blocked with the upgrade nudge.
+    r = _save_model(client, tid, name="nope")
+    assert r.status_code == 402 and r.json()["code"] == "member_pro_required"
+    r = client.patch(f"/api/models/{mid}", json={"name": "x"}, headers=h)
+    assert r.status_code == 402 and r.json()["code"] == "member_pro_required"
+    # Personal workspace is unaffected.
+    assert _save_model(client, name="own").status_code == 200
+
+    # Upgrading unlocks editing.
+    _make_pro(client.db, B)
+    assert client.patch(f"/api/models/{mid}", json={"name": "renamed"}, headers=h).status_code == 200
+
+
+def test_free_members_edit_when_billing_disabled(client, monkeypatch):
+    from backend import config
+
+    _make_pro(client.db, A)
+    _register(client.db, B)
+    client.act_as(A)
+    tid = _create_team(client)
+    client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
+
+    monkeypatch.setattr(config, "BILLING_ENABLED", False)
+    client.act_as(B)
+    assert _save_model(client, tid).status_code == 200
