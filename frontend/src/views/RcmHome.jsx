@@ -37,7 +37,7 @@ export default function RcmHome() {
 
   const refresh = useCallback(() => {
     listRcmStudies()
-      .then((d) => setStudies(d.studies))
+      .then((d) => setStudies(d.studies || []))
       .catch((e) => setError(e.message));
   }, []);
   useEffect(() => refresh(), [refresh]);

@@ -6,7 +6,7 @@ import { listRcmStudies } from "../api.js";
 export default function RcmDashboard() {
   const [studies, setStudies] = useState(null);
   useEffect(() => {
-    listRcmStudies().then((d) => setStudies(d.studies)).catch(() => setStudies([]));
+    listRcmStudies().then((d) => setStudies(d.studies || [])).catch(() => setStudies([]));
   }, []);
 
   const totals = (studies || []).reduce(

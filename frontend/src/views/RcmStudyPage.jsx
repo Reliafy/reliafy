@@ -54,7 +54,11 @@ export default function RcmStudyPage() {
 
   useEffect(() => {
     getRcmStudy(id)
-      .then((s) => { setStudy(s); setFunctions(s.functions || []); })
+      .then((s) => {
+        if (!s?.id) throw new Error("Unexpected response from the server.");
+        setStudy(s);
+        setFunctions(s.functions || []);
+      })
       .catch((e) => setError(e.message));
     getRcmOptions().then(setOptions).catch(() => {});
   }, [id]);
