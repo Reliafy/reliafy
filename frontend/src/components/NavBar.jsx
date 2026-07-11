@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import Logo from "./Logo.jsx";
 import Modal from "./Modal.jsx";
+import Select from "./Select.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { createTeam } from "../api.js";
 
@@ -122,17 +123,17 @@ export default function NavBar() {
               view-only
             </span>
           )}
-          <select
+          <Select
+            className="nav-workspace-select"
             value={workspace}
-            onChange={(e) => onSwitch(e.target.value)}
+            onChange={onSwitch}
             title="Active workspace"
-          >
-            <option value="personal">Personal</option>
-            {teams.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-            <option value="__create__">＋ New team…</option>
-          </select>
+            options={[
+              { value: "personal", label: "Personal" },
+              ...teams.map((t) => ({ value: t.id, label: t.name })),
+              { value: "__create__", label: "＋ New team…" },
+            ]}
+          />
           {activeTeam && (
             <NavLink
               to="/team"

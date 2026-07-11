@@ -146,6 +146,7 @@ export default function UploadModal({ onClose, onFitted }) {
         fit: {
           file,
           datasetId,
+          sourceName,
           distribution,
           mapping,
           unit,

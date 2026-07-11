@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
+import Select from "./Select.jsx";
 
 // Guided RCM decision flow for one failure mode: consequence → outcome
 // (suggested first, per the classic decision diagram) → task details →
@@ -156,15 +157,12 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
                   placeholder="Interval"
                   onChange={(e) => setInterval_(e.target.value)}
                 />
-                <select value={intervalUnit} onChange={(e) => setIntervalUnit(e.target.value)} title="Use the same time unit as the linked analysis — a mismatch resolves as inconclusive.">
-                  <option value="hours">hours</option>
-                  <option value="days">days</option>
-                  <option value="weeks">weeks</option>
-                  <option value="months">months</option>
-                  <option value="years">years</option>
-                  <option value="cycles">cycles</option>
-                  <option value="km">km</option>
-                </select>
+                <Select
+                  value={intervalUnit}
+                  onChange={setIntervalUnit}
+                  title="Use the same time unit as the linked analysis — a mismatch resolves as inconclusive."
+                  options={["hours", "days", "weeks", "months", "years", "cycles", "km"]}
+                />
               </>
             )}
           </div>

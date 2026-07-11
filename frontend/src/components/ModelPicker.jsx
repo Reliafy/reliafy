@@ -1,3 +1,4 @@
+import Select from "./Select.jsx";
 import { useEffect, useMemo, useState } from "react";
 import { getDistributions, listModels, getModel } from "../api.js";
 
@@ -108,22 +109,15 @@ export default function ModelPicker({ label, value, onChange }) {
         <>
           <label className="dist-field" style={{ maxWidth: 280 }}>
             <span className="dist-label">Distribution</span>
-            <div className="select-wrap">
-              <select
-                value={distId}
-                onChange={(e) => {
-                  setDistId(e.target.value);
-                  setPvals({});
-                  onChange(null);
-                }}
-              >
-                {dists.map((d) => (
-                  <option value={d.id} key={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <Select
+              value={distId}
+              onChange={(id) => {
+                setDistId(id);
+                setPvals({});
+                onChange(null);
+              }}
+              options={dists.map((d) => ({ value: d.id, label: d.name }))}
+            />
           </label>
           <div className="param-fields">
             {(dist?.params || []).map((p) => (
@@ -148,17 +142,19 @@ export default function ModelPicker({ label, value, onChange }) {
       ) : (
         <label className="dist-field" style={{ maxWidth: 320 }}>
           <span className="dist-label">Model</span>
-          <div className="select-wrap">
-            <select value={savedId} onChange={(e) => onPickSaved(e.target.value)}>
-              <option value="">— choose —</option>
-              {saved.map((m) => (
-                <option value={m.id} key={m.id}>
-                  {m.name} ({m.distribution}
-                  {m.kind === "regression" ? ", covariates" : ""})
-                </option>
-              ))}
-            </select>
-          </div>
+          <Select
+            value={savedId}
+            onChange={onPickSaved}
+            placeholder="— choose —"
+            options={[
+              { value: "", label: "— choose —" },
+              ...saved.map((m) => ({
+                value: m.id,
+                label: m.name,
+                hint: m.distribution + (m.kind === "regression" ? ", covariates" : ""),
+              })),
+            ]}
+          />
         </label>
       )}
     </div>

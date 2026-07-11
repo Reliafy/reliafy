@@ -1,3 +1,4 @@
+import Select from "./Select.jsx";
 // Short blurbs shown under the dropdown for context (keyed by distribution id).
 const DESCRIPTIONS = {
   weibull: "Two-parameter (α scale, β shape). The most common life model.",
@@ -18,22 +19,14 @@ const DESCRIPTIONS = {
 export default function DistributionStep({ options, value, onChange }) {
   return (
     <div className="dist-picker">
-      <label className="dist-field" htmlFor="dist-select">
+      <div className="dist-field">
         <span className="dist-label">Distribution</span>
-        <div className="select-wrap">
-          <select
-            id="dist-select"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-          >
-            {options.map((d) => (
-              <option value={d.id} key={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </label>
+        <Select
+          value={value}
+          onChange={onChange}
+          options={options.map((d) => ({ value: d.id, label: d.name }))}
+        />
+      </div>
       {DESCRIPTIONS[value] && <p className="dist-blurb">{DESCRIPTIONS[value]}</p>}
     </div>
   );

@@ -26,7 +26,8 @@ export default function ModellingHome() {
 
   const onFitted = ({ result, fit }) => {
     setPending({ result, fit });
-    setName(`${result.distribution} — ${fit.file.name.replace(/\.csv$/i, "")}`);
+    const source = fit.file?.name || fit.sourceName || "dataset";
+    setName(`${result.distribution} — ${source.replace(/\.csv$/i, "")}`);
     setError(null);
     setModalOpen(false);
   };

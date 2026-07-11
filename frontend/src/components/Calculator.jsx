@@ -1,3 +1,4 @@
+import Select from "./Select.jsx";
 import { useRef, useState } from "react";
 import Plot from "react-plotly.js";
 import { evaluateAt } from "../api.js";
@@ -213,18 +214,11 @@ export default function Calculator({ functions, unit }) {
                   <label className="calc-cov" key={c.name}>
                     <span>{c.name}</span>
                     {c.type === "category" ? (
-                      <div className="select-wrap">
-                        <select
-                          value={s.values[c.name]}
-                          onChange={(e) => updateValue(s.id, c.name, e.target.value)}
-                        >
-                          {c.options.map((o) => (
-                            <option value={o} key={o}>
-                              {o}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <Select
+                        value={s.values[c.name]}
+                        onChange={(v) => updateValue(s.id, c.name, v)}
+                        options={c.options}
+                      />
                     ) : (
                       <input
                         type="number"

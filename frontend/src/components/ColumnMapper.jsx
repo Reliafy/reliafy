@@ -1,3 +1,4 @@
+import Select from "./Select.jsx";
 // Column-mapping UI. Encodes SurPyval's input rules:
 //   - 'x' is mutually exclusive with the 'xl'/'xr' interval pair
 //   - 'xl' and 'xr' must be used together
@@ -67,22 +68,13 @@ export default function ColumnMapper({ columns, mapping, onChange }) {
                     {info.label}
                     {required && <i className="req">*</i>}
                   </span>
-                  <div className="select-wrap">
-                    <select
-                      id={`map-${field}`}
-                      aria-label={`${info.label} — ${info.help}`}
-                      value={mapping[field] || ""}
-                      disabled={disabled}
-                      onChange={(e) => setField(field, e.target.value)}
-                    >
-                      <option value="">— none —</option>
-                      {columns.map((col) => (
-                        <option value={col} key={col}>
-                          {col}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <Select
+                    className="sel-embedded"
+                    value={mapping[field] || ""}
+                    disabled={disabled}
+                    onChange={(v) => setField(field, v)}
+                    options={[{ value: "", label: "— none —" }, ...columns]}
+                  />
                 </label>
               );
             })}

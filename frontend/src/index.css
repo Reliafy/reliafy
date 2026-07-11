@@ -279,10 +279,12 @@ body {
 .side-foot .who {
   flex: 1;
   min-width: 0;
+  padding-right: 4px;
 }
 
 .side-foot .nm,
 .side-foot .rl {
+  display: block; /* ellipsis only applies to block-level boxes */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2176,7 +2178,7 @@ button.secondary:hover:not(:disabled) {
 .calc-cov input,
 .calc-cov .select-wrap select {
   width: 150px;
-  background: var(--panel);
+  background-color: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -2706,40 +2708,60 @@ button.secondary:hover:not(:disabled) {
   min-width: 0;
 }
 
-.select-wrap::after {
-  content: "";
-  position: absolute;
-  right: 0.6rem;
-  top: 50%;
-  width: 0.45rem;
-  height: 0.45rem;
-  transform: translateY(-65%) rotate(45deg);
-  border-right: 2px solid var(--muted);
-  border-bottom: 2px solid var(--muted);
-  pointer-events: none;
+/* Wrapped selects are fused into a bordered parent control: no own border,
+   no focus ring (the parent styles those); the chevron comes from the base
+   select rule. */
+.select-wrap select {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
+  padding: 0.4rem 1.9rem 0.4rem 0.55rem;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.select-wrap select:hover {
+  border-color: transparent;
+}
+
+.select-wrap select:focus {
+  box-shadow: none;
+  border-color: transparent;
 }
 
 select {
   appearance: none;
   -webkit-appearance: none;
-  width: 100%;
-  height: 100%;
-  background: var(--panel);
-  border: none;
-  color: var(--text);
-  padding: 0.4rem 1.7rem 0.4rem 0.55rem;
-  font-size: 0.85rem;
   font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c727c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 30px 7px 10px;
   cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+select:hover {
+  border-color: var(--faint);
 }
 
 select:focus {
   outline: none;
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--acc-t);
 }
 
 select:disabled {
   cursor: not-allowed;
-  background: var(--panel-2);
+  background-color: var(--panel-2);
   color: var(--muted);
 }
 
@@ -2983,8 +3005,7 @@ select:disabled {
   color: var(--faint);
 }
 
-.login-field input,
-.login-field select {
+.login-field input {
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 10px 12px;
@@ -2994,8 +3015,14 @@ select:disabled {
   background: var(--bg);
 }
 
-.login-field input:focus,
-.login-field select:focus {
+.login-field select {
+  border-radius: 9px;
+  padding: 9px 32px 9px 12px;
+  font-size: 14px;
+  background-color: var(--bg);
+}
+
+.login-field input:focus {
   outline: none;
   border-color: var(--acc);
   box-shadow: 0 0 0 3px var(--acc-t);
@@ -3027,13 +3054,13 @@ select:disabled {
 /* Sign-out control in the sidebar footer. */
 .side-signout {
   margin-left: auto;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
-  background: transparent;
-  border: none;
+  background: #fff;
+  border: 1px solid var(--line);
   box-shadow: none;
   color: var(--faint);
   cursor: pointer;
@@ -3048,6 +3075,7 @@ select:disabled {
 
 .side-signout:hover {
   background: var(--bg);
+  border-color: var(--faint);
   color: var(--ink);
 }
 
@@ -3624,7 +3652,7 @@ select:disabled {
   position: sticky;
   top: 58px;
   flex-shrink: 0;
-  width: 360px;
+  width: 360px; /* default — overridden by the inline resizable width */
   height: calc(100vh - 58px);
   background: var(--panel);
   border-left: 1px solid var(--border);
@@ -4298,8 +4326,7 @@ select:disabled {
 .rcm-form { display: flex; flex-direction: column; gap: 14px; }
 .login-field textarea,
 .decision-step input,
-.decision-step textarea,
-.decision-step select {
+.decision-step textarea {
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 8px 12px;
@@ -4308,10 +4335,15 @@ select:disabled {
   color: var(--ink);
   background: var(--bg);
 }
+.decision-step select {
+  border-radius: 9px;
+  padding: 8px 32px 8px 12px;
+  font-size: 13.5px;
+  background-color: var(--bg);
+}
 .login-field textarea:focus,
 .decision-step input:focus,
-.decision-step textarea:focus,
-.decision-step select:focus {
+.decision-step textarea:focus {
   outline: none;
   border-color: var(--acc);
   box-shadow: 0 0 0 3px var(--acc-t);
@@ -4325,20 +4357,8 @@ select:disabled {
   gap: 8px;
 }
 .nav-workspace select {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 6px 10px;
-  font-size: 13px;
-  font-family: inherit;
-  color: var(--ink);
-  background: #fff;
-  cursor: pointer;
+  padding: 6px 30px 6px 10px;
   max-width: 220px;
-}
-.nav-workspace select:focus {
-  outline: none;
-  border-color: var(--acc);
-  box-shadow: 0 0 0 3px var(--acc-t);
 }
 .nav-team-settings {
   display: inline-flex;
@@ -4474,3 +4494,113 @@ button.danger:hover { background: #fdeeee; }
 .viz-row-box { fill: var(--bg); stroke: var(--line); }
 .viz-ok { fill: #eef8f1; stroke: #bfe3cd; }
 .viz-bad { fill: #fdeeee; stroke: #f3c9c9; }
+
+/* Assistant panel resize handle (left edge) */
+.chat-resize {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 5;
+}
+.chat-resize:hover,
+.chat-resize:active {
+  background: linear-gradient(to right, transparent 2px, var(--acc-t) 2px, var(--acc-t) 5px, transparent 5px);
+}
+
+/* ---- Custom dropdown (Select.jsx) ---------------------------------------- */
+.sel-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  text-align: left;
+  min-width: 0;
+  box-shadow: none;
+}
+.sel-trigger:hover { border-color: var(--faint); }
+.sel-trigger.open,
+.sel-trigger:focus-visible {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--acc-t);
+}
+.sel-trigger:disabled { cursor: not-allowed; color: var(--muted); background: var(--panel-2); }
+.sel-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sel-label.placeholder { color: var(--faint); }
+.sel-chevron {
+  display: inline-flex;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.sel-chevron svg { width: 13px; height: 13px; }
+.sel-trigger.open .sel-chevron { transform: rotate(180deg); }
+
+.sel-menu {
+  position: fixed;
+  z-index: 200;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(20, 24, 32, 0.14);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sel-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: none;
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.sel-option.active { background: var(--bg); }
+.sel-option.selected { color: var(--acc); font-weight: 500; }
+.sel-option.disabled { color: var(--faint); cursor: not-allowed; }
+.sel-option-main { display: flex; flex-direction: column; min-width: 0; }
+.sel-option-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-option-hint { font-size: 11px; color: var(--muted); }
+.sel-check { display: inline-flex; color: var(--acc); flex-shrink: 0; }
+.sel-check svg { width: 13px; height: 13px; }
+
+/* Embedded variant: fused into a bordered parent (column mapper fields). */
+.sel-trigger.sel-embedded {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  width: 100%;
+  height: 100%;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.85rem;
+}
+.sel-trigger.sel-embedded.open,
+.sel-trigger.sel-embedded:focus-visible { box-shadow: none; border-color: transparent; }

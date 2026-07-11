@@ -5,6 +5,10 @@ import { runTurn } from "../llm.js";
 import { getAssistantInfo } from "../api.js";
 
 const OPEN_KEY = "reliafy_chat_open";
+const WIDTH_KEY = "reliafy_chat_width";
+const DEFAULT_WIDTH = 360;
+const MIN_WIDTH = 300;
+const MAX_WIDTH = 760;
 
 const TOOL_LABEL = {
   list_datasets: "Looked up datasets",
@@ -28,6 +32,10 @@ const credits = (cents) => (cents || 0).toLocaleString();
 export default function ChatPanel() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(() => localStorage.getItem(OPEN_KEY) === "1");
+  const [width, setWidth] = useState(() => {
+    const w = parseInt(localStorage.getItem(WIDTH_KEY) || "", 10);
+    return Number.isFinite(w) ? Math.min(Math.max(w, MIN_WIDTH), MAX_WIDTH) : DEFAULT_WIDTH;
+  });
   const [info, setInfo] = useState(null); // { enabled, provider, billing_enabled, credit_cents }
   const [balance, setBalance] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -41,6 +49,28 @@ export default function ChatPanel() {
   const execute = useMemo(() => makeExecutor({ navigate }), [navigate]);
 
   useEffect(() => localStorage.setItem(OPEN_KEY, open ? "1" : "0"), [open]);
+  useEffect(() => localStorage.setItem(WIDTH_KEY, String(width)), [width]);
+
+  // Drag the panel's left edge to resize; double-click resets.
+  const startResize = useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = width;
+    const cap = Math.min(MAX_WIDTH, window.innerWidth - 420); // keep the app usable
+    const onMove = (ev) => {
+      setWidth(Math.min(Math.max(startW + (startX - ev.clientX), MIN_WIDTH), cap));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [width]);
 
   // Load assistant config/balance once it's first opened.
   useEffect(() => {
@@ -132,7 +162,13 @@ export default function ChatPanel() {
   const showBalance = info?.billing_enabled && !info?.admin; // operators aren't charged
 
   return (
-    <aside className="chat-panel">
+    <aside className="chat-panel" style={{ width }}>
+      <div
+        className="chat-resize"
+        onMouseDown={startResize}
+        onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
+        title="Drag to resize — double-click to reset"
+      />
       <header className="chat-head">
         <div className="chat-title"><ChatIcon /><span>Assistant</span></div>
         <div className="chat-head-actions">

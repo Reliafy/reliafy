@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import TrackedItemsPanel, { healthBadge, rulText } from "../components/TrackedItemsPanel.jsx";
 import RulChart from "../components/RulChart.jsx";
+import Select from "../components/Select.jsx";
 import {
   listDegradationModels,
   getDegradationModel,
@@ -95,14 +96,11 @@ export default function StrategyTracking() {
         {models && models.length > 0 && model && (
           <label className="login-field" style={{ minWidth: 260 }}>
             <span>Degradation model</span>
-            <select
+            <Select
               value={modelId || ""}
-              onChange={(e) => navigate(`/strategy/tracking/${e.target.value}`)}
-            >
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
+              onChange={(id) => navigate(`/strategy/tracking/${id}`)}
+              options={models.map((m) => ({ value: m.id, label: m.name }))}
+            />
           </label>
         )}
       </header>

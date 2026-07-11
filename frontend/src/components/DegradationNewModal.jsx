@@ -7,6 +7,7 @@ import {
   listDatasets,
 } from "../api.js";
 import Modal from "./Modal.jsx";
+import Select from "./Select.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 
 // Three-step modal for fitting a degradation model, mirroring UploadModal:
@@ -179,21 +180,22 @@ export default function DegradationNewModal({ onClose, onFitted }) {
   const select = (label, value, onChange, opts, disabledIds = []) => (
     <label className="login-field" style={{ flex: 1 }}>
       <span>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
-        {opts.map((o) => (
-          <option key={o.id} value={o.id} disabled={disabledIds.includes(o.id)}>{o.name}</option>
-        ))}
-      </select>
+      <Select
+        value={value}
+        onChange={onChange}
+        options={opts.map((o) => ({ value: o.id, label: o.name, disabled: disabledIds.includes(o.id) }))}
+      />
     </label>
   );
 
   const colSelect = (label, key) => (
     <label className="login-field" style={{ flex: 1 }}>
       <span>{label}</span>
-      <select value={mapping[key]} onChange={(e) => setMapping({ ...mapping, [key]: e.target.value })}>
-        <option value="">—</option>
-        {csv.columns.map((c) => <option key={c} value={c}>{c}</option>)}
-      </select>
+      <Select
+        value={mapping[key]}
+        onChange={(v) => setMapping({ ...mapping, [key]: v })}
+        options={[{ value: "", label: "—" }, ...csv.columns]}
+      />
     </label>
   );
 

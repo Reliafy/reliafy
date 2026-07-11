@@ -1,3 +1,4 @@
+import Select from "./Select.jsx";
 import { useRef, useState } from "react";
 import ModelPicker from "./ModelPicker.jsx";
 import CompareResult from "./CompareResult.jsx";
@@ -103,34 +104,19 @@ function SideEditor({ tag, side, onChange }) {
             <div className="compare-cols">
               <label className="calc-t">
                 <span>Time column</span>
-                <div className="select-wrap">
-                  <select
-                    value={side.timeCol}
-                    onChange={(e) => set({ timeCol: e.target.value })}
-                  >
-                    {side.columns.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <Select
+                  value={side.timeCol}
+                  onChange={(v) => set({ timeCol: v })}
+                  options={side.columns}
+                />
               </label>
               <label className="calc-t">
                 <span>Censor column (optional)</span>
-                <div className="select-wrap">
-                  <select
-                    value={side.censorCol}
-                    onChange={(e) => set({ censorCol: e.target.value })}
-                  >
-                    <option value="">— none —</option>
-                    {side.columns.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <Select
+                  value={side.censorCol}
+                  onChange={(v) => set({ censorCol: v })}
+                  options={[{ value: "", label: "— none —" }, ...side.columns]}
+                />
               </label>
             </div>
           )}

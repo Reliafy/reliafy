@@ -1,3 +1,4 @@
+import Select from "./Select.jsx";
 import { useState } from "react";
 import Modal from "./Modal.jsx";
 
@@ -39,18 +40,11 @@ export default function CovariatesModal({ covNodes, values, onApply, onClose }) 
               <label className="calc-cov" key={c.name}>
                 <span>{c.name}</span>
                 {c.type === "category" ? (
-                  <div className="select-wrap">
-                    <select
-                      value={get(node, c)}
-                      onChange={(e) => set(node.id, c.name, e.target.value)}
-                    >
-                      {(c.options || []).map((o) => (
-                        <option value={o} key={o}>
-                          {o}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <Select
+                    value={get(node, c)}
+                    onChange={(v) => set(node.id, c.name, v)}
+                    options={c.options || []}
+                  />
                 ) : (
                   <input
                     type="number"
