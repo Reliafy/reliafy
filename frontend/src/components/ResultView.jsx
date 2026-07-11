@@ -19,6 +19,28 @@ const REGRESSION_TABS = [
 const fmtGof = (v) =>
   Math.abs(v) >= 1e-4 || v === 0 ? Number(v).toFixed(2) : Number(v).toExponential(2);
 
+// One-line interpretation of the failure pattern — the statistical evidence an
+// RCM run-to-failure decision leans on.
+function RandomnessVerdict({ r }) {
+  if (r.basis === "memoryless") {
+    return (
+      <p className="verdict-line">
+        Exponential model — memoryless by construction: failures occur at a
+        constant rate (<b>random</b>). Time-based replacement won't help.
+      </p>
+    );
+  }
+  const ci = r.beta_ci ? `[${r.beta_ci[0].toPrecision(3)}, ${r.beta_ci[1].toPrecision(3)}]` : null;
+  const beta = `β = ${Number(r.beta).toPrecision(3)}${ci ? ` ${ci}` : ""}`;
+  const text = {
+    random: <>the CI contains 1 — failures are <b>consistent with a random</b> (constant-rate) process.</>,
+    wear_out: <>the CI excludes 1 — this is <b>wear-out</b>; preventive replacement can pay off.</>,
+    infant_mortality: <>the CI is below 1 — <b>infant mortality</b>; failures decrease with age.</>,
+    inconclusive: <>no confidence interval available — the failure pattern is <b>inconclusive</b>.</>,
+  }[r.verdict];
+  return <p className="verdict-line">{beta}: {text}</p>;
+}
+
 // Presentational result panel for a fit (used for both fresh and saved models).
 export default function ResultView({ result }) {
   const isRegression = result.kind === "regression";
@@ -43,6 +65,11 @@ export default function ResultView({ result }) {
           <div className="stat" key={p.name}>
             <div className="value">{p.value.toPrecision(4)}</div>
             <div className="name">{p.name}</div>
+            {p.ci && (
+              <div className="param-ci">
+                95% CI [{p.ci[0].toPrecision(3)}, {p.ci[1].toPrecision(3)}]
+              </div>
+            )}
           </div>
         ))}
         <div className="stat">
@@ -50,6 +77,8 @@ export default function ResultView({ result }) {
           <div className="name">observations</div>
         </div>
       </div>
+
+      {result.randomness && <RandomnessVerdict r={result.randomness} />}
 
       <div className="tabs">
         {tabs.map((t) => (

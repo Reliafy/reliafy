@@ -1,9 +1,9 @@
 import DashboardSection from "../components/DashboardSection.jsx";
-import { CostIcon, CompareIcon } from "../components/icons.jsx";
+import { CostIcon, CompareIcon, ListIcon, StrategyIcon } from "../components/icons.jsx";
 
 export default function StrategyDashboard() {
-  // The strategy tools are stateless (they work on data you provide), so the
-  // overview is action cards rather than a stat strip.
+  // The strategy tools work on data you provide; saved analyses persist their
+  // outputs so RCM decisions can cite them as evidence.
   const cards = [
     {
       to: "/strategy/replacement",
@@ -18,6 +18,20 @@ export default function StrategyDashboard() {
       title: "Compare two models",
       body: "Compare two designs head-to-head to see which item is more reliable over time.",
       cta: "Open",
+    },
+    {
+      to: "/strategy/failure-finding",
+      icon: <StrategyIcon />,
+      title: "Failure finding",
+      body: "Set the inspection interval that keeps a hidden protective function available.",
+      cta: "Open",
+    },
+    {
+      to: "/strategy/analyses",
+      icon: <ListIcon />,
+      title: "Saved analyses",
+      body: "Persisted calculations — linkable as evidence in RCM studies.",
+      cta: "View all",
     },
   ];
 

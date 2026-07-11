@@ -241,8 +241,13 @@ def seed_samples(db) -> None:
 
     for spec in SAMPLE_MODELS:
         try:
-            if db.models.find_one({"_id": spec["id"]}) is not None:
-                continue
+            existing = db.models.find_one({"_id": spec["id"]})
+            if existing is not None:
+                # Upgrade older seeds whose cached results predate newer payload
+                # fields (parameter CIs / the randomness verdict).
+                old_params = (existing.get("results") or {}).get("params") or []
+                if old_params and "ci" in old_params[0]:
+                    continue
             ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
             if ds_doc is None:
                 continue
@@ -251,6 +256,12 @@ def seed_samples(db) -> None:
             result = fitting.fit(
                 spec["distribution"], df, spec["mapping"], None, None, spec.get("unit")
             )
+            if existing is not None:
+                db.models.update_one(
+                    {"_id": spec["id"]}, {"$set": {"results": result}}
+                )
+                logger.info("Upgraded sample model %r (param CIs).", spec["id"])
+                continue
             model = Model(
                 id=spec["id"],
                 name=spec["name"],
@@ -273,6 +284,8 @@ def seed_samples(db) -> None:
             logger.info("Seeded sample model %r.", spec["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample model %r: %s", spec["id"], exc)
+
+    _seed_strategy_analyses(db)
 
     for spec in SAMPLE_RBDS:
         try:
@@ -344,6 +357,62 @@ def seed_samples(db) -> None:
                 logger.info("Seeded sample tracked item %r.", it["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample degradation %r: %s", spec["id"], exc)
+
+
+def _seed_strategy_analyses(db) -> None:
+    """Sample saved strategy analyses (evidence for the sample RCM study).
+
+    The bearing replacement analysis reads the just-seeded bearing model's
+    fitted parameters, so this runs after the SAMPLE_MODELS loop.
+    """
+    from backend.schema import StrategyAnalysis
+    from backend.services import strategy_store
+
+    specs = []
+    bearing = db.models.find_one({"_id": "sample-model-bearings-weibull"})
+    if bearing is not None:
+        params = [
+            {"name": p["name"], "value": p["value"]}
+            for p in (bearing.get("results") or {}).get("params", [])
+        ]
+        if params:
+            specs.append({
+                "id": "sample-strategy-bearing-replacement",
+                "name": "Bearing preventive replacement (sample)",
+                "kind": "optimal_replacement",
+                "inputs": {
+                    "distribution_id": "weibull",
+                    "params": params,
+                    "planned_cost": 200.0,
+                    "unplanned_cost": 1500.0,
+                    "unit": "hours",
+                },
+            })
+    specs.append({
+        "id": "sample-strategy-ffi-brake-circuit",
+        "name": "Secondary brake circuit — failure finding (sample)",
+        "kind": "failure_finding",
+        "inputs": {
+            "distribution_id": "exponential",
+            "params": [{"name": "failure_rate", "value": 1.0 / 8760.0}],
+            "target_availability": 0.99,
+            "unit": "hours",
+        },
+    })
+
+    for spec in specs:
+        try:
+            if db.strategy_analyses.find_one({"_id": spec["id"]}) is not None:
+                continue
+            results = strategy_store.compute(spec["kind"], spec["inputs"])
+            doc = StrategyAnalysis(
+                id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER,
+                kind=spec["kind"], inputs=spec["inputs"], results=results,
+            )
+            db.strategy_analyses.insert_one(to_doc(doc))
+            logger.info("Seeded sample strategy analysis %r.", spec["id"])
+        except Exception as exc:  # pragma: no cover - defensive; never block boot
+            logger.warning("Failed to seed sample analysis %r: %s", spec["id"], exc)
 
 
 # ---------------------------------------------------------------------------

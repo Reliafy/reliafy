@@ -230,3 +230,44 @@ def test_fit_all_distributions(dist_id):
         assert np.isfinite(plot["line"][key]).all()
     assert np.isfinite(plot["x_range"]).all()
     assert np.isfinite(plot["y_range"]).all()
+
+
+def test_params_carry_confidence_intervals():
+    import json
+
+    import numpy as np
+    import pandas as pd
+
+    from backend import fitting
+
+    rng = np.random.default_rng(1)
+    df = pd.DataFrame({"t": np.round(rng.weibull(2.0, 60) * 100, 2)})
+    r = fitting.fit("weibull", df, {"x": "t"}, None, None, None)
+    json.dumps(r, allow_nan=False)
+    for p in r["params"]:
+        assert p["se"] is not None and p["se"] > 0
+        lo, hi = p["ci"]
+        assert lo < p["value"] < hi
+
+
+def test_randomness_verdicts():
+    import numpy as np
+    import pandas as pd
+
+    from backend import fitting
+
+    rng = np.random.default_rng(2)
+    wear = pd.DataFrame({"t": np.round(rng.weibull(3.0, 80) * 100, 2)})
+    r = fitting.fit("weibull", wear, {"x": "t"}, None, None, None)
+    assert r["randomness"]["verdict"] == "wear_out"
+    assert r["randomness"]["beta_ci"][0] > 1
+
+    rand = pd.DataFrame({"t": np.round(rng.exponential(100, 80), 2)})
+    r2 = fitting.fit("weibull", rand, {"x": "t"}, None, None, None)
+    assert r2["randomness"]["verdict"] == "random"
+
+    r3 = fitting.fit("exponential", rand, {"x": "t"}, None, None, None)
+    assert r3["randomness"] == {"verdict": "random", "basis": "memoryless"}
+
+    r4 = fitting.fit("lognormal", wear, {"x": "t"}, None, None, None)
+    assert "randomness" not in r4

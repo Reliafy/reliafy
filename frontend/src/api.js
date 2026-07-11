@@ -368,3 +368,48 @@ export function addTrackedMeasurement(modelId, itemId, t, y) {
 export function deleteTrackedItem(modelId, itemId) {
   return request(`/api/degradation/models/${modelId}/items/${itemId}`, { method: "DELETE" });
 }
+
+// ---- Strategy: failure finding + saved analyses ------------------------------
+
+// Failure-finding interval for a hidden function (protective device).
+export function failureFinding(distributionId, params, targetAvailability, unit) {
+  return request("/api/strategy/failure-finding", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      distribution_id: distributionId,
+      params,
+      target_availability: targetAvailability,
+      unit: unit || null,
+    }),
+  });
+}
+
+// Persist a strategy analysis (results recomputed server-side from inputs).
+export function saveStrategyAnalysis(name, kind, inputs) {
+  return request("/api/strategy/analyses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, kind, inputs }),
+  });
+}
+
+export function listStrategyAnalyses() {
+  return request("/api/strategy/analyses");
+}
+
+export function getStrategyAnalysis(id) {
+  return request(`/api/strategy/analyses/${id}`);
+}
+
+export function renameStrategyAnalysis(id, name) {
+  return request(`/api/strategy/analyses/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteStrategyAnalysis(id) {
+  return request(`/api/strategy/analyses/${id}`, { method: "DELETE" });
+}

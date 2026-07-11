@@ -80,6 +80,21 @@ class DegradationModelDoc(BaseModel):
     error: Optional[str] = None
 
 
+class StrategyAnalysis(BaseModel):
+    """A saved strategy calculation (optimal replacement, two-model comparison,
+    or failure-finding interval): the inputs plus the computed results — the
+    persistent evidence an RCM decision can link to."""
+
+    id: str
+    name: str
+    owner_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+    kind: str = "optimal_replacement"  # | 'compare_two' | 'failure_finding'
+    inputs: dict = Field(default_factory=dict)
+    results: dict = Field(default_factory=dict)
+
+
 class TrackedItem(BaseModel):
     """An asset monitored against a degradation model: its measurement history
     plus the cached threshold-crossing prediction (recomputed on append)."""
