@@ -29,7 +29,7 @@ export default function StrategyDashboard() {
     {
       to: "/strategy/tracking",
       icon: <DegradeIcon />,
-      title: "Item tracking",
+      title: "Degradation tracking",
       body: "Monitor individual assets against a degradation model and predict remaining useful life.",
       cta: "Open",
     },

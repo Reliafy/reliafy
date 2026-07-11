@@ -80,7 +80,7 @@ export default function DegradationHome() {
           <h1>Degradation &amp; RUL</h1>
           <p>
             Model how your assets wear toward a failure threshold. Individual
-            items are monitored under Strategy → Item tracking.
+            items are monitored under Strategy → Degradation tracking.
           </p>
         </div>
         <button onClick={() => setModalOpen(true)}>

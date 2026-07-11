@@ -84,9 +84,9 @@ export default function StrategyTracking() {
       <header>
         <div>
           <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/strategy")}>Strategy</button> / <b>Item tracking</b>
+            <button className="crumb-link" onClick={() => navigate("/strategy")}>Strategy</button> / <b>Degradation tracking</b>
           </div>
-          <h1>Item tracking</h1>
+          <h1>Degradation tracking</h1>
           <p>
             Monitor individual assets against a degradation model and predict
             when each will cross its failure threshold.
@@ -115,7 +115,7 @@ export default function StrategyTracking() {
         <div className="card empty">
           <h2>No degradation models</h2>
           <p>
-            Item tracking needs a degradation model to predict against.{" "}
+            Degradation tracking needs a degradation model to predict against.{" "}
             <Link to="/modelling/degradation">Create one under Modelling → Degradation</Link>.
           </p>
         </div>

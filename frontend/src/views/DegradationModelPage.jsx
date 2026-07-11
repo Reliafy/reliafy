@@ -4,7 +4,7 @@ import DegradationResultView from "../components/DegradationResultView.jsx";
 import { getDegradationModel } from "../api.js";
 
 // One saved degradation model: the fitted paths + life model. The fleet of
-// tracked items lives under Strategy → Item tracking.
+// tracked items lives under Strategy → Degradation tracking.
 export default function DegradationModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -60,7 +60,7 @@ export default function DegradationModelPage() {
       <p className="muted-line" style={{ marginTop: "1rem" }}>
         Monitor individual assets against this model under{" "}
         <Link to={`/strategy/tracking/${model.id}`} className="evidence-link">
-          Strategy → Item tracking
+          Strategy → Degradation tracking
         </Link>
         .
       </p>
