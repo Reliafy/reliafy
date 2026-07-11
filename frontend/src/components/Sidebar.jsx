@@ -43,6 +43,16 @@ const StrategyIcon = () => (
   </svg>
 );
 
+const FleetIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3 16V7a1 1 0 0 1 1-1h9v10" />
+    <path d="M13 9h4l3 3.5V16h-2.5" />
+    <circle cx="7.5" cy="17.5" r="1.8" />
+    <circle cx="16.5" cy="17.5" r="1.8" />
+    <path d="M9.3 17.5h5.4M3 16h2.7" />
+  </svg>
+);
+
 const RcmSectionIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <rect x="5" y="4" width="14" height="17" rx="2" />
@@ -99,8 +109,16 @@ const ITEMS = [
       { to: "/strategy/replacement", label: "Optimal replacement" },
       { to: "/strategy/compare", label: "Compare two models" },
       { to: "/strategy/failure-finding", label: "Failure finding" },
-      { to: "/strategy/tracking", label: "Degradation tracking" },
       { to: "/strategy/analyses", label: "Saved analyses" },
+    ],
+  },
+  {
+    to: "/fleet",
+    label: "Fleet",
+    icon: <FleetIcon />,
+    children: [
+      { to: "/fleet/tracking", label: "Degradation tracking" },
+      { to: "/fleet/forecasts", label: "Failure forecast" },
     ],
   },
   {

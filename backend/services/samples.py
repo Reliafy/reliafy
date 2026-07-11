@@ -287,6 +287,7 @@ def seed_samples(db) -> None:
 
     _seed_strategy_analyses(db)
     _seed_rcm_study(db)
+    _seed_fleet(db)
 
     for spec in SAMPLE_RBDS:
         try:
@@ -549,3 +550,35 @@ def hide_sample(db, uid: str, sample_id: str) -> None:
         {"$addToSet": {"hidden_samples": sample_id}},
         upsert=True,
     )
+
+
+def _seed_fleet(db) -> None:
+    """Sample fleet forecast: eight trucks' wheel bearings against the sample
+    bearing Weibull, staggered ages, 12 months at 500 operating hours/month.
+    Demos the "how many failures next year?" question out of the box.
+    """
+    from backend.schema import Fleet
+
+    if db.fleets.find_one({"_id": "sample-fleet-trucks"}) is not None:
+        return
+    try:
+        if db.models.find_one({"_id": "sample-model-bearings-weibull"}) is None:
+            return
+        ages = [5200, 4100, 3600, 2900, 2400, 1800, 900, 350]
+        fleet = Fleet(
+            id="sample-fleet-trucks",
+            name="Delivery trucks — bearing forecast (sample)",
+            owner_id=SAMPLE_OWNER,
+            model_id="sample-model-bearings-weibull",
+            settings={"periods": 12, "period_label": "months",
+                      "default_rate": 500.0, "method": "renewals"},
+            items=[
+                {"id": f"sample-fleet-truck-{i+1:02d}", "name": f"Truck {i+1:02d} — wheel bearing",
+                 "current_use": float(a), "rate": None}
+                for i, a in enumerate(ages)
+            ],
+        )
+        db.fleets.insert_one(to_doc(fleet))
+        logger.info("Seeded sample fleet 'sample-fleet-trucks'.")
+    except Exception:  # pragma: no cover - seeding must never block boot
+        logger.exception("Failed to seed the sample fleet")

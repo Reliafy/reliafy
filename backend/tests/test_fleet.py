@@ -1,0 +1,260 @@
+"""Fleet failure forecasting: math, CRUD, caps, isolation, sample."""
+
+import math
+
+import matplotlib
+
+matplotlib.use("Agg")
+
+import io
+
+import mongomock
+import numpy as np
+import pandas as pd
+import pytest
+
+A = "user-a"
+B = "user-b"
+
+USERS = {
+    A: {"uid": A, "email": "a@x.com", "name": "A"},
+    B: {"uid": B, "email": "b@x.com", "name": "B"},
+}
+
+
+@pytest.fixture()
+def session(monkeypatch):
+    from backend import db
+
+    test_db = mongomock.MongoClient()["reliafy_test"]
+    monkeypatch.setattr(db, "_db", test_db)
+    monkeypatch.setattr(db, "_simulated", True)
+    yield test_db
+
+
+@pytest.fixture()
+def client(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from backend import config, db
+    from backend.auth import get_current_user
+    from backend.main import app
+
+    monkeypatch.setattr(config, "AUTH_DISABLED", False)
+    monkeypatch.setattr(config, "BILLING_ENABLED", True)
+    test_db = mongomock.MongoClient()["reliafy_test"]
+    monkeypatch.setattr(db, "_db", test_db)
+    monkeypatch.setattr(db, "_simulated", True)
+    tc = TestClient(app)
+
+    def act_as(uid):
+        app.dependency_overrides[get_current_user] = lambda: USERS[uid]
+        email = USERS[uid]["email"]
+        test_db.users.update_one(
+            {"_id": uid},
+            {"$set": {"email": email, "email_lc": email, "name": USERS[uid]["name"], "plan": "pro"}},
+            upsert=True,
+        )
+
+    tc.act_as = act_as
+    tc.db = test_db
+    try:
+        yield tc
+    finally:
+        app.dependency_overrides.clear()
+
+
+def _csv(kind="wear") -> bytes:
+    rng = np.random.default_rng(7)
+    x = np.round(rng.weibull(3.0, 80) * 100, 2) if kind == "wear" else np.round(rng.exponential(100, 80), 2)
+    buf = io.StringIO()
+    pd.DataFrame({"t": x}).to_csv(buf, index=False)
+    return buf.getvalue().encode()
+
+
+def _make_model(session, owner, distribution="weibull", kind="wear"):
+    from backend.services import datasets as ds
+    from backend.services import models as ms
+
+    dataset = ds.create_dataset(session, f"{kind}.csv", _csv(kind), owner)
+    return ms.save_model(session, f"{kind} model", dataset, distribution, {"x": "t"}, [], None, owner_id=owner)
+
+
+def _fleet_with(session, owner, model, items, method="single", periods=12, rate=50.0):
+    from backend.services import fleet as fs
+
+    fleet = fs.create_fleet(session, "F", model.id, owner)
+    fleet = fs.replace_items(
+        session, fleet.id,
+        {"periods": periods, "period_label": "months", "default_rate": rate, "method": method},
+        items, owner,
+    )
+    return fleet
+
+
+# ---- Math ---------------------------------------------------------------------
+
+def test_single_method_exponential_is_memoryless(session):
+    """Exponential + 'single': p = 1 - exp(-λu) regardless of item age."""
+    from backend.services import fleet as fs
+
+    model = _make_model(session, A, distribution="exponential", kind="random")
+    lam = next(p["value"] for p in model.results["params"] if "rate" in p["name"] or p["name"] == "failure_rate")
+    items = [
+        {"name": "new", "current_use": 0},
+        {"name": "old", "current_use": 500},
+    ]
+    fleet = _fleet_with(session, A, model, items, method="single", periods=10, rate=10.0)
+    f = fs.compute(session, fleet, A)
+    assert f["status"] == "ok"
+    expected_p = 1 - math.exp(-lam * 100)  # u = 10 periods × 10/period
+    for row in f["per_item"]:
+        assert row["prob_any"] == pytest.approx(expected_p, rel=1e-6)
+    assert f["expected"] == pytest.approx(2 * expected_p, rel=1e-6)
+    # Per-period sums back to the total.
+    assert sum(f["per_period"]) == pytest.approx(f["expected"], rel=1e-6)
+
+
+def test_renewals_close_to_single_on_short_windows(session):
+    """When failures are rare in the window, both methods agree."""
+    from backend.services import fleet as fs
+
+    model = _make_model(session, A)  # weibull, alpha ~90
+    items = [{"name": f"i{k}", "current_use": 10.0 * k} for k in range(5)]
+    single = fs.compute(session, _fleet_with(session, A, model, items, "single", periods=2, rate=2.0), A)
+    renew = fs.compute(session, _fleet_with(session, A, model, items, "renewals", periods=2, rate=2.0), A)
+    assert renew["expected"] == pytest.approx(single["expected"], rel=0.15, abs=0.02)
+
+
+def test_renewals_exceed_single_on_long_windows(session):
+    """Replacement means an item can fail more than once over a long horizon."""
+    from backend.services import fleet as fs
+
+    model = _make_model(session, A)
+    items = [{"name": "i", "current_use": 50.0}]
+    single = fs.compute(session, _fleet_with(session, A, model, items, "single", periods=12, rate=50.0), A)
+    renew = fs.compute(session, _fleet_with(session, A, model, items, "renewals", periods=12, rate=50.0), A)
+    # 600 use vs alpha≈90: many renewals expected; single caps at 1.
+    assert single["expected"] <= 1.0
+    assert renew["expected"] > 2.0
+    assert renew["interval"][0] <= renew["expected"] <= renew["interval"][1]
+    # Deterministic (seeded).
+    renew2 = fs.compute(session, _fleet_with(session, A, model, items, "renewals", periods=12, rate=50.0), A)
+    assert renew2["expected"] == renew["expected"]
+    assert sum(renew["per_period"]) == pytest.approx(renew["expected"], rel=1e-6)
+
+
+def test_stale_when_model_deleted(session):
+    from backend.services import fleet as fs
+    from backend.services import models as ms
+
+    model = _make_model(session, A)
+    fleet = _fleet_with(session, A, model, [{"name": "i", "current_use": 0}])
+    ms.delete_model(session, model.id, A)
+    f = fs.compute(session, fleet, A)
+    assert f["status"] == "stale"
+
+
+def test_regression_model_rejected(session):
+    from backend.services import fleet as fs
+
+    # Fake a regression model result on a saved doc.
+    model = _make_model(session, A)
+    session.models.update_one({"_id": model.id}, {"$set": {"results.kind": "regression"}})
+    with pytest.raises(fs.FleetValidationError):
+        fs.create_fleet(session, "F", model.id, A)
+
+
+# ---- API: caps, isolation, conflict ------------------------------------------------
+
+def test_api_flow_caps_isolation_conflict(client, monkeypatch):
+    from backend import config
+
+    monkeypatch.setattr(config, "FREE_MAX_FLEETS", 1)
+    client.act_as(A)
+    # A pro fixture user: make free to test the cap.
+    client.db.users.update_one({"_id": A}, {"$set": {"plan": "free"}})
+
+    r = client.post("/api/models", data={"name": "M", "distribution": "weibull", "x": "t"},
+                    files={"file": ("d.csv", _csv(), "text/csv")})
+    mid = r.json()["id"]
+    r = client.post("/api/fleet/fleets", json={"name": "F1", "model_id": mid})
+    assert r.status_code == 200, r.json()
+    fid = r.json()["id"]
+    # Cap bites on the second fleet.
+    r = client.post("/api/fleet/fleets", json={"name": "F2", "model_id": mid})
+    assert r.status_code == 402 and r.json()["code"] == "cap"
+
+    # Items round-trip and forecast computes.
+    r = client.put(f"/api/fleet/fleets/{fid}/items", json={
+        "settings": {"periods": 6, "period_label": "months", "default_rate": 30, "method": "single"},
+        "items": [{"name": "Truck 1", "current_use": 100},
+                  {"name": "Truck 2", "current_use": 40, "rate": 10}],
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["forecast"]["status"] == "ok"
+    assert body["forecast"]["expected"] > 0
+    assert len(body["forecast"]["per_period"]) == 6
+    loaded_at = body["updated_at"]
+
+    # Optimistic lock: stale stamp conflicts.
+    ok = client.put(f"/api/fleet/fleets/{fid}/items", json={
+        "settings": body["settings"], "items": body["items"], "expected_updated_at": loaded_at,
+    })
+    assert ok.status_code == 200
+    stale = client.put(f"/api/fleet/fleets/{fid}/items", json={
+        "settings": body["settings"], "items": body["items"], "expected_updated_at": loaded_at,
+    })
+    assert stale.status_code == 409 and stale.json()["code"] == "conflict"
+
+    # Validation errors are 422.
+    r = client.put(f"/api/fleet/fleets/{fid}/items", json={
+        "settings": {"periods": 0}, "items": [],
+    })
+    assert r.status_code == 422
+
+    # Isolation: B sees nothing.
+    client.act_as(B)
+    assert client.get(f"/api/fleet/fleets/{fid}").status_code == 404
+    assert all(f["id"] != fid for f in client.get("/api/fleet/fleets").json()["fleets"])
+
+
+def test_share_fleet_grants_model_read(client):
+    client.act_as(B)
+    client.act_as(A)
+    r = client.post("/api/models", data={"name": "M", "distribution": "weibull", "x": "t"},
+                    files={"file": ("d.csv", _csv(), "text/csv")})
+    mid = r.json()["id"]
+    fid = client.post("/api/fleet/fleets", json={"name": "F", "model_id": mid}).json()["id"]
+    client.put(f"/api/fleet/fleets/{fid}/items", json={
+        "settings": {"periods": 12, "default_rate": 20, "method": "single"},
+        "items": [{"name": "T1", "current_use": 10}],
+    })
+    assert client.post("/api/shares", json={"collection": "fleets", "artifact_id": fid, "email": "b@x.com"}).status_code == 200
+
+    client.act_as(B)
+    got = client.get(f"/api/fleet/fleets/{fid}")
+    assert got.status_code == 200
+    assert got.json()["read_only"] is True
+    assert got.json()["forecast"]["status"] == "ok"
+    # Transitive: the linked model opens for the recipient.
+    assert client.get(f"/api/models/{mid}").status_code == 200
+    # Read-only: edits blocked.
+    assert client.put(f"/api/fleet/fleets/{fid}/items", json={"settings": {}, "items": []}).status_code == 403
+
+
+def test_sample_fleet_seeds_and_computes(session, monkeypatch):
+    from backend import config
+    from backend.services import fleet as fs
+    from backend.services import samples
+
+    monkeypatch.setattr(config, "SEED_SAMPLES", True)
+    samples.seed_samples(session)
+    fleet = fs.get_fleet(session, "sample-fleet-trucks", A)
+    assert fleet is not None and len(fleet.items) == 8
+    f = fs.compute(session, fleet, A)
+    assert f["status"] == "ok" and f["expected"] > 0
+    # Idempotent.
+    samples.seed_samples(session)
+    assert session.fleets.count_documents({"_id": "sample-fleet-trucks"}) == 1

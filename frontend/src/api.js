@@ -579,3 +579,41 @@ export function getAdminStats() {
 export function restoreSamples() {
   return request("/api/samples/restore", { method: "POST" });
 }
+
+// ---- Fleet failure forecasting ---------------------------------------------------
+
+export function listFleets() {
+  return request("/api/fleet/fleets");
+}
+
+export function createFleet(name, modelId) {
+  return request("/api/fleet/fleets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, model_id: modelId }),
+  });
+}
+
+export function getFleet(id) {
+  return request(`/api/fleet/fleets/${id}`);
+}
+
+export function renameFleet(id, name) {
+  return request(`/api/fleet/fleets/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteFleet(id) {
+  return request(`/api/fleet/fleets/${id}`, { method: "DELETE" });
+}
+
+export function putFleetItems(id, settings, items, expectedUpdatedAt) {
+  return request(`/api/fleet/fleets/${id}/items`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ settings, items, expected_updated_at: expectedUpdatedAt || null }),
+  });
+}

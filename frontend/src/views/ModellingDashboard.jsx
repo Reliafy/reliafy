@@ -42,7 +42,7 @@ export default function ModellingDashboard() {
       to: "/modelling/degradation",
       icon: <DegradeIcon />,
       title: "Degradation models",
-      body: "Model wear toward a failure threshold — then monitor your fleet under Strategy → Degradation tracking.",
+      body: "Model wear toward a failure threshold — then monitor your fleet under Fleet → Degradation tracking.",
       cta: "Open",
     },
   ];

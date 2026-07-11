@@ -5,7 +5,7 @@ import { ShareButton } from "../components/ShareDialog.jsx";
 import { getDegradationModel } from "../api.js";
 
 // One saved degradation model: the fitted paths + life model. The fleet of
-// tracked items lives under Strategy → Degradation tracking.
+// tracked items lives under Fleet → Degradation tracking.
 export default function DegradationModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -58,7 +58,7 @@ export default function DegradationModelPage() {
             name={model.name}
             readOnly={model.read_only}
           />
-          <button onClick={() => navigate(`/strategy/tracking/${model.id}`)}>
+          <button onClick={() => navigate(`/fleet/tracking/${model.id}`)}>
             Track items{nItems > 0 ? ` (${nItems})` : ""}
           </button>
         </div>
@@ -68,8 +68,8 @@ export default function DegradationModelPage() {
 
       <p className="muted-line" style={{ marginTop: "1rem" }}>
         Monitor individual assets against this model under{" "}
-        <Link to={`/strategy/tracking/${model.id}`} className="evidence-link">
-          Strategy → Degradation tracking
+        <Link to={`/fleet/tracking/${model.id}`} className="evidence-link">
+          Fleet → Degradation tracking
         </Link>
         .
       </p>

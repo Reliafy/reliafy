@@ -31,7 +31,7 @@ export default function StrategyTracking() {
         const list = d.models || [];
         setModels(list);
         if (!modelId && list.length > 0) {
-          navigate(`/strategy/tracking/${list[0].id}`, { replace: true });
+          navigate(`/fleet/tracking/${list[0].id}`, { replace: true });
         }
       })
       .catch((e) => setError(e.message));
@@ -85,7 +85,7 @@ export default function StrategyTracking() {
       <header>
         <div>
           <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/strategy")}>Strategy</button> / <b>Degradation tracking</b>
+            <button className="crumb-link" onClick={() => navigate("/fleet")}>Fleet</button> / <b>Degradation tracking</b>
           </div>
           <h1>Degradation tracking</h1>
           <p>
@@ -98,7 +98,7 @@ export default function StrategyTracking() {
             <span>Degradation model</span>
             <Select
               value={modelId || ""}
-              onChange={(id) => navigate(`/strategy/tracking/${id}`)}
+              onChange={(id) => navigate(`/fleet/tracking/${id}`)}
               options={models.map((m) => ({ value: m.id, label: m.name }))}
             />
           </label>

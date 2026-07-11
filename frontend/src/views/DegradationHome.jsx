@@ -82,7 +82,7 @@ export default function DegradationHome() {
           <h1>Degradation models</h1>
           <p>
             Model how your assets wear toward a failure threshold. Individual
-            items are monitored under Strategy → Degradation tracking.
+            items are monitored under Fleet → Degradation tracking.
           </p>
         </div>
         <button onClick={() => setModalOpen(true)}>

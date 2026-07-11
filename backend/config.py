@@ -82,6 +82,7 @@ FREE_MAX_RBDS = _int("FREE_MAX_RBDS", 1)
 FREE_MAX_DEGRADATION_MODELS = _int("FREE_MAX_DEGRADATION_MODELS", 1)
 FREE_MAX_TRACKED_ITEMS = _int("FREE_MAX_TRACKED_ITEMS", 3)
 FREE_MAX_RCM_STUDIES = _int("FREE_MAX_RCM_STUDIES", 1)
+FREE_MAX_FLEETS = _int("FREE_MAX_FLEETS", 1)
 
 # One-time prepaid credit packs (Stripe Checkout, mode=payment). `grant_cents`
 # is the credit added on success (>= price_cents builds in the bonus).
