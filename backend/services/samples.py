@@ -290,10 +290,19 @@ def seed_samples(db) -> None:
             from backend import degradation as degradation_fit  # local: heavy import
 
             model_exists = db.degradation_models.find_one({"_id": spec["id"]}) is not None
+
+            def _needs_seed(it):
+                doc = db.tracked_items.find_one({"_id": it["id"]})
+                if doc is None:
+                    return True
+                # Upgrade older seeds whose cached prediction predates newer
+                # payload fields (e.g. the credible band on the projection).
+                proj = (doc.get("prediction") or {}).get("projection") or {}
+                return bool(proj) and "lo" not in proj
+
             missing_items = [
                 it for it in SAMPLE_TRACKED_ITEMS
-                if it["model_id"] == spec["id"]
-                and db.tracked_items.find_one({"_id": it["id"]}) is None
+                if it["model_id"] == spec["id"] and _needs_seed(it)
             ]
             if model_exists and not missing_items:
                 continue
@@ -331,7 +340,7 @@ def seed_samples(db) -> None:
                     owner_id=SAMPLE_OWNER, measurements=it["measurements"],
                     prediction=pred,
                 )
-                db.tracked_items.insert_one(to_doc(item))
+                db.tracked_items.replace_one({"_id": it["id"]}, to_doc(item), upsert=True)
                 logger.info("Seeded sample tracked item %r.", it["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample degradation %r: %s", spec["id"], exc)

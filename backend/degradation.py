@@ -274,8 +274,10 @@ def predict_item(model, t, y) -> dict:
 
 
 def _projection(model, theta, t, pred) -> dict | None:
-    """Central projected degradation path for the item chart: the path model
-    evaluated at the posterior-mean parameters, out past the credible interval."""
+    """Projected degradation path for the item chart: the path model at the
+    posterior-mean parameters, out past the credible interval, with a 95%
+    credible band from the posterior parameter covariance (delta method via
+    the path jacobian)."""
     try:
         lo, hi = pred.failure_time_interval
         end = hi if np.isfinite(hi) else (pred.failure_time if np.isfinite(pred.failure_time) else None)
@@ -283,7 +285,18 @@ def _projection(model, theta, t, pred) -> dict | None:
             end = float(np.max(t)) * 1.5
         end = max(float(end) * 1.1, float(np.max(t)) * 1.05)
         grid = np.linspace(0.0, end, 120)
-        vals = np.asarray(model.path_model.path(grid, *np.asarray(theta, dtype=float)), dtype=float)
-        return {"x": grid.tolist(), "y": vals.tolist()}
+        theta = np.asarray(theta, dtype=float)
+        vals = np.asarray(model.path_model.path(grid, *theta), dtype=float)
+        out = {"x": grid.tolist(), "y": vals.tolist()}
+        try:
+            J = np.asarray(model.path_model.jacobian(grid, *theta), dtype=float)
+            cov = np.asarray(pred.posterior_cov, dtype=float)
+            se = np.sqrt(np.maximum(np.einsum("ij,jk,ik->i", J, cov, J), 0.0))
+            z = 1.959963984540054  # 95%
+            out["lo"] = (vals - z * se).tolist()
+            out["hi"] = (vals + z * se).tolist()
+        except Exception:  # pragma: no cover - band is optional
+            pass
+        return out
     except Exception:  # pragma: no cover - projection is cosmetic
         return None

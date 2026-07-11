@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Modal from "./Modal.jsx";
-import { createTrackedItem } from "../api.js";
+import { createTrackedItem, addTrackedMeasurement } from "../api.js";
 
 const fmt = (v, digits = 0) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -31,6 +31,7 @@ export function rulText(pred, unit) {
 // modal. Selecting a row surfaces its RUL chart in the parent.
 export default function TrackedItemsPanel({ model, items, selectedId, onSelect, onChanged, onDelete }) {
   const [registering, setRegistering] = useState(false);
+  const [measuring, setMeasuring] = useState(null); // item receiving a new reading
   const unit = model?.results?.unit || model?.unit || "";
 
   return (
@@ -91,6 +92,17 @@ export default function TrackedItemsPanel({ model, items, selectedId, onSelect, 
                   <td className="lib-n">{it.n_measurements}</td>
                   <td className="lib-actions">
                     <div className="lib-acts">
+                      {!it.is_sample && (
+                        <button
+                          className="act"
+                          title="Add measurement"
+                          onClick={(e) => { e.stopPropagation(); setMeasuring(it); }}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 5v14M5 12h14" />
+                          </svg>
+                        </button>
+                      )}
                       <button
                         className="act del"
                         title={it.is_sample ? "Hide sample item" : "Delete item"}
@@ -116,7 +128,75 @@ export default function TrackedItemsPanel({ model, items, selectedId, onSelect, 
           onCreated={(item) => { setRegistering(false); onChanged(item); }}
         />
       )}
+
+      {measuring && (
+        <AddMeasurementModal
+          model={model}
+          item={measuring}
+          onClose={() => setMeasuring(null)}
+          onAdded={(item) => { setMeasuring(null); onSelect(item.id); onChanged(item); }}
+        />
+      )}
     </div>
+  );
+}
+
+function AddMeasurementModal({ model, item, onClose, onAdded }) {
+  const [t, setT] = useState("");
+  const [y, setY] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const unit = model?.results?.unit || "";
+  const mUnit = model?.results?.measurement_unit || "";
+  const last = item.measurements?.[item.measurements.length - 1];
+
+  const valid = t !== "" && y !== "" && Number.isFinite(Number(t)) && Number.isFinite(Number(y));
+
+  const onSubmit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await addTrackedMeasurement(model.id, item.id, Number(t), Number(y));
+      onAdded(updated);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={`New reading — ${item.name}`}
+      className="modal-sm"
+      onClose={onClose}
+      locked={busy}
+      footer={
+        <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+          <button className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button onClick={onSubmit} disabled={!valid || busy}>
+            {busy ? "Predicting…" : "Add & re-predict"}
+          </button>
+        </div>
+      }
+    >
+      {last && (
+        <p className="muted-line" style={{ marginTop: 0 }}>
+          Last reading: {last.y}{mUnit ? ` ${mUnit}` : ""} at {last.t}{unit ? ` ${unit}` : ""}.
+        </p>
+      )}
+      <div className="row" style={{ gap: "0.6rem" }}>
+        <label className="login-field" style={{ flex: 1 }}>
+          <span>Time{unit ? ` (${unit})` : ""}</span>
+          <input type="number" step="any" value={t} onChange={(e) => setT(e.target.value)} autoFocus />
+        </label>
+        <label className="login-field" style={{ flex: 1 }}>
+          <span>Measurement{mUnit ? ` (${mUnit})` : ""}</span>
+          <input type="number" step="any" value={y} onChange={(e) => setY(e.target.value)} />
+        </label>
+      </div>
+      {error && <div className="error">{error}</div>}
+    </Modal>
   );
 }
 
