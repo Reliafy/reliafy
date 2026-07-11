@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from backend.config import SAMPLE_OWNER
+from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.schema import Rbd
 from backend.services import models as models_service
@@ -36,22 +36,22 @@ def save_rbd(db, name: str, graph: dict, owner_id: str, rbd_id: str | None = Non
     return rbd
 
 
-def list_rbds(db, owner_id: str, hidden=frozenset()) -> list[Rbd]:
+def list_rbds(db, owner_id: str | list[str], hidden=frozenset()) -> list[Rbd]:
     """The owner's RBDs plus the shared samples, minus hidden samples."""
     return [
         from_doc(Rbd, r)
         for r in db.rbds.find(
-            {"owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+            {"owner_id": {"$in": access.owner_in(owner_id)}}
         ).sort("created_at", -1)
         if r["_id"] not in hidden
     ]
 
 
-def get_rbd(db, rbd_id: str, owner_id: str) -> Rbd | None:
+def get_rbd(db, rbd_id: str, owner_id: str | list[str]) -> Rbd | None:
     """Fetch an RBD by id. Shared sample RBDs are visible to every owner."""
     return from_doc(
         Rbd,
-        db.rbds.find_one({"_id": rbd_id, "owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}),
+        db.rbds.find_one({"_id": rbd_id, "owner_id": {"$in": access.owner_in(owner_id)}}),
     )
 
 

@@ -75,10 +75,17 @@ def get_current_user(authorization: str | None = Header(default=None)) -> dict:
 def upsert_user(db, user: dict) -> dict:
     """Record/refresh the user's profile on first sight (and each login)."""
     now = datetime.now(timezone.utc)
+    email = user.get("email")
     db.users.update_one(
         {"_id": user["uid"]},
         {
-            "$set": {"email": user.get("email"), "name": user.get("name"), "last_login": now},
+            "$set": {
+                "email": email,
+                # Lowercased copy for team-invite / share lookups by email.
+                "email_lc": (email or "").strip().lower() or None,
+                "name": user.get("name"),
+                "last_login": now,
+            },
             "$setOnInsert": {"created_at": now},
         },
         upsert=True,

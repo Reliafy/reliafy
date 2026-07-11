@@ -95,6 +95,9 @@ def init_db() -> None:
     db.degradation_models.create_index([("owner_id", 1), ("created_at", -1)])
     db.tracked_items.create_index([("owner_id", 1), ("model_id", 1)])
     db.tracked_items.create_index([("model_id", 1), ("created_at", -1)])
+    db.teams.create_index([("members.uid", 1)])
+    db.teams.create_index([("invites.email", 1)])
+    db.users.create_index([("email_lc", 1)])
 
 
 def get_session() -> Iterator:

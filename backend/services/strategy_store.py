@@ -15,7 +15,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from backend.config import SAMPLE_OWNER
+from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.schema import StrategyAnalysis
 from backend.services import strategy as strategy_service
@@ -74,20 +74,20 @@ def save_analysis(db, name: str, kind: str, inputs: dict, owner_id: str) -> Stra
     return doc
 
 
-def list_analyses(db, owner_id: str, hidden=frozenset()) -> list[StrategyAnalysis]:
+def list_analyses(db, owner_id: str | list[str], hidden=frozenset()) -> list[StrategyAnalysis]:
     return [
         from_doc(StrategyAnalysis, d)
         for d in db.strategy_analyses.find(
-            {"owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+            {"owner_id": {"$in": access.owner_in(owner_id)}}
         ).sort("created_at", -1)
         if d["_id"] not in hidden
     ]
 
 
-def get_analysis(db, analysis_id: str, owner_id: str | None = None) -> StrategyAnalysis | None:
+def get_analysis(db, analysis_id: str, owner_id: str | list[str] | None = None) -> StrategyAnalysis | None:
     query = {"_id": analysis_id}
     if owner_id is not None:
-        query["owner_id"] = {"$in": [owner_id, SAMPLE_OWNER]}
+        query["owner_id"] = {"$in": access.owner_in(owner_id)}
     return from_doc(StrategyAnalysis, db.strategy_analyses.find_one(query))
 
 

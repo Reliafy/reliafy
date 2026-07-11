@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 import surpyval
 
 from backend import fitting
-from backend.config import SAMPLE_OWNER
+from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.schema import Model
 from backend.services import datasets as datasets_service
@@ -72,22 +72,22 @@ def save_model(
     return model
 
 
-def list_models(db, owner_id: str, hidden=frozenset()) -> list[Model]:
+def list_models(db, owner_id: str | list[str], hidden=frozenset()) -> list[Model]:
     """The owner's models plus the shared samples, minus hidden samples."""
     return [
         from_doc(Model, m)
         for m in db.models.find(
-            {"owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+            {"owner_id": {"$in": access.owner_in(owner_id)}}
         ).sort("created_at", -1)
         if m["_id"] not in hidden
     ]
 
 
-def get_model(db, model_id: str, owner_id: str | None = None) -> Model | None:
+def get_model(db, model_id: str, owner_id: str | list[str] | None = None) -> Model | None:
     """Fetch a model by id. Shared sample models are visible to every owner."""
     query = {"_id": model_id}
     if owner_id is not None:
-        query["owner_id"] = {"$in": [owner_id, SAMPLE_OWNER]}
+        query["owner_id"] = {"$in": access.owner_in(owner_id)}
     return from_doc(Model, db.models.find_one(query))
 
 
@@ -142,7 +142,7 @@ def evaluate(db, model_id: str, values: dict, owner_id: str) -> dict:
     return fitting.evaluate(cache_id, values)
 
 
-def get_live_model(db, model_id: str, owner_id: str) -> dict | None:
+def get_live_model(db, model_id: str, owner_id: str | list[str]) -> dict | None:
     """Return the live (re-fitted) model entry for a saved model id.
 
     The entry is the one cached by :mod:`backend.fitting`:

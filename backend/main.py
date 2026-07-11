@@ -39,6 +39,7 @@ from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
 from backend.routers import degradation as degradation_router
 from backend.routers import rcm as rcm_router
+from backend.routers import teams as teams_router
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
@@ -64,6 +65,7 @@ app.include_router(billing_router.router)
 app.include_router(assistant_router.router)
 app.include_router(degradation_router.router)
 app.include_router(rcm_router.router)
+app.include_router(teams_router.router)
 
 # ---------------------------------------------------------------------------
 # API routes

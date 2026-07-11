@@ -12,6 +12,8 @@ from backend.db import get_session
 from backend.services import billing as billing_service
 from backend.services import rcm as rcm_service
 from backend.services import samples as samples_service
+from backend.services import access as access_service
+from backend.services.access import AccessCtx, get_access
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/rcm")
@@ -85,13 +87,14 @@ def rcm_options(user: dict = Depends(get_current_user)) -> dict:
     }
 
 
-def _summary(study, rollup=None) -> dict:
+def _summary(study, ctx: AccessCtx, rollup=None) -> dict:
     return {
         "id": study.id,
         "name": study.name,
         "system": study.system,
         "description": study.description,
         "is_sample": samples_service.is_sample(study.owner_id),
+        "read_only": not access_service.can_write(ctx, study.owner_id),
         "rollup": rollup,
         "created_at": study.created_at.isoformat(),
         "updated_at": study.updated_at.isoformat(),
@@ -104,39 +107,44 @@ def create_study(
     system: str = Body(default=""),
     description: str = Body(default=""),
     session=Depends(get_session),
-    user: dict = Depends(get_current_user),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    if not billing_service.is_admin_user(user) and billing_service.would_exceed_cap(
-        session, user["uid"], "rcm_studies"
+    if ctx.frozen:
+        return JSONResponse(
+            status_code=402,
+            content={"detail": access_service.FROZEN_MSG, "code": "team_frozen", "upgrade": True},
+        )
+    if (
+        ctx.is_personal
+        and not billing_service.is_admin_user(ctx.user)
+        and billing_service.would_exceed_cap(session, ctx.uid, "rcm_studies")
     ):
         return JSONResponse(status_code=402, content={"detail": _CAP_MSG, "code": "cap", "upgrade": True})
     try:
-        study = rcm_service.create_study(session, name, system, description, user["uid"])
+        study = rcm_service.create_study(session, name, system, description, ctx.write_owner)
     except rcm_service.RcmValidationError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    return JSONResponse(content=_summary(study))
+    return JSONResponse(content=_summary(study, ctx))
 
 
 @router.get("/studies")
-def list_studies(session=Depends(get_session), user: dict = Depends(get_current_user)) -> dict:
-    hidden = samples_service.hidden_sample_ids(session, user["uid"])
+def list_studies(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
     out = []
-    for study in rcm_service.list_studies(session, user["uid"], hidden):
-        resolved = rcm_service.resolve(session, study, user["uid"], hidden)
-        out.append(_summary(study, resolved["rollup"]))
+    for study in rcm_service.list_studies(session, ctx.list_owners, ctx.hidden):
+        resolved = rcm_service.resolve(session, study, ctx.read_owners, ctx.hidden)
+        out.append(_summary(study, ctx, resolved["rollup"]))
     return {"studies": out}
 
 
 @router.get("/studies/{study_id}")
 def get_study(
-    study_id: str, session=Depends(get_session), user: dict = Depends(get_current_user)
+    study_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    hidden = samples_service.hidden_sample_ids(session, user["uid"])
-    study = rcm_service.get_study(session, study_id, user["uid"])
-    if study is None or study.id in hidden:
+    study = rcm_service.get_study(session, study_id, ctx.read_owners)
+    if study is None or study.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Study not found."})
-    resolved = rcm_service.resolve(session, study, user["uid"], hidden)
-    return JSONResponse(content={**_summary(study, resolved["rollup"]), "functions": resolved["functions"]})
+    resolved = rcm_service.resolve(session, study, ctx.read_owners, ctx.hidden)
+    return JSONResponse(content={**_summary(study, ctx, resolved["rollup"]), "functions": resolved["functions"]})
 
 
 @router.patch("/studies/{study_id}")
@@ -144,34 +152,38 @@ def rename_study(
     study_id: str,
     name: str = Body(..., embed=True),
     session=Depends(get_session),
-    user: dict = Depends(get_current_user),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    existing = rcm_service.get_study(session, study_id, user["uid"])
-    if existing is not None and samples_service.is_sample(existing.owner_id):
-        return JSONResponse(status_code=403, content={"detail": "Sample studies are read-only."})
+    existing = rcm_service.get_study(session, study_id, ctx.read_owners)
+    if existing is not None:
+        denial = access_service.write_denial(ctx, existing.owner_id)
+        if denial:
+            status, payload = denial
+            return JSONResponse(status_code=status, content=payload)
     try:
-        study = rcm_service.rename_study(session, study_id, name, user["uid"])
+        study = rcm_service.rename_study(session, study_id, name, ctx.write_owner)
     except rcm_service.StudyNotFound:
         return JSONResponse(status_code=404, content={"detail": "Study not found."})
-    return JSONResponse(content=_summary(study))
+    return JSONResponse(content=_summary(study, ctx))
 
 
 @router.delete("/studies/{study_id}")
 def delete_study(
-    study_id: str, session=Depends(get_session), user: dict = Depends(get_current_user)
+    study_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    uid = user["uid"]
-    hidden = samples_service.hidden_sample_ids(session, uid)
-    study = rcm_service.get_study(session, study_id, uid)
-    if study is None or study.id in hidden:
+    study = rcm_service.get_study(session, study_id, ctx.read_owners)
+    if study is None or study.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Study not found."})
-    if samples_service.is_sample(study.owner_id):
-        samples_service.hide_sample(session, uid, study_id)
-        return JSONResponse(content={"ok": True})
-    try:
-        rcm_service.delete_study(session, study_id, uid)
-    except rcm_service.StudyNotFound:
-        return JSONResponse(status_code=404, content={"detail": "Study not found."})
+    if access_service.can_write(ctx, study.owner_id):
+        try:
+            rcm_service.delete_study(session, study_id, ctx.write_owner)
+        except rcm_service.StudyNotFound:
+            return JSONResponse(status_code=404, content={"detail": "Study not found."})
+    elif samples_service.is_sample(study.owner_id):
+        samples_service.hide_sample(session, ctx.uid, study_id)
+    else:
+        status, payload = access_service.write_denial(ctx, study.owner_id)
+        return JSONResponse(status_code=status, content=payload)
     return JSONResponse(content={"ok": True})
 
 
@@ -180,17 +192,19 @@ def put_tree(
     study_id: str,
     functions: list = Body(..., embed=True),
     session=Depends(get_session),
-    user: dict = Depends(get_current_user),
+    ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    existing = rcm_service.get_study(session, study_id, user["uid"])
-    if existing is not None and samples_service.is_sample(existing.owner_id):
-        return JSONResponse(status_code=403, content={"detail": "Sample studies are read-only."})
+    existing = rcm_service.get_study(session, study_id, ctx.read_owners)
+    if existing is not None:
+        denial = access_service.write_denial(ctx, existing.owner_id)
+        if denial:
+            status, payload = denial
+            return JSONResponse(status_code=status, content=payload)
     try:
-        study = rcm_service.replace_tree(session, study_id, functions, user["uid"])
+        study = rcm_service.replace_tree(session, study_id, functions, ctx.write_owner)
     except rcm_service.StudyNotFound:
         return JSONResponse(status_code=404, content={"detail": "Study not found."})
     except rcm_service.RcmValidationError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    hidden = samples_service.hidden_sample_ids(session, user["uid"])
-    resolved = rcm_service.resolve(session, study, user["uid"], hidden)
-    return JSONResponse(content={**_summary(study, resolved["rollup"]), "functions": resolved["functions"]})
+    resolved = rcm_service.resolve(session, study, ctx.read_owners, ctx.hidden)
+    return JSONResponse(content={**_summary(study, ctx, resolved["rollup"]), "functions": resolved["functions"]})

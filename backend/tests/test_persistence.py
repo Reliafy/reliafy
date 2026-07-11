@@ -74,6 +74,8 @@ def test_unit_and_surpyval_version_saved(session):
     from backend.routers.models import _model_detail
     from backend.services import datasets as ds
     from backend.services import models as ms
+    from backend.services.access import AccessCtx
+    from backend.config import SAMPLE_OWNER
 
     d = ds.create_dataset(session, "data.csv", _covariate_csv(), OWNER)
     model = ms.save_model(
@@ -84,7 +86,11 @@ def test_unit_and_surpyval_version_saved(session):
     assert model.spec["unit"] == "Cycles"
     assert model.results["unit"] == "Cycles"
     # And surfaced by the API shaping.
-    detail = _model_detail(model)
+    ctx = AccessCtx(
+        user={"uid": OWNER}, uid=OWNER, workspace="personal", write_owner=OWNER,
+        read_owners=[OWNER, SAMPLE_OWNER], list_owners=OWNER,
+    )
+    detail = _model_detail(model, ctx)
     assert detail["unit"] == "Cycles"
     assert detail["surpyval_version"] == model.surpyval_version
 
