@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { listRbds, deleteRbd } from "../api.js";
+import ShareDialog from "../components/ShareDialog.jsx";
+import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { relativeTime } from "../instrument.js";
 
 const PlusIcon = () => (
@@ -11,6 +13,12 @@ const PlusIcon = () => (
 const OpenIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M7 17 17 7M9 7h8v8" />
+  </svg>
+);
+const ShareIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="6" cy="12" r="2.6" /><circle cx="17" cy="5.5" r="2.6" /><circle cx="17" cy="18.5" r="2.6" />
+    <path d="m8.4 10.8 6.2-4M8.4 13.2l6.2 4" />
   </svg>
 );
 const TrashIcon = () => (
@@ -52,6 +60,8 @@ export default function RbdHome() {
   const navigate = useNavigate();
   const [rbds, setRbds] = useState(null);
   const [error, setError] = useState(null);
+  const [sharing, setSharing] = useState(null); // rbd being shared
+  const { workspace } = useWorkspace();
 
   const refresh = useCallback(() => {
     listRbds()
@@ -134,7 +144,7 @@ export default function RbdHome() {
               <tbody>
                 {rbds.map((r) => (
                   <tr key={r.id} className="lib-row" onClick={() => open(r.id)}>
-                    <td><div className="lib-name">{r.name}{r.is_sample && <span className="sample-tag">Sample</span>}</div></td>
+                    <td><div className="lib-name">{r.name}{r.is_sample && <span className="sample-tag">Sample</span>}{r.shared_by && <span className="sample-tag shared" title={`Shared by ${r.shared_by}`}>Shared</span>}</div></td>
                     <td className="lib-n">{(r.n_nodes ?? 0).toLocaleString()}</td>
                     <td className="lib-n">{(r.n_edges ?? 0).toLocaleString()}</td>
                     <td><RbdGlyph /></td>
@@ -144,6 +154,11 @@ export default function RbdHome() {
                         <button className="act" title="Open" onClick={(e) => { e.stopPropagation(); open(r.id); }}>
                           <OpenIcon />
                         </button>
+                        {!r.read_only && workspace === "personal" && (
+                          <button className="act" title="Share" onClick={(e) => { e.stopPropagation(); setSharing(r); }}>
+                            <ShareIcon />
+                          </button>
+                        )}
                         <button className="act del" title="Delete" onClick={(e) => onDelete(e, r)}>
                           <TrashIcon />
                         </button>
@@ -155,6 +170,15 @@ export default function RbdHome() {
             </table>
           </div>
         </>
+      )}
+
+      {sharing && (
+        <ShareDialog
+          collection="rbds"
+          artifactId={sharing.id}
+          name={sharing.name}
+          onClose={() => setSharing(null)}
+        />
       )}
     </div>
   );

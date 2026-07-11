@@ -98,6 +98,9 @@ def init_db() -> None:
     db.teams.create_index([("members.uid", 1)])
     db.teams.create_index([("invites.email", 1)])
     db.users.create_index([("email_lc", 1)])
+    db.shares.create_index([("recipient_uid", 1), ("collection", 1)])
+    db.shares.create_index([("artifact_id", 1)])
+    db.shares.create_index([("artifact_id", 1), ("recipient_uid", 1)], unique=True)
 
 
 def get_session() -> Iterator:

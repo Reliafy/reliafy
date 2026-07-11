@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import DegradationResultView from "../components/DegradationResultView.jsx";
+import { ShareButton } from "../components/ShareDialog.jsx";
 import { getDegradationModel } from "../api.js";
 
 // One saved degradation model: the fitted paths + life model. The fleet of
@@ -50,9 +51,17 @@ export default function DegradationModelPage() {
             {unit ? ` · time in ${unit}` : ""}
           </p>
         </div>
-        <button onClick={() => navigate(`/strategy/tracking/${model.id}`)}>
-          Track items{nItems > 0 ? ` (${nItems})` : ""}
-        </button>
+        <div className="head-actions">
+          <ShareButton
+            collection="degradation_models"
+            artifactId={model.id}
+            name={model.name}
+            readOnly={model.read_only}
+          />
+          <button onClick={() => navigate(`/strategy/tracking/${model.id}`)}>
+            Track items{nItems > 0 ? ` (${nItems})` : ""}
+          </button>
+        </div>
       </header>
 
       <DegradationResultView results={model.results} />

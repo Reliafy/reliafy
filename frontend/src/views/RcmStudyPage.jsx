@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import RcmTree from "../components/RcmTree.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
+import { ShareButton } from "../components/ShareDialog.jsx";
 import { getRcmStudy, getRcmOptions, putRcmTree, renameRcmStudy } from "../api.js";
 
 const csvCell = (v) => {
@@ -111,7 +112,7 @@ export default function RcmStudyPage() {
   if (error && !study) return <div className="app"><div className="card error">{error}</div></div>;
   if (!study) return <div className="app"><div className="card empty">Loading…</div></div>;
 
-  const readOnly = study.is_sample;
+  const readOnly = study.read_only ?? study.is_sample;
 
   return (
     <div className="app">
@@ -125,6 +126,7 @@ export default function RcmStudyPage() {
           <h1>
             {study.name}
             {study.is_sample && <span className="sample-tag">Sample</span>}
+            {study.shared_by && <span className="sample-tag shared" title={`Shared by ${study.shared_by}`}>Shared</span>}
             {dirty && <span className="dirty-tag">unsaved</span>}
           </h1>
           {(study.system || study.description) && (
@@ -133,6 +135,12 @@ export default function RcmStudyPage() {
           <RollupBadges rollup={study.rollup} />
         </div>
         <div className="head-actions">
+          <ShareButton
+            collection="rcm_studies"
+            artifactId={study.id}
+            name={study.name}
+            readOnly={readOnly}
+          />
           {!readOnly && (
             <button className="secondary" onClick={onRename}>Rename</button>
           )}
@@ -148,11 +156,18 @@ export default function RcmStudyPage() {
       </header>
 
       {error && <div className="card error">{error}</div>}
-      {readOnly && (
+      {readOnly && study.is_sample && (
         <div className="card note">
           This is a shared sample — explore how decisions link to evidence
           (including the intentionally contradicted run-to-failure call), then
           create your own study to edit.
+        </div>
+      )}
+      {readOnly && !study.is_sample && (
+        <div className="card note">
+          {study.shared_by
+            ? `Shared with you by ${study.shared_by} — read-only. Evidence links open the analyses behind each decision.`
+            : "This study is read-only in your current workspace."}
         </div>
       )}
 

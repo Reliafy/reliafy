@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import ResultView from "../components/ResultView.jsx";
+import { ShareButton } from "../components/ShareDialog.jsx";
 import { getModel, deleteModel } from "../api.js";
 import { distColor } from "../instrument.js";
 
@@ -51,9 +52,17 @@ export default function ModelPage() {
           )}
         </div>
         {model && (
-          <button className="secondary" onClick={onDelete}>
-            Delete
-          </button>
+          <div className="head-actions">
+            <ShareButton
+              collection="models"
+              artifactId={model.id}
+              name={model.name}
+              readOnly={model.read_only}
+            />
+            <button className="secondary" onClick={onDelete}>
+              {model.read_only && !model.is_sample ? "Remove from my view" : "Delete"}
+            </button>
+          </div>
         )}
       </header>
 

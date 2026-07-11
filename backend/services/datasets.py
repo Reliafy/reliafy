@@ -15,6 +15,14 @@ from backend.fitting import read_dataframe
 from backend.schema import Dataset, Model
 
 
+
+def _list_query(owner_id, shared=frozenset()):
+    """Owner-scoped filter, optionally unioned with directly-shared ids."""
+    query = {"owner_id": {"$in": access.owner_in(owner_id)}}
+    if shared:
+        return {"$or": [query, {"_id": {"$in": sorted(shared)}}]}
+    return query
+
 def create_dataset(db, name: str, file_bytes: bytes, owner_id: str) -> Dataset:
     """Persist a CSV (content-addressed) and return the Dataset.
 
@@ -56,7 +64,7 @@ def get_dataset(db, dataset_id: str, owner_id: str | list[str] | None = None) ->
     return from_doc(Dataset, db.datasets.find_one(query))
 
 
-def list_datasets(db, owner_id: str | list[str], hidden=frozenset()) -> list[Dataset]:
+def list_datasets(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset()) -> list[Dataset]:
     """The owner's datasets plus the shared samples, newest first.
 
     ``hidden`` is the set of sample ids this user has dismissed; they're left
@@ -65,7 +73,7 @@ def list_datasets(db, owner_id: str | list[str], hidden=frozenset()) -> list[Dat
     return [
         from_doc(Dataset, d)
         for d in db.datasets.find(
-            {"owner_id": {"$in": access.owner_in(owner_id)}}
+            _list_query(owner_id, shared)
         ).sort("created_at", -1)
         if d["_id"] not in hidden
     ]

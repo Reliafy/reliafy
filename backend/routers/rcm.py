@@ -13,7 +13,9 @@ from backend.services import billing as billing_service
 from backend.services import rcm as rcm_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
+from backend.services import shares as shares_service
 from backend.services.access import AccessCtx, get_access
+from backend.schema import RcmStudy
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/rcm")
@@ -129,10 +131,16 @@ def create_study(
 
 @router.get("/studies")
 def list_studies(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
+    shared_by = shares_service.shared_by_map(session, ctx.uid, "rcm_studies") if ctx.is_personal else {}
     out = []
-    for study in rcm_service.list_studies(session, ctx.list_owners, ctx.hidden):
-        resolved = rcm_service.resolve(session, study, ctx.read_owners, ctx.hidden)
-        out.append(_summary(study, ctx, resolved["rollup"]))
+    for study in rcm_service.list_studies(session, ctx.list_owners, ctx.hidden, shared=set(shared_by)):
+        # Resolve as the study's own owner too, so a shared study's evidence
+        # statuses match what its author sees.
+        resolved = rcm_service.resolve(session, study, [*ctx.read_owners, study.owner_id], ctx.hidden)
+        row = _summary(study, ctx, resolved["rollup"])
+        if study.id in shared_by:
+            row["shared_by"] = shared_by[study.id]
+        out.append(row)
     return {"studies": out}
 
 
@@ -140,11 +148,14 @@ def list_studies(session=Depends(get_session), ctx: AccessCtx = Depends(get_acce
 def get_study(
     study_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    study = rcm_service.get_study(session, study_id, ctx.read_owners)
+    study, via_share = access_service.fetch_readable(session, "rcm_studies", RcmStudy, study_id, ctx)
     if study is None or study.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Study not found."})
-    resolved = rcm_service.resolve(session, study, ctx.read_owners, ctx.hidden)
-    return JSONResponse(content={**_summary(study, ctx, resolved["rollup"]), "functions": resolved["functions"]})
+    resolved = rcm_service.resolve(session, study, [*ctx.read_owners, study.owner_id], ctx.hidden)
+    payload = {**_summary(study, ctx, resolved["rollup"]), "functions": resolved["functions"]}
+    if via_share:
+        payload["shared_by"] = shares_service.shared_by_for(session, ctx.uid, study.id)
+    return JSONResponse(content=payload)
 
 
 @router.patch("/studies/{study_id}")
@@ -154,7 +165,7 @@ def rename_study(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    existing = rcm_service.get_study(session, study_id, ctx.read_owners)
+    existing, _ = access_service.fetch_readable(session, "rcm_studies", RcmStudy, study_id, ctx)
     if existing is not None:
         denial = access_service.write_denial(ctx, existing.owner_id)
         if denial:
@@ -171,7 +182,7 @@ def rename_study(
 def delete_study(
     study_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    study = rcm_service.get_study(session, study_id, ctx.read_owners)
+    study, _ = access_service.fetch_readable(session, "rcm_studies", RcmStudy, study_id, ctx)
     if study is None or study.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Study not found."})
     if access_service.can_write(ctx, study.owner_id):
@@ -179,7 +190,7 @@ def delete_study(
             rcm_service.delete_study(session, study_id, ctx.write_owner)
         except rcm_service.StudyNotFound:
             return JSONResponse(status_code=404, content={"detail": "Study not found."})
-    elif samples_service.is_sample(study.owner_id):
+    elif samples_service.is_sample(study.owner_id) or access_service.is_shared_with(session, ctx.uid, study_id):
         samples_service.hide_sample(session, ctx.uid, study_id)
     else:
         status, payload = access_service.write_denial(ctx, study.owner_id)
@@ -194,7 +205,7 @@ def put_tree(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    existing = rcm_service.get_study(session, study_id, ctx.read_owners)
+    existing, _ = access_service.fetch_readable(session, "rcm_studies", RcmStudy, study_id, ctx)
     if existing is not None:
         denial = access_service.write_denial(ctx, existing.owner_id)
         if denial:

@@ -30,6 +30,14 @@ _LIVE: "OrderedDict[str, str]" = OrderedDict()
 _LIVE_MAX = 64
 
 
+
+def _list_query(owner_id, shared=frozenset()):
+    """Owner-scoped filter, optionally unioned with directly-shared ids."""
+    query = {"owner_id": {"$in": access.owner_in(owner_id)}}
+    if shared:
+        return {"$or": [query, {"_id": {"$in": sorted(shared)}}]}
+    return query
+
 class ModelNotFound(KeyError):
     """Raised when a degradation model id is unknown / not visible."""
 
@@ -72,11 +80,11 @@ def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> Degradation
     return doc
 
 
-def list_models(db, owner_id: str | list[str], hidden=frozenset()) -> list[DegradationModelDoc]:
+def list_models(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset()) -> list[DegradationModelDoc]:
     return [
         from_doc(DegradationModelDoc, d)
         for d in db.degradation_models.find(
-            {"owner_id": {"$in": access.owner_in(owner_id)}}
+            _list_query(owner_id, shared)
         ).sort("created_at", -1)
         if d["_id"] not in hidden
     ]

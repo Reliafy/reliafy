@@ -14,8 +14,10 @@ from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
 from backend.services import models as models_service
 from backend.services import samples as samples_service
+from backend.services import shares as shares_service
 from backend.services import access as access_service
 from backend.services.access import AccessCtx, get_access
+from backend.schema import Dataset, Model
 
 _CAP_MSG = "You've reached the free-plan limit. Upgrade to Pro for unlimited saves."
 
@@ -102,13 +104,15 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
 
 @router.get("/datasets")
 def list_datasets(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
+    shared_by = shares_service.shared_by_map(session, ctx.uid, "datasets") if ctx.is_personal else {}
     counts: dict[str, int] = {}
     for m in models_service.list_models(session, ctx.list_owners, ctx.hidden):
         counts[m.dataset_id] = counts.get(m.dataset_id, 0) + 1
     return {
         "datasets": [
-            _dataset_summary(d, ctx, n_models=counts.get(d.id, 0))
-            for d in datasets_service.list_datasets(session, ctx.list_owners, ctx.hidden)
+            {**_dataset_summary(d, ctx, n_models=counts.get(d.id, 0)),
+             **({"shared_by": shared_by[d.id]} if d.id in shared_by else {})}
+            for d in datasets_service.list_datasets(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
         ]
     }
 
@@ -146,7 +150,7 @@ async def upload_dataset(
 def get_dataset(
     dataset_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    dataset = datasets_service.get_dataset(session, dataset_id, owner_id=ctx.read_owners)
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
     if dataset is None or dataset.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
     return JSONResponse(content=_dataset_detail(dataset, session, ctx))
@@ -156,7 +160,7 @@ def get_dataset(
 def delete_dataset(
     dataset_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    dataset = datasets_service.get_dataset(session, dataset_id, owner_id=ctx.read_owners)
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
     if dataset is None or dataset.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
 
@@ -178,8 +182,7 @@ def delete_dataset(
     if access_service.can_write(ctx, dataset.owner_id):
         if not datasets_service.delete_dataset(session, dataset_id, ctx.write_owner):
             return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
-    elif samples_service.is_sample(dataset.owner_id):
-        # A shared sample isn't really deleted — just hidden for this user.
+    elif samples_service.is_sample(dataset.owner_id) or access_service.is_shared_with(session, ctx.uid, dataset_id):
         samples_service.hide_sample(session, ctx.uid, dataset_id)
     else:
         status, payload = access_service.write_denial(ctx, dataset.owner_id)
@@ -189,10 +192,12 @@ def delete_dataset(
 
 @router.get("/models")
 def list_models(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
+    shared_by = shares_service.shared_by_map(session, ctx.uid, "models") if ctx.is_personal else {}
     return {
         "models": [
-            _model_summary(m, ctx)
-            for m in models_service.list_models(session, ctx.list_owners, ctx.hidden)
+            {**_model_summary(m, ctx),
+             **({"shared_by": shared_by[m.id]} if m.id in shared_by else {})}
+            for m in models_service.list_models(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
         ]
     }
 
@@ -258,7 +263,7 @@ async def save_model(
 def get_model(
     model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    model = models_service.get_model(session, model_id, ctx.read_owners)
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if model is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     return JSONResponse(content=_model_detail(model, ctx))
@@ -271,7 +276,7 @@ def rename_model(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    existing = models_service.get_model(session, model_id, ctx.read_owners)
+    existing, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if existing is not None:
         denial = access_service.write_denial(ctx, existing.owner_id)
         if denial:
@@ -288,7 +293,7 @@ def rename_model(
 def delete_model(
     model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    model = models_service.get_model(session, model_id, ctx.read_owners)
+    model, via_share = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if model is None or model.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
 
@@ -297,8 +302,9 @@ def delete_model(
             models_service.delete_model(session, model_id, ctx.write_owner)
         except models_service.ModelNotFound:
             return JSONResponse(status_code=404, content={"detail": "Model not found."})
-    elif samples_service.is_sample(model.owner_id):
-        # A shared sample isn't really deleted — just hidden for this user.
+    elif samples_service.is_sample(model.owner_id) or access_service.is_shared_with(session, ctx.uid, model_id):
+        # Samples and shared-with-me artifacts aren't really deleted — just
+        # hidden for this user.
         samples_service.hide_sample(session, ctx.uid, model_id)
     else:
         status, payload = access_service.write_denial(ctx, model.owner_id)
@@ -313,9 +319,14 @@ def evaluate_model(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
     try:
         return JSONResponse(
-            content=models_service.evaluate(session, model_id, values, ctx.read_owners)
+            content=models_service.evaluate(
+                session, model_id, values, [*ctx.read_owners, model.owner_id]
+            )
         )
     except models_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})

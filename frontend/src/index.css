@@ -4334,3 +4334,17 @@ select:disabled {
 }
 button.danger { color: #a23a3a; border-color: #f3c9c9; }
 button.danger:hover { background: #fdeeee; }
+
+/* ---- Sharing ------------------------------------------------------------ */
+.share-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 6px;
+  font-size: 13px;
+}
+.sample-tag.shared { color: #3d5a80; background: #eef3f9; border-color: #cfdeed; }

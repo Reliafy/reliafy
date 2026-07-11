@@ -141,6 +141,130 @@ def get_access(
     )
 
 
+# ---- Direct shares (view-only) ------------------------------------------------
+#
+# A share grants one user read access to one artifact. Referenced artifacts
+# (a shared model's dataset, a shared study's evidence) become readable
+# *transitively* — resolved live per request, never materialised, so the grant
+# follows later edits to the root artifact.
+
+SHARABLE_COLLECTIONS = (
+    "datasets", "models", "rbds", "degradation_models",
+    "strategy_analyses", "rcm_studies",
+)
+
+# How much of the reference graph a share can pull in: an RCM study links
+# evidence (depth 1) whose models link datasets (depth 2).
+_REF_DEPTH = 2
+
+
+def shared_ids(db, uid: str, collection: str) -> set[str]:
+    """Artifact ids in this collection shared directly with the user."""
+    return {
+        s["artifact_id"]
+        for s in db.shares.find({"recipient_uid": uid, "collection": collection})
+    }
+
+
+def refs_of(collection: str, doc: dict) -> list[tuple[str, str]]:
+    """(collection, id) pairs this artifact references, from its raw doc."""
+    refs: list[tuple[str, str]] = []
+    if collection in ("models", "degradation_models") and doc.get("dataset_id"):
+        refs.append(("datasets", doc["dataset_id"]))
+    elif collection == "rcm_studies":
+        type_to_coll = {
+            "model": "models",
+            "strategy_analysis": "strategy_analyses",
+            "degradation_model": "degradation_models",
+        }
+        for fn in doc.get("functions") or []:
+            for failure in fn.get("failures") or []:
+                for mode in failure.get("modes") or []:
+                    evidence = (mode.get("decision") or {}).get("evidence") or {}
+                    coll = type_to_coll.get(evidence.get("type"))
+                    if coll and evidence.get("id"):
+                        refs.append((coll, evidence["id"]))
+    elif collection == "rbds":
+        for node in (doc.get("graph") or {}).get("nodes") or []:
+            data = node.get("data") or {}
+            if data.get("model_id"):
+                refs.append(("models", data["model_id"]))
+            if data.get("rbd_id"):
+                refs.append(("rbds", data["rbd_id"]))
+    return refs
+
+
+def reachable_via_shares(db, uid: str, collection: str) -> set[str]:
+    """Ids in ``collection`` readable through shares — direct or referenced.
+
+    Walks the reference graph from every artifact shared with the user
+    (depth-capped), so e.g. a shared RCM study's evidence models and their
+    datasets open for the recipient. Computed fresh per request: revoking the
+    root share instantly revokes the whole chain.
+    """
+    reachable: dict[str, set[str]] = {c: set() for c in SHARABLE_COLLECTIONS}
+    frontier: list[tuple[str, str]] = [
+        (s["collection"], s["artifact_id"]) for s in db.shares.find({"recipient_uid": uid})
+    ]
+    seen: set[tuple[str, str]] = set()
+    for _ in range(_REF_DEPTH + 1):
+        next_frontier: list[tuple[str, str]] = []
+        for coll, aid in frontier:
+            if (coll, aid) in seen or coll not in reachable:
+                continue
+            seen.add((coll, aid))
+            reachable[coll].add(aid)
+            doc = db[coll].find_one({"_id": aid})
+            if doc is not None:
+                next_frontier.extend(refs_of(coll, doc))
+        if not next_frontier:
+            break
+        frontier = next_frontier
+    return reachable.get(collection, set())
+
+
+def shared_doc(db, collection: str, cls, artifact_id: str, ctx: AccessCtx):
+    """Fetch an artifact readable only through a share (or None).
+
+    The fallback path for get-by-id after the normal owner-scoped fetch
+    misses: direct shares first (cheap), then the transitive walk.
+    """
+    from backend.db import from_doc
+
+    if collection not in SHARABLE_COLLECTIONS:
+        return None
+    direct = db.shares.find_one({"recipient_uid": ctx.uid, "collection": collection,
+                                 "artifact_id": artifact_id})
+    if direct is None and artifact_id not in reachable_via_shares(db, ctx.uid, collection):
+        return None
+    return from_doc(cls, db[collection].find_one({"_id": artifact_id}))
+
+
+def fetch_readable(db, collection: str, cls, artifact_id: str, ctx: AccessCtx):
+    """Get-by-id across everything the user may read.
+
+    Owner-scoped fetch first (own + samples + teams), then — in the personal
+    workspace — the share fallback (direct, then transitive references).
+    Returns ``(doc, via_share)``.
+    """
+    from backend.db import from_doc
+
+    doc = from_doc(cls, db[collection].find_one(
+        {"_id": artifact_id, "owner_id": {"$in": ctx.read_owners}}
+    ))
+    if doc is not None:
+        return doc, False
+    if not ctx.is_personal:
+        return None, False
+    doc = shared_doc(db, collection, cls, artifact_id, ctx)
+    return doc, doc is not None
+
+
+def is_shared_with(db, uid: str, artifact_id: str) -> bool:
+    """Whether this artifact was shared directly with the user (hide vs 403)."""
+    return db.shares.find_one({"recipient_uid": uid, "artifact_id": artifact_id}) is not None
+
+
 def team_frozen(db, team: dict, billing_service) -> bool:
     """A team freezes (read-only) when its owner's Pro lapses.
 

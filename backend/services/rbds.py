@@ -12,6 +12,14 @@ from backend.services import models as models_service
 from backend.services import rbd_analysis
 
 
+
+def _list_query(owner_id, shared=frozenset()):
+    """Owner-scoped filter, optionally unioned with directly-shared ids."""
+    query = {"owner_id": {"$in": access.owner_in(owner_id)}}
+    if shared:
+        return {"$or": [query, {"_id": {"$in": sorted(shared)}}]}
+    return query
+
 class RbdNotFound(KeyError):
     """Raised when an RBD id is unknown."""
 
@@ -36,12 +44,12 @@ def save_rbd(db, name: str, graph: dict, owner_id: str, rbd_id: str | None = Non
     return rbd
 
 
-def list_rbds(db, owner_id: str | list[str], hidden=frozenset()) -> list[Rbd]:
+def list_rbds(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset()) -> list[Rbd]:
     """The owner's RBDs plus the shared samples, minus hidden samples."""
     return [
         from_doc(Rbd, r)
         for r in db.rbds.find(
-            {"owner_id": {"$in": access.owner_in(owner_id)}}
+            _list_query(owner_id, shared)
         ).sort("created_at", -1)
         if r["_id"] not in hidden
     ]

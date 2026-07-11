@@ -15,7 +15,9 @@ from backend.services import datasets as datasets_service
 from backend.services import degradation as degradation_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
+from backend.services import shares as shares_service
 from backend.services.access import AccessCtx, get_access
+from backend.schema import DegradationModelDoc
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -200,21 +202,28 @@ async def save_model(
 
 @router.get("/degradation/models")
 def list_models(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
-    models = degradation_service.list_models(session, ctx.list_owners, ctx.hidden)
+    shared_by = shares_service.shared_by_map(session, ctx.uid, "degradation_models") if ctx.is_personal else {}
+    models = degradation_service.list_models(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
     counts: dict[str, int] = {}
     for m in models:
-        counts[m.id] = len(degradation_service.list_items(session, m.id, ctx.read_owners, ctx.hidden))
-    return {"models": [_model_summary(m, ctx, counts.get(m.id, 0)) for m in models]}
+        counts[m.id] = len(degradation_service.list_items(
+            session, m.id, [*ctx.read_owners, m.owner_id], ctx.hidden))
+    return {"models": [
+        {**_model_summary(m, ctx, counts.get(m.id, 0)),
+         **({"shared_by": shared_by[m.id]} if m.id in shared_by else {})}
+        for m in models
+    ]}
 
 
 @router.get("/degradation/models/{model_id}")
 def get_model(
     model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    doc = degradation_service.get_model(session, model_id, ctx.read_owners)
+    doc, _ = access_service.fetch_readable(session, "degradation_models", DegradationModelDoc, model_id, ctx)
     if doc is None or doc.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
-    items = degradation_service.list_items(session, model_id, ctx.read_owners, ctx.hidden)
+    # The owner's tracked items ride along with a shared model (read-only).
+    items = degradation_service.list_items(session, model_id, [*ctx.read_owners, doc.owner_id], ctx.hidden)
     return JSONResponse(content={
         **_model_summary(doc, ctx, len(items)),
         "spec": doc.spec,
@@ -230,7 +239,7 @@ def rename_model(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    existing = degradation_service.get_model(session, model_id, ctx.read_owners)
+    existing, _ = access_service.fetch_readable(session, "degradation_models", DegradationModelDoc, model_id, ctx)
     if existing is not None:
         denial = access_service.write_denial(ctx, existing.owner_id)
         if denial:
@@ -247,7 +256,7 @@ def rename_model(
 def delete_model(
     model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    doc = degradation_service.get_model(session, model_id, ctx.read_owners)
+    doc, _ = access_service.fetch_readable(session, "degradation_models", DegradationModelDoc, model_id, ctx)
     if doc is None or doc.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     if access_service.can_write(ctx, doc.owner_id):
@@ -255,7 +264,7 @@ def delete_model(
             degradation_service.delete_model(session, model_id, ctx.write_owner)
         except degradation_service.ModelNotFound:
             return JSONResponse(status_code=404, content={"detail": "Model not found."})
-    elif samples_service.is_sample(doc.owner_id):
+    elif samples_service.is_sample(doc.owner_id) or access_service.is_shared_with(session, ctx.uid, model_id):
         samples_service.hide_sample(session, ctx.uid, model_id)
     else:
         status, payload = access_service.write_denial(ctx, doc.owner_id)
@@ -292,9 +301,10 @@ def create_item(
 def list_items(
     model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    if degradation_service.get_model(session, model_id, ctx.read_owners) is None:
+    doc, _ = access_service.fetch_readable(session, "degradation_models", DegradationModelDoc, model_id, ctx)
+    if doc is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
-    items = degradation_service.list_items(session, model_id, ctx.read_owners, ctx.hidden)
+    items = degradation_service.list_items(session, model_id, [*ctx.read_owners, doc.owner_id], ctx.hidden)
     return JSONResponse(content={"items": [_item_summary(it, ctx) for it in items]})
 
 
@@ -305,12 +315,16 @@ def get_item(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    item = degradation_service.get_item(session, model_id, item_id, ctx.read_owners)
+    doc, _ = access_service.fetch_readable(session, "degradation_models", DegradationModelDoc, model_id, ctx)
+    if doc is None:
+        return JSONResponse(status_code=404, content={"detail": "Item not found."})
+    owners = [*ctx.read_owners, doc.owner_id]
+    item = degradation_service.get_item(session, model_id, item_id, owners)
     if item is None:
         return JSONResponse(status_code=404, content={"detail": "Item not found."})
     if not item.prediction or item.prediction.get("method") == "error":
         # A model refit may have fixed it (e.g. dataset was briefly missing).
-        item = degradation_service.refresh_prediction(session, model_id, item, ctx.read_owners)
+        item = degradation_service.refresh_prediction(session, model_id, item, owners)
     return JSONResponse(content=_item_summary(item, ctx))
 
 
