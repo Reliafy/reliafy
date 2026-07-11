@@ -321,6 +321,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   const [subsystemNodeId, setSubsystemNodeId] = useState(null);
   const [savedRbdId, setSavedRbdId] = useState(null);
   const [savedRbdName, setSavedRbdName] = useState("");
+  const [savedRbdUpdatedAt, setSavedRbdUpdatedAt] = useState(null);
   const [rbdUnit, setRbdUnit] = useState("");
   const [tab, setTab] = useState("builder"); // 'builder' | 'calc'
   const [validation, setValidation] = useState(null);
@@ -558,18 +559,19 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   const onSaveRbd = useCallback(
     async (name) => {
       const graph = { nodes, edges, unit: rbdUnit };
-      const saved = await saveRbd(name, graph, savedRbdId);
+      const saved = await saveRbd(name, graph, savedRbdId, savedRbdUpdatedAt);
       setSavedRbdId(saved.id);
       setSavedRbdName(name);
+      setSavedRbdUpdatedAt(saved.updated_at || null);
       setModal(null);
       onSaved?.(saved.id);
     },
-    [nodes, edges, rbdUnit, savedRbdId, onSaved]
+    [nodes, edges, rbdUnit, savedRbdId, savedRbdUpdatedAt, onSaved]
   );
 
   // Replace the canvas with a saved graph; bump the id counter past loaded ids.
   const loadGraph = useCallback(
-    (graph, id, name) => {
+    (graph, id, name, updatedAt = null) => {
       // Re-apply the input/output handle sides (and io styling): a saved graph
       // may not carry sourcePosition/targetPosition, so without this React Flow
       // would default the input's handle to the bottom and the output's to the
@@ -593,6 +595,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setRbdUnit(graph?.unit || "");
       setSavedRbdId(id);
       setSavedRbdName(name);
+      setSavedRbdUpdatedAt(updatedAt);
       window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
     },
     [setNodes, setEdges, fitView]
@@ -601,7 +604,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   const openRbd = useCallback(
     async (id) => {
       const full = await getRbd(id);
-      loadGraph(full.graph, full.id, full.name);
+      loadGraph(full.graph, full.id, full.name, full.updated_at || null);
       setModal(null);
     },
     [loadGraph]
@@ -614,6 +617,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     setRbdUnit("");
     setSavedRbdId(null);
     setSavedRbdName("");
+    setSavedRbdUpdatedAt(null);
     window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
   }, [setNodes, setEdges, fitView]);
 

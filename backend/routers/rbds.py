@@ -32,6 +32,7 @@ def _summary(rbd, ctx: AccessCtx) -> dict:
         "updated_at": rbd.updated_at.isoformat(),
         "is_sample": samples_service.is_sample(rbd.owner_id),
         "read_only": not access_service.can_write(ctx, rbd.owner_id),
+        "updated_by": (rbd.updated_by or {}).get("name"),
     }
 
 
@@ -51,14 +52,14 @@ def save_rbd(
     name: str = Body(...),
     graph: dict = Body(...),
     id: str | None = Body(default=None),
+    expected_updated_at: str | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    if ctx.frozen:
-        return JSONResponse(
-            status_code=402,
-            content={"detail": access_service.FROZEN_MSG, "code": "team_frozen", "upgrade": True},
-        )
+    denied = access_service.workspace_write_denial(ctx)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
     # Free-plan cap applies only when creating a new diagram (updating one you
     # own, or forking a sample, is checked by whether you already own it).
     existing = rbds_service.get_rbd(session, id, ctx.read_owners) if id else None
@@ -73,7 +74,15 @@ def save_rbd(
             status_code=402,
             content={"detail": "You've reached the free-plan limit of 1 saved RBD. Upgrade to Pro for unlimited diagrams.", "code": "cap", "upgrade": True},
         )
-    rbd = rbds_service.save_rbd(session, name, graph, ctx.write_owner, rbd_id=id)
+    try:
+        rbd = rbds_service.save_rbd(
+            session, name, graph, ctx.write_owner, rbd_id=id,
+            expected_updated_at=expected_updated_at,
+        )
+    except access_service.EditConflict:
+        return JSONResponse(status_code=409, content={"detail": access_service.CONFLICT_MSG, "code": "conflict"})
+    access_service.stamp_editor(session, "rbds", rbd.id, ctx)
+    rbd.updated_by = access_service.editor_of(ctx)
     return JSONResponse(content=_summary(rbd, ctx))
 
 
@@ -85,6 +94,27 @@ def get_rbd(
     if rbd is None or rbd.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
     return JSONResponse(content={**_summary(rbd, ctx), "graph": rbd.graph})
+
+
+@router.patch("/rbds/{rbd_id}")
+def rename_rbd(
+    rbd_id: str,
+    name: str = Body(..., embed=True),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    existing, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
+    if existing is not None:
+        denial = access_service.write_denial(ctx, existing.owner_id)
+        if denial:
+            status, payload = denial
+            return JSONResponse(status_code=status, content=payload)
+    try:
+        rbd = rbds_service.rename_rbd(session, rbd_id, name, ctx.write_owner)
+        access_service.stamp_editor(session, "rbds", rbd.id, ctx)
+    except rbds_service.RbdNotFound:
+        return JSONResponse(status_code=404, content={"detail": "RBD not found."})
+    return JSONResponse(content=_summary(rbd, ctx))
 
 
 @router.delete("/rbds/{rbd_id}")

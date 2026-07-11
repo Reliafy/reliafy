@@ -20,6 +20,12 @@ A **FastAPI** backend does the statistics with
 - **Reliability block diagrams** — wire components in series, parallel,
   k-out-of-n, and standby on a drag-and-drop canvas; compute system
   reliability, MTTF, importance measures, and minimal path/cut sets.
+- **Degradation & RUL** — fit per-unit degradation paths to a failure
+  threshold, then track in-service items and predict when each will cross it
+  (remaining useful life with credible intervals).
+- **RCM studies** — Function → Functional failure → Failure mode worksheets
+  where every maintenance decision links to the analysis that justifies it,
+  re-validated live (supported / contradicted / inconclusive).
 - **Maintenance strategy** — rank candidate distributions against your data,
   compare two designs head-to-head, and find the cost-optimal
   preventive-replacement interval.
@@ -125,7 +131,8 @@ re-fits on demand from the dataset + spec.
 
 The hosted version at **Reliafy Cloud** adds what only makes sense hosted:
 user accounts (Firebase sign-in), a Pro plan, a metered AI assistant on
-prepaid credits, and (coming) team workspaces. The cloud code lives in this
+prepaid credits, team workspaces (view free, edit with Pro), and view-only
+sharing of any analysis with other accounts. The cloud code lives in this
 same repository — GitLab-style, one codebase — and is **dormant unless
 configured**: without Firebase/Stripe/AI env vars, none of it runs. Multi-user
 env reference for operators:

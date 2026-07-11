@@ -27,11 +27,10 @@ router = APIRouter(prefix="/api")
 
 def _creation_denied(session, ctx: AccessCtx, kind: str, cap_msg: str = _CAP_MSG) -> JSONResponse | None:
     """Frozen-team or free-plan-cap rejection for a create, or None."""
-    if ctx.frozen:
-        return JSONResponse(
-            status_code=402,
-            content={"detail": access_service.FROZEN_MSG, "code": "team_frozen", "upgrade": True},
-        )
+    denied = access_service.workspace_write_denial(ctx)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
     if (
         ctx.is_personal
         and not billing_service.is_admin_user(ctx.user)
@@ -55,6 +54,7 @@ def _model_summary(model, ctx: AccessCtx) -> dict:
         "dataset_id": model.dataset_id,
         "is_sample": samples_service.is_sample(model.owner_id),
         "read_only": not access_service.can_write(ctx, model.owner_id),
+        "updated_by": (model.updated_by or {}).get("name"),
         # Randomness verdict (weibull beta CI / exponential), used when picking
         # RCM evidence for run-to-failure decisions.
         "randomness": results.get("randomness"),
@@ -249,6 +249,7 @@ async def save_model(
             session, name, dataset, distribution, mapping, z, formula, unit,
             owner_id=ctx.write_owner,
         )
+        access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except Exception as exc:  # pragma: no cover - defensive
@@ -284,6 +285,7 @@ def rename_model(
             return JSONResponse(status_code=status, content=payload)
     try:
         model = models_service.rename_model(session, model_id, name, ctx.write_owner)
+        access_service.stamp_editor(session, "models", model.id, ctx)
     except models_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     return JSONResponse(content=_model_detail(model, ctx))

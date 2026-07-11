@@ -27,6 +27,52 @@ TEAM_PREFIX = "team:"
 PERSONAL = "personal"
 
 
+class EditConflict(Exception):
+    """A whole-document write raced another editor (optimistic-lock miss)."""
+
+
+def timestamps_match(stored, expected_iso: str) -> bool:
+    """Whether a stored timestamp is the one the client loaded.
+
+    MongoDB truncates datetimes to millisecond precision and drops tzinfo on
+    the round-trip, so exact string equality would always miss — compare
+    tz-normalised with a 1ms tolerance instead.
+    """
+    from datetime import datetime, timezone
+
+    try:
+        expected = datetime.fromisoformat(str(expected_iso))
+        actual = stored if hasattr(stored, "isoformat") else datetime.fromisoformat(str(stored))
+    except (ValueError, TypeError):
+        return False
+    if expected.tzinfo is None:
+        expected = expected.replace(tzinfo=timezone.utc)
+    if actual.tzinfo is None:
+        actual = actual.replace(tzinfo=timezone.utc)
+    return abs((actual - expected).total_seconds()) < 0.001
+
+
+CONFLICT_MSG = (
+    "Someone saved changes to this while you were editing — reload to see "
+    "their version, then re-apply yours."
+)
+
+
+def editor_of(ctx: "AccessCtx") -> dict:
+    """Who is making this change, for updated_by stamping."""
+    return {
+        "uid": ctx.uid,
+        "name": ctx.user.get("name") or ctx.user.get("email") or "unknown",
+    }
+
+
+def stamp_editor(db, collection: str, artifact_id: str, ctx: "AccessCtx") -> None:
+    """Record who last touched an artifact (best-effort, after a mutation)."""
+    db[collection].update_one(
+        {"_id": artifact_id}, {"$set": {"updated_by": editor_of(ctx)}}
+    )
+
+
 def team_principal(team_id: str) -> str:
     return f"{TEAM_PREFIX}{team_id}"
 
@@ -67,6 +113,7 @@ class AccessCtx:
     list_owners: str | list[str]    # what list endpoints scope to
     hidden: set[str] = field(default_factory=set)
     frozen: bool = False            # team workspace whose owner's Pro lapsed
+    member_view_only: bool = False  # team workspace, but this member isn't Pro
 
     @property
     def is_personal(self) -> bool:
@@ -75,7 +122,11 @@ class AccessCtx:
 
 def can_write(ctx: AccessCtx, owner_id: str | None) -> bool:
     """Whether the active workspace may mutate a record with this owner."""
-    return owner_id == ctx.write_owner and not ctx.frozen
+    return (
+        owner_id == ctx.write_owner
+        and not ctx.frozen
+        and not ctx.member_view_only
+    )
 
 
 FROZEN_MSG = (
@@ -83,18 +134,50 @@ FROZEN_MSG = (
     "until it's renewed."
 )
 
+MEMBER_PRO_MSG = (
+    "Editing in a team workspace requires a Pro plan — you can view "
+    "everything, and upgrade to edit."
+)
+
 
 def write_denial(ctx: AccessCtx, owner_id: str | None) -> tuple[int, dict] | None:
     """None when the workspace may mutate this record, else (status, payload).
 
-    Distinguishes a frozen team (402, upgrade nudge) from plain read-only
-    (samples, another workspace's artifact, shared-to-me: 403).
+    Distinguishes a frozen team and a non-Pro member (402, upgrade nudge)
+    from plain read-only (samples, another workspace's artifact,
+    shared-to-me: 403).
     """
     if can_write(ctx, owner_id):
         return None
-    if ctx.frozen and owner_id == ctx.write_owner:
+    if owner_id == ctx.write_owner and ctx.frozen:
         return 402, {"detail": FROZEN_MSG, "code": "team_frozen", "upgrade": True}
+    if owner_id == ctx.write_owner and ctx.member_view_only:
+        return 402, {"detail": MEMBER_PRO_MSG, "code": "member_pro_required", "upgrade": True}
     return 403, {"detail": "This item is read-only in your current workspace."}
+
+
+def workspace_write_denial(ctx: AccessCtx) -> tuple[int, dict] | None:
+    """Denials that block ANY write in the active workspace (incl. creates)."""
+    if ctx.frozen:
+        return 402, {"detail": FROZEN_MSG, "code": "team_frozen", "upgrade": True}
+    if ctx.member_view_only:
+        return 402, {"detail": MEMBER_PRO_MSG, "code": "member_pro_required", "upgrade": True}
+    return None
+
+
+def member_can_edit(db, user: dict, billing_service) -> bool:
+    """Whether this member may edit in a team workspace: Pro or admin.
+
+    Free accounts can join teams and view everything; editing is a Pro
+    capability. With billing disabled (self-host) everyone can edit.
+    """
+    from backend import config
+
+    if not config.BILLING_ENABLED:
+        return True
+    if billing_service.is_admin_user(user):
+        return True
+    return billing_service.account(db, user["uid"])["is_pro"]
 
 
 def get_access(
@@ -138,6 +221,7 @@ def get_access(
         read_owners=read_owners,
         list_owners=[team_principal(workspace)],  # team lists exclude samples
         hidden=hidden, frozen=frozen,
+        member_view_only=not member_can_edit(session, user, billing_service),
     )
 
 

@@ -33,11 +33,10 @@ _CAP_ITEMS = (
 
 
 def _creation_denied(session, ctx: AccessCtx, kind: str, cap_msg: str) -> JSONResponse | None:
-    if ctx.frozen:
-        return JSONResponse(
-            status_code=402,
-            content={"detail": access_service.FROZEN_MSG, "code": "team_frozen", "upgrade": True},
-        )
+    denied = access_service.workspace_write_denial(ctx)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
     if (
         ctx.is_personal
         and not billing_service.is_admin_user(ctx.user)
@@ -62,6 +61,7 @@ def _model_summary(doc, ctx: AccessCtx, n_items: int = 0) -> dict:
         "dataset_id": doc.dataset_id,
         "is_sample": samples_service.is_sample(doc.owner_id),
         "read_only": not access_service.can_write(ctx, doc.owner_id),
+        "updated_by": (doc.updated_by or {}).get("name"),
         "created_at": doc.created_at.isoformat(),
         "updated_at": doc.updated_at.isoformat(),
     }
@@ -192,6 +192,7 @@ async def save_model(
         dataset = await _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(i, x, y, threshold, path, distribution, population_method, unit, measurement_unit)
         doc = degradation_service.save_model(session, name, dataset, spec, ctx.write_owner)
+        access_service.stamp_editor(session, "degradation_models", doc.id, ctx)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except Exception as exc:  # pragma: no cover - defensive
@@ -290,6 +291,7 @@ def create_item(
         item = degradation_service.create_item(
             session, model_id, name, measurements, ctx.write_owner, meta
         )
+        access_service.stamp_editor(session, "tracked_items", item.id, ctx)
     except degradation_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except FitError as exc:
@@ -345,6 +347,7 @@ def add_measurement(
             return JSONResponse(status_code=status, content=payload)
     try:
         item = degradation_service.append_measurement(session, model_id, item_id, t, y, ctx.write_owner)
+        access_service.stamp_editor(session, "tracked_items", item.id, ctx)
     except degradation_service.ItemNotFound:
         return JSONResponse(status_code=404, content={"detail": "Item not found."})
     except FitError as exc:

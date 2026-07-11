@@ -82,7 +82,7 @@ const ITEMS = [
     children: [
       { to: "/modelling/models", label: "Saved models" },
       { to: "/modelling/compare", label: "Model comparison" },
-      { to: "/modelling/degradation", label: "Degradation & RUL" },
+      { to: "/modelling/degradation", label: "Degradation models" },
     ],
   },
   {

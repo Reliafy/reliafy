@@ -24,11 +24,20 @@ class RbdNotFound(KeyError):
     """Raised when an RBD id is unknown."""
 
 
-def save_rbd(db, name: str, graph: dict, owner_id: str, rbd_id: str | None = None) -> Rbd:
-    """Create a new RBD or update an existing owned one (when ``rbd_id`` given)."""
+def save_rbd(db, name: str, graph: dict, owner_id: str, rbd_id: str | None = None,
+             expected_updated_at: str | None = None) -> Rbd:
+    """Create a new RBD or update an existing owned one (when ``rbd_id`` given).
+
+    ``expected_updated_at`` (the isoformat the client loaded) makes the update
+    optimistic: a mismatch raises :class:`access.EditConflict` instead of
+    overwriting another editor's save.
+    """
     if rbd_id:
         existing = db.rbds.find_one({"_id": rbd_id, "owner_id": owner_id})
         if existing is not None:
+            if expected_updated_at and existing.get("updated_at") is not None:
+                if not access.timestamps_match(existing["updated_at"], expected_updated_at):
+                    raise access.EditConflict()
             rbd = from_doc(Rbd, existing)
             rbd.name = name
             rbd.graph = graph
@@ -61,6 +70,19 @@ def get_rbd(db, rbd_id: str, owner_id: str | list[str]) -> Rbd | None:
         Rbd,
         db.rbds.find_one({"_id": rbd_id, "owner_id": {"$in": access.owner_in(owner_id)}}),
     )
+
+
+def rename_rbd(db, rbd_id: str, name: str, owner_id: str) -> Rbd:
+    rbd = get_rbd(db, rbd_id, owner_id)
+    if rbd is None or rbd.owner_id != owner_id:
+        raise RbdNotFound(rbd_id)
+    rbd.name = name
+    rbd.updated_at = datetime.now(timezone.utc)
+    db.rbds.update_one(
+        {"_id": rbd_id, "owner_id": owner_id},
+        {"$set": {"name": name, "updated_at": rbd.updated_at}},
+    )
+    return rbd
 
 
 def delete_rbd(db, rbd_id: str, owner_id: str) -> None:

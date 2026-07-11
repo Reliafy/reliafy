@@ -26,6 +26,7 @@ class Dataset(BaseModel):
     id: str
     name: str
     owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
     created_at: datetime = Field(default_factory=_now)
     checksum: str = ""  # sha256 of the file (content-addressed)
     n_rows: int = 0
@@ -37,6 +38,7 @@ class Model(BaseModel):
     id: str
     name: str
     owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     dataset_id: str = ""
@@ -57,6 +59,7 @@ class Rbd(BaseModel):
     id: str
     name: str
     owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     graph: dict = Field(default_factory=dict)
@@ -70,6 +73,7 @@ class DegradationModelDoc(BaseModel):
     id: str
     name: str
     owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     dataset_id: str = ""
@@ -96,6 +100,7 @@ class RcmStudy(BaseModel):
     system: str = ""
     description: str = ""
     owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     functions: list = Field(default_factory=list)
@@ -109,6 +114,7 @@ class StrategyAnalysis(BaseModel):
     id: str
     name: str
     owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     kind: str = "optimal_replacement"  # | 'compare_two' | 'failure_finding'
@@ -124,6 +130,7 @@ class TrackedItem(BaseModel):
     model_id: str
     name: str
     owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     meta: dict = Field(default_factory=dict)

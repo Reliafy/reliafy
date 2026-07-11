@@ -174,3 +174,41 @@ def test_admin_stats_gated(client, monkeypatch):
         "datasets", "models", "rbds", "degradation_models",
         "tracked_items", "strategy_analyses", "rcm_studies",
     }
+
+
+# ---- Optimistic locking + attribution ----------------------------------------------
+
+def test_rcm_tree_conflict_409(client):
+    client.act_as(A)
+    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
+    tree = {"functions": [{"text": "Fn", "failures": []}]}
+    first = client.put(f"/api/rcm/studies/{sid}/tree", json=tree)
+    assert first.status_code == 200
+    loaded_at = first.json()["updated_at"]
+
+    # A save carrying the current stamp succeeds and bumps updated_at.
+    r = client.put(f"/api/rcm/studies/{sid}/tree",
+                   json={**tree, "expected_updated_at": loaded_at})
+    assert r.status_code == 200
+    # Reusing the stale stamp now conflicts.
+    r = client.put(f"/api/rcm/studies/{sid}/tree",
+                   json={**tree, "expected_updated_at": loaded_at})
+    assert r.status_code == 409 and r.json()["code"] == "conflict"
+    # Without the precondition it's last-write-wins (backwards compatible).
+    assert client.put(f"/api/rcm/studies/{sid}/tree", json=tree).status_code == 200
+
+
+def test_rbd_conflict_and_attribution(client):
+    client.act_as(A)
+    graph = {"nodes": [{"id": "input", "type": "input"}, {"id": "output", "type": "output"}],
+             "edges": [{"source": "input", "target": "output"}]}
+    saved = client.post("/api/rbds", json={"name": "D", "graph": graph}).json()
+    assert saved["updated_by"] == "A"
+    loaded_at = saved["updated_at"]
+
+    ok = client.post("/api/rbds", json={"name": "D2", "graph": graph, "id": saved["id"],
+                                        "expected_updated_at": loaded_at})
+    assert ok.status_code == 200
+    stale = client.post("/api/rbds", json={"name": "D3", "graph": graph, "id": saved["id"],
+                                           "expected_updated_at": loaded_at})
+    assert stale.status_code == 409 and stale.json()["code"] == "conflict"

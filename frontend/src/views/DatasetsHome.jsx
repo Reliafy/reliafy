@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { listDatasets, uploadDataset, deleteDataset } from "../api.js";
+import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 
 const UploadIcon = () => (
@@ -43,6 +44,7 @@ export default function DatasetsHome() {
   const navigate = useNavigate();
   const location = useLocation();
   const [datasets, setDatasets] = useState(null);
+  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef(null);
@@ -149,6 +151,10 @@ export default function DatasetsHome() {
           </div>
 
           <div className="lib">
+            <div className="tablebar">
+              <span className="grow" />
+              <ListSearch value={query} onChange={setQuery} placeholder="Search datasets…" />
+            </div>
             <table className="lib-table">
               <thead>
                 <tr>
@@ -161,7 +167,7 @@ export default function DatasetsHome() {
                 </tr>
               </thead>
               <tbody>
-                {datasets.map((d) => (
+                {datasets.filter((d) => matches(query, d.name)).map((d) => (
                   <tr key={d.id} className="lib-row" onClick={() => open(d.id)}>
                     <td>
                       <div className="ds-name">

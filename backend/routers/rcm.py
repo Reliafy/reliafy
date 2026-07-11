@@ -97,6 +97,7 @@ def _summary(study, ctx: AccessCtx, rollup=None) -> dict:
         "description": study.description,
         "is_sample": samples_service.is_sample(study.owner_id),
         "read_only": not access_service.can_write(ctx, study.owner_id),
+        "updated_by": (study.updated_by or {}).get("name"),
         "rollup": rollup,
         "created_at": study.created_at.isoformat(),
         "updated_at": study.updated_at.isoformat(),
@@ -111,11 +112,10 @@ def create_study(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    if ctx.frozen:
-        return JSONResponse(
-            status_code=402,
-            content={"detail": access_service.FROZEN_MSG, "code": "team_frozen", "upgrade": True},
-        )
+    denied = access_service.workspace_write_denial(ctx)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
     if (
         ctx.is_personal
         and not billing_service.is_admin_user(ctx.user)
@@ -126,6 +126,7 @@ def create_study(
         study = rcm_service.create_study(session, name, system, description, ctx.write_owner)
     except rcm_service.RcmValidationError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+    access_service.stamp_editor(session, "rcm_studies", study.id, ctx)
     return JSONResponse(content=_summary(study, ctx))
 
 
@@ -202,6 +203,7 @@ def delete_study(
 def put_tree(
     study_id: str,
     functions: list = Body(..., embed=True),
+    expected_updated_at: str | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -212,10 +214,17 @@ def put_tree(
             status, payload = denial
             return JSONResponse(status_code=status, content=payload)
     try:
-        study = rcm_service.replace_tree(session, study_id, functions, ctx.write_owner)
+        study = rcm_service.replace_tree(
+            session, study_id, functions, ctx.write_owner,
+            expected_updated_at=expected_updated_at,
+        )
     except rcm_service.StudyNotFound:
         return JSONResponse(status_code=404, content={"detail": "Study not found."})
     except rcm_service.RcmValidationError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except access_service.EditConflict:
+        return JSONResponse(status_code=409, content={"detail": access_service.CONFLICT_MSG, "code": "conflict"})
+    access_service.stamp_editor(session, "rcm_studies", study_id, ctx)
+    study.updated_by = access_service.editor_of(ctx)
     resolved = rcm_service.resolve(session, study, ctx.read_owners, ctx.hidden)
     return JSONResponse(content={**_summary(study, ctx, resolved["rollup"]), "functions": resolved["functions"]})

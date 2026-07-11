@@ -37,7 +37,7 @@ export default function StrategyDashboard() {
       to: "/strategy/analyses",
       icon: <ListIcon />,
       title: "Saved analyses",
-      body: "Persisted calculations — linkable as evidence in RCM studies.",
+      body: "Persisted calculations — replacement and failure-finding results are citable RCM evidence.",
       cta: "View all",
     },
   ];
