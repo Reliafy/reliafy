@@ -60,3 +60,36 @@ class Rbd(BaseModel):
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     graph: dict = Field(default_factory=dict)
+
+
+class DegradationModelDoc(BaseModel):
+    """A saved degradation model: the fit recipe (dataset + column mapping +
+    threshold + path form) plus cached results. Like ``Model``, the live
+    SurPyval object can't be pickled, so predictions re-fit on demand."""
+
+    id: str
+    name: str
+    owner_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+    dataset_id: str = ""
+    spec: dict = Field(default_factory=dict)
+    results: dict = Field(default_factory=dict)
+    surpyval_version: Optional[str] = None
+    status: str = "ready"
+    error: Optional[str] = None
+
+
+class TrackedItem(BaseModel):
+    """An asset monitored against a degradation model: its measurement history
+    plus the cached threshold-crossing prediction (recomputed on append)."""
+
+    id: str
+    model_id: str
+    name: str
+    owner_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+    meta: dict = Field(default_factory=dict)
+    measurements: list = Field(default_factory=list)  # [{"t": float, "y": float}]
+    prediction: Optional[dict] = None

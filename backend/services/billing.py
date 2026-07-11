@@ -220,6 +220,8 @@ def cap_for(kind: str) -> int:
         "datasets": config.FREE_MAX_DATASETS,
         "models": config.FREE_MAX_MODELS,
         "rbds": config.FREE_MAX_RBDS,
+        "degradation_models": config.FREE_MAX_DEGRADATION_MODELS,
+        "tracked_items": config.FREE_MAX_TRACKED_ITEMS,
     }[kind]
 
 
@@ -243,11 +245,15 @@ def usage_summary(db, uid: str) -> dict:
             "datasets": config.FREE_MAX_DATASETS,
             "models": config.FREE_MAX_MODELS,
             "rbds": config.FREE_MAX_RBDS,
+            "degradation_models": config.FREE_MAX_DEGRADATION_MODELS,
+            "tracked_items": config.FREE_MAX_TRACKED_ITEMS,
         },
         "usage": {
             "datasets": owned_count(db, uid, "datasets"),
             "models": owned_count(db, uid, "models"),
             "rbds": owned_count(db, uid, "rbds"),
+            "degradation_models": owned_count(db, uid, "degradation_models"),
+            "tracked_items": owned_count(db, uid, "tracked_items"),
         },
         "packs": config.CREDIT_PACKS,
     }

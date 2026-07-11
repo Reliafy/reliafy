@@ -65,6 +65,9 @@ ADMIN_EMAILS = {
 FREE_MAX_DATASETS = _int("FREE_MAX_DATASETS", 3)
 FREE_MAX_MODELS = _int("FREE_MAX_MODELS", 3)
 FREE_MAX_RBDS = _int("FREE_MAX_RBDS", 1)
+# Degradation/RUL is the flagship feature: free gets a taste, Pro gets fleets.
+FREE_MAX_DEGRADATION_MODELS = _int("FREE_MAX_DEGRADATION_MODELS", 1)
+FREE_MAX_TRACKED_ITEMS = _int("FREE_MAX_TRACKED_ITEMS", 3)
 
 # One-time prepaid credit packs (Stripe Checkout, mode=payment). `grant_cents`
 # is the credit added on success (>= price_cents builds in the bonus).

@@ -81,7 +81,7 @@ export default function BillingPage() {
             <p className="muted-line">Operator account — plan limits and AI charges don't apply to you.</p>
           )}
           <ul className="bill-usage">
-            {[["Datasets", "datasets"], ["Models", "models"], ["RBDs", "rbds"]].map(([label, key]) => (
+            {[["Datasets", "datasets"], ["Models", "models"], ["RBDs", "rbds"], ["Degradation models", "degradation_models"], ["Tracked items", "tracked_items"]].map(([label, key]) => (
               <li key={key}>
                 <span>{label}</span>
                 <span className="bill-usage-n">{usage[key] ?? 0}{noCaps ? "" : ` / ${caps[key]}`}</span>

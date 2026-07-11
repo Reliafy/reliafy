@@ -1,0 +1,270 @@
+"""Persistence and predictions for degradation models and tracked items.
+
+A saved degradation model stores the fit recipe (dataset + column mapping +
+threshold + path form) and cached results. The live SurPyval model can't be
+pickled, so — exactly like :mod:`backend.services.models` — a bounded in-memory
+map links persistent model ids to live fits, rebuilt on demand from the
+dataset + spec.
+
+Tracked items are the fleet-monitoring half: each holds an asset's measurement
+history and a cached threshold-crossing prediction, recomputed whenever a
+measurement is appended (never on reads, so listing a fleet is cheap).
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections import OrderedDict
+from datetime import datetime, timezone
+
+import surpyval
+
+from backend import degradation as degradation_fit
+from backend.config import SAMPLE_OWNER
+from backend.db import from_doc, to_doc
+from backend.fitting import FitError
+from backend.schema import DegradationModelDoc, TrackedItem
+from backend.services import datasets as datasets_service
+
+_LIVE: "OrderedDict[str, str]" = OrderedDict()
+_LIVE_MAX = 64
+
+
+class ModelNotFound(KeyError):
+    """Raised when a degradation model id is unknown / not visible."""
+
+
+class ItemNotFound(KeyError):
+    """Raised when a tracked item id is unknown / not visible."""
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+# ---- Models ----------------------------------------------------------------
+
+def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> DegradationModelDoc:
+    """Fit and persist a degradation model. Raises ``FitError`` on a bad fit."""
+    df = datasets_service.load_dataframe(dataset)
+    payload, cache_id = degradation_fit.fit(
+        df,
+        spec.get("mapping", {}),
+        spec.get("threshold"),
+        path=spec.get("path", "best"),
+        distribution_id=spec.get("distribution_id", "weibull"),
+        population_method=spec.get("population_method", "moments"),
+        unit=spec.get("unit", ""),
+        measurement_unit=spec.get("measurement_unit", ""),
+    )
+    doc = DegradationModelDoc(
+        id=uuid.uuid4().hex,
+        name=name,
+        owner_id=owner_id,
+        dataset_id=dataset.id,
+        spec=spec,
+        results=payload,
+        surpyval_version=getattr(surpyval, "__version__", None),
+        status="ready",
+    )
+    db.degradation_models.insert_one(to_doc(doc))
+    _remember_live(doc.id, cache_id)
+    return doc
+
+
+def list_models(db, owner_id: str, hidden=frozenset()) -> list[DegradationModelDoc]:
+    return [
+        from_doc(DegradationModelDoc, d)
+        for d in db.degradation_models.find(
+            {"owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+        ).sort("created_at", -1)
+        if d["_id"] not in hidden
+    ]
+
+
+def get_model(db, model_id: str, owner_id: str | None = None) -> DegradationModelDoc | None:
+    query = {"_id": model_id}
+    if owner_id is not None:
+        query["owner_id"] = {"$in": [owner_id, SAMPLE_OWNER]}
+    return from_doc(DegradationModelDoc, db.degradation_models.find_one(query))
+
+
+def rename_model(db, model_id: str, name: str, owner_id: str) -> DegradationModelDoc:
+    doc = get_model(db, model_id, owner_id)
+    if doc is None or doc.owner_id != owner_id:
+        raise ModelNotFound(model_id)  # unknown, not owned, or read-only sample
+    doc.name = name
+    doc.updated_at = _now()
+    db.degradation_models.update_one(
+        {"_id": model_id, "owner_id": owner_id},
+        {"$set": {"name": name, "updated_at": doc.updated_at}},
+    )
+    return doc
+
+
+def delete_model(db, model_id: str, owner_id: str) -> None:
+    result = db.degradation_models.delete_one({"_id": model_id, "owner_id": owner_id})
+    if result.deleted_count == 0:
+        raise ModelNotFound(model_id)
+    db.tracked_items.delete_many({"model_id": model_id, "owner_id": owner_id})
+    _LIVE.pop(model_id, None)
+
+
+def _remember_live(model_id: str, cache_id: str) -> None:
+    _LIVE[model_id] = cache_id
+    while len(_LIVE) > _LIVE_MAX:
+        _LIVE.popitem(last=False)
+
+
+def get_live_model(db, model_id: str, owner_id: str):
+    """The live (fitted) SurPyval model for a saved id, re-fitting on a miss."""
+    doc = get_model(db, model_id, owner_id)
+    if doc is None:
+        raise ModelNotFound(model_id)
+
+    cache_id = _LIVE.get(model_id)
+    live = degradation_fit.get_live(cache_id) if cache_id else None
+    if live is None:
+        live = _refit(db, doc)
+    return live
+
+
+def _refit(db, doc: DegradationModelDoc):
+    dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
+    if dataset is None:
+        raise ModelNotFound(doc.id)
+    df = datasets_service.load_dataframe(dataset)
+    spec = doc.spec or {}
+    _, cache_id = degradation_fit.fit(
+        df,
+        spec.get("mapping", {}),
+        spec.get("threshold"),
+        path=spec.get("path", "best"),
+        distribution_id=spec.get("distribution_id", "weibull"),
+        population_method=spec.get("population_method", "moments"),
+        unit=spec.get("unit", ""),
+        measurement_unit=spec.get("measurement_unit", ""),
+    )
+    _remember_live(doc.id, cache_id)
+    return degradation_fit.get_live(cache_id)
+
+
+# ---- Tracked items ----------------------------------------------------------
+
+def _clean_measurements(measurements) -> list[dict]:
+    """Validate and normalise ``[{t, y}, …]``: numeric, sorted by t, exact-t
+    duplicates collapsed (last value wins)."""
+    cleaned: dict[float, float] = {}
+    for m in measurements or []:
+        try:
+            t = float(m["t"])
+            y = float(m["y"])
+        except (KeyError, TypeError, ValueError):
+            raise FitError("Each measurement needs numeric 't' (time) and 'y' (value).")
+        if not (t >= 0):
+            raise FitError("Measurement times must be non-negative numbers.")
+        cleaned[t] = y
+    if not cleaned:
+        raise FitError("At least one measurement is required.")
+    return [{"t": t, "y": cleaned[t]} for t in sorted(cleaned)]
+
+
+def create_item(db, model_id: str, name: str, measurements, owner_id: str, meta: dict | None = None) -> TrackedItem:
+    doc = get_model(db, model_id, owner_id)
+    if doc is None:
+        raise ModelNotFound(model_id)
+    if not (name or "").strip():
+        raise FitError("The item needs a name.")
+
+    item = TrackedItem(
+        id=uuid.uuid4().hex,
+        model_id=model_id,
+        name=name.strip(),
+        owner_id=owner_id,
+        meta=meta or {},
+        measurements=_clean_measurements(measurements),
+    )
+    item.prediction = _predict(db, model_id, owner_id, item.measurements)
+    db.tracked_items.insert_one(to_doc(item))
+    return item
+
+
+def list_items(db, model_id: str, owner_id: str, hidden=frozenset()) -> list[TrackedItem]:
+    """The owner's items on this model, plus sample items, minus hidden ones."""
+    return [
+        from_doc(TrackedItem, d)
+        for d in db.tracked_items.find(
+            {"model_id": model_id, "owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+        ).sort("created_at", -1)
+        if d["_id"] not in hidden
+    ]
+
+
+def get_item(db, model_id: str, item_id: str, owner_id: str) -> TrackedItem | None:
+    return from_doc(
+        TrackedItem,
+        db.tracked_items.find_one(
+            {"_id": item_id, "model_id": model_id, "owner_id": {"$in": [owner_id, SAMPLE_OWNER]}}
+        ),
+    )
+
+
+def append_measurement(db, model_id: str, item_id: str, t, y, owner_id: str) -> TrackedItem:
+    item = get_item(db, model_id, item_id, owner_id)
+    if item is None or item.owner_id != owner_id:
+        raise ItemNotFound(item_id)  # unknown, not owned, or read-only sample
+    try:
+        t = float(t)
+        y = float(y)
+    except (TypeError, ValueError):
+        raise FitError("Measurement needs numeric 't' (time) and 'y' (value).")
+    last_t = item.measurements[-1]["t"] if item.measurements else -1.0
+    if t <= last_t:
+        raise FitError(f"Measurement time must be after the last one ({last_t:g}).")
+
+    item.measurements = [*item.measurements, {"t": t, "y": y}]
+    item.prediction = _predict(db, model_id, owner_id, item.measurements)
+    item.updated_at = _now()
+    db.tracked_items.update_one(
+        {"_id": item_id, "owner_id": owner_id},
+        {"$set": {
+            "measurements": item.measurements,
+            "prediction": item.prediction,
+            "updated_at": item.updated_at,
+        }},
+    )
+    return item
+
+
+def delete_item(db, model_id: str, item_id: str, owner_id: str) -> None:
+    result = db.tracked_items.delete_one(
+        {"_id": item_id, "model_id": model_id, "owner_id": owner_id}
+    )
+    if result.deleted_count == 0:
+        raise ItemNotFound(item_id)
+
+
+def refresh_prediction(db, model_id: str, item: TrackedItem, owner_id: str) -> TrackedItem:
+    """Recompute and persist a missing/error prediction (used on item reads)."""
+    item.prediction = _predict(db, model_id, owner_id, item.measurements)
+    db.tracked_items.update_one(
+        {"_id": item.id}, {"$set": {"prediction": item.prediction}}
+    )
+    return item
+
+
+def _predict(db, model_id: str, owner_id: str, measurements: list[dict]) -> dict:
+    """Compute the prediction blob; fit problems become method="error" blobs so
+    a measurement append never fails."""
+    try:
+        live = get_live_model(db, model_id, owner_id)
+    except (ModelNotFound, FitError) as exc:
+        return {
+            "predicted_at": _now().isoformat(),
+            "n_measurements": len(measurements),
+            "method": "error",
+            "detail": str(exc),
+        }
+    t = [m["t"] for m in measurements]
+    y = [m["y"] for m in measurements]
+    return degradation_fit.predict_item(live, t, y)

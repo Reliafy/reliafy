@@ -4054,3 +4054,19 @@ select:disabled {
 .foot-links { display: inline-flex; gap: 16px; }
 .foot-links a { color: var(--faint); text-decoration: none; }
 .foot-links a:hover { color: var(--acc); }
+
+/* Tracked-item health badges + selected fleet row */
+.health-badge {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.health-green { color: #2f7a52; background: #eef8f1; border: 1px solid #bfe3cd; }
+.health-amber { color: #9a6b0c; background: #fdf6e7; border: 1px solid #ecd9a8; }
+.health-red { color: #a23a3a; background: #fdeeee; border: 1px solid #f3c9c9; }
+.health-grey { color: var(--muted); background: var(--bg); border: 1px solid var(--line); }
+.selected-row { background: var(--acc-t); }
