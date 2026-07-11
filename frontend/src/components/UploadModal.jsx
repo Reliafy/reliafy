@@ -69,6 +69,11 @@ export default function UploadModal({ onClose, onFitted }) {
 
   const pickFile = async (f) => {
     if (!f) return;
+    // Server enforces the same ceiling; fail fast before uploading.
+    if (f.size > 5 * 1024 * 1024) {
+      setError(`That file is ${(f.size / (1024 * 1024)).toFixed(1)} MB — the limit is 5 MB. Try trimming unused columns or rows.`);
+      return;
+    }
     setFile(f);
     setDatasetId(null);
     setSourceName(f.name);

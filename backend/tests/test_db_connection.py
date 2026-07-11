@@ -39,9 +39,11 @@ def test_uses_real_client_when_reachable(monkeypatch):
     assert handle == {"_name": config.MONGODB_DB}
 
 
-def test_falls_back_to_simulator_when_unreachable(monkeypatch):
-    import mongomock
+def test_refuses_simulator_when_uri_unreachable(monkeypatch):
+    """With MONGODB_URI configured, an unreachable cluster is FATAL — silently
+    serving an empty in-memory database would look like data loss."""
     import pymongo
+    import pytest
 
     from backend import config, db
 
@@ -56,9 +58,8 @@ def test_falls_back_to_simulator_when_unreachable(monkeypatch):
     monkeypatch.setattr(pymongo, "MongoClient", _Client)
     monkeypatch.setattr(config, "MONGODB_URI", "mongodb+srv://u:p@nope.example/db")
 
-    handle = db.get_db()
-    assert db.is_simulated() is True
-    assert isinstance(handle, mongomock.database.Database)
+    with pytest.raises(RuntimeError, match="unreachable"):
+        db.get_db()
 
 
 def test_falls_back_to_simulator_when_no_uri(monkeypatch):

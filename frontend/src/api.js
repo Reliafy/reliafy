@@ -551,3 +551,8 @@ export function listShares(collection, artifactId) {
 export function revokeShare(shareId) {
   return request(`/api/shares/${shareId}`, { method: "DELETE" });
 }
+
+// Operator-only stats (403 for regular accounts).
+export function getAdminStats() {
+  return request("/api/admin/stats");
+}

@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BrowserRouter,
   Navigate,
   Route,
   Routes,
+  useLocation,
 } from "react-router-dom";
 import NavBar from "./components/NavBar.jsx";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 import BillingPage from "./views/BillingPage.jsx";
@@ -38,10 +40,12 @@ import BlogPost from "./views/BlogPost.jsx";
 import TermsPage from "./views/TermsPage.jsx";
 import PrivacyPage from "./views/PrivacyPage.jsx";
 import TeamSettingsPage from "./views/TeamSettingsPage.jsx";
+import AdminPage from "./views/AdminPage.jsx";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
 import { ConfigProvider, useAppConfig } from "./ConfigProvider.jsx";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider.jsx";
 import { AUTH_DISABLED } from "./firebase.js";
+import { installTelemetry, trackEvent } from "./telemetry.js";
 
 // Gate the app shell behind authentication: while auth initialises show a
 // spinner; if signed out, redirect to /login.
@@ -50,6 +54,14 @@ function RequireAuth({ children }) {
   if (loading) return <div className="auth-loading">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
   return children;
+}
+
+function PageViews() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    trackEvent("pageview");
+  }, [pathname]);
+  return null;
 }
 
 function AppShell() {
@@ -66,6 +78,7 @@ function AppShell() {
       <div className="layout">
         <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
         <main className="content" key={workspace}>
+          <ErrorBoundary>
           <Routes>
             <Route path="/" element={<Navigate to="/modelling" replace />} />
             <Route path="/modelling" element={<ModellingDashboard />} />
@@ -93,9 +106,11 @@ function AppShell() {
             <Route path="/rcm/studies" element={<RcmHome />} />
             <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />
             <Route path="/team" element={<TeamSettingsPage />} />
+            <Route path="/admin" element={<AdminPage />} />
             {billing && <Route path="/billing" element={<BillingPage />} />}
             <Route path="*" element={<Navigate to="/modelling" replace />} />
           </Routes>
+          </ErrorBoundary>
         </main>
         {ai && <ChatPanel />}
       </div>
@@ -104,8 +119,10 @@ function AppShell() {
 }
 
 export default function App() {
+  useEffect(() => installTelemetry(), []);
   return (
     <BrowserRouter>
+      <PageViews />
       <ConfigProvider>
         <AuthProvider>
           <Routes>

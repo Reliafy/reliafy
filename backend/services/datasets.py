@@ -10,6 +10,7 @@ import pandas as pd
 from backend import storage
 from backend.services import access
 from backend.db import from_doc, to_doc
+from backend.fitting import FitError
 from backend.fitting import preview as _preview
 from backend.fitting import read_dataframe
 from backend.schema import Dataset, Model
@@ -30,6 +31,15 @@ def create_dataset(db, name: str, file_bytes: bytes, owner_id: str) -> Dataset:
     from the same upload reuses one dataset, while different users keep their
     own isolated copies.
     """
+    from backend import config
+
+    if len(file_bytes) > config.MAX_UPLOAD_BYTES:
+        mb = config.MAX_UPLOAD_BYTES / (1024 * 1024)
+        raise FitError(
+            f"That file is too large ({len(file_bytes) / (1024 * 1024):.1f} MB). "
+            f"The limit is {mb:.0f} MB — try trimming unused columns or rows."
+        )
+
     digest = storage.checksum(file_bytes)
     existing = db.datasets.find_one({"checksum": digest, "owner_id": owner_id})
     if existing is not None:

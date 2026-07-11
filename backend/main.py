@@ -41,6 +41,8 @@ from backend.routers import degradation as degradation_router
 from backend.routers import rcm as rcm_router
 from backend.routers import teams as teams_router
 from backend.routers import shares as shares_router
+from backend.routers import telemetry as telemetry_router
+from backend.routers import admin as admin_router
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
@@ -68,6 +70,8 @@ app.include_router(degradation_router.router)
 app.include_router(rcm_router.router)
 app.include_router(teams_router.router)
 app.include_router(shares_router.router)
+app.include_router(telemetry_router.router)
+app.include_router(admin_router.router)
 
 # ---------------------------------------------------------------------------
 # API routes

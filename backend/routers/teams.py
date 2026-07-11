@@ -121,7 +121,7 @@ def add_member(
     if (email or "").strip().lower() == (user.get("email") or "").strip().lower():
         return JSONResponse(status_code=400, content={"detail": "You're already in the team."})
     try:
-        result = teams_service.add_member_or_invite(session, team, email)
+        result = teams_service.add_member_or_invite(session, team, email, inviter=user)
     except teams_service.TeamError as exc:
         return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
     return JSONResponse(content=result)
