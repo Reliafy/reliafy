@@ -4070,3 +4070,21 @@ select:disabled {
 .health-red { color: #a23a3a; background: #fdeeee; border: 1px solid #f3c9c9; }
 .health-grey { color: var(--muted); background: var(--bg); border: 1px solid var(--line); }
 .selected-row { background: var(--acc-t); }
+
+/* Parameter CIs + randomness verdict on fit results */
+.param-ci {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-top: 2px;
+}
+.verdict-line {
+  margin: 0.4rem 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+}

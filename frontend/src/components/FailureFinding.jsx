@@ -1,24 +1,23 @@
 import { useState } from "react";
 import ModelPicker from "./ModelPicker.jsx";
-import ReplacementResult from "./ReplacementResult.jsx";
+import FfiResult from "./FfiResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
-import { optimalReplacement } from "../api.js";
+import { failureFinding } from "../api.js";
 
-// Optimal preventive-replacement tool: the age that minimises the long-run
-// cost rate given planned vs. unplanned costs.
-export default function OptimalReplacement() {
+// Failure-finding interval tool: how often to check a HIDDEN function (e.g. a
+// protective device) so its availability stays above the target.
+export default function FailureFinding() {
   const [model, setModel] = useState(null);
-  const [cp, setCp] = useState("");
-  const [cu, setCu] = useState("");
+  const [availability, setAvailability] = useState("99");
   const [unit, setUnit] = useState("");
   const [result, setResult] = useState(null);
-  const [inputs, setInputs] = useState(null); // what produced the result
+  const [inputs, setInputs] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const isRegression = model?.kind === "regression";
   const canRun =
-    model && model.distribution_id && !isRegression && cp !== "" && cu !== "";
+    model && model.distribution_id && !isRegression && availability !== "";
 
   const run = async () => {
     setLoading(true);
@@ -27,12 +26,11 @@ export default function OptimalReplacement() {
       const body = {
         distribution_id: model.distribution_id,
         params: model.params,
-        planned_cost: Number(cp),
-        unplanned_cost: Number(cu),
+        target_availability: Number(availability) / 100,
         unit: unit || model.unit || null,
       };
-      const res = await optimalReplacement(
-        body.distribution_id, body.params, body.planned_cost, body.unplanned_cost, body.unit
+      const res = await failureFinding(
+        body.distribution_id, body.params, body.target_availability, body.unit
       );
       setResult(res);
       setInputs(body);
@@ -48,23 +46,15 @@ export default function OptimalReplacement() {
   return (
     <div className="strategy-tool">
       <div className="strategy-form">
-        <ModelPicker label="Life model" value={model} onChange={setModel} />
+        <ModelPicker label="Life model of the hidden function" value={model} onChange={setModel} />
         {isRegression && (
-          <p className="hint">
-            Pick a plain distribution — proportional-hazards models aren't
-            supported here.
-          </p>
+          <p className="hint">Pick a plain distribution — proportional-hazards models aren't supported here.</p>
         )}
         <div className="strategy-costs">
           <label className="calc-t">
-            <span>Planned replacement cost</span>
-            <input type="number" min="0" step="any" value={cp}
-              onChange={(e) => setCp(e.target.value)} />
-          </label>
-          <label className="calc-t">
-            <span>Unplanned (failure) cost</span>
-            <input type="number" min="0" step="any" value={cu}
-              onChange={(e) => setCu(e.target.value)} />
+            <span>Target availability (%)</span>
+            <input type="number" min="1" max="99.999" step="any" value={availability}
+              onChange={(e) => setAvailability(e.target.value)} />
           </label>
           <label className="calc-t">
             <span>Unit (optional)</span>
@@ -76,9 +66,9 @@ export default function OptimalReplacement() {
           </button>
           {result && inputs && (
             <SaveAnalysisButton
-              kind="optimal_replacement"
+              kind="failure_finding"
               inputs={inputs}
-              defaultName={`Replacement — ${result.distribution}`}
+              defaultName={`Failure finding — ${result.distribution}`}
             />
           )}
         </div>
@@ -86,7 +76,7 @@ export default function OptimalReplacement() {
 
       {error && <div className="error">{error}</div>}
 
-      {result && <ReplacementResult result={result} />}
+      {result && <FfiResult result={result} />}
     </div>
   );
 }

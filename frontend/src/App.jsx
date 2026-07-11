@@ -24,6 +24,9 @@ import DatasetPage from "./views/DatasetPage.jsx";
 import StrategyDashboard from "./views/StrategyDashboard.jsx";
 import StrategyReplacement from "./views/StrategyReplacement.jsx";
 import StrategyCompare from "./views/StrategyCompare.jsx";
+import StrategyFailureFinding from "./views/StrategyFailureFinding.jsx";
+import StrategyAnalyses from "./views/StrategyAnalyses.jsx";
+import StrategyAnalysisPage from "./views/StrategyAnalysisPage.jsx";
 import Login from "./views/Login.jsx";
 import Landing from "./views/Landing.jsx";
 import Blog from "./views/Blog.jsx";
@@ -72,6 +75,9 @@ function AppShell() {
             <Route path="/strategy" element={<StrategyDashboard />} />
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
+            <Route path="/strategy/failure-finding" element={<StrategyFailureFinding />} />
+            <Route path="/strategy/analyses" element={<StrategyAnalyses />} />
+            <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
             {billing && <Route path="/billing" element={<BillingPage />} />}
             <Route path="*" element={<Navigate to="/modelling" replace />} />
           </Routes>

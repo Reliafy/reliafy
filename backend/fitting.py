@@ -321,12 +321,9 @@ def _fit_distribution(distribution: str, df: pd.DataFrame, mapping: dict) -> dic
         or getattr(dist, "param_names", None)
         or [f"p{i}" for i in range(len(model.params))]
     )
-    params = [
-        {"name": name, "value": float(value)}
-        for name, value in zip(param_names, model.params)
-    ]
+    params = _params_with_uncertainty(model, param_names)
 
-    return {
+    result = {
         "distribution": entry["name"],
         "distribution_id": distribution,
         "kind": "distribution",
@@ -336,6 +333,70 @@ def _fit_distribution(distribution: str, df: pd.DataFrame, mapping: dict) -> dic
         "functions": {"meta": FUNCTIONS, "curves": curves},
         "gof": gof,
     }
+    randomness = _randomness_verdict(distribution, params)
+    if randomness is not None:
+        result["randomness"] = randomness
+    return result
+
+
+def _params_with_uncertainty(model, param_names) -> list[dict]:
+    """Parameter estimates with standard errors and 95% CIs from the fit's
+    covariance matrix (plain normal approximation, ``value ± 1.96·se``).
+
+    Kept on the natural scale for transparency; for positive parameters with
+    small samples a log-scale interval would differ slightly near boundaries —
+    acceptable for v1 and documented where the verdict is consumed.
+    """
+    values = np.atleast_1d(np.asarray(model.params, dtype=float))
+    ses = [None] * len(values)
+    cov = getattr(model, "cov_matrix", None)
+    if cov is not None:
+        cov = np.asarray(cov, dtype=float)
+        if cov.shape == (len(values), len(values)) and np.all(np.isfinite(cov)):
+            diag = np.diag(cov)
+            ses = [float(np.sqrt(d)) if d > 0 else None for d in diag]
+
+    z = 1.959963984540054  # 95%
+    out = []
+    for name, value, se in zip(param_names, values, ses):
+        entry = {"name": name, "value": float(value)}
+        if se is not None and math.isfinite(se):
+            entry["se"] = se
+            entry["ci"] = [float(value - z * se), float(value + z * se)]
+        else:
+            entry["se"] = None
+            entry["ci"] = None
+        out.append(entry)
+    return out
+
+
+def _randomness_verdict(distribution_id: str, params: list[dict]) -> dict | None:
+    """Whether the fitted model is consistent with random (constant-rate)
+    failures — the statistical evidence behind a run-to-failure decision.
+
+    Weibull: read the shape parameter's 95% CI against 1. Exponential: random
+    by construction (memoryless). Other distributions can't establish this and
+    return no block.
+    """
+    if distribution_id == "exponential":
+        return {"verdict": "random", "basis": "memoryless"}
+    if distribution_id != "weibull":
+        return None
+
+    beta = next((p for p in params if p["name"] == "beta"), None)
+    if beta is None:
+        return None
+    block = {"basis": "beta_ci", "beta": beta["value"], "beta_ci": beta.get("ci")}
+    ci = beta.get("ci")
+    if not ci:
+        block["verdict"] = "inconclusive"
+    elif ci[0] <= 1.0 <= ci[1]:
+        block["verdict"] = "random"
+    elif ci[0] > 1.0:
+        block["verdict"] = "wear_out"
+    else:
+        block["verdict"] = "infant_mortality"
+    return block
 
 
 def _fit_regression(

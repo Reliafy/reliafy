@@ -531,3 +531,45 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
             f"(longer: {higher})."
         )
     return {"more_reliable": more, "crossover_time": cross, "text": text}
+
+
+def failure_finding(
+    distribution_id: str,
+    params: list,
+    target_availability: float,
+    unit: Optional[str] = None,
+) -> dict:
+    """Failure-finding interval for a hidden failure (protective device).
+
+    Uses the standard first-order approximation FFI = 2 x (1 - A) x MTTF,
+    where A is the target availability of the protective function. It follows
+    from the average unavailability of an inspected hidden function being
+    ~T / (2 x MTTF); accurate for A >= ~0.9, conservative below that.
+    """
+    try:
+        availability = float(target_availability)
+    except (TypeError, ValueError):
+        raise StrategyError("Target availability must be a number between 0 and 1.")
+    if not (0.0 < availability < 1.0):
+        raise StrategyError("Target availability must be strictly between 0 and 1 (e.g. 0.99).")
+
+    model, name = _model_from_params(distribution_id, params)
+    mttf = _scalar(model.mean())
+    if mttf is None or not np.isfinite(mttf) or mttf <= 0:
+        raise StrategyError("Couldn't compute a finite MTTF for this model.")
+
+    interval = 2.0 * (1.0 - availability) * mttf
+    unit_s = f" {unit.strip()}" if unit and unit.strip() else ""
+    return {
+        "distribution": name,
+        "unit": (unit or "").strip(),
+        "mttf": float(mttf),
+        "target_availability": availability,
+        "interval": float(interval),
+        "method": "approx_2(1-A)MTTF",
+        "note": (
+            f"Check the hidden function about every {interval:,.0f}{unit_s} to keep its "
+            f"availability near {availability:.1%}. Uses the standard approximation "
+            "FFI = 2 x (1 - A) x MTTF, accurate for availability targets above ~90%."
+        ),
+    }
