@@ -12,7 +12,9 @@ from backend.services import billing as billing_service
 from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
+from backend.services import shares as shares_service
 from backend.services.access import AccessCtx, get_access
+from backend.schema import Rbd
 from backend.services.rbd_analysis import AnalysisError
 
 logger = logging.getLogger(__name__)
@@ -35,8 +37,12 @@ def _summary(rbd, ctx: AccessCtx) -> dict:
 
 @router.get("/rbds")
 def list_rbds(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
+    shared_by = shares_service.shared_by_map(session, ctx.uid, "rbds") if ctx.is_personal else {}
     return {
-        "rbds": [_summary(r, ctx) for r in rbds_service.list_rbds(session, ctx.list_owners, ctx.hidden)]
+        "rbds": [
+            {**_summary(r, ctx), **({"shared_by": shared_by[r.id]} if r.id in shared_by else {})}
+            for r in rbds_service.list_rbds(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
+        ]
     }
 
 
@@ -75,7 +81,7 @@ def save_rbd(
 def get_rbd(
     rbd_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    rbd = rbds_service.get_rbd(session, rbd_id, ctx.read_owners)
+    rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
     if rbd is None or rbd.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
     return JSONResponse(content={**_summary(rbd, ctx), "graph": rbd.graph})
@@ -85,7 +91,7 @@ def get_rbd(
 def delete_rbd(
     rbd_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    rbd = rbds_service.get_rbd(session, rbd_id, ctx.read_owners)
+    rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
     if rbd is None or rbd.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
 
@@ -94,8 +100,8 @@ def delete_rbd(
             rbds_service.delete_rbd(session, rbd_id, ctx.write_owner)
         except rbds_service.RbdNotFound:
             return JSONResponse(status_code=404, content={"detail": "RBD not found."})
-    elif samples_service.is_sample(rbd.owner_id):
-        # A shared sample isn't really deleted — just hidden for this user.
+    elif samples_service.is_sample(rbd.owner_id) or access_service.is_shared_with(session, ctx.uid, rbd_id):
+        # Samples and shared-with-me diagrams are hidden, not deleted.
         samples_service.hide_sample(session, ctx.uid, rbd_id)
     else:
         status, payload = access_service.write_denial(ctx, rbd.owner_id)
@@ -147,9 +153,14 @@ def analyze_rbd(
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Analyse a saved RBD with RePyability and return the results."""
+    rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
+    if rbd is None:
+        return JSONResponse(status_code=404, content={"detail": "RBD not found."})
     try:
         return JSONResponse(
-            content=rbds_service.analyze_rbd(session, rbd_id, ctx.read_owners, t_max=t_max)
+            content=rbds_service.analyze_graph(
+                session, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id], t_max=t_max
+            )
         )
     except rbds_service.RbdNotFound:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
@@ -177,7 +188,9 @@ def validate_rbd(
     rbd_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
     """Check whether a saved RBD is valid and analytically solvable."""
-    try:
-        return JSONResponse(content=rbds_service.validate_rbd(session, rbd_id, ctx.read_owners))
-    except rbds_service.RbdNotFound:
+    rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
+    if rbd is None:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
+    return JSONResponse(
+        content=rbds_service.validate_graph(session, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id])
+    )

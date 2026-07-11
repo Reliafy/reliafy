@@ -27,6 +27,14 @@ _LIVE: "OrderedDict[str, str]" = OrderedDict()
 _LIVE_MAX = 64
 
 
+
+def _list_query(owner_id, shared=frozenset()):
+    """Owner-scoped filter, optionally unioned with directly-shared ids."""
+    query = {"owner_id": {"$in": access.owner_in(owner_id)}}
+    if shared:
+        return {"$or": [query, {"_id": {"$in": sorted(shared)}}]}
+    return query
+
 class ModelNotFound(KeyError):
     """Raised when a model id is unknown."""
 
@@ -72,12 +80,12 @@ def save_model(
     return model
 
 
-def list_models(db, owner_id: str | list[str], hidden=frozenset()) -> list[Model]:
+def list_models(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset()) -> list[Model]:
     """The owner's models plus the shared samples, minus hidden samples."""
     return [
         from_doc(Model, m)
         for m in db.models.find(
-            {"owner_id": {"$in": access.owner_in(owner_id)}}
+            _list_query(owner_id, shared)
         ).sort("created_at", -1)
         if m["_id"] not in hidden
     ]

@@ -13,7 +13,9 @@ from backend.fitting import read_dataframe
 from backend.services import samples as samples_service
 from backend.services import strategy as strategy_service
 from backend.services import access as access_service
+from backend.services import shares as shares_service
 from backend.services.access import AccessCtx, get_access
+from backend.schema import StrategyAnalysis
 from backend.services import strategy_store
 from backend.services.strategy import StrategyError
 
@@ -158,17 +160,24 @@ def save_analysis(
 
 @router.get("/analyses")
 def list_analyses(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
-    return {"analyses": [_analysis_summary(d, ctx) for d in strategy_store.list_analyses(session, ctx.list_owners, ctx.hidden)]}
+    shared_by = shares_service.shared_by_map(session, ctx.uid, "strategy_analyses") if ctx.is_personal else {}
+    return {"analyses": [
+        {**_analysis_summary(d, ctx), **({"shared_by": shared_by[d.id]} if d.id in shared_by else {})}
+        for d in strategy_store.list_analyses(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
+    ]}
 
 
 @router.get("/analyses/{analysis_id}")
 def get_analysis(
     analysis_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    doc = strategy_store.get_analysis(session, analysis_id, ctx.read_owners)
+    doc, via_share = access_service.fetch_readable(session, "strategy_analyses", StrategyAnalysis, analysis_id, ctx)
     if doc is None or doc.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Analysis not found."})
-    return JSONResponse(content={**_analysis_summary(doc, ctx), "inputs": doc.inputs, "results": doc.results})
+    payload = {**_analysis_summary(doc, ctx), "inputs": doc.inputs, "results": doc.results}
+    if via_share:
+        payload["shared_by"] = shares_service.shared_by_for(session, ctx.uid, doc.id)
+    return JSONResponse(content=payload)
 
 
 @router.patch("/analyses/{analysis_id}")
@@ -178,7 +187,7 @@ def rename_analysis(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    existing = strategy_store.get_analysis(session, analysis_id, ctx.read_owners)
+    existing, _ = access_service.fetch_readable(session, "strategy_analyses", StrategyAnalysis, analysis_id, ctx)
     if existing is not None:
         denial = access_service.write_denial(ctx, existing.owner_id)
         if denial:
@@ -195,7 +204,7 @@ def rename_analysis(
 def delete_analysis(
     analysis_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    doc = strategy_store.get_analysis(session, analysis_id, ctx.read_owners)
+    doc, _ = access_service.fetch_readable(session, "strategy_analyses", StrategyAnalysis, analysis_id, ctx)
     if doc is None or doc.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Analysis not found."})
     if access_service.can_write(ctx, doc.owner_id):
@@ -203,7 +212,7 @@ def delete_analysis(
             strategy_store.delete_analysis(session, analysis_id, ctx.write_owner)
         except strategy_store.AnalysisNotFound:
             return JSONResponse(status_code=404, content={"detail": "Analysis not found."})
-    elif samples_service.is_sample(doc.owner_id):
+    elif samples_service.is_sample(doc.owner_id) or access_service.is_shared_with(session, ctx.uid, analysis_id):
         samples_service.hide_sample(session, ctx.uid, analysis_id)
     else:
         status, payload = access_service.write_denial(ctx, doc.owner_id)

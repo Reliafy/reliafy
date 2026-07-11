@@ -138,6 +138,7 @@ export default function DegradationHome() {
                     <div className="lib-name">
                       {m.name}
                       {m.is_sample && <span className="sample-tag">Sample</span>}
+                      {m.shared_by && <span className="sample-tag shared" title={`Shared by ${m.shared_by}`}>Shared</span>}
                     </div>
                   </td>
                   <td>{m.path_model || "—"}</td>

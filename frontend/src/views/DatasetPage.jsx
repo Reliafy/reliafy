@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getDataset, deleteDataset } from "../api.js";
 import PreviewTable from "../components/PreviewTable.jsx";
+import { ShareButton } from "../components/ShareDialog.jsx";
 import { distColor } from "../instrument.js";
 
 // Detail view for one dataset: schema, a preview of the rows, and the models
@@ -48,9 +49,17 @@ export default function DatasetPage() {
           )}
         </div>
         {ds && (
-          <button className="secondary" onClick={onDelete}>
-            Delete
-          </button>
+          <div className="head-actions">
+            <ShareButton
+              collection="datasets"
+              artifactId={ds.id}
+              name={ds.name}
+              readOnly={ds.read_only}
+            />
+            <button className="secondary" onClick={onDelete}>
+              {ds.read_only && !ds.is_sample ? "Remove from my view" : "Delete"}
+            </button>
+          </div>
         )}
       </header>
 

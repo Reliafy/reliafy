@@ -98,7 +98,7 @@ export default function ModelLibrary({ models, loading, onOpen, onDelete }) {
               const seed = seedFromString(m.id || m.name);
               return (
                 <tr key={m.id} className="lib-row" onClick={() => onOpen(m.id)}>
-                  <td><div className="lib-name">{m.name}{m.is_sample && <span className="sample-tag">Sample</span>}</div></td>
+                  <td><div className="lib-name">{m.name}{m.is_sample && <span className="sample-tag">Sample</span>}{m.shared_by && <span className="sample-tag shared" title={`Shared by ${m.shared_by}`}>Shared</span>}</div></td>
                   <td>
                     <span className="dpill">
                       <span className="dot" style={{ background: color }} />

@@ -533,3 +533,21 @@ export function removeTeamInvite(id, email) {
 export function leaveTeam(id) {
   return request(`/api/teams/${id}/leave`, { method: "POST" });
 }
+
+// ---- Direct sharing ------------------------------------------------------------
+
+export function createShare(collection, artifactId, email) {
+  return request("/api/shares", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ collection, artifact_id: artifactId, email }),
+  });
+}
+
+export function listShares(collection, artifactId) {
+  return request(`/api/shares?collection=${collection}&artifact_id=${artifactId}`);
+}
+
+export function revokeShare(shareId) {
+  return request(`/api/shares/${shareId}`, { method: "DELETE" });
+}

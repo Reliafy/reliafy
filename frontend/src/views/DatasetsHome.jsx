@@ -166,7 +166,7 @@ export default function DatasetsHome() {
                     <td>
                       <div className="ds-name">
                         <span className="ds-ic"><FileIcon /></span>
-                        <span className="lib-name">{d.name}{d.is_sample && <span className="sample-tag">Sample</span>}</span>
+                        <span className="lib-name">{d.name}{d.is_sample && <span className="sample-tag">Sample</span>}{d.shared_by && <span className="sample-tag shared" title={`Shared by ${d.shared_by}`}>Shared</span>}</span>
                       </div>
                     </td>
                     <td className="lib-n">{(d.n_rows ?? 0).toLocaleString()}</td>

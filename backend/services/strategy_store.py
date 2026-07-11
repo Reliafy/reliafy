@@ -24,6 +24,14 @@ from backend.services.strategy import StrategyError
 KINDS = ("optimal_replacement", "compare_two", "failure_finding")
 
 
+
+def _list_query(owner_id, shared=frozenset()):
+    """Owner-scoped filter, optionally unioned with directly-shared ids."""
+    query = {"owner_id": {"$in": access.owner_in(owner_id)}}
+    if shared:
+        return {"$or": [query, {"_id": {"$in": sorted(shared)}}]}
+    return query
+
 class AnalysisNotFound(KeyError):
     """Raised when a saved analysis id is unknown / not visible."""
 
@@ -74,11 +82,11 @@ def save_analysis(db, name: str, kind: str, inputs: dict, owner_id: str) -> Stra
     return doc
 
 
-def list_analyses(db, owner_id: str | list[str], hidden=frozenset()) -> list[StrategyAnalysis]:
+def list_analyses(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset()) -> list[StrategyAnalysis]:
     return [
         from_doc(StrategyAnalysis, d)
         for d in db.strategy_analyses.find(
-            {"owner_id": {"$in": access.owner_in(owner_id)}}
+            _list_query(owner_id, shared)
         ).sort("created_at", -1)
         if d["_id"] not in hidden
     ]

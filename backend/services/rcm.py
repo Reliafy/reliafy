@@ -21,6 +21,14 @@ from backend.services import models as models_service
 from backend.services import strategy_store
 
 
+
+def _list_query(owner_id, shared=frozenset()):
+    """Owner-scoped filter, optionally unioned with directly-shared ids."""
+    query = {"owner_id": {"$in": access.owner_in(owner_id)}}
+    if shared:
+        return {"$or": [query, {"_id": {"$in": sorted(shared)}}]}
+    return query
+
 class StudyNotFound(KeyError):
     """Raised when a study id is unknown / not visible."""
 
@@ -65,11 +73,11 @@ def create_study(db, name: str, system: str, description: str, owner_id: str) ->
     return study
 
 
-def list_studies(db, owner_id: str | list[str], hidden=frozenset()) -> list[RcmStudy]:
+def list_studies(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset()) -> list[RcmStudy]:
     return [
         from_doc(RcmStudy, d)
         for d in db.rcm_studies.find(
-            {"owner_id": {"$in": access.owner_in(owner_id)}}
+            _list_query(owner_id, shared)
         ).sort("created_at", -1)
         if d["_id"] not in hidden
     ]

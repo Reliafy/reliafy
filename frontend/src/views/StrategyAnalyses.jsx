@@ -86,6 +86,7 @@ export default function StrategyAnalyses() {
                     <div className="lib-name">
                       {a.name}
                       {a.is_sample && <span className="sample-tag">Sample</span>}
+                      {a.shared_by && <span className="sample-tag shared" title={`Shared by ${a.shared_by}`}>Shared</span>}
                     </div>
                   </td>
                   <td>{KIND_LABEL[a.kind] || a.kind}</td>

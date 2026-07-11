@@ -162,7 +162,7 @@ export default function StrategyTracking() {
                 unit={unit}
                 measurementUnit={mUnit}
               />
-              {!selected.is_sample && (
+              {!(selected.read_only ?? selected.is_sample) && (
                 <div className="row" style={{ gap: "0.6rem", alignItems: "flex-end" }}>
                   <label className="login-field" style={{ flex: 1 }}>
                     <span>New reading — time{unit ? ` (${unit})` : ""}</span>
@@ -177,8 +177,8 @@ export default function StrategyTracking() {
                   </button>
                 </div>
               )}
-              {selected.is_sample && (
-                <p className="muted-line">Sample items are read-only — register your own item to add measurements.</p>
+              {(selected.read_only ?? selected.is_sample) && (
+                <p className="muted-line">{selected.is_sample ? "Sample items are read-only — register your own item to add measurements." : "This item is read-only in your workspace."}</p>
               )}
               {measureError && <div className="error">{measureError}</div>}
             </div>

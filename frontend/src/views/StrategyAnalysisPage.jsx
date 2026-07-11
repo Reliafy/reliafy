@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
+import { ShareButton } from "../components/ShareDialog.jsx";
 import { getStrategyAnalysis } from "../api.js";
 
 const KIND_LABEL = {
@@ -44,9 +45,16 @@ export default function StrategyAnalysisPage() {
           <h1>
             {doc.name}
             {doc.is_sample && <span className="sample-tag" style={{ verticalAlign: "middle" }}>Sample</span>}
+            {doc.shared_by && <span className="sample-tag shared" style={{ verticalAlign: "middle" }} title={`Shared by ${doc.shared_by}`}>Shared</span>}
           </h1>
           <p>{KIND_LABEL[doc.kind] || doc.kind} — computed when saved; results are stored, not refreshed.</p>
         </div>
+        <ShareButton
+          collection="strategy_analyses"
+          artifactId={doc.id}
+          name={doc.name}
+          readOnly={doc.read_only}
+        />
       </header>
 
       <div className="card">

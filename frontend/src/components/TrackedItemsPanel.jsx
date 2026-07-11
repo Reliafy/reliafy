@@ -38,12 +38,14 @@ export default function TrackedItemsPanel({ model, items, selectedId, onSelect, 
     <div className="card" style={{ marginTop: "1rem" }}>
       <div className="bill-head">
         <h2 style={{ margin: 0 }}>Tracked items</h2>
+        {!(model?.read_only && !model?.is_sample) && (
         <button onClick={() => setRegistering(true)}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
           Register item
         </button>
+        )}
       </div>
       <p className="muted-line">
         Your monitored assets. Add measurements as inspections happen — the
@@ -92,7 +94,7 @@ export default function TrackedItemsPanel({ model, items, selectedId, onSelect, 
                   <td className="lib-n">{it.n_measurements}</td>
                   <td className="lib-actions">
                     <div className="lib-acts">
-                      {!it.is_sample && (
+                      {!(it.read_only ?? it.is_sample) && (
                         <button
                           className="act"
                           title="Add measurement"

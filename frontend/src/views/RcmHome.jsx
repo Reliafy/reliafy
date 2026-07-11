@@ -127,6 +127,7 @@ export default function RcmHome() {
                     <div className="lib-name">
                       {s.name}
                       {s.is_sample && <span className="sample-tag">Sample</span>}
+                      {s.shared_by && <span className="sample-tag shared" title={`Shared by ${s.shared_by}`}>Shared</span>}
                     </div>
                   </td>
                   <td className="lib-date">{s.system || "—"}</td>
