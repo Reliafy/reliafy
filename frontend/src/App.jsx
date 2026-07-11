@@ -13,6 +13,8 @@ import ModellingDashboard from "./views/ModellingDashboard.jsx";
 import ModellingHome from "./views/ModellingHome.jsx";
 import ModelPage from "./views/ModelPage.jsx";
 import ModellingCompare from "./views/ModellingCompare.jsx";
+import DegradationHome from "./views/DegradationHome.jsx";
+import DegradationModelPage from "./views/DegradationModelPage.jsx";
 import RbdDashboard from "./views/RbdDashboard.jsx";
 import RbdHome from "./views/RbdHome.jsx";
 import RbdBuilder from "./views/RbdBuilder.jsx";
@@ -57,6 +59,8 @@ function AppShell() {
             <Route path="/modelling" element={<ModellingDashboard />} />
             <Route path="/modelling/models" element={<ModellingHome />} />
             <Route path="/modelling/compare" element={<ModellingCompare />} />
+            <Route path="/modelling/degradation" element={<DegradationHome />} />
+            <Route path="/modelling/degradation/:id" element={<DegradationModelPage />} />
             <Route path="/modelling/m/:id" element={<ModelPage />} />
             <Route path="/rbds" element={<RbdDashboard />} />
             <Route path="/rbds/list" element={<RbdHome />} />

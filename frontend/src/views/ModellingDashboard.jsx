@@ -1,6 +1,6 @@
 import DashboardSection from "../components/DashboardSection.jsx";
 import { useModels } from "../useModels.js";
-import { WaveIcon, PlusIcon, CompareIcon } from "../components/icons.jsx";
+import { WaveIcon, PlusIcon, CompareIcon, DegradeIcon } from "../components/icons.jsx";
 
 export default function ModellingDashboard() {
   const { models } = useModels();
@@ -36,6 +36,13 @@ export default function ModellingDashboard() {
       icon: <CompareIcon />,
       title: "Model comparison",
       body: "Rank every candidate distribution against your data with the empirical fit.",
+      cta: "Open",
+    },
+    {
+      to: "/modelling/degradation",
+      icon: <DegradeIcon />,
+      title: "Degradation & RUL",
+      body: "Model wear toward a failure threshold and predict each asset's remaining useful life.",
       cta: "Open",
     },
   ];

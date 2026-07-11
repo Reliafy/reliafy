@@ -286,3 +286,85 @@ export function validateRbd(graph) {
   });
 }
 
+
+// ---- Degradation & RUL -------------------------------------------------------
+
+export function getDegradationOptions() {
+  return request("/api/degradation/options");
+}
+
+function degradationForm(file, { datasetId, mapping, threshold, path, distribution, populationMethod, unit, measurementUnit, name } = {}) {
+  const form = new FormData();
+  if (name) form.append("name", name);
+  if (datasetId) form.append("dataset_id", datasetId);
+  else if (file) form.append("file", file);
+  form.append("i", mapping.i);
+  form.append("x", mapping.x);
+  form.append("y", mapping.y);
+  form.append("threshold", threshold);
+  if (path) form.append("path", path);
+  if (distribution) form.append("distribution", distribution);
+  if (populationMethod) form.append("population_method", populationMethod);
+  if (unit) form.append("unit", unit);
+  if (measurementUnit) form.append("measurement_unit", measurementUnit);
+  return form;
+}
+
+// Fit a degradation model for preview (nothing saved except an uploaded CSV).
+export function fitDegradation(file, opts) {
+  return request("/api/degradation/fit", { method: "POST", body: degradationForm(file, opts) });
+}
+
+// Fit and persist a degradation model.
+export function saveDegradationModel(name, file, opts) {
+  return request("/api/degradation/models", {
+    method: "POST",
+    body: degradationForm(file, { ...opts, name }),
+  });
+}
+
+export function listDegradationModels() {
+  return request("/api/degradation/models");
+}
+
+export function getDegradationModel(id) {
+  return request(`/api/degradation/models/${id}`);
+}
+
+export function renameDegradationModel(id, name) {
+  return request(`/api/degradation/models/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteDegradationModel(id) {
+  return request(`/api/degradation/models/${id}`, { method: "DELETE" });
+}
+
+// Tracked items: register an asset against a degradation model, append
+// measurements over time, and read back its threshold-crossing prediction.
+export function createTrackedItem(modelId, { name, measurements, meta } = {}) {
+  return request(`/api/degradation/models/${modelId}/items`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, measurements, meta: meta || {} }),
+  });
+}
+
+export function listTrackedItems(modelId) {
+  return request(`/api/degradation/models/${modelId}/items`);
+}
+
+export function addTrackedMeasurement(modelId, itemId, t, y) {
+  return request(`/api/degradation/models/${modelId}/items/${itemId}/measurements`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ t, y }),
+  });
+}
+
+export function deleteTrackedItem(modelId, itemId) {
+  return request(`/api/degradation/models/${modelId}/items/${itemId}`, { method: "DELETE" });
+}

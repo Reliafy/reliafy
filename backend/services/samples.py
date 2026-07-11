@@ -20,7 +20,7 @@ import logging
 
 from backend import config, fitting, storage
 from backend.db import from_doc, to_doc
-from backend.schema import Dataset, Model, Rbd
+from backend.schema import Dataset, DegradationModelDoc, Model, Rbd, TrackedItem
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,24 @@ _PUMP_CSV = (
     "36,1\n36,1\n36,1\n36,1\n36,1\n36,1\n36,1\n"
 ).encode()
 
+# Long-format degradation histories: 6 brake pads measured every 550 hours.
+# Near-linear wear toward the 8 mm replacement threshold.
+_BRAKE_WEAR_CSV = (
+    "item,hours,wear_mm\n"
+    "pad-01,500,1.16\npad-01,1050,1.96\npad-01,1600,2.53\npad-01,2150,3.37\n"
+    "pad-01,2700,4.28\npad-01,3250,5.04\npad-01,3800,5.85\npad-01,4350,6.58\n"
+    "pad-02,500,1.16\npad-02,1050,1.88\npad-02,1600,2.46\npad-02,2150,3.00\n"
+    "pad-02,2700,3.73\npad-02,3250,4.26\npad-02,3800,5.05\npad-02,4350,5.61\n"
+    "pad-03,500,1.15\npad-03,1050,1.83\npad-03,1600,2.60\npad-03,2150,3.39\n"
+    "pad-03,2700,4.25\npad-03,3250,5.02\npad-03,3800,5.81\npad-03,4350,6.60\n"
+    "pad-04,500,1.26\npad-04,1050,2.01\npad-04,1600,2.91\npad-04,2150,3.73\n"
+    "pad-04,2700,4.42\npad-04,3250,5.14\npad-04,3800,5.92\npad-04,4350,6.82\n"
+    "pad-05,500,1.04\npad-05,1050,1.84\npad-05,1600,2.41\npad-05,2150,3.14\n"
+    "pad-05,2700,3.80\npad-05,3250,4.47\npad-05,3800,5.19\npad-05,4350,5.80\n"
+    "pad-06,500,0.75\npad-06,1050,1.35\npad-06,1600,1.75\npad-06,2150,2.41\n"
+    "pad-06,2700,2.97\npad-06,3250,3.53\npad-06,3800,4.13\npad-06,4350,4.85\n"
+).encode()
+
 SAMPLE_DATASETS = [
     {
         "id": "sample-ds-bearings",
@@ -57,6 +75,52 @@ SAMPLE_DATASETS = [
         "id": "sample-ds-pumps",
         "name": "Pump field returns (sample)",
         "csv": _PUMP_CSV,
+    },
+    {
+        "id": "sample-ds-brake-wear",
+        "name": "Brake pad wear (sample)",
+        "csv": _BRAKE_WEAR_CSV,
+    },
+]
+
+SAMPLE_DEGRADATION_MODELS = [
+    {
+        "id": "sample-deg-brake-wear",
+        "name": "Brake pad wear — linear degradation (sample)",
+        "dataset_id": "sample-ds-brake-wear",
+        "spec": {
+            "mapping": {"i": "item", "x": "hours", "y": "wear_mm"},
+            "threshold": 8.0,
+            "path": "linear",
+            "distribution_id": "weibull",
+            "population_method": "moments",
+            "unit": "hours",
+            "measurement_unit": "mm",
+        },
+    },
+]
+
+# Two monitored assets on the sample degradation model, so the fleet table has
+# life the moment a user opens it. Measurements are literal (idempotent seed).
+SAMPLE_TRACKED_ITEMS = [
+    {
+        "id": "sample-item-truck-07",
+        "model_id": "sample-deg-brake-wear",
+        "name": "Truck 07 — front left",
+        "measurements": [
+            {"t": 500.0, "y": 0.9},
+            {"t": 1500.0, "y": 2.4},
+            {"t": 2500.0, "y": 4.1},
+        ],
+    },
+    {
+        "id": "sample-item-truck-12",
+        "model_id": "sample-deg-brake-wear",
+        "name": "Truck 12 — front right",
+        "measurements": [
+            {"t": 800.0, "y": 1.1},
+            {"t": 2000.0, "y": 2.6},
+        ],
     },
 ]
 
@@ -220,6 +284,57 @@ def seed_samples(db) -> None:
             logger.info("Seeded sample RBD %r.", spec["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample RBD %r: %s", spec["id"], exc)
+
+    for spec in SAMPLE_DEGRADATION_MODELS:
+        try:
+            from backend import degradation as degradation_fit  # local: heavy import
+
+            model_exists = db.degradation_models.find_one({"_id": spec["id"]}) is not None
+            missing_items = [
+                it for it in SAMPLE_TRACKED_ITEMS
+                if it["model_id"] == spec["id"]
+                and db.tracked_items.find_one({"_id": it["id"]}) is None
+            ]
+            if model_exists and not missing_items:
+                continue
+
+            ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
+            if ds_doc is None:
+                continue
+            dataset = from_doc(Dataset, ds_doc)
+            df = fitting.read_dataframe(bytes(dataset.data))
+            s = spec["spec"]
+            payload, cache_id = degradation_fit.fit(
+                df, s["mapping"], s["threshold"], s["path"],
+                s["distribution_id"], s["population_method"],
+                s["unit"], s["measurement_unit"],
+            )
+            if not model_exists:
+                import surpyval
+
+                doc = DegradationModelDoc(
+                    id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER,
+                    dataset_id=spec["dataset_id"], spec=s, results=payload,
+                    surpyval_version=getattr(surpyval, "__version__", None),
+                    status="ready",
+                )
+                db.degradation_models.insert_one(to_doc(doc))
+                logger.info("Seeded sample degradation model %r.", spec["id"])
+
+            live = degradation_fit.get_live(cache_id)
+            for it in missing_items:
+                pred = degradation_fit.predict_item(
+                    live, [m["t"] for m in it["measurements"]], [m["y"] for m in it["measurements"]]
+                )
+                item = TrackedItem(
+                    id=it["id"], model_id=it["model_id"], name=it["name"],
+                    owner_id=SAMPLE_OWNER, measurements=it["measurements"],
+                    prediction=pred,
+                )
+                db.tracked_items.insert_one(to_doc(item))
+                logger.info("Seeded sample tracked item %r.", it["id"])
+        except Exception as exc:  # pragma: no cover - defensive; never block boot
+            logger.warning("Failed to seed sample degradation %r: %s", spec["id"], exc)
 
 
 # ---------------------------------------------------------------------------
