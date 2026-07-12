@@ -3366,6 +3366,15 @@ select:disabled {
 }
 .learn-cta p { margin: 0; max-width: 60ch; }
 
+/* Operator traffic view: per-day bar rows + top lists. */
+.traffic-days { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.traffic-day { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
+.traffic-date { width: 42px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.traffic-bar-wrap { flex: 1; background: var(--panel); border-radius: 4px; overflow: hidden; }
+.traffic-bar { display: block; height: 14px; min-width: 2px; background: var(--acc); opacity: 0.75; border-radius: 4px; }
+.traffic-nums { width: 170px; color: var(--faint); white-space: nowrap; }
+.traffic-key { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%; }
+
 /* SEO product pages reuse the landing sections plus a prose column. */
 .prod-prose {
   max-width: 840px;

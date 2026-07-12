@@ -28,11 +28,46 @@ export function reportError(message, stack) {
   });
 }
 
+// Campaign attribution: capture utm_* once per browser session so every
+// pageview in the visit stays tied to the link that brought it here.
+// sessionStorage, not localStorage — attribution shouldn't outlive the visit.
+const UTM_KEY = "reliafy_utm";
+
+function sessionUtm() {
+  try {
+    const saved = sessionStorage.getItem(UTM_KEY);
+    if (saved) return JSON.parse(saved);
+    const q = new URLSearchParams(window.location.search);
+    const utm = {
+      utm_source: q.get("utm_source") || "",
+      utm_medium: q.get("utm_medium") || "",
+      utm_campaign: q.get("utm_campaign") || "",
+    };
+    if (utm.utm_source || utm.utm_medium || utm.utm_campaign) {
+      sessionStorage.setItem(UTM_KEY, JSON.stringify(utm));
+    }
+    return utm;
+  } catch {
+    return {};
+  }
+}
+
+// document.referrer never changes across SPA navigations, so only the first
+// pageview of a page load reports it — referrer counts then measure
+// landings (acquisition), not every route change within a visit.
+let referrerSent = false;
+
 export function trackEvent(name, extra = {}) {
+  let referrer = "";
+  if (name === "pageview" && !referrerSent) {
+    referrerSent = true;
+    referrer = document.referrer || "";
+  }
   post("/api/metrics/event", {
     name,
     path: window.location.pathname,
-    referrer: document.referrer || "",
+    referrer,
+    ...sessionUtm(),
     ...extra,
   });
 }

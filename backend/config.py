@@ -74,6 +74,11 @@ ADMIN_EMAILS = {
     if e.strip()
 }
 
+# Salt for the daily visitor hash in first-party analytics. Any stable value
+# works; setting a private one in prod stops anyone recomputing hashes from
+# guessed (day, ip, ua) tuples.
+METRICS_SALT = os.environ.get("METRICS_SALT", "reliafy-metrics")
+
 # Free-tier caps (owned items, excluding shared samples). Pro lifts them.
 FREE_MAX_DATASETS = _int("FREE_MAX_DATASETS", 3)
 FREE_MAX_MODELS = _int("FREE_MAX_MODELS", 3)

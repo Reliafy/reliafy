@@ -112,6 +112,11 @@ def init_db() -> None:
     db.shares.create_index([("recipient_uid", 1), ("collection", 1)])
     db.shares.create_index([("artifact_id", 1)])
     db.shares.create_index([("artifact_id", 1), ("recipient_uid", 1)], unique=True)
+    # First-party analytics: traffic queries scan by recency; the TTL index
+    # enforces the 90-day retention promise (Mongo drops old events itself).
+    db.metrics_events.create_index(
+        [("created_at", 1)], expireAfterSeconds=90 * 24 * 3600
+    )
 
 
 def get_session() -> Iterator:

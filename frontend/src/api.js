@@ -576,6 +576,11 @@ export function getAdminStats() {
   return request("/api/admin/stats");
 }
 
+// Operator-only first-party traffic analytics.
+export function getAdminTraffic(days = 14) {
+  return request(`/api/admin/traffic?days=${days}`);
+}
+
 // Un-hide all dismissed sample artifacts.
 export function restoreSamples() {
   return request("/api/samples/restore", { method: "POST" });

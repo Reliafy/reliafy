@@ -164,8 +164,10 @@ export const PRODUCT_PAGES = [
           <Link to="/weibull-analysis-software">life models</Link>, replacement intervals, and
           degradation models in the same platform, from the same datasets. Teams work in a shared
           workspace, and single studies can be shared view-only with anyone, referenced evidence
-          included. See a <Link to="/learn/censored-data-suspensions">worked look at the data side</Link>,
-          or start from the built-in sample study.
+          included. Walk through a{" "}
+          <Link to="/learn/rcm-analysis-example">complete worked RCM example</Link> — a pump
+          system, five failure modes, every decision reasoned — or start from the built-in
+          sample study.
         </p>
       </>
     ),

@@ -11,6 +11,7 @@ from backend.auth import get_current_user
 from backend.config import SAMPLE_OWNER
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.services import metrics as metrics_service
 
 router = APIRouter(prefix="/api/admin")
 
@@ -44,3 +45,15 @@ def stats(session=Depends(get_session), user: dict = Depends(get_current_user)) 
         "artifacts": artifacts,
         "generated_at": now.isoformat(),
     })
+
+
+@router.get("/traffic")
+def traffic(
+    days: int = 14,
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """First-party visitor analytics: daily traffic, pages, referrers, UTM."""
+    if not billing_service.is_admin_user(user):
+        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
+    return JSONResponse(content=metrics_service.traffic(session, days=days))
