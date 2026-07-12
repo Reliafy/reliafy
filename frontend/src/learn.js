@@ -59,6 +59,8 @@ export const articles = Object.entries(files)
       slug: meta.slug || name,
       title: meta.title || "Untitled",
       description: meta.description || "",
+      // Index position: lower first (pillar guides on top), default 50.
+      order: Number(meta.order) || 50,
       readingMinutes: readingTime(body),
       cta: meta.cta_href
         ? { text: meta.cta_text || "", label: meta.cta_label || "Learn more", href: meta.cta_href }
@@ -67,7 +69,7 @@ export const articles = Object.entries(files)
       body,
     };
   })
-  .sort((a, b) => (a.order || 0) - (b.order || 0) || a.title.localeCompare(b.title));
+  .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
 
 export function getArticle(slug) {
   return articles.find((a) => a.slug === slug) || null;

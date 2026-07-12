@@ -100,6 +100,7 @@ export const PRODUCT_PAGES = [
 
         <h2>Keep reading</h2>
         <ul>
+          <li><Link to="/learn/weibull-analysis">Weibull analysis: a complete, practical guide</Link></li>
           <li><Link to="/learn/weibull-analysis-in-excel">How to do Weibull analysis in Excel — and where it breaks</Link></li>
           <li><Link to="/learn/censored-data-suspensions">Censored data and suspensions: why your MTBF is probably wrong</Link></li>
           <li><Link to="/learn/b10-life">B10 life: definition and a worked example</Link></li>
@@ -295,6 +296,7 @@ export const PRODUCT_PAGES = [
 
         <h2>Learn the methods</h2>
         <ul>
+          <li><Link to="/learn/weibull-analysis">Weibull analysis: a complete, practical guide</Link></li>
           <li><Link to="/learn/mtbf-vs-mttf">MTBF vs MTTF: the difference, and when each applies</Link></li>
           <li><Link to="/learn/censored-data-suspensions">Censored data and suspensions</Link></li>
           <li><Link to="/learn/weibull-analysis-in-excel">Weibull analysis in Excel — and where it breaks</Link></li>

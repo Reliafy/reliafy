@@ -6,11 +6,12 @@ cta_label: "Try Weibull analysis in Reliafy"
 cta_href: "/weibull-analysis-software"
 ---
 
-You can do a legitimate Weibull analysis in Excel. No add-ins, no macros —
-just a sorted column of failure times, one transformation, and a straight-line
-fit. This guide walks through the whole thing with real numbers, because the
-method is worth knowing even if you later graduate to proper software: it's
-the same probability plot that every reliability tool draws.
+You can do a legitimate [Weibull analysis](/learn/weibull-analysis) in
+Excel. No add-ins, no macros — just a sorted column of failure times, one
+transformation, and a straight-line fit. This guide walks through the whole
+thing with real numbers, because the method is worth knowing even if you
+later graduate to proper software: it's the same probability plot that every
+reliability tool draws.
 
 It also tells you, precisely, where Excel stops being the right tool. Not as
 a sales pitch — as a statistical fact about what least-squares on ranked data
