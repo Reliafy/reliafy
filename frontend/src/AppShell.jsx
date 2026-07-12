@@ -32,6 +32,7 @@ import RcmDashboard from "./views/RcmDashboard.jsx";
 import RcmHome from "./views/RcmHome.jsx";
 import RcmStudyPage from "./views/RcmStudyPage.jsx";
 import TeamSettingsPage from "./views/TeamSettingsPage.jsx";
+import ApiTokensPage from "./views/ApiTokensPage.jsx";
 import AdminPage from "./views/AdminPage.jsx";
 import { useAppConfig } from "./ConfigProvider.jsx";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
@@ -95,6 +96,7 @@ export default function AppShell() {
             <Route path="/rcm/studies" element={<RcmHome />} />
             <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />
             <Route path="/team" element={<TeamSettingsPage />} />
+            <Route path="/tokens" element={<ApiTokensPage />} />
             <Route path="/admin" element={<AdminPage />} />
             {billing && <Route path="/billing" element={<BillingPage />} />}
             <Route path="*" element={<Navigate to="/modelling" replace />} />

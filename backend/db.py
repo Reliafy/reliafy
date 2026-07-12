@@ -119,6 +119,8 @@ def init_db() -> None:
     )
     db.public_links.create_index([("collection", 1), ("artifact_id", 1)])
     db.public_links.create_index([("grantor_uid", 1)])
+    db.api_tokens.create_index([("token_hash", 1)], unique=True)
+    db.api_tokens.create_index([("uid", 1)])
 
 
 def get_session() -> Iterator:

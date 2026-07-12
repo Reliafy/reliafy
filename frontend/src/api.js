@@ -652,6 +652,24 @@ export function getPublicArtifact(token) {
   return request(`/api/public/${encodeURIComponent(token)}`);
 }
 
+// ---- Personal API tokens ------------------------------------------------------
+
+export function listApiTokens() {
+  return request("/api/tokens");
+}
+
+export function createApiToken(name) {
+  return request("/api/tokens", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function revokeApiToken(id) {
+  return request(`/api/tokens/${id}`, { method: "DELETE" });
+}
+
 // Operator-only stats (403 for regular accounts).
 export function getAdminStats() {
   return request("/api/admin/stats");

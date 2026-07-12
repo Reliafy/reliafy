@@ -75,6 +75,11 @@ const GuidesIcon = () => (
   </svg>
 );
 
+const ApiIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12" />
+  </svg>
+);
 const BillingIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -226,6 +231,14 @@ export default function Sidebar({ collapsed, onToggle }) {
           {!collapsed && <span className="side-label">Billing &amp; credits</span>}
         </NavLink>
       )}
+      <NavLink
+        to="/tokens"
+        className={({ isActive }) => "side-item" + (isActive ? " active" : "")}
+        title="API access (personal tokens)"
+      >
+        <span className="side-icon"><ApiIcon /></span>
+        {!collapsed && <span className="side-label">API access</span>}
+      </NavLink>
       <a
         className="side-item"
         href="/blog"
