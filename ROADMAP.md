@@ -32,6 +32,11 @@ something desktop reliability tools structurally can't do.
 - Personal API tokens
 - Ingestion endpoints (fleet usage, measurements, lives) — JSON and CSV
 - Health-transition and forecast-drift email alerts
+- **Notebook → Reliafy model push**: fit with
+  [SurPyval](https://github.com/derrynknife/SurPyval) anywhere (your AI
+  assistant writes the notebook), then `reliafy.push(model)` to make it a
+  shareable, trackable, citable artifact. The notebook is the lab; Reliafy
+  is the plant.
 - `curl`/Python examples in docs; a packaged CLI once the API settles
 
 ## Next
