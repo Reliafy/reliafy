@@ -117,6 +117,17 @@ def test_traffic_endpoint_gated_and_aggregates(client):
     assert data["events"] == [{"key": "signup", "count": 1}]
 
 
+def test_signup_event_once_per_account(client):
+    client.act_as(A)
+    client.get("/api/me")
+    client.get("/api/me")
+    signups = list(client.db.metrics_events.find({"name": "signup"}))
+    assert len(signups) == 1
+    client.act_as(B)
+    client.get("/api/me")
+    assert client.db.metrics_events.count_documents({"name": "signup"}) == 2
+
+
 def test_traffic_days_clamped(client):
     client.act_as(A)
     assert client.get("/api/admin/traffic?days=5000").json()["days"] == 90

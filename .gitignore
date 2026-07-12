@@ -148,3 +148,6 @@ env_vars.sh
 .DS_Store
 .claude/
 frontend/dist-ssr/
+
+# Generated marketing assets (social cards live in frontend/public)
+marketing/

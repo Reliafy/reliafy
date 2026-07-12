@@ -76,7 +76,7 @@ def upsert_user(db, user: dict) -> dict:
     """Record/refresh the user's profile on first sight (and each login)."""
     now = datetime.now(timezone.utc)
     email = user.get("email")
-    db.users.update_one(
+    result = db.users.update_one(
         {"_id": user["uid"]},
         {
             "$set": {
@@ -90,6 +90,12 @@ def upsert_user(db, user: dict) -> dict:
         },
         upsert=True,
     )
+    if result.upserted_id is not None:
+        # First sight of this account — the conversion event the traffic
+        # funnel needs. Server-side so it can't be missed or double-fired.
+        from backend.services import metrics as metrics_service
+
+        metrics_service.record_event(db, name="signup", path="/login")
     return user
 
 
