@@ -1,6 +1,6 @@
 ---
 title: "The RCM binder is wrong and nobody knows which page"
-date: 2026-07-24
+date: 2026-07-23
 author: The Reliafy Team
 summary: Every mature RCM programme has the same artifact — a thorough, expensive study that was true the day it was written and has been quietly diverging from reality ever since. The fix isn't more discipline. It's making the worksheet check itself.
 ---
