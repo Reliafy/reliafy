@@ -3106,6 +3106,25 @@ select:disabled {
   gap: 10px;
 }
 
+/* Phone widths: let the nav wrap into rows instead of forcing the page
+   wider than the viewport (the links row tucks under the brand). */
+@media (max-width: 700px) {
+  .landing-nav {
+    flex-wrap: wrap;
+    padding: 14px 20px;
+    row-gap: 10px;
+  }
+  .landing-nav-actions {
+    /* Take the full row and let the links wrap inside it: without min-width:0
+       a flex item refuses to shrink below its content width and pushes the
+       page wider than the phone. */
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+}
+
 /* Link styled like a button (the global `button` rules only hit <button>). */
 .cta {
   display: inline-flex;
@@ -3649,6 +3668,31 @@ select:disabled {
   padding: 14px 16px;
   overflow-x: auto;
   margin: 0 0 18px;
+}
+
+/* Markdown tables (worked examples in the learn articles). display:block +
+   overflow keeps a wide table scrollable on phones instead of stretching
+   the page. */
+.blog-prose table {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0 0 18px;
+  font-size: 14.5px;
+}
+.blog-prose th,
+.blog-prose td {
+  border: 1px solid var(--line);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.blog-prose th {
+  background: var(--panel-2);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .blog-prose pre code {
