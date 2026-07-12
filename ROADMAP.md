@@ -58,6 +58,32 @@ sample narratives, empty states that teach.
 
 ## Later
 
+### The model landscape
+
+Reliafy's statistical core, [SurPyval](https://github.com/derrynknife/SurPyval),
+organises survival models along orthogonal axes — **time scale**
+(continuous durations vs discrete trials) × **recurrence** × **competing
+events** × **covariates** × **estimation method**. Our destination for the
+analysis engine is simple to state: **every cell of that table, surfaced in
+the UI** with the same fit-plot-decide workflow the current models have.
+The engine already implements more of the landscape than Reliafy exposes;
+much of this horizon is UI, not statistics:
+
+- **Covariates beyond PH** — AFT and proportional-odds families, CoxPH
+- **Competing events** — cumulative incidence, Fine-Gray / cause-specific
+  hazards regression
+- **Recurrence** — Crow-AMSAA/NHPP and MCF (see *Next*), plus
+  proportional-intensity regression and cause-specific MCF
+- **Discrete time** — per-demand Bernoulli/Binomial models (protective
+  devices, one-shot equipment), feeding failure-finding intervals
+- **Estimation breadth** — Turnbull/Nelson-Aalen/Fleming-Harrington
+  non-parametrics; probability-plotting, product-spacing, and
+  method-of-moments estimation where MLE struggles
+- **Distribution breadth** — the full catalogue (Exponentiated Weibull,
+  Gumbel, Logistic, LogLogistic, Beta, Uniform) with 3-parameter offsets
+
+### Beyond the table
+
 **Accelerated life testing (ALT).** Arrhenius/Eyring/power-law stress
 models — fit at test stress, extrapolate to use stress. Opens the
 design/test-engineering audience.
@@ -92,6 +118,18 @@ auto-map-my-CSV, "what changed since last month?" — the assistant as a
 reliability engineer's analyst, not a chatbot.
 
 ## Ideas
+
+**Deep survival models — learned RUL distributions from operating data.**
+The moonshot. Once the ingestion API is streaming usage, duty, and
+condition signals, train neural survival models that regress *full
+survival distributions* on covariate histories — censoring-aware losses, a
+distribution output head, so every prediction is a distribution of
+remaining life with honest uncertainty, re-scored on a regular cadence as
+data lands, feeding the same health badges and alerts as the statistical
+models. The ingestion API is deliberately the first step of this: it
+builds the training corpus. Where fleets are small, the classical models
+remain the fallback — this augments the statistics, never replaces the
+transparency.
 
 - Warranty forecasting and returns analysis
 - Stress–strength interference
