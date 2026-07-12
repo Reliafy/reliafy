@@ -201,8 +201,15 @@ def _build_distribution(
         values = [float(p["value"]) for p in params]
     if not values:
         raise AnalysisError(f"{where} is missing distribution parameters.")
+    # Extra fitted quantities (offset gamma, LFP p, ZI f0) rebuild the model
+    # exactly as fitted; sf/ff are well-defined for all of them.
+    extras = {
+        k: float(v)
+        for k, v in (model.get("extras") or {}).items()
+        if k in ("gamma", "p", "f0") and v is not None
+    }
     try:
-        return dist.from_params(values)
+        return dist.from_params(values, **extras)
     except Exception as exc:  # surpyval validates the parameters
         raise AnalysisError(f"{where}: {exc}") from exc
 

@@ -73,13 +73,15 @@ def optimal_replacement_endpoint(
     planned_cost: float | None = Body(default=None),
     unplanned_cost: float | None = Body(default=None),
     unit: str | None = Body(default=None),
+    extras: dict | None = Body(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
     """Compute the cost-optimal preventive-replacement interval."""
     try:
         return JSONResponse(
             content=strategy_service.optimal_replacement(
-                distribution_id, params, planned_cost, unplanned_cost, unit=unit
+                distribution_id, params, planned_cost, unplanned_cost, unit=unit,
+                extras=extras,
             )
         )
     except StrategyError as exc:
@@ -116,13 +118,15 @@ def failure_finding_endpoint(
     params: list = Body(default=[]),
     target_availability: float = Body(...),
     unit: str | None = Body(default=None),
+    extras: dict | None = Body(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
     """Failure-finding interval for a hidden failure (protective device)."""
     try:
         return JSONResponse(
             content=strategy_service.failure_finding(
-                distribution_id, params, target_availability, unit=unit
+                distribution_id, params, target_availability, unit=unit,
+                extras=extras,
             )
         )
     except StrategyError as exc:

@@ -72,11 +72,29 @@ export default function ResultView({ result }) {
             )}
           </div>
         ))}
+        {(result.extra_params || []).map((p) => (
+          <div className="stat" key={p.name}>
+            <div className="value">{p.value.toPrecision(4)}</div>
+            <div className="name">{p.name}</div>
+          </div>
+        ))}
         <div className="stat">
           <div className="value">{result.n}</div>
           <div className="name">observations</div>
         </div>
       </div>
+      {result.options && (
+        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+          Fit options:{" "}
+          {[
+            result.options.offset && "3-parameter offset",
+            result.options.lfp && "limited failure population",
+            result.options.zi && "zero-inflated",
+            result.options.fixed &&
+              `fixed ${Object.entries(result.options.fixed).map(([k, v]) => `${k} = ${v}`).join(", ")}`,
+          ].filter(Boolean).join(" · ")}
+        </p>
+      )}
 
       {result.randomness && <RandomnessVerdict r={result.randomness} />}
 

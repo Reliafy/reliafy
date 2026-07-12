@@ -101,11 +101,21 @@ export function getColumns(file) {
   return request("/api/columns", { method: "POST", body: form });
 }
 
+
+// Advanced fit options shared by fit + save: offset (3-parameter), zero
+// inflation, limited failure population, and fixed parameter values.
+function appendFitOptions(form, { offset, zi, lfp, fixed } = {}) {
+  if (offset) form.append("offset", "true");
+  if (zi) form.append("zi", "true");
+  if (lfp) form.append("lfp", "true");
+  if (fixed && Object.keys(fixed).length) form.append("fixed", JSON.stringify(fixed));
+}
+
 // Fit a model: distribution id, a data source (an uploaded `file` or a saved
 // `datasetId`), a column mapping ({ x, c, n, xl, xr, tl, tr } -> column name or
 // ""), and optional covariates (array of column names) or a formula string for
 // proportional-hazards models.
-export function fitModel(distribution, file, mapping, { covariates, formula, unit, datasetId } = {}) {
+export function fitModel(distribution, file, mapping, { covariates, formula, unit, datasetId, fitOptions } = {}) {
   const form = new FormData();
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
@@ -118,6 +128,7 @@ export function fitModel(distribution, file, mapping, { covariates, formula, uni
   } else if (covariates) {
     for (const col of covariates) form.append("z", col);
   }
+  appendFitOptions(form, fitOptions);
   return withEvent(
     request(`/api/fit/${distribution}`, { method: "POST", body: form }),
     "model_fit"
@@ -151,7 +162,7 @@ export function compareTwoModels(a, b, unit) {
 }
 
 // Compute the cost-optimal preventive-replacement interval for a distribution.
-export function optimalReplacement(distributionId, params, plannedCost, unplannedCost, unit) {
+export function optimalReplacement(distributionId, params, plannedCost, unplannedCost, unit, extras) {
   return request("/api/strategy/optimal-replacement", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -161,6 +172,7 @@ export function optimalReplacement(distributionId, params, plannedCost, unplanne
       planned_cost: plannedCost,
       unplanned_cost: unplannedCost,
       unit: unit || null,
+      extras: extras || null,
     }),
   });
 }
@@ -192,7 +204,7 @@ export function saveModel(
   distribution,
   file,
   mapping,
-  { covariates, formula, unit, datasetId } = {}
+  { covariates, formula, unit, datasetId, fitOptions } = {}
 ) {
   const form = new FormData();
   if (datasetId) form.append("dataset_id", datasetId);
@@ -208,6 +220,7 @@ export function saveModel(
   } else if (covariates) {
     for (const col of covariates) form.append("z", col);
   }
+  appendFitOptions(form, fitOptions);
   return withEvent(request("/api/models", { method: "POST", body: form }), "model_save");
 }
 
@@ -438,7 +451,7 @@ export function deleteTrackedItem(modelId, itemId) {
 // ---- Strategy: failure finding + saved analyses ------------------------------
 
 // Failure-finding interval for a hidden function (protective device).
-export function failureFinding(distributionId, params, targetAvailability, unit) {
+export function failureFinding(distributionId, params, targetAvailability, unit, extras) {
   return request("/api/strategy/failure-finding", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -447,6 +460,7 @@ export function failureFinding(distributionId, params, targetAvailability, unit)
       params,
       target_availability: targetAvailability,
       unit: unit || null,
+      extras: extras || null,
     }),
   });
 }

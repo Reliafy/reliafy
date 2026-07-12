@@ -19,7 +19,10 @@ def _weibull_data(alpha=500.0, beta=2.5, n=200, seed=0):
 def test_compare_ranks_and_returns_curves():
     res = st.compare_models(_weibull_data(), {"x": "time"}, unit="Hours")
     ids = [m["id"] for m in res["models"]]
-    assert set(ids) <= {"weibull", "exponential", "normal", "lognormal", "gamma"}
+    from backend.fitting import DISTRIBUTIONS
+    assert set(ids) <= set(DISTRIBUTIONS)
+    # The classic five are always in the ranking.
+    assert {"weibull", "exponential", "normal", "lognormal", "gamma"} <= set(ids)
     # Ranked best-first by AIC.
     aics = [m["aic"] for m in res["models"] if m["aic"] is not None]
     assert aics == sorted(aics)

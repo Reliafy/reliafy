@@ -69,6 +69,9 @@ export default function ModelPicker({ label, value, onChange }) {
         distribution: r.distribution,
         distribution_id: r.distribution_id,
         params: r.params || [],
+        // Extra fitted quantities (offset/LFP/ZI) so calculators rebuild the
+        // model exactly as it was fitted.
+        extras: r.extras || null,
         // Covariate field definitions for proportional-hazards models; the RBD
         // calculator prompts for these values.
         covariates: (r.functions && r.functions.covariates) || [],

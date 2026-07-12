@@ -43,6 +43,7 @@ export default function ModellingHome() {
         formula: fit.formula,
         unit: fit.unit,
         datasetId: fit.datasetId,
+        fitOptions: fit.fitOptions,
       });
       await refresh();
       navigate(`/modelling/m/${saved.id}`);

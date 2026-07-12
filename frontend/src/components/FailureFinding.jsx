@@ -28,9 +28,10 @@ export default function FailureFinding() {
         params: model.params,
         target_availability: Number(availability) / 100,
         unit: unit || model.unit || null,
+        extras: model.extras || null,
       };
       const res = await failureFinding(
-        body.distribution_id, body.params, body.target_availability, body.unit
+        body.distribution_id, body.params, body.target_availability, body.unit, body.extras
       );
       setResult(res);
       setInputs(body);

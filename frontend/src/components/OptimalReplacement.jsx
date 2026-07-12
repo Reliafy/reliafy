@@ -30,9 +30,10 @@ export default function OptimalReplacement() {
         planned_cost: Number(cp),
         unplanned_cost: Number(cu),
         unit: unit || model.unit || null,
+        extras: model.extras || null,
       };
       const res = await optimalReplacement(
-        body.distribution_id, body.params, body.planned_cost, body.unplanned_cost, body.unit
+        body.distribution_id, body.params, body.planned_cost, body.unplanned_cost, body.unit, body.extras
       );
       setResult(res);
       setInputs(body);

@@ -3394,6 +3394,37 @@ select:disabled {
 .traffic-nums { width: 170px; color: var(--faint); white-space: nowrap; }
 .traffic-key { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%; }
 
+/* Advanced fit options in the distribution step. */
+.fitopts { margin-top: 14px; }
+.fitopts-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.fitopts-toggle:hover { color: var(--acc); }
+.fitopts-body {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fitopts-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.fitopts-row input { accent-color: var(--acc); }
+.fitopts-fixed { margin-top: 6px; }
+.fitopts-fixed-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+
 /* Public link section in the share dialog. */
 .pl-section {
   margin-top: 1rem;

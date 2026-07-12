@@ -24,6 +24,7 @@ SurPyval's input model (see ``surpyval.utils.xcnt_handler``):
 from __future__ import annotations
 
 import io
+import json
 import math
 import uuid
 from collections import OrderedDict
@@ -43,15 +44,23 @@ from surpyval import (
     Weibull,
     WeibullPH,
 )
+from surpyval import ExpoWeibull, Gumbel, Logistic, LogLogistic
 from surpyval.univariate.regression import CoxPH
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
+# ``offsetable``: supports the 3-parameter offset (failure-free period) —
+# only distributions on the half real line; a location shift is meaningless
+# for full-real-line supports (Normal, Gumbel, Logistic).
 DISTRIBUTIONS = {
-    "weibull": {"name": "Weibull", "dist": Weibull},
-    "exponential": {"name": "Exponential", "dist": Exponential},
-    "normal": {"name": "Normal", "dist": Normal},
-    "lognormal": {"name": "Lognormal", "dist": LogNormal},
-    "gamma": {"name": "Gamma", "dist": Gamma},
+    "weibull": {"name": "Weibull", "dist": Weibull, "offsetable": True},
+    "exponential": {"name": "Exponential", "dist": Exponential, "offsetable": True},
+    "normal": {"name": "Normal", "dist": Normal, "offsetable": False},
+    "lognormal": {"name": "Lognormal", "dist": LogNormal, "offsetable": True},
+    "gamma": {"name": "Gamma", "dist": Gamma, "offsetable": True},
+    "loglogistic": {"name": "LogLogistic", "dist": LogLogistic, "offsetable": True},
+    "expo_weibull": {"name": "Exponentiated Weibull", "dist": ExpoWeibull, "offsetable": True},
+    "gumbel": {"name": "Gumbel", "dist": Gumbel, "offsetable": False},
+    "logistic": {"name": "Logistic", "dist": Logistic, "offsetable": False},
 }
 
 # Proportional-hazards regression models (require covariates). Each is fit with
@@ -157,6 +166,13 @@ def _ensure_covariance(model) -> None:
     cov = getattr(model, "cov_matrix", None)
     if cov is not None and np.all(np.isfinite(np.asarray(cov, dtype=float))):
         return  # SurPyval already produced a usable covariance.
+    # LFP/ZI fits carry the extra parameter inside the covariance (k+1 square);
+    # recomputing over the base params alone would swap in a wrong-shaped
+    # matrix and break the confidence bands. Leave those as-is.
+    if float(getattr(model, "f0", 0.0) or 0.0) != 0.0:
+        return
+    if float(getattr(model, "p", 1.0) or 1.0) != 1.0:
+        return
     try:
         params = np.asarray(model.params, dtype=float)
         gamma = float(getattr(model, "gamma", 0.0) or 0.0)
@@ -247,6 +263,77 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen") -> dict:
     }
 
 
+def options_from_form(
+    offset: Optional[str] = None,
+    zi: Optional[str] = None,
+    lfp: Optional[str] = None,
+    fixed: Optional[str] = None,
+) -> Optional[dict]:
+    """Build an options dict from HTML-form string fields (both fit routers)."""
+
+    def truthy(v):
+        return str(v or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    opts = {"offset": truthy(offset), "zi": truthy(zi), "lfp": truthy(lfp)}
+    if fixed and str(fixed).strip():
+        try:
+            opts["fixed"] = json.loads(fixed)
+        except json.JSONDecodeError:
+            raise FitError('fixed must be valid JSON, e.g. {"beta": 2}.')
+    return opts if any(opts.values()) else None
+
+
+def normalize_options(distribution: str, options: Optional[dict]) -> dict:
+    """Validate/clean fit options (offset, zi, lfp, fixed) for a distribution.
+
+    Raises :class:`FitError` on invalid combinations so both routers share the
+    same messages.
+    """
+    opts = dict(options or {})
+    out = {
+        "offset": bool(opts.get("offset")),
+        "zi": bool(opts.get("zi")),
+        "lfp": bool(opts.get("lfp")),
+        "fixed": opts.get("fixed") or None,
+    }
+    if not any([out["offset"], out["zi"], out["lfp"], out["fixed"]]):
+        return {}
+    entry = DISTRIBUTIONS.get(distribution)
+    if entry is None:
+        raise FitError(
+            "Fit options (offset/zi/lfp/fixed) apply to plain distributions only, "
+            "not regression models."
+        )
+    if out["offset"] and not entry.get("offsetable"):
+        raise FitError(
+            f"{entry['name']} doesn't support an offset — its support is the "
+            "whole real line, so a failure-free period isn't meaningful."
+        )
+    fixed = out["fixed"]
+    if fixed is not None:
+        if not isinstance(fixed, dict):
+            raise FitError('fixed must be an object like {"beta": 2}.')
+        names = set(getattr(entry["dist"], "param_names", []) or [])
+        # Extras can be fixed too when their option is active.
+        if out["offset"]:
+            names.add("gamma")
+        if out["lfp"]:
+            names.add("p")
+        if out["zi"]:
+            names.add("f0")
+        unknown = set(fixed) - names
+        if unknown:
+            raise FitError(
+                f"Can't fix {', '.join(sorted(unknown))} — {entry['name']}'s "
+                f"parameters are: {', '.join(sorted(names))}."
+            )
+        try:
+            out["fixed"] = {k: float(v) for k, v in fixed.items()}
+        except (TypeError, ValueError):
+            raise FitError("Fixed parameter values must be numbers.")
+    return {k: v for k, v in out.items() if v}
+
+
 def fit(
     distribution: str,
     df: pd.DataFrame,
@@ -254,18 +341,22 @@ def fit(
     covariates: Optional[list] = None,
     formula: Optional[str] = None,
     unit: Optional[str] = None,
+    options: Optional[dict] = None,
 ) -> dict:
     """Fit ``distribution`` (plain or proportional hazards) and build the payload.
 
     If ``distribution`` is a regression model it is fit with covariate columns
     (``covariates``) or a ``formula``; otherwise the plain distribution path is
     used. ``unit`` is the (optional) unit of ``x`` carried through for display.
-    Any SurPyval error is wrapped in :class:`FitError`.
+    ``options`` (plain distributions only) may hold ``offset``/``zi``/``lfp``
+    booleans and a ``fixed`` mapping. Any SurPyval error is wrapped in
+    :class:`FitError`.
     """
+    options = normalize_options(distribution, options)
     if distribution in REGRESSION_MODELS:
         result = _fit_regression(distribution, df, mapping, covariates, formula)
     elif distribution in DISTRIBUTIONS:
-        result = _fit_distribution(distribution, df, mapping)
+        result = _fit_distribution(distribution, df, mapping, options)
     else:
         raise FitError(
             f"Unknown model '{distribution}'. Available: "
@@ -295,12 +386,38 @@ def _json_safe(value):
     return value
 
 
-def _fit_distribution(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
+# Extra fitted quantities from fit options: attribute name -> display label.
+_EXTRA_LABELS = {
+    "gamma": "gamma (offset)",
+    "p": "p (max fraction failing)",
+    "f0": "f0 (failed at t=0)",
+}
+
+
+def _extract_extras(model, options: dict) -> dict:
+    """Pull the extra fitted quantities (offset gamma, LFP p, ZI f0)."""
+    extras = {}
+    if options.get("offset"):
+        extras["gamma"] = float(getattr(model, "gamma"))
+    if options.get("lfp"):
+        extras["p"] = float(getattr(model, "p"))
+    if options.get("zi"):
+        extras["f0"] = float(getattr(model, "f0"))
+    return extras
+
+
+def _fit_distribution(
+    distribution: str, df: pd.DataFrame, mapping: dict, options: Optional[dict] = None
+) -> dict:
     entry = DISTRIBUTIONS[distribution]
     dist = entry["dist"]
+    options = options or {}
 
     try:
         kwargs = build_fit_inputs(df, mapping)
+        for key in ("offset", "zi", "lfp", "fixed"):
+            if options.get(key):
+                kwargs[key] = options[key]
         model = dist.fit(**kwargs)
         # Backfill the covariance when SurPyval's Hessian came out non-finite
         # (otherwise the confidence band would be all-NaN).
@@ -333,6 +450,19 @@ def _fit_distribution(distribution: str, df: pd.DataFrame, mapping: dict) -> dic
         "functions": {"meta": FUNCTIONS, "curves": curves},
         "gof": gof,
     }
+    if options:
+        # Extra fitted quantities ride separately from ``params`` so every
+        # downstream ``from_params(values)`` reconstruction stays valid; the
+        # extras are re-applied via keyword arguments where models are rebuilt.
+        extras = _extract_extras(model, options)
+        if extras:
+            result["extras"] = extras
+            result["extra_params"] = [
+                {"name": _EXTRA_LABELS[k], "value": v} for k, v in extras.items()
+            ]
+        result["options"] = {
+            k: options[k] for k in ("offset", "zi", "lfp", "fixed") if options.get(k)
+        }
     randomness = _randomness_verdict(distribution, params)
     if randomness is not None:
         result["randomness"] = randomness

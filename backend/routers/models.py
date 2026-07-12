@@ -8,7 +8,7 @@ from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
 from backend.db import get_session
-from backend.fitting import FitError
+from backend.fitting import FitError, options_from_form
 from backend import storage
 from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
@@ -218,6 +218,10 @@ async def save_model(
     z: list[str] = Form(default=[]),
     formula: str | None = Form(default=None),
     unit: str | None = Form(default=None),
+    offset: str | None = Form(default=None),
+    zi: str | None = Form(default=None),
+    lfp: str | None = Form(default=None),
+    fixed: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -248,6 +252,7 @@ async def save_model(
         model = models_service.save_model(
             session, name, dataset, distribution, mapping, z, formula, unit,
             owner_id=ctx.write_owner,
+            options=options_from_form(offset, zi, lfp, fixed),
         )
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:

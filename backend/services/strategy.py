@@ -68,7 +68,7 @@ def _life_metrics(model) -> dict:
     return metrics
 
 
-def _model_from_params(distribution_id: str, params: list):
+def _model_from_params(distribution_id: str, params: list, extras: dict | None = None):
     entry = DISTRIBUTIONS.get(distribution_id)
     if entry is None:
         raise StrategyError(
@@ -83,8 +83,15 @@ def _model_from_params(distribution_id: str, params: list):
         values = [float(p["value"]) for p in (params or [])]
     if not values:
         raise StrategyError("The model is missing its parameters.")
+    # Extra fitted quantities from fit options (offset gamma, LFP p, ZI f0)
+    # rebuild the model exactly as it was fitted.
+    kwargs = {
+        k: float(v)
+        for k, v in (extras or {}).items()
+        if k in ("gamma", "p", "f0") and v is not None
+    }
     try:
-        return dist.from_params(values), entry["name"]
+        return dist.from_params(values, **kwargs), entry["name"]
     except Exception as exc:
         raise StrategyError(str(exc)) from exc
 
@@ -207,6 +214,7 @@ def optimal_replacement(
     planned_cost: Optional[float],
     unplanned_cost: Optional[float],
     unit: Optional[str] = None,
+    extras: Optional[dict] = None,
 ) -> dict:
     """Age-based preventive-replacement interval that minimises the cost rate.
 
@@ -221,7 +229,13 @@ def optimal_replacement(
     if cp >= cu:
         raise StrategyError("The planned cost must be less than the unplanned cost.")
 
-    model, name = _model_from_params(distribution_id, params)
+    model, name = _model_from_params(distribution_id, params, extras)
+    if extras and extras.get("p") is not None:
+        raise StrategyError(
+            "Replacement optimisation isn't defined for limited-failure-population "
+            "models — a fraction of the population never fails, so the cost rate "
+            "has no age-based optimum in general. Refit without LFP to use this."
+        )
     nr = NonRepairable(model)
     nr.set_costs_planned_and_unplanned(cp, cu)
 
@@ -310,8 +324,11 @@ def _side_hi(spec: dict) -> Optional[float]:
         x = np.asarray(spec.get("x") or [], dtype=float)
         x = x[np.isfinite(x)]
         return float(x.max()) if x.size else None
-    model, _ = _model_from_params(spec.get("distribution_id"), spec.get("params"))
-    return _scalar(model.qf(0.99))
+    model, _ = _model_from_params(spec.get("distribution_id"), spec.get("params"), spec.get("extras"))
+    try:
+        return _scalar(model.qf(0.99))
+    except NotImplementedError:
+        return None  # LFP models have no quantile function; grid falls back.
 
 
 def _eval_side(spec: dict, grid: np.ndarray) -> dict:
@@ -348,7 +365,7 @@ def _eval_side(spec: dict, grid: np.ndarray) -> dict:
                 "mttf_restricted": True,
             },
         }
-    model, name = _model_from_params(spec.get("distribution_id"), spec.get("params"))
+    model, name = _model_from_params(spec.get("distribution_id"), spec.get("params"), spec.get("extras"))
     with np.errstate(all="ignore"):
         sf = np.clip(np.asarray(model.sf(grid), dtype=float), 0.0, 1.0)
     metrics = _life_metrics(model)
@@ -538,6 +555,7 @@ def failure_finding(
     params: list,
     target_availability: float,
     unit: Optional[str] = None,
+    extras: Optional[dict] = None,
 ) -> dict:
     """Failure-finding interval for a hidden failure (protective device).
 
@@ -553,7 +571,7 @@ def failure_finding(
     if not (0.0 < availability < 1.0):
         raise StrategyError("Target availability must be strictly between 0 and 1 (e.g. 0.99).")
 
-    model, name = _model_from_params(distribution_id, params)
+    model, name = _model_from_params(distribution_id, params, extras)
     mttf = _scalar(model.mean())
     if mttf is None or not np.isfinite(mttf) or mttf <= 0:
         raise StrategyError("Couldn't compute a finite MTTF for this model.")

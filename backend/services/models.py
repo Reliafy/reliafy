@@ -53,10 +53,13 @@ def save_model(
     formula: str | None,
     unit: str | None = None,
     owner_id: str = "",
+    options: dict | None = None,
 ) -> Model:
     """Fit and persist a model. Raises ``fitting.FitError`` on a bad fit."""
     df = datasets_service.load_dataframe(dataset)
-    result = fitting.fit(distribution_id, df, mapping, covariates, formula, unit)
+    result = fitting.fit(
+        distribution_id, df, mapping, covariates, formula, unit, options=options
+    )
 
     model = Model(
         id=uuid.uuid4().hex,
@@ -71,6 +74,7 @@ def save_model(
             "covariates": list(covariates or []),
             "formula": formula or None,
             "unit": (unit or "").strip(),
+            "options": result.get("options") or None,
         },
         results=result,
         surpyval_version=getattr(surpyval, "__version__", None),
@@ -193,6 +197,7 @@ def _refit(model: Model) -> str:
         spec.get("covariates", []),
         spec.get("formula"),
         spec.get("unit"),
+        options=spec.get("options"),
     )
     functions = result.get("functions") or {}
     cache_id = functions.get("model_id")

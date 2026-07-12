@@ -32,6 +32,7 @@ export default function UploadModal({ onClose, onFitted }) {
   const [formula, setFormula] = useState("");
   const [distributions, setDistributions] = useState([]);
   const [distribution, setDistribution] = useState("weibull");
+  const [fitOpts, setFitOpts] = useState({});
   const [datasets, setDatasets] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -138,6 +139,7 @@ export default function UploadModal({ onClose, onFitted }) {
         unit,
         ...(datasetId ? { datasetId } : {}),
         ...(hasCovariates ? (advanced ? { formula } : { covariates }) : {}),
+        ...(hasCovariates ? {} : { fitOptions: fitOpts }),
       };
       const result = await fitModel(distribution, file, mapping, opts);
       // Pass the fit context too, so the result can be saved without re-entry.
@@ -152,6 +154,7 @@ export default function UploadModal({ onClose, onFitted }) {
           unit,
           covariates: opts.covariates || [],
           formula: opts.formula || null,
+          fitOptions: opts.fitOptions || null,
         },
       });
     } catch (err) {
@@ -332,7 +335,12 @@ export default function UploadModal({ onClose, onFitted }) {
           <DistributionStep
             options={options}
             value={distribution}
-            onChange={setDistribution}
+            onChange={(id) => {
+              setDistribution(id);
+              setFitOpts({}); // options are per-distribution (params differ)
+            }}
+            fitOpts={fitOpts}
+            onFitOpts={setFitOpts}
           />
         </>
       )}

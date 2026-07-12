@@ -27,6 +27,7 @@ from backend.fitting import (
     ModelNotFound,
     evaluate,
     fit,
+    options_from_form,
     preview,
     read_dataframe,
 )
@@ -140,6 +141,7 @@ def distributions_endpoint() -> dict:
             "name": entry["name"],
             "covariates": False,
             "params": list(getattr(entry["dist"], "param_names", [])),
+            "offsetable": bool(entry.get("offsetable")),
         }
         for key, entry in DISTRIBUTIONS.items()
     ]
@@ -165,6 +167,10 @@ async def fit_endpoint(
     z: list[str] = Form(default=[]),
     formula: str | None = Form(default=None),
     unit: str | None = Form(default=None),
+    offset: str | None = Form(default=None),
+    zi: str | None = Form(default=None),
+    lfp: str | None = Form(default=None),
+    fixed: str | None = Form(default=None),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
@@ -191,8 +197,10 @@ async def fit_endpoint(
                 status_code=422,
                 content={"detail": "Provide a CSV file or a dataset_id."},
             )
+        options = options_from_form(offset, zi, lfp, fixed)
         result = fit(
-            distribution, df, mapping, covariates=z, formula=formula, unit=unit
+            distribution, df, mapping, covariates=z, formula=formula, unit=unit,
+            options=options,
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})

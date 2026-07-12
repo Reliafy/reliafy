@@ -212,7 +212,9 @@ def compute(db, fleet: Fleet, owners) -> dict:
         return {"status": "stale",
                 "reason": "The linked model can't be evaluated as a plain distribution."}
     try:
-        dist, _name = _model_from_params(results.get("distribution_id"), results.get("params"))
+        dist, _name = _model_from_params(
+            results.get("distribution_id"), results.get("params"), results.get("extras")
+        )
     except StrategyError as exc:
         return {"status": "stale", "reason": str(exc)}
 
@@ -220,6 +222,13 @@ def compute(db, fleet: Fleet, owners) -> dict:
     periods = int(settings.get("periods", 12))
     default_rate = float(settings.get("default_rate", 0) or 0)
     method = settings.get("method", "renewals")
+    if method == "renewals" and (results.get("extras") or {}).get("p") is not None:
+        # LFP: a fraction of the population never fails, so there is no
+        # quantile function to draw replacement lives from.
+        return {"status": "stale",
+                "reason": "The linked model is a limited-failure-population fit - "
+                          "renewals forecasting can't sample replacement lives from it. "
+                          "Switch this forecast to the 'first failures' method."}
     items = fleet.items or []
 
     base = {
