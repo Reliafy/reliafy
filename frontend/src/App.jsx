@@ -44,6 +44,10 @@ import Blog from "./views/Blog.jsx";
 import BlogPost from "./views/BlogPost.jsx";
 import TermsPage from "./views/TermsPage.jsx";
 import PrivacyPage from "./views/PrivacyPage.jsx";
+import LearnIndex from "./views/LearnIndex.jsx";
+import LearnArticle from "./views/LearnArticle.jsx";
+import ProductPage from "./views/ProductPage.jsx";
+import { PRODUCT_PAGES } from "./productPages.jsx";
 import TeamSettingsPage from "./views/TeamSettingsPage.jsx";
 import AdminPage from "./views/AdminPage.jsx";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
@@ -150,6 +154,12 @@ export default function App() {
             {!AUTH_DISABLED && <Route path="/" element={<Landing />} />}
             {!AUTH_DISABLED && <Route path="/blog" element={<Blog />} />}
             {!AUTH_DISABLED && <Route path="/blog/:slug" element={<BlogPost />} />}
+            {!AUTH_DISABLED && <Route path="/learn" element={<LearnIndex />} />}
+            {!AUTH_DISABLED && <Route path="/learn/:slug" element={<LearnArticle />} />}
+            {!AUTH_DISABLED &&
+              PRODUCT_PAGES.map((p) => (
+                <Route key={p.path} path={p.path} element={<ProductPage page={p} />} />
+              ))}
             {!AUTH_DISABLED && <Route path="/terms" element={<TermsPage />} />}
             {!AUTH_DISABLED && <Route path="/privacy" element={<PrivacyPage />} />}
             {!AUTH_DISABLED && <Route path="/login" element={<Login />} />}

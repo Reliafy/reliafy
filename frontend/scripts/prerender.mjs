@@ -35,6 +35,12 @@ for (const route of routes()) {
     `<meta property="og:url" content="${canonical}" />`,
     `<meta property="og:type" content="website" />`,
     `<meta property="og:site_name" content="Reliafy" />`,
+    // Structured data (SoftwareApplication on product pages, Article/FAQPage
+    // on learn pages) — what featured snippets and AI overviews lift.
+    ...(route.jsonld || []).map(
+      (obj) =>
+        `<script type="application/ld+json">${JSON.stringify(obj).replaceAll("</", "<\\/")}</script>`
+    ),
   ].join("\n    ");
 
   let page = template

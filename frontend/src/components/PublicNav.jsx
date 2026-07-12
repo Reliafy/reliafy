@@ -14,6 +14,7 @@ export default function PublicNav() {
       <nav className="landing-nav-actions">
         <Link className="landing-nav-link" to="/#features">Features</Link>
         <Link className="landing-nav-link" to="/#pricing">Pricing</Link>
+        <Link className="landing-nav-link" to="/learn">Learn</Link>
         <Link className="landing-nav-link" to="/blog">Blog</Link>
         {user ? (
           <Link className="cta cta-solid" to="/modelling">Open the app</Link>

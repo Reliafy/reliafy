@@ -3325,6 +3325,57 @@ select:disabled {
   font-size: 12.5px;
 }
 
+/* Two-row public footer: product links above the legal row. */
+.landing-foot.foot-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+.foot-products {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.foot-products a {
+  color: var(--faint);
+  text-decoration: none;
+}
+.foot-products a:hover { color: var(--acc); }
+.foot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+/* Contextual CTA card at the end of a learn article. */
+.learn-cta {
+  margin: 34px 0 8px;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.learn-cta p { margin: 0; max-width: 60ch; }
+
+/* SEO product pages reuse the landing sections plus a prose column. */
+.prod-prose {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 8px 40px 40px;
+}
+@media (max-width: 700px) {
+  .prod-prose { padding: 8px 22px 32px; }
+}
+
 /* ---- Section dashboards (overview cards) --------------------------------- */
 .dash-cards {
   margin-top: 22px;

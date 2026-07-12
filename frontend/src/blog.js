@@ -38,6 +38,13 @@ function readingTime(body) {
   return Math.max(1, Math.round(words / 200));
 }
 
+// Posts dated in the future are queued, not published: they're invisible in
+// the list and 404 by direct URL until their date arrives. Write a batch,
+// date them out, deploy once — the blog releases them on schedule. (UTC-date
+// comparison; prerender excludes them from static HTML and the sitemap too,
+// so SEO for a post starts at the first deploy after its date.)
+const TODAY = new Date().toISOString().slice(0, 10);
+
 export const posts = Object.entries(files)
   .map(([path, raw]) => {
     const { meta, body } = parseFrontmatter(raw);
@@ -51,6 +58,7 @@ export const posts = Object.entries(files)
       body,
     };
   })
+  .filter((p) => !p.date || p.date <= TODAY)
   // Newest first (ISO dates sort lexically).
   .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 

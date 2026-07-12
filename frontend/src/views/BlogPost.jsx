@@ -1,5 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import PublicNav from "../components/PublicNav.jsx";
+import PublicFooter from "../components/PublicFooter.jsx";
 import { getPost, renderMarkdown, formatDate } from "../blog.js";
 
 // Public single-post page. Renders the Markdown body to HTML (content is
@@ -52,9 +53,7 @@ export default function BlogPost() {
         </footer>
       </article>
 
-      <footer className="landing-foot">
-        <span>© Reliafy</span>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }

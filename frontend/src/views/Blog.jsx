@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import PublicNav from "../components/PublicNav.jsx";
+import PublicFooter from "../components/PublicFooter.jsx";
 import { posts, formatDate } from "../blog.js";
 
 // Public blog index: a list of posts, newest first.
@@ -37,9 +38,7 @@ export default function Blog() {
         )}
       </section>
 
-      <footer className="landing-foot">
-        <span>© Reliafy</span>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }
