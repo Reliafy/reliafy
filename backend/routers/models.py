@@ -275,6 +275,45 @@ def get_model(
     return JSONResponse(content=_model_detail(model, ctx))
 
 
+@router.put("/models/{model_id}/fit")
+def update_model_fit(
+    model_id: str,
+    distribution: str = Body(...),
+    mapping: dict = Body(default={}),
+    covariates: list[str] = Body(default=[]),
+    formula: str | None = Body(default=None),
+    unit: str | None = Body(default=None),
+    offset: bool = Body(default=False),
+    zi: bool = Body(default=False),
+    lfp: bool = Body(default=False),
+    fixed: dict | None = Body(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Refit a saved model in place with an edited fit spec (same dataset)."""
+    existing, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if existing is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    denial = access_service.write_denial(ctx, existing.owner_id)
+    if denial:
+        status, payload = denial
+        return JSONResponse(status_code=status, content=payload)
+    options = {"offset": offset, "zi": zi, "lfp": lfp, "fixed": fixed or None}
+    try:
+        model = models_service.update_fit(
+            session, model_id, existing.owner_id, distribution,
+            {k: (v or None) for k, v in mapping.items()},
+            covariates, formula, unit,
+            options if any(options.values()) else None,
+        )
+        access_service.stamp_editor(session, "models", model.id, ctx)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except models_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    return JSONResponse(content=_model_detail(model, ctx))
+
+
 @router.patch("/models/{model_id}")
 def rename_model(
     model_id: str,

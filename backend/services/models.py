@@ -106,6 +106,66 @@ def get_model(db, model_id: str, owner_id: str | list[str] | None = None) -> Mod
     return from_doc(Model, db.models.find_one(query))
 
 
+def update_fit(
+    db,
+    model_id: str,
+    owner_id: str,
+    distribution_id: str,
+    mapping: dict,
+    covariates: list | None,
+    formula: str | None,
+    unit: str | None,
+    options: dict | None,
+) -> Model:
+    """Refit a saved model in place with a new fit spec (same dataset).
+
+    The model keeps its id, so everything that references it — RCM evidence,
+    RBD blocks, fleet forecasts — sees the updated fit live, exactly like the
+    rest of the evidence-linking behaviour. Raises ``fitting.FitError`` on a
+    bad fit (the stored model is untouched in that case).
+    """
+    model = get_model(db, model_id, owner_id)
+    if model is None or model.owner_id != owner_id:
+        raise ModelNotFound(model_id)
+    dataset = datasets_service.get_dataset(db, model.dataset_id, owner_id=model.owner_id)
+    if dataset is None:
+        raise fitting.FitError(
+            "The model's dataset no longer exists, so it can't be refit."
+        )
+    df = datasets_service.load_dataframe(dataset)
+    result = fitting.fit(
+        distribution_id, df, mapping, covariates, formula, unit, options=options
+    )
+    resolved_id = result.get("distribution_id", distribution_id)
+
+    model.results = result
+    model.kind = result.get("kind", "distribution")
+    model.distribution_id = resolved_id
+    model.spec = {
+        "distribution_id": resolved_id,
+        "mapping": {k: v for k, v in mapping.items() if v},
+        "covariates": list(covariates or []),
+        "formula": formula or None,
+        "unit": (unit or "").strip(),
+        "options": result.get("options") or None,
+    }
+    model.updated_at = datetime.now(timezone.utc)
+    db.models.update_one(
+        {"_id": model_id, "owner_id": owner_id},
+        {"$set": {
+            "results": result,
+            "kind": model.kind,
+            "distribution_id": resolved_id,
+            "spec": model.spec,
+            "surpyval_version": getattr(surpyval, "__version__", None),
+            "updated_at": model.updated_at,
+        }},
+    )
+    # The cached live model (refit-on-demand) is stale now.
+    _LIVE.pop(model_id, None)
+    return model
+
+
 def rename_model(db, model_id: str, name: str, owner_id: str) -> Model:
     model = get_model(db, model_id, owner_id)
     if model is None or model.owner_id != owner_id:

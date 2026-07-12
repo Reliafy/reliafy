@@ -228,6 +228,26 @@ export function deleteModel(id) {
   return request(`/api/models/${id}`, { method: "DELETE" });
 }
 
+// Refit a saved model in place with an edited spec (same dataset, same id --
+// everything referencing the model sees the updated fit).
+export function updateModelFit(id, { distribution, mapping, covariates, formula, unit, fitOptions } = {}) {
+  return request(`/api/models/${id}/fit`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      distribution,
+      mapping: mapping || {},
+      covariates: covariates || [],
+      formula: formula || null,
+      unit: unit || null,
+      offset: !!fitOptions?.offset,
+      zi: !!fitOptions?.zi,
+      lfp: !!fitOptions?.lfp,
+      fixed: fitOptions?.fixed && Object.keys(fitOptions.fixed).length ? fitOptions.fixed : null,
+    }),
+  });
+}
+
 // ---- Datasets --------------------------------------------------------------
 
 export function listDatasets() {

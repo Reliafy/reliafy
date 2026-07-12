@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import ResultView from "../components/ResultView.jsx";
+import EditFitModal from "../components/EditFitModal.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getModel, deleteModel } from "../api.js";
 import { distColor } from "../instrument.js";
@@ -11,6 +12,7 @@ export default function ModelPage() {
   const navigate = useNavigate();
   const [model, setModel] = useState(null);
   const [error, setError] = useState(null);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     setModel(null);
@@ -53,6 +55,11 @@ export default function ModelPage() {
         </div>
         {model && (
           <div className="head-actions">
+            {!model.read_only && (
+              <button className="secondary" onClick={() => setEditing(true)}>
+                Edit fit
+              </button>
+            )}
             <ShareButton
               collection="models"
               artifactId={model.id}
@@ -71,6 +78,16 @@ export default function ModelPage() {
         <div className="card">
           <ResultView result={model.results} />
         </div>
+      )}
+      {editing && model && (
+        <EditFitModal
+          model={model}
+          onClose={() => setEditing(false)}
+          onUpdated={(updated) => {
+            setModel(updated);
+            setEditing(false);
+          }}
+        />
       )}
     </div>
   );

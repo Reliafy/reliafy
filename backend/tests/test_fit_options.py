@@ -224,3 +224,57 @@ def test_best_fit_saved_model_persists_winner(client):
     # Refit-on-demand spec is pinned to the winner, so it can't drift.
     doc = client.db.models.find_one({"_id": body["id"]})
     assert doc["spec"]["distribution_id"] == winner
+
+
+# ---- edit / refit in place ----------------------------------------------------
+
+def test_update_fit_in_place(client):
+    rng = np.random.default_rng(31)
+    csv = io.BytesIO(pd.DataFrame({"t": rng.weibull(2, 300) * 1000 + 400}).to_csv(index=False).encode())
+    saved = client.post(
+        "/api/models",
+        data={"name": "Editable", "distribution": "weibull", "x": "t", "unit": "hours"},
+        files={"file": ("d.csv", csv, "text/csv")},
+    ).json()
+    model_id = saved["id"]
+    assert "extras" not in saved["results"]
+
+    # Refit with an offset and a different distribution family available.
+    r = client.put(
+        f"/api/models/{model_id}/fit",
+        json={"distribution": "weibull", "mapping": {"x": "t"}, "unit": "hours", "offset": True},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == model_id
+    assert body["results"]["extras"]["gamma"] == pytest.approx(400, rel=0.2)
+    assert body["spec"]["options"] == {"offset": True}
+
+    # Best-fit refit resolves and pins the winner.
+    r2 = client.put(
+        f"/api/models/{model_id}/fit",
+        json={"distribution": "best", "mapping": {"x": "t"}, "unit": "hours"},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["spec"]["distribution_id"] != "best"
+
+    # A failing refit leaves the stored model untouched.
+    r3 = client.put(
+        f"/api/models/{model_id}/fit",
+        json={"distribution": "gumbel", "mapping": {"x": "t"}, "offset": True},
+    )
+    assert r3.status_code == 422
+    current = client.get(f"/api/models/{model_id}").json()
+    assert current["results"]["distribution_id"] == r2.json()["results"]["distribution_id"]
+
+
+def test_update_fit_rejected_for_read_only(client):
+    from backend.services import samples as samples_service
+
+    samples_service.seed_samples(client.db)
+    sample = client.db.models.find_one({"kind": "distribution"})
+    r = client.put(
+        f"/api/models/{sample['_id']}/fit",
+        json={"distribution": "weibull", "mapping": {"x": "t"}},
+    )
+    assert r.status_code in (402, 403)
