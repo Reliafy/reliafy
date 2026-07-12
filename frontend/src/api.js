@@ -1,5 +1,17 @@
 // Thin wrappers around the backend endpoints.
 import { auth } from "./firebase.js";
+import { trackEvent } from "./telemetry.js";
+
+// Activation milestones: fire a product event when the promise resolves.
+// These are the funnel steps between "signed up" and "getting value" —
+// visible in /admin traffic so acquisition posts can be judged on
+// activation, not just signups.
+function withEvent(promise, name) {
+  return promise.then((result) => {
+    trackEvent(name);
+    return result;
+  });
+}
 
 // Attach the current user's Firebase ID token (auto-refreshed by the SDK) to
 // every request. `auth` is null when auth is disabled for local dev.
@@ -106,7 +118,10 @@ export function fitModel(distribution, file, mapping, { covariates, formula, uni
   } else if (covariates) {
     for (const col of covariates) form.append("z", col);
   }
-  return request(`/api/fit/${distribution}`, { method: "POST", body: form });
+  return withEvent(
+    request(`/api/fit/${distribution}`, { method: "POST", body: form }),
+    "model_fit"
+  );
 }
 
 // ---- Strategy / decision support ------------------------------------------
@@ -193,7 +208,7 @@ export function saveModel(
   } else if (covariates) {
     for (const col of covariates) form.append("z", col);
   }
-  return request("/api/models", { method: "POST", body: form });
+  return withEvent(request("/api/models", { method: "POST", body: form }), "model_save");
 }
 
 export function deleteModel(id) {
@@ -215,7 +230,7 @@ export function uploadDataset(file, name) {
   const form = new FormData();
   form.append("file", file);
   if (name) form.append("name", name);
-  return request("/api/datasets", { method: "POST", body: form });
+  return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
 }
 
 export function deleteDataset(id) {
@@ -233,11 +248,14 @@ export function getRbd(id) {
 }
 
 export function saveRbd(name, graph, id, expectedUpdatedAt) {
-  return request("/api/rbds", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, graph, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
-  });
+  return withEvent(
+    request("/api/rbds", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, graph, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
+    }),
+    "rbd_save"
+  );
 }
 
 export function renameRbd(id, name) {
@@ -362,10 +380,13 @@ export function fitDegradation(file, opts) {
 
 // Fit and persist a degradation model.
 export function saveDegradationModel(name, file, opts) {
-  return request("/api/degradation/models", {
-    method: "POST",
-    body: degradationForm(file, { ...opts, name }),
-  });
+  return withEvent(
+    request("/api/degradation/models", {
+      method: "POST",
+      body: degradationForm(file, { ...opts, name }),
+    }),
+    "degradation_save"
+  );
 }
 
 export function listDegradationModels() {
@@ -470,11 +491,14 @@ export function listRcmStudies() {
 }
 
 export function createRcmStudy(name, system, description) {
-  return request("/api/rcm/studies", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, system: system || "", description: description || "" }),
-  });
+  return withEvent(
+    request("/api/rcm/studies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, system: system || "", description: description || "" }),
+    }),
+    "rcm_create"
+  );
 }
 
 export function getRcmStudy(id) {
