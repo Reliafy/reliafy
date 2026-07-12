@@ -7,7 +7,7 @@ import { useAuth } from "../AuthProvider.jsx";
 // Reuses the landing hero/band sections and the blog prose styles.
 export default function ProductPage({ page }) {
   const { user } = useAuth();
-  const primaryHref = user ? "/modelling" : "/login";
+  const primaryHref = user ? "/modelling" : "/login?signup";
 
   return (
     <div className="landing">

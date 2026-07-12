@@ -21,7 +21,7 @@ export default function PublicNav() {
         ) : (
           <>
             <Link className="cta cta-ghost" to="/login">Sign in</Link>
-            <Link className="cta cta-solid" to="/login">Get started</Link>
+            <Link className="cta cta-solid" to="/login?signup">Get started</Link>
           </>
         )}
       </nav>

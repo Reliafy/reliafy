@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Logo from "../components/Logo.jsx";
 import { useAuth } from "../AuthProvider.jsx";
 
@@ -19,7 +19,10 @@ const MESSAGES = {
 export default function Login() {
   const { signIn, signUp, signInWithGoogle, resetPassword } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState("signin"); // 'signin' | 'signup' | 'reset'
+  // "Get started" CTAs link to /login?signup so new users land on the
+  // create-account form directly instead of hunting for the toggle.
+  const [params] = useSearchParams();
+  const [mode, setMode] = useState(params.has("signup") ? "signup" : "signin"); // 'signin' | 'signup' | 'reset'
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);

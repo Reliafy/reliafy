@@ -164,7 +164,7 @@ const TIERS = (primaryHref) => [
 export default function Landing() {
   const { user } = useAuth();
   const location = useLocation();
-  const primaryHref = user ? "/modelling" : "/login";
+  const primaryHref = user ? "/modelling" : "/login?signup";
   const primaryLabel = user ? "Open the app" : "Get started";
 
   // Support /#pricing links from other pages: scroll once the section exists.
