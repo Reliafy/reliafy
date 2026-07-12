@@ -29,6 +29,10 @@ import { installTelemetry, trackEvent } from "./telemetry.js";
 // prerendered HTML — lazy-loading them would flash a fallback on first paint.
 const AppShell = lazy(() => import("./AppShell.jsx"));
 
+// Public read-only artifact viewer (/p/:token). Lazy for the same reason:
+// it pulls in the charting components, which marketing pages don't need.
+const PublicArtifact = lazy(() => import("./views/PublicArtifact.jsx"));
+
 // Gate the app shell behind authentication: while auth initialises show a
 // spinner; if signed out, redirect to /login.
 function RequireAuth({ children }) {
@@ -67,6 +71,16 @@ export default function App() {
               PRODUCT_PAGES.map((p) => (
                 <Route key={p.path} path={p.path} element={<ProductPage page={p} />} />
               ))}
+            {!AUTH_DISABLED && (
+              <Route
+                path="/p/:token"
+                element={
+                  <Suspense fallback={<div className="auth-loading">Loading…</div>}>
+                    <PublicArtifact />
+                  </Suspense>
+                }
+              />
+            )}
             {!AUTH_DISABLED && <Route path="/terms" element={<TermsPage />} />}
             {!AUTH_DISABLED && <Route path="/privacy" element={<PrivacyPage />} />}
             {!AUTH_DISABLED && <Route path="/login" element={<Login />} />}

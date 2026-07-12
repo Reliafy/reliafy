@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import Modal from "./Modal.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
-import { createShare, listShares, revokeShare } from "../api.js";
+import {
+  createShare, listShares, revokeShare,
+  createPublicLink, getPublicLink, revokePublicLink,
+} from "../api.js";
+
+// Collections with a public read-only renderer at /p/:token. RBDs need the
+// canvas and aren't public-linkable yet.
+const PUBLIC_LINKABLE = new Set([
+  "models", "datasets", "degradation_models", "strategy_analyses", "rcm_studies", "fleets",
+]);
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -18,13 +27,51 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
+  const [link, setLink] = useState(null); // null = none, object = active
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const linkable = PUBLIC_LINKABLE.has(collection);
 
   const refresh = useCallback(() => {
     listShares(collection, artifactId)
       .then((d) => setShares(d.shares))
       .catch((e) => setError(e.message));
+    if (PUBLIC_LINKABLE.has(collection)) {
+      getPublicLink(collection, artifactId).then((d) => setLink(d.link)).catch(() => {});
+    }
   }, [collection, artifactId]);
   useEffect(() => refresh(), [refresh]);
+
+  const linkUrl = link ? `${window.location.origin}${link.path}` : "";
+
+  const onToggleLink = async () => {
+    setLinkBusy(true);
+    setError(null);
+    setCopied(false);
+    try {
+      if (link) {
+        await revokePublicLink(link.token);
+        setLink(null);
+      } else {
+        setLink(await createPublicLink(collection, artifactId));
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLinkBusy(false);
+    }
+  };
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(linkUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard can be unavailable; the URL is selectable */
+    }
+  };
 
   const onShare = async () => {
     if (!email.trim()) return;
@@ -95,6 +142,35 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {linkable && (
+        <div className="pl-section">
+          <label className="field-label">Public link</label>
+          <p className="muted-line" style={{ margin: "0.2rem 0 0.5rem" }}>
+            Anyone with the link can view it — no account needed. Read-only,
+            revocable, and it includes the linked analyses this one relies on.
+          </p>
+          {link ? (
+            <div className="row" style={{ gap: "0.5rem" }}>
+              <input
+                type="text"
+                readOnly
+                value={linkUrl}
+                style={{ flex: 1 }}
+                onFocus={(e) => e.target.select()}
+              />
+              <button onClick={onCopy}>{copied ? "Copied ✓" : "Copy"}</button>
+              <button className="secondary" onClick={onToggleLink} disabled={linkBusy}>
+                Revoke
+              </button>
+            </div>
+          ) : (
+            <button className="secondary" onClick={onToggleLink} disabled={linkBusy}>
+              {linkBusy ? "Creating…" : "Create public link"}
+            </button>
+          )}
         </div>
       )}
     </Modal>

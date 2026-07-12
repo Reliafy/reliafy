@@ -595,6 +595,29 @@ export function revokeShare(shareId) {
   return request(`/api/shares/${shareId}`, { method: "DELETE" });
 }
 
+// ---- Public share links -----------------------------------------------------
+
+export function createPublicLink(collection, artifactId) {
+  return request("/api/public-links", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ collection, artifact_id: artifactId }),
+  });
+}
+
+export function getPublicLink(collection, artifactId) {
+  return request(`/api/public-links?collection=${collection}&artifact_id=${artifactId}`);
+}
+
+export function revokePublicLink(token) {
+  return request(`/api/public-links/${token}`, { method: "DELETE" });
+}
+
+// Unauthenticated: resolve a public link to its artifact payload.
+export function getPublicArtifact(token) {
+  return request(`/api/public/${encodeURIComponent(token)}`);
+}
+
 // Operator-only stats (403 for regular accounts).
 export function getAdminStats() {
   return request("/api/admin/stats");

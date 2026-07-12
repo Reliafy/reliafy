@@ -3394,6 +3394,22 @@ select:disabled {
 .traffic-nums { width: 170px; color: var(--faint); white-space: nowrap; }
 .traffic-key { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%; }
 
+/* Public link section in the share dialog. */
+.pl-section {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+}
+
+/* Public artifact viewer (/p/:token): app-style content on the public shell. */
+.public-artifact {
+  min-height: 60vh;
+  padding: 28px 40px 48px;
+}
+@media (max-width: 700px) {
+  .public-artifact { padding: 18px 16px 36px; }
+}
+
 /* SEO product pages reuse the landing sections plus a prose column. */
 .prod-prose {
   max-width: 840px;

@@ -117,6 +117,8 @@ def init_db() -> None:
     db.metrics_events.create_index(
         [("created_at", 1)], expireAfterSeconds=90 * 24 * 3600
     )
+    db.public_links.create_index([("collection", 1), ("artifact_id", 1)])
+    db.public_links.create_index([("grantor_uid", 1)])
 
 
 def get_session() -> Iterator:
