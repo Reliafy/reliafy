@@ -10,7 +10,9 @@ export default function FleetDashboard() {
   useEffect(() => {
     listFleets().then((d) => setFleets(d.fleets || [])).catch(() => setFleets([]));
     listDegradationModels()
-      .then((d) => setTracked((d.models || []).reduce((s, m) => s + (m.n_items || 0), 0)))
+      .then((d) => setTracked((d.models || [])
+        .filter((m) => !m.is_sample)
+        .reduce((s, m) => s + (m.n_items || 0), 0)))
       .catch(() => setTracked(0));
   }, []);
 
@@ -18,7 +20,7 @@ export default function FleetDashboard() {
     (s, f) => s + (f.forecast_status === "ok" ? f.expected || 0 : 0), 0
   );
   const stats = fleets === null ? [] : [
-    { k: "Fleets", v: fleets.length },
+    { k: "Forecasts", v: fleets.length },
     { k: "Items in forecasts", v: fleets.reduce((s, f) => s + (f.n_items || 0), 0) },
     { k: "Expected failures (horizons)", v: expected.toFixed(1) },
     { k: "Tracked items (degradation)", v: tracked ?? "…" },
@@ -28,7 +30,7 @@ export default function FleetDashboard() {
     {
       to: "/fleet/forecasts",
       icon: <CompareIcon />,
-      title: "Failure forecast",
+      title: "Failure forecasts",
       body: "How many failures should you expect next quarter or next year? Enter each item's usage and let your life model answer — with replacement, for spares planning.",
       cta: "Open",
     },

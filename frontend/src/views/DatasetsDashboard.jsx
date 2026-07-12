@@ -10,10 +10,11 @@ export default function DatasetsDashboard() {
     listDatasets().then((d) => setDatasets(d.datasets)).catch(() => setDatasets([]));
   }, []);
 
-  const rows = datasets.reduce((s, d) => s + (d.n_rows || 0), 0);
-  const linked = datasets.reduce((s, d) => s + (d.n_models || 0), 0);
+  const own = datasets.filter((d) => !d.is_sample);
+  const rows = own.reduce((s, d) => s + (d.n_rows || 0), 0);
+  const linked = own.reduce((s, d) => s + (d.n_models || 0), 0);
   const stats = [
-    { k: "Datasets", v: datasets.length },
+    { k: "Datasets", v: own.length },
     { k: "Total rows", v: rows.toLocaleString() },
     { k: "Linked models", v: linked },
   ];

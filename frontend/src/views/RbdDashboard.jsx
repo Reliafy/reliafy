@@ -10,10 +10,11 @@ export default function RbdDashboard() {
     listRbds().then((d) => setRbds(d.rbds)).catch(() => setRbds([]));
   }, []);
 
-  const components = rbds.reduce((s, r) => s + (r.n_nodes || 0), 0);
-  const connections = rbds.reduce((s, r) => s + (r.n_edges || 0), 0);
+  const own = rbds.filter((r) => !r.is_sample);
+  const components = own.reduce((s, r) => s + (r.n_nodes || 0), 0);
+  const connections = own.reduce((s, r) => s + (r.n_edges || 0), 0);
   const stats = [
-    { k: "Saved RBDs", v: rbds.length },
+    { k: "Saved RBDs", v: own.length },
     { k: "Components", v: components.toLocaleString() },
     { k: "Connections", v: connections.toLocaleString() },
   ];

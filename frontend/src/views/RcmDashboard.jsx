@@ -9,7 +9,8 @@ export default function RcmDashboard() {
     listRcmStudies().then((d) => setStudies(d.studies || [])).catch(() => setStudies([]));
   }, []);
 
-  const totals = (studies || []).reduce(
+  const own = (studies || []).filter((s) => !s.is_sample);
+  const totals = own.reduce(
     (acc, s) => {
       const r = s.rollup || {};
       acc.decided += r.decided || 0;
@@ -21,7 +22,7 @@ export default function RcmDashboard() {
   );
 
   const stats = studies === null ? [] : [
-    { k: "Studies", v: studies.length },
+    { k: "Studies", v: own.length },
     { k: "Decisions", v: totals.decided },
     { k: "Supported by evidence", v: totals.supported },
     { k: "Contradicted", v: totals.contradicted },

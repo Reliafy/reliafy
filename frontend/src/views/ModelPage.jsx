@@ -60,7 +60,7 @@ export default function ModelPage() {
               readOnly={model.read_only}
             />
             <button className="secondary" onClick={onDelete}>
-              {model.read_only && !model.is_sample ? "Remove from my view" : "Delete"}
+              {model.read_only ? "Remove from my view" : "Delete"}
             </button>
           </div>
         )}

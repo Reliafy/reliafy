@@ -90,7 +90,7 @@ export default function FleetForecasts() {
       <header>
         <div>
           <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/fleet")}>Fleet</button> / <b>Failure forecast</b>
+            <button className="crumb-link" onClick={() => navigate("/fleet")}>Fleet</button> / <b>Failure forecasts</b>
           </div>
           <h1>Failure forecasts</h1>
           <p>
@@ -107,7 +107,7 @@ export default function FleetForecasts() {
       {capHit && (
         <div className="card upgrade-nudge">
           <p>
-            You've reached the free-plan limit of 1 fleet forecast.{" "}
+            You've reached the free-plan limit of 1 failure forecast.{" "}
             <Link to="/billing">Upgrade to Pro</Link> for unlimited fleets.
           </p>
         </div>
@@ -127,12 +127,12 @@ export default function FleetForecasts() {
         <div className="lib">
           <div className="tablebar">
             <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search fleets…" />
+            <ListSearch value={query} onChange={setQuery} placeholder="Search forecasts…" />
           </div>
           <table className="lib-table">
             <thead>
               <tr>
-                <th style={{ width: "30%" }}>Fleet</th>
+                <th style={{ width: "30%" }}>Forecast</th>
                 <th style={{ width: 80 }}>Items</th>
                 <th>Forecast</th>
                 <th>Updated</th>
@@ -171,7 +171,7 @@ export default function FleetForecasts() {
 
       {modalOpen && (
         <Modal
-          title="New fleet forecast"
+          title="New failure forecast"
           locked={creating}
           onClose={() => setModalOpen(false)}
           footer={
@@ -193,7 +193,7 @@ export default function FleetForecasts() {
                 type="text"
                 autoFocus
                 value={name}
-                placeholder="e.g. Delivery trucks — bearings"
+                placeholder="e.g. Delivery trucks — bearings, next 12 months"
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onCreate()}
               />

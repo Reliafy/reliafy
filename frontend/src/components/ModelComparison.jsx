@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Plot from "react-plotly.js";
 import CompareModal from "./CompareModal.jsx";
+import { compareModels } from "../api.js";
 
 const COLORS = ["#0284c7", "#16a34a", "#db2777", "#d97706", "#7c3aed", "#0891b2"];
 
@@ -23,6 +24,21 @@ const gofVal = (m, id) => {
 export default function ModelComparison() {
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState(null);
+  const [demoBusy, setDemoBusy] = useState(false);
+  const [demoError, setDemoError] = useState(null);
+
+  const runDemo = async () => {
+    setDemoBusy(true);
+    setDemoError(null);
+    try {
+      // The seeded bearing-fatigue sample: one 'hours' column of failure times.
+      setResult(await compareModels(null, { x: "hours" }, "hours", "sample-ds-bearings"));
+    } catch (err) {
+      setDemoError(err.message);
+    } finally {
+      setDemoBusy(false);
+    }
+  };
   const [fn, setFn] = useState("sf"); // sf | ff
 
   const unit = result?.unit;
@@ -151,7 +167,13 @@ export default function ModelComparison() {
       )}
 
       {!result && (
-        <p className="muted-line">No comparison yet — upload a dataset to begin.</p>
+        <p className="muted-line">
+          No comparison yet — upload a dataset, or{" "}
+          <button className="link-btn" onClick={runDemo} disabled={demoBusy}>
+            {demoBusy ? "ranking…" : "try it on the bearing sample"}
+          </button>
+          .{demoError ? ` (${demoError})` : ""}
+        </p>
       )}
 
       {open && (

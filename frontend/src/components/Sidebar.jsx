@@ -118,7 +118,7 @@ const ITEMS = [
     icon: <FleetIcon />,
     children: [
       { to: "/fleet/tracking", label: "Degradation tracking" },
-      { to: "/fleet/forecasts", label: "Failure forecast" },
+      { to: "/fleet/forecasts", label: "Failure forecasts" },
     ],
   },
   {
@@ -226,10 +226,16 @@ export default function Sidebar({ collapsed, onToggle }) {
           {!collapsed && <span className="side-label">Billing &amp; credits</span>}
         </NavLink>
       )}
-      <span className="side-item disabled" title="Guides — coming soon">
+      <a
+        className="side-item"
+        href="/blog"
+        target="_blank"
+        rel="noreferrer"
+        title="Guides & articles (opens the blog)"
+      >
         <span className="side-icon"><GuidesIcon /></span>
         {!collapsed && <span className="side-label">Guides</span>}
-      </span>
+      </a>
 
       <div className="side-foot">
         <span className="ava">{initials(user)}</span>

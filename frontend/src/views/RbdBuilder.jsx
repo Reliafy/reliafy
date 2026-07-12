@@ -24,6 +24,7 @@ import RbdSaveModal from "../components/RbdSaveModal.jsx";
 import RbdCalculator from "../components/RbdCalculator.jsx";
 import ValidationPanel, { graphSignature } from "../components/RbdValidation.jsx";
 import { saveRbd, getRbd, validateRbd } from "../api.js";
+import { ShareButton } from "../components/ShareDialog.jsx";
 import { registerRbdCanvas } from "../rbdBridge.js";
 import { normalizeRbdGraph } from "../rbdGraph.js";
 
@@ -322,6 +323,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   const [savedRbdId, setSavedRbdId] = useState(null);
   const [savedRbdName, setSavedRbdName] = useState("");
   const [savedRbdUpdatedAt, setSavedRbdUpdatedAt] = useState(null);
+  const [savedRbdReadOnly, setSavedRbdReadOnly] = useState(false);
   const [rbdUnit, setRbdUnit] = useState("");
   const [tab, setTab] = useState("builder"); // 'builder' | 'calc'
   const [validation, setValidation] = useState(null);
@@ -563,6 +565,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setSavedRbdId(saved.id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(saved.updated_at || null);
+      setSavedRbdReadOnly(false);
       setModal(null);
       onSaved?.(saved.id);
     },
@@ -571,7 +574,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
 
   // Replace the canvas with a saved graph; bump the id counter past loaded ids.
   const loadGraph = useCallback(
-    (graph, id, name, updatedAt = null) => {
+    (graph, id, name, updatedAt = null, readOnly = false) => {
       // Re-apply the input/output handle sides (and io styling): a saved graph
       // may not carry sourcePosition/targetPosition, so without this React Flow
       // would default the input's handle to the bottom and the output's to the
@@ -596,6 +599,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setSavedRbdId(id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
+      setSavedRbdReadOnly(readOnly);
       window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
     },
     [setNodes, setEdges, fitView]
@@ -604,7 +608,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   const openRbd = useCallback(
     async (id) => {
       const full = await getRbd(id);
-      loadGraph(full.graph, full.id, full.name, full.updated_at || null);
+      loadGraph(full.graph, full.id, full.name, full.updated_at || null, !!full.read_only);
       setModal(null);
     },
     [loadGraph]
@@ -618,6 +622,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     setSavedRbdId(null);
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
+    setSavedRbdReadOnly(false);
     window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
   }, [setNodes, setEdges, fitView]);
 
@@ -833,6 +838,14 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
           <button className="rbd-btn" onClick={() => setModal("saverbd")}>
             Save RBD
           </button>
+          {savedRbdId && (
+            <ShareButton
+              collection="rbds"
+              artifactId={savedRbdId}
+              name={savedRbdName || "Untitled RBD"}
+              readOnly={savedRbdReadOnly}
+            />
+          )}
           <button className="rbd-btn" onClick={autoLayout}>
             Auto-arrange
           </button>

@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/fleet")
 
 _CAP_MSG = (
-    "You've reached the free-plan limit of 1 fleet forecast. "
-    "Upgrade to Pro for unlimited fleets."
+    "You've reached the free-plan limit of 1 failure forecast. "
+    "Upgrade to Pro for unlimited forecasts."
 )
 
 

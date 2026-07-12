@@ -113,9 +113,10 @@ export function fitModel(distribution, file, mapping, { covariates, formula, uni
 
 // Fit and rank every parametric distribution against a dataset (with the
 // non-parametric empirical estimate). ``mapping`` is { x, c, n, xl, xr, tl, tr }.
-export function compareModels(file, mapping, unit) {
+export function compareModels(file, mapping, unit, datasetId) {
   const form = new FormData();
-  form.append("file", file);
+  if (datasetId) form.append("dataset_id", datasetId);
+  else if (file) form.append("file", file);
   for (const [field, column] of Object.entries(mapping)) {
     if (column) form.append(field, column);
   }

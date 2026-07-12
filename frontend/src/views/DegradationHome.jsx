@@ -77,7 +77,7 @@ export default function DegradationHome() {
       <header>
         <div>
           <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> / <b>Degradation</b>
+            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> / <b>Degradation models</b>
           </div>
           <h1>Degradation models</h1>
           <p>

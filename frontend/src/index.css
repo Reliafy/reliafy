@@ -4625,3 +4625,29 @@ button.danger:hover { background: #fdeeee; }
   box-shadow: 0 0 0 3px var(--acc-t);
 }
 .cell-input::placeholder { color: var(--faint); font-size: 12px; }
+
+/* First-run intro card (Modelling dashboard) */
+.intro-card {
+  max-width: 1120px;
+  margin: 0 0 4px;
+  border: 1px solid #cfdeed;
+  background: #eef3f9;
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+.intro-head { display: flex; align-items: center; justify-content: space-between; }
+.intro-head h3 { margin: 0; font-size: 15px; }
+.intro-steps { margin: 8px 0 2px; padding-left: 20px; font-size: 13.5px; line-height: 1.9; color: var(--muted); }
+.intro-steps a { color: var(--acc); }
+
+/* Inline link-styled button (compare demo) */
+.link-btn {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font: inherit;
+  color: var(--acc);
+  cursor: pointer;
+  text-decoration: underline;
+}

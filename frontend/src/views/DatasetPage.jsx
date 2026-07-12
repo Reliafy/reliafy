@@ -57,7 +57,7 @@ export default function DatasetPage() {
               readOnly={ds.read_only}
             />
             <button className="secondary" onClick={onDelete}>
-              {ds.read_only && !ds.is_sample ? "Remove from my view" : "Delete"}
+              {ds.read_only ? "Remove from my view" : "Delete"}
             </button>
           </div>
         )}

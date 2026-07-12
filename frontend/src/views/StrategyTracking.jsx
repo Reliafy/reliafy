@@ -124,6 +124,13 @@ export default function StrategyTracking() {
       </header>
 
       {error && <div className="card error">{error}</div>}
+      {fleet.is_sample && (
+        <div className="card note">
+          This is a shared sample fleet — items you register here are yours but
+          live alongside the sample. For real assets,{" "}
+          <Link to="/fleet/tracking">create your own fleet</Link>.
+        </div>
+      )}
 
       {panelModel && (
         <TrackedItemsPanel

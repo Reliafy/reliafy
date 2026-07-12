@@ -9,9 +9,9 @@ export default function ModellingCompare() {
     <div className="app">
       <header>
         <div>
-          <button className="back-link" onClick={() => navigate("/modelling")}>
-            ← Modelling
-          </button>
+          <div className="crumb">
+            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> / <b>Model comparison</b>
+          </div>
           <h1>Model comparison</h1>
           <p>
             Fit every parametric distribution to a dataset, overlay them on the

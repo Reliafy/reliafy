@@ -196,10 +196,11 @@ export default function ChatPanel() {
                 <p>I can help with reliability engineering and act in Reliafy — fit models, build RBDs, run replacement and failure-finding calculations, track degradation, forecast fleet failures, and build evidence-linked RCM studies.</p>
                 <div className="chat-suggest">
                   {[
-                    "Fit a Weibull to the bearing sample",
-                    "Build a 2-out-of-3 redundant sensor system",
-                    "What does a Weibull beta below 1 mean?",
-                  ].map((s) => <button key={s} onClick={() => setInput(s)}>{s}</button>)}
+  "Fit a Weibull to the bearing sample",
+  "How many failures will my fleet see next year?",
+  "Start an RCM study for a pump system",
+  "What's the optimal replacement interval for a part costing $200 planned / $1500 on failure?",
+].map((s) => <button key={s} onClick={() => setInput(s)}>{s}</button>)}
                 </div>
                 {showBalance && (
                   <p className="chat-credit-note">AI usage draws on your credit balance ({credits(balance)} credits). <button className="linkish" onClick={() => navigate("/billing")}>Manage credits</button></p>

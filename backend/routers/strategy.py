@@ -25,7 +25,8 @@ router = APIRouter(prefix="/api/strategy")
 
 @router.post("/compare")
 async def compare_endpoint(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(default=None),
+    dataset_id: str | None = Form(default=None),
     x: str | None = Form(default=None),
     c: str | None = Form(default=None),
     n: str | None = Form(default=None),
@@ -36,8 +37,20 @@ async def compare_endpoint(
     unit: str | None = Form(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
-    """Fit and rank every parametric distribution against a dataset."""
-    contents = await file.read()
+    """Fit and rank every parametric distribution against a dataset (an
+    uploaded CSV, or a saved dataset by id — e.g. the samples)."""
+    if dataset_id:
+        from backend.db import get_db
+        from backend.services import datasets as datasets_service
+
+        dataset = datasets_service.get_dataset(get_db(), dataset_id, owner_id=user["uid"])
+        if dataset is None:
+            return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+        contents = dataset.data
+    elif file is not None:
+        contents = await file.read()
+    else:
+        return JSONResponse(status_code=422, content={"detail": "Provide a CSV file or a dataset_id."})
     mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}
     try:
         df = read_dataframe(contents)

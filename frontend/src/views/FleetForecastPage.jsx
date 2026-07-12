@@ -85,7 +85,7 @@ export default function FleetForecastPage() {
   };
 
   const onRename = async () => {
-    const name = window.prompt("Fleet name", fleet.name);
+    const name = window.prompt("Forecast name", fleet.name);
     if (!name || !name.trim() || name.trim() === fleet.name) return;
     try {
       const updated = await renameFleet(id, name.trim());
@@ -121,7 +121,7 @@ export default function FleetForecastPage() {
         <div>
           <div className="crumb">
             <button className="crumb-link" onClick={() => navigate("/fleet")}>Fleet</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/fleet/forecasts")}>Failure forecast</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/fleet/forecasts")}>Failure forecasts</button> /{" "}
             <b>{fleet.name}</b>
           </div>
           <h1>
