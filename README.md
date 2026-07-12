@@ -11,6 +11,10 @@ A **FastAPI** backend does the statistics with
 
 ![Reliafy — Weibull probability plot with confidence bounds](docs/screenshot.png)
 
+**Where it's going:** see the [public roadmap](ROADMAP.md) — 👍 the
+[roadmap issues](https://github.com/Reliafy/reliafy/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc)
+you want built first.
+
 ## Features
 
 - **Life-distribution modelling** — fit Weibull, Exponential, Normal,
