@@ -58,7 +58,7 @@ export default function DegradationModelPage() {
             name={model.name}
             readOnly={model.read_only}
           />
-          <button onClick={() => navigate(`/fleet/tracking/${model.id}`)}>
+          <button onClick={() => navigate("/fleet/tracking")}>
             Track items{nItems > 0 ? ` (${nItems})` : ""}
           </button>
         </div>
@@ -68,7 +68,7 @@ export default function DegradationModelPage() {
 
       <p className="muted-line" style={{ marginTop: "1rem" }}>
         Monitor individual assets against this model under{" "}
-        <Link to={`/fleet/tracking/${model.id}`} className="evidence-link">
+        <Link to="/fleet/tracking" className="evidence-link">
           Fleet → Degradation tracking
         </Link>
         .

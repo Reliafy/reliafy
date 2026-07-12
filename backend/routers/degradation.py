@@ -201,34 +201,6 @@ async def save_model(
     return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": doc.results})
 
 
-def _health_of(prediction: dict | None) -> str:
-    """One item's health bucket — mirrors the frontend badge thresholds."""
-    if not prediction or prediction.get("method") == "error":
-        return "monitoring"
-    if (prediction.get("prob_never_fails") or 0) > 0.5:
-        return "monitoring"
-    p = prediction.get("prob_failed")
-    if p is None:
-        return "monitoring"
-    if p >= 0.5:
-        return "replace"
-    if p >= 0.05:
-        return "plan"
-    return "healthy"
-
-
-def _tracking_rollup(items) -> dict:
-    """Fleet-health summary for a model's tracked items."""
-    rollup = {"healthy": 0, "plan": 0, "replace": 0, "monitoring": 0}
-    next_crossing = None
-    for it in items:
-        rollup[_health_of(it.prediction)] += 1
-        ft = (it.prediction or {}).get("failure_time")
-        if ft is not None and (next_crossing is None or ft < next_crossing):
-            next_crossing = ft
-    return {**rollup, "next_crossing": next_crossing}
-
-
 @router.get("/degradation/models")
 def list_models(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
     shared_by = shares_service.shared_by_map(session, ctx.uid, "degradation_models") if ctx.is_personal else {}
@@ -239,7 +211,7 @@ def list_models(session=Depends(get_session), ctx: AccessCtx = Depends(get_acces
     }
     return {"models": [
         {**_model_summary(m, ctx, len(items_by_model[m.id])),
-         "tracking": _tracking_rollup(items_by_model[m.id]),
+         "tracking": degradation_service.tracking_rollup(items_by_model[m.id]),
          **({"shared_by": shared_by[m.id]} if m.id in shared_by else {})}
         for m in models
     ]}
@@ -310,6 +282,7 @@ def create_item(
     name: str = Body(...),
     measurements: list = Body(default=[]),
     meta: dict = Body(default={}),
+    fleet_id: str | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -318,7 +291,7 @@ def create_item(
         return denied
     try:
         item = degradation_service.create_item(
-            session, model_id, name, measurements, ctx.write_owner, meta
+            session, model_id, name, measurements, ctx.write_owner, meta, fleet_id=fleet_id
         )
         access_service.stamp_editor(session, "tracked_items", item.id, ctx)
     except degradation_service.ModelNotFound:

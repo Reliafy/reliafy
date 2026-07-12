@@ -389,11 +389,11 @@ export function deleteDegradationModel(id) {
 
 // Tracked items: register an asset against a degradation model, append
 // measurements over time, and read back its threshold-crossing prediction.
-export function createTrackedItem(modelId, { name, measurements, meta } = {}) {
+export function createTrackedItem(modelId, { name, measurements, meta, fleetId } = {}) {
   return request(`/api/degradation/models/${modelId}/items`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, measurements, meta: meta || {} }),
+    body: JSON.stringify({ fleet_id: fleetId || null, name, measurements, meta: meta || {} }),
   });
 }
 
@@ -616,4 +616,34 @@ export function putFleetItems(id, settings, items, expectedUpdatedAt) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ settings, items, expected_updated_at: expectedUpdatedAt || null }),
   });
+}
+
+// ---- Tracked fleets (degradation tracking groups) --------------------------------
+
+export function listTrackedFleets() {
+  return request("/api/fleet/tracked");
+}
+
+export function createTrackedFleet(name, modelId) {
+  return request("/api/fleet/tracked", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, model_id: modelId }),
+  });
+}
+
+export function getTrackedFleet(id) {
+  return request(`/api/fleet/tracked/${id}`);
+}
+
+export function renameTrackedFleet(id, name) {
+  return request(`/api/fleet/tracked/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteTrackedFleet(id) {
+  return request(`/api/fleet/tracked/${id}`, { method: "DELETE" });
 }

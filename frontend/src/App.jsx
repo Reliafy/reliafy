@@ -69,10 +69,11 @@ function PageViews() {
   return null;
 }
 
-// Old bookmarks: /strategy/tracking/<model> -> /fleet/tracking/<model>.
+// Old bookmarks carried MODEL ids; fleets are their own ids now, so the
+// safest landing is the tracking index.
 function TrackingRedirect() {
-  const { modelId } = useParams();
-  return <Navigate to={`/fleet/tracking/${modelId}`} replace />;
+  useParams();
+  return <Navigate to="/fleet/tracking" replace />;
 }
 
 function AppShell() {
@@ -113,7 +114,7 @@ function AppShell() {
             <Route path="/strategy/tracking/:modelId" element={<TrackingRedirect />} />
             <Route path="/fleet" element={<FleetDashboard />} />
             <Route path="/fleet/tracking" element={<FleetTrackingHome />} />
-            <Route path="/fleet/tracking/:modelId" element={<StrategyTracking />} />
+            <Route path="/fleet/tracking/:fleetId" element={<StrategyTracking />} />
             <Route path="/fleet/forecasts" element={<FleetForecasts />} />
             <Route path="/fleet/forecasts/:id" element={<FleetForecastPage />} />
             <Route path="/strategy/analyses" element={<StrategyAnalyses />} />

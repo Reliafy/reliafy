@@ -29,7 +29,7 @@ export function rulText(pred, unit) {
 
 // Fleet table for a degradation model's tracked items, plus the register-item
 // modal. Selecting a row surfaces its RUL chart in the parent.
-export default function TrackedItemsPanel({ model, items, selectedId, onSelect, onChanged, onDelete }) {
+export default function TrackedItemsPanel({ model, fleetId, items, selectedId, onSelect, onChanged, onDelete }) {
   const [registering, setRegistering] = useState(false);
   const [measuring, setMeasuring] = useState(null); // item receiving a new reading
   const unit = model?.results?.unit || model?.unit || "";
@@ -126,6 +126,7 @@ export default function TrackedItemsPanel({ model, items, selectedId, onSelect, 
       {registering && (
         <RegisterItemModal
           model={model}
+          fleetId={fleetId}
           onClose={() => setRegistering(false)}
           onCreated={(item) => { setRegistering(false); onChanged(item); }}
         />
@@ -202,7 +203,7 @@ function AddMeasurementModal({ model, item, onClose, onAdded }) {
   );
 }
 
-function RegisterItemModal({ model, onClose, onCreated }) {
+function RegisterItemModal({ model, fleetId, onClose, onCreated }) {
   const [name, setName] = useState("");
   const [rows, setRows] = useState([{ t: "", y: "" }]);
   const [busy, setBusy] = useState(false);
@@ -225,7 +226,7 @@ function RegisterItemModal({ model, onClose, onCreated }) {
       const measurements = rows
         .filter((r) => r.t !== "" && r.y !== "")
         .map((r) => ({ t: Number(r.t), y: Number(r.y) }));
-      const item = await createTrackedItem(model.id, { name: name.trim(), measurements });
+      const item = await createTrackedItem(model.id, { name: name.trim(), measurements, fleetId });
       onCreated(item);
     } catch (err) {
       setError(err.code === "cap" ? `${err.message}` : err.message);

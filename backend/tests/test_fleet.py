@@ -258,3 +258,66 @@ def test_sample_fleet_seeds_and_computes(session, monkeypatch):
     # Idempotent.
     samples.seed_samples(session)
     assert session.fleets.count_documents({"_id": "sample-fleet-trucks"}) == 1
+
+
+# ---- Tracked fleets (degradation tracking groups) ----------------------------------
+
+def test_tracked_fleets_many_per_model(client):
+    client.act_as(A)
+    # Fit a degradation model.
+    rows = []
+    rng = np.random.default_rng(9)
+    for i in range(6):
+        slope = 0.004 + rng.normal(0, 0.0005)
+        for t in (200, 800, 1400, 2000):
+            rows.append({"i": f"u{i}", "x": t, "y": round(slope * t + rng.normal(0, 0.05), 3)})
+    buf = io.StringIO(); pd.DataFrame(rows).to_csv(buf, index=False)
+    dm = client.post("/api/degradation/models", data={
+        "name": "D", "i": "i", "x": "x", "y": "y", "threshold": "8",
+    }, files={"file": ("d.csv", buf.getvalue().encode(), "text/csv")}).json()
+
+    # Two fleets on ONE model.
+    f1 = client.post("/api/fleet/tracked", json={"name": "Sydney", "model_id": dm["id"]}).json()
+    f2 = client.post("/api/fleet/tracked", json={"name": "Brisbane", "model_id": dm["id"]}).json()
+    assert f1["id"] != f2["id"] and f1["model_id"] == f2["model_id"]
+
+    # Items land in their fleet and stay isolated between fleets.
+    client.post(f"/api/degradation/models/{dm['id']}/items",
+                json={"name": "SYD-1", "fleet_id": f1["id"],
+                      "measurements": [{"t": 100, "y": 1.0}, {"t": 500, "y": 2.5}]})
+    client.post(f"/api/degradation/models/{dm['id']}/items",
+                json={"name": "BNE-1", "fleet_id": f2["id"],
+                      "measurements": [{"t": 200, "y": 1.2}]})
+    d1 = client.get(f"/api/fleet/tracked/{f1['id']}").json()
+    d2 = client.get(f"/api/fleet/tracked/{f2['id']}").json()
+    assert [it["name"] for it in d1["items"]] == ["SYD-1"]
+    assert [it["name"] for it in d2["items"]] == ["BNE-1"]
+    assert d1["tracking"]["healthy"] + d1["tracking"]["plan"] + d1["tracking"]["replace"] + d1["tracking"]["monitoring"] == 1
+    assert d1["model"]["threshold"] == 8.0
+
+    # Deleting a fleet removes only its items.
+    assert client.delete(f"/api/fleet/tracked/{f1['id']}").status_code == 200
+    assert client.db.tracked_items.count_documents({"fleet_id": f1["id"]}) == 0
+    assert client.db.tracked_items.count_documents({"fleet_id": f2["id"]}) == 1
+
+
+def test_orphan_items_adopted_into_fleet(client):
+    client.act_as(A)
+    rows = []
+    rng = np.random.default_rng(4)
+    for i in range(6):
+        slope = 0.004 + rng.normal(0, 0.0005)
+        for t in (200, 800, 1400, 2000):
+            rows.append({"i": f"u{i}", "x": t, "y": round(slope * t + rng.normal(0, 0.05), 3)})
+    buf = io.StringIO(); pd.DataFrame(rows).to_csv(buf, index=False)
+    dm = client.post("/api/degradation/models", data={
+        "name": "D", "i": "i", "x": "x", "y": "y", "threshold": "8",
+    }, files={"file": ("d.csv", buf.getvalue().encode(), "text/csv")}).json()
+    # Legacy item: no fleet_id.
+    client.post(f"/api/degradation/models/{dm['id']}/items",
+                json={"name": "legacy", "measurements": [{"t": 100, "y": 1.0}]})
+    fleets = client.get("/api/fleet/tracked").json()["fleets"]
+    mine = [f for f in fleets if not f["is_sample"]]
+    assert len(mine) == 1 and mine[0]["n_items"] == 1
+    detail = client.get(f"/api/fleet/tracked/{mine[0]['id']}").json()
+    assert [it["name"] for it in detail["items"]] == ["legacy"]

@@ -128,6 +128,9 @@ class TrackedItem(BaseModel):
 
     id: str
     model_id: str
+    # The tracked fleet this item belongs to (one model can back many fleets).
+    # Legacy items without one are adopted into an auto-created fleet on read.
+    fleet_id: Optional[str] = None
     name: str
     owner_id: Optional[str] = None
     updated_by: Optional[dict] = None
@@ -156,3 +159,19 @@ class Fleet(BaseModel):
     settings: dict = Field(default_factory=dict)
     # [{id, name, current_use, rate|null, notes?}]
     items: list = Field(default_factory=list)
+
+
+class TrackedFleet(BaseModel):
+    """A named group of tracked items monitored against one degradation model.
+
+    One model can back any number of fleets (e.g. "Sydney trucks" and
+    "Brisbane trucks" both tracked against the same brake-wear model).
+    """
+
+    id: str
+    name: str
+    owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    model_id: str

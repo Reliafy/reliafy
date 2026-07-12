@@ -177,7 +177,8 @@ def _clean_measurements(measurements) -> list[dict]:
     return [{"t": t, "y": cleaned[t]} for t in sorted(cleaned)]
 
 
-def create_item(db, model_id: str, name: str, measurements, owner_id: str, meta: dict | None = None) -> TrackedItem:
+def create_item(db, model_id: str, name: str, measurements, owner_id: str,
+                meta: dict | None = None, fleet_id: str | None = None) -> TrackedItem:
     doc = get_model(db, model_id, owner_id)
     if doc is None:
         raise ModelNotFound(model_id)
@@ -187,6 +188,7 @@ def create_item(db, model_id: str, name: str, measurements, owner_id: str, meta:
     item = TrackedItem(
         id=uuid.uuid4().hex,
         model_id=model_id,
+        fleet_id=fleet_id,
         name=name.strip(),
         owner_id=owner_id,
         meta=meta or {},
@@ -197,13 +199,15 @@ def create_item(db, model_id: str, name: str, measurements, owner_id: str, meta:
     return item
 
 
-def list_items(db, model_id: str, owner_id: str | list[str], hidden=frozenset()) -> list[TrackedItem]:
+def list_items(db, model_id: str, owner_id: str | list[str], hidden=frozenset(),
+               fleet_id: str | None = None) -> list[TrackedItem]:
     """The owner's items on this model, plus sample items, minus hidden ones."""
+    query = {"model_id": model_id, "owner_id": {"$in": access.owner_in(owner_id)}}
+    if fleet_id is not None:
+        query["fleet_id"] = fleet_id
     return [
         from_doc(TrackedItem, d)
-        for d in db.tracked_items.find(
-            {"model_id": model_id, "owner_id": {"$in": access.owner_in(owner_id)}}
-        ).sort("created_at", -1)
+        for d in db.tracked_items.find(query).sort("created_at", -1)
         if d["_id"] not in hidden
     ]
 
@@ -276,3 +280,126 @@ def _predict(db, model_id: str, owner_id: str, measurements: list[dict]) -> dict
     t = [m["t"] for m in measurements]
     y = [m["y"] for m in measurements]
     return degradation_fit.predict_item(live, t, y)
+
+
+# ---- Tracked fleets ----------------------------------------------------------
+#
+# Named groups of tracked items against one model. Legacy items created
+# before fleets existed carry no fleet_id; ``adopt_orphan_items`` folds them
+# into an auto-created fleet per (owner, model) the first time fleets are
+# listed, so nothing is ever stranded.
+
+def create_tracked_fleet(db, name: str, model_id: str, owner_id: str) -> "TrackedFleet":
+    from backend.schema import TrackedFleet
+
+    if not (name or "").strip():
+        raise FitError("The fleet needs a name.")
+    if get_model(db, model_id, owner_id) is None:
+        raise ModelNotFound(model_id)
+    fleet = TrackedFleet(id=uuid.uuid4().hex, name=name.strip(),
+                         owner_id=owner_id, model_id=model_id)
+    db.tracked_fleets.insert_one(to_doc(fleet))
+    return fleet
+
+
+def adopt_orphan_items(db, owner_id: str) -> None:
+    """Fold pre-fleet items into an auto-created fleet per (owner, model)."""
+    orphans = list(db.tracked_items.find({
+        "owner_id": owner_id,
+        "$or": [{"fleet_id": None}, {"fleet_id": {"$exists": False}}],
+    }))
+    if not orphans:
+        return
+    from backend.schema import TrackedFleet
+
+    for model_id in {o["model_id"] for o in orphans}:
+        model = get_model(db, model_id, owner_id)
+        existing = db.tracked_fleets.find_one({"owner_id": owner_id, "model_id": model_id})
+        if existing is None:
+            fleet = TrackedFleet(
+                id=uuid.uuid4().hex,
+                name=f"{model.name} — fleet" if model else "Tracked fleet",
+                owner_id=owner_id, model_id=model_id,
+            )
+            db.tracked_fleets.insert_one(to_doc(fleet))
+            fid = fleet.id
+        else:
+            fid = existing["_id"]
+        db.tracked_items.update_many(
+            {"owner_id": owner_id, "model_id": model_id,
+             "$or": [{"fleet_id": None}, {"fleet_id": {"$exists": False}}]},
+            {"$set": {"fleet_id": fid}},
+        )
+
+
+def list_tracked_fleets(db, owner_id, hidden=frozenset()) -> list:
+    from backend.schema import TrackedFleet
+
+    return [
+        from_doc(TrackedFleet, d)
+        for d in db.tracked_fleets.find(
+            {"owner_id": {"$in": access.owner_in(owner_id)}}
+        ).sort("created_at", -1)
+        if d["_id"] not in hidden
+    ]
+
+
+def get_tracked_fleet(db, fleet_id: str, owner_id=None):
+    from backend.schema import TrackedFleet
+
+    query = {"_id": fleet_id}
+    if owner_id is not None:
+        query["owner_id"] = {"$in": access.owner_in(owner_id)}
+    return from_doc(TrackedFleet, db.tracked_fleets.find_one(query))
+
+
+def rename_tracked_fleet(db, fleet_id: str, name: str, owner_id: str):
+    fleet = get_tracked_fleet(db, fleet_id, owner_id)
+    if fleet is None or fleet.owner_id != owner_id:
+        raise ModelNotFound(fleet_id)
+    fleet.name = name
+    fleet.updated_at = _now()
+    db.tracked_fleets.update_one(
+        {"_id": fleet_id, "owner_id": owner_id},
+        {"$set": {"name": name, "updated_at": fleet.updated_at}},
+    )
+    return fleet
+
+
+def delete_tracked_fleet(db, fleet_id: str, owner_id: str) -> None:
+    result = db.tracked_fleets.delete_one({"_id": fleet_id, "owner_id": owner_id})
+    if result.deleted_count == 0:
+        raise ModelNotFound(fleet_id)
+    db.tracked_items.delete_many({"fleet_id": fleet_id, "owner_id": owner_id})
+
+
+def health_of(prediction: dict | None) -> str:
+    """One item's health bucket — mirrors the frontend badge thresholds."""
+    if not prediction or prediction.get("method") == "error":
+        return "monitoring"
+    if (prediction.get("prob_never_fails") or 0) > 0.5:
+        return "monitoring"
+    p = prediction.get("prob_failed")
+    if p is None:
+        return "monitoring"
+    if p >= 0.5:
+        return "replace"
+    if p >= 0.05:
+        return "plan"
+    return "healthy"
+
+
+def tracking_rollup(items) -> dict:
+    """Fleet-health summary for a set of tracked items."""
+    rollup = {"healthy": 0, "plan": 0, "replace": 0, "monitoring": 0}
+    next_crossing = None
+    for it in items:
+        rollup[health_of(it.prediction)] += 1
+        ft = (it.prediction or {}).get("failure_time")
+        if ft is not None and (next_crossing is None or ft < next_crossing):
+            next_crossing = ft
+    return {**rollup, "next_crossing": next_crossing}
+
+
+def list_fleet_items(db, fleet, owner_id, hidden=frozenset()) -> list[TrackedItem]:
+    return list_items(db, fleet.model_id, owner_id, hidden, fleet_id=fleet.id)

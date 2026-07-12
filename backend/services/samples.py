@@ -360,6 +360,9 @@ def seed_samples(db) -> None:
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample degradation %r: %s", spec["id"], exc)
 
+    # Last: groups the sample tracked items (needs the degradation model above).
+    _seed_tracked_fleet(db)
+
 
 def _seed_rcm_study(db) -> None:
     """Sample RCM study wiring every sample artifact together as evidence.
@@ -582,3 +585,32 @@ def _seed_fleet(db) -> None:
         logger.info("Seeded sample fleet 'sample-fleet-trucks'.")
     except Exception:  # pragma: no cover - seeding must never block boot
         logger.exception("Failed to seed the sample fleet")
+
+
+def _seed_tracked_fleet(db) -> None:
+    """Sample tracked fleet grouping the sample tracked items.
+
+    Also the upgrade path: pre-fleet sample items get their fleet_id set so
+    existing deployments come up consistent.
+    """
+    from backend.schema import TrackedFleet
+
+    try:
+        if db.tracked_fleets.find_one({"_id": "sample-tracked-trucks"}) is None:
+            if db.degradation_models.find_one({"_id": "sample-deg-brake-wear"}) is None:
+                return
+            fleet = TrackedFleet(
+                id="sample-tracked-trucks",
+                name="Delivery trucks — brake pads (sample)",
+                owner_id=SAMPLE_OWNER,
+                model_id="sample-deg-brake-wear",
+            )
+            db.tracked_fleets.insert_one(to_doc(fleet))
+            logger.info("Seeded sample tracked fleet 'sample-tracked-trucks'.")
+        db.tracked_items.update_many(
+            {"owner_id": SAMPLE_OWNER, "model_id": "sample-deg-brake-wear",
+             "$or": [{"fleet_id": None}, {"fleet_id": {"$exists": False}}]},
+            {"$set": {"fleet_id": "sample-tracked-trucks"}},
+        )
+    except Exception:  # pragma: no cover - seeding must never block boot
+        logger.exception("Failed to seed the sample tracked fleet")

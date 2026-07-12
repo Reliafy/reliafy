@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/admin")
 
 _ARTIFACTS = (
     "datasets", "models", "rbds", "degradation_models",
-    "tracked_items", "strategy_analyses", "rcm_studies", "fleets",
+    "tracked_items", "tracked_fleets", "strategy_analyses", "rcm_studies", "fleets",
 )
 
 
