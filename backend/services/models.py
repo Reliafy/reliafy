@@ -60,6 +60,9 @@ def save_model(
     result = fitting.fit(
         distribution_id, df, mapping, covariates, formula, unit, options=options
     )
+    # "Best fit" resolves to a concrete winner at fit time: persist that, so
+    # the saved model (and its refit-on-demand spec) is stable forever.
+    resolved_id = result.get("distribution_id", distribution_id)
 
     model = Model(
         id=uuid.uuid4().hex,
@@ -67,9 +70,9 @@ def save_model(
         owner_id=owner_id or dataset.owner_id,
         dataset_id=dataset.id,
         kind=result.get("kind", "distribution"),
-        distribution_id=distribution_id,
+        distribution_id=resolved_id,
         spec={
-            "distribution_id": distribution_id,
+            "distribution_id": resolved_id,
             "mapping": {k: v for k, v in mapping.items() if v},
             "covariates": list(covariates or []),
             "formula": formula or None,

@@ -2,6 +2,7 @@ import { useState } from "react";
 import Select from "./Select.jsx";
 // Short blurbs shown under the dropdown for context (keyed by distribution id).
 const DESCRIPTIONS = {
+  best: "Fits every distribution and keeps the lowest-AIC winner — let the data decide.",
   weibull: "Two-parameter (α scale, β shape). The most common life model.",
   exponential: "Single rate parameter; constant hazard.",
   normal: "Gaussian location–scale model.",

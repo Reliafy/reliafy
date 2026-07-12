@@ -137,13 +137,22 @@ def distributions_endpoint() -> dict:
     """
     plain = [
         {
-            "id": key,
-            "name": entry["name"],
+            "id": "best",
+            "name": "Best fit (auto)",
             "covariates": False,
-            "params": list(getattr(entry["dist"], "param_names", [])),
-            "offsetable": bool(entry.get("offsetable")),
-        }
-        for key, entry in DISTRIBUTIONS.items()
+            "params": [],
+            "offsetable": True,
+        },
+        *(
+            {
+                "id": key,
+                "name": entry["name"],
+                "covariates": False,
+                "params": list(getattr(entry["dist"], "param_names", [])),
+                "offsetable": bool(entry.get("offsetable")),
+            }
+            for key, entry in DISTRIBUTIONS.items()
+        ),
     ]
     regression = [
         {"id": key, "name": entry["name"], "covariates": True, "params": []}

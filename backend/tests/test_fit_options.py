@@ -179,3 +179,48 @@ def test_save_and_fleet_guard_via_api(client):
     forecast2 = put2.json()["forecast"]
     assert forecast2["status"] == "ok"
     assert 0 <= forecast2["expected"] <= 1
+
+
+# ---- best fit ----------------------------------------------------------------
+
+def test_best_fit_picks_lowest_aic():
+    rng = np.random.default_rng(21)
+    df = pd.DataFrame({"t": rng.lognormal(6.5, 0.5, 500)})
+    r = fitting.fit("best", df, {"x": "t"}, None, None, None)
+    sel = r["selection"]
+    assert sel["criterion"] == "aic"
+    aics = [c["aic"] for c in sel["candidates"]]
+    assert aics == sorted(aics)
+    assert r["distribution_id"] == sel["candidates"][0]["id"]
+    # Lognormal data: the lognormal family should be at/near the top.
+    assert sel["candidates"][0]["id"] in {"lognormal", "expo_weibull", "gamma", "weibull"}
+    # Full payload identical to a direct fit (plot, functions, gof present).
+    assert r["plot"]["scatter"]["x"] and r["gof"]
+
+
+def test_best_fit_rejects_fixed_but_allows_offset():
+    rng = np.random.default_rng(22)
+    df = pd.DataFrame({"t": rng.weibull(2, 300) * 1000 + 500})
+    with pytest.raises(fitting.FitError, match="specific distribution"):
+        fitting.fit("best", df, {"x": "t"}, None, None, None, options={"fixed": {"beta": 2}})
+    r = fitting.fit("best", df, {"x": "t"}, None, None, None, options={"offset": True})
+    # Winner honoured the offset when it supports one.
+    if r["options"].get("offset"):
+        assert "gamma" in (r.get("extras") or {})
+
+
+def test_best_fit_saved_model_persists_winner(client):
+    rng = np.random.default_rng(23)
+    csv = io.BytesIO(pd.DataFrame({"t": rng.weibull(2, 200) * 1000}).to_csv(index=False).encode())
+    r = client.post(
+        "/api/models",
+        data={"name": "Auto pick", "distribution": "best", "x": "t"},
+        files={"file": ("d.csv", csv, "text/csv")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    winner = body["results"]["distribution_id"]
+    assert winner != "best" and winner in body["results"]["selection"]["candidates"][0]["id"]
+    # Refit-on-demand spec is pinned to the winner, so it can't drift.
+    doc = client.db.models.find_one({"_id": body["id"]})
+    assert doc["spec"]["distribution_id"] == winner

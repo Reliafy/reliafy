@@ -83,6 +83,14 @@ export default function ResultView({ result }) {
           <div className="name">observations</div>
         </div>
       </div>
+      {result.selection && result.selection.candidates?.length > 1 && (
+        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+          Selected by lowest AIC over {result.selection.candidates.length}{" "}
+          candidates — next best:{" "}
+          {result.selection.candidates[1].name} (ΔAIC +
+          {(result.selection.candidates[1].aic - result.selection.candidates[0].aic).toFixed(1)})
+        </p>
+      )}
       {result.options && (
         <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
           Fit options:{" "}

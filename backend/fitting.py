@@ -283,6 +283,10 @@ def options_from_form(
     return opts if any(opts.values()) else None
 
 
+# Pseudo-distribution id: fit every plain distribution and keep the lowest-AIC.
+BEST_ID = "best"
+
+
 def normalize_options(distribution: str, options: Optional[dict]) -> dict:
     """Validate/clean fit options (offset, zi, lfp, fixed) for a distribution.
 
@@ -298,6 +302,14 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
     }
     if not any([out["offset"], out["zi"], out["lfp"], out["fixed"]]):
         return {}
+    if distribution == BEST_ID:
+        if out["fixed"]:
+            raise FitError(
+                "Fix parameters after choosing a specific distribution — "
+                "'Best fit' compares models with different parameter sets."
+            )
+        # offset applies only to the offsetable candidates; handled per-fit.
+        return {k: v for k, v in out.items() if v}
     entry = DISTRIBUTIONS.get(distribution)
     if entry is None:
         raise FitError(
@@ -355,12 +367,14 @@ def fit(
     options = normalize_options(distribution, options)
     if distribution in REGRESSION_MODELS:
         result = _fit_regression(distribution, df, mapping, covariates, formula)
+    elif distribution == BEST_ID:
+        result = _fit_best(df, mapping, options)
     elif distribution in DISTRIBUTIONS:
         result = _fit_distribution(distribution, df, mapping, options)
     else:
         raise FitError(
             f"Unknown model '{distribution}'. Available: "
-            f"{', '.join([*DISTRIBUTIONS, *REGRESSION_MODELS])}."
+            f"{', '.join([BEST_ID, *DISTRIBUTIONS, *REGRESSION_MODELS])}."
         )
     result["unit"] = (unit or "").strip()
     # Confidence bounds and probability-paper transforms can produce non-finite
@@ -384,6 +398,51 @@ def _json_safe(value):
     if isinstance(value, np.integer):
         return int(value)
     return value
+
+
+def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -> dict:
+    """Fit every plain distribution and return the full result for the
+    lowest-AIC winner, with the ranking attached as ``selection``.
+
+    The scoring pass is fits-only (no plots); the winner is then refit through
+    the normal path so its payload is identical to a direct fit. Options apply
+    per candidate where valid (offset only on offsetable distributions).
+    """
+    options = options or {}
+    try:
+        base_kwargs = build_fit_inputs(df, mapping)
+    except Exception as exc:
+        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+
+    ranking = []
+    for dist_id, entry in DISTRIBUTIONS.items():
+        kwargs = dict(base_kwargs)
+        for key in ("zi", "lfp"):
+            if options.get(key):
+                kwargs[key] = True
+        if options.get("offset") and entry.get("offsetable"):
+            kwargs["offset"] = True
+        try:
+            model = entry["dist"].fit(**kwargs)
+            gof = _goodness_of_fit(model)
+            aic = next((g["value"] for g in gof if g["id"] == "aic"), None)
+        except Exception:
+            continue  # a distribution that won't fit this data is skipped
+        if aic is None or not math.isfinite(float(aic)):
+            continue
+        ranking.append({"id": dist_id, "name": entry["name"], "aic": float(aic)})
+
+    if not ranking:
+        raise FitError("None of the distributions could be fit to this data.")
+    ranking.sort(key=lambda r: r["aic"])
+
+    winner = ranking[0]["id"]
+    win_options = dict(options)
+    if win_options.get("offset") and not DISTRIBUTIONS[winner].get("offsetable"):
+        win_options.pop("offset")
+    result = _fit_distribution(winner, df, mapping, win_options)
+    result["selection"] = {"criterion": "aic", "candidates": ranking}
+    return result
 
 
 # Extra fitted quantities from fit options: attribute name -> display label.

@@ -66,7 +66,10 @@ export default function UploadModal({ onClose, onFitted }) {
     }
   }, [options, distribution]);
 
-  const distName = distributions.find((d) => d.id === distribution)?.name || "model";
+  const distName =
+    distribution === "best"
+      ? "best model"
+      : distributions.find((d) => d.id === distribution)?.name || "model";
 
   const pickFile = async (f) => {
     if (!f) return;
