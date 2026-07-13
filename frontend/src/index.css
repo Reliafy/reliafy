@@ -2666,11 +2666,13 @@ button.secondary:hover:not(:disabled) {
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
+/* Match the standalone select box hover: accent border + faint tint. */
 .map-field:hover:not(.disabled) {
-  border-color: var(--line);
+  border-color: var(--acc);
+  background: rgba(47, 109, 246, 0.03);
 }
 
 .map-field:focus-within {
