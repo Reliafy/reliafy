@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import ApiReference from "../components/ApiReference.jsx";
 import { createApiToken, listApiTokens, revokeApiToken } from "../api.js";
 import { relativeTime } from "../instrument.js";
 
@@ -53,8 +54,9 @@ export default function ApiTokensPage() {
     } catch { /* selectable field remains */ }
   };
 
+  const origin = (typeof window !== "undefined" && window.location.origin) || "https://reliafy.com";
   const curl = minted
-    ? `curl -X POST https://reliafy.com/api/ingest/fleets/<fleet-id>/usage \\\n  -H "Authorization: Bearer ${minted.token}" \\\n  -H "Content-Type: text/csv" --data-binary @usage.csv`
+    ? `curl -X POST ${origin}/api/ingest/fleets/<fleet-id>/usage \\\n  -H "Authorization: Bearer ${minted.token}" \\\n  -H "Content-Type: text/csv" --data-binary @usage.csv`
     : "";
 
   return (
@@ -156,6 +158,8 @@ export default function ApiTokensPage() {
           </table>
         )}
       </div>
+
+      <ApiReference />
     </div>
   );
 }
