@@ -4791,6 +4791,20 @@ button.danger:hover { background: #fdeeee; }
 .sel-option-main { display: flex; flex-direction: column; min-width: 0; }
 .sel-option-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel-option-hint { font-size: 11px; color: var(--muted); }
+.sel-group {
+  padding: 8px 12px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  pointer-events: none;
+}
+.sel-group:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
 .sel-check { display: inline-flex; color: var(--acc); flex-shrink: 0; }
 .sel-check svg { width: 13px; height: 13px; }
 

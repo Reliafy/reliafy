@@ -21,7 +21,7 @@ export default function ParamsModelModal({ onClose, onCreated }) {
 
   useEffect(() => {
     getDistributions()
-      .then((d) => setDists(d.distributions.filter((x) => !x.covariates && x.id !== "best")))
+      .then((d) => setDists(d.distributions.filter((x) => !x.covariates && !x.nonparametric && x.id !== "best")))
       .catch(() => setError("Couldn't load distributions."));
   }, []);
 

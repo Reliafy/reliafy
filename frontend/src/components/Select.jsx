@@ -23,7 +23,11 @@ const Check = () => (
   </svg>
 );
 
-const norm = (o) => (typeof o === "object" && o !== null ? o : { value: o, label: String(o) });
+// An option is a value row, or a non-selectable group header ({ heading }).
+const norm = (o) =>
+  typeof o === "object" && o !== null
+    ? (o.heading != null ? { ...o, _header: true } : o)
+    : { value: o, label: String(o) };
 
 export default function Select({
   value,
@@ -35,7 +39,18 @@ export default function Select({
   title,
 }) {
   const items = options.map(norm);
-  const selected = items.find((o) => o.value === value);
+  const selected = items.find((o) => !o._header && o.value === value);
+
+  // Move focus to the next selectable (non-header) row in a direction.
+  const step = (from, dir) => {
+    let i = from;
+    for (let n = 0; n < items.length; n++) {
+      i += dir;
+      if (i < 0 || i >= items.length) return from;
+      if (!items[i]._header) return i;
+    }
+    return from;
+  };
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [pos, setPos] = useState(null); // { left, top, bottom, minWidth, up }
@@ -64,8 +79,9 @@ export default function Select({
   };
 
   const choose = (o) => {
+    if (o._header || o.disabled) return;
     setOpen(false);
-    if (!o.disabled && o.value !== value) onChange(o.value);
+    if (o.value !== value) onChange(o.value);
   };
 
   // Close on outside interaction / scroll / resize while open.
@@ -106,10 +122,10 @@ export default function Select({
       return;
     }
     if (e.key === "Escape") { e.preventDefault(); setOpen(false); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(i + 1, items.length - 1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
-    else if (e.key === "Home") { e.preventDefault(); setActive(0); }
-    else if (e.key === "End") { e.preventDefault(); setActive(items.length - 1); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => step(i, 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => step(i, -1)); }
+    else if (e.key === "Home") { e.preventDefault(); setActive(step(-1, 1)); }
+    else if (e.key === "End") { e.preventDefault(); setActive(step(items.length, -1)); }
     else if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
       if (items[active]) choose(items[active]);
@@ -148,30 +164,36 @@ export default function Select({
             minWidth: pos.minWidth,
           }}
         >
-          {items.map((o, i) => (
-            <button
-              type="button"
-              key={String(o.value) + i}
-              data-i={i}
-              role="option"
-              aria-selected={o.value === value}
-              className={
-                "sel-option" +
-                (o.value === value ? " selected" : "") +
-                (i === active ? " active" : "") +
-                (o.disabled ? " disabled" : "")
-              }
-              onMouseEnter={() => setActive(i)}
-              onClick={() => choose(o)}
-              disabled={o.disabled}
-            >
-              <span className="sel-option-main">
-                <span className="sel-option-label">{o.label}</span>
-                {o.hint && <span className="sel-option-hint">{o.hint}</span>}
-              </span>
-              {o.value === value && <span className="sel-check"><Check /></span>}
-            </button>
-          ))}
+          {items.map((o, i) =>
+            o._header ? (
+              <div key={"h" + i} data-i={i} className="sel-group" role="presentation">
+                {o.heading}
+              </div>
+            ) : (
+              <button
+                type="button"
+                key={String(o.value) + i}
+                data-i={i}
+                role="option"
+                aria-selected={o.value === value}
+                className={
+                  "sel-option" +
+                  (o.value === value ? " selected" : "") +
+                  (i === active ? " active" : "") +
+                  (o.disabled ? " disabled" : "")
+                }
+                onMouseEnter={() => setActive(i)}
+                onClick={() => choose(o)}
+                disabled={o.disabled}
+              >
+                <span className="sel-option-main">
+                  <span className="sel-option-label">{o.label}</span>
+                  {o.hint && <span className="sel-option-hint">{o.hint}</span>}
+                </span>
+                {o.value === value && <span className="sel-check"><Check /></span>}
+              </button>
+            )
+          )}
         </div>,
         document.body
       )}

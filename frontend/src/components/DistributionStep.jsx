@@ -54,15 +54,24 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
     (opts.offset ? 1 : 0) + (opts.zi ? 1 : 0) + (opts.lfp ? 1 : 0) +
     Object.keys(opts.fixed || {}).length;
 
+  // Group the picker into Parametric / Non-parametric when both are present
+  // (they only coexist on the no-covariate path; regression is filtered out
+  // upstream, so a covariate list needs no grouping).
+  const parametric = options.filter((d) => !d.nonparametric);
+  const nonparam = options.filter((d) => d.nonparametric);
+  const asOpt = (d) => ({ value: d.id, label: d.name });
+  const selectOptions = nonparam.length && parametric.length
+    ? [
+        { heading: "Parametric" }, ...parametric.map(asOpt),
+        { heading: "Non-parametric" }, ...nonparam.map(asOpt),
+      ]
+    : options.map(asOpt);
+
   return (
     <div className="dist-picker">
       <div className="dist-field">
-        <span className="dist-label">Distribution</span>
-        <Select
-          value={value}
-          onChange={onChange}
-          options={options.map((d) => ({ value: d.id, label: d.name }))}
-        />
+        <span className="dist-label">Model</span>
+        <Select value={value} onChange={onChange} options={selectOptions} />
       </div>
       {DESCRIPTIONS[value] && <p className="dist-blurb">{DESCRIPTIONS[value]}</p>}
 

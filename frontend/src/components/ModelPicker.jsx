@@ -23,7 +23,9 @@ export default function ModelPicker({ label, value, onChange }) {
 
   useEffect(() => {
     getDistributions()
-      .then((d) => setDists(d.distributions.filter((x) => !x.covariates)))
+      // Manual-parameter entry only makes sense for plain parametric
+      // distributions — not "best" (a selector) or non-parametric (no params).
+      .then((d) => setDists(d.distributions.filter((x) => !x.covariates && !x.nonparametric && x.id !== "best")))
       .catch(() => {});
     // Include proportional-hazards (regression) models: they can't be entered
     // as plain parameters, but a node can reference a saved one and supply

@@ -229,7 +229,7 @@ export default function UploadModal({ onClose, onFitted }) {
 
   return (
     <Modal
-      title="Fit a parametric model"
+      title="Fit a model"
       onClose={onClose}
       locked={loading}
       footer={footer}
@@ -333,7 +333,7 @@ export default function UploadModal({ onClose, onFitted }) {
           <p className="muted-line" style={{ marginTop: 0 }}>
             {hasCovariates
               ? "Covariates detected — choose a proportional-hazards model."
-              : "No covariates — choose a distribution."}
+              : "Choose a parametric distribution or a non-parametric estimator."}
           </p>
           <DistributionStep
             options={options}
