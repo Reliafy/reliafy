@@ -4,6 +4,9 @@ Automate the data Reliafy otherwise takes by hand: push meter readings,
 degradation measurements, and new failure data from scripts, cron jobs, or
 your CMMS export pipeline.
 
+> **Pro feature.** On Reliafy Cloud the programmatic API requires a Pro plan.
+> (Self-hosted instances have it unconditionally — there are no plans.)
+
 ## Authentication
 
 Create a personal token in the app under **API access** (sidebar → Account).

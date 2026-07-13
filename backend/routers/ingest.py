@@ -20,12 +20,18 @@ from fastapi.responses import JSONResponse
 
 from backend.auth import get_current_user
 from backend.db import get_session
+from backend.services import billing as billing_service
 from backend.services import ingest as ingest_service
 from backend.services import metrics as metrics_service
 from backend.services import tokens as tokens_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
+
+_PRO_REQUIRED = (
+    "The programmatic API is a Pro feature. Upgrade to Pro to create tokens "
+    "and push data to Reliafy."
+)
 
 # Simple per-user sliding-window rate limit for the ingest endpoints. In-memory
 # (per instance) — a genuine abuse ceiling, not billing-grade accounting.
@@ -47,13 +53,20 @@ def ingest_user(
     authorization: str | None = Header(default=None),
     session=Depends(get_session),
 ) -> dict:
-    """Token-or-session auth for the ingest endpoints."""
+    """Token-or-session auth for the ingest endpoints, gated to Pro.
+
+    The Pro check runs on every ingest request (not just token creation) so a
+    token minted while Pro stops working the moment the plan lapses.
+    """
     if authorization and authorization.startswith("Bearer rlf_"):
         user = tokens_service.verify(session, authorization.split(" ", 1)[1].strip())
         if user is None:
             raise HTTPException(status_code=401, detail="Invalid or revoked API token.")
-        return user
-    return get_current_user(authorization)
+    else:
+        user = get_current_user(authorization)
+    if not billing_service.api_access_allowed(session, user):
+        raise HTTPException(status_code=402, detail=_PRO_REQUIRED)
+    return user
 
 
 # ---- token management (session auth) ----------------------------------------
@@ -64,6 +77,8 @@ def create_token(
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
+    if not billing_service.api_access_allowed(session, user):
+        return JSONResponse(status_code=402, content={"detail": _PRO_REQUIRED, "code": "pro_required"})
     try:
         return JSONResponse(content=tokens_service.create_token(session, user["uid"], name))
     except tokens_service.TokenError as exc:
@@ -72,7 +87,10 @@ def create_token(
 
 @router.get("/tokens")
 def list_tokens(session=Depends(get_session), user: dict = Depends(get_current_user)) -> dict:
-    return {"tokens": tokens_service.list_tokens(session, user["uid"])}
+    return {
+        "tokens": tokens_service.list_tokens(session, user["uid"]),
+        "allowed": billing_service.api_access_allowed(session, user),
+    }
 
 
 @router.delete("/tokens/{token_id}")

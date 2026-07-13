@@ -153,6 +153,7 @@ const TIERS = (primaryHref) => [
       "Unlimited fleet monitoring (degradation & RUL)",
       "Unlimited evidence-linked RCM studies",
       "Fleet failure forecasting — spares demand from your models",
+      "API access — push meter data & measurements from your scripts",
       "Team workspaces: create teams and edit together",
       "AI assistant: fits models and builds RBDs for you",
       "Top-up credit packs from $5 — credits never expire",

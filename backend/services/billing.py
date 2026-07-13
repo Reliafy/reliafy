@@ -237,6 +237,19 @@ def would_exceed_cap(db, uid: str, kind: str) -> bool:
     return owned_count(db, uid, kind) >= cap_for(kind)
 
 
+def api_access_allowed(db, user: dict) -> bool:
+    """Whether this user may use the programmatic API (tokens + ingestion).
+
+    A Pro-only feature on the cloud. Always allowed when billing is off
+    (self-hosted single-user) or for operator accounts.
+    """
+    if not config.BILLING_ENABLED:
+        return True
+    if is_admin_user(user):
+        return True
+    return account(db, user["uid"])["is_pro"]
+
+
 def usage_summary(db, uid: str) -> dict:
     acct = account(db, uid)
     return {

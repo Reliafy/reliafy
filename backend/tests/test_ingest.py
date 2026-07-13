@@ -283,3 +283,62 @@ def test_ingest_rate_limit(client, monkeypatch):
         for _ in range(5)
     ]
     assert 429 in codes
+
+
+# ---- Pro gating (cloud) --------------------------------------------------------
+
+def test_api_is_pro_gated(client, monkeypatch):
+    from backend import config
+    from backend.services import billing
+
+    monkeypatch.setattr(config, "BILLING_ENABLED", True)
+    client.act_as(A)
+
+    # Free user: token creation is refused with an upgrade hint.
+    r = client.post("/api/tokens", json={"name": "cron"})
+    assert r.status_code == 402 and r.json()["code"] == "pro_required"
+    assert client.get("/api/tokens").json()["allowed"] is False
+
+    # Upgrade to Pro: creation works and the gate opens.
+    billing.set_plan(client.db, A, "pro")
+    created = client.post("/api/tokens", json={"name": "cron"})
+    assert created.status_code == 200
+    raw = created.json()["token"]
+    assert client.get("/api/tokens").json()["allowed"] is True
+
+    # A model + fleet to push at.
+    model = _save_model(client)
+    fleet = client.post("/api/fleet/fleets", json={"name": "T", "model_id": model["id"]}).json()
+    client.put(
+        f"/api/fleet/fleets/{fleet['id']}/items",
+        json={"settings": {"periods": 6, "period_label": "months", "default_rate": 100, "method": "single"},
+              "items": [{"name": "T1", "current_use": 100}],
+              "expected_updated_at": fleet["updated_at"]},
+    )
+    client.act_as(None)
+    ok = client.post(
+        f"/api/ingest/fleets/{fleet['id']}/usage",
+        json={"items": [{"name": "T1", "current_use": 500}]},
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert ok.status_code == 200
+
+    # Plan lapses: the same token stops working immediately (402).
+    billing.set_plan(client.db, A, "free")
+    lapsed = client.post(
+        f"/api/ingest/fleets/{fleet['id']}/usage",
+        json={"items": [{"name": "T1", "current_use": 600}]},
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert lapsed.status_code == 402
+
+
+def test_admin_bypasses_api_gate(client, monkeypatch):
+    from backend import config
+
+    monkeypatch.setattr(config, "BILLING_ENABLED", True)
+    monkeypatch.setattr(config, "ADMIN_EMAILS", {"a@x.com"})
+    client.act_as(A)
+    r = client.post("/api/tokens", json={"name": "ops"})
+    assert r.status_code == 200
+    assert client.get("/api/tokens").json()["allowed"] is True

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { createApiToken, listApiTokens, revokeApiToken } from "../api.js";
 import { relativeTime } from "../instrument.js";
 
 // Personal API tokens for the ingestion API. The raw token is shown exactly
-// once at creation; only a hash is stored server-side.
+// once at creation; only a hash is stored server-side. Pro-only on the cloud.
 export default function ApiTokensPage() {
   const [tokens, setTokens] = useState(null);
+  const [allowed, setAllowed] = useState(true);
   const [name, setName] = useState("");
   const [minted, setMinted] = useState(null); // {name, token} — show-once
   const [busy, setBusy] = useState(false);
@@ -13,7 +15,12 @@ export default function ApiTokensPage() {
   const [copied, setCopied] = useState(false);
 
   const refresh = useCallback(() => {
-    listApiTokens().then((d) => setTokens(d.tokens)).catch((e) => setError(e.message));
+    listApiTokens()
+      .then((d) => {
+        setTokens(d.tokens);
+        setAllowed(d.allowed !== false);
+      })
+      .catch((e) => setError(e.message));
   }, []);
   useEffect(() => refresh(), [refresh]);
 
@@ -65,6 +72,17 @@ export default function ApiTokensPage() {
         </div>
       </header>
 
+      {!allowed && (
+        <div className="card note">
+          <p style={{ marginTop: 0 }}>
+            <b>The programmatic API is a Pro feature.</b> Upgrade to create
+            tokens and push meter readings, measurements, and failure data to
+            Reliafy from your own scripts and cron jobs.
+          </p>
+          <Link className="cta cta-solid" to="/billing">Upgrade to Pro</Link>
+        </div>
+      )}
+
       <div className="card">
         <div className="row" style={{ gap: "0.6rem", alignItems: "flex-end" }}>
           <label className="login-field" style={{ flex: 1, maxWidth: 340 }}>
@@ -73,11 +91,12 @@ export default function ApiTokensPage() {
               type="text"
               value={name}
               placeholder="e.g. CMMS nightly export"
+              disabled={!allowed}
               onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && onCreate()}
+              onKeyDown={(e) => e.key === "Enter" && allowed && onCreate()}
             />
           </label>
-          <button onClick={onCreate} disabled={busy}>
+          <button onClick={onCreate} disabled={busy || !allowed}>
             {busy ? "Creating…" : "Create token"}
           </button>
         </div>
