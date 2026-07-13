@@ -2597,6 +2597,76 @@ button.secondary:hover:not(:disabled) {
 .fit-step { display: flex; flex-direction: column; gap: 1.15rem; }
 .fit-step > * { margin-top: 0 !important; margin-bottom: 0 !important; }
 
+/* New-dataset flow: choice cards, structured-entry form, editable grid. */
+.ds-choose { display: grid; gap: 0.7rem; }
+.ds-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  cursor: pointer;
+  color: var(--text);
+  box-shadow: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ds-choice:hover { border-color: var(--acc); background: rgba(47, 109, 246, 0.03); }
+.ds-choice-h { font-size: 15px; font-weight: 600; }
+.ds-choice-b { font-size: 13px; color: var(--muted); }
+
+.ds-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.4rem; }
+.ds-chip {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.3rem 0.7rem;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ds-chip.on { background: var(--acc); border-color: var(--acc); color: #fff; }
+
+.ds-grid-wrap { overflow-x: auto; }
+.ds-grid { border-collapse: collapse; width: 100%; }
+.ds-grid th {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: left;
+  padding: 2px 4px 5px;
+}
+.ds-grid td { padding: 2px; }
+.ds-grid td input {
+  width: 100%;
+  min-width: 74px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.35rem 0.45rem;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--panel);
+  color: var(--text);
+}
+.ds-grid td input:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 2px rgba(47,109,246,0.18); }
+.ds-grid-x { width: 28px; text-align: center; }
+.ds-grid-x button {
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--faint);
+  font-size: 13px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+.ds-grid-x button:hover:not(:disabled) { color: #a23a3a; background: none; }
+
 /* Paste-data textarea. */
 .paste-area {
   width: 100%;

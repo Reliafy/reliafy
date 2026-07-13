@@ -1,21 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { listDatasets, uploadDataset, deleteDataset } from "../api.js";
-import PasteDataModal from "../components/PasteDataModal.jsx";
+import { listDatasets, deleteDataset } from "../api.js";
+import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 
-const PasteIcon = () => (
+const PlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
-    <rect x="9" y="3" width="6" height="4" rx="1" />
-  </svg>
-);
-
-const UploadIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 16V4m0 0 4 4m-4-4-4 4" />
-    <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+    <path d="M12 5v14M5 12h14" />
   </svg>
 );
 const OpenIcon = () => (
@@ -54,15 +46,13 @@ export default function DatasetsHome() {
   const [datasets, setDatasets] = useState(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [pasteOpen, setPasteOpen] = useState(false);
-  const inputRef = useRef(null);
+  const [newOpen, setNewOpen] = useState(false);
 
-  // Open the file picker directly when arriving from the dashboard "Upload" card.
+  // Open the New-dataset flow directly when arriving from the dashboard card.
   useEffect(() => {
     if (location.state?.openUpload) {
       window.history.replaceState({}, "");
-      inputRef.current?.click();
+      setNewOpen(true);
     }
   }, [location.state]);
 
@@ -74,20 +64,10 @@ export default function DatasetsHome() {
 
   useEffect(() => refresh(), [refresh]);
 
-  const onPick = async (file) => {
-    if (!file) return;
-    setUploading(true);
-    setError(null);
-    try {
-      const ds = await uploadDataset(file);
-      await refresh();
-      navigate(`/datasets/d/${ds.id}`);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setUploading(false);
-      if (inputRef.current) inputRef.current.value = "";
-    }
+  const onCreated = (ds) => {
+    setNewOpen(false);
+    refresh();
+    navigate(`/datasets/d/${ds.id}`);
   };
 
   const onDelete = async (e, d) => {
@@ -110,13 +90,6 @@ export default function DatasetsHome() {
 
   return (
     <div className="app">
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".csv,text/csv"
-        hidden
-        onChange={(e) => onPick(e.target.files?.[0])}
-      />
       <header>
         <div>
           <div className="crumb">
@@ -124,18 +97,13 @@ export default function DatasetsHome() {
           </div>
           <h1>Datasets</h1>
           <p>
-            Uploaded CSVs, stored once and shared across the models fitted from
-            them. Upload a file here or when you fit a new model.
+            Stored once and shared across the models fitted from them. Upload a
+            CSV, paste from a spreadsheet, or type data into a form.
           </p>
         </div>
-        <div className="row" style={{ margin: 0, gap: "0.5rem" }}>
-          <button className="secondary" onClick={() => setPasteOpen(true)}>
-            <PasteIcon /> Paste data
-          </button>
-          <button onClick={() => inputRef.current?.click()} disabled={uploading}>
-            <UploadIcon /> {uploading ? "Uploading…" : "Upload CSV"}
-          </button>
-        </div>
+        <button onClick={() => setNewOpen(true)}>
+          <PlusIcon /> New dataset
+        </button>
       </header>
 
       {error && <div className="card error">{error}</div>}
@@ -145,15 +113,10 @@ export default function DatasetsHome() {
       ) : datasets.length === 0 ? (
         <div className="card empty">
           <h2>No datasets yet</h2>
-          <p>Upload a CSV, paste data straight from a spreadsheet, or fit a model to create one.</p>
-          <div className="row" style={{ marginTop: "1rem", justifyContent: "center", gap: "0.5rem" }}>
-            <button className="secondary" onClick={() => setPasteOpen(true)}>
-              <PasteIcon /> Paste data
-            </button>
-            <button onClick={() => inputRef.current?.click()} disabled={uploading}>
-              <UploadIcon /> {uploading ? "Uploading…" : "Upload CSV"}
-            </button>
-          </div>
+          <p>Upload a CSV, paste from a spreadsheet, type data into a form, or fit a model to create one.</p>
+          <button style={{ marginTop: "1rem" }} onClick={() => setNewOpen(true)}>
+            <PlusIcon /> New dataset
+          </button>
         </div>
       ) : (
         <>
@@ -216,15 +179,8 @@ export default function DatasetsHome() {
         </>
       )}
 
-      {pasteOpen && (
-        <PasteDataModal
-          onClose={() => setPasteOpen(false)}
-          onCreated={(ds) => {
-            setPasteOpen(false);
-            refresh();
-            navigate(`/datasets/d/${ds.id}`);
-          }}
-        />
+      {newOpen && (
+        <NewDatasetModal onClose={() => setNewOpen(false)} onCreated={onCreated} />
       )}
     </div>
   );
