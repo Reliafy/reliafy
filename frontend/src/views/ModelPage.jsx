@@ -55,7 +55,7 @@ export default function ModelPage() {
         </div>
         {model && (
           <div className="head-actions">
-            {!model.read_only && (
+            {!model.read_only && model.dataset_id && (
               <button className="secondary" onClick={() => setEditing(true)}>
                 Edit fit
               </button>

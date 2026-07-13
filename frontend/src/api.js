@@ -228,6 +228,20 @@ export function deleteModel(id) {
   return request(`/api/models/${id}`, { method: "DELETE" });
 }
 
+// Create a model from parameters alone (no data): functions & life metrics,
+// no probability plot. ``params`` is [{name, value}]; ``extras`` may hold
+// gamma/p/f0 for offset/LFP/zero-inflated models.
+export function createModelFromParams(name, distribution, params, { unit, extras } = {}) {
+  return withEvent(
+    request("/api/models/from-params", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, distribution, params, unit: unit || null, extras: extras || null }),
+    }),
+    "model_save"
+  );
+}
+
 // Refit a saved model in place with an edited spec (same dataset, same id --
 // everything referencing the model sees the updated fit).
 export function updateModelFit(id, { distribution, mapping, covariates, formula, unit, fitOptions } = {}) {

@@ -265,6 +265,34 @@ async def save_model(
     return JSONResponse(content=_model_detail(model, ctx))
 
 
+@router.post("/models/from-params")
+def create_from_params(
+    name: str = Body(...),
+    distribution: str = Body(...),
+    params: list = Body(default=[]),
+    unit: str | None = Body(default=None),
+    extras: dict | None = Body(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Create a parameters-only model (no data) — reliability functions and
+    life metrics, but no probability plot. Counts against the model cap."""
+    denied = _creation_denied(session, ctx, "models")
+    if denied is not None:
+        return denied
+    if not (name or "").strip():
+        return JSONResponse(status_code=422, content={"detail": "A name is required."})
+    try:
+        model = models_service.import_model(
+            session, ctx.write_owner, name.strip(),
+            distribution=distribution, unit=unit, params=params, extras=extras,
+        )
+        access_service.stamp_editor(session, "models", model.id, ctx)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return JSONResponse(content=_model_detail(model, ctx))
+
+
 @router.get("/models/{model_id}")
 def get_model(
     model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)

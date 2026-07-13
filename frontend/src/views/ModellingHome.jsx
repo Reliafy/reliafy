@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import UploadModal from "../components/UploadModal.jsx";
+import ParamsModelModal from "../components/ParamsModelModal.jsx";
 import ResultView from "../components/ResultView.jsx";
 import ModelLibrary from "./ModelLibrary.jsx";
 import { useModels } from "../useModels.js";
@@ -11,6 +12,7 @@ export default function ModellingHome() {
   const location = useLocation();
   const { models, loading, refresh } = useModels();
   const [modalOpen, setModalOpen] = useState(false);
+  const [paramsOpen, setParamsOpen] = useState(false);
 
   // Open the new-model flow directly when arriving from the dashboard card.
   useEffect(() => {
@@ -76,12 +78,17 @@ export default function ModellingHome() {
             inspect, predict, or export.
           </p>
         </div>
-        <button onClick={() => setModalOpen(true)}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          New model
-        </button>
+        <div className="row" style={{ margin: 0, gap: "0.5rem" }}>
+          <button className="secondary" onClick={() => setParamsOpen(true)}>
+            From parameters
+          </button>
+          <button onClick={() => setModalOpen(true)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New model
+          </button>
+        </div>
       </header>
 
       {pending ? (
@@ -115,6 +122,16 @@ export default function ModellingHome() {
 
       {modalOpen && (
         <UploadModal onClose={() => setModalOpen(false)} onFitted={onFitted} />
+      )}
+      {paramsOpen && (
+        <ParamsModelModal
+          onClose={() => setParamsOpen(false)}
+          onCreated={(model) => {
+            setParamsOpen(false);
+            refresh();
+            navigate(`/modelling/m/${model.id}`);
+          }}
+        />
       )}
     </div>
   );

@@ -44,10 +44,14 @@ function RandomnessVerdict({ r }) {
 // Presentational result panel for a fit (used for both fresh and saved models).
 export default function ResultView({ result }) {
   const isRegression = result.kind === "regression";
-  const [tab, setTab] = useState(isRegression ? "coef" : "plot");
+  // Params-only models (created from parameters, no data) have no probability
+  // plot or goodness-of-fit — just the functions.
+  const hasPlot = !!result.plot;
+  const [tab, setTab] = useState(isRegression ? "coef" : hasPlot ? "plot" : "calc");
 
   let tabs = isRegression ? REGRESSION_TABS : DISTRIBUTION_TABS;
   if (!result.functions) tabs = tabs.filter((t) => t.id !== "calc");
+  if (!hasPlot) tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
 
   const color = distColor(result.distribution);
   const gof = result.gof || [];
@@ -78,11 +82,19 @@ export default function ResultView({ result }) {
             <div className="name">{p.name}</div>
           </div>
         ))}
-        <div className="stat">
-          <div className="value">{result.n}</div>
-          <div className="name">observations</div>
-        </div>
+        {result.n != null && (
+          <div className="stat">
+            <div className="value">{result.n}</div>
+            <div className="name">observations</div>
+          </div>
+        )}
       </div>
+      {result.params_only && (
+        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+          Created from parameters — reliability functions and life metrics are
+          available; there's no probability plot without data.
+        </p>
+      )}
       {result.selection && result.selection.candidates?.length > 1 && (
         <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
           Selected by lowest AIC over {result.selection.candidates.length}{" "}

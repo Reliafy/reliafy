@@ -278,3 +278,42 @@ def test_update_fit_rejected_for_read_only(client):
         json={"distribution": "weibull", "mapping": {"x": "t"}},
     )
     assert r.status_code in (402, 403)
+
+
+# ---- create from parameters (in-app, no data) --------------------------------
+
+def test_create_from_params_endpoint(client):
+    r = client.post(
+        "/api/models/from-params",
+        json={"name": "Handbook Weibull", "distribution": "weibull", "unit": "hours",
+              "params": [{"name": "alpha", "value": 1200}, {"name": "beta", "value": 2.3}]},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["results"]["params_only"] is True
+    assert body["results"]["plot"] is None
+    assert body["results"]["functions"]["curves"]["x"]  # functions work
+    assert body["dataset_id"] == ""  # no dataset
+
+    # It reads back like any model.
+    got = client.get(f"/api/models/{body['id']}").json()
+    assert got["results"]["distribution"] == "Weibull"
+
+
+def test_create_from_params_with_offset_and_validation(client):
+    r = client.post(
+        "/api/models/from-params",
+        json={"name": "Offset", "distribution": "weibull",
+              "params": [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}],
+              "extras": {"gamma": 300, "p": 1, "f0": 0}},
+    )
+    assert r.status_code == 200
+    assert r.json()["results"]["extras"] == {"gamma": 300.0}
+
+    # Bad distribution and missing name -> 422.
+    assert client.post("/api/models/from-params",
+                       json={"name": "x", "distribution": "nope", "params": [{"value": 1}]}
+                       ).status_code == 422
+    assert client.post("/api/models/from-params",
+                       json={"name": "", "distribution": "weibull", "params": [{"value": 1}]}
+                       ).status_code == 422
