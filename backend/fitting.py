@@ -45,6 +45,7 @@ from surpyval import (
     WeibullPH,
 )
 from surpyval import ExpoWeibull, Gumbel, Logistic, LogLogistic
+from surpyval import Binomial, FlemingHarrington, KaplanMeier, NelsonAalen, Turnbull
 from surpyval.univariate.regression import CoxPH
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
@@ -61,6 +62,16 @@ DISTRIBUTIONS = {
     "expo_weibull": {"name": "Exponentiated Weibull", "dist": ExpoWeibull, "offsetable": True},
     "gumbel": {"name": "Gumbel", "dist": Gumbel, "offsetable": False},
     "logistic": {"name": "Logistic", "dist": Logistic, "offsetable": False},
+}
+
+# Non-parametric estimators (no distribution assumed): the "estimation axis"
+# of the same single-event life data. Same x/c/n/xl/xr/tl/tr mapping as the
+# distributions; produce an empirical survival curve, not fitted parameters.
+NONPARAMETRIC = {
+    "kaplan_meier": {"name": "Kaplan-Meier", "est": KaplanMeier},
+    "nelson_aalen": {"name": "Nelson-Aalen", "est": NelsonAalen},
+    "fleming_harrington": {"name": "Fleming-Harrington", "est": FlemingHarrington},
+    "turnbull": {"name": "Turnbull", "est": Turnbull},
 }
 
 # Proportional-hazards regression models (require covariates). Each is fit with
@@ -369,12 +380,14 @@ def fit(
         result = _fit_regression(distribution, df, mapping, covariates, formula)
     elif distribution == BEST_ID:
         result = _fit_best(df, mapping, options)
+    elif distribution in NONPARAMETRIC:
+        result = _fit_nonparametric(distribution, df, mapping)
     elif distribution in DISTRIBUTIONS:
         result = _fit_distribution(distribution, df, mapping, options)
     else:
         raise FitError(
             f"Unknown model '{distribution}'. Available: "
-            f"{', '.join([BEST_ID, *DISTRIBUTIONS, *REGRESSION_MODELS])}."
+            f"{', '.join([BEST_ID, *DISTRIBUTIONS, *NONPARAMETRIC, *REGRESSION_MODELS])}."
         )
     result["unit"] = (unit or "").strip()
     # Confidence bounds and probability-paper transforms can produce non-finite
@@ -480,6 +493,45 @@ def result_from_params(
     if randomness is not None:
         result["randomness"] = randomness
     return _json_safe(result)
+
+
+def result_per_demand(demands: int, failures: int) -> dict:
+    """Per-demand (Binomial) reliability: probability of failure per demand.
+
+    For one-shot / protective equipment where "reliability" is per-demand, not
+    over time. ``p = failures / demands`` with a Wilson-score 95% interval
+    (robust near 0 and 1). Reconstructs downstream via ``Binomial.from_params``.
+    """
+    try:
+        demands = int(demands)
+        failures = int(failures)
+    except (TypeError, ValueError):
+        raise FitError("Demands and failures must be whole numbers.")
+    if demands <= 0:
+        raise FitError("Number of demands must be a positive integer.")
+    if not (0 <= failures <= demands):
+        raise FitError("Failures must be between 0 and the number of demands.")
+
+    p = failures / demands
+    z = 1.959963984540054  # 95%
+    denom = 1 + z * z / demands
+    centre = (p + z * z / (2 * demands)) / denom
+    half = z * math.sqrt(p * (1 - p) / demands + z * z / (4 * demands * demands)) / denom
+    ci = [max(0.0, centre - half), min(1.0, centre + half)]
+
+    return _json_safe({
+        "distribution": "Per-demand (Binomial)",
+        "distribution_id": "binomial",
+        "kind": "per_demand",
+        "params": [{"name": "p", "value": p, "se": None, "ci": ci}],
+        "n": demands,
+        "per_demand": {
+            "demands": demands, "failures": failures,
+            "p": p, "ci": ci, "reliability": 1.0 - p,
+        },
+        "functions": None,
+        "gof": [],
+    })
 
 
 def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -> dict:
@@ -608,6 +660,69 @@ def _fit_distribution(
     if randomness is not None:
         result["randomness"] = randomness
     return result
+
+
+def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
+    """Fit a non-parametric survival estimator (KM/NA/FH/Turnbull).
+
+    Produces an empirical step survival curve with confidence bounds instead
+    of fitted parameters — no probability plot, no goodness-of-fit. The
+    reliability functions (sf/ff via interpolation) and life metrics are
+    still available, so the model reads back like any other in the calculator.
+    """
+    entry = NONPARAMETRIC[distribution]
+    est = entry["est"]
+    try:
+        kwargs = build_fit_inputs(df, mapping)
+        model = est.fit(**kwargs)
+        xs = np.asarray(model.x, dtype=float)
+        R = np.asarray(model.R, dtype=float)
+        try:
+            cb = np.asarray(model.cb(model.x, on="sf", alpha_ci=0.05), dtype=float)
+            lower, upper = cb[:, 0], cb[:, 1]
+        except Exception:  # not all estimators expose bounds for all data
+            lower = upper = np.full_like(R, np.nan)
+        curves = _function_curves(model)
+        metrics = _life_metrics(model)
+    except Exception as exc:
+        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+
+    finite = np.isfinite(xs)
+    # Stash the live estimator so downstream consumers (RBD) can resolve it via
+    # the same refit-on-demand path regression models use (get_live_model).
+    cache_id = _store_model(model, np.asarray(curves["x"], dtype=float), [])
+    return {
+        "distribution": entry["name"],
+        "distribution_id": distribution,
+        "kind": "nonparametric",
+        "params": [],
+        "n": int(np.asarray(model.data["n"]).sum()) if hasattr(model, "data") else int(finite.sum()),
+        "estimate": {
+            "x": [float(v) for v in xs[finite]],
+            "R": [float(v) for v in R[finite]],
+            "cb_lower": [None if not np.isfinite(v) else float(v) for v in lower[finite]],
+            "cb_upper": [None if not np.isfinite(v) else float(v) for v in upper[finite]],
+        },
+        "functions": {"meta": FUNCTIONS, "curves": curves, "model_id": cache_id},
+        "gof": [],
+        "metrics": metrics,
+    }
+
+
+def _life_metrics(model) -> dict:
+    """Median / MTTF / B10 from any model exposing qf() and mean()."""
+    def q(p):
+        try:
+            v = float(np.asarray(model.qf(p)).ravel()[0])
+            return v if np.isfinite(v) else None
+        except Exception:
+            return None
+    try:
+        mttf = float(model.mean())
+        mttf = mttf if np.isfinite(mttf) else None
+    except Exception:
+        mttf = None
+    return {"median": q(0.5), "b10": q(0.1), "mttf": mttf}
 
 
 def _params_with_uncertainty(model, param_names) -> list[dict]:

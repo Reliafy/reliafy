@@ -164,6 +164,20 @@ def _ph_reliability(model: dict, where: str, resolve_model, cov_values):
         raise AnalysisError(f"{where}: {exc}") from exc
 
 
+def _nonparametric_reliability(model: dict, where: str, resolve_model):
+    """Return the re-fitted empirical estimator for a non-parametric node.
+    It exposes sf/ff, which is all series/parallel/k-of-n structures need."""
+    model_id = model.get("modelId") or model.get("model_id")
+    if not model_id:
+        raise AnalysisError(f"{where}: no model selected.")
+    if resolve_model is None:
+        return PerfectReliability  # structural validation doesn't need the fit
+    entry = resolve_model(model_id)
+    if not entry or entry.get("model") is None:
+        raise AnalysisError(f"{where}: saved model not found — re-fit it or pick another.")
+    return entry["model"]
+
+
 def _build_distribution(
     model: Optional[dict],
     where: str,
@@ -183,6 +197,10 @@ def _build_distribution(
     # whose reliability depends on covariate values supplied at calc time.
     if model.get("kind") == "regression":
         return _ph_reliability(model, where, resolve_model, cov_values)
+    # Non-parametric models (KM/NA/Turnbull) have no parameters — resolve the
+    # re-fitted empirical estimator (sf/ff) via the same refit-on-demand path.
+    if model.get("kind") == "nonparametric":
+        return _nonparametric_reliability(model, where, resolve_model)
     dist_id = model.get("distribution_id")
     entry = DISTRIBUTIONS.get(dist_id)
     if entry is None:

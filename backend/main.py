@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.db import get_session, init_db
 from backend.fitting import (
     DISTRIBUTIONS,
+    NONPARAMETRIC,
     REGRESSION_MODELS,
     FitError,
     ModelNotFound,
@@ -156,11 +157,16 @@ def distributions_endpoint() -> dict:
             for key, entry in DISTRIBUTIONS.items()
         ),
     ]
+    nonparametric = [
+        {"id": key, "name": entry["name"], "covariates": False,
+         "nonparametric": True, "params": []}
+        for key, entry in NONPARAMETRIC.items()
+    ]
     regression = [
         {"id": key, "name": entry["name"], "covariates": True, "params": []}
         for key, entry in REGRESSION_MODELS.items()
     ]
-    return {"distributions": plain + regression}
+    return {"distributions": plain + nonparametric + regression}
 
 
 @app.post("/api/fit/{distribution}")

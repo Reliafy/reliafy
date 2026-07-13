@@ -293,6 +293,29 @@ def create_from_params(
     return JSONResponse(content=_model_detail(model, ctx))
 
 
+@router.post("/models/per-demand")
+def create_per_demand(
+    name: str = Body(...),
+    demands: int = Body(...),
+    failures: int = Body(...),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Create a per-demand (Binomial) model from demands + failures counts.
+    A one-shot / protective-device reliability. Counts against the model cap."""
+    denied = _creation_denied(session, ctx, "models")
+    if denied is not None:
+        return denied
+    if not (name or "").strip():
+        return JSONResponse(status_code=422, content={"detail": "A name is required."})
+    try:
+        model = models_service.create_per_demand(session, ctx.write_owner, name.strip(), demands, failures)
+        access_service.stamp_editor(session, "models", model.id, ctx)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return JSONResponse(content=_model_detail(model, ctx))
+
+
 @router.get("/models/{model_id}")
 def get_model(
     model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)

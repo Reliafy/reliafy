@@ -1,5 +1,6 @@
 import { useState } from "react";
 import ProbabilityPlot from "./ProbabilityPlot.jsx";
+import SurvivalPlot from "./SurvivalPlot.jsx";
 import Calculator from "./Calculator.jsx";
 import GoodnessOfFit from "./GoodnessOfFit.jsx";
 import Coefficients from "./Coefficients.jsx";
@@ -10,6 +11,45 @@ const DISTRIBUTION_TABS = [
   { id: "calc", label: "Calculator" },
   { id: "gof", label: "Goodness of fit" },
 ];
+const NONPARAMETRIC_TABS = [
+  { id: "survival", label: "Survival curve" },
+  { id: "calc", label: "Calculator" },
+];
+
+const pct = (v) => `${(v * 100).toFixed(v < 0.1 ? 2 : 1)}%`;
+
+// Per-demand (Binomial) reliability: a probability, not a curve over time.
+function PerDemandPanel({ result }) {
+  const d = result.per_demand || {};
+  const color = distColor(result.distribution);
+  return (
+    <>
+      <div className="result-head">
+        <span className="dpill"><span className="dot" style={{ background: color }} />Per-demand</span>
+      </div>
+      <div className="params">
+        <div className="stat">
+          <div className="value">{pct(d.p)}</div>
+          <div className="name">failure probability / demand</div>
+          {d.ci && <div className="param-ci">95% CI [{pct(d.ci[0])}, {pct(d.ci[1])}]</div>}
+        </div>
+        <div className="stat">
+          <div className="value">{pct(d.reliability)}</div>
+          <div className="name">reliability / demand</div>
+        </div>
+        <div className="stat">
+          <div className="value">{d.failures} / {d.demands}</div>
+          <div className="name">failures / demands</div>
+        </div>
+      </div>
+      <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
+        Estimated from {d.failures} failure{d.failures === 1 ? "" : "s"} in {d.demands} demands
+        (Binomial, Wilson 95% interval). For one-shot and protective equipment — feeds
+        failure-finding intervals.
+      </p>
+    </>
+  );
+}
 const REGRESSION_TABS = [
   { id: "coef", label: "Coefficients" },
   { id: "calc", label: "Calculator" },
@@ -43,18 +83,28 @@ function RandomnessVerdict({ r }) {
 
 // Presentational result panel for a fit (used for both fresh and saved models).
 export default function ResultView({ result }) {
+  if (result.kind === "per_demand") return <PerDemandPanel result={result} />;
+
   const isRegression = result.kind === "regression";
+  const isNonparametric = result.kind === "nonparametric";
   // Params-only models (created from parameters, no data) have no probability
   // plot or goodness-of-fit — just the functions.
   const hasPlot = !!result.plot;
-  const [tab, setTab] = useState(isRegression ? "coef" : hasPlot ? "plot" : "calc");
+  const [tab, setTab] = useState(
+    isRegression ? "coef" : isNonparametric ? "survival" : hasPlot ? "plot" : "calc"
+  );
 
-  let tabs = isRegression ? REGRESSION_TABS : DISTRIBUTION_TABS;
+  let tabs = isNonparametric
+    ? NONPARAMETRIC_TABS
+    : isRegression
+    ? REGRESSION_TABS
+    : DISTRIBUTION_TABS;
   if (!result.functions) tabs = tabs.filter((t) => t.id !== "calc");
-  if (!hasPlot) tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
+  if (!isNonparametric && !hasPlot) tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
 
   const color = distColor(result.distribution);
   const gof = result.gof || [];
+  const metrics = result.metrics || {};
 
   return (
     <>
@@ -82,6 +132,12 @@ export default function ResultView({ result }) {
             <div className="name">{p.name}</div>
           </div>
         ))}
+        {isNonparametric && metrics.median != null && (
+          <div className="stat"><div className="value">{Number(metrics.median).toPrecision(4)}</div><div className="name">median life</div></div>
+        )}
+        {isNonparametric && metrics.mttf != null && (
+          <div className="stat"><div className="value">{Number(metrics.mttf).toPrecision(4)}</div><div className="name">MTTF</div></div>
+        )}
         {result.n != null && (
           <div className="stat">
             <div className="value">{result.n}</div>
@@ -89,6 +145,12 @@ export default function ResultView({ result }) {
           </div>
         )}
       </div>
+      {isNonparametric && (
+        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+          Non-parametric empirical estimate — no distribution assumed, so no
+          fitted parameters or goodness-of-fit.
+        </p>
+      )}
       {result.params_only && (
         <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
           Created from parameters — reliability functions and life metrics are
@@ -131,6 +193,12 @@ export default function ResultView({ result }) {
       </div>
 
       <div className="tab-panel">
+        {tab === "survival" && (
+          <div className="plotwrap">
+            <div className="plottitle">{result.distribution} — empirical survival</div>
+            <SurvivalPlot estimate={result.estimate} unit={result.unit} />
+          </div>
+        )}
         {tab === "plot" && (
           <div className="detail-panel">
             <div className="plotwrap">

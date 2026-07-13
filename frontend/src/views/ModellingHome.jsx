@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import UploadModal from "../components/UploadModal.jsx";
 import ParamsModelModal from "../components/ParamsModelModal.jsx";
+import PerDemandModal from "../components/PerDemandModal.jsx";
 import ResultView from "../components/ResultView.jsx";
 import ModelLibrary from "./ModelLibrary.jsx";
 import { useModels } from "../useModels.js";
@@ -13,6 +14,7 @@ export default function ModellingHome() {
   const { models, loading, refresh } = useModels();
   const [modalOpen, setModalOpen] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
+  const [perDemandOpen, setPerDemandOpen] = useState(false);
 
   // Open the new-model flow directly when arriving from the dashboard card.
   useEffect(() => {
@@ -79,6 +81,9 @@ export default function ModellingHome() {
           </p>
         </div>
         <div className="row" style={{ margin: 0, gap: "0.5rem" }}>
+          <button className="secondary" onClick={() => setPerDemandOpen(true)}>
+            Per-demand
+          </button>
           <button className="secondary" onClick={() => setParamsOpen(true)}>
             From parameters
           </button>
@@ -128,6 +133,16 @@ export default function ModellingHome() {
           onClose={() => setParamsOpen(false)}
           onCreated={(model) => {
             setParamsOpen(false);
+            refresh();
+            navigate(`/modelling/m/${model.id}`);
+          }}
+        />
+      )}
+      {perDemandOpen && (
+        <PerDemandModal
+          onClose={() => setPerDemandOpen(false)}
+          onCreated={(model) => {
+            setPerDemandOpen(false);
             refresh();
             navigate(`/modelling/m/${model.id}`);
           }}

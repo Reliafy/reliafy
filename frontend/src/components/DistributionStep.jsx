@@ -18,6 +18,10 @@ const DESCRIPTIONS = {
   normal_ph: "Normal baseline proportional-hazards model.",
   gamma_ph: "Gamma baseline proportional-hazards model.",
   cox_ph: "Semi-parametric Cox model — covariate effects, no baseline shape.",
+  kaplan_meier: "Non-parametric survival estimate — no distribution assumed.",
+  nelson_aalen: "Non-parametric survival via cumulative hazard.",
+  fleming_harrington: "Non-parametric, tie-corrected cumulative hazard.",
+  turnbull: "Non-parametric estimate that handles left/interval censoring.",
 };
 
 const OPTION_HELP = {
@@ -33,7 +37,9 @@ const OPTION_HELP = {
 export default function DistributionStep({ options, value, onChange, fitOpts, onFitOpts }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((d) => d.id === value);
-  const isPlain = selected && !selected.covariates;
+  // Advanced fit options (offset/LFP/ZI/fixed) apply to parametric plain
+  // distributions only — not to non-parametric estimators or regression.
+  const isPlain = selected && !selected.covariates && !selected.nonparametric;
   const opts = fitOpts || {};
 
   const setOpt = (key, val) => onFitOpts({ ...opts, [key]: val });

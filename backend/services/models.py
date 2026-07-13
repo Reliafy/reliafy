@@ -161,6 +161,26 @@ def import_model(
     return model
 
 
+def create_per_demand(db, uid: str, name: str, demands, failures) -> Model:
+    """Create a per-demand (Binomial) model from a demands/failures count."""
+    result = fitting.result_per_demand(demands, failures)
+    model = Model(
+        id=uuid.uuid4().hex,
+        name=name,
+        owner_id=uid,
+        dataset_id="",
+        kind="per_demand",
+        distribution_id="binomial",
+        spec={"distribution_id": "binomial", "params_only": True,
+              "per_demand": {"demands": int(demands), "failures": int(failures)}},
+        results=result,
+        surpyval_version=getattr(surpyval, "__version__", None),
+        status="ready",
+    )
+    db.models.insert_one(to_doc(model))
+    return model
+
+
 def list_models(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset()) -> list[Model]:
     """The owner's models plus the shared samples, minus hidden samples."""
     return [

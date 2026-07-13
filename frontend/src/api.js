@@ -228,6 +228,18 @@ export function deleteModel(id) {
   return request(`/api/models/${id}`, { method: "DELETE" });
 }
 
+// Create a per-demand (Binomial) model from demands + failures counts.
+export function createPerDemandModel(name, demands, failures) {
+  return withEvent(
+    request("/api/models/per-demand", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, demands: Number(demands), failures: Number(failures) }),
+    }),
+    "model_save"
+  );
+}
+
 // Create a model from parameters alone (no data): functions & life metrics,
 // no probability plot. ``params`` is [{name, value}]; ``extras`` may hold
 // gamma/p/f0 for offset/LFP/zero-inflated models.

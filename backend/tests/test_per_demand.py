@@ -1,0 +1,68 @@
+"""Per-demand (Binomial) reliability models."""
+
+import mongomock
+import pytest
+
+from backend import fitting
+
+A = "user-a"
+USERS = {A: {"uid": A, "email": "a@x.com", "name": "A"}}
+
+
+def test_result_per_demand_math():
+    r = fitting.result_per_demand(130, 3)
+    assert r["kind"] == "per_demand"
+    d = r["per_demand"]
+    assert d["p"] == pytest.approx(3 / 130)
+    assert d["reliability"] == pytest.approx(1 - 3 / 130)
+    lo, hi = d["ci"]
+    assert 0 < lo < d["p"] < hi < 0.1        # Wilson interval brackets p
+    assert r["functions"] is None and r["gof"] == []
+
+
+def test_per_demand_edge_cases():
+    zero = fitting.result_per_demand(50, 0)
+    assert zero["per_demand"]["p"] == 0.0 and zero["per_demand"]["ci"][0] == pytest.approx(0, abs=1e-9)
+    allf = fitting.result_per_demand(50, 50)
+    assert allf["per_demand"]["p"] == 1.0 and allf["per_demand"]["ci"][1] == pytest.approx(1, abs=1e-9)
+    for bad in ((0, 0), (10, 11), (-1, 0)):
+        with pytest.raises(fitting.FitError):
+            fitting.result_per_demand(*bad)
+
+
+@pytest.fixture()
+def client(monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend import config, db
+    from backend.auth import get_current_user
+    from backend.main import app
+
+    monkeypatch.setattr(config, "AUTH_DISABLED", False)
+    monkeypatch.setattr(config, "BILLING_ENABLED", False)
+    test_db = mongomock.MongoClient()["reliafy_test"]
+    monkeypatch.setattr(db, "_db", test_db)
+    monkeypatch.setattr(db, "_simulated", True)
+    app.dependency_overrides[get_current_user] = lambda: USERS[A]
+    tc = TestClient(app)
+    tc.db = test_db
+    try:
+        yield tc
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_per_demand_endpoint(client):
+    r = client.post("/api/models/per-demand", json={"name": "Relief valve", "demands": 130, "failures": 3})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["kind"] == "per_demand"
+    assert body["results"]["per_demand"]["p"] == pytest.approx(3 / 130)
+    assert body["dataset_id"] == ""
+
+    # Reads back like any model.
+    got = client.get(f"/api/models/{body['id']}").json()
+    assert got["results"]["distribution"] == "Per-demand (Binomial)"
+
+    # Validation.
+    assert client.post("/api/models/per-demand", json={"name": "x", "demands": 10, "failures": 20}).status_code == 422
+    assert client.post("/api/models/per-demand", json={"name": "", "demands": 10, "failures": 1}).status_code == 422
