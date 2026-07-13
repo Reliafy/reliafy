@@ -4850,6 +4850,9 @@ button.danger:hover { background: #fdeeee; }
 }
 .sel-trigger.sel-embedded.open,
 .sel-trigger.sel-embedded:focus-visible { box-shadow: none; border-color: transparent; }
+/* The clickable input is a <button>; keep the global button:hover (dark-blue
+   fill) off it so the grouped field's own accent hover shows through. */
+.sel-trigger.sel-embedded:hover { background: transparent; }
 
 /* Fleet forecast items table: inline editable cells */
 .cell-input {
