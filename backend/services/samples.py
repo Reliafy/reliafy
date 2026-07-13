@@ -65,11 +65,31 @@ _BRAKE_WEAR_CSV = (
     "pad-06,2700,2.97\npad-06,3250,3.53\npad-06,3800,4.13\npad-06,4350,4.85\n"
 ).encode()
 
+# Accelerated life test with covariates: valve seals run at combinations of
+# temperature and mechanical load. Life falls as either stress rises — the
+# textbook proportional-hazards regression case. A crossed 3×2 stress design
+# (so temperature and load aren't collinear) with a couple of right-censored
+# units still running at the end of the test.
+_SEAL_ALT_CSV = (
+    "hours,censored,temp_C,load\n"
+    "1350,0,60,0.5\n1780,0,60,0.5\n2050,0,60,0.5\n2420,0,60,0.5\n1620,0,60,0.5\n2200,1,60,0.5\n"
+    "950,0,60,0.9\n1360,0,60,0.9\n1180,0,60,0.9\n1560,0,60,0.9\n1080,0,60,0.9\n"
+    "900,0,80,0.5\n1320,0,80,0.5\n1090,0,80,0.5\n1500,0,80,0.5\n1180,0,80,0.5\n"
+    "620,0,80,0.9\n910,0,80,0.9\n760,0,80,0.9\n1080,0,80,0.9\n820,0,80,0.9\n1000,1,80,0.9\n"
+    "540,0,100,0.5\n780,0,100,0.5\n650,0,100,0.5\n920,0,100,0.5\n700,0,100,0.5\n"
+    "320,0,100,0.9\n510,0,100,0.9\n380,0,100,0.9\n610,0,100,0.9\n450,0,100,0.9\n"
+).encode()
+
 SAMPLE_DATASETS = [
     {
         "id": "sample-ds-bearings",
         "name": "Bearing fatigue test (sample)",
         "csv": _BEARINGS_CSV,
+    },
+    {
+        "id": "sample-ds-seal-alt",
+        "name": "Valve seal life vs. temperature & load (sample)",
+        "csv": _SEAL_ALT_CSV,
     },
     {
         "id": "sample-ds-pumps",
@@ -148,6 +168,15 @@ SAMPLE_MODELS = [
         "distribution": "weibull",
         "mapping": {"x": "months", "c": "censored"},
         "unit": "months",
+    },
+    {
+        "id": "sample-model-seal-weibull-ph",
+        "name": "Valve seal life — Weibull PH on temp & load (sample)",
+        "dataset_id": "sample-ds-seal-alt",
+        "distribution": "weibull_ph",
+        "mapping": {"x": "hours", "c": "censored"},
+        "covariates": ["temp_C", "load"],
+        "unit": "hours",
     },
 ]
 
@@ -241,8 +270,13 @@ def seed_samples(db) -> None:
 
     for spec in SAMPLE_MODELS:
         try:
+            is_regression = bool(spec.get("covariates") or spec.get("formula"))
             existing = db.models.find_one({"_id": spec["id"]})
             if existing is not None:
+                # Regression baselines carry no per-parameter CI, so the CI
+                # upgrade below doesn't apply — skip once seeded.
+                if is_regression:
+                    continue
                 # Upgrade older seeds whose cached results predate newer payload
                 # fields (parameter CIs / the randomness verdict).
                 old_params = (existing.get("results") or {}).get("params") or []
@@ -254,7 +288,8 @@ def seed_samples(db) -> None:
             dataset = from_doc(Dataset, ds_doc)
             df = fitting.read_dataframe(bytes(dataset.data))
             result = fitting.fit(
-                spec["distribution"], df, spec["mapping"], None, None, spec.get("unit")
+                spec["distribution"], df, spec["mapping"],
+                spec.get("covariates"), spec.get("formula"), spec.get("unit"),
             )
             if existing is not None:
                 db.models.update_one(
@@ -272,8 +307,8 @@ def seed_samples(db) -> None:
                 spec={
                     "distribution_id": spec["distribution"],
                     "mapping": {k: v for k, v in spec["mapping"].items() if v},
-                    "covariates": [],
-                    "formula": None,
+                    "covariates": spec.get("covariates") or [],
+                    "formula": spec.get("formula"),
                     "unit": spec.get("unit", ""),
                 },
                 results=result,
