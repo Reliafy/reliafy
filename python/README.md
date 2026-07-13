@@ -6,8 +6,10 @@ then make it a shareable, trackable, citable artifact in
 Reliafy is the plant.
 
 ```bash
-pip install reliafy
+pip install reliafy-client
 ```
+
+(The package installs as `reliafy-client`; you import it as `reliafy`.)
 
 ## Quick start
 

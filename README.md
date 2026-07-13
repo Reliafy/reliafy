@@ -14,7 +14,7 @@ A **FastAPI** backend does the statistics with
 **Automate it:** the [ingestion API](docs/api.md) pushes meter readings,
 inspection measurements, and new failure data from scripts and cron jobs. Fit
 a model in a notebook and [push it from SurPyval](python/README.md)
-(`pip install reliafy`).
+(`pip install reliafy-client`).
 
 **Where it's going:** see the [public roadmap](ROADMAP.md) — 👍 the
 [roadmap issues](https://github.com/Reliafy/reliafy/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc)

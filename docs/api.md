@@ -110,7 +110,7 @@ Response reports what was appended and each model's refit outcome.
 
 Upload a model fit elsewhere (a SurPyval notebook) so it becomes a full
 Reliafy model — shareable, editable, citable as RCM evidence. Easiest via
-the [`reliafy`](../python/README.md) helper (`pip install reliafy`):
+the [`reliafy`](../python/README.md) helper (`pip install reliafy-client`):
 
 ```python
 import surpyval as sp

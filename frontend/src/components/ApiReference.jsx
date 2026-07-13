@@ -120,7 +120,7 @@ print(r.json()["forecast"])`}</Code>
       <p className="muted-line">
         Fit a model in a notebook and upload it (with its data) — it becomes a
         full Reliafy model: probability plot, editable, citable as evidence.
-        <code> pip install reliafy</code>.
+        <code> pip install reliafy-client</code>.
       </p>
       <Code>{`import surpyval as sp
 import reliafy

@@ -3,7 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "reliafy"
+# Distribution name is reliafy-client (the bare `reliafy` name is taken on
+# PyPI by an unrelated project); the import package stays `import reliafy`.
+name = "reliafy-client"
 version = "0.1.0"
 description = "Push SurPyval models to Reliafy — shareable, trackable, citable reliability analyses."
 readme = "README.md"
