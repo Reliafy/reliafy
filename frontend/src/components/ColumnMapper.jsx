@@ -14,8 +14,8 @@ const FIELD_INFO = {
 };
 
 const GROUPS = [
-  { title: "Variable — use x, or both xl and xr", fields: ["x", "xl", "xr"] },
-  { title: "Modifiers", fields: ["c", "n", "tl", "tr"] },
+  { title: "Variable — use x, or both xl and xr", fields: ["x", "xl", "xr"], cols: 3 },
+  { title: "Modifiers (optional)", fields: ["c", "n", "tl", "tr"], cols: 4 },
 ];
 
 export default function ColumnMapper({ columns, mapping, onChange }) {
@@ -47,7 +47,7 @@ export default function ColumnMapper({ columns, mapping, onChange }) {
           <div className="map-group-title">
             <span>{group.title}</span>
           </div>
-          <div className="map-fields">
+          <div className="map-fields" data-cols={group.cols}>
             {group.fields.map((field) => {
               const info = FIELD_INFO[field];
               const disabled = isDisabled(field);

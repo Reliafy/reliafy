@@ -299,8 +299,8 @@ export default function UploadModal({ onClose, onFitted }) {
       )}
 
       {step === 2 && csv && (
-        <>
-          <p className="muted-line" style={{ marginTop: 0 }}>
+        <div className="fit-step">
+          <p className="muted-line">
             {sourceName} · {csv.n_rows} rows · {csv.columns.length} columns
           </p>
           <PreviewTable columns={csv.columns} rows={csv.preview} />
@@ -320,17 +320,17 @@ export default function UploadModal({ onClose, onFitted }) {
             onSetFormula={setFormula}
           />
           {!mappingValid && (
-            <p className="hint" style={{ marginTop: "1rem" }}>
+            <p className="hint">
               Map a column to <code>x</code>, or to both <code>xl</code> and{" "}
               <code>xr</code>.
             </p>
           )}
-        </>
+        </div>
       )}
 
       {step === 3 && (
-        <>
-          <p className="muted-line" style={{ marginTop: 0 }}>
+        <div className="fit-step">
+          <p className="muted-line">
             {hasCovariates
               ? "Covariates detected — choose a proportional-hazards model."
               : "Choose a parametric distribution or a non-parametric estimator."}
@@ -345,7 +345,7 @@ export default function UploadModal({ onClose, onFitted }) {
             fitOpts={fitOpts}
             onFitOpts={setFitOpts}
           />
-        </>
+        </div>
       )}
 
       {error && <div className="error">{error}</div>}

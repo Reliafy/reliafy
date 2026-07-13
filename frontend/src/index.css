@@ -2390,17 +2390,26 @@ button.secondary:hover:not(:disabled) {
 .units-field {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.45rem;
   margin-top: 1.25rem;
-  max-width: 360px;
 }
+.units-input { max-width: 360px; }
 
 .units-label {
-  font-size: 0.72rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 600;
   color: var(--muted);
+}
+.units-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 
 .units-input {
@@ -2575,11 +2584,18 @@ button.secondary:hover:not(:disabled) {
 
 /* Preview table */
 .preview-wrap {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 190px;
   border: 1px solid var(--border);
   border-radius: 8px;
   margin-bottom: 1.25rem;
 }
+.preview-table thead th { position: sticky; top: 0; }
+
+/* Fit modal steps: one consistent vertical rhythm between sections instead
+   of each sub-component contributing its own margin. */
+.fit-step { display: flex; flex-direction: column; gap: 1.15rem; }
+.fit-step > * { margin-top: 0 !important; margin-bottom: 0 !important; }
 
 .preview-table {
   border-collapse: collapse;
@@ -2632,17 +2648,20 @@ button.secondary:hover:not(:disabled) {
 }
 
 .map-fields {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 0.5rem;
+  grid-template-columns: repeat(4, 1fr);
+}
+.map-fields[data-cols="3"] { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 560px) {
+  .map-fields, .map-fields[data-cols="3"] { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* Each field is one connected control: badge fused to its select. */
 .map-field {
   display: inline-flex;
   align-items: stretch;
-  flex: 1 1 150px;
-  min-width: 140px;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
