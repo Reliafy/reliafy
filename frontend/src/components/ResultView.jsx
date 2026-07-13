@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import ProbabilityPlot from "./ProbabilityPlot.jsx";
 import SurvivalPlot from "./SurvivalPlot.jsx";
-import Calculator from "./Calculator.jsx";
+import Calculator, { initCalcState } from "./Calculator.jsx";
 import GoodnessOfFit from "./GoodnessOfFit.jsx";
 import Coefficients from "./Coefficients.jsx";
 import { distColor } from "../instrument.js";
@@ -90,9 +90,22 @@ export default function ResultView({ result }) {
   // Params-only models (created from parameters, no data) have no probability
   // plot or goodness-of-fit — just the functions.
   const hasPlot = !!result.plot;
-  const [tab, setTab] = useState(
-    isRegression ? "coef" : isNonparametric ? "survival" : hasPlot ? "plot" : "calc"
-  );
+  const defaultTab =
+    isRegression ? "coef" : isNonparametric ? "survival" : hasPlot ? "plot" : "calc";
+  const [tab, setTab] = useState(defaultTab);
+
+  // The Calculator tab unmounts when you switch away, so its inputs live here
+  // and survive tab switches. When the result itself changes in place (e.g.
+  // fitting another model in the workspace) reset them for the new model.
+  const [calc, setCalc] = useState(() => initCalcState(result.functions));
+  const calcNextId = useRef(1);
+  const [prevResult, setPrevResult] = useState(result);
+  if (result !== prevResult) {
+    setPrevResult(result);
+    setCalc(initCalcState(result.functions));
+    calcNextId.current = 1;
+    setTab(defaultTab);
+  }
 
   let tabs = isNonparametric
     ? NONPARAMETRIC_TABS
@@ -227,7 +240,13 @@ export default function ResultView({ result }) {
           </div>
         )}
         {tab === "calc" && (
-          <Calculator functions={result.functions} unit={result.unit} />
+          <Calculator
+            functions={result.functions}
+            unit={result.unit}
+            state={calc}
+            setState={setCalc}
+            nextIdRef={calcNextId}
+          />
         )}
         {tab === "coef" && <Coefficients coefficients={result.coefficients} />}
         {tab === "gof" && <GoodnessOfFit gof={result.gof} n={result.n} />}

@@ -1,7 +1,27 @@
 import Select from "./Select.jsx";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import Plot from "react-plotly.js";
 import { evaluateAt } from "../api.js";
+
+// The calculator's inputs (covariate combinations, active function, evaluation
+// time, conditional age) live in the parent (ResultView) so they survive tab
+// switches — the tab body unmounts when you leave it. This builds the initial
+// state for a set of fitted functions.
+export function initCalcState(functions) {
+  const covariates = functions?.covariates || [];
+  const hasCov = covariates.length > 0 && !!functions?.evaluate_path;
+  const values = hasCov
+    ? Object.fromEntries(covariates.map((c) => [c.name, c.default]))
+    : null;
+  const x = functions?.curves?.x || [];
+  const mid = x.length ? x[Math.floor(x.length / 2)] : 0;
+  return {
+    series: functions ? [{ id: 0, values, curves: functions.curves, error: null }] : [],
+    active: "sf",
+    t: x.length ? Number(mid.toPrecision(4)) : 0,
+    condAge: "", // conditional survival age s
+  };
+}
 
 // Distinct colours for covariate-combination series.
 const COLORS = ["#0284c7", "#16a34a", "#db2777", "#d97706", "#7c3aed", "#0891b2"];
@@ -56,7 +76,7 @@ function conditionalize(curves, s) {
 // Calculator tab: chart any of the reliability functions and read them off at a
 // chosen t. For regression models you can add several covariate combinations,
 // each re-evaluated by the backend and overlaid on the chart.
-export default function Calculator({ functions, unit }) {
+export default function Calculator({ functions, unit, state, setState, nextIdRef }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
@@ -65,16 +85,18 @@ export default function Calculator({ functions, unit }) {
   const defaults = () =>
     Object.fromEntries(covariates.map((c) => [c.name, c.default]));
 
-  const nextId = useRef(1);
-  const [series, setSeries] = useState(() => [
-    { id: 0, values: hasCov ? defaults() : null, curves: functions.curves, error: null },
-  ]);
+  // State is owned by the parent so it persists across tab switches.
+  const { series, active, t, condAge } = state;
+  const setSeries = (updater) =>
+    setState((st) => ({
+      ...st,
+      series: typeof updater === "function" ? updater(st.series) : updater,
+    }));
+  const setActive = (v) => setState((st) => ({ ...st, active: v }));
+  const setT = (v) => setState((st) => ({ ...st, t: v }));
+  const setCondAge = (v) => setState((st) => ({ ...st, condAge: v }));
 
   const x = functions.curves.x;
-  const [active, setActive] = useState("sf");
-  const mid = x[Math.floor(x.length / 2)];
-  const [t, setT] = useState(() => Number(mid.toPrecision(4)));
-  const [condAge, setCondAge] = useState(""); // conditional survival age s
 
   const cond = condAge === "" ? 0 : Number(condAge);
   const sLabel = `${cond}${unit ? ` ${unit}` : ""}`;
@@ -115,7 +137,7 @@ export default function Calculator({ functions, unit }) {
 
   const addSeries = () => {
     if (series.length >= MAX_SERIES) return;
-    const id = nextId.current++;
+    const id = nextIdRef.current++;
     const values = { ...(series[series.length - 1]?.values || defaults()) };
     setSeries((prev) => [...prev, { id, values, curves: null, error: null }]);
     runEval(id, values);
