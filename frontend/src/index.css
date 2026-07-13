@@ -4804,7 +4804,13 @@ button.danger:hover { background: #fdeeee; }
   border-radius: 7px;
   cursor: pointer;
 }
-.sel-option.active { background: var(--bg); }
+/* Hover / keyboard-focus row: a soft accent tint with matching text, so the
+   active option reads as one cohesive highlight rather than black-on-grey. */
+.sel-option.active:not(.disabled) {
+  background: rgba(47, 109, 246, 0.10);
+  color: var(--acc);
+}
+.sel-option.active:not(.disabled) .sel-option-hint { color: var(--acc); opacity: 0.75; }
 .sel-option.selected { color: var(--acc); font-weight: 500; }
 .sel-option.disabled { color: var(--faint); cursor: not-allowed; }
 .sel-option-main { display: flex; flex-direction: column; min-width: 0; }
