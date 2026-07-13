@@ -4750,7 +4750,10 @@ button.danger:hover { background: #fdeeee; }
   min-width: 0;
   box-shadow: none;
 }
-.sel-trigger:hover { border-color: var(--faint); }
+.sel-trigger:hover:not(.sel-embedded) {
+  border-color: var(--acc);
+  background: rgba(47, 109, 246, 0.03);
+}
 .sel-trigger.open,
 .sel-trigger:focus-visible {
   outline: none;
