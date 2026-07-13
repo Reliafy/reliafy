@@ -5,7 +5,7 @@ import {
   listDatasets,
   listModels,
   getDistributions,
-  uploadDataset,
+  pasteDataset,
   saveModel,
   listRbds,
   saveRbd,
@@ -158,12 +158,12 @@ export const TOOLS = [
   },
   {
     name: "save_dataset",
-    description: "Create a dataset from CSV text. The CSV must include a header row. Returns the new dataset's id and column names.",
+    description: "Create a dataset from pasted tabular text (CSV or tab-separated). Must include a header row. Use this to turn data the user pastes or dictates into a dataset. Returns the new dataset's id and column names.",
     parameters: {
       type: "object",
       properties: {
         name: { type: "string", description: "A short name for the dataset." },
-        csv: { type: "string", description: "The full CSV content including a header row." },
+        csv: { type: "string", description: "The full tabular content (CSV or TSV) including a header row." },
       },
       required: ["name", "csv"],
       additionalProperties: false,
@@ -617,9 +617,7 @@ export function makeExecutor({ navigate, onChange }) {
       case "save_dataset": {
         const csv = String(input.csv ?? "");
         if (!csv.trim()) throw new Error("csv is empty");
-        const fname = input.name && /\.csv$/i.test(input.name) ? input.name : `${input.name || "dataset"}.csv`;
-        const file = new File([csv], fname, { type: "text/csv" });
-        const ds = await uploadDataset(file, input.name || fname);
+        const ds = await pasteDataset(input.name || "Dataset", csv);
         onChange?.();
         return { id: ds.id, name: ds.name, n_rows: ds.n_rows, columns: columnNames(ds.columns) };
       }

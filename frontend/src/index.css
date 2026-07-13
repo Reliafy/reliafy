@@ -2597,6 +2597,26 @@ button.secondary:hover:not(:disabled) {
 .fit-step { display: flex; flex-direction: column; gap: 1.15rem; }
 .fit-step > * { margin-top: 0 !important; margin-bottom: 0 !important; }
 
+/* Paste-data textarea. */
+.paste-area {
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+.paste-area:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 109, 246, 0.18);
+}
+
 .preview-table {
   border-collapse: collapse;
   width: 100%;

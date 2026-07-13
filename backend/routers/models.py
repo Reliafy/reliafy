@@ -146,6 +146,37 @@ async def upload_dataset(
     return JSONResponse(content=_dataset_detail(dataset, session, ctx))
 
 
+@router.post("/datasets/paste")
+def paste_dataset(
+    name: str = Body(default=""),
+    content: str = Body(default=""),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Create a dataset from pasted tabular text (CSV or TSV). Used by the
+    paste-data form and the assistant."""
+    try:
+        csv_bytes = datasets_service.normalize_pasted(content)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    # Free-plan cap (skipped when the identical data already exists).
+    denied = _creation_denied(session, ctx, "datasets")
+    if denied is not None:
+        digest = storage.checksum(csv_bytes)
+        if session.datasets.find_one({"checksum": digest, "owner_id": ctx.write_owner}) is None:
+            return denied
+    try:
+        dataset = datasets_service.create_dataset(
+            session, (name or "").strip() or "Pasted data", csv_bytes, ctx.write_owner
+        )
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Failed to store pasted dataset")
+        return JSONResponse(status_code=500, content={"detail": f"Failed to store dataset: {exc}"})
+    return JSONResponse(content=_dataset_detail(dataset, session, ctx))
+
+
 @router.get("/datasets/{dataset_id}")
 def get_dataset(
     dataset_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)

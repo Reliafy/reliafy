@@ -24,6 +24,42 @@ def _list_query(owner_id, shared=frozenset()):
         return {"$or": [query, {"_id": {"$in": sorted(shared)}}]}
     return query
 
+def normalize_pasted(content: str) -> bytes:
+    """Parse pasted tabular text (CSV or TSV) into canonical CSV bytes.
+
+    The delimiter is chosen from a fixed set (tab / comma / semicolon / pipe)
+    by counting occurrences in the header row — so spreadsheet paste (tabs)
+    and CSV both work — rather than letting pandas sniff any character (which
+    can wrongly split on letters in single-column data). Everything downstream
+    then sees a plain CSV.
+    """
+    import io
+
+    text = (content or "").strip()
+    if not text:
+        raise FitError("Nothing to import — paste some data first (with a header row).")
+
+    header = next((ln for ln in text.splitlines() if ln.strip()), "")
+    delim = max("\t,;|", key=lambda d: header.count(d))
+    if header.count(delim) == 0:
+        raise FitError(
+            "Only one column was detected. Separate columns with commas or tabs "
+            "and include a header row."
+        )
+    try:
+        df = pd.read_csv(io.StringIO(text), sep=delim, engine="python", skipinitialspace=True)
+    except Exception as exc:
+        raise FitError(f"Couldn't read the pasted data: {exc}") from exc
+    if df.empty or df.shape[1] == 0:
+        raise FitError("Couldn't find any rows — data needs a header row and at least one data row.")
+    if df.shape[1] == 1:
+        raise FitError(
+            "Only one column was detected. Separate columns with commas or tabs "
+            "and include a header row."
+        )
+    return df.to_csv(index=False).encode()
+
+
 def create_dataset(db, name: str, file_bytes: bytes, owner_id: str) -> Dataset:
     """Persist a CSV (content-addressed) and return the Dataset.
 

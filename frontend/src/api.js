@@ -292,6 +292,19 @@ export function uploadDataset(file, name) {
   return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
 }
 
+// Create a dataset from pasted tabular text (CSV or TSV; delimiter sniffed
+// server-side). Used by the paste-data form and the assistant.
+export function pasteDataset(name, content) {
+  return withEvent(
+    request("/api/datasets/paste", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name || "", content: content || "" }),
+    }),
+    "dataset_upload"
+  );
+}
+
 export function deleteDataset(id) {
   return request(`/api/datasets/${id}`, { method: "DELETE" });
 }
