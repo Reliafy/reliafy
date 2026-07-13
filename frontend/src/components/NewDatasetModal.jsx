@@ -37,16 +37,18 @@ const listLen = (s) => {
   return parts.length;
 };
 
-// One labelled comma-separated value list for a survival field.
-function ListField({ f, v, onChange, disabled, placeholder }) {
+// One labelled comma-separated value list for a survival field. When
+// ``broadcast`` is set, a single value is treated as applying to every row.
+function ListField({ f, v, onChange, disabled, placeholder, broadcast }) {
   const n = disabled ? 0 : listLen(v || "");
+  const label = n === 0 ? "" : broadcast && n === 1 ? "all rows" : `${n} value${n === 1 ? "" : "s"}`;
   return (
     <label className={"ds-listfield" + (disabled ? " disabled" : "")} title={FIELDS[f]}>
       <span className="ds-listbadge">{f}</span>
       <input type="text" className="ds-listinput" value={v || ""} disabled={disabled}
              placeholder={placeholder} spellCheck={false}
              onChange={(e) => onChange(f, e.target.value)} />
-      <span className="ds-listcount">{n > 0 ? `${n} value${n === 1 ? "" : "s"}` : ""}</span>
+      <span className="ds-listcount">{label}</span>
     </label>
   );
 }
@@ -94,18 +96,28 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   const fieldDisabled = (f) =>
     (f === "x" && usingInterval) || ((f === "xl" || f === "xr") && usingX);
 
-  // Fields with content, in canonical order, and their parsed value lists.
+  // Fields with content, in canonical order. Truncation (tl/tr) may be a single
+  // value that broadcasts to every row (a uniform truncation window).
   const active = FIELD_ORDER.filter((f) => !fieldDisabled(f) && listLen(vals[f]) > 0);
-  const rowCount = active.length ? Math.max(...active.map((f) => listLen(vals[f]))) : 0;
+  const broadcastable = (f) => f === "tl" || f === "tr";
+  const isBroadcast = (f) => broadcastable(f) && listLen(vals[f]) === 1;
+  // Row count comes from the per-observation value fields, not truncation.
+  const rowCount = usingX
+    ? listLen(vals.x)
+    : Math.max(listLen(vals.xl), listLen(vals.xr));
   const hasValue = usingX || (listLen(vals.xl) > 0 && listLen(vals.xr) > 0);
-  const lengthsMatch = active.every((f) => listLen(vals[f]) === rowCount);
+  const lengthsMatch = active.every((f) => isBroadcast(f) || listLen(vals[f]) === rowCount);
   const formValid = name.trim() && hasValue && rowCount > 0 && lengthsMatch;
 
   const onForm = async () => {
     setBusy(true); setError(null);
     try {
       const header = active.join(",");
-      const lists = Object.fromEntries(active.map((f) => [f, splitList(vals[f])]));
+      const lists = Object.fromEntries(active.map((f) => {
+        const parts = splitList(vals[f]);
+        while (parts.length && parts[parts.length - 1] === "") parts.pop();
+        return [f, isBroadcast(f) ? Array(rowCount).fill(parts[0]) : parts];
+      }));
       const rows = Array.from({ length: rowCount }, (_, i) =>
         active.map((f) => (lists[f][i] ?? "").trim()).join(",")
       );
@@ -201,6 +213,7 @@ export default function NewDatasetModal({ onClose, onCreated }) {
                 Enter each field as a comma-separated list — one value per
                 observation, so every list has the same length. Use <code>x</code>{" "}
                 for values, or <code>xl</code>+<code>xr</code> for intervals.
+                A single <code>tl</code>/<code>tr</code> applies to every row.
               </p>
               <ListField f="x" v={vals.x} onChange={setVal} disabled={fieldDisabled("x")}
                          placeholder="1240, 980, 1500, 2100" />
@@ -211,14 +224,14 @@ export default function NewDatasetModal({ onClose, onCreated }) {
               <ListField f="c" v={vals.c} onChange={setVal} placeholder="0, 1, 0, 1" />
               <ListField f="n" v={vals.n} onChange={setVal} placeholder="1, 1, 2, 1" />
               <div className="ds-pair">
-                <ListField f="tl" v={vals.tl} onChange={setVal} placeholder="optional" />
-                <ListField f="tr" v={vals.tr} onChange={setVal} placeholder="optional" />
+                <ListField f="tl" v={vals.tl} onChange={setVal} placeholder="50 or per-row" broadcast />
+                <ListField f="tr" v={vals.tr} onChange={setVal} placeholder="optional" broadcast />
               </div>
               {!hasValue && <p className="hint">Enter <code>x</code> values, or both <code>xl</code> and <code>xr</code>.</p>}
               {hasValue && !lengthsMatch && (
                 <p className="hint">
                   Each list needs the same number of values (found{" "}
-                  {active.map((f) => `${f}: ${listLen(vals[f])}`).join(", ")}).
+                  {active.filter((f) => !isBroadcast(f)).map((f) => `${f}: ${listLen(vals[f])}`).join(", ")}).
                 </p>
               )}
             </div>
