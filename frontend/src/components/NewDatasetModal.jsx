@@ -19,17 +19,37 @@ function parsePreview(text, rows = 5) {
 }
 
 // ---- structured form fields (SurPyval survival inputs, no covariates) --------
+// One comma-separated value list per field. Canonical column order for the CSV.
+const FIELD_ORDER = ["x", "xl", "xr", "c", "n", "tl", "tr"];
 const FIELDS = {
-  x: "Observed value (exact or censored)",
-  c: "Censor flag: 0 exact · 1 right · -1 left · 2 interval",
+  x: "Observed values (exact or censored)",
+  c: "Censor flag per value: 0 exact · 1 right · -1 left · 2 interval",
   n: "Count of identical observations",
-  xl: "Interval lower bound (with xr)",
-  xr: "Interval upper bound (with xl)",
-  tl: "Left truncation bound",
-  tr: "Right truncation bound",
+  xl: "Interval lower bounds (with xr)",
+  xr: "Interval upper bounds (with xl)",
+  tl: "Left truncation bounds",
+  tr: "Right truncation bounds",
 };
-const ALL_FIELDS = ["x", "c", "n", "xl", "xr", "tl", "tr"];
-const emptyRows = (n = 4) => Array.from({ length: n }, () => ({}));
+const splitList = (s) => String(s || "").split(",").map((v) => v.trim());
+const listLen = (s) => {
+  const parts = splitList(s);
+  while (parts.length && parts[parts.length - 1] === "") parts.pop();
+  return parts.length;
+};
+
+// One labelled comma-separated value list for a survival field.
+function ListField({ f, v, onChange, disabled, placeholder }) {
+  const n = disabled ? 0 : listLen(v || "");
+  return (
+    <label className={"ds-listfield" + (disabled ? " disabled" : "")} title={FIELDS[f]}>
+      <span className="ds-listbadge">{f}</span>
+      <input type="text" className="ds-listinput" value={v || ""} disabled={disabled}
+             placeholder={placeholder} spellCheck={false}
+             onChange={(e) => onChange(f, e.target.value)} />
+      <span className="ds-listcount">{n > 0 ? `${n} value${n === 1 ? "" : "s"}` : ""}</span>
+    </label>
+  );
+}
 
 export default function NewDatasetModal({ onClose, onCreated }) {
   const [step, setStep] = useState("choose"); // choose | upload | enter
@@ -43,9 +63,9 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   const [text, setText] = useState("");
   const preview = useMemo(() => parsePreview(text), [text]);
 
-  // form
-  const [cols, setCols] = useState(["x", "c"]);
-  const [rows, setRows] = useState(emptyRows());
+  // form — one comma-separated value list per field
+  const [vals, setVals] = useState({});
+  const setVal = (f, v) => setVals((cur) => ({ ...cur, [f]: v }));
 
   const reset = () => { setError(null); };
   const back = () => { reset(); setStep("choose"); };
@@ -69,26 +89,27 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   };
 
   // --- form ---
-  const toggleCol = (f) => {
-    setCols((cur) => {
-      let next;
-      if (cur.includes(f)) next = cur.filter((c) => c !== f);
-      else next = [...cur, f];
-      // x is mutually exclusive with the xl/xr interval pair.
-      if (f === "x" && next.includes("x")) next = next.filter((c) => c !== "xl" && c !== "xr");
-      if ((f === "xl" || f === "xr") && next.includes(f)) next = next.filter((c) => c !== "x");
-      return ALL_FIELDS.filter((k) => next.includes(k)); // keep canonical order
-    });
-  };
-  const setCell = (i, f, v) => setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [f]: v } : r)));
-  const formMapping = cols.includes("x") ? !!cols.length : cols.includes("xl") && cols.includes("xr");
-  const dataRows = rows.filter((r) => cols.some((c) => String(r[c] ?? "").trim() !== ""));
-  const formValid = name.trim() && cols.length && formMapping && dataRows.length > 0;
+  const usingX = listLen(vals.x) > 0;
+  const usingInterval = listLen(vals.xl) > 0 || listLen(vals.xr) > 0;
+  const fieldDisabled = (f) =>
+    (f === "x" && usingInterval) || ((f === "xl" || f === "xr") && usingX);
+
+  // Fields with content, in canonical order, and their parsed value lists.
+  const active = FIELD_ORDER.filter((f) => !fieldDisabled(f) && listLen(vals[f]) > 0);
+  const rowCount = active.length ? Math.max(...active.map((f) => listLen(vals[f]))) : 0;
+  const hasValue = usingX || (listLen(vals.xl) > 0 && listLen(vals.xr) > 0);
+  const lengthsMatch = active.every((f) => listLen(vals[f]) === rowCount);
+  const formValid = name.trim() && hasValue && rowCount > 0 && lengthsMatch;
 
   const onForm = async () => {
     setBusy(true); setError(null);
     try {
-      const csv = [cols.join(","), ...dataRows.map((r) => cols.map((c) => String(r[c] ?? "").trim()).join(","))].join("\n");
+      const header = active.join(",");
+      const lists = Object.fromEntries(active.map((f) => [f, splitList(vals[f])]));
+      const rows = Array.from({ length: rowCount }, (_, i) =>
+        active.map((f) => (lists[f][i] ?? "").trim()).join(",")
+      );
+      const csv = [header, ...rows].join("\n");
       const file = new File([csv], `${name.trim() || "dataset"}.csv`, { type: "text/csv" });
       onCreated(await uploadDataset(file, name.trim() || undefined));
     } catch (e) { setError(e.message); } finally { setBusy(false); }
@@ -176,48 +197,30 @@ export default function NewDatasetModal({ onClose, onCreated }) {
             </>
           ) : (
             <div className="ds-form">
-              <div className="ds-form-cols">
-                <span className="dist-label">Columns</span>
-                <div className="ds-chips">
-                  {ALL_FIELDS.map((f) => (
-                    <button key={f} type="button" title={FIELDS[f]}
-                            className={"ds-chip" + (cols.includes(f) ? " on" : "")}
-                            onClick={() => toggleCol(f)}>{f}</button>
-                  ))}
-                </div>
-                <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>
-                  Use <code>x</code> for values, or <code>xl</code>+<code>xr</code> for intervals.
-                  {" "}<code>c</code> censoring, <code>n</code> counts, <code>tl</code>/<code>tr</code> truncation. Leave a cell blank for its default.
-                </p>
+              <p className="muted-line" style={{ marginTop: 0 }}>
+                Enter each field as a comma-separated list — one value per
+                observation, so every list has the same length. Use <code>x</code>{" "}
+                for values, or <code>xl</code>+<code>xr</code> for intervals.
+              </p>
+              <ListField f="x" v={vals.x} onChange={setVal} disabled={fieldDisabled("x")}
+                         placeholder="1240, 980, 1500, 2100" />
+              <div className="ds-pair">
+                <ListField f="xl" v={vals.xl} onChange={setVal} disabled={fieldDisabled("xl")} placeholder="100, 200" />
+                <ListField f="xr" v={vals.xr} onChange={setVal} disabled={fieldDisabled("xr")} placeholder="150, 250" />
               </div>
-              {cols.length > 0 && (
-                <div className="ds-grid-wrap">
-                  <table className="ds-grid">
-                    <thead><tr>{cols.map((c) => <th key={c}>{c}</th>)}<th /></tr></thead>
-                    <tbody>
-                      {rows.map((r, i) => (
-                        <tr key={i}>
-                          {cols.map((c) => (
-                            <td key={c}>
-                              <input type="number" step="any" value={r[c] ?? ""}
-                                     onChange={(e) => setCell(i, c, e.target.value)} />
-                            </td>
-                          ))}
-                          <td className="ds-grid-x">
-                            {rows.length > 1 && (
-                              <button type="button" title="Remove row"
-                                      onClick={() => setRows((rs) => rs.filter((_, idx) => idx !== i))}>✕</button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <button className="secondary" style={{ marginTop: "0.5rem" }}
-                          onClick={() => setRows((rs) => [...rs, {}])}>+ Add row</button>
-                </div>
+              <ListField f="c" v={vals.c} onChange={setVal} placeholder="0, 1, 0, 1" />
+              <ListField f="n" v={vals.n} onChange={setVal} placeholder="1, 1, 2, 1" />
+              <div className="ds-pair">
+                <ListField f="tl" v={vals.tl} onChange={setVal} placeholder="optional" />
+                <ListField f="tr" v={vals.tr} onChange={setVal} placeholder="optional" />
+              </div>
+              {!hasValue && <p className="hint">Enter <code>x</code> values, or both <code>xl</code> and <code>xr</code>.</p>}
+              {hasValue && !lengthsMatch && (
+                <p className="hint">
+                  Each list needs the same number of values (found{" "}
+                  {active.map((f) => `${f}: ${listLen(vals[f])}`).join(", ")}).
+                </p>
               )}
-              {!formMapping && <p className="hint">Include an <code>x</code> column, or both <code>xl</code> and <code>xr</code>.</p>}
             </div>
           )}
           {error && <div className="error">{error}</div>}
