@@ -101,6 +101,10 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   const active = FIELD_ORDER.filter((f) => !fieldDisabled(f) && listLen(vals[f]) > 0);
   const broadcastable = (f) => f === "tl" || f === "tr";
   const isBroadcast = (f) => broadcastable(f) && listLen(vals[f]) === 1;
+  // c (censor flag) and n (count) are optional: for plain x data, a blank field
+  // is written as 0 (all exact) / 1 (one each) so the dataset is explicit.
+  const DEFAULTS = { c: "0", n: "1" };
+  const isDefaulted = (f) => usingX && f in DEFAULTS && listLen(vals[f]) === 0;
   // Row count comes from the per-observation value fields, not truncation.
   const rowCount = usingX
     ? listLen(vals.x)
@@ -112,14 +116,19 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   const onForm = async () => {
     setBusy(true); setError(null);
     try {
-      const header = active.join(",");
-      const lists = Object.fromEntries(active.map((f) => {
+      // Output columns: the filled-in fields plus defaulted c/n for x data.
+      const outFields = FIELD_ORDER.filter(
+        (f) => !fieldDisabled(f) && (listLen(vals[f]) > 0 || isDefaulted(f))
+      );
+      const header = outFields.join(",");
+      const lists = Object.fromEntries(outFields.map((f) => {
+        if (isDefaulted(f)) return [f, Array(rowCount).fill(DEFAULTS[f])];
         const parts = splitList(vals[f]);
         while (parts.length && parts[parts.length - 1] === "") parts.pop();
         return [f, isBroadcast(f) ? Array(rowCount).fill(parts[0]) : parts];
       }));
       const rows = Array.from({ length: rowCount }, (_, i) =>
-        active.map((f) => (lists[f][i] ?? "").trim()).join(",")
+        outFields.map((f) => (lists[f][i] ?? "").trim()).join(",")
       );
       const csv = [header, ...rows].join("\n");
       const file = new File([csv], `${name.trim() || "dataset"}.csv`, { type: "text/csv" });
@@ -213,7 +222,9 @@ export default function NewDatasetModal({ onClose, onCreated }) {
                 Enter each field as a comma-separated list — one value per
                 observation, so every list has the same length. Use <code>x</code>{" "}
                 for values, or <code>xl</code>+<code>xr</code> for intervals.
-                A single <code>tl</code>/<code>tr</code> applies to every row.
+                <code>c</code> and <code>n</code> are optional (blank means all
+                exact, one each); a single <code>tl</code>/<code>tr</code> applies
+                to every row.
               </p>
               <ListField f="x" v={vals.x} onChange={setVal} disabled={fieldDisabled("x")}
                          placeholder="1240, 980, 1500, 2100" />
@@ -221,8 +232,8 @@ export default function NewDatasetModal({ onClose, onCreated }) {
                 <ListField f="xl" v={vals.xl} onChange={setVal} disabled={fieldDisabled("xl")} placeholder="100, 200" />
                 <ListField f="xr" v={vals.xr} onChange={setVal} disabled={fieldDisabled("xr")} placeholder="150, 250" />
               </div>
-              <ListField f="c" v={vals.c} onChange={setVal} placeholder="0, 1, 0, 1" />
-              <ListField f="n" v={vals.n} onChange={setVal} placeholder="1, 1, 2, 1" />
+              <ListField f="c" v={vals.c} onChange={setVal} placeholder="optional · 0 for all" />
+              <ListField f="n" v={vals.n} onChange={setVal} placeholder="optional · 1 for all" />
               <div className="ds-pair">
                 <ListField f="tl" v={vals.tl} onChange={setVal} placeholder="50 or per-row" broadcast />
                 <ListField f="tr" v={vals.tr} onChange={setVal} placeholder="optional" broadcast />
