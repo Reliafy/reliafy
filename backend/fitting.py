@@ -400,6 +400,88 @@ def _json_safe(value):
     return value
 
 
+def resolve_distribution_id(name: str) -> str:
+    """Map a SurPyval distribution name (or a Reliafy id) to a Reliafy id.
+
+    Accepts 'Weibull', 'weibull', 'LogNormal', 'lognormal', 'ExpoWeibull',
+    'expo_weibull', etc. Raises FitError for anything unsupported.
+    """
+    if not name:
+        raise FitError("No distribution given.")
+    key = str(name).strip().lower().replace(" ", "_")
+    if key in DISTRIBUTIONS:
+        return key
+    aliases = {
+        "expoweibull": "expo_weibull",
+        "exponentiatedweibull": "expo_weibull",
+        "log_normal": "lognormal",
+        "log_logistic": "loglogistic",
+    }
+    if key in aliases:
+        return aliases[key]
+    # Match by the human name of each distribution ("Weibull" -> "weibull").
+    for did, entry in DISTRIBUTIONS.items():
+        if entry["name"].lower().replace(" ", "_") == key:
+            return did
+    raise FitError(
+        f"'{name}' isn't a supported plain distribution. Supported: "
+        f"{', '.join(DISTRIBUTIONS)}."
+    )
+
+
+def result_from_params(
+    distribution_id: str,
+    params: list,
+    extras: Optional[dict] = None,
+    unit: Optional[str] = None,
+) -> dict:
+    """Build a result payload from parameters alone (no data).
+
+    Used by model import when only the fitted parameters are supplied: there
+    are no observations, so there's no probability plot or goodness-of-fit —
+    but the reliability functions and life metrics are fully available.
+    """
+    entry = DISTRIBUTIONS.get(distribution_id)
+    if entry is None:
+        raise FitError(
+            f"'{distribution_id}' isn't a supported plain distribution. "
+            f"Supported: {', '.join(DISTRIBUTIONS)}."
+        )
+    dist = entry["dist"]
+    values = [float(p["value"]) for p in (params or []) if "value" in p]
+    if not values:
+        raise FitError("No parameter values supplied.")
+    kwargs = {
+        k: float(v) for k, v in (extras or {}).items()
+        if k in ("gamma", "p", "f0") and v is not None
+    }
+    try:
+        model = dist.from_params(values, **kwargs)
+    except Exception as exc:
+        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+
+    names = list(getattr(dist, "param_names", []) or [f"p{i}" for i in range(len(values))])
+    result = {
+        "distribution": entry["name"],
+        "distribution_id": distribution_id,
+        "kind": "distribution",
+        "params": [{"name": n, "value": v, "se": None, "ci": None} for n, v in zip(names, values)],
+        "n": None,
+        "plot": None,
+        "functions": {"meta": FUNCTIONS, "curves": _function_curves(model)},
+        "gof": [],
+        "unit": (unit or "").strip(),
+        "params_only": True,
+    }
+    if kwargs:
+        result["extras"] = kwargs
+        result["extra_params"] = [{"name": _EXTRA_LABELS[k], "value": v} for k, v in kwargs.items()]
+    randomness = _randomness_verdict(distribution_id, result["params"])
+    if randomness is not None:
+        result["randomness"] = randomness
+    return _json_safe(result)
+
+
 def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -> dict:
     """Fit every plain distribution and return the full result for the
     lowest-AIC winner, with the ranking attached as ``selection``.

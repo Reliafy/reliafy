@@ -150,6 +150,61 @@ async def ingest_measurements(
     return await _handle(request, user, op)
 
 
+@router.post("/import/models")
+async def import_model(
+    request: Request,
+    session=Depends(get_session),
+    user: dict = Depends(ingest_user),
+) -> JSONResponse:
+    """Import a model built elsewhere (e.g. a SurPyval notebook).
+
+    JSON body: ``name``, ``distribution`` (SurPyval name or Reliafy id),
+    optional ``unit``; then either ``data`` (``{x, c?, n?}`` arrays — refit
+    server-side into a full model) or ``params`` (``[{name, value}, …]`` for a
+    params-only model), with optional ``options`` (offset/zi/lfp for the data
+    path) or ``extras`` (gamma/p/f0 values for the params path).
+    """
+    from backend.services import models as models_service
+
+    _rate_check(user["uid"])
+    import json
+
+    try:
+        payload = json.loads(await request.body() or b"{}")
+    except json.JSONDecodeError:
+        return JSONResponse(status_code=422, content={"detail": "Body must be JSON."})
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return JSONResponse(status_code=422, content={"detail": "A 'name' is required."})
+    if not payload.get("data") and not payload.get("params"):
+        return JSONResponse(status_code=422, content={"detail": "Provide 'data' arrays or 'params'."})
+
+    try:
+        model = models_service.import_model(
+            session, user["uid"], name,
+            distribution=payload.get("distribution", ""),
+            unit=payload.get("unit"),
+            data=payload.get("data"),
+            params=payload.get("params"),
+            options=payload.get("options"),
+            extras=payload.get("extras"),
+        )
+    except ingest_service.IngestError as exc:  # pragma: no cover - defensive
+        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+    except Exception as exc:
+        # fitting.FitError and friends carry a user-facing message.
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+    metrics_service.record_event(session, name="import_model", path="/api/import/models")
+    return JSONResponse(content={
+        "id": model.id,
+        "name": model.name,
+        "distribution": (model.results or {}).get("distribution", model.distribution_id),
+        "params_only": bool((model.results or {}).get("params_only")),
+        "url": f"/modelling/m/{model.id}",
+    })
+
+
 @router.post("/ingest/datasets/{dataset_id}/lives")
 async def ingest_dataset_lives(
     dataset_id: str,

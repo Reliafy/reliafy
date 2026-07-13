@@ -104,6 +104,34 @@ Response reports what was appended and each model's refit outcome.
 
 ---
 
+## 4. Import a model — push from SurPyval
+
+`POST /api/import/models`
+
+Upload a model fit elsewhere (a SurPyval notebook) so it becomes a full
+Reliafy model — shareable, editable, citable as RCM evidence. Easiest via
+the [`reliafy`](../python/README.md) helper (`pip install reliafy`):
+
+```python
+import surpyval as sp
+import reliafy
+
+model = sp.Weibull.fit(x=failures, c=censoring_flags)
+
+reliafy.configure(token="rlf_...")
+url = reliafy.push(model, name="Pump bearings", unit="hours")
+print(url)
+```
+
+`push()` uploads the fitted data too (so Reliafy shows the probability plot
+and the model stays editable); offset / LFP / zero-inflated fits are detected
+and reproduced. Pass `data=False` for a parameters-only model.
+
+Raw request (JSON body): `name`, `distribution` (SurPyval name or Reliafy id),
+optional `unit`, then either `data` (`{"x": [...], "c": [...], "n": [...]}`)
+or `params` (`[{"name": ..., "value": ...}]`) with optional `options`
+(offset/zi/lfp) or `extras` (gamma/p/f0). Returns `{id, name, url, ...}`.
+
 ## Python example (scheduled job)
 
 ```python

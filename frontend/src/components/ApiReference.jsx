@@ -115,6 +115,21 @@ with open("meter_readings.csv", "rb") as f:
     )
 r.raise_for_status()
 print(r.json()["forecast"])`}</Code>
+
+      <h3>Push a model from SurPyval</h3>
+      <p className="muted-line">
+        Fit a model in a notebook and upload it (with its data) — it becomes a
+        full Reliafy model: probability plot, editable, citable as evidence.
+        <code> pip install reliafy</code>.
+      </p>
+      <Code>{`import surpyval as sp
+import reliafy
+
+model = sp.Weibull.fit(x=failures, c=censoring_flags)
+
+reliafy.configure(token="rlf_...", base_url="${base}")
+url = reliafy.push(model, name="Pump bearings", unit="hours")
+print(url)   # open it in Reliafy`}</Code>
     </div>
   );
 }

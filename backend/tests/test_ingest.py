@@ -342,3 +342,73 @@ def test_admin_bypasses_api_gate(client, monkeypatch):
     r = client.post("/api/tokens", json={"name": "ops"})
     assert r.status_code == 200
     assert client.get("/api/tokens").json()["allowed"] is True
+
+
+# ---- model import (notebook push) --------------------------------------------
+
+def test_import_model_with_data(client):
+    client.act_as(A)
+    raw = client.post("/api/tokens", json={"name": "nb"}).json()["token"]
+    client.act_as(None)
+    rng = np.random.default_rng(4)
+    x = list(rng.weibull(2, 80) * 1000)
+    r = client.post(
+        "/api/import/models",
+        json={"name": "Notebook Weibull", "distribution": "Weibull", "unit": "hours",
+              "data": {"x": x}},
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["params_only"] is False and body["url"].startswith("/modelling/m/")
+
+    # The model opened in-app has a full result (plot + params).
+    client.act_as(A)
+    model = client.get(f"/api/models/{body['url'].split('/')[-1]}").json()
+    assert model["results"]["plot"] is not None
+    assert model["results"]["n"] == 80
+    assert model["dataset_id"]  # data was uploaded as a dataset
+
+
+def test_import_model_params_only(client):
+    client.act_as(A)
+    raw = client.post("/api/tokens", json={"name": "nb"}).json()["token"]
+    client.act_as(None)
+    r = client.post(
+        "/api/import/models",
+        json={"name": "Params model", "distribution": "lognormal",
+              "params": [{"name": "mu", "value": 6.5}, {"name": "sigma", "value": 0.5}]},
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["params_only"] is True
+
+    client.act_as(A)
+    model = client.get(f"/api/models/{r.json()['url'].split('/')[-1]}").json()
+    assert model["results"]["plot"] is None
+    assert model["results"]["functions"]["curves"]["x"]  # functions still work
+
+
+def test_import_model_pro_gated_and_validated(client, monkeypatch):
+    from backend import config
+
+    client.act_as(A)
+    raw = client.post("/api/tokens", json={"name": "nb"}).json()["token"]
+    hdr = {"Authorization": f"Bearer {raw}"}
+    client.act_as(None)
+
+    # Billing on + free user: the token's owner isn't Pro -> import is blocked.
+    monkeypatch.setattr(config, "BILLING_ENABLED", True)
+    r = client.post("/api/import/models",
+                    json={"name": "x", "distribution": "weibull",
+                          "params": [{"value": 1000}, {"value": 2}]}, headers=hdr)
+    assert r.status_code == 402
+
+    # Billing off (self-host): bad distribution and missing name are clean 422s.
+    monkeypatch.setattr(config, "BILLING_ENABLED", False)
+    assert client.post("/api/import/models",
+                       json={"name": "x", "distribution": "nope", "params": [{"value": 1}]},
+                       headers=hdr).status_code == 422
+    assert client.post("/api/import/models",
+                       json={"distribution": "weibull", "params": [{"value": 1}]},
+                       headers=hdr).status_code == 422

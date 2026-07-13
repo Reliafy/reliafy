@@ -87,6 +87,80 @@ def save_model(
     return model
 
 
+def import_model(
+    db,
+    uid: str,
+    name: str,
+    distribution: str,
+    unit: str | None = None,
+    data: dict | None = None,
+    params: list | None = None,
+    options: dict | None = None,
+    extras: dict | None = None,
+) -> Model:
+    """Create a model from an external fit (e.g. a SurPyval notebook).
+
+    Two modes:
+
+    * **with data** — ``data`` holds arrays (``x`` required, optional ``c``/``n``).
+      A dataset is created from them and the model is fit through the normal
+      path, so the result is identical to an in-app fit (probability plot,
+      bounds, goodness-of-fit) and stays editable/refittable.
+    * **params-only** — no data, just ``params`` (+ optional ``options`` extras).
+      Reliability functions and life metrics are available; there's no plot.
+
+    Raises ``fitting.FitError`` on a bad distribution/params/data.
+    """
+    import pandas as pd
+
+    distribution_id = fitting.resolve_distribution_id(distribution)
+
+    if data and data.get("x"):
+        x = list(data["x"])
+        cols = {"x": x}
+        mapping = {"x": "x"}
+        c = data.get("c")
+        if c is not None and any(int(v) != 0 for v in c):
+            cols["c"] = list(c)
+            mapping["c"] = "c"
+        n = data.get("n")
+        if n is not None and any(int(v) != 1 for v in n):
+            cols["n"] = list(n)
+            mapping["n"] = "n"
+        lengths = {len(v) for v in cols.values()}
+        if len(lengths) != 1:
+            raise fitting.FitError("data arrays x/c/n must all be the same length.")
+        csv_bytes = pd.DataFrame(cols).to_csv(index=False).encode()
+        dataset = datasets_service.create_dataset(db, f"{name} (imported)", csv_bytes, uid)
+        return save_model(
+            db, name, dataset, distribution_id, mapping, [], None, unit, uid, options=options
+        )
+
+    # Params-only: extras carry actual fitted values (gamma/p/f0). Drop the
+    # no-op defaults (offset 0, lfp 1, zi 0) so a plain model stays plain.
+    clean = {}
+    for key, default in (("gamma", 0.0), ("p", 1.0), ("f0", 0.0)):
+        v = (extras or {}).get(key)
+        if v is not None and float(v) != default:
+            clean[key] = float(v)
+    result = fitting.result_from_params(distribution_id, params, clean or None, unit)
+    model = Model(
+        id=uuid.uuid4().hex,
+        name=name,
+        owner_id=uid,
+        dataset_id="",
+        kind="distribution",
+        distribution_id=distribution_id,
+        spec={"distribution_id": distribution_id, "unit": (unit or "").strip(),
+              "params_only": True, "options": result.get("options") or None},
+        results=result,
+        surpyval_version=getattr(surpyval, "__version__", None),
+        status="ready",
+    )
+    db.models.insert_one(to_doc(model))
+    return model
+
+
 def list_models(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset()) -> list[Model]:
     """The owner's models plus the shared samples, minus hidden samples."""
     return [
