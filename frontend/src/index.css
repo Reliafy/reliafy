@@ -986,9 +986,11 @@ body {
   background: transparent;
   color: var(--ink);
   border: none;
+  box-shadow: none; /* drop the global button shadow so items aren't card-like */
   border-radius: 7px;
   padding: 7px 10px;
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
 }
 
