@@ -1835,6 +1835,17 @@ button.secondary:hover:not(:disabled) {
   font-weight: 500;
 }
 
+/* Parameter rows carry a value with its confidence interval stacked beneath. */
+.detail-panel .gofr .gv-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+.detail-panel .gofr .gv-col .param-ci {
+  margin-top: 0;
+}
+
 .detail-note {
   background: var(--acc-t);
   border: 1px solid rgba(47, 109, 246, 0.18);

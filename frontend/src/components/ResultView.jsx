@@ -147,37 +147,36 @@ export default function ResultView({ result, hideHead = false }) {
           </span>
         </div>
       )}
-      <div className="params">
-        {result.params.map((p) => (
-          <div className="stat" key={p.name}>
-            <div className="value">{p.value.toPrecision(4)}</div>
-            <div className="name">{p.name}</div>
-            {p.ci && (
-              <div className="param-ci">
-                95% CI [{p.ci[0].toPrecision(3)}, {p.ci[1].toPrecision(3)}]
-              </div>
-            )}
-          </div>
-        ))}
-        {(result.extra_params || []).map((p) => (
-          <div className="stat" key={p.name}>
-            <div className="value">{p.value.toPrecision(4)}</div>
-            <div className="name">{p.name}</div>
-          </div>
-        ))}
-        {(isNonparametric || isDiscrete) && metrics.median != null && (
-          <div className="stat"><div className="value">{Number(metrics.median).toPrecision(4)}</div><div className="name">median life</div></div>
-        )}
-        {(isNonparametric || isDiscrete) && metrics.mttf != null && (
-          <div className="stat"><div className="value">{Number(metrics.mttf).toPrecision(4)}</div><div className="name">MTTF</div></div>
-        )}
-        {result.n != null && (
-          <div className="stat">
-            <div className="value">{result.n}</div>
-            <div className="name">observations</div>
-          </div>
-        )}
-      </div>
+      {/* Distributions with a probability plot move their parameters into the
+          plot's side rail (below); other kinds keep the top summary bar. The
+          observation count is no longer shown as a stat. */}
+      {!hasPlot && (
+        <div className="params">
+          {result.params.map((p) => (
+            <div className="stat" key={p.name}>
+              <div className="value">{p.value.toPrecision(4)}</div>
+              <div className="name">{p.name}</div>
+              {p.ci && (
+                <div className="param-ci">
+                  95% CI [{p.ci[0].toPrecision(3)}, {p.ci[1].toPrecision(3)}]
+                </div>
+              )}
+            </div>
+          ))}
+          {(result.extra_params || []).map((p) => (
+            <div className="stat" key={p.name}>
+              <div className="value">{p.value.toPrecision(4)}</div>
+              <div className="name">{p.name}</div>
+            </div>
+          ))}
+          {(isNonparametric || isDiscrete) && metrics.median != null && (
+            <div className="stat"><div className="value">{Number(metrics.median).toPrecision(4)}</div><div className="name">median life</div></div>
+          )}
+          {(isNonparametric || isDiscrete) && metrics.mttf != null && (
+            <div className="stat"><div className="value">{Number(metrics.mttf).toPrecision(4)}</div><div className="name">MTTF</div></div>
+          )}
+        </div>
+      )}
       {isNonparametric && (
         <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
           Non-parametric empirical estimate — no distribution assumed, so no
@@ -246,6 +245,30 @@ export default function ResultView({ result, hideHead = false }) {
               <ProbabilityPlot plot={result.plot} unit={result.unit} />
             </div>
             <div className="aside">
+              {result.params.length > 0 && (
+                <div className="gof-card">
+                  <div className="gofh">Parameters</div>
+                  {result.params.map((p) => (
+                    <div className="gofr" key={p.name}>
+                      <span className="gk">{p.name}</span>
+                      <span className="gv-col">
+                        <span className="gv">{p.value.toPrecision(4)}</span>
+                        {p.ci && (
+                          <span className="param-ci">
+                            95% CI [{p.ci[0].toPrecision(3)}, {p.ci[1].toPrecision(3)}]
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                  {(result.extra_params || []).map((p) => (
+                    <div className="gofr" key={p.name}>
+                      <span className="gk">{p.name}</span>
+                      <span className="gv">{p.value.toPrecision(4)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {gof.length > 0 && (
                 <div className="gof-card">
                   <div className="gofh">Goodness of fit</div>
