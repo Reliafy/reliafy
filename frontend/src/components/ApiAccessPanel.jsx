@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import ApiReference from "./ApiReference.jsx";
 import { createApiToken, listApiTokens, revokeApiToken } from "../api.js";
 import { relativeTime } from "../instrument.js";
 
@@ -155,7 +154,12 @@ export default function ApiAccessPanel() {
         )}
       </div>
 
-      <ApiReference />
+      <p className="muted-line" style={{ marginTop: "1rem" }}>
+        Ready to send data? See the{" "}
+        <Link className="evidence-link" to="/api-docs">API reference</Link>{" "}
+        for authentication, request bodies and every endpoint with copyable
+        examples.
+      </p>
     </div>
   );
 }

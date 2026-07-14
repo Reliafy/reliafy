@@ -33,6 +33,7 @@ import RcmHome from "./views/RcmHome.jsx";
 import RcmStudyPage from "./views/RcmStudyPage.jsx";
 import TeamSettingsPage from "./views/TeamSettingsPage.jsx";
 import SettingsPage from "./views/SettingsPage.jsx";
+import ApiDocsPage from "./views/ApiDocsPage.jsx";
 import AdminPage from "./views/AdminPage.jsx";
 import { useAppConfig } from "./ConfigProvider.jsx";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
@@ -97,6 +98,7 @@ export default function AppShell() {
             <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />
             <Route path="/team" element={<TeamSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/api-docs" element={<ApiDocsPage />} />
             {/* API tokens moved into Settings; keep old links working. */}
             <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
             <Route path="/admin" element={<AdminPage />} />
