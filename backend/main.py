@@ -27,6 +27,7 @@ from backend.fitting import (
     REGRESSION_MODELS,
     FitError,
     ModelNotFound,
+    confidence_bounds,
     evaluate,
     fit,
     options_from_form,
@@ -232,10 +233,13 @@ async def fit_endpoint(
         return JSONResponse(
             status_code=500, content={"detail": f"Failed to fit model: {exc}"}
         )
-    # Point the (unsaved) calculator at the in-memory evaluate endpoint.
+    # Point the (unsaved) calculator at the in-memory evaluate / confidence
+    # endpoints. Confidence bounds aren't available for regression models.
     functions = result.get("functions")
     if functions and functions.get("model_id"):
         functions["evaluate_path"] = f"/api/evaluate/{functions['model_id']}"
+        if result.get("kind") in ("distribution", "discrete", "nonparametric"):
+            functions["confidence_path"] = f"/api/confidence/{functions['model_id']}"
     return JSONResponse(content=result)
 
 
@@ -250,6 +254,26 @@ def evaluate_endpoint(model_id: str, values: dict = Body(default={})) -> JSONRes
             content={"detail": "Model not found — re-fit to use the calculator."},
         )
     except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.post("/api/confidence/{model_id}")
+def confidence_endpoint(model_id: str, body: dict = Body(default={})) -> JSONResponse:
+    """Confidence bounds of a freshly-fitted model's function (configurable
+    significance / bound), for the modelling-page calculator."""
+    try:
+        return JSONResponse(content=confidence_bounds(
+            model_id,
+            on=body.get("on", "sf"),
+            alpha_ci=float(body.get("alpha_ci", 0.05)),
+            bound=body.get("bound", "two-sided"),
+        ))
+    except ModelNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Model not found — re-fit to compute confidence bounds."},
+        )
+    except (FitError, ValueError, TypeError) as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 

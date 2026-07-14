@@ -282,21 +282,27 @@ def delete_model(db, model_id: str, owner_id: str) -> None:
 
 
 def public_results(model: Model) -> dict:
-    """Results shaped for the client, with the evaluate path pointed at this
-    saved model (so the calculator re-evaluates via the persistent id)."""
+    """Results shaped for the client, with the evaluate / confidence paths
+    pointed at this saved model (so the calculator re-evaluates and recomputes
+    confidence bounds via the persistent id)."""
     results = dict(model.results or {})
     functions = results.get("functions")
     if functions and functions.get("model_id"):
         functions = dict(functions)
         functions["model_id"] = model.id
         functions["evaluate_path"] = f"/api/models/{model.id}/evaluate"
+        # Confidence bounds aren't available for regression models.
+        if model.kind in ("distribution", "discrete", "nonparametric"):
+            functions["confidence_path"] = f"/api/models/{model.id}/confidence"
         results["functions"] = functions
     return results
 
 
-def evaluate(db, model_id: str, values: dict, owner_id: str) -> dict:
-    """Evaluate the model's functions at covariate ``values``, re-fitting if the
-    live model isn't cached."""
+def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
+    """Resolve a saved model to its live fitting-cache id, re-fitting on demand.
+
+    Raises ``ModelNotFound`` if the model is unknown/not owned.
+    """
     model = get_model(db, model_id, owner_id)
     if model is None:
         raise ModelNotFound(model_id)
@@ -307,8 +313,24 @@ def evaluate(db, model_id: str, values: dict, owner_id: str) -> dict:
         _LIVE[model_id] = cache_id
         while len(_LIVE) > _LIVE_MAX:
             _LIVE.popitem(last=False)
+    return cache_id
 
-    return fitting.evaluate(cache_id, values)
+
+def evaluate(db, model_id: str, values: dict, owner_id: str) -> dict:
+    """Evaluate the model's functions at covariate ``values``, re-fitting if the
+    live model isn't cached."""
+    return fitting.evaluate(_live_cache_id(db, model_id, owner_id), values)
+
+
+def confidence(db, model_id: str, params: dict, owner_id: str) -> dict:
+    """Confidence bounds of a saved model's function (configurable level /
+    bound), re-fitting on demand if the live model isn't cached."""
+    return fitting.confidence_bounds(
+        _live_cache_id(db, model_id, owner_id),
+        on=params.get("on", "sf"),
+        alpha_ci=float(params.get("alpha_ci", 0.05)),
+        bound=params.get("bound", "two-sided"),
+    )
 
 
 def get_live_model(db, model_id: str, owner_id: str | list[str]) -> dict | None:
@@ -321,17 +343,9 @@ def get_live_model(db, model_id: str, owner_id: str | list[str]) -> dict | None:
     graph and read it. Returns ``None`` if the model id is unknown/not owned,
     and raises ``fitting.FitError`` if the model has no covariate functions.
     """
-    model = get_model(db, model_id, owner_id)
-    if model is None:
+    if get_model(db, model_id, owner_id) is None:
         return None
-
-    cache_id = _LIVE.get(model_id)
-    if cache_id is None or cache_id not in fitting._MODEL_STORE:
-        cache_id = _refit(model)
-        _LIVE[model_id] = cache_id
-        while len(_LIVE) > _LIVE_MAX:
-            _LIVE.popitem(last=False)
-    return fitting._MODEL_STORE.get(cache_id)
+    return fitting._MODEL_STORE.get(_live_cache_id(db, model_id, owner_id))
 
 
 def _refit(model: Model) -> str:

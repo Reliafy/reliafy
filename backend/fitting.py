@@ -649,6 +649,9 @@ def _fit_distribution(
     )
     params = _params_with_uncertainty(model, param_names)
 
+    # Stash the live model so its confidence bounds can be recomputed on demand
+    # (configurable level / bound) over the same grid the curves use.
+    cache_id = _store_model(model, np.asarray(curves["x"], dtype=float), [])
     result = {
         "distribution": entry["name"],
         "distribution_id": distribution,
@@ -656,7 +659,7 @@ def _fit_distribution(
         "params": params,
         "n": int(np.sum(model.data["n"])),
         "plot": plot,
-        "functions": {"meta": FUNCTIONS, "curves": curves},
+        "functions": {"meta": FUNCTIONS, "curves": curves, "model_id": cache_id},
         "gof": gof,
     }
     if options:
@@ -742,6 +745,7 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
     )
     params = _params_with_uncertainty(model, param_names)
 
+    cache_id = _store_model(model, np.asarray(curves["x"], dtype=float), [])
     return {
         "distribution": entry["name"],
         "distribution_id": distribution,
@@ -749,7 +753,7 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
         "params": params,
         "n": int(np.sum(model.data["n"])),
         "plot": None,
-        "functions": {"meta": FUNCTIONS, "curves": curves},
+        "functions": {"meta": FUNCTIONS, "curves": curves, "model_id": cache_id},
         "gof": gof,
         "metrics": metrics,
     }
@@ -1038,6 +1042,66 @@ def evaluate(model_id: str, values: dict) -> dict:
     except Exception as exc:
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
     return {"curves": curves}
+
+
+# Reliability functions confidence bounds can be computed on, and the bound
+# types SurPyval's ``cb`` accepts.
+_CB_FUNCTIONS = {"sf", "ff", "hf", "Hf", "df"}
+_CB_BOUNDS = {"two-sided", "lower", "upper"}
+
+
+def confidence_bounds(
+    model_id: str,
+    on: str = "sf",
+    alpha_ci: float = 0.05,
+    bound: str = "two-sided",
+) -> dict:
+    """Confidence bounds of a fitted model's ``on`` function over its grid.
+
+    Wraps SurPyval's ``model.cb`` — configurable significance ``alpha_ci`` and
+    ``bound`` (two-sided / lower / upper). Available for plain, discrete and
+    non-parametric models; regression (proportional-hazards) models don't
+    expose confidence bounds. Two-sided returns both arrays; a one-sided bound
+    returns just the relevant side (the other is ``None``).
+    """
+    if on not in _CB_FUNCTIONS:
+        raise FitError(f"Can't compute confidence bounds on '{on}'.")
+    if bound not in _CB_BOUNDS:
+        raise FitError(f"Unknown bound '{bound}' — use two-sided, lower or upper.")
+    if not 0.0 < alpha_ci < 1.0:
+        raise FitError("Confidence level must be between 0% and 100% (exclusive).")
+
+    entry = _MODEL_STORE.get(model_id)
+    if entry is None:
+        raise ModelNotFound(model_id)
+    model, grid = entry["model"], np.asarray(entry["grid"], dtype=float)
+    if not hasattr(model, "cb"):
+        raise FitError("This model type doesn't provide confidence bounds.")
+
+    try:
+        with np.errstate(all="ignore"):
+            cb = np.asarray(model.cb(grid, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+    except Exception as exc:
+        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+
+    def _col(a):
+        return [None if not np.isfinite(v) else float(v) for v in np.asarray(a, dtype=float)]
+
+    if cb.ndim == 2:  # two-sided → columns [lower, upper]
+        lower, upper = _col(cb[:, 0]), _col(cb[:, 1])
+    elif bound == "lower":
+        lower, upper = _col(cb), None
+    else:  # upper
+        lower, upper = None, _col(cb)
+
+    return {
+        "x": grid.tolist(),
+        "on": on,
+        "alpha_ci": alpha_ci,
+        "bound": bound,
+        "lower": lower,
+        "upper": upper,
+    }
 
 
 # The reliability functions exposed in the calculator tab, with display labels.

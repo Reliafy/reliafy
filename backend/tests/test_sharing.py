@@ -95,10 +95,13 @@ def test_share_model_happy_path(client):
     mine = next(m for m in rows if m["id"] == model["id"])
     assert mine["read_only"] is True and mine["shared_by"] == "a@x.com"
     assert client.get(f"/api/models/{model['id']}").status_code == 200
-    # Evaluate reaches the compute layer (a plain distribution has no covariate
-    # functions, so 422 with that message — NOT a 404 — proves access + refit).
+    # Evaluate reaches the compute layer for the shared model (200 with the
+    # reliability curves — proves access + refit-on-demand, not a 404).
     r = client.post(f"/api/models/{model['id']}/evaluate", json={})
-    assert r.status_code == 422 and "no covariate functions" in r.json()["detail"]
+    assert r.status_code == 200 and r.json()["curves"]["sf"]
+    # Confidence bounds likewise reach the compute layer via the shared id.
+    r = client.post(f"/api/models/{model['id']}/confidence", json={"on": "sf"})
+    assert r.status_code == 200 and r.json()["lower"] and r.json()["upper"]
 
     # Recipient mutations are blocked.
     assert client.patch(f"/api/models/{model['id']}", json={"name": "x"}).status_code == 403

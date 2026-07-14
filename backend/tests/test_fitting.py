@@ -266,6 +266,40 @@ def test_discrete_accepts_integer_valued_floats():
     assert result["kind"] == "discrete"
 
 
+def test_confidence_bounds_two_sided_and_one_sided():
+    import json
+
+    from backend.fitting import ModelNotFound, confidence_bounds
+
+    df = _df("x\n" + "\n".join(map(str, range(10, 110, 10))) + "\n")
+    mid = fit("weibull", df, {"x": "x"})["functions"]["model_id"]
+
+    two = confidence_bounds(mid, on="sf", alpha_ci=0.05, bound="two-sided")
+    json.dumps(two, allow_nan=False)
+    assert two["lower"] and two["upper"] and len(two["x"]) == len(two["lower"])
+    # Lower bound sits below the upper bound wherever both are finite.
+    pairs = [(lo, up) for lo, up in zip(two["lower"], two["upper"]) if lo is not None and up is not None]
+    assert pairs and all(lo <= up for lo, up in pairs)
+
+    lower = confidence_bounds(mid, on="sf", alpha_ci=0.1, bound="lower")
+    assert lower["lower"] is not None and lower["upper"] is None
+    upper = confidence_bounds(mid, on="ff", alpha_ci=0.1, bound="upper")
+    assert upper["lower"] is None and upper["upper"] is not None
+
+    with pytest.raises(FitError, match="between 0"):
+        confidence_bounds(mid, alpha_ci=1.5)
+    with pytest.raises(ModelNotFound):
+        confidence_bounds("does-not-exist")
+
+
+def test_confidence_bounds_available_for_discrete():
+    from backend.fitting import confidence_bounds
+
+    mid = fit("geometric", _df("c\n3\n5\n6\n7\n8\n9\n10\n12\n16\n20\n"), {"x": "c"})["functions"]["model_id"]
+    cb = confidence_bounds(mid, on="sf", alpha_ci=0.05, bound="two-sided")
+    assert cb["lower"] and cb["upper"]
+
+
 @pytest.mark.parametrize("dist_id", list(DISTRIBUTIONS))
 def test_fit_all_distributions(dist_id):
     values = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]

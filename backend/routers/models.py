@@ -460,3 +460,27 @@ def evaluate_model(
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@router.post("/models/{model_id}/confidence")
+def confidence_model(
+    model_id: str,
+    params: dict = Body(default={}),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Confidence bounds of a saved model's reliability function, at a
+    configurable significance level and bound (two-sided / lower / upper)."""
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        return JSONResponse(
+            content=models_service.confidence(
+                session, model_id, params, [*ctx.read_owners, model.owner_id]
+            )
+        )
+    except models_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})

@@ -1,7 +1,7 @@
 import Select from "./Select.jsx";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import Plot from "react-plotly.js";
-import { evaluateAt } from "../api.js";
+import { confidenceAt, evaluateAt } from "../api.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
 // time, conditional age) live in the parent (ResultView) so they survive tab
@@ -20,6 +20,8 @@ export function initCalcState(functions) {
     active: "sf",
     t: x.length ? Number(mid.toPrecision(4)) : 0,
     condAge: "", // conditional survival age s
+    // Confidence bounds config + last-fetched band (keyed to avoid refetching).
+    ci: { level: 95, bound: "two-sided", key: null, data: null, error: null },
   };
 }
 
@@ -86,7 +88,7 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
     Object.fromEntries(covariates.map((c) => [c.name, c.default]));
 
   // State is owned by the parent so it persists across tab switches.
-  const { series, active, t, condAge } = state;
+  const { series, active, t, condAge, ci } = state;
   const setSeries = (updater) =>
     setState((st) => ({
       ...st,
@@ -95,6 +97,27 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
   const setActive = (v) => setState((st) => ({ ...st, active: v }));
   const setT = (v) => setState((st) => ({ ...st, t: v }));
   const setCondAge = (v) => setState((st) => ({ ...st, condAge: v }));
+  const setCi = (patch) => setState((st) => ({ ...st, ci: { ...st.ci, ...patch } }));
+
+  // Confidence bounds — available for plain/discrete/non-parametric models
+  // (regression has none). Computed by SurPyval's cb() on demand.
+  const confidencePath = functions.confidence_path;
+  const ciLevel = Number(ci.level);
+  const ciValid = confidencePath && ciLevel > 0 && ciLevel < 100;
+  const ciAlpha = 1 - ciLevel / 100;
+  useEffect(() => {
+    if (!ciValid) return;
+    const wantKey = `${active}|${ciAlpha}|${ci.bound}`;
+    if (ci.key === wantKey && ci.data) return; // already have this band
+    // Debounced so typing a level doesn't spam the backend.
+    const id = setTimeout(() => {
+      confidenceAt(confidencePath, { on: active, alpha_ci: ciAlpha, bound: ci.bound })
+        .then((res) => setCi({ key: wantKey, data: res, error: null }))
+        .catch((err) => setCi({ key: wantKey, data: null, error: err.message }));
+    }, 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ciValid, active, ciAlpha, ci.bound, confidencePath]);
 
   const x = functions.curves.x;
 
@@ -107,6 +130,7 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
   const activeLabel = cond > 0 ? `${baseLabel} | survived to ${sLabel}` : baseLabel;
   const tAxisLabel =
     cond > 0 ? `additional time${unit ? ` (${unit})` : ""}` : tLabel;
+  const multi = series.length > 1;
 
   // Per-series debounced re-evaluation against the backend.
   const timers = useRef({});
@@ -154,8 +178,33 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
   // Per-series curves, conditioned on the survived age when set.
   const views = series.map((s) => view(s.curves));
 
+  // Confidence band for the active function (raw scale only — it isn't
+  // conditionalised, so it's hidden when a survived-age is set).
+  const band = ci.data && ci.data.on === active && cond === 0 ? ci.data : null;
+
   // Chart: the active function for every series, plus a marker at t.
   const traces = [];
+  if (band) {
+    // Lower first, then upper filling down to it (two-sided) — drawn under the
+    // fitted line, which is added next.
+    if (band.lower) {
+      traces.push({
+        x: band.x, y: band.lower, mode: "lines", type: "scatter",
+        line: { color: "#0284c7", width: 1, dash: "dot" },
+        name: band.bound === "two-sided" ? `${ciLevel}% lower` : `${ciLevel}% ${band.bound}`,
+        connectgaps: false, hoverinfo: "skip",
+      });
+    }
+    if (band.upper) {
+      traces.push({
+        x: band.x, y: band.upper, mode: "lines", type: "scatter",
+        line: { color: "#0284c7", width: 1, dash: "dot" },
+        name: band.bound === "two-sided" ? `${ciLevel}% upper` : `${ciLevel}% ${band.bound}`,
+        fill: band.lower ? "tonexty" : undefined, fillcolor: "rgba(2,132,199,0.10)",
+        connectgaps: false, hoverinfo: "skip",
+      });
+    }
+  }
   series.forEach((s, i) => {
     const cv = views[i];
     if (!cv) return;
@@ -165,7 +214,7 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
       y: cv[active],
       mode: "lines",
       line: { color, width: 2 },
-      name: labelOf(s),
+      name: multi ? labelOf(s) : baseLabel,
       type: "scatter",
       connectgaps: false,
     });
@@ -183,15 +232,15 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
     }
   });
 
-  const multi = series.length > 1;
+  const showLegend = multi || !!band;
   const layout = {
     autosize: true,
     height: 440,
-    margin: { l: 64, r: 20, t: 20, b: multi ? 70 : 46 },
+    margin: { l: 64, r: 20, t: 20, b: showLegend ? 70 : 46 },
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "#ffffff",
     font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
-    showlegend: multi,
+    showlegend: showLegend,
     legend: { orientation: "h", y: -0.18 },
     xaxis: {
       title: { text: tAxisLabel, standoff: 12 },
@@ -309,7 +358,45 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
             onChange={(e) => setCondAge(e.target.value)}
           />
         </label>
+        {confidencePath && (
+          <>
+            <label className="calc-t">
+              <span>Confidence level %</span>
+              <input
+                type="number"
+                value={ci.level}
+                min={1}
+                max={99.9}
+                step="any"
+                onChange={(e) => setCi({ level: e.target.value })}
+              />
+            </label>
+            <label className="calc-t">
+              <span>Bound</span>
+              <Select
+                value={ci.bound}
+                onChange={(v) => setCi({ bound: v })}
+                options={[
+                  { value: "two-sided", label: "Two-sided" },
+                  { value: "lower", label: "Lower" },
+                  { value: "upper", label: "Upper" },
+                ]}
+              />
+            </label>
+          </>
+        )}
       </div>
+      {confidencePath && ci.error && (
+        <p className="hint" style={{ margin: "0 0 0.4rem" }}>
+          Couldn't compute confidence bounds: {ci.error}
+        </p>
+      )}
+      {confidencePath && cond > 0 && (
+        <p className="muted-line" style={{ margin: "0 0 0.4rem" }}>
+          Confidence bounds are shown on the unconditional function only — clear
+          the survived-age to see them.
+        </p>
+      )}
 
       {multi ? (
         <table className="calc-table">
@@ -346,19 +433,37 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
           </tbody>
         </table>
       ) : (
-        <div className="calc-values">
-          {meta.map((m) => (
-            <div
-              className={"calc-cell" + (active === m.id ? " active" : "")}
-              key={m.id}
-            >
-              <div className="calc-cell-id">{m.id}</div>
-              <div className="calc-cell-val">
-                {fmt(interp(views[0]?.x, views[0]?.[m.id], Number(t)))}
+        <>
+          <div className="calc-values">
+            {meta.map((m) => (
+              <div
+                className={"calc-cell" + (active === m.id ? " active" : "")}
+                key={m.id}
+              >
+                <div className="calc-cell-id">{m.id}</div>
+                <div className="calc-cell-val">
+                  {fmt(interp(views[0]?.x, views[0]?.[m.id], Number(t)))}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+          {band && (() => {
+            const lo = band.lower ? interp(band.x, band.lower, Number(t)) : null;
+            const hi = band.upper ? interp(band.x, band.upper, Number(t)) : null;
+            const range =
+              band.bound === "two-sided"
+                ? `[${fmt(lo)}, ${fmt(hi)}]`
+                : band.bound === "lower"
+                ? `≥ ${fmt(lo)}`
+                : `≤ ${fmt(hi)}`;
+            return (
+              <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>
+                {ciLevel}% {band.bound === "two-sided" ? "confidence interval" : `${band.bound} confidence bound`} on{" "}
+                {baseLabel} at {tAxisLabel} = {t}: <b>{range}</b>
+              </p>
+            );
+          })()}
+        </>
       )}
 
       <Plot

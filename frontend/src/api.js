@@ -188,6 +188,16 @@ export function evaluateAt(path, values) {
   });
 }
 
+// Confidence bounds of a fitted model's function. ``path`` comes from the
+// result payload (functions.confidence_path); params are { on, alpha_ci, bound }.
+export function confidenceAt(path, params) {
+  return request(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+}
+
 // ---- Saved models ----------------------------------------------------------
 
 export function listModels() {
