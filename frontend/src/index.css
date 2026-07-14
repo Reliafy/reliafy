@@ -4480,13 +4480,16 @@ select:disabled {
    the tabs sit near the top of the card. */
 .model-page .card { margin-top: 0.85rem; padding-top: 1rem; }
 
-/* Overflow ("…") menu for secondary actions. */
+/* Overflow ("…") menu for secondary actions. Stretch the row so the trigger
+   matches the Edit button's height. */
+.model-page .head-actions { align-items: stretch; }
 .ovm { position: relative; display: inline-flex; }
 .ovm-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0 10px;
+  height: 100%;
 }
 .ovm-menu {
   position: absolute;
