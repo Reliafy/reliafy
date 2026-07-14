@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import ParamsModelModal from "../components/ParamsModelModal.jsx";
 import PerDemandModal from "../components/PerDemandModal.jsx";
 import ModelLibrary from "./ModelLibrary.jsx";
 import { useModels } from "../useModels.js";
@@ -9,7 +8,6 @@ import { deleteModel } from "../api.js";
 export default function ModellingHome() {
   const navigate = useNavigate();
   const { models, loading, refresh } = useModels();
-  const [paramsOpen, setParamsOpen] = useState(false);
   const [perDemandOpen, setPerDemandOpen] = useState(false);
 
   const onDelete = async (m) => {
@@ -38,9 +36,6 @@ export default function ModellingHome() {
           <button className="secondary" onClick={() => setPerDemandOpen(true)}>
             Per-demand
           </button>
-          <button className="secondary" onClick={() => setParamsOpen(true)}>
-            From parameters
-          </button>
           <button onClick={() => navigate("/modelling/new")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 5v14M5 12h14" />
@@ -57,16 +52,6 @@ export default function ModellingHome() {
         onDelete={onDelete}
       />
 
-      {paramsOpen && (
-        <ParamsModelModal
-          onClose={() => setParamsOpen(false)}
-          onCreated={(model) => {
-            setParamsOpen(false);
-            refresh();
-            navigate(`/modelling/m/${model.id}`);
-          }}
-        />
-      )}
       {perDemandOpen && (
         <PerDemandModal
           onClose={() => setPerDemandOpen(false)}

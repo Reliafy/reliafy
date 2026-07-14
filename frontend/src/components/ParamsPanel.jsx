@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import Units from "./Units.jsx";
 import { getDistributions, createModelFromParams } from "../api.js";
 
-// Create a model from known parameters — no data. For handbook values,
-// values from a report, or a fit done elsewhere. Produces reliability
-// functions and life metrics (no probability plot, since there are no
-// observations). Complements uploading data.
-export default function ParamsModelModal({ onClose, onCreated }) {
+// Build a model from known parameters — no data. For handbook values, a figure
+// from a report, or a fit done elsewhere. Produces reliability functions and
+// life metrics (no probability plot). Rendered as a page panel; calls
+// ``onCreated`` with the saved model and ``onCancel`` to back out.
+export default function ParamsPanel({ onCreated, onCancel }) {
   const [dists, setDists] = useState([]);
   const [distribution, setDistribution] = useState("weibull");
   const [values, setValues] = useState({}); // { paramName: string }
@@ -49,27 +48,16 @@ export default function ParamsModelModal({ onClose, onCreated }) {
       onCreated(model);
     } catch (err) {
       setError(err.message);
-    } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal
-      title="Create a model from parameters"
-      onClose={onClose}
-      locked={busy}
-      footer={
-        <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
-          <button className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-          <button onClick={onSave} disabled={!canSave}>{busy ? "Creating…" : "Create model"}</button>
-        </div>
-      }
-    >
+    <div className="card">
       <p className="muted-line" style={{ marginTop: 0 }}>
         For known parameters — a handbook value, a figure from a report, or a
         fit done elsewhere. You get the reliability functions and life metrics;
-        upload data instead if you want a probability plot.
+        fit to data instead if you want a probability plot.
       </p>
 
       <label className="login-field">
@@ -131,6 +119,14 @@ export default function ParamsModelModal({ onClose, onCreated }) {
       </div>
 
       {error && <div className="error">{error}</div>}
-    </Modal>
+
+      <div className="fit-flow-foot">
+        <span />
+        <div className="row" style={{ margin: 0 }}>
+          <button className="secondary" onClick={onCancel} disabled={busy}>Back</button>
+          <button onClick={onSave} disabled={!canSave}>{busy ? "Creating…" : "Create model"}</button>
+        </div>
+      </div>
+    </div>
   );
 }
