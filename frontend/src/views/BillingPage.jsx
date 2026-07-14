@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { restoreSamples, getBilling, buyCredits, subscribePro, billingPortal } from "../api.js";
+import { getBilling, buyCredits, subscribePro, billingPortal } from "../api.js";
 
 // AI usage is denominated in "credits" — users never see a dollar balance.
 // (Internally 1 credit == 1 cent; only pack purchase prices show as dollars.)
@@ -92,14 +92,6 @@ export default function BillingPage() {
             Usage shown is your personal workspace — team workspaces have
             unlimited saves.
           </p>
-          <button
-            className="secondary"
-            style={{ marginTop: "0.4rem" }}
-            onClick={() => restoreSamples().then(() => window.location.reload())}
-            title="Bring back any sample datasets, models, or studies you removed."
-          >
-            Restore sample data
-          </button>
           {isPro ? (
             <button className="secondary" disabled={working === "portal"} onClick={() => go("portal", billingPortal)}>
               {working === "portal" ? "Opening…" : "Manage subscription"}

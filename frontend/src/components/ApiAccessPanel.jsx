@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import ApiReference from "../components/ApiReference.jsx";
+import ApiReference from "./ApiReference.jsx";
 import { createApiToken, listApiTokens, revokeApiToken } from "../api.js";
 import { relativeTime } from "../instrument.js";
 
-// Personal API tokens for the ingestion API. The raw token is shown exactly
-// once at creation; only a hash is stored server-side. Pro-only on the cloud.
-export default function ApiTokensPage() {
+// Personal API tokens for the ingestion API, plus the endpoint reference.
+// Rendered as a section of the Settings page (no page chrome of its own). The
+// raw token is shown exactly once at creation; only a hash is stored
+// server-side. Pro-only on the cloud.
+export default function ApiAccessPanel() {
   const [tokens, setTokens] = useState(null);
   const [allowed, setAllowed] = useState(true);
   const [name, setName] = useState("");
@@ -60,19 +62,13 @@ export default function ApiTokensPage() {
     : "";
 
   return (
-    <div className="app">
-      <header>
-        <div>
-          <div className="crumb"><b>API access</b></div>
-          <h1>API access</h1>
-          <p>
-            Personal tokens for pushing data into Reliafy from scripts and cron
-            jobs — meter readings, degradation measurements, new failure data.
-            Tokens are write-only: they work on the ingestion endpoints and
-            nothing else.
-          </p>
-        </div>
-      </header>
+    <div className="set-section">
+      <p className="muted-line" style={{ marginTop: 0 }}>
+        Personal tokens for pushing data into Reliafy from scripts and cron
+        jobs — meter readings, degradation measurements, new failure data.
+        Tokens are write-only: they work on the ingestion endpoints and nothing
+        else.
+      </p>
 
       {!allowed && (
         <div className="card note">

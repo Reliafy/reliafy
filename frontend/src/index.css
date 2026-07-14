@@ -4461,6 +4461,24 @@ select:disabled {
   padding: 8px 12px;
 }
 
+/* ---- Settings page ---------------------------------------------------- */
+.set-section { margin-top: 1.25rem; }
+.set-section .card h2 { margin-top: 0; }
+.set-profile { display: flex; align-items: center; gap: 14px; }
+.set-profile .ava.lg {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #e7eaf0;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.set-name { font-weight: 600; font-size: 15px; }
+
 /* Descriptive notes + randomness verdict, moved below the tabbed content. */
 .result-foot {
   margin-top: 1.1rem;

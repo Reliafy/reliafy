@@ -75,9 +75,10 @@ const GuidesIcon = () => (
   </svg>
 );
 
-const ApiIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12" />
+const SettingsIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
   </svg>
 );
 const BillingIcon = () => (
@@ -221,6 +222,14 @@ export default function Sidebar({ collapsed, onToggle }) {
       <div className="side-grow" />
 
       {!collapsed && <div className="side-label-group">Account</div>}
+      <NavLink
+        to="/settings"
+        className={({ isActive }) => "side-item" + (isActive ? " active" : "")}
+        title="Settings — profile, sample data, API access"
+      >
+        <span className="side-icon"><SettingsIcon /></span>
+        {!collapsed && <span className="side-label">Settings</span>}
+      </NavLink>
       {billing && (
         <NavLink
           to="/billing"
@@ -231,14 +240,6 @@ export default function Sidebar({ collapsed, onToggle }) {
           {!collapsed && <span className="side-label">Billing &amp; credits</span>}
         </NavLink>
       )}
-      <NavLink
-        to="/tokens"
-        className={({ isActive }) => "side-item" + (isActive ? " active" : "")}
-        title="API access (personal tokens)"
-      >
-        <span className="side-icon"><ApiIcon /></span>
-        {!collapsed && <span className="side-label">API access</span>}
-      </NavLink>
       <a
         className="side-item"
         href="/blog"
