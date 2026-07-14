@@ -2630,7 +2630,9 @@ button.secondary:hover:not(:disabled) {
   box-shadow: none;
   transition: border-color 0.15s, background 0.15s;
 }
-.ds-choice:hover { border-color: var(--acc); background: rgba(47, 109, 246, 0.03); }
+/* Match the selector/dropdown input hover (subtle border + faint tint), not
+   the global dark-blue button hover — :not(:disabled) beats that rule. */
+.ds-choice:hover:not(:disabled) { border-color: var(--acc); background: rgba(47, 109, 246, 0.03); }
 .ds-choice-h { font-size: 15px; font-weight: 600; }
 .ds-choice-b { font-size: 13px; color: var(--muted); }
 
