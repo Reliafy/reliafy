@@ -4456,6 +4456,13 @@ select:disabled {
   padding: 8px 12px;
 }
 
+/* Descriptive notes + randomness verdict, moved below the tabbed content. */
+.result-foot {
+  margin-top: 1.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line2);
+}
+
 /* ---- Model page: lean header + overflow actions ----------------------- */
 /* Inline, de-emphasised meta next to the title (relative save time / unit). */
 .page-meta {

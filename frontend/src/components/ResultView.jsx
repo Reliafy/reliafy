@@ -137,6 +137,56 @@ export default function ResultView({ result, hideHead = false }) {
   const gof = result.gof || [];
   const metrics = result.metrics || {};
 
+  // Descriptive notes + the randomness verdict — rendered below the tabbed
+  // content (the model itself stays at the top of the view).
+  const hasNotes =
+    isNonparametric || isDiscrete || result.params_only ||
+    result.selection?.candidates?.length > 1 || result.options || result.randomness;
+  const notes = (
+    <>
+      {isNonparametric && (
+        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+          Non-parametric empirical estimate — no distribution assumed, so no
+          fitted parameters or goodness-of-fit.
+        </p>
+      )}
+      {isDiscrete && (
+        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+          Discrete distribution — fitted to whole-count life data (cycles, shocks
+          or demands to failure). There's no probability plot; the fitted
+          reliability functions and goodness-of-fit are shown.
+        </p>
+      )}
+      {result.params_only && (
+        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+          Created from parameters — reliability functions and life metrics are
+          available; there's no probability plot without data.
+        </p>
+      )}
+      {result.selection && result.selection.candidates?.length > 1 && (
+        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+          Selected by lowest AIC over {result.selection.candidates.length}{" "}
+          candidates — next best:{" "}
+          {result.selection.candidates[1].name} (ΔAIC +
+          {(result.selection.candidates[1].aic - result.selection.candidates[0].aic).toFixed(1)})
+        </p>
+      )}
+      {result.options && (
+        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+          Fit options:{" "}
+          {[
+            result.options.offset && "3-parameter offset",
+            result.options.lfp && "limited failure population",
+            result.options.zi && "zero-inflated",
+            result.options.fixed &&
+              `fixed ${Object.entries(result.options.fixed).map(([k, v]) => `${k} = ${v}`).join(", ")}`,
+          ].filter(Boolean).join(" · ")}
+        </p>
+      )}
+      {result.randomness && <RandomnessVerdict r={result.randomness} />}
+    </>
+  );
+
   return (
     <>
       {!hideHead && (
@@ -177,48 +227,6 @@ export default function ResultView({ result, hideHead = false }) {
           )}
         </div>
       )}
-      {isNonparametric && (
-        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-          Non-parametric empirical estimate — no distribution assumed, so no
-          fitted parameters or goodness-of-fit.
-        </p>
-      )}
-      {isDiscrete && (
-        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-          Discrete distribution — fitted to whole-count life data (cycles, shocks
-          or demands to failure). There's no probability plot; the fitted
-          reliability functions and goodness-of-fit are shown.
-        </p>
-      )}
-      {result.params_only && (
-        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-          Created from parameters — reliability functions and life metrics are
-          available; there's no probability plot without data.
-        </p>
-      )}
-      {result.selection && result.selection.candidates?.length > 1 && (
-        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-          Selected by lowest AIC over {result.selection.candidates.length}{" "}
-          candidates — next best:{" "}
-          {result.selection.candidates[1].name} (ΔAIC +
-          {(result.selection.candidates[1].aic - result.selection.candidates[0].aic).toFixed(1)})
-        </p>
-      )}
-      {result.options && (
-        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-          Fit options:{" "}
-          {[
-            result.options.offset && "3-parameter offset",
-            result.options.lfp && "limited failure population",
-            result.options.zi && "zero-inflated",
-            result.options.fixed &&
-              `fixed ${Object.entries(result.options.fixed).map(([k, v]) => `${k} = ${v}`).join(", ")}`,
-          ].filter(Boolean).join(" · ")}
-        </p>
-      )}
-
-      {result.randomness && <RandomnessVerdict r={result.randomness} />}
-
       <div className="tabs">
         {tabs.map((t) => (
           <button
@@ -301,6 +309,8 @@ export default function ResultView({ result, hideHead = false }) {
         {tab === "coef" && <Coefficients coefficients={result.coefficients} />}
         {tab === "gof" && <GoodnessOfFit gof={result.gof} n={result.n} />}
       </div>
+
+      {hasNotes && <div className="result-foot">{notes}</div>}
     </>
   );
 }
