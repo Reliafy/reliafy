@@ -4485,6 +4485,21 @@ select:disabled {
 .type-tag.life { background: rgba(47, 109, 246, 0.10); color: var(--acc); }
 .type-tag.degradation { background: rgba(124, 58, 237, 0.10); color: #7c3aed; }
 
+/* Inline unit field in the column mapper — sits alongside x / xl / xr and
+   matches the embedded selects. */
+.map-unit .map-badge { width: auto; padding: 0 0.55rem; }
+.map-unit-input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: var(--ink);
+}
+.map-unit-input:focus { outline: none; }
+
 /* ---- New-model fit flow (page panel) ---------------------------------- */
 .fit-flow-foot {
   display: flex;

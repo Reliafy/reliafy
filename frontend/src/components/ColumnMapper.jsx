@@ -13,12 +13,17 @@ const FIELD_INFO = {
   tr: { label: "tr", help: "Right truncation bound" },
 };
 
+const COMMON_UNITS = [
+  "Hours", "Days", "Weeks", "Months", "Years",
+  "Cycles", "Kilometres", "Miles", "Operations", "Rounds",
+];
+
 const GROUPS = [
   { title: "Variable — use x, or both xl and xr", fields: ["x", "xl", "xr"], cols: 3 },
   { title: "Modifiers (optional)", fields: ["c", "n", "tl", "tr"], cols: 4 },
 ];
 
-export default function ColumnMapper({ columns, mapping, onChange }) {
+export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitChange }) {
   const usingX = !!mapping.x;
   const usingInterval = !!mapping.xl || !!mapping.xr;
 
@@ -42,12 +47,15 @@ export default function ColumnMapper({ columns, mapping, onChange }) {
 
   return (
     <div className="mapper">
-      {GROUPS.map((group) => (
+      {GROUPS.map((group) => {
+        // The unit of the time axis sits inline with x/xl/xr.
+        const withUnit = group.fields.includes("x") && !!onUnitChange;
+        return (
         <div className="map-group" key={group.title}>
           <div className="map-group-title">
             <span>{group.title}</span>
           </div>
-          <div className="map-fields" data-cols={group.cols}>
+          <div className="map-fields" data-cols={withUnit ? group.cols + 1 : group.cols}>
             {group.fields.map((field) => {
               const info = FIELD_INFO[field];
               const disabled = isDisabled(field);
@@ -78,9 +86,30 @@ export default function ColumnMapper({ columns, mapping, onChange }) {
                 </label>
               );
             })}
+            {withUnit && (
+              <label
+                className="map-field map-unit"
+                title="Unit of the time axis (optional)"
+              >
+                <span className="map-badge">unit</span>
+                <input
+                  className="map-unit-input"
+                  list="x-units"
+                  value={unit || ""}
+                  placeholder="e.g. Hours"
+                  onChange={(e) => onUnitChange(e.target.value)}
+                />
+                <datalist id="x-units">
+                  {COMMON_UNITS.map((u) => (
+                    <option value={u} key={u} />
+                  ))}
+                </datalist>
+              </label>
+            )}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

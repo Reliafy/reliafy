@@ -3,23 +3,24 @@ import {
   getColumns,
   getDistributions,
   fitModel,
+  saveModel,
   listDatasets,
   getDataset,
 } from "../api.js";
 import ColumnMapper from "./ColumnMapper.jsx";
 import Covariates from "./Covariates.jsx";
-import Units from "./Units.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
+import ResultView from "./ResultView.jsx";
 
 const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "" };
-const STEPS = ["Source", "Data", "Model"];
+const STEPS = ["Source", "Data", "Model", "Result"];
 
-// Three-step fit flow rendered as a page panel: (1) pick a data source — upload
-// a CSV or choose a saved dataset, (2) map columns + add covariates, (3) pick a
-// model (filtered by whether covariates were provided) and fit. Calls
-// ``onFitted`` with the result + fit context; ``onCancel`` backs out to the list.
-export default function FitFlow({ onFitted, onCancel }) {
+// Fit flow rendered as a page panel: (1) pick a data source, (2) map columns
+// (+ unit, covariates), (3) pick a model and fit, (4) review the fit, name it,
+// and save — with Back to change anything and re-fit before saving. Calls
+// ``onSaved`` with the saved model; ``onCancel`` backs out to the list.
+export default function FitFlow({ onSaved, onCancel }) {
   const [step, setStep] = useState(1);
   const [file, setFile] = useState(null);
   const [datasetId, setDatasetId] = useState(null);
@@ -38,6 +39,11 @@ export default function FitFlow({ onFitted, onCancel }) {
   const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
+
+  // Step 4 (Result): the fit, a name, and the save action.
+  const [result, setResult] = useState(null);
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     getDistributions()
@@ -144,22 +150,11 @@ export default function FitFlow({ onFitted, onCancel }) {
         ...(hasCovariates ? (advanced ? { formula } : { covariates }) : {}),
         ...(hasCovariates ? {} : { fitOptions: fitOpts }),
       };
-      const result = await fitModel(distribution, file, mapping, opts);
-      // Pass the fit context too, so the result can be saved without re-entry.
-      onFitted({
-        result,
-        fit: {
-          file,
-          datasetId,
-          sourceName,
-          distribution,
-          mapping,
-          unit,
-          covariates: opts.covariates || [],
-          formula: opts.formula || null,
-          fitOptions: opts.fitOptions || null,
-        },
-      });
+      const res = await fitModel(distribution, file, mapping, opts);
+      setResult(res);
+      const src = file?.name || sourceName || "dataset";
+      setName(`${res.distribution} — ${src.replace(/\.csv$/i, "")}`);
+      setStep(4);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -167,7 +162,24 @@ export default function FitFlow({ onFitted, onCancel }) {
     }
   };
 
-  // Back from step 1 leaves the flow entirely.
+  const onSave = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const saved = await saveModel(name.trim(), distribution, file, mapping, {
+        unit,
+        datasetId: datasetId || undefined,
+        ...(hasCovariates ? (advanced ? { formula } : { covariates }) : { fitOptions: fitOpts }),
+      });
+      onSaved?.(saved);
+    } catch (err) {
+      setError(err.message);
+      setSaving(false);
+    }
+  };
+
+  // Back from step 1 leaves the flow entirely; from Result it returns to Model.
   const goBack = () => {
     setError(null);
     if (step === 1) return onCancel?.();
@@ -206,12 +218,21 @@ export default function FitFlow({ onFitted, onCancel }) {
         <button onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
       </>
     );
-  } else {
+  } else if (step === 3) {
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
         <button onClick={onFit} disabled={!distribution || loading}>
           {loading ? "Fitting…" : `Fit ${distName}`}
+        </button>
+      </>
+    );
+  } else {
+    nav = (
+      <>
+        <button className="secondary" onClick={goBack} disabled={saving}>Back</button>
+        <button onClick={onSave} disabled={!name.trim() || saving}>
+          {saving ? "Saving…" : "Save model"}
         </button>
       </>
     );
@@ -293,8 +314,9 @@ export default function FitFlow({ onFitted, onCancel }) {
             columns={csv.columns}
             mapping={mapping}
             onChange={setMapping}
+            unit={unit}
+            onUnitChange={setUnit}
           />
-          <Units value={unit} onChange={setUnit} />
           <Covariates
             columns={csv.columns}
             selected={covariates}
@@ -330,6 +352,26 @@ export default function FitFlow({ onFitted, onCancel }) {
             fitOpts={fitOpts}
             onFitOpts={setFitOpts}
           />
+        </div>
+      )}
+
+      {step === 4 && result && (
+        <div className="fit-step">
+          <label className="login-field">
+            <span>Model name</span>
+            <input
+              type="text"
+              autoFocus
+              value={name}
+              placeholder="Model name"
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <p className="muted-line" style={{ margin: 0 }}>
+            Review the fit below. Go <b>Back</b> to change the mapping or model
+            and re-fit, or save it.
+          </p>
+          <ResultView result={result} />
         </div>
       )}
 
