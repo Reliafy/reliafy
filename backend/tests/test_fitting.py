@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from backend.fitting import (
+    DISCRETE,
     DISTRIBUTIONS,
     FitError,
     build_fit_inputs,
@@ -213,6 +214,37 @@ def test_unknown_distribution_raises():
     df = _df("x\n10\n20\n30\n")
     with pytest.raises(FitError, match="Unknown model"):
         fit("rayleigh", df, {"x": "x"})
+
+
+@pytest.mark.parametrize("dist_id", list(DISCRETE))
+def test_fit_discrete_distributions(dist_id):
+    import json
+
+    # Whole-count cycles-to-failure.
+    cycles = [3, 5, 5, 6, 7, 7, 8, 8, 9, 10, 11, 12, 14, 16, 20]
+    df = _df("cycles\n" + "\n".join(map(str, cycles)) + "\n")
+    result = fit(dist_id, df, {"x": "cycles"}, None, None, "cycles")
+
+    assert result["kind"] == "discrete"
+    assert result["distribution_id"] == dist_id
+    assert result["n"] == len(cycles)
+    # Discrete models carry no probability paper — no plot.
+    assert result["plot"] is None
+    # Fitted parameters with confidence intervals, plus goodness-of-fit.
+    assert len(result["params"]) >= 1
+    assert all("ci" in p for p in result["params"])
+    assert {"aic", "bic"} <= {g["id"] for g in result["gof"]}
+    # Reliability functions and life metrics are available for the calculator.
+    assert "curves" in result["functions"]
+    assert result["metrics"]["median"] is not None
+    # The payload must be valid JSON (no NaN/Inf leaks).
+    json.dumps(result, allow_nan=False)
+
+
+def test_discrete_not_in_continuous_best_fit():
+    # Discrete distributions must not compete in the continuous "best fit"
+    # comparison (incompatible supports) — the two registries stay disjoint.
+    assert set(DISCRETE) & set(DISTRIBUTIONS) == set()
 
 
 @pytest.mark.parametrize("dist_id", list(DISTRIBUTIONS))

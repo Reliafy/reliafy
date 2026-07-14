@@ -46,6 +46,7 @@ from surpyval import (
 )
 from surpyval import ExpoWeibull, Gumbel, Logistic, LogLogistic
 from surpyval import Binomial, FlemingHarrington, KaplanMeier, NelsonAalen, Turnbull
+from surpyval import DiscreteWeibull, Geometric, NegativeBinomial
 from surpyval.univariate.regression import CoxPH
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
@@ -62,6 +63,19 @@ DISTRIBUTIONS = {
     "expo_weibull": {"name": "Exponentiated Weibull", "dist": ExpoWeibull, "offsetable": True},
     "gumbel": {"name": "Gumbel", "dist": Gumbel, "offsetable": False},
     "logistic": {"name": "Logistic", "dist": Logistic, "offsetable": False},
+}
+
+# Discrete lifetime distributions: for life measured in whole counts — cycles,
+# shocks, or demands to failure — rather than continuous time. Same x/c/n
+# mapping and standard ``.fit`` interface as the continuous distributions, but
+# there's no probability paper (no ``mpp`` transforms), so they produce fitted
+# parameters, reliability functions and goodness-of-fit without a probability
+# plot. Kept separate from ``DISTRIBUTIONS`` so they don't enter the continuous
+# "best fit" comparison, which mixes incompatible supports.
+DISCRETE = {
+    "discrete_weibull": {"name": "Discrete Weibull", "dist": DiscreteWeibull},
+    "geometric": {"name": "Geometric", "dist": Geometric},
+    "negative_binomial": {"name": "Negative Binomial", "dist": NegativeBinomial},
 }
 
 # Non-parametric estimators (no distribution assumed): the "estimation axis"
@@ -382,12 +396,14 @@ def fit(
         result = _fit_best(df, mapping, options)
     elif distribution in NONPARAMETRIC:
         result = _fit_nonparametric(distribution, df, mapping)
+    elif distribution in DISCRETE:
+        result = _fit_discrete(distribution, df, mapping)
     elif distribution in DISTRIBUTIONS:
         result = _fit_distribution(distribution, df, mapping, options)
     else:
         raise FitError(
             f"Unknown model '{distribution}'. Available: "
-            f"{', '.join([BEST_ID, *DISTRIBUTIONS, *NONPARAMETRIC, *REGRESSION_MODELS])}."
+            f"{', '.join([BEST_ID, *DISTRIBUTIONS, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
         )
     result["unit"] = (unit or "").strip()
     # Confidence bounds and probability-paper transforms can produce non-finite
@@ -660,6 +676,47 @@ def _fit_distribution(
     if randomness is not None:
         result["randomness"] = randomness
     return result
+
+
+def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
+    """Fit a discrete lifetime distribution (Discrete Weibull / Geometric /
+    Negative Binomial) to whole-count data.
+
+    Same estimation machinery as the continuous distributions — fitted
+    parameters (with confidence intervals), reliability functions and
+    goodness-of-fit — but discrete models carry no probability-paper
+    transforms, so there's no probability plot. Life metrics (median / MTTF /
+    B10) come through as for any other model.
+    """
+    entry = DISCRETE[distribution]
+    dist = entry["dist"]
+    try:
+        kwargs = build_fit_inputs(df, mapping)
+        model = dist.fit(**kwargs)
+        curves = _function_curves(model)
+        gof = _goodness_of_fit(model)
+        metrics = _life_metrics(model)
+    except Exception as exc:
+        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+
+    param_names = (
+        getattr(model, "param_names", None)
+        or getattr(dist, "param_names", None)
+        or [f"p{i}" for i in range(len(model.params))]
+    )
+    params = _params_with_uncertainty(model, param_names)
+
+    return {
+        "distribution": entry["name"],
+        "distribution_id": distribution,
+        "kind": "discrete",
+        "params": params,
+        "n": int(np.sum(model.data["n"])),
+        "plot": None,
+        "functions": {"meta": FUNCTIONS, "curves": curves},
+        "gof": gof,
+        "metrics": metrics,
+    }
 
 
 def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:

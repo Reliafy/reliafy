@@ -15,6 +15,11 @@ const NONPARAMETRIC_TABS = [
   { id: "survival", label: "Survival curve" },
   { id: "calc", label: "Calculator" },
 ];
+// Discrete distributions have no probability paper, so no probability plot.
+const DISCRETE_TABS = [
+  { id: "calc", label: "Calculator" },
+  { id: "gof", label: "Goodness of fit" },
+];
 
 const pct = (v) => `${(v * 100).toFixed(v < 0.1 ? 2 : 1)}%`;
 
@@ -87,11 +92,19 @@ export default function ResultView({ result }) {
 
   const isRegression = result.kind === "regression";
   const isNonparametric = result.kind === "nonparametric";
+  const isDiscrete = result.kind === "discrete";
   // Params-only models (created from parameters, no data) have no probability
   // plot or goodness-of-fit — just the functions.
   const hasPlot = !!result.plot;
-  const defaultTab =
-    isRegression ? "coef" : isNonparametric ? "survival" : hasPlot ? "plot" : "calc";
+  const defaultTab = isRegression
+    ? "coef"
+    : isNonparametric
+    ? "survival"
+    : isDiscrete
+    ? "calc"
+    : hasPlot
+    ? "plot"
+    : "calc";
   const [tab, setTab] = useState(defaultTab);
 
   // The Calculator tab unmounts when you switch away, so its inputs live here
@@ -111,9 +124,12 @@ export default function ResultView({ result }) {
     ? NONPARAMETRIC_TABS
     : isRegression
     ? REGRESSION_TABS
+    : isDiscrete
+    ? DISCRETE_TABS
     : DISTRIBUTION_TABS;
   if (!result.functions) tabs = tabs.filter((t) => t.id !== "calc");
-  if (!isNonparametric && !hasPlot) tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
+  if (!isNonparametric && !isDiscrete && !hasPlot)
+    tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
 
   const color = distColor(result.distribution);
   const gof = result.gof || [];
@@ -145,10 +161,10 @@ export default function ResultView({ result }) {
             <div className="name">{p.name}</div>
           </div>
         ))}
-        {isNonparametric && metrics.median != null && (
+        {(isNonparametric || isDiscrete) && metrics.median != null && (
           <div className="stat"><div className="value">{Number(metrics.median).toPrecision(4)}</div><div className="name">median life</div></div>
         )}
-        {isNonparametric && metrics.mttf != null && (
+        {(isNonparametric || isDiscrete) && metrics.mttf != null && (
           <div className="stat"><div className="value">{Number(metrics.mttf).toPrecision(4)}</div><div className="name">MTTF</div></div>
         )}
         {result.n != null && (
@@ -162,6 +178,13 @@ export default function ResultView({ result }) {
         <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
           Non-parametric empirical estimate — no distribution assumed, so no
           fitted parameters or goodness-of-fit.
+        </p>
+      )}
+      {isDiscrete && (
+        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+          Discrete distribution — fitted to whole-count life data (cycles, shocks
+          or demands to failure). There's no probability plot; the fitted
+          reliability functions and goodness-of-fit are shown.
         </p>
       )}
       {result.params_only && (

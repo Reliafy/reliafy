@@ -12,6 +12,9 @@ const DESCRIPTIONS = {
   expo_weibull: "Three-parameter Weibull generalisation (extra shape μ).",
   gumbel: "Extreme-value (minimum) location–scale model.",
   logistic: "Location–scale model with slightly heavy tails.",
+  discrete_weibull: "Whole-count analogue of the Weibull — cycles or shocks to failure.",
+  geometric: "Discrete constant-hazard (memoryless) model — the discrete Exponential.",
+  negative_binomial: "Discrete counts to failure; more dispersed than the Geometric.",
   weibull_ph: "Weibull baseline with proportional-hazards covariate effects.",
   exponential_ph: "Exponential baseline proportional-hazards model.",
   lognormal_ph: "Lognormal baseline proportional-hazards model.",
@@ -37,9 +40,10 @@ const OPTION_HELP = {
 export default function DistributionStep({ options, value, onChange, fitOpts, onFitOpts }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((d) => d.id === value);
-  // Advanced fit options (offset/LFP/ZI/fixed) apply to parametric plain
-  // distributions only — not to non-parametric estimators or regression.
-  const isPlain = selected && !selected.covariates && !selected.nonparametric;
+  // Advanced fit options (offset/LFP/ZI/fixed) apply to continuous parametric
+  // distributions only — not to discrete, non-parametric or regression models.
+  const isPlain =
+    selected && !selected.covariates && !selected.nonparametric && !selected.discrete;
   const opts = fitOpts || {};
 
   const setOpt = (key, val) => onFitOpts({ ...opts, [key]: val });
@@ -54,18 +58,19 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
     (opts.offset ? 1 : 0) + (opts.zi ? 1 : 0) + (opts.lfp ? 1 : 0) +
     Object.keys(opts.fixed || {}).length;
 
-  // Group the picker into Parametric / Non-parametric when both are present
-  // (they only coexist on the no-covariate path; regression is filtered out
-  // upstream, so a covariate list needs no grouping).
-  const parametric = options.filter((d) => !d.nonparametric);
-  const nonparam = options.filter((d) => d.nonparametric);
+  // Group the picker into Continuous / Discrete / Non-parametric when more than
+  // one group is present (they only coexist on the no-covariate path; regression
+  // is filtered out upstream, so a covariate list needs no grouping).
   const asOpt = (d) => ({ value: d.id, label: d.name });
-  const selectOptions = nonparam.length && parametric.length
-    ? [
-        { heading: "Parametric" }, ...parametric.map(asOpt),
-        { heading: "Non-parametric" }, ...nonparam.map(asOpt),
-      ]
-    : options.map(asOpt);
+  const groups = [
+    ["Continuous", options.filter((d) => !d.nonparametric && !d.discrete)],
+    ["Discrete", options.filter((d) => d.discrete)],
+    ["Non-parametric", options.filter((d) => d.nonparametric)],
+  ].filter(([, list]) => list.length);
+  const selectOptions =
+    groups.length > 1
+      ? groups.flatMap(([heading, list]) => [{ heading }, ...list.map(asOpt)])
+      : options.map(asOpt);
 
   return (
     <div className="dist-picker">
