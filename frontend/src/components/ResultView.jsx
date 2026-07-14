@@ -87,7 +87,9 @@ function RandomnessVerdict({ r }) {
 }
 
 // Presentational result panel for a fit (used for both fresh and saved models).
-export default function ResultView({ result }) {
+// ``hideHead`` drops the distribution pill when the surrounding page already
+// shows it (e.g. the saved-model page header) to avoid stating it twice.
+export default function ResultView({ result, hideHead = false }) {
   if (result.kind === "per_demand") return <PerDemandPanel result={result} />;
 
   const isRegression = result.kind === "regression";
@@ -137,12 +139,14 @@ export default function ResultView({ result }) {
 
   return (
     <>
-      <div className="result-head">
-        <span className="dpill">
-          <span className="dot" style={{ background: color }} />
-          {result.distribution}
-        </span>
-      </div>
+      {!hideHead && (
+        <div className="result-head">
+          <span className="dpill">
+            <span className="dot" style={{ background: color }} />
+            {result.distribution}
+          </span>
+        </div>
+      )}
       <div className="params">
         {result.params.map((p) => (
           <div className="stat" key={p.name}>

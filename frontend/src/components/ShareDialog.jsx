@@ -179,7 +179,7 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
 
 // The share button that opens the dialog — render on detail pages when the
 // artifact is the user's own (not read-only, personal workspace).
-export function ShareButton({ collection, artifactId, name, readOnly }) {
+export function ShareButton({ collection, artifactId, name, readOnly, className = "secondary" }) {
   const { workspace } = useWorkspace();
   const [open, setOpen] = useState(false);
   // Only your own personal artifacts are sharable (team artifacts are already
@@ -187,7 +187,7 @@ export function ShareButton({ collection, artifactId, name, readOnly }) {
   if (readOnly || workspace !== "personal") return null;
   return (
     <>
-      <button className="secondary" onClick={() => setOpen(true)}>Share</button>
+      <button className={className} onClick={() => setOpen(true)}>Share</button>
       {open && (
         <ShareDialog
           collection={collection}
