@@ -24,9 +24,9 @@ export default function ModellingHome() {
       <header>
         <div>
           <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> / <b>Saved models</b>
+            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> / <b>Life data models</b>
           </div>
-          <h1>Models</h1>
+          <h1>Life data models</h1>
           <p>
             Fitted life-distribution and proportional-hazards models. Reopen to
             inspect, predict, or export.

@@ -7,6 +7,7 @@ import ChatPanel from "./components/ChatPanel.jsx";
 import BillingPage from "./views/BillingPage.jsx";
 import ModellingDashboard from "./views/ModellingDashboard.jsx";
 import ModellingHome from "./views/ModellingHome.jsx";
+import AllModelsPage from "./views/AllModelsPage.jsx";
 import NewModelPage from "./views/NewModelPage.jsx";
 import ModelPage from "./views/ModelPage.jsx";
 import ModellingCompare from "./views/ModellingCompare.jsx";
@@ -69,7 +70,8 @@ export default function AppShell() {
           <Routes>
             <Route path="/" element={<Navigate to="/modelling" replace />} />
             <Route path="/modelling" element={<ModellingDashboard />} />
-            <Route path="/modelling/models" element={<ModellingHome />} />
+            <Route path="/modelling/models" element={<AllModelsPage />} />
+            <Route path="/modelling/life" element={<ModellingHome />} />
             <Route path="/modelling/new" element={<NewModelPage />} />
             <Route path="/modelling/compare" element={<ModellingCompare />} />
             <Route path="/modelling/degradation" element={<DegradationHome />} />

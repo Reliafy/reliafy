@@ -4472,6 +4472,19 @@ select:disabled {
   padding: 8px 12px;
 }
 
+/* Model-type pill on the combined Saved-models list. */
+.type-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.type-tag.life { background: rgba(47, 109, 246, 0.10); color: var(--acc); }
+.type-tag.degradation { background: rgba(124, 58, 237, 0.10); color: #7c3aed; }
+
 /* ---- New-model fit flow (page panel) ---------------------------------- */
 .fit-flow-foot {
   display: flex;

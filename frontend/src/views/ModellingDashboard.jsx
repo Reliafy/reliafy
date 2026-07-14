@@ -24,7 +24,7 @@ export default function ModellingDashboard() {
       to: "/modelling/models",
       icon: <WaveIcon />,
       title: "Saved models",
-      body: "Browse, reopen, and manage your fitted life-distribution and PH models.",
+      body: "Every saved model — life-data and degradation — in one list.",
       cta: "View all",
     },
     {
@@ -35,10 +35,10 @@ export default function ModellingDashboard() {
       cta: "Start",
     },
     {
-      to: "/modelling/compare",
-      icon: <CompareIcon />,
-      title: "Model comparison",
-      body: "Rank every candidate distribution against your data with the empirical fit.",
+      to: "/modelling/life",
+      icon: <WaveIcon />,
+      title: "Life data models",
+      body: "Fitted life-distribution and proportional-hazards models.",
       cta: "Open",
     },
     {
@@ -46,6 +46,13 @@ export default function ModellingDashboard() {
       icon: <DegradeIcon />,
       title: "Degradation models",
       body: "Model wear toward a failure threshold — then monitor your fleet under Fleet → Degradation tracking.",
+      cta: "Open",
+    },
+    {
+      to: "/modelling/compare",
+      icon: <CompareIcon />,
+      title: "Model comparison",
+      body: "Rank every candidate distribution against your data with the empirical fit.",
       cta: "Open",
     },
   ];

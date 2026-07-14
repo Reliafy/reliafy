@@ -67,7 +67,7 @@ export default function NewModelPage() {
         <div>
           <div className="crumb">
             <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/models")}>Models</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/modelling/life")}>Life data models</button> /{" "}
             <b>New model</b>
           </div>
           <h1>{heading}</h1>

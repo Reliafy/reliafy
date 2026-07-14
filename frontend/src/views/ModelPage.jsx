@@ -56,7 +56,7 @@ export default function ModelPage() {
   const onDelete = async () => {
     if (!window.confirm(`Delete “${model.name}”?`)) return;
     await deleteModel(id);
-    navigate("/modelling/models");
+    navigate("/modelling/life");
   };
 
   const canEdit = model && !model.read_only && model.dataset_id;
@@ -67,7 +67,7 @@ export default function ModelPage() {
         <div>
           <div className="crumb">
             <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/models")}>Models</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/modelling/life")}>Life data models</button> /{" "}
             <b>{model ? model.name : "Model"}</b>
           </div>
           <div className="title-row">

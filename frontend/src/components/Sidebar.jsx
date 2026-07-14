@@ -102,7 +102,7 @@ const ITEMS = [
     icon: <ModellingIcon />,
     children: [
       { to: "/modelling/models", label: "Saved models" },
-      { to: "/modelling/compare", label: "Model comparison" },
+      { to: "/modelling/life", label: "Life data models" },
       { to: "/modelling/degradation", label: "Degradation models" },
     ],
   },
