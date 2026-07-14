@@ -75,6 +75,11 @@ const GuidesIcon = () => (
   </svg>
 );
 
+const ApiIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12" />
+  </svg>
+);
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="12" cy="12" r="3" />
@@ -240,6 +245,14 @@ export default function Sidebar({ collapsed, onToggle }) {
           {!collapsed && <span className="side-label">Billing &amp; credits</span>}
         </NavLink>
       )}
+      <NavLink
+        to="/api-docs"
+        className={({ isActive }) => "side-item" + (isActive ? " active" : "")}
+        title="API docs — the ingestion API reference"
+      >
+        <span className="side-icon"><ApiIcon /></span>
+        {!collapsed && <span className="side-label">API docs</span>}
+      </NavLink>
       <a
         className="side-item"
         href="/blog"
