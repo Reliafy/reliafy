@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider.jsx";
 import ApiAccessPanel from "../components/ApiAccessPanel.jsx";
-import { restoreSamples } from "../api.js";
+import { restoreSamples, removeSamples } from "../api.js";
 
 const TABS = [
   { id: "general", label: "General" },
@@ -24,14 +24,24 @@ export default function SettingsPage() {
   const initial = new URLSearchParams(location.search).get("tab");
   const [tab, setTab] = useState(TABS.some((t) => t.id === initial) ? initial : "general");
 
-  const [restoring, setRestoring] = useState(false);
+  const [samplesBusy, setSamplesBusy] = useState("");
   const onRestore = async () => {
-    setRestoring(true);
+    setSamplesBusy("restore");
     try {
       await restoreSamples();
       window.location.reload();
     } finally {
-      setRestoring(false);
+      setSamplesBusy("");
+    }
+  };
+  const onRemoveAll = async () => {
+    if (!window.confirm("Remove all sample data from your workspace? The samples stay available to restore any time.")) return;
+    setSamplesBusy("remove");
+    try {
+      await removeSamples();
+      window.location.reload();
+    } finally {
+      setSamplesBusy("");
     }
   };
 
@@ -79,12 +89,17 @@ export default function SettingsPage() {
             <h2>Sample data</h2>
             <p className="muted-line" style={{ marginTop: 0 }}>
               A fresh workspace comes with sample datasets, models, RBDs and
-              studies so you can explore. Removing a sample only hides it from
-              you — restore them here any time.
+              studies so you can explore. Hiding samples only affects your view —
+              they stay available to restore any time.
             </p>
-            <button className="secondary" onClick={onRestore} disabled={restoring}>
-              {restoring ? "Restoring…" : "Restore sample data"}
-            </button>
+            <div className="row" style={{ gap: "0.6rem" }}>
+              <button className="secondary" onClick={onRestore} disabled={!!samplesBusy}>
+                {samplesBusy === "restore" ? "Restoring…" : "Restore sample data"}
+              </button>
+              <button className="secondary" onClick={onRemoveAll} disabled={!!samplesBusy}>
+                {samplesBusy === "remove" ? "Removing…" : "Remove all samples"}
+              </button>
+            </div>
           </div>
         </div>
       )}

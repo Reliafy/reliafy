@@ -46,6 +46,28 @@ def test_seed_is_idempotent_and_shared(session):
     assert all(samples.is_sample(d.owner_id) for d in ds.list_datasets(session, A))
 
 
+def test_remove_all_then_restore_all(session):
+    from backend.services import datasets as ds
+    from backend.services import models as ms
+    from backend.services import samples
+
+    samples.seed_samples(session)
+
+    # Remove-all hides every sample across collections for A only.
+    n = samples.hide_all_samples(session, A)
+    assert n == len(samples.all_sample_ids(session)) > 0
+    hidden_a = samples.hidden_sample_ids(session, A)
+    assert ds.list_datasets(session, A, hidden_a) == []
+    assert ms.list_models(session, A, hidden_a) == []
+    # B is untouched — still sees all samples.
+    assert len(ms.list_models(session, B)) == len(samples.SAMPLE_MODELS)
+
+    # Restore clears the hide list, bringing them all back for A.
+    session.users.update_one({"_id": A}, {"$set": {"hidden_samples": []}})
+    hidden_a = samples.hidden_sample_ids(session, A)
+    assert len(ds.list_datasets(session, A, hidden_a)) == len(samples.SAMPLE_DATASETS)
+
+
 def test_hiding_a_sample_is_per_user(session):
     from backend.services import datasets as ds
     from backend.services import models as ms

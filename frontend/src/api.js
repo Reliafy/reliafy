@@ -734,6 +734,11 @@ export function restoreSamples() {
   return request("/api/samples/restore", { method: "POST" });
 }
 
+// Hide every shared sample for this user (inverse of restoreSamples).
+export function removeSamples() {
+  return request("/api/samples/remove", { method: "POST" });
+}
+
 // ---- Fleet failure forecasting ---------------------------------------------------
 
 export function listFleets() {

@@ -8,6 +8,7 @@ from backend.auth import current_user_doc
 from backend.db import get_session
 from backend.services import access as access_service
 from backend.services import billing as billing_service
+from backend.services import samples as samples_service
 from backend.services import teams as teams_service
 
 router = APIRouter(prefix="/api")
@@ -19,6 +20,14 @@ def restore_samples(user: dict = Depends(current_user_doc), session=Depends(get_
     read-only, so restoring is just clearing the per-user hide list)."""
     session.users.update_one({"_id": user["uid"]}, {"$set": {"hidden_samples": []}})
     return {"ok": True}
+
+
+@router.post("/samples/remove")
+def remove_samples(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
+    """Hide every shared sample for this user (the inverse of restore). Only the
+    per-user hide list is touched; the shared samples stay for everyone else."""
+    hidden = samples_service.hide_all_samples(session, user["uid"])
+    return {"ok": True, "hidden": hidden}
 
 
 @router.get("/me")

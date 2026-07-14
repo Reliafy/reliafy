@@ -590,6 +590,36 @@ def hide_sample(db, uid: str, sample_id: str) -> None:
     )
 
 
+# Every collection that can hold a shared-sample artifact.
+_SAMPLE_COLLECTIONS = (
+    "datasets", "models", "rbds", "degradation_models", "tracked_items",
+    "tracked_fleets", "rcm_studies", "strategy_analyses", "fleets",
+)
+
+
+def all_sample_ids(db) -> list[str]:
+    """Ids of every shared-sample artifact across all collections.
+
+    Queried live (not the seed lists) so it stays correct as samples change.
+    """
+    ids: list[str] = []
+    for coll in _SAMPLE_COLLECTIONS:
+        for doc in db[coll].find({"owner_id": SAMPLE_OWNER}, {"_id": 1}):
+            ids.append(doc["_id"])
+    return ids
+
+
+def hide_all_samples(db, uid: str) -> int:
+    """Hide every shared sample for one user. Returns how many were hidden."""
+    ids = all_sample_ids(db)
+    db.users.update_one(
+        {"_id": uid},
+        {"$set": {"hidden_samples": ids}},
+        upsert=True,
+    )
+    return len(ids)
+
+
 def _seed_fleet(db) -> None:
     """Sample fleet forecast: eight trucks' wheel bearings against the sample
     bearing Weibull, staggered ages, 12 months at 500 operating hours/month.
