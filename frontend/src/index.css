@@ -1919,6 +1919,11 @@ button.secondary:hover:not(:disabled) {
   border-bottom: 1px solid var(--border);
   margin: 0.9rem 0 1rem;
 }
+/* When the tabs are the first thing in the card (lean model page), don't add
+   dead space above them. */
+.tabs:first-child {
+  margin-top: 0;
+}
 
 .tab {
   background: transparent;
@@ -4471,8 +4476,9 @@ select:disabled {
   white-space: nowrap;
 }
 .title-row { flex-wrap: wrap; }
-/* Pull the result up: less gap under the header, tighter result head. */
-.model-page .card { margin-top: 0.85rem; }
+/* Pull the result up: less gap under the header, and a tighter top padding so
+   the tabs sit near the top of the card. */
+.model-page .card { margin-top: 0.85rem; padding-top: 1rem; }
 
 /* Overflow ("…") menu for secondary actions. */
 .ovm { position: relative; display: inline-flex; }
