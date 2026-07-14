@@ -247,6 +247,25 @@ def test_discrete_not_in_continuous_best_fit():
     assert set(DISCRETE) & set(DISTRIBUTIONS) == set()
 
 
+def test_discrete_rejects_non_integer_values():
+    df = _df("cycles\n3.5\n5.2\n7\n9.1\n")
+    with pytest.raises(FitError, match="whole-number"):
+        fit("discrete_weibull", df, {"x": "cycles"})
+
+
+def test_discrete_rejects_sub_one_values():
+    df = _df("cycles\n0\n1\n2\n3\n")
+    with pytest.raises(FitError, match="count from 1"):
+        fit("geometric", df, {"x": "cycles"})
+
+
+def test_discrete_accepts_integer_valued_floats():
+    # CSV parsing yields floats (3.0); those are whole numbers and must fit.
+    df = _df("cycles\n3.0\n5.0\n5.0\n7.0\n9.0\n10.0\n12.0\n16.0\n20.0\n")
+    result = fit("discrete_weibull", df, {"x": "cycles"})
+    assert result["kind"] == "discrete"
+
+
 @pytest.mark.parametrize("dist_id", list(DISTRIBUTIONS))
 def test_fit_all_distributions(dist_id):
     values = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]

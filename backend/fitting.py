@@ -678,6 +678,41 @@ def _fit_distribution(
     return result
 
 
+# Value-axis columns for a discrete fit (event, interval and truncation
+# bounds). All must land on the positive integers; ``n`` is a repeat count and
+# is integer by construction, so it's not checked here.
+_DISCRETE_AXIS_KEYS = ("x", "xl", "xr", "tl", "tr")
+
+
+def _validate_discrete_inputs(kwargs: dict) -> None:
+    """Discrete distributions live on the positive integers {1, 2, 3, ...}.
+
+    SurPyval accepts floating-point values without complaint and would silently
+    fit nonsense, so reject non-integer or sub-1 values up front with a clear
+    message (the caller can pick a continuous distribution instead).
+    """
+    for key in _DISCRETE_AXIS_KEYS:
+        if key not in kwargs:
+            continue
+        arr = np.asarray(kwargs[key], dtype=float)
+        arr = arr[np.isfinite(arr)]
+        if arr.size == 0:
+            continue
+        non_integer = np.unique(arr[np.mod(arr, 1) != 0])
+        if non_integer.size:
+            examples = ", ".join(f"{v:g}" for v in non_integer[:3])
+            raise FitError(
+                "Discrete distributions need whole-number counts — cycles, shocks "
+                f"or demands to failure. Found non-integer values ({examples}). "
+                "Round the data to whole numbers, or choose a continuous distribution."
+            )
+        if np.any(arr < 1):
+            raise FitError(
+                "Discrete distributions count from 1 (the first cycle or demand); "
+                "values below 1 aren't supported. Shift a zero-based count by 1."
+            )
+
+
 def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
     """Fit a discrete lifetime distribution (Discrete Weibull / Geometric /
     Negative Binomial) to whole-count data.
@@ -692,6 +727,7 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
     dist = entry["dist"]
     try:
         kwargs = build_fit_inputs(df, mapping)
+        _validate_discrete_inputs(kwargs)
         model = dist.fit(**kwargs)
         curves = _function_curves(model)
         gof = _goodness_of_fit(model)
