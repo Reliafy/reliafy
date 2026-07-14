@@ -6,7 +6,6 @@ import {
   listDatasets,
   getDataset,
 } from "../api.js";
-import Modal from "./Modal.jsx";
 import ColumnMapper from "./ColumnMapper.jsx";
 import Covariates from "./Covariates.jsx";
 import Units from "./Units.jsx";
@@ -16,10 +15,11 @@ import DistributionStep from "./DistributionStep.jsx";
 const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "" };
 const STEPS = ["Source", "Data", "Model"];
 
-// Three-step modal flow: (1) pick a data source — upload a CSV or choose a
-// saved dataset, (2) map columns + add covariates, (3) pick a model (filtered
-// by whether covariates were provided) and fit.
-export default function UploadModal({ onClose, onFitted }) {
+// Three-step fit flow rendered as a page panel: (1) pick a data source — upload
+// a CSV or choose a saved dataset, (2) map columns + add covariates, (3) pick a
+// model (filtered by whether covariates were provided) and fit. Calls
+// ``onFitted`` with the result + fit context; ``onCancel`` backs out to the list.
+export default function FitFlow({ onFitted, onCancel }) {
   const [step, setStep] = useState(1);
   const [file, setFile] = useState(null);
   const [datasetId, setDatasetId] = useState(null);
@@ -167,9 +167,11 @@ export default function UploadModal({ onClose, onFitted }) {
     }
   };
 
+  // Back from step 1 leaves the flow entirely.
   const goBack = () => {
     setError(null);
-    setStep((s) => Math.max(1, s - 1));
+    if (step === 1) return onCancel?.();
+    setStep((s) => s - 1);
   };
 
   const stepper = (
@@ -189,51 +191,34 @@ export default function UploadModal({ onClose, onFitted }) {
     </div>
   );
 
-  let footer;
+  let nav;
   if (step === 1) {
-    footer = (
+    nav = (
       <>
-        {stepper}
-        <span className="hint">Upload a CSV or pick a dataset to continue</span>
+        <button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
+        <span className="hint" style={{ margin: 0 }}>Upload a CSV or pick a dataset to continue</span>
       </>
     );
   } else if (step === 2) {
-    footer = (
+    nav = (
       <>
-        {stepper}
-        <div className="row" style={{ margin: 0 }}>
-          <button className="secondary" onClick={goBack} disabled={loading}>
-            Back
-          </button>
-          <button onClick={() => setStep(3)} disabled={!mappingValid}>
-            Next
-          </button>
-        </div>
+        <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
+        <button onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
       </>
     );
   } else {
-    footer = (
+    nav = (
       <>
-        {stepper}
-        <div className="row" style={{ margin: 0 }}>
-          <button className="secondary" onClick={goBack} disabled={loading}>
-            Back
-          </button>
-          <button onClick={onFit} disabled={!distribution || loading}>
-            {loading ? "Fitting…" : `Fit ${distName}`}
-          </button>
-        </div>
+        <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
+        <button onClick={onFit} disabled={!distribution || loading}>
+          {loading ? "Fitting…" : `Fit ${distName}`}
+        </button>
       </>
     );
   }
 
   return (
-    <Modal
-      title="Fit a model"
-      onClose={onClose}
-      locked={loading}
-      footer={footer}
-    >
+    <div className="card fit-flow">
       {step === 1 && (
         <>
           <div
@@ -349,6 +334,11 @@ export default function UploadModal({ onClose, onFitted }) {
       )}
 
       {error && <div className="error">{error}</div>}
-    </Modal>
+
+      <div className="fit-flow-foot">
+        {stepper}
+        <div className="row" style={{ margin: 0 }}>{nav}</div>
+      </div>
+    </div>
   );
 }

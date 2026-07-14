@@ -28,8 +28,7 @@ export default function ModellingDashboard() {
       cta: "View all",
     },
     {
-      to: "/modelling/models",
-      state: { openNew: true },
+      to: "/modelling/new",
       icon: <PlusIcon />,
       title: "New model",
       body: "Fit a distribution or proportional-hazards model from a CSV or a saved dataset.",

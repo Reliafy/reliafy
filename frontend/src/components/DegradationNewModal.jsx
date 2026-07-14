@@ -10,7 +10,7 @@ import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 
-// Three-step modal for fitting a degradation model, mirroring UploadModal:
+// Three-step modal for fitting a degradation model, mirroring the FitFlow steps:
 // (1) pick a source (upload / saved dataset), (2) map item/time/measurement
 // columns + set the failure threshold, (3) choose path model + options → fit.
 const STEPS = ["Source", "Data", "Model"];

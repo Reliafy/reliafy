@@ -4461,6 +4461,17 @@ select:disabled {
   padding: 8px 12px;
 }
 
+/* ---- New-model fit flow (page panel) ---------------------------------- */
+.fit-flow-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line2);
+}
+
 /* ---- Settings page ---------------------------------------------------- */
 .set-section { margin-top: 1.25rem; }
 .set-section .card h2 { margin-top: 0; }
