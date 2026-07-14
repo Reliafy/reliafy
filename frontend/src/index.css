@@ -1310,9 +1310,13 @@ header p {
   letter-spacing: inherit;
 }
 
-.crumb-link:hover {
+/* Text-link hover: darken + underline, never the global dark-blue button fill
+   (:not(:disabled) beats that rule). */
+.crumb-link:hover:not(:disabled) {
   background: none;
-  color: var(--acc);
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* Title + distribution pill on the model-detail header. */
