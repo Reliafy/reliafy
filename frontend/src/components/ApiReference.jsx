@@ -18,14 +18,46 @@ function Code({ children }) {
   );
 }
 
-function Endpoint({ method, path, children }) {
+// A request/response field table (name · type · required · description).
+function Fields({ title, rows }) {
+  if (!rows || !rows.length) return null;
+  return (
+    <div className="api-fields">
+      <div className="api-fields-h">{title}</div>
+      <table className="api-params">
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name}>
+              <td><code>{r.name}</code></td>
+              <td className="api-ptype">{r.type}</td>
+              <td className={"api-preq " + (r.req ? "yes" : "no")}>{r.req ? "required" : "optional"}</td>
+              <td className="api-pdesc">{r.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// One endpoint, OpenAPI-style: method + path, description, request fields, an
+// example, and the response shape.
+function Endpoint({ method, path, desc, request, example, returns }) {
   return (
     <div className="api-ep">
       <div className="api-ep-head">
         <span className={`api-method ${method.toLowerCase()}`}>{method}</span>
         <code className="api-path">{path}</code>
       </div>
-      {children}
+      {desc && <p className="muted-line api-ep-desc">{desc}</p>}
+      <Fields title="Request" rows={request} />
+      {example && <Code>{example}</Code>}
+      {returns && (
+        <div className="api-fields">
+          <div className="api-fields-h">Response · 200</div>
+          <Code>{returns}</Code>
+        </div>
+      )}
     </div>
   );
 }
@@ -47,55 +79,41 @@ function ClientDocs({ base }) {
 
 import reliafy
 reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-hosted`}</Code>
-      <p className="muted-line">
-        Create a token under <b>Settings → API access</b> (Pro on Reliafy Cloud).
-      </p>
+      <p className="muted-line">Create a token under <b>Settings → API access</b> (Pro on Reliafy Cloud).</p>
 
       <h3>Push a fitted model</h3>
       <p className="muted-line">
-        <code>push(model, name, *, data=True, unit=None)</code> uploads a SurPyval
-        model and returns its URL. <code>data=True</code> (default) sends the
-        fitted observations too, so Reliafy shows the probability plot and the
-        model stays refittable; <code>data=False</code> is parameters only.
-        Offset / LFP / zero-inflated fits are detected and reproduced.
+        <code>push(model, name, *, data=True, unit=None) → url</code>. With{" "}
+        <code>data=True</code> (default) the fitted observations go up too (full
+        probability plot, refittable); <code>data=False</code> is params only.
       </p>
       <Code>{`import surpyval as sp, reliafy
 model = sp.Weibull.fit(x=failures, c=censoring_flags)
 url = reliafy.push(model, name="Pump bearings — 2026", unit="hours")
 
-# no SurPyval object — just numbers:
 reliafy.push_params("weibull", [1200.0, 2.3], name="Handbook value", unit="hours")`}</Code>
 
-      <h3>Read your models &amp; reliability</h3>
-      <Code>{`reliafy.list_models()                       # [{id, name, distribution, ...}, ...]
-m = reliafy.get_model(model_id)             # params (+CIs), metrics, goodness-of-fit
+      <h3>Read models &amp; reliability</h3>
+      <Code>{`reliafy.list_models()                       # -> [{id, name, distribution, ...}]
+reliafy.get_model(model_id)                 # -> params(+CIs), metrics, gof
 
-r = reliafy.reliability(model_id, t=1000)   # {"at": {reliability, failure, hazard, ...}}
-print(r["at"]["reliability"])               # R(1000)
-
-# proportional-hazards model at a covariate combination:
-reliafy.reliability(model_id, t=1000, covariates={"temp_C": 90, "load": 0.8})`}</Code>
+r = reliafy.reliability(model_id, t=1000)   # -> {"at": {reliability, failure, hazard, ...}}
+reliafy.reliability(model_id, t=1000, covariates={"temp_C": 90})   # PH model`}</Code>
 
       <h3>Create a dataset &amp; fit</h3>
       <Code>{`ds = reliafy.upload_dataset("Bearings", csv="hours,failed\\n120,1\\n340,0\\n510,1")
-#   or:  reliafy.upload_dataset("Bearings", data={"hours": [...], "failed": [...]})
-
 model = reliafy.fit(ds["id"], "weibull", "Bearing life",
-                    mapping={"x": "hours", "c": "failed"}, unit="hours")
-print(model["url"])`}</Code>
+                    mapping={"x": "hours", "c": "failed"}, unit="hours")`}</Code>
 
       <h3>Fleet &amp; strategy</h3>
-      <Code>{`reliafy.fleet_forecast(fleet_id)            # expected failures per period
-
+      <Code>{`reliafy.fleet_forecast(fleet_id)
 reliafy.optimal_replacement("weibull", [1435, 2.5],
                             planned_cost=200, unplanned_cost=1500, unit="hours")
 reliafy.failure_finding("exponential", [1/8760], target_availability=0.99, unit="hours")`}</Code>
 
-      <h3>Notes</h3>
       <ul className="api-list">
-        <li>Supported distributions for <code>push</code>: Weibull, Exponential, Normal, LogNormal, Gamma, LogLogistic, Exponentiated Weibull, Gumbel, Logistic.</li>
-        <li>Errors raise <code>reliafy.ReliafyError</code> (missing token, unreachable host, or a server 4xx with its message).</li>
-        <li>Every call maps to an endpoint on the HTTP API tab; reads and writes are scoped to your own data.</li>
+        <li>Full field/response schemas are on the <b>HTTP API</b> tab — each client call maps to one endpoint.</li>
+        <li>Errors raise <code>reliafy.ReliafyError</code>; reads/writes are scoped to your own data.</li>
       </ul>
     </div>
   );
@@ -106,145 +124,212 @@ function HttpDocs({ base }) {
   return (
     <div className="api-section">
       <p className="muted-line">
-        Token-authed endpoints scoped to your own data — read models and
-        reliability, create datasets and fit, read fleet forecasts, run strategy
-        calculators, and push operational data. The <code>reliafy-client</code>{" "}
-        package wraps these.
+        Token-authed endpoints scoped to your own data. Base URL{" "}
+        <code>{base}</code>. Every request needs the bearer header below.
       </p>
 
       <h3>Authentication</h3>
       <p className="muted-line">
-        A personal token (<code>rlf_…</code>) from <b>Settings → API access</b>,
-        sent as a bearer header. Tokens read and write <b>your own</b> data —
-        they can't touch the account, billing, tokens, or team artifacts.
+        A personal token (<code>rlf_…</code>) from <b>Settings → API access</b>.
+        Tokens read and write <b>your own</b> data — never the account, billing,
+        tokens, or team artifacts.
       </p>
       <Code>{`-H "Authorization: Bearer rlf_your_token_here"`}</Code>
-
-      <h3>Conventions</h3>
       <ul className="api-list">
-        <li><b>Bodies</b> are JSON; the data-push endpoints also accept raw CSV (<code>Content-Type: text/csv</code>) as a CMMS exports it.</li>
-        <li><b>Scope</b>: reads see your models/datasets/fleets (plus shared samples); writes create under your account.</li>
-        <li><b>Errors</b>: a bad request is a <code>422</code> with a message; unknown/foreign ids are <code>404</code>.</li>
-        <li><b>Limits</b>: 120 requests / minute per user.</li>
+        <li>Bodies are JSON; the ingest endpoints also accept raw CSV (<code>Content-Type: text/csv</code>).</li>
+        <li>Errors: <code>422</code> (bad input, with a message), <code>404</code> (unknown/foreign id), <code>401</code> (bad token), <code>429</code> (over 120 req/min).</li>
       </ul>
 
       <h3>Models &amp; reliability</h3>
-      <Endpoint method="GET" path="/api/v1/models">
-        <p className="muted-line">List your saved models.</p>
-      </Endpoint>
-      <Endpoint method="GET" path="/api/v1/models/{id}">
-        <p className="muted-line">
-          A model's fit: <code>params</code> (with 95% CIs),{" "}
-          <code>coefficients</code> (PH), <code>metrics</code>, <code>gof</code>.
-        </p>
-      </Endpoint>
-      <Endpoint method="POST" path="/api/v1/models/{id}/reliability">
-        <p className="muted-line">
-          Evaluate reliability. Body: optional <code>t</code>, and{" "}
-          <code>covariates</code> for a PH model. With <code>t</code> you get{" "}
-          <code>{`{ at: { reliability, failure, hazard, cumulative_hazard, density } }`}</code>;
-          without it, the full function grid.
-        </p>
-        <Code>{`curl -X POST ${base}/api/v1/models/MODEL_ID/reliability \\
+
+      <Endpoint
+        method="GET"
+        path="/api/v1/models"
+        desc="List your saved models (life-data and degradation)."
+        returns={`{
+  "models": [
+    { "id": "a1b2…", "name": "Bearing life", "kind": "distribution",
+      "distribution": "Weibull", "n": 30, "unit": "hours",
+      "created_at": "2026-07-15T02:48:08+00:00", "url": "/modelling/m/a1b2…" }
+  ]
+}`}
+      />
+
+      <Endpoint
+        method="GET"
+        path="/api/v1/models/{id}"
+        desc="A model's fitted parameters, life metrics, and goodness-of-fit."
+        request={[{ name: "id", type: "string · path", req: true, desc: "Model id." }]}
+        returns={`{
+  "id": "a1b2…", "name": "Bearing life", "distribution": "Weibull",
+  "kind": "distribution", "unit": "hours", "n": 30,
+  "params": [ { "name": "alpha", "value": 1435.1, "se": 108.9, "ci": [1220, 1650] },
+              { "name": "beta",  "value": 2.5,    "ci": [1.78, 3.21] } ],
+  "coefficients": [],          // populated for proportional-hazards models
+  "metrics": null,             // {median, mttf, b10} for discrete / non-parametric
+  "gof": [ { "id": "aic", "label": "AIC", "value": 466.3 }, … ]
+}`}
+      />
+
+      <Endpoint
+        method="POST"
+        path="/api/v1/models/{id}/reliability"
+        desc="Evaluate the reliability functions. With t you get point values; without it, the full grid."
+        request={[
+          { name: "t", type: "number", req: false, desc: "Time to evaluate at. Omit for the whole curve." },
+          { name: "covariates", type: "object", req: false, desc: "Covariate values for a proportional-hazards model, e.g. {\"temp_C\": 90}." },
+        ]}
+        example={`curl -X POST ${base}/api/v1/models/MODEL_ID/reliability \\
   -H "Authorization: Bearer rlf_..." -H "Content-Type: application/json" \\
-  -d '{"t": 1000}'`}</Code>
-      </Endpoint>
+  -d '{"t": 1000}'`}
+        returns={`{
+  "model": "Bearing life", "unit": "hours",
+  "at": { "t": 1000, "reliability": 0.666, "failure": 0.334,
+          "hazard": 0.00101, "cumulative_hazard": 0.406, "density": 0.000675 }
+}
+// without "t":  { "model": …, "unit": …, "curves": { "x": [...], "sf": [...], "ff": [...], "hf": [...], "Hf": [...], "df": [...] } }`}
+      />
 
       <h3>Datasets &amp; fitting</h3>
-      <Endpoint method="POST" path="/api/v1/datasets">
-        <p className="muted-line">
-          Create a dataset. Body: <code>name</code> plus <code>csv</code> (text)
-          or <code>data</code> (column arrays). Returns{" "}
-          <code>{`{ id, n_rows, columns, url }`}</code>.
-        </p>
-        <Code>{`curl -X POST ${base}/api/v1/datasets \\
+
+      <Endpoint
+        method="POST"
+        path="/api/v1/datasets"
+        desc="Create a dataset from CSV text or column arrays."
+        request={[
+          { name: "name", type: "string", req: true, desc: "Dataset name." },
+          { name: "csv", type: "string", req: false, desc: "Raw CSV text (with a header row). Provide this or data." },
+          { name: "data", type: "object", req: false, desc: "Column arrays, e.g. {\"hours\": [...], \"failed\": [...]}." },
+        ]}
+        example={`curl -X POST ${base}/api/v1/datasets \\
   -H "Authorization: Bearer rlf_..." -H "Content-Type: application/json" \\
-  -d '{"name": "Bearings", "csv": "hours,failed\\n120,1\\n340,0"}'`}</Code>
-      </Endpoint>
-      <Endpoint method="POST" path="/api/v1/fit">
-        <p className="muted-line">
-          Fit and save a model from a dataset. Body: <code>name</code>,{" "}
-          <code>dataset_id</code>, <code>distribution</code>,{" "}
-          <code>mapping</code>, optional <code>unit</code> /{" "}
-          <code>covariates</code> / <code>formula</code>.
-        </p>
-        <Code>{`curl -X POST ${base}/api/v1/fit \\
+  -d '{"name": "Bearings", "csv": "hours,failed\\n120,1\\n340,0"}'`}
+        returns={`{ "id": "d3…", "name": "Bearings", "n_rows": 2,
+  "columns": ["hours", "failed"], "url": "/datasets/d/d3…" }`}
+      />
+
+      <Endpoint
+        method="POST"
+        path="/api/v1/fit"
+        desc="Fit and save a model from one of your datasets."
+        request={[
+          { name: "name", type: "string", req: true, desc: "Model name." },
+          { name: "dataset_id", type: "string", req: true, desc: "Id of the dataset to fit." },
+          { name: "distribution", type: "string", req: true, desc: "e.g. weibull, lognormal, weibull_ph, discrete_weibull, best." },
+          { name: "mapping", type: "object", req: true, desc: "Role → column, e.g. {\"x\": \"hours\", \"c\": \"failed\"}." },
+          { name: "unit", type: "string", req: false, desc: "Unit of the time axis." },
+          { name: "covariates", type: "string[]", req: false, desc: "Covariate columns for a PH model." },
+          { name: "formula", type: "string", req: false, desc: "Formulaic covariate formula (alternative to covariates)." },
+        ]}
+        example={`curl -X POST ${base}/api/v1/fit \\
   -H "Authorization: Bearer rlf_..." -H "Content-Type: application/json" \\
-  -d '{"name": "Bearing life", "dataset_id": "DS_ID", "distribution": "weibull",
-       "mapping": {"x": "hours", "c": "failed"}, "unit": "hours"}'`}</Code>
-      </Endpoint>
+  -d '{"name": "Bearing life", "dataset_id": "d3…", "distribution": "weibull",
+       "mapping": {"x": "hours", "c": "failed"}, "unit": "hours"}'`}
+        returns={`{ "id": "a1b2…", "name": "Bearing life", "kind": "distribution",
+  "distribution": "Weibull", "n": 2, "unit": "hours",
+  "created_at": "…", "url": "/modelling/m/a1b2…" }`}
+      />
 
       <h3>Fleet forecasts</h3>
-      <Endpoint method="GET" path="/api/v1/fleets/{id}/forecast">
-        <p className="muted-line">
-          The live forecast — expected failures per period, spares demand. Id is
-          in <code>/fleet/forecasts/&lt;id&gt;</code>.
-        </p>
-      </Endpoint>
+      <Endpoint
+        method="GET"
+        path="/api/v1/fleets/{id}/forecast"
+        desc="The live failure forecast — expected failures per period. Id is in /fleet/forecasts/<id>."
+        request={[{ name: "id", type: "string · path", req: true, desc: "Fleet id." }]}
+        returns={`{
+  "fleet": { "id": "f1…", "name": "Delivery trucks", "model_id": "a1b2…" },
+  "forecast": { "status": "ok", "method": "renewals", "periods": 12,
+                "period_label": "months", "expected_failures": [0.4, 0.9, …],
+                "total_expected": 11.7 }
+}`}
+      />
 
       <h3>Strategy calculators</h3>
-      <Endpoint method="POST" path="/api/v1/strategy/optimal-replacement">
-        <p className="muted-line">
-          Body: <code>distribution_id</code>, <code>params</code>,{" "}
-          <code>planned_cost</code>, <code>unplanned_cost</code>, optional{" "}
-          <code>unit</code>. Returns the optimal interval and cost rate.
-        </p>
-      </Endpoint>
-      <Endpoint method="POST" path="/api/v1/strategy/failure-finding">
-        <p className="muted-line">
-          Body: <code>distribution_id</code>, <code>params</code>,{" "}
-          <code>target_availability</code>, optional <code>unit</code>.
-        </p>
-      </Endpoint>
+      <Endpoint
+        method="POST"
+        path="/api/v1/strategy/optimal-replacement"
+        desc="Cost-optimal preventive-replacement interval."
+        request={[
+          { name: "distribution_id", type: "string", req: true, desc: "e.g. weibull." },
+          { name: "params", type: "number[] | {name,value}[]", req: true, desc: "Distribution parameters." },
+          { name: "planned_cost", type: "number", req: true, desc: "Cost of a planned replacement." },
+          { name: "unplanned_cost", type: "number", req: true, desc: "Cost of a failure." },
+          { name: "unit", type: "string", req: false, desc: "Time unit for display." },
+        ]}
+        returns={`{ "distribution": "Weibull", "unit": "hours", "mttf": 1272.4,
+  "beneficial": true, "optimal_time": 580.5, "optimal_cost_rate": 0.51,
+  "planned_cost": 200, "unplanned_cost": 1500 }`}
+      />
+      <Endpoint
+        method="POST"
+        path="/api/v1/strategy/failure-finding"
+        desc="Inspection interval that keeps a hidden (protective) function available."
+        request={[
+          { name: "distribution_id", type: "string", req: true, desc: "e.g. exponential." },
+          { name: "params", type: "number[] | {name,value}[]", req: true, desc: "Distribution parameters." },
+          { name: "target_availability", type: "number", req: true, desc: "Target availability in (0,1), e.g. 0.99." },
+          { name: "unit", type: "string", req: false, desc: "Time unit for display." },
+        ]}
+        returns={`{ "distribution": "Exponential", "unit": "hours", "mttf": 8760,
+  "target_availability": 0.99, "interval": 176.4, "method": "…", "note": "…" }`}
+      />
 
       <h3>Push operational data (ingest)</h3>
       <p className="muted-line">
-        Append data to existing artifacts from cron jobs / CMMS exports — JSON or
-        raw CSV, idempotent, atomic (a bad row is a 422 with no changes).
+        Append data to existing artifacts — JSON or raw CSV, idempotent, atomic
+        (a bad row is a 422 with no changes applied).
       </p>
-      <Endpoint method="POST" path="/api/ingest/fleets/{fleet_id}/usage">
-        <p className="muted-line">
-          Update forecast items' current use (columns <code>name</code>,{" "}
-          <code>current_use</code>, optional <code>rate</code>) and recompute.
-        </p>
-        <Code>{`curl -X POST ${base}/api/ingest/fleets/FLEET_ID/usage \\
+      <Endpoint
+        method="POST"
+        path="/api/ingest/fleets/{fleet_id}/usage"
+        desc="Update forecast items' current use, then recompute the forecast."
+        request={[
+          { name: "name / id", type: "csv col", req: true, desc: "Item name (or id)." },
+          { name: "current_use", type: "csv col", req: true, desc: "Accumulated use so far." },
+          { name: "rate", type: "csv col", req: false, desc: "Optional per-period usage rate." },
+        ]}
+        example={`curl -X POST ${base}/api/ingest/fleets/FLEET_ID/usage \\
   -H "Authorization: Bearer rlf_..." -H "Content-Type: text/csv" \\
-  --data-binary @meter_readings.csv          # name,current_use`}</Code>
-      </Endpoint>
-      <Endpoint method="POST" path="/api/ingest/tracking/{fleet_id}/measurements">
-        <p className="muted-line">
-          Append <code>(item, time, value)</code> readings to a tracked fleet and
-          re-predict remaining life.
-        </p>
-      </Endpoint>
-      <Endpoint method="POST" path="/api/ingest/datasets/{dataset_id}/lives">
-        <p className="muted-line">
-          Append failure rows to a dataset and refit its models in place
-          (<code>?refit=false</code> to skip).
-        </p>
-      </Endpoint>
+  --data-binary @meter_readings.csv          # name,current_use`}
+        returns={`{ "updated": 8, "forecast": { … } }`}
+      />
+      <Endpoint
+        method="POST"
+        path="/api/ingest/tracking/{fleet_id}/measurements"
+        desc="Append (item, time, value) readings to a tracked fleet and re-predict remaining life."
+        request={[
+          { name: "measurements", type: "object[]", req: true, desc: "[{item, time, value}, …] (JSON), or CSV columns item,time,value." },
+        ]}
+        example={`-d '{"measurements": [{"item": "Pump 7", "time": 5300, "value": 6.1}]}'`}
+        returns={`{ "updated": 1, "items": [ { … } ] }`}
+      />
+      <Endpoint
+        method="POST"
+        path="/api/ingest/datasets/{dataset_id}/lives"
+        desc="Append failure rows to a dataset and refit its models in place."
+        request={[
+          { name: "refit", type: "bool · query", req: false, desc: "Default true; ?refit=false to skip refitting." },
+          { name: "(rows)", type: "csv / json", req: true, desc: "Rows whose columns match the dataset." },
+        ]}
+        returns={`{ "appended": 12, "n_rows": 142, "refit": [ { "id": "…", "name": "…" } ] }`}
+      />
 
       <h3>Model import</h3>
-      <Endpoint method="POST" path="/api/import/models">
-        <p className="muted-line">
-          Create a model from a fit done elsewhere (what <code>reliafy.push</code>{" "}
-          wraps). JSON: <code>name</code>, <code>distribution</code>, optional{" "}
-          <code>unit</code>; then <code>data</code> (<code>{`{x, c?, n?}`}</code>)
-          or <code>params</code> (<code>{`[{name, value}]`}</code>).
-        </p>
-      </Endpoint>
-
-      <h3>Scheduled job (Python, no dependencies)</h3>
-      <Code>{`import requests
-
-TOKEN = "rlf_..."
-with open("meter_readings.csv", "rb") as f:
-    r = requests.post(
-        "${base}/api/ingest/fleets/FLEET_ID/usage",
-        headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "text/csv"},
-        data=f.read(), timeout=60,
-    )
-r.raise_for_status()`}</Code>
+      <Endpoint
+        method="POST"
+        path="/api/import/models"
+        desc="Create a model from a fit done elsewhere (what reliafy.push wraps)."
+        request={[
+          { name: "name", type: "string", req: true, desc: "Model name." },
+          { name: "distribution", type: "string", req: true, desc: "SurPyval name or Reliafy id." },
+          { name: "unit", type: "string", req: false, desc: "Time unit." },
+          { name: "data", type: "object", req: false, desc: "{x, c?, n?} arrays — refit into a full model. Provide this or params." },
+          { name: "params", type: "{name,value}[]", req: false, desc: "Parameters for a params-only model." },
+          { name: "options / extras", type: "object", req: false, desc: "offset/zi/lfp (data) or gamma/p/f0 (params)." },
+        ]}
+        returns={`{ "id": "a1b2…", "name": "Pump bearings", "distribution": "Weibull",
+  "params_only": false, "url": "/modelling/m/a1b2…" }`}
+      />
     </div>
   );
 }

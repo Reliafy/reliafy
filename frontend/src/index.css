@@ -3626,6 +3626,30 @@ select:disabled {
 }
 .api-path { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
 
+/* OpenAPI-style request/response field tables. */
+.api-ep-desc { margin: 0.4rem 0 0.5rem; }
+.api-fields { margin: 0.6rem 0 0; }
+.api-fields-h {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 4px;
+}
+.api-params { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.api-params td {
+  padding: 5px 12px 5px 0;
+  border-top: 1px solid var(--line2);
+  vertical-align: top;
+}
+.api-params tr:first-child td { border-top: none; }
+.api-ptype { font-family: var(--mono); font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.api-preq { font-size: 11px; white-space: nowrap; }
+.api-preq.yes { color: #b45309; }
+.api-preq.no { color: var(--faint); }
+.api-pdesc { color: var(--muted); width: 99%; }
+
 /* Public link section in the share dialog. */
 .pl-section {
   margin-top: 1rem;
