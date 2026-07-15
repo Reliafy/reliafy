@@ -45,10 +45,21 @@ export function reliabilityPath(w, h, shape = 0.5, pad = 0) {
   return "M " + pts.map((p) => `${p[0]},${p[1]}`).join(" L ");
 }
 
+// API timestamps are UTC. If the ISO string carries no timezone (naive, e.g.
+// after a MongoDB round-trip) treat it as UTC, not the browser's local zone —
+// otherwise every time reads off by the viewer's UTC offset.
+export function parseTimestamp(iso) {
+  if (iso == null) return new Date(NaN);
+  if (typeof iso === "string" && !/([zZ]|[+-]\d{2}:?\d{2})$/.test(iso)) {
+    return new Date(iso + "Z");
+  }
+  return new Date(iso);
+}
+
 // "5 days ago" style relative time from an ISO timestamp.
 export function relativeTime(iso) {
   if (!iso) return "—";
-  const then = new Date(iso).getTime();
+  const then = parseTimestamp(iso).getTime();
   const secs = Math.max(0, (Date.now() - then) / 1000);
   const day = 86400;
   if (secs < 60) return "just now";

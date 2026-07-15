@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Modal from "./Modal.jsx";
 import { listRbds } from "../api.js";
+import { parseTimestamp } from "../instrument.js";
 
 // Pick a saved RBD to embed as a sub-system block.
 export default function SubsystemModal({ onClose, onPick }) {
@@ -41,7 +42,7 @@ export default function SubsystemModal({ onClose, onPick }) {
                 <td className="lib-name">{r.name}</td>
                 <td>{r.n_nodes}</td>
                 <td className="lib-date">
-                  {new Date(r.created_at).toLocaleDateString()}
+                  {parseTimestamp(r.created_at).toLocaleDateString()}
                 </td>
               </tr>
             ))}

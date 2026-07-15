@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from typing import Optional, Type, TypeVar
 
 from backend import config
@@ -143,8 +144,19 @@ def to_doc(obj) -> dict:
 
 
 def from_doc(cls: Type[T], doc: Optional[dict]) -> Optional[T]:
-    """Rebuild a pydantic model from a MongoDB document, or None."""
+    """Rebuild a pydantic model from a MongoDB document, or None.
+
+    MongoDB returns datetimes as *naive* (UTC value, no tzinfo). Re-attach UTC
+    so downstream ``isoformat()`` serialises with an offset — otherwise clients
+    parse the timestamp as local time and it drifts by their UTC offset.
+    """
     if doc is None:
         return None
-    data = {k: v for k, v in doc.items() if k != "_id"}
+    data = {}
+    for k, v in doc.items():
+        if k == "_id":
+            continue
+        if isinstance(v, datetime) and v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        data[k] = v
     return cls(**data)

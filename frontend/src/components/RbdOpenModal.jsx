@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Modal from "./Modal.jsx";
 import { listRbds, deleteRbd } from "../api.js";
+import { parseTimestamp } from "../instrument.js";
 
 // Library of saved RBDs: open one into the canvas, or delete.
 export default function RbdOpenModal({ onClose, onOpen }) {
@@ -45,7 +46,7 @@ export default function RbdOpenModal({ onClose, onOpen }) {
                 <td className="lib-name">{r.name}</td>
                 <td>{r.n_nodes}</td>
                 <td className="lib-date">
-                  {new Date(r.updated_at || r.created_at).toLocaleDateString()}
+                  {parseTimestamp(r.updated_at || r.created_at).toLocaleDateString()}
                 </td>
                 <td className="lib-actions">
                   <button className="lib-del" onClick={(e) => remove(e, r)}>

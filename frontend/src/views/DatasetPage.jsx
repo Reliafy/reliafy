@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { getDataset, deleteDataset } from "../api.js";
 import PreviewTable from "../components/PreviewTable.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import { distColor } from "../instrument.js";
+import { distColor, parseTimestamp } from "../instrument.js";
 
 // Detail view for one dataset: schema, a preview of the rows, and the models
 // fitted from it.
@@ -44,7 +44,7 @@ export default function DatasetPage() {
           {ds && (
             <p>
               {ds.n_rows.toLocaleString()} rows · {ds.n_columns} columns · added{" "}
-              {new Date(ds.created_at).toLocaleString()}
+              {parseTimestamp(ds.created_at).toLocaleString()}
             </p>
           )}
         </div>
