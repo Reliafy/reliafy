@@ -3535,6 +3535,7 @@ select:disabled {
 .fitopts-toggle {
   background: none;
   border: none;
+  box-shadow: none; /* drop the global button shadow (no pill behind the text) */
   padding: 0;
   color: var(--muted);
   font-size: 13px;
