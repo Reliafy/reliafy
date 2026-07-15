@@ -87,6 +87,7 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
           </button>
           {open && (
             <div className="fitopts-body">
+              <span className="dist-label">Model adjustments (optional)</span>
               {selected.offsetable && (
                 <label className="fitopts-row" title={OPTION_HELP.offset}>
                   <input
