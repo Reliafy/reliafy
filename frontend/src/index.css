@@ -3650,6 +3650,17 @@ select:disabled {
 .api-preq.no { color: var(--faint); }
 .api-pdesc { color: var(--muted); width: 99%; }
 
+/* Client function reference: signature + the endpoint it maps to. */
+.api-fn-head { justify-content: space-between; gap: 14px; }
+.api-sig { white-space: normal; word-break: break-word; }
+.api-maps {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* Public link section in the share dialog. */
 .pl-section {
   margin-top: 1rem;

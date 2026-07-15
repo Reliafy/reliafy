@@ -62,15 +62,35 @@ function Endpoint({ method, path, desc, request, example, returns }) {
   );
 }
 
+// One client function, matching the endpoint layout: signature, description,
+// a Parameters table, and Returns. ``endpoint`` shows the HTTP call it maps to.
+function ClientFn({ sig, endpoint, desc, params, returns }) {
+  return (
+    <div className="api-ep">
+      <div className="api-ep-head api-fn-head">
+        <code className="api-path api-sig">{sig}</code>
+        {endpoint && <span className="api-maps">{endpoint}</span>}
+      </div>
+      {desc && <p className="muted-line api-ep-desc">{desc}</p>}
+      <Fields title="Parameters" rows={params} />
+      {returns && (
+        <div className="api-fields">
+          <div className="api-fields-h">Returns</div>
+          <Code>{returns}</Code>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- reliafy-client (Python package) ---------------------------------------
-function ClientDocs({ base }) {
+function ClientDocs() {
   return (
     <div className="api-section">
       <p className="muted-line">
         <code>reliafy-client</code> is a thin Python wrapper over the HTTP API —
-        push SurPyval fits, create datasets, fit models, read reliability, and
-        run the strategy calculators, all from a notebook or script. Pure
-        standard library; you bring{" "}
+        each call maps to one endpoint (shown on the right). Pure standard
+        library; you bring{" "}
         <a className="evidence-link" href="https://github.com/derrynknife/SurPyval" target="_blank" rel="noreferrer">SurPyval</a>.
       </p>
 
@@ -81,42 +101,133 @@ import reliafy
 reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-hosted`}</Code>
       <p className="muted-line">Create a token under <b>Settings → API access</b> (Pro on Reliafy Cloud).</p>
 
-      <p className="muted-line">
-        Calls are grouped: <code>reliafy.models</code>, <code>reliafy.data</code>,{" "}
-        <code>reliafy.strategy</code>, <code>reliafy.fleet</code>.
-      </p>
+      <h3>reliafy.models</h3>
 
-      <h3>Models</h3>
-      <p className="muted-line">
-        <code>models.push(model, name, *, data=True, unit=None) → url</code>. With{" "}
-        <code>data=True</code> (default) the fitted observations go up too (full
-        probability plot, refittable); <code>data=False</code> is params only.
-      </p>
-      <Code>{`import surpyval as sp, reliafy
-model = sp.Weibull.fit(x=failures, c=censoring_flags)
-url = reliafy.models.push(model, name="Pump bearings — 2026", unit="hours")
-reliafy.models.push_params("weibull", [1200.0, 2.3], name="Handbook value", unit="hours")
+      <ClientFn
+        sig="models.push(model, name, *, data=True, unit=None)"
+        endpoint="POST /api/import/models"
+        desc="Push a fitted SurPyval model and return its URL."
+        params={[
+          { name: "model", type: "SurPyval model", req: true, desc: "A fitted SurPyval distribution." },
+          { name: "name", type: "str", req: true, desc: "Model name." },
+          { name: "data", type: "bool", req: false, desc: "Upload the fitted observations too (default True → full plot, refittable). False = params only." },
+          { name: "unit", type: "str", req: false, desc: "Unit of the time axis." },
+        ]}
+        returns={`"https://reliafy.com/modelling/m/a1b2…"   # str — open in the app`}
+      />
 
-reliafy.models.list()                              # -> [{id, name, distribution, ...}]
-reliafy.models.get(model_id)                       # -> params(+CIs), metrics, gof
-reliafy.models.reliability(model_id, t=1000)       # -> {"at": {reliability, hazard, ...}}
-reliafy.models.reliability(model_id, t=1000, covariates={"temp_C": 90})   # PH model`}</Code>
+      <ClientFn
+        sig="models.push_params(distribution, params, name, *, unit=None, extras=None)"
+        endpoint="POST /api/import/models"
+        desc="Push a model by distribution + parameter values (no SurPyval object)."
+        params={[
+          { name: "distribution", type: "str", req: true, desc: "e.g. \"weibull\"." },
+          { name: "params", type: "number[] | {name,value}[]", req: true, desc: "Parameter values." },
+          { name: "name", type: "str", req: true, desc: "Model name." },
+          { name: "unit", type: "str", req: false, desc: "Time unit." },
+          { name: "extras", type: "dict", req: false, desc: "gamma / p / f0 for offset / LFP / zero-inflation." },
+        ]}
+        returns={`"https://reliafy.com/modelling/m/…"   # str`}
+      />
 
-      <h3>Data &amp; fitting</h3>
-      <Code>{`ds = reliafy.data.upload("Bearings", csv="hours,failed\\n120,1\\n340,0\\n510,1")
-model = reliafy.models.fit(ds["id"], "weibull", "Bearing life",
-                           mapping={"x": "hours", "c": "failed"}, unit="hours")`}</Code>
+      <ClientFn
+        sig="models.list()"
+        endpoint="GET /api/v1/models"
+        desc="Your saved models."
+        returns={`[ { "id": "a1b2…", "name": "Bearing life", "distribution": "Weibull",
+    "kind": "distribution", "n": 30, "unit": "hours", "url": "/modelling/m/…" }, … ]`}
+      />
 
-      <h3>Fleet &amp; strategy</h3>
-      <Code>{`reliafy.fleet.forecast(fleet_id)
-reliafy.strategy.optimal_replacement("weibull", [1435, 2.5],
-                                     planned_cost=200, unplanned_cost=1500, unit="hours")
-reliafy.strategy.failure_finding("exponential", [1/8760],
-                                 target_availability=0.99, unit="hours")`}</Code>
+      <ClientFn
+        sig="models.get(model_id)"
+        endpoint="GET /api/v1/models/{id}"
+        desc="One model's fit."
+        params={[{ name: "model_id", type: "str", req: true, desc: "Model id." }]}
+        returns={`{ "id": …, "distribution": "Weibull", "params": [{name, value, se, ci}],
+  "coefficients": [], "metrics": null, "gof": [{id, label, value}] }`}
+      />
+
+      <ClientFn
+        sig="models.reliability(model_id, t=None, covariates=None)"
+        endpoint="POST /api/v1/models/{id}/reliability"
+        desc="Evaluate the reliability functions."
+        params={[
+          { name: "model_id", type: "str", req: true, desc: "Model id." },
+          { name: "t", type: "number", req: false, desc: "Time to evaluate at. Omit for the whole curve." },
+          { name: "covariates", type: "dict", req: false, desc: "Covariate values for a proportional-hazards model." },
+        ]}
+        returns={`{ "at": { "reliability": 0.666, "failure": 0.334, "hazard": …,
+          "cumulative_hazard": …, "density": … } }   # or {"curves": {...}}`}
+      />
+
+      <ClientFn
+        sig="models.fit(dataset_id, distribution, name, *, mapping=None, unit=None, covariates=None, formula=None)"
+        endpoint="POST /api/v1/fit"
+        desc="Fit and save a model from one of your datasets."
+        params={[
+          { name: "dataset_id", type: "str", req: true, desc: "Dataset to fit." },
+          { name: "distribution", type: "str", req: true, desc: "e.g. weibull, weibull_ph, best." },
+          { name: "name", type: "str", req: true, desc: "Model name." },
+          { name: "mapping", type: "dict", req: true, desc: "Role → column, e.g. {\"x\": \"hours\", \"c\": \"failed\"}." },
+          { name: "unit", type: "str", req: false, desc: "Time unit." },
+          { name: "covariates", type: "str[]", req: false, desc: "Covariate columns (PH)." },
+          { name: "formula", type: "str", req: false, desc: "Formulaic covariate formula." },
+        ]}
+        returns={`{ "id": …, "name": "Bearing life", "distribution": "Weibull", "url": "/modelling/m/…" }`}
+      />
+
+      <h3>reliafy.data</h3>
+      <ClientFn
+        sig="data.upload(name, *, csv=None, data=None)"
+        endpoint="POST /api/v1/datasets"
+        desc="Create a dataset from CSV text or column arrays."
+        params={[
+          { name: "name", type: "str", req: true, desc: "Dataset name." },
+          { name: "csv", type: "str", req: false, desc: "Raw CSV text (with a header). Provide this or data." },
+          { name: "data", type: "dict", req: false, desc: "Column arrays, e.g. {\"hours\": [...], \"failed\": [...]}." },
+        ]}
+        returns={`{ "id": "d3…", "name": "Bearings", "n_rows": 8, "columns": ["hours","failed"], "url": "/datasets/d/…" }`}
+      />
+
+      <h3>reliafy.strategy</h3>
+      <ClientFn
+        sig="strategy.optimal_replacement(distribution, params, planned_cost, unplanned_cost, *, unit=None)"
+        endpoint="POST /api/v1/strategy/optimal-replacement"
+        desc="Cost-optimal preventive-replacement interval."
+        params={[
+          { name: "distribution", type: "str", req: true, desc: "e.g. weibull." },
+          { name: "params", type: "number[]", req: true, desc: "Distribution parameters." },
+          { name: "planned_cost", type: "number", req: true, desc: "Cost of a planned replacement." },
+          { name: "unplanned_cost", type: "number", req: true, desc: "Cost of a failure." },
+          { name: "unit", type: "str", req: false, desc: "Time unit." },
+        ]}
+        returns={`{ "optimal_time": 580.5, "optimal_cost_rate": 0.51, "beneficial": true, "mttf": 1272.4 }`}
+      />
+      <ClientFn
+        sig="strategy.failure_finding(distribution, params, target_availability, *, unit=None)"
+        endpoint="POST /api/v1/strategy/failure-finding"
+        desc="Inspection interval for a hidden (protective) function."
+        params={[
+          { name: "distribution", type: "str", req: true, desc: "e.g. exponential." },
+          { name: "params", type: "number[]", req: true, desc: "Distribution parameters." },
+          { name: "target_availability", type: "number", req: true, desc: "Target availability in (0,1), e.g. 0.99." },
+          { name: "unit", type: "str", req: false, desc: "Time unit." },
+        ]}
+        returns={`{ "interval": 176.4, "method": "…", "mttf": 8760, "target_availability": 0.99 }`}
+      />
+
+      <h3>reliafy.fleet</h3>
+      <ClientFn
+        sig="fleet.forecast(fleet_id)"
+        endpoint="GET /api/v1/fleets/{id}/forecast"
+        desc="The live failure forecast for one of your fleets."
+        params={[{ name: "fleet_id", type: "str", req: true, desc: "Fleet id (from /fleet/forecasts/<id>)." }]}
+        returns={`{ "fleet": {id, name, model_id}, "forecast": {status, method, periods, expected_failures, …} }`}
+      />
 
       <ul className="api-list">
-        <li>Full field/response schemas are on the <b>HTTP API</b> tab — each client call maps to one endpoint.</li>
         <li>Errors raise <code>reliafy.ReliafyError</code>; reads/writes are scoped to your own data.</li>
+        <li>Full request/response field tables are on the <b>HTTP API</b> tab.</li>
       </ul>
     </div>
   );
@@ -353,7 +464,7 @@ export default function ApiReference() {
           HTTP API
         </button>
       </div>
-      {tab === "client" ? <ClientDocs base={base} /> : <HttpDocs base={base} />}
+      {tab === "client" ? <ClientDocs /> : <HttpDocs base={base} />}
     </div>
   );
 }
