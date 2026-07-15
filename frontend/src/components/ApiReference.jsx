@@ -81,38 +81,42 @@ import reliafy
 reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-hosted`}</Code>
       <p className="muted-line">Create a token under <b>Settings → API access</b> (Pro on Reliafy Cloud).</p>
 
-      <h3>Push a fitted model</h3>
       <p className="muted-line">
-        <code>push(model, name, *, data=True, unit=None) → url</code>. With{" "}
+        Calls are grouped: <code>reliafy.models</code>, <code>reliafy.data</code>,{" "}
+        <code>reliafy.strategy</code>, <code>reliafy.fleet</code>.
+      </p>
+
+      <h3>Models</h3>
+      <p className="muted-line">
+        <code>models.push(model, name, *, data=True, unit=None) → url</code>. With{" "}
         <code>data=True</code> (default) the fitted observations go up too (full
         probability plot, refittable); <code>data=False</code> is params only.
       </p>
       <Code>{`import surpyval as sp, reliafy
 model = sp.Weibull.fit(x=failures, c=censoring_flags)
-url = reliafy.push(model, name="Pump bearings — 2026", unit="hours")
+url = reliafy.models.push(model, name="Pump bearings — 2026", unit="hours")
+reliafy.models.push_params("weibull", [1200.0, 2.3], name="Handbook value", unit="hours")
 
-reliafy.push_params("weibull", [1200.0, 2.3], name="Handbook value", unit="hours")`}</Code>
+reliafy.models.list()                              # -> [{id, name, distribution, ...}]
+reliafy.models.get(model_id)                       # -> params(+CIs), metrics, gof
+reliafy.models.reliability(model_id, t=1000)       # -> {"at": {reliability, hazard, ...}}
+reliafy.models.reliability(model_id, t=1000, covariates={"temp_C": 90})   # PH model`}</Code>
 
-      <h3>Read models &amp; reliability</h3>
-      <Code>{`reliafy.list_models()                       # -> [{id, name, distribution, ...}]
-reliafy.get_model(model_id)                 # -> params(+CIs), metrics, gof
-
-r = reliafy.reliability(model_id, t=1000)   # -> {"at": {reliability, failure, hazard, ...}}
-reliafy.reliability(model_id, t=1000, covariates={"temp_C": 90})   # PH model`}</Code>
-
-      <h3>Create a dataset &amp; fit</h3>
-      <Code>{`ds = reliafy.upload_dataset("Bearings", csv="hours,failed\\n120,1\\n340,0\\n510,1")
-model = reliafy.fit(ds["id"], "weibull", "Bearing life",
-                    mapping={"x": "hours", "c": "failed"}, unit="hours")`}</Code>
+      <h3>Data &amp; fitting</h3>
+      <Code>{`ds = reliafy.data.upload("Bearings", csv="hours,failed\\n120,1\\n340,0\\n510,1")
+model = reliafy.models.fit(ds["id"], "weibull", "Bearing life",
+                           mapping={"x": "hours", "c": "failed"}, unit="hours")`}</Code>
 
       <h3>Fleet &amp; strategy</h3>
-      <Code>{`reliafy.fleet_forecast(fleet_id)
-reliafy.optimal_replacement("weibull", [1435, 2.5],
-                            planned_cost=200, unplanned_cost=1500, unit="hours")
-reliafy.failure_finding("exponential", [1/8760], target_availability=0.99, unit="hours")`}</Code>
+      <Code>{`reliafy.fleet.forecast(fleet_id)
+reliafy.strategy.optimal_replacement("weibull", [1435, 2.5],
+                                     planned_cost=200, unplanned_cost=1500, unit="hours")
+reliafy.strategy.failure_finding("exponential", [1/8760],
+                                 target_availability=0.99, unit="hours")`}</Code>
 
       <ul className="api-list">
         <li>Full field/response schemas are on the <b>HTTP API</b> tab — each client call maps to one endpoint.</li>
+        <li><code>configure</code>, <code>push</code> and <code>push_params</code> also work top-level (backward compatible).</li>
         <li>Errors raise <code>reliafy.ReliafyError</code>; reads/writes are scoped to your own data.</li>
       </ul>
     </div>

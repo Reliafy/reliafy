@@ -1,19 +1,31 @@
-"""reliafy — push SurPyval models to Reliafy.
+"""reliafy — the programmatic client for Reliafy.
 
-Build a model in a notebook with SurPyval, then make it a shareable,
-trackable, citable artifact in Reliafy with one call:
+Grouped by area:
 
     import surpyval as sp
     import reliafy
 
+    reliafy.configure(token="rlf_...")           # from Settings -> API access
+
+    # models
     model = sp.Weibull.fit(x=my_data)
+    url = reliafy.models.push(model, name="Pump bearings", unit="hours")
+    reliafy.models.list()
+    reliafy.models.reliability(model_id, t=1000)
 
-    reliafy.configure(token="rlf_...")           # from the API access page
-    url = reliafy.push(model, name="Pump bearings")
-    print(url)                                    # open it in the app
+    # data
+    ds = reliafy.data.upload("Bearings", csv="hours,failed\\n120,1\\n340,0")
+    reliafy.models.fit(ds["id"], "weibull", "Bearing life",
+                       mapping={"x": "hours", "c": "failed"})
 
-The token is a personal API token (Reliafy Cloud → API access; a Pro
-feature). Self-hosted instances pass ``base_url`` to point at your server.
+    # strategy / fleet
+    reliafy.strategy.optimal_replacement("weibull", [1435, 2.5],
+                                         planned_cost=200, unplanned_cost=1500)
+    reliafy.fleet.forecast(fleet_id)
+
+``configure`` / ``push`` / ``push_params`` are also available top-level for
+backward compatibility. The token is a personal API token (Reliafy Cloud ->
+API access; a Pro feature); self-hosted instances pass ``base_url``.
 """
 
 from __future__ import annotations
@@ -25,9 +37,7 @@ import urllib.request
 
 __all__ = [
     "configure", "push", "push_params",
-    "list_models", "get_model", "reliability",
-    "upload_dataset", "fit",
-    "fleet_forecast", "optimal_replacement", "failure_finding",
+    "models", "data", "strategy", "fleet",
     "ReliafyError",
 ]
 
@@ -264,3 +274,35 @@ def failure_finding(distribution: str, params, target_availability: float,
         "distribution_id": distribution, "params": list(params),
         "target_availability": target_availability, "unit": unit,
     })
+
+
+# ---- namespaces ------------------------------------------------------------
+# Grouped access: reliafy.models.* / reliafy.data.* / reliafy.strategy.* /
+# reliafy.fleet.*. (configure / push / push_params also stay top-level.)
+
+class _Namespace:
+    def __init__(self, name, **members):
+        self._name = name
+        self.__dict__.update(members)
+
+    def __repr__(self):
+        fns = ", ".join(k for k in self.__dict__ if not k.startswith("_"))
+        return f"<reliafy.{self._name}: {fns}>"
+
+
+models = _Namespace(
+    "models",
+    push=push,
+    push_params=push_params,
+    list=list_models,
+    get=get_model,
+    reliability=reliability,
+    fit=fit,
+)
+data = _Namespace("data", upload=upload_dataset)
+strategy = _Namespace(
+    "strategy",
+    optimal_replacement=optimal_replacement,
+    failure_finding=failure_finding,
+)
+fleet = _Namespace("fleet", forecast=fleet_forecast)
