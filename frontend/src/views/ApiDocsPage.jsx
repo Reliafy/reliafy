@@ -17,9 +17,10 @@ export default function ApiDocsPage() {
           </div>
           <h1>API reference</h1>
           <p>
-            The ingestion API — push meter readings, degradation measurements and
-            new failure data from your own scripts and cron jobs. Create a token
-            under{" "}
+            Two ways to get data and models into Reliafy: the{" "}
+            <b>reliafy-client</b> Python package for pushing SurPyval fits, and
+            the raw <b>HTTP API</b> for scripts, cron jobs and CMMS integrations.
+            Create a token under{" "}
             <button className="crumb-link" onClick={() => navigate("/settings?tab=api")}>
               Settings › API access
             </button>

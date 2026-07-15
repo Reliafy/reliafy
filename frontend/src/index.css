@@ -3567,6 +3567,17 @@ select:disabled {
 /* In-app API reference (on the API access page). */
 .api-ref h3 { margin: 1.4rem 0 0.4rem; font-size: 15px; }
 .api-ref h3:first-of-type { margin-top: 1rem; }
+.api-section > p:first-child { margin-top: 0.2rem; }
+.api-list {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.api-list li { line-height: 1.5; }
 .api-code { position: relative; margin: 0.5rem 0 0.2rem; }
 .api-code pre {
   background: var(--panel-2);
