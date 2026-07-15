@@ -3540,7 +3540,9 @@ select:disabled {
   font-size: 13px;
   cursor: pointer;
 }
-.fitopts-toggle:hover { color: var(--acc); }
+/* Text-toggle hover: just darken, never the global dark-blue button fill
+   (:not(:disabled) beats that rule). */
+.fitopts-toggle:hover:not(:disabled) { background: none; color: var(--ink); }
 .fitopts-body {
   margin-top: 10px;
   padding: 12px 14px;
