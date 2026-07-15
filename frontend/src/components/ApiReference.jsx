@@ -116,7 +116,6 @@ reliafy.strategy.failure_finding("exponential", [1/8760],
 
       <ul className="api-list">
         <li>Full field/response schemas are on the <b>HTTP API</b> tab — each client call maps to one endpoint.</li>
-        <li><code>configure</code>, <code>push</code> and <code>push_params</code> also work top-level (backward compatible).</li>
         <li>Errors raise <code>reliafy.ReliafyError</code>; reads/writes are scoped to your own data.</li>
       </ul>
     </div>

@@ -23,9 +23,8 @@ Grouped by area:
                                          planned_cost=200, unplanned_cost=1500)
     reliafy.fleet.forecast(fleet_id)
 
-``configure`` / ``push`` / ``push_params`` are also available top-level for
-backward compatibility. The token is a personal API token (Reliafy Cloud ->
-API access; a Pro feature); self-hosted instances pass ``base_url``.
+The token is a personal API token (Reliafy Cloud -> API access; a Pro
+feature); self-hosted instances pass ``base_url``.
 """
 
 from __future__ import annotations
@@ -35,11 +34,7 @@ import os
 import urllib.error
 import urllib.request
 
-__all__ = [
-    "configure", "push", "push_params",
-    "models", "data", "strategy", "fleet",
-    "ReliafyError",
-]
+__all__ = ["configure", "models", "data", "strategy", "fleet", "ReliafyError"]
 
 _DEFAULT_BASE = "https://reliafy.com"
 
@@ -277,8 +272,8 @@ def failure_finding(distribution: str, params, target_availability: float,
 
 
 # ---- namespaces ------------------------------------------------------------
-# Grouped access: reliafy.models.* / reliafy.data.* / reliafy.strategy.* /
-# reliafy.fleet.*. (configure / push / push_params also stay top-level.)
+# The public surface is grouped: reliafy.models.* / reliafy.data.* /
+# reliafy.strategy.* / reliafy.fleet.* (plus reliafy.configure).
 
 class _Namespace:
     def __init__(self, name, **members):
@@ -306,3 +301,8 @@ strategy = _Namespace(
     failure_finding=failure_finding,
 )
 fleet = _Namespace("fleet", forecast=fleet_forecast)
+
+# The namespaces hold the only references now; drop the flat names so the API
+# is exclusively reliafy.models.* / data.* / strategy.* / fleet.*.
+del (push, push_params, list_models, get_model, reliability, upload_dataset,
+     fit, fleet_forecast, optimal_replacement, failure_finding)
