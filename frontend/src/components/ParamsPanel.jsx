@@ -7,7 +7,7 @@ import { getDistributions, createModelFromParams } from "../api.js";
 // from a report, or a fit done elsewhere. Produces reliability functions and
 // life metrics (no probability plot). Rendered as a page panel; calls
 // ``onCreated`` with the saved model and ``onCancel`` to back out.
-export default function ParamsPanel({ onCreated, onCancel }) {
+export default function ParamsPanel({ onCreated, onCancel, onPerDemand }) {
   const [dists, setDists] = useState([]);
   const [distribution, setDistribution] = useState("weibull");
   const [values, setValues] = useState({}); // { paramName: string }
@@ -20,7 +20,7 @@ export default function ParamsPanel({ onCreated, onCancel }) {
 
   useEffect(() => {
     getDistributions()
-      .then((d) => setDists(d.distributions.filter((x) => !x.covariates && !x.nonparametric && x.id !== "best")))
+      .then((d) => setDists(d.distributions.filter((x) => !x.covariates && !x.nonparametric && !x.discrete && x.id !== "best")))
       .catch(() => setError("Couldn't load distributions."));
   }, []);
 
@@ -70,8 +70,11 @@ export default function ParamsPanel({ onCreated, onCancel }) {
         <span className="dist-label">Distribution</span>
         <Select
           value={distribution}
-          onChange={setDistribution}
-          options={dists.map((d) => ({ value: d.id, label: d.name }))}
+          onChange={(v) => (v === "__perdemand" ? onPerDemand?.() : setDistribution(v))}
+          options={[
+            ...(onPerDemand ? [{ value: "__perdemand", label: "Per-demand (Binomial)" }] : []),
+            ...dists.map((d) => ({ value: d.id, label: d.name })),
+          ]}
         />
       </div>
 

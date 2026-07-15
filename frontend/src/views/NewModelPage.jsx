@@ -2,24 +2,30 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import FitFlow from "../components/FitFlow.jsx";
 import ParamsPanel from "../components/ParamsPanel.jsx";
+import PerDemandPanel from "../components/PerDemandPanel.jsx";
 
 // Dedicated page for building a new model. First question: fit to data, or
-// build from known parameters. Each path (FitFlow / ParamsPanel) owns its own
-// steps, review and save.
+// build from known parameters. Per-demand (Binomial) is reachable from both —
+// a parameters option, and a button on the fit-to-data source step.
 export default function NewModelPage() {
   const navigate = useNavigate();
   const initialMode = new URLSearchParams(useLocation().search).get("mode");
   const [mode, setMode] = useState(
-    initialMode === "data" || initialMode === "params" ? initialMode : null
-  ); // null | "data" | "params"
+    ["data", "params", "perdemand"].includes(initialMode) ? initialMode : null
+  ); // null | "data" | "params" | "perdemand"
 
-  const heading = mode === "params" ? "From parameters" : mode === "data" ? "Fit to data" : "New model";
+  const openModel = (model) => navigate(`/modelling/m/${model.id}`);
+
+  const heading =
+    mode === "params" ? "From parameters"
+    : mode === "perdemand" ? "Per-demand"
+    : mode === "data" ? "Fit to data"
+    : "New model";
   const sub =
-    mode === "params"
-      ? "Enter known parameters to build the model."
-      : mode === "data"
-      ? "Pick data, map columns, fit, then review and save."
-      : "How do you want to build the model?";
+    mode === "params" ? "Enter known parameters to build the model."
+    : mode === "perdemand" ? "Reliability per demand, from a demands/failures count."
+    : mode === "data" ? "Pick data, map columns, fit, then review and save."
+    : "How do you want to build the model?";
 
   return (
     <div className="app">
@@ -49,8 +55,8 @@ export default function NewModelPage() {
             <button className="ds-choice" onClick={() => setMode("params")}>
               <span className="ds-choice-h">From parameters</span>
               <span className="ds-choice-b">
-                Enter known parameters — a handbook or report value — for the
-                reliability functions and life metrics. No data needed.
+                Enter known parameters — a handbook or report value, or a
+                per-demand count — for the reliability functions and metrics.
               </span>
             </button>
           </div>
@@ -59,16 +65,22 @@ export default function NewModelPage() {
 
       {mode === "data" && (
         <FitFlow
-          onSaved={(model) => navigate(`/modelling/m/${model.id}`)}
+          onSaved={openModel}
           onCancel={() => setMode(null)}
+          onPerDemand={() => setMode("perdemand")}
         />
       )}
 
       {mode === "params" && (
         <ParamsPanel
-          onCreated={(model) => navigate(`/modelling/m/${model.id}`)}
+          onCreated={openModel}
           onCancel={() => setMode(null)}
+          onPerDemand={() => setMode("perdemand")}
         />
+      )}
+
+      {mode === "perdemand" && (
+        <PerDemandPanel onCreated={openModel} onBack={() => setMode(null)} />
       )}
     </div>
   );

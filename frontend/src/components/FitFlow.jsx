@@ -20,7 +20,7 @@ const STEPS = ["Source", "Data", "Model", "Result"];
 // (+ unit, covariates), (3) pick a model and fit, (4) review the fit, name it,
 // and save — with Back to change anything and re-fit before saving. Calls
 // ``onSaved`` with the saved model; ``onCancel`` backs out to the list.
-export default function FitFlow({ onSaved, onCancel }) {
+export default function FitFlow({ onSaved, onCancel, onPerDemand }) {
   const [step, setStep] = useState(1);
   const [file, setFile] = useState(null);
   const [datasetId, setDatasetId] = useState(null);
@@ -299,6 +299,17 @@ export default function FitFlow({ onSaved, onCancel }) {
                   </span>
                 </button>
               ))}
+            </div>
+          )}
+
+          {onPerDemand && (
+            <div className="perdemand-cta">
+              <span className="muted-line" style={{ margin: 0 }}>
+                Not time-to-failure data? Model one-shot / protective equipment:
+              </span>
+              <button type="button" className="secondary" onClick={onPerDemand}>
+                Per-demand
+              </button>
             </div>
           )}
         </>

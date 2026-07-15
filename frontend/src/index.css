@@ -4549,6 +4549,18 @@ select:disabled {
 }
 .map-unit-input:focus { outline: none; }
 
+/* "Per-demand" escape hatch on the fit-flow source step. */
+.perdemand-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line2);
+}
+
 /* ---- New-model fit flow (page panel) ---------------------------------- */
 .fit-flow-foot {
   display: flex;
