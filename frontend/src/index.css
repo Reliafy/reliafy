@@ -4567,30 +4567,32 @@ select:disabled {
   right: 0;
   top: calc(100% + 6px);
   min-width: 176px;
-  padding: 5px;
+  padding: 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: #fff;
+  border: 1px solid var(--line);
   border-radius: 10px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 10px 32px rgba(20, 24, 32, 0.14);
   z-index: 40;
 }
 .ovm-item {
   width: 100%;
   text-align: left;
-  padding: 8px 10px;
+  padding: 7px 10px;
   font-size: 13px;
-  color: var(--text);
+  color: var(--ink);
   background: transparent;
   border: none;
+  box-shadow: none;
   border-radius: 7px;
   cursor: pointer;
 }
-.ovm-item:hover:not(:disabled) { background: var(--bg); }
+/* Soft accent-tint hover to match the dropdowns. */
+.ovm-item:hover:not(:disabled) { background: rgba(47, 109, 246, 0.10); color: var(--acc); }
 .ovm-item.danger { color: #dc2626; }
-.ovm-item.danger:hover:not(:disabled) { background: #fef2f2; }
+.ovm-item.danger:hover:not(:disabled) { background: #fef2f2; color: #dc2626; }
 
 /* ---- RCM: study tree, decision flow, evidence -------------------------- */
 .head-actions { display: inline-flex; gap: 0.6rem; align-items: flex-start; }
