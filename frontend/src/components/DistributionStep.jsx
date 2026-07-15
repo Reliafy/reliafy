@@ -21,6 +21,11 @@ const DESCRIPTIONS = {
   normal_ph: "Normal baseline proportional-hazards model.",
   gamma_ph: "Gamma baseline proportional-hazards model.",
   cox_ph: "Semi-parametric Cox model — covariate effects, no baseline shape.",
+  weibull_aft: "Weibull baseline; covariates scale time to failure (accelerated life).",
+  exponential_aft: "Exponential baseline accelerated-failure-time model.",
+  lognormal_aft: "Lognormal baseline accelerated-failure-time model.",
+  normal_aft: "Normal baseline accelerated-failure-time model.",
+  gamma_aft: "Gamma baseline accelerated-failure-time model.",
   kaplan_meier: "Non-parametric survival estimate — no distribution assumed.",
   nelson_aalen: "Non-parametric survival via cumulative hazard.",
   fleming_harrington: "Non-parametric, tie-corrected cumulative hazard.",
@@ -58,15 +63,22 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
     (opts.offset ? 1 : 0) + (opts.zi ? 1 : 0) + (opts.lfp ? 1 : 0) +
     Object.keys(opts.fixed || {}).length;
 
-  // Group the picker into Continuous / Discrete / Non-parametric when more than
-  // one group is present (they only coexist on the no-covariate path; regression
-  // is filtered out upstream, so a covariate list needs no grouping).
+  // Group the picker into sections when more than one group is present. The
+  // covariate path lists regression models — split into proportional-hazards
+  // and accelerated-failure-time; the no-covariate path splits into Continuous /
+  // Discrete / Non-parametric.
   const asOpt = (d) => ({ value: d.id, label: d.name });
-  const groups = [
-    ["Continuous", options.filter((d) => !d.nonparametric && !d.discrete)],
-    ["Discrete", options.filter((d) => d.discrete)],
-    ["Non-parametric", options.filter((d) => d.nonparametric)],
-  ].filter(([, list]) => list.length);
+  const isCovariateList = options.some((d) => d.covariates);
+  const groups = isCovariateList
+    ? [
+        ["Proportional hazards", options.filter((d) => d.effect !== "aft")],
+        ["Accelerated failure time", options.filter((d) => d.effect === "aft")],
+      ].filter(([, list]) => list.length)
+    : [
+        ["Continuous", options.filter((d) => !d.nonparametric && !d.discrete)],
+        ["Discrete", options.filter((d) => d.discrete)],
+        ["Non-parametric", options.filter((d) => d.nonparametric)],
+      ].filter(([, list]) => list.length);
   const selectOptions =
     groups.length > 1
       ? groups.flatMap(([heading, list]) => [{ heading }, ...list.map(asOpt)])

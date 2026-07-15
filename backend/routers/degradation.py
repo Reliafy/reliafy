@@ -234,6 +234,31 @@ def get_model(
     })
 
 
+@router.get("/degradation/models/{model_id}/reliability")
+def reliability(
+    model_id: str,
+    confidence: float = 0.90,
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Population reliability curve with two-stage confidence bounds at the
+    requested confidence level (re-fitting the model on demand)."""
+    from backend import degradation as degradation_fit
+
+    doc, _ = access_service.fetch_readable(session, "degradation_models", DegradationModelDoc, model_id, ctx)
+    if doc is None or doc.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    if not 0.0 < confidence < 1.0:
+        return JSONResponse(status_code=422, content={"detail": "Confidence must be between 0 and 1 (exclusive)."})
+    live = degradation_service.get_live_model(session, model_id, [*ctx.read_owners, doc.owner_id])
+    if live is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    curves = degradation_fit.reliability_curves(live, alpha_ci=1.0 - confidence)
+    if curves is None:
+        return JSONResponse(status_code=422, content={"detail": "This model has no reliability curve."})
+    return JSONResponse(content=degradation_fit._json_safe(curves))
+
+
 @router.patch("/degradation/models/{model_id}")
 def rename_model(
     model_id: str,
@@ -330,6 +355,30 @@ def get_item(
         # A model refit may have fixed it (e.g. dataset was briefly missing).
         item = degradation_service.refresh_prediction(session, model_id, item, owners)
     return JSONResponse(content=_item_summary(item, ctx))
+
+
+@router.get("/degradation/models/{model_id}/items/{item_id}/prediction")
+def item_prediction_at_confidence(
+    model_id: str,
+    item_id: str,
+    confidence: float = 0.95,
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Recompute one item's crossing prediction at a chosen confidence level
+    (view-only — the stored prediction is unchanged). Lets the projection show
+    the expected crossing and the crossing time at that confidence."""
+    doc, _ = access_service.fetch_readable(session, "degradation_models", DegradationModelDoc, model_id, ctx)
+    if doc is None:
+        return JSONResponse(status_code=404, content={"detail": "Item not found."})
+    owners = [*ctx.read_owners, doc.owner_id]
+    try:
+        pred = degradation_service.predict_item_at(session, model_id, item_id, confidence, owners)
+    except degradation_service.ItemNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Item not found."})
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return JSONResponse(content=pred)
 
 
 @router.post("/degradation/models/{model_id}/items/{item_id}/measurements")

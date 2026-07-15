@@ -61,9 +61,6 @@ const REGRESSION_TABS = [
   { id: "gof", label: "Goodness of fit" },
 ];
 
-const fmtGof = (v) =>
-  Math.abs(v) >= 1e-4 || v === 0 ? Number(v).toFixed(2) : Number(v).toExponential(2);
-
 // One-line interpretation of the failure pattern — the statistical evidence an
 // RCM run-to-failure decision leans on.
 function RandomnessVerdict({ r }) {
@@ -99,7 +96,7 @@ export default function ResultView({ result, hideHead = false }) {
   // plot or goodness-of-fit — just the functions.
   const hasPlot = !!result.plot;
   const defaultTab = isRegression
-    ? "coef"
+    ? (result.functions ? "calc" : "coef")
     : isNonparametric
     ? "survival"
     : isDiscrete
@@ -134,8 +131,10 @@ export default function ResultView({ result, hideHead = false }) {
     tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
 
   const color = distColor(result.distribution);
-  const gof = result.gof || [];
   const metrics = result.metrics || {};
+  // PH models show their baseline parameters in the calculator's side rail
+  // rather than a top summary bar.
+  const paramsInRail = isRegression && !!result.functions;
 
   // Descriptive notes + the randomness verdict — rendered below the tabbed
   // content (the model itself stays at the top of the view).
@@ -198,9 +197,10 @@ export default function ResultView({ result, hideHead = false }) {
         </div>
       )}
       {/* Distributions with a probability plot move their parameters into the
-          plot's side rail (below); other kinds keep the top summary bar. The
-          observation count is no longer shown as a stat. */}
-      {!hasPlot && (
+          plot's side rail; proportional-hazards models move theirs into the
+          calculator's side rail (like non-PH models). Other kinds keep the top
+          summary bar. The observation count is no longer shown as a stat. */}
+      {!hasPlot && !paramsInRail && (
         <div className="params">
           {result.params.map((p) => (
             <div className="stat" key={p.name}>
@@ -277,17 +277,6 @@ export default function ResultView({ result, hideHead = false }) {
                   ))}
                 </div>
               )}
-              {gof.length > 0 && (
-                <div className="gof-card">
-                  <div className="gofh">Goodness of fit</div>
-                  {gof.map((g) => (
-                    <div className="gofr" key={g.id}>
-                      <span className="gk">{g.label}</span>
-                      <span className="gv">{fmtGof(g.value)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
               <div className="detail-note">
                 Maximum-likelihood fit over <b>{result.n} observations</b>. The
                 line is the fitted model; points are the data on{" "}
@@ -301,12 +290,13 @@ export default function ResultView({ result, hideHead = false }) {
           <Calculator
             functions={result.functions}
             unit={result.unit}
+            params={paramsInRail ? result.params : null}
             state={calc}
             setState={setCalc}
             nextIdRef={calcNextId}
           />
         )}
-        {tab === "coef" && <Coefficients coefficients={result.coefficients} />}
+        {tab === "coef" && <Coefficients coefficients={result.coefficients} ratioLabel={result.ratio_label} />}
         {tab === "gof" && <GoodnessOfFit gof={result.gof} n={result.n} />}
       </div>
 

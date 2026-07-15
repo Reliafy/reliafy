@@ -1,5 +1,6 @@
 import Select from "./Select.jsx";
-import { useEffect, useRef } from "react";
+import Modal from "./Modal.jsx";
+import { useEffect, useRef, useState } from "react";
 import Plot from "react-plotly.js";
 import { confidenceAt, evaluateAt } from "../api.js";
 
@@ -20,6 +21,8 @@ export function initCalcState(functions) {
     active: "sf",
     t: x.length ? Number(mid.toPrecision(4)) : 0,
     condAge: "", // conditional survival age s
+    xMin: "", // blank = auto-range from the data
+    xMax: "",
     // Confidence bounds config + last-fetched band (keyed to avoid refetching).
     ci: { level: 95, bound: "two-sided", key: null, data: null, error: null },
   };
@@ -75,10 +78,62 @@ function conditionalize(curves, s) {
   return out;
 }
 
+// The covariate-combination editor: one row per combination, each a set of
+// covariate value inputs. Shared by the side rail (narrow, stacked) and the
+// "more" modal (wide). Each edit re-evaluates its combination on the backend.
+function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd }) {
+  return (
+    <>
+      {series.map((s, i) => (
+        <div className="combo-row" key={s.id}>
+          <span className="combo-dot" style={{ background: COLORS[i % COLORS.length] }} />
+          <div className="calc-cov-fields">
+            {covariates.map((c) => (
+              <label className="calc-cov" key={c.name}>
+                <span>{c.name}</span>
+                {c.type === "category" ? (
+                  <Select
+                    value={s.values[c.name]}
+                    onChange={(v) => onUpdate(s.id, c.name, v)}
+                    options={c.options}
+                  />
+                ) : (
+                  <input
+                    type="number"
+                    step="any"
+                    value={s.values[c.name]}
+                    onChange={(e) => onUpdate(s.id, c.name, e.target.value)}
+                  />
+                )}
+              </label>
+            ))}
+          </div>
+          {s.error && <span className="combo-err">{s.error}</span>}
+          {series.length > 1 && (
+            <button
+              className="combo-remove"
+              onClick={() => onRemove(s.id)}
+              aria-label="Remove combination"
+              title="Remove combination"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      ))}
+      {canAdd && (
+        <button className="secondary combo-add" onClick={onAdd}>
+          + Add combination
+        </button>
+      )}
+    </>
+  );
+}
+
 // Calculator tab: chart any of the reliability functions and read them off at a
 // chosen t. For regression models you can add several covariate combinations,
 // each re-evaluated by the backend and overlaid on the chart.
-export default function Calculator({ functions, unit, state, setState, nextIdRef }) {
+export default function Calculator({ functions, unit, params, state, setState, nextIdRef }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
@@ -87,8 +142,13 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
   const defaults = () =>
     Object.fromEntries(covariates.map((c) => [c.name, c.default]));
 
+  // Side-rail collapse + "edit in a larger view" modal (local UI only).
+  const [railOpen, setRailOpen] = useState(true);
+  const [covModal, setCovModal] = useState(false);
+  const [axisOpen, setAxisOpen] = useState(false);
+
   // State is owned by the parent so it persists across tab switches.
-  const { series, active, t, condAge, ci } = state;
+  const { series, active, t, condAge, ci, xMin, xMax } = state;
   const setSeries = (updater) =>
     setState((st) => ({
       ...st,
@@ -97,7 +157,18 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
   const setActive = (v) => setState((st) => ({ ...st, active: v }));
   const setT = (v) => setState((st) => ({ ...st, t: v }));
   const setCondAge = (v) => setState((st) => ({ ...st, condAge: v }));
+  const setXMin = (v) => setState((st) => ({ ...st, xMin: v }));
+  const setXMax = (v) => setState((st) => ({ ...st, xMax: v }));
   const setCi = (patch) => setState((st) => ({ ...st, ci: { ...st.ci, ...patch } }));
+
+  // Manual x-axis limits (blank/invalid = auto). When set — and the model can
+  // be re-evaluated — the curves and confidence band are recomputed over the
+  // new range so the lines extend (or refine) to the chosen limits, not just
+  // clip the view.
+  const xLoNum = xMin !== "" && !Number.isNaN(Number(xMin)) ? Number(xMin) : null;
+  const xHiNum = xMax !== "" && !Number.isNaN(Number(xMax)) ? Number(xMax) : null;
+  const manualX = xLoNum != null || xHiNum != null;
+  const evalRange = manualX ? { xMin: xLoNum, xMax: xHiNum } : undefined;
 
   // Confidence bounds — available for plain/discrete/non-parametric models
   // (regression has none). Computed by SurPyval's cb() on demand.
@@ -106,18 +177,18 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
   const ciValid = confidencePath && ciLevel > 0 && ciLevel < 100;
   const ciAlpha = 1 - ciLevel / 100;
   useEffect(() => {
-    if (!ciValid) return;
-    const wantKey = `${active}|${ciAlpha}|${ci.bound}`;
+    if (!ciValid || ci.bound === "none") return;
+    const wantKey = `${active}|${ciAlpha}|${ci.bound}|${xLoNum}|${xHiNum}`;
     if (ci.key === wantKey && ci.data) return; // already have this band
     // Debounced so typing a level doesn't spam the backend.
     const id = setTimeout(() => {
-      confidenceAt(confidencePath, { on: active, alpha_ci: ciAlpha, bound: ci.bound })
+      confidenceAt(confidencePath, { on: active, alpha_ci: ciAlpha, bound: ci.bound }, evalRange)
         .then((res) => setCi({ key: wantKey, data: res, error: null }))
         .catch((err) => setCi({ key: wantKey, data: null, error: err.message }));
     }, 300);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ciValid, active, ciAlpha, ci.bound, confidencePath]);
+  }, [ciValid, active, ciAlpha, ci.bound, confidencePath, xLoNum, xHiNum]);
 
   const x = functions.curves.x;
 
@@ -132,13 +203,16 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
     cond > 0 ? `additional time${unit ? ` (${unit})` : ""}` : tLabel;
   const multi = series.length > 1;
 
-  // Per-series debounced re-evaluation against the backend.
+  // Per-series debounced re-evaluation against the backend (over the current
+  // x-range when limits are set).
   const timers = useRef({});
+  const seriesRef = useRef(series);
+  seriesRef.current = series;
   const runEval = (id, values) => {
     clearTimeout(timers.current[id]);
     timers.current[id] = setTimeout(async () => {
       try {
-        const res = await evaluateAt(evaluatePath, values);
+        const res = await evaluateAt(evaluatePath, values || {}, evalRange);
         setSeries((prev) =>
           prev.map((s) => (s.id === id ? { ...s, curves: res.curves, error: null } : s))
         );
@@ -149,6 +223,16 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
       }
     }, 300);
   };
+
+  // When the x-limits change, recompute every series over the new range.
+  // Skips the initial mount (the payload curves already span the default grid).
+  const rangeReady = useRef(false);
+  useEffect(() => {
+    if (!evaluatePath) return; // params-only models can't be re-evaluated
+    if (!rangeReady.current) { rangeReady.current = true; return; }
+    seriesRef.current.forEach((s) => runEval(s.id, s.values));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [xLoNum, xHiNum, evaluatePath]);
 
   const updateValue = (id, name, value) => {
     const current = series.find((s) => s.id === id);
@@ -180,7 +264,7 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
 
   // Confidence band for the active function (raw scale only — it isn't
   // conditionalised, so it's hidden when a survived-age is set).
-  const band = ci.data && ci.data.on === active && cond === 0 ? ci.data : null;
+  const band = ci.bound !== "none" && ci.data && ci.data.on === active && cond === 0 ? ci.data : null;
 
   // Chart: the active function for every series, plus a marker at t.
   const traces = [];
@@ -233,6 +317,11 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
   });
 
   const showLegend = multi || !!band;
+
+  // Plot axis range: a single manual bound falls back to the data extent for
+  // the other end.
+  const xRange = manualX ? [xLoNum != null ? xLoNum : 0, xHiNum != null ? xHiNum : xMaxView] : undefined;
+
   const layout = {
     autosize: true,
     height: 440,
@@ -248,6 +337,7 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
       gridcolor: "#e2e8f0",
       linecolor: "#cbd5e1",
       zeroline: false,
+      ...(manualX ? { range: xRange, autorange: false } : {}),
     },
     yaxis: {
       title: { text: activeLabel, standoff: 12 },
@@ -271,121 +361,8 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
 
   return (
     <div className="calc">
-      {hasCov && (
-        <div className="calc-covs">
-          <div className="calc-covs-head">Covariate combinations</div>
-          {series.map((s, i) => (
-            <div className="combo-row" key={s.id}>
-              <span
-                className="combo-dot"
-                style={{ background: COLORS[i % COLORS.length] }}
-              />
-              <div className="calc-cov-fields">
-                {covariates.map((c) => (
-                  <label className="calc-cov" key={c.name}>
-                    <span>{c.name}</span>
-                    {c.type === "category" ? (
-                      <Select
-                        value={s.values[c.name]}
-                        onChange={(v) => updateValue(s.id, c.name, v)}
-                        options={c.options}
-                      />
-                    ) : (
-                      <input
-                        type="number"
-                        step="any"
-                        value={s.values[c.name]}
-                        onChange={(e) => updateValue(s.id, c.name, e.target.value)}
-                      />
-                    )}
-                  </label>
-                ))}
-              </div>
-              {s.error && <span className="combo-err">{s.error}</span>}
-              {series.length > 1 && (
-                <button
-                  className="combo-remove"
-                  onClick={() => removeSeries(s.id)}
-                  aria-label="Remove combination"
-                  title="Remove combination"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          ))}
-          {series.length < MAX_SERIES && (
-            <button className="secondary combo-add" onClick={addSeries}>
-              + Add combination
-            </button>
-          )}
-        </div>
-      )}
-
-      <div className="calc-controls">
-        <div className="seg">
-          {meta.map((m) => (
-            <button
-              key={m.id}
-              className={"seg-btn" + (active === m.id ? " active" : "")}
-              onClick={() => setActive(m.id)}
-              title={m.label}
-            >
-              {m.id}
-            </button>
-          ))}
-        </div>
-        <label className="calc-t">
-          <span>Evaluate at {tAxisLabel}</span>
-          <input
-            type="number"
-            value={t}
-            min={0}
-            max={xMaxView}
-            step="any"
-            onChange={(e) => setT(e.target.value)}
-          />
-        </label>
-        <label className="calc-t">
-          <span>Given survived to{unit ? ` (${unit})` : ""}</span>
-          <input
-            type="number"
-            value={condAge}
-            min={0}
-            max={x[x.length - 1]}
-            step="any"
-            placeholder="0"
-            onChange={(e) => setCondAge(e.target.value)}
-          />
-        </label>
-        {confidencePath && (
-          <>
-            <label className="calc-t">
-              <span>Confidence level %</span>
-              <input
-                type="number"
-                value={ci.level}
-                min={1}
-                max={99.9}
-                step="any"
-                onChange={(e) => setCi({ level: e.target.value })}
-              />
-            </label>
-            <label className="calc-t">
-              <span>Bound</span>
-              <Select
-                value={ci.bound}
-                onChange={(v) => setCi({ bound: v })}
-                options={[
-                  { value: "two-sided", label: "Two-sided" },
-                  { value: "lower", label: "Lower" },
-                  { value: "upper", label: "Upper" },
-                ]}
-              />
-            </label>
-          </>
-        )}
-      </div>
+      <div className="calc-body">
+        <div className="calc-main">
       {confidencePath && ci.error && (
         <p className="hint" style={{ margin: "0 0 0.4rem" }}>
           Couldn't compute confidence bounds: {ci.error}
@@ -473,6 +450,207 @@ export default function Calculator({ functions, unit, state, setState, nextIdRef
         style={{ width: "100%" }}
         useResizeHandler
       />
+        </div>
+
+        <div className="calc-side-rail">
+            <div className="calc-rail-card calc-eval-card">
+              <div className="gofh">Evaluate</div>
+              <div className="calc-eval-body">
+                <div className="seg">
+                  {meta.map((m) => (
+                    <button
+                      key={m.id}
+                      className={"seg-btn" + (active === m.id ? " active" : "")}
+                      onClick={() => setActive(m.id)}
+                      title={m.label}
+                    >
+                      {m.id}
+                    </button>
+                  ))}
+                </div>
+                <label className="calc-t">
+                  <span>Evaluate at {tAxisLabel}</span>
+                  <input
+                    type="number"
+                    value={t}
+                    min={0}
+                    max={xMaxView}
+                    step="any"
+                    onChange={(e) => setT(e.target.value)}
+                  />
+                </label>
+                <label className="calc-t">
+                  <span>Given survived to{unit ? ` (${unit})` : ""}</span>
+                  <input
+                    type="number"
+                    value={condAge}
+                    min={0}
+                    max={x[x.length - 1]}
+                    step="any"
+                    placeholder="0"
+                    onChange={(e) => setCondAge(e.target.value)}
+                  />
+                </label>
+                {confidencePath && (
+                  <>
+                    {ci.bound !== "none" && (
+                      <label className="calc-t">
+                        <span>Confidence level %</span>
+                        <input
+                          type="number"
+                          value={ci.level}
+                          min={1}
+                          max={99.9}
+                          step="any"
+                          onChange={(e) => setCi({ level: e.target.value })}
+                        />
+                      </label>
+                    )}
+                    <label className="calc-t">
+                      <span>Confidence bound</span>
+                      <Select
+                        value={ci.bound}
+                        onChange={(v) => setCi({ bound: v })}
+                        options={[
+                          { value: "none", label: "None" },
+                          { value: "two-sided", label: "Two-sided" },
+                          { value: "lower", label: "Lower" },
+                          { value: "upper", label: "Upper" },
+                        ]}
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+            </div>
+            {params && params.length > 0 && (
+              <div className="calc-rail-card calc-rail-params">
+                <div className="gofh">Parameters</div>
+                {params.map((p) => (
+                  <div className="gofr" key={p.name}>
+                    <span className="gk">{p.name}</span>
+                    <span className="gv-col">
+                      <span className="gv">{Number(p.value).toPrecision(4)}</span>
+                      {p.ci && (
+                        <span className="param-ci">
+                          95% CI [{Number(p.ci[0]).toPrecision(3)}, {Number(p.ci[1]).toPrecision(3)}]
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {hasCov && (
+            <aside className={"calc-rail-card calc-cov-rail" + (railOpen ? "" : " collapsed")}>
+            <div className="calc-cov-rail-head">
+              <button
+                type="button"
+                className="cov-rail-toggle"
+                onClick={() => setRailOpen((o) => !o)}
+                aria-expanded={railOpen}
+              >
+                <span>{railOpen ? "▾" : "▸"}</span> Covariates
+              </button>
+              <button
+                type="button"
+                className="cov-rail-expand"
+                title="Edit in a larger view"
+                aria-label="Edit covariates in a larger view"
+                onClick={() => setCovModal(true)}
+              >
+                ⤢
+              </button>
+            </div>
+            {railOpen && (
+              <div className="calc-cov-rail-body">
+                <CovariateCombos
+                  series={series}
+                  covariates={covariates}
+                  onUpdate={updateValue}
+                  onRemove={removeSeries}
+                  onAdd={addSeries}
+                  canAdd={series.length < MAX_SERIES}
+                />
+              </div>
+            )}
+            </aside>
+            )}
+
+            <div className={"calc-rail-card calc-axis-card" + (axisOpen ? "" : " collapsed")}>
+              <div className="calc-cov-rail-head">
+                <button
+                  type="button"
+                  className="cov-rail-toggle"
+                  onClick={() => setAxisOpen((o) => !o)}
+                  aria-expanded={axisOpen}
+                >
+                  <span>{axisOpen ? "▾" : "▸"}</span> X-axis limits
+                </button>
+              </div>
+              {axisOpen && (
+                <div className="calc-axis-body">
+                  <label className="calc-cov">
+                    <span>Min{unit ? ` (${unit})` : ""}</span>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="auto"
+                      value={xMin}
+                      onChange={(e) => setXMin(e.target.value)}
+                    />
+                  </label>
+                  <label className="calc-cov">
+                    <span>Max{unit ? ` (${unit})` : ""}</span>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="auto"
+                      value={xMax}
+                      onChange={(e) => setXMax(e.target.value)}
+                    />
+                  </label>
+                  {(xMin !== "" || xMax !== "") && (
+                    <button
+                      type="button"
+                      className="secondary calc-axis-reset"
+                      onClick={() => { setXMin(""); setXMax(""); }}
+                    >
+                      Reset to auto
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+      </div>
+
+      {hasCov && covModal && (
+        <Modal
+          title="Covariate combinations"
+          onClose={() => setCovModal(false)}
+          footer={
+            <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+              <button onClick={() => setCovModal(false)}>Done</button>
+            </div>
+          }
+        >
+          <p className="hint" style={{ marginTop: 0 }}>
+            Each combination is evaluated by the model and overlaid on the chart.
+            Changes apply live.
+          </p>
+          <div className="calc-cov-modal">
+            <CovariateCombos
+              series={series}
+              covariates={covariates}
+              onUpdate={updateValue}
+              onRemove={removeSeries}
+              onAdd={addSeries}
+              canAdd={series.length < MAX_SERIES}
+            />
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

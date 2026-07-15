@@ -128,6 +128,36 @@ def fit(
     return payload, store_live(model)
 
 
+_DEFAULT_ALPHA = 0.10  # 90% two-stage confidence band by default
+
+
+def _col(a) -> list:
+    return [None if not np.isfinite(v) else float(v) for v in np.asarray(a, dtype=float)]
+
+
+def reliability_curves(model, alpha_ci: float = _DEFAULT_ALPHA) -> dict | None:
+    """Population reliability curve (sf) with SurPyval's two-stage confidence
+    bounds. Returns ``{x, sf, lower, upper, alpha_ci}`` or ``None``."""
+    try:
+        life = model.life_model
+        t_hi = float(life.qf(0.99))
+        if not (np.isfinite(t_hi) and t_hi > 0):
+            return None
+        grid = np.linspace(0.0, t_hi, 200)
+        sf = np.asarray(model.sf(grid), dtype=float)
+        out = {"x": grid.tolist(), "sf": _col(sf), "alpha_ci": float(alpha_ci)}
+        try:
+            cb = np.asarray(model.cb(grid, on="sf", alpha_ci=float(alpha_ci), bound="two-sided"), dtype=float)
+            if cb.ndim == 2 and cb.shape[1] == 2:
+                out["lower"] = _col(cb[:, 0])
+                out["upper"] = _col(cb[:, 1])
+        except Exception:  # pragma: no cover - bounds are optional
+            pass
+        return out
+    except Exception:  # pragma: no cover - defensive; curves are optional
+        return None
+
+
 def _build_payload(model, distribution_id: str, unit: str, measurement_unit: str) -> dict:
     units_payload = []
     for idx, u in enumerate(model.units):
@@ -170,17 +200,11 @@ def _build_payload(model, distribution_id: str, unit: str, measurement_unit: str
         {"name": n, "value": float(v)}
         for n, v in zip(life.dist.param_names, np.atleast_1d(life.params))
     ]
-    # Reliability curve over a grid to the ~99th percentile for plotting.
+    # Population reliability curve with two-stage confidence bounds.
+    curves = reliability_curves(model)
     try:
-        t_hi = float(life.qf(0.99))
-        t_grid = np.linspace(0.0, t_hi, 200)
-        curves = {
-            "x": t_grid.tolist(),
-            "sf": np.asarray(life.sf(t_grid), dtype=float).tolist(),
-        }
         mean_life = float(life.mean())
-    except Exception:  # pragma: no cover - defensive; curves are optional
-        curves = None
+    except Exception:  # pragma: no cover - defensive
         mean_life = None
 
     payload = {
@@ -214,16 +238,18 @@ def _build_payload(model, distribution_id: str, unit: str, measurement_unit: str
     return _json_safe(payload)
 
 
-def predict_item(model, t, y) -> dict:
+def predict_item(model, t, y, alpha_ci: float = 0.05) -> dict:
     """Predict threshold crossing for one tracked item's measurements.
 
-    Returns a JSON-safe blob for caching on the item document. Never raises for
+    ``alpha_ci`` sets the credible-interval width (0.05 → 95%). Returns a
+    JSON-safe blob for caching on the item document. Never raises for
     prediction problems — degraded results carry ``method: "point"`` (no
     measurement noise → no Bayesian posterior) or ``"error"`` (e.g. too few
     measurements for the path form) so a measurement is never lost.
     """
     t = np.asarray(t, dtype=float)
     y = np.asarray(y, dtype=float)
+    alpha_ci = float(alpha_ci)
     base = {
         "predicted_at": datetime.now(timezone.utc).isoformat(),
         "n_measurements": int(len(t)),
@@ -232,14 +258,14 @@ def predict_item(model, t, y) -> dict:
 
     try:
         pred = model.predict_rul(
-            t, y, alpha_ci=0.05, n_samples=_RUL_SAMPLES, random_state=_RUL_SEED
+            t, y, alpha_ci=alpha_ci, n_samples=_RUL_SAMPLES, random_state=_RUL_SEED
         )
         lo, hi = pred.failure_time_interval
         rlo, rhi = pred.rul_interval
         return _json_safe({
             **base,
             "method": "bayesian",
-            "alpha_ci": 0.05,
+            "alpha_ci": alpha_ci,
             "failure_time": float(pred.failure_time),
             "failure_time_interval": [float(lo), float(hi)],
             "rul": float(pred.rul),

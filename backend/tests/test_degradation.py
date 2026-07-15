@@ -66,6 +66,29 @@ def test_fit_payload_shape_and_json_safety():
     assert degradation.get_live(cache_id) is not None
 
 
+def test_reliability_curves_shape_and_bounds():
+    from backend import degradation
+
+    _, cache_id = degradation.fit(_deg_df(), MAPPING, 8.0, path="linear")
+    live = degradation.get_live(cache_id)
+
+    curves = degradation.reliability_curves(live, alpha_ci=0.10)
+    assert curves is not None
+    json.dumps(curves, allow_nan=False)  # JSON-safe (no NaN/inf)
+    assert curves["alpha_ci"] == 0.10
+    assert len(curves["x"]) == len(curves["sf"]) == 200
+    # sf is a survival curve: monotone non-increasing, within [0, 1].
+    sf = [v for v in curves["sf"] if v is not None]
+    assert all(0.0 <= v <= 1.0001 for v in sf)
+    assert sf == sorted(sf, reverse=True)
+    # Two-stage band brackets the point curve where all three are present.
+    if "lower" in curves and "upper" in curves:
+        for lo, s, hi in zip(curves["lower"], curves["sf"], curves["upper"]):
+            if None in (lo, s, hi):
+                continue
+            assert lo <= s + 1e-9 and s <= hi + 1e-9
+
+
 def test_fit_errors():
     from backend import degradation
     from backend.fitting import FitError
@@ -181,6 +204,20 @@ def test_api_flow_and_caps(monkeypatch):
                         files={"file": ("wear.csv", _deg_csv(), "text/csv")})
         assert r.status_code == 200, r.text
         model_id = r.json()["id"]
+
+        # Reliability endpoint: refits on demand, honours the confidence level.
+        rc = client.get(f"/api/degradation/models/{model_id}/reliability?confidence=0.80")
+        assert rc.status_code == 200, rc.text
+        curves = rc.json()
+        assert curves["alpha_ci"] == pytest.approx(0.20)
+        assert len(curves["x"]) == len(curves["sf"]) == 200
+        assert client.get(
+            f"/api/degradation/models/{model_id}/reliability?confidence=1.5"
+        ).status_code == 422
+        assert client.get(
+            "/api/degradation/models/does-not-exist/reliability"
+        ).status_code == 404
+
         r2 = client.post("/api/degradation/models", data={**form, "name": "Wear 2"},
                          files={"file": ("wear2.csv", _deg_csv(5), "text/csv")})
         assert r2.status_code == 402 and r2.json()["code"] == "cap"

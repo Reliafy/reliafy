@@ -134,6 +134,18 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand }) {
       prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]
     );
 
+  // Columns already claimed by a survival field (x/xl/xr/c/n/tl/tr) can't also
+  // be covariates. Disable them in the picker and drop any that got mapped.
+  const mappedColumns = useMemo(
+    () => new Set(Object.values(mapping).filter(Boolean)),
+    [mapping]
+  );
+  useEffect(() => {
+    setCovariates((prev) =>
+      prev.some((c) => mappedColumns.has(c)) ? prev.filter((c) => !mappedColumns.has(c)) : prev
+    );
+  }, [mappedColumns]);
+
   // Use 'x' alone, or both interval bounds 'xl'/'xr' — never together.
   const mappingValid = mapping.x
     ? !mapping.xl && !mapping.xr
@@ -336,6 +348,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand }) {
             onSetAdvanced={setAdvanced}
             formula={formula}
             onSetFormula={setFormula}
+            disabledColumns={mappedColumns}
           />
           {!mappingValid && (
             <p className="hint">
@@ -350,7 +363,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand }) {
         <div className="fit-step">
           <p className="muted-line">
             {hasCovariates
-              ? "Covariates detected — choose a proportional-hazards model."
+              ? "Covariates detected — choose a regression model (proportional-hazards or accelerated-failure-time)."
               : "Choose a parametric distribution or a non-parametric estimator."}
           </p>
           <DistributionStep

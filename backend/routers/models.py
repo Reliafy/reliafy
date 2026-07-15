@@ -444,6 +444,8 @@ def delete_model(
 def evaluate_model(
     model_id: str,
     values: dict = Body(default={}),
+    x_min: float | None = None,
+    x_max: float | None = None,
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -453,7 +455,8 @@ def evaluate_model(
     try:
         return JSONResponse(
             content=models_service.evaluate(
-                session, model_id, values, [*ctx.read_owners, model.owner_id]
+                session, model_id, values, [*ctx.read_owners, model.owner_id],
+                x_min=x_min, x_max=x_max,
             )
         )
     except models_service.ModelNotFound:
@@ -466,6 +469,8 @@ def evaluate_model(
 def confidence_model(
     model_id: str,
     params: dict = Body(default={}),
+    x_min: float | None = None,
+    x_max: float | None = None,
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -477,7 +482,8 @@ def confidence_model(
     try:
         return JSONResponse(
             content=models_service.confidence(
-                session, model_id, params, [*ctx.read_owners, model.owner_id]
+                session, model_id, params, [*ctx.read_owners, model.owner_id],
+                x_min=x_min, x_max=x_max,
             )
         )
     except models_service.ModelNotFound:

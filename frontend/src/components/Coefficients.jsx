@@ -1,30 +1,25 @@
-// Regression coefficients table for proportional-hazards models. The hazard
-// ratio exp(β) > 1 means the covariate increases hazard (shorter life).
+// Regression coefficients for proportional-hazards / accelerated-failure-time
+// models, in the same card format as the other tabs. exp(β) is a hazard ratio
+// (PH) or a time ratio (AFT) — ``ratioLabel`` says which.
 const fmt = (v) =>
   Math.abs(v) >= 1e-4 || v === 0 ? v.toFixed(4) : v.toExponential(3);
 
-export default function Coefficients({ coefficients }) {
+export default function Coefficients({ coefficients, ratioLabel = "hazard ratio" }) {
   if (!coefficients || coefficients.length === 0) {
     return <p className="muted-line">This model has no covariate coefficients.</p>;
   }
   return (
-    <table className="coef-table">
-      <thead>
-        <tr>
-          <th>Covariate</th>
-          <th>Coefficient (β)</th>
-          <th>Hazard ratio (e^β)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {coefficients.map((c) => (
-          <tr key={c.name}>
-            <td className="coef-name">{c.name}</td>
-            <td>{fmt(c.value)}</td>
-            <td>{fmt(c.hazard_ratio)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="gof-metrics-card">
+      <div className="gofh">Coefficients</div>
+      {coefficients.map((c) => (
+        <div className="gofr" key={c.name}>
+          <span className="gk">{c.name}</span>
+          <span className="gv-col">
+            <span className="gv">β = {fmt(c.value)}</span>
+            <span className="param-ci">{ratioLabel} e^β = {fmt(c.ratio ?? c.hazard_ratio)}</span>
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }

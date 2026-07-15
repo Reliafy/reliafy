@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal.jsx";
 import ColumnMapper from "./ColumnMapper.jsx";
 import Covariates from "./Covariates.jsx";
@@ -45,6 +45,17 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
 
   const toggleCovariate = (col) =>
     setCovariates((prev) => (prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]));
+
+  // Columns mapped to a survival field can't also be covariates.
+  const mappedColumns = useMemo(
+    () => new Set(Object.values(mapping).filter(Boolean)),
+    [mapping]
+  );
+  useEffect(() => {
+    setCovariates((prev) =>
+      prev.some((c) => mappedColumns.has(c)) ? prev.filter((c) => !mappedColumns.has(c)) : prev
+    );
+  }, [mappedColumns]);
 
   const onRefit = async () => {
     setLoading(true);
@@ -97,6 +108,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
             onSetAdvanced={setAdvanced}
             formula={formula}
             onSetFormula={setFormula}
+            disabledColumns={mappedColumns}
           />
           <div style={{ marginTop: "0.9rem" }}>
             <DistributionStep

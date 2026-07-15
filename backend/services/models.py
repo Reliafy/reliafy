@@ -316,13 +316,15 @@ def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
     return cache_id
 
 
-def evaluate(db, model_id: str, values: dict, owner_id: str) -> dict:
+def evaluate(db, model_id: str, values: dict, owner_id: str, x_min=None, x_max=None) -> dict:
     """Evaluate the model's functions at covariate ``values``, re-fitting if the
-    live model isn't cached."""
-    return fitting.evaluate(_live_cache_id(db, model_id, owner_id), values)
+    live model isn't cached. ``x_min``/``x_max`` recompute over a custom grid."""
+    return fitting.evaluate(
+        _live_cache_id(db, model_id, owner_id), values, x_min=x_min, x_max=x_max
+    )
 
 
-def confidence(db, model_id: str, params: dict, owner_id: str) -> dict:
+def confidence(db, model_id: str, params: dict, owner_id: str, x_min=None, x_max=None) -> dict:
     """Confidence bounds of a saved model's function (configurable level /
     bound), re-fitting on demand if the live model isn't cached."""
     return fitting.confidence_bounds(
@@ -330,6 +332,8 @@ def confidence(db, model_id: str, params: dict, owner_id: str) -> dict:
         on=params.get("on", "sf"),
         alpha_ci=float(params.get("alpha_ci", 0.05)),
         bound=params.get("bound", "two-sided"),
+        x_min=x_min,
+        x_max=x_max,
     )
 
 

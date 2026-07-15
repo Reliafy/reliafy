@@ -1,5 +1,6 @@
 """Fleet failure forecasting: math, CRUD, caps, isolation, sample."""
 
+import json
 import math
 
 import matplotlib
@@ -299,6 +300,46 @@ def test_tracked_fleets_many_per_model(client):
     assert client.delete(f"/api/fleet/tracked/{f1['id']}").status_code == 200
     assert client.db.tracked_items.count_documents({"fleet_id": f1["id"]}) == 0
     assert client.db.tracked_items.count_documents({"fleet_id": f2["id"]}) == 1
+
+
+def test_item_prediction_at_confidence(client):
+    client.act_as(A)
+    rows = []
+    rng = np.random.default_rng(11)
+    for i in range(6):
+        slope = 0.004 + rng.normal(0, 0.0004)
+        for t in (200, 800, 1400, 2000):
+            rows.append({"i": f"u{i}", "x": t, "y": round(slope * t + rng.normal(0, 0.04), 3)})
+    buf = io.StringIO(); pd.DataFrame(rows).to_csv(buf, index=False)
+    dm = client.post("/api/degradation/models", data={
+        "name": "D", "i": "i", "x": "x", "y": "y", "threshold": "8", "unit": "h",
+    }, files={"file": ("d.csv", buf.getvalue().encode(), "text/csv")}).json()
+    fleet = client.post("/api/fleet/tracked", json={"name": "Fleet", "model_id": dm["id"]}).json()
+    item = client.post(f"/api/degradation/models/{dm['id']}/items",
+                       json={"name": "asset", "fleet_id": fleet["id"],
+                             "measurements": [{"t": 200, "y": 0.9}, {"t": 900, "y": 3.6},
+                                              {"t": 1600, "y": 6.4}]}).json()
+    base = f"/api/degradation/models/{dm['id']}/items/{item['id']}/prediction"
+
+    def width(conf):
+        r = client.get(f"{base}?confidence={conf}")
+        assert r.status_code == 200, r.text
+        p = r.json()
+        json.dumps(p, allow_nan=False)
+        assert p["alpha_ci"] == pytest.approx(1 - conf)
+        lo, hi = p["failure_time_interval"]
+        # Point estimate is confidence-independent; it sits inside the interval.
+        assert lo <= p["failure_time"] <= hi
+        return hi - lo
+
+    # A wider confidence gives a wider crossing interval; the point is stable.
+    assert width(0.95) > width(0.80)
+
+    # Bad inputs.
+    assert client.get(f"{base}?confidence=1.5").status_code == 422
+    assert client.get(
+        f"/api/degradation/models/{dm['id']}/items/nope/prediction"
+    ).status_code == 404
 
 
 def test_orphan_items_adopted_into_fleet(client):

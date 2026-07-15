@@ -2,12 +2,24 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import TrackedItemsPanel, { healthBadge, rulText } from "../components/TrackedItemsPanel.jsx";
 import RulChart from "../components/RulChart.jsx";
+import Select from "../components/Select.jsx";
 import {
   getTrackedFleet,
   renameTrackedFleet,
   deleteTrackedItem,
   addTrackedMeasurement,
+  getItemPrediction,
 } from "../api.js";
+
+const CONFIDENCE_LEVELS = [
+  { value: "0.8", label: "80%" },
+  { value: "0.9", label: "90%" },
+  { value: "0.95", label: "95%" },
+  { value: "0.99", label: "99%" },
+];
+
+const fmt = (v, digits = 0) =>
+  v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: digits });
 
 // One tracked fleet: its items against the fleet's degradation model, each
 // with a live RUL outlook. Several fleets can share one model.
@@ -21,6 +33,11 @@ export default function StrategyTracking() {
   const [my, setMy] = useState("");
   const [adding, setAdding] = useState(false);
   const [measureError, setMeasureError] = useState(null);
+  // Per-item crossing confidence: the level, the recomputed prediction, and
+  // which item it belongs to (so a stale preview never bleeds across items).
+  const [confidence, setConfidence] = useState("0.95");
+  const [preview, setPreview] = useState(null); // { itemId, prediction }
+  const [previewBusy, setPreviewBusy] = useState(false);
 
   const refresh = useCallback(() => {
     if (!fleetId) {
@@ -37,6 +54,25 @@ export default function StrategyTracking() {
       .catch((e) => setError(e.message));
   }, [fleetId, navigate]);
   useEffect(() => { setFleet(null); refresh(); }, [refresh]);
+
+  // Recompute the selected item's crossing prediction at the chosen confidence.
+  // At 95% the stored prediction already applies, so no round-trip is needed.
+  useEffect(() => {
+    const sel = (fleet?.items || []).find((it) => it.id === selectedId) || null;
+    setPreview(null);
+    if (!sel || sel.prediction?.method !== "bayesian") return;
+    if (confidence === "0.95") {
+      setPreview({ itemId: sel.id, prediction: sel.prediction });
+      return;
+    }
+    let cancelled = false;
+    setPreviewBusy(true);
+    getItemPrediction(sel.model_id, sel.id, Number(confidence))
+      .then((p) => { if (!cancelled) setPreview({ itemId: sel.id, prediction: p }); })
+      .catch(() => { if (!cancelled) setPreview(null); })
+      .finally(() => { if (!cancelled) setPreviewBusy(false); });
+    return () => { cancelled = true; };
+  }, [fleet, selectedId, confidence]);
 
   if (error && !fleet) return <div className="app"><div className="card error">{error}</div></div>;
   if (!fleet) return <div className="app"><div className="card empty">Loading…</div></div>;
@@ -89,7 +125,13 @@ export default function StrategyTracking() {
     }
   };
 
-  const badge = selected ? healthBadge(selected.prediction) : null;
+  // The prediction shown for the selected item: the confidence-adjusted preview
+  // when it matches the selection, else the stored (95%) one.
+  const activePred =
+    preview && preview.itemId === selectedId ? preview.prediction : selected?.prediction || null;
+  const badge = selected ? healthBadge(activePred) : null;
+  const confPct = Math.round(Number(confidence) * 100);
+  const [ftLo, ftHi] = activePred?.failure_time_interval || [null, null];
 
   return (
     <div className="app">
@@ -152,7 +194,7 @@ export default function StrategyTracking() {
               {badge && <span className={`health-badge ${badge.cls}`} style={{ marginLeft: 10 }}>{badge.label}</span>}
             </h2>
             <span className="muted-line" style={{ margin: 0 }}>
-              Remaining life: <b>{rulText(selected.prediction, unit)}</b>
+              Remaining life: <b>{rulText(activePred, unit)}</b>
             </span>
           </div>
           {selected.prediction?.method === "error" && (
@@ -161,8 +203,32 @@ export default function StrategyTracking() {
               more measurements below.
             </p>
           )}
+
+          {activePred?.method === "bayesian" && (
+            <>
+              <div className="row" style={{ gap: "0.7rem", alignItems: "center", margin: "1rem 0 0.6rem" }}>
+                <span className="muted-line" style={{ margin: 0 }}>Crossing confidence</span>
+                <div style={{ width: 96 }}>
+                  <Select value={confidence} onChange={setConfidence} options={CONFIDENCE_LEVELS} />
+                </div>
+                {previewBusy && <span className="muted-line" style={{ margin: 0 }}>Computing…</span>}
+              </div>
+              <div className="design-life-readout">
+                Expected crossing at{" "}
+                <strong>{fmt(activePred.failure_time)}{unit ? ` ${unit}` : ""}</strong>.
+                {ftLo != null && ftHi != null && (
+                  <span>
+                    {" "}With <strong>{confPct}%</strong> confidence it crosses between{" "}
+                    <strong>{fmt(ftLo)}</strong> and <strong>{fmt(ftHi)}{unit ? ` ${unit}` : ""}</strong>
+                    {" "}— plan for the earliest, <strong>{fmt(ftLo)}{unit ? ` ${unit}` : ""}</strong>.
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+
           <RulChart
-            item={selected}
+            item={{ ...selected, prediction: activePred }}
             threshold={model?.results?.threshold}
             unit={unit}
             measurementUnit={mUnit}

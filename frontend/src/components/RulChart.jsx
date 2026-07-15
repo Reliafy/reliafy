@@ -9,9 +9,12 @@ export default function RulChart({ item, threshold, unit, measurementUnit }) {
   const xTitle = unit ? `Time (${unit})` : "Time";
   const yTitle = measurementUnit ? `Measurement (${measurementUnit})` : "Measurement";
 
+  // Confidence of the crossing-time interval, from the prediction itself.
+  const ciPct = pred.alpha_ci != null ? Math.round((1 - pred.alpha_ci) * 100) : 95;
+
   const traces = [];
   if (pred.projection?.lo && pred.projection?.hi) {
-    // 95% credible band around the projected path (posterior uncertainty).
+    // Credible band around the projected degradation path (posterior spread).
     traces.push({
       x: [...pred.projection.x, ...[...pred.projection.x].reverse()],
       y: [...pred.projection.hi, ...[...pred.projection.lo].reverse()],
@@ -19,7 +22,7 @@ export default function RulChart({ item, threshold, unit, measurementUnit }) {
       fillcolor: "rgba(47, 109, 246, 0.10)",
       line: { color: "rgba(0,0,0,0)" },
       hoverinfo: "skip",
-      name: "95% credible band",
+      name: "path credible band",
       type: "scatter",
     });
   }
@@ -49,6 +52,11 @@ export default function RulChart({ item, threshold, unit, measurementUnit }) {
       type: "rect", yref: "paper", x0: lo, x1: hi, y0: 0, y1: 1,
       fillcolor: "rgba(47, 109, 246, 0.08)", line: { width: 0 },
     });
+    annotations.push({
+      x: lo, yref: "paper", y: 0, yanchor: "top",
+      text: `${ciPct}% interval`, showarrow: false, xanchor: "left",
+      font: { color: "#6c727c", size: 10 },
+    });
   }
   if (pred.failure_time !== null && pred.failure_time !== undefined) {
     shapes.push({
@@ -57,7 +65,7 @@ export default function RulChart({ item, threshold, unit, measurementUnit }) {
     });
     annotations.push({
       x: pred.failure_time, yref: "paper", y: 1, yanchor: "bottom",
-      text: "predicted crossing", showarrow: false, font: { color: "#2f6df6", size: 10 },
+      text: "expected crossing", showarrow: false, font: { color: "#2f6df6", size: 10 },
     });
   }
 

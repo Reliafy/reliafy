@@ -201,6 +201,45 @@ def test_regression_calculator_and_evaluate():
     with pytest.raises(ModelNotFound):
         evaluate("does-not-exist", {})
 
+    # Custom x-range recomputes the curves over the new limits, keeping the
+    # stored grid's resolution (point count).
+    default_x = evaluate(funcs["model_id"], {"age": 50, "sex": "M"})["curves"]["x"]
+    wide = evaluate(funcs["model_id"], {"age": 50, "sex": "M"}, x_max=default_x[-1] * 2)["curves"]["x"]
+    assert len(wide) == len(default_x)
+    assert wide[0] == 0.0
+    assert abs(wide[-1] - default_x[-1] * 2) < 1e-6
+    zoom = evaluate(funcs["model_id"], {"age": 50, "sex": "M"}, x_min=10, x_max=50)["curves"]["x"]
+    assert abs(zoom[0] - 10) < 1e-6 and abs(zoom[-1] - 50) < 1e-6
+
+
+def test_confidence_bounds_custom_range():
+    from backend.fitting import confidence_bounds
+
+    df = _df("t\n" + "\n".join(str(v) for v in range(10, 210, 10)) + "\n")
+    result = fit("weibull", df, {"x": "t"}, None, None, None)
+    model_id = result["functions"]["model_id"]
+    base = confidence_bounds(model_id, on="sf")["x"]
+    wide = confidence_bounds(model_id, on="sf", x_max=base[-1] * 1.5)["x"]
+    assert len(wide) == len(base)
+    assert abs(wide[-1] - base[-1] * 1.5) < 1e-6
+
+
+@pytest.mark.parametrize("dist_id", ["weibull_aft", "exponential_aft", "lognormal_aft", "gamma_aft"])
+def test_fit_aft_models(dist_id):
+    import json
+
+    df = _covariate_df()
+    result = fit(dist_id, df, {"x": "time", "c": "censored"}, formula="age + sex")
+    json.dumps(result, allow_nan=False)
+    assert result["kind"] == "regression"
+    assert result["effect"] == "aft"
+    assert result["ratio_label"] == "time ratio"
+    assert any(c["name"] == "age" for c in result["coefficients"])
+    # exp(β) exposed as both the generic ratio and the legacy hazard_ratio key.
+    c0 = result["coefficients"][0]
+    assert c0["ratio"] == pytest.approx(c0["hazard_ratio"])
+    assert result["functions"] is not None  # calculator curves available
+
 
 def test_fit_cox_ph_has_coefficients_no_baseline():
     df = _covariate_df()

@@ -47,6 +47,13 @@ from surpyval import (
 from surpyval import ExpoWeibull, Gumbel, Logistic, LogLogistic
 from surpyval import Binomial, FlemingHarrington, KaplanMeier, NelsonAalen, Turnbull
 from surpyval import DiscreteWeibull, Geometric, NegativeBinomial
+from surpyval import (
+    ExponentialAFT,
+    GammaAFT,
+    LogNormalAFT,
+    NormalAFT,
+    WeibullAFT,
+)
 from surpyval.univariate.regression import CoxPH
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
@@ -88,15 +95,22 @@ NONPARAMETRIC = {
     "turnbull": {"name": "Turnbull", "est": Turnbull},
 }
 
-# Proportional-hazards regression models (require covariates). Each is fit with
-# ``fitter.fit_from_df`` using covariate columns or a formula.
+# Regression models (require covariates). Each is fit with ``fitter.fit_from_df``
+# using covariate columns or a formula. ``effect`` is what exp(coefficient)
+# means: "hazard" (hazard ratio, proportional-hazards) or "aft" (time ratio /
+# acceleration factor, accelerated-failure-time).
 REGRESSION_MODELS = {
-    "weibull_ph": {"name": "Weibull PH", "fitter": WeibullPH},
-    "exponential_ph": {"name": "Exponential PH", "fitter": ExponentialPH},
-    "lognormal_ph": {"name": "Lognormal PH", "fitter": LogNormalPH},
-    "normal_ph": {"name": "Normal PH", "fitter": NormalPH},
-    "gamma_ph": {"name": "Gamma PH", "fitter": GammaPH},
-    "cox_ph": {"name": "Cox PH (semi-parametric)", "fitter": CoxPH},
+    "weibull_ph": {"name": "Weibull PH", "fitter": WeibullPH, "effect": "hazard"},
+    "exponential_ph": {"name": "Exponential PH", "fitter": ExponentialPH, "effect": "hazard"},
+    "lognormal_ph": {"name": "Lognormal PH", "fitter": LogNormalPH, "effect": "hazard"},
+    "normal_ph": {"name": "Normal PH", "fitter": NormalPH, "effect": "hazard"},
+    "gamma_ph": {"name": "Gamma PH", "fitter": GammaPH, "effect": "hazard"},
+    "cox_ph": {"name": "Cox PH (semi-parametric)", "fitter": CoxPH, "effect": "hazard"},
+    "weibull_aft": {"name": "Weibull AFT", "fitter": WeibullAFT, "effect": "aft"},
+    "exponential_aft": {"name": "Exponential AFT", "fitter": ExponentialAFT, "effect": "aft"},
+    "lognormal_aft": {"name": "Lognormal AFT", "fitter": LogNormalAFT, "effect": "aft"},
+    "normal_aft": {"name": "Normal AFT", "fitter": NormalAFT, "effect": "aft"},
+    "gamma_aft": {"name": "Gamma AFT", "fitter": GammaAFT, "effect": "aft"},
 }
 
 # Probabilities are clipped away from 0/1 before the y-transform, which would
@@ -923,12 +937,18 @@ def _fit_regression(
         for name, value in zip(base_names, params_arr[:k_dist])
     ]
 
-    # Regression coefficients with hazard ratios exp(beta).
+    # Regression coefficients. exp(coefficient) is a hazard ratio for PH models
+    # and a time ratio (acceleration factor) for AFT models; ``ratio_label`` (in
+    # the payload) tells the UI which. The ``hazard_ratio`` key is kept for
+    # backward compatibility with saved models.
+    effect = entry.get("effect", "hazard")
+    ratio_label = "time ratio" if effect == "aft" else "hazard ratio"
     feature_names = getattr(model, "feature_names", None) or [
         f"b{i}" for i in range(len(params_arr) - k_dist)
     ]
     coefficients = [
-        {"name": name, "value": float(value), "hazard_ratio": float(np.exp(value))}
+        {"name": name, "value": float(value), "ratio": float(np.exp(value)),
+         "hazard_ratio": float(np.exp(value))}
         for name, value in zip(feature_names, params_arr[k_dist:])
     ]
 
@@ -967,6 +987,8 @@ def _fit_regression(
         "distribution": entry["name"],
         "distribution_id": distribution,
         "kind": "regression",
+        "effect": effect,
+        "ratio_label": ratio_label,
         "params": baseline,
         "coefficients": coefficients,
         "n": n,
@@ -1017,12 +1039,29 @@ def _covariate_fields(df: pd.DataFrame, raw_vars) -> list:
     return fields
 
 
-def evaluate(model_id: str, values: dict) -> dict:
-    """Re-evaluate the reliability functions at given covariate ``values``."""
+def _custom_grid(grid, x_min=None, x_max=None) -> np.ndarray:
+    """A grid over ``[x_min, x_max]`` at the stored grid's resolution, so the
+    calculator can recompute the curves out to (or in to) a chosen x-axis limit.
+    A ``None`` bound keeps the stored grid's end; an invalid range is ignored."""
+    g = np.asarray(grid, dtype=float)
+    if x_min is None and x_max is None:
+        return g
+    lo = float(x_min) if x_min is not None else float(g[0])
+    hi = float(x_max) if x_max is not None else float(g[-1])
+    if not (np.isfinite(lo) and np.isfinite(hi)) or hi <= lo:
+        return g
+    n = int(g.size) if g.size >= 2 else 300
+    return np.linspace(lo, hi, n)
+
+
+def evaluate(model_id: str, values: dict, x_min=None, x_max=None) -> dict:
+    """Re-evaluate the reliability functions at given covariate ``values``,
+    optionally over a custom ``[x_min, x_max]`` grid."""
     entry = _MODEL_STORE.get(model_id)
     if entry is None:
         raise ModelNotFound(model_id)
-    model, grid, fields = entry["model"], entry["grid"], entry["fields"]
+    model, fields = entry["model"], entry["fields"]
+    grid = _custom_grid(entry["grid"], x_min, x_max)
 
     row = {}
     for f in fields:
@@ -1055,6 +1094,8 @@ def confidence_bounds(
     on: str = "sf",
     alpha_ci: float = 0.05,
     bound: str = "two-sided",
+    x_min=None,
+    x_max=None,
 ) -> dict:
     """Confidence bounds of a fitted model's ``on`` function over its grid.
 
@@ -1074,7 +1115,8 @@ def confidence_bounds(
     entry = _MODEL_STORE.get(model_id)
     if entry is None:
         raise ModelNotFound(model_id)
-    model, grid = entry["model"], np.asarray(entry["grid"], dtype=float)
+    model = entry["model"]
+    grid = _custom_grid(entry["grid"], x_min, x_max)
     if not hasattr(model, "cb"):
         raise FitError("This model type doesn't provide confidence bounds.")
 

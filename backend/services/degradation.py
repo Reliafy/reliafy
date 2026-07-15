@@ -265,7 +265,8 @@ def refresh_prediction(db, model_id: str, item: TrackedItem, owner_id: str) -> T
     return item
 
 
-def _predict(db, model_id: str, owner_id: str, measurements: list[dict]) -> dict:
+def _predict(db, model_id: str, owner_id: str, measurements: list[dict],
+             alpha_ci: float = 0.05) -> dict:
     """Compute the prediction blob; fit problems become method="error" blobs so
     a measurement append never fails."""
     try:
@@ -279,7 +280,24 @@ def _predict(db, model_id: str, owner_id: str, measurements: list[dict]) -> dict
         }
     t = [m["t"] for m in measurements]
     y = [m["y"] for m in measurements]
-    return degradation_fit.predict_item(live, t, y)
+    return degradation_fit.predict_item(live, t, y, alpha_ci=alpha_ci)
+
+
+def predict_item_at(db, model_id: str, item_id: str, confidence: float,
+                    owner_id: str | list[str]) -> dict:
+    """Recompute one item's crossing prediction at ``confidence`` (view-only —
+    the stored prediction is unchanged). Raises ``ItemNotFound`` for an unknown
+    item; ``FitError`` for a bad confidence."""
+    try:
+        confidence = float(confidence)
+    except (TypeError, ValueError):
+        raise FitError("Confidence must be a number.")
+    if not 0.0 < confidence < 1.0:
+        raise FitError("Confidence must be between 0 and 1 (exclusive).")
+    item = get_item(db, model_id, item_id, owner_id)
+    if item is None:
+        raise ItemNotFound(item_id)
+    return _predict(db, model_id, owner_id, item.measurements, alpha_ci=1.0 - confidence)
 
 
 # ---- Tracked fleets ----------------------------------------------------------

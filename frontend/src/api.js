@@ -180,8 +180,16 @@ export function optimalReplacement(distributionId, params, plannedCost, unplanne
 // Re-evaluate a fitted model's functions at covariate values. ``path`` comes
 // from the result payload (functions.evaluate_path) and differs for unsaved
 // (in-memory) vs saved (re-fit) models.
-export function evaluateAt(path, values) {
-  return request(path, {
+// Optional { xMin, xMax } recompute the curves over a custom x-axis range.
+function rangeQuery({ xMin, xMax } = {}) {
+  const q = [];
+  if (xMin != null) q.push(`x_min=${xMin}`);
+  if (xMax != null) q.push(`x_max=${xMax}`);
+  return q.length ? `?${q.join("&")}` : "";
+}
+
+export function evaluateAt(path, values, range) {
+  return request(path + rangeQuery(range), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(values),
@@ -190,8 +198,8 @@ export function evaluateAt(path, values) {
 
 // Confidence bounds of a fitted model's function. ``path`` comes from the
 // result payload (functions.confidence_path); params are { on, alpha_ci, bound }.
-export function confidenceAt(path, params) {
-  return request(path, {
+export function confidenceAt(path, params, range) {
+  return request(path + rangeQuery(range), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
@@ -479,6 +487,12 @@ export function getDegradationModel(id) {
   return request(`/api/degradation/models/${id}`);
 }
 
+// Population reliability curve (sf) with two-stage confidence bounds at a
+// chosen confidence level. Refits the live model on demand.
+export function degradationReliability(id, confidence) {
+  return request(`/api/degradation/models/${id}/reliability?confidence=${confidence}`);
+}
+
 export function renameDegradationModel(id, name) {
   return request(`/api/degradation/models/${id}`, {
     method: "PATCH",
@@ -515,6 +529,11 @@ export function addTrackedMeasurement(modelId, itemId, t, y) {
 
 export function deleteTrackedItem(modelId, itemId) {
   return request(`/api/degradation/models/${modelId}/items/${itemId}`, { method: "DELETE" });
+}
+
+// Recompute one item's crossing prediction at a chosen confidence (view-only).
+export function getItemPrediction(modelId, itemId, confidence) {
+  return request(`/api/degradation/models/${modelId}/items/${itemId}/prediction?confidence=${confidence}`);
 }
 
 // ---- Strategy: failure finding + saved analyses ------------------------------

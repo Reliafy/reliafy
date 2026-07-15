@@ -10,7 +10,9 @@ export default function Covariates({
   onSetAdvanced,
   formula,
   onSetFormula,
+  disabledColumns,
 }) {
+  const isMapped = (col) => !!disabledColumns && disabledColumns.has(col);
   return (
     <div className="cov">
       <div className="cov-head">
@@ -26,9 +28,9 @@ export default function Covariates({
       </div>
 
       <p className="cov-hint">
-        Add covariates to fit a proportional-hazards model. Leave empty to fit a
-        plain distribution. For categorical (text) columns, use the advanced
-        formula.
+        Add covariates to fit a regression model (proportional-hazards or
+        accelerated-failure-time). Leave empty to fit a plain distribution. For
+        categorical (text) columns, use the advanced formula.
       </p>
 
       {advanced ? (
@@ -53,19 +55,28 @@ export default function Covariates({
         </div>
       ) : (
         <div className="cov-chips">
-          {columns.map((col) => (
-            <label
-              key={col}
-              className={"cov-chip" + (selected.includes(col) ? " on" : "")}
-            >
-              <input
-                type="checkbox"
-                checked={selected.includes(col)}
-                onChange={() => onToggle(col)}
-              />
-              {col}
-            </label>
-          ))}
+          {columns.map((col) => {
+            const mapped = isMapped(col);
+            return (
+              <label
+                key={col}
+                className={
+                  "cov-chip" +
+                  (selected.includes(col) ? " on" : "") +
+                  (mapped ? " disabled" : "")
+                }
+                title={mapped ? "Already mapped to a survival column (x, c, n, t…)" : undefined}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.includes(col)}
+                  disabled={mapped}
+                  onChange={() => onToggle(col)}
+                />
+                {col}
+              </label>
+            );
+          })}
         </div>
       )}
     </div>

@@ -1068,6 +1068,16 @@ body {
 
 /* Model library */
 /* Stat strip — 4 figures across a hairline-divided card (Instrument). */
+.design-life-readout {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--acc);
+  border-radius: 8px;
+  background: var(--surf);
+  font-size: 0.95rem;
+}
+
 .stats {
   display: flex;
   margin: 24px 0 6px;
@@ -1855,6 +1865,51 @@ button.secondary:hover:not(:disabled) {
   margin-top: 0;
 }
 
+/* Goodness-of-fit tab: same card format as the side-rail cards. */
+.gof-metrics-card {
+  max-width: 420px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surf);
+  overflow: hidden;
+}
+.gof-metrics-card .gofh {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 13px 16px 11px;
+  border-bottom: 1px solid var(--line2);
+}
+.gof-metrics-card .gofr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line2);
+  font-size: 13px;
+}
+.gof-metrics-card .gofr:last-child {
+  border-bottom: none;
+}
+.gof-metrics-card .gk {
+  color: var(--muted);
+}
+.gof-metrics-card .gv {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.gof-metrics-card .gv-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+.gof-metrics-card .gv-col .param-ci {
+  margin-top: 0;
+}
+
 .detail-note {
   background: var(--acc-t);
   border: 1px solid rgba(47, 109, 246, 0.18);
@@ -2271,6 +2326,207 @@ button.secondary:hover:not(:disabled) {
   padding: 0.4rem 0.8rem;
 }
 
+/* Calculator layout: chart + controls on the left, covariate side rail right. */
+.calc-body {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.calc-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.calc-side-rail {
+  flex: 0 0 290px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+}
+.calc-rail-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surf);
+  overflow: hidden;
+}
+.calc-cov-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 13px 16px 11px;
+  border-bottom: 1px solid var(--line2);
+}
+.calc-cov-rail.collapsed .calc-cov-rail-head,
+.calc-axis-card.collapsed .calc-cov-rail-head {
+  border-bottom: none;
+}
+
+.calc-eval-card .gofh {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 13px 16px 11px;
+  border-bottom: 1px solid var(--line2);
+}
+.calc-eval-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 12px 16px 14px;
+}
+/* Function selector spans the card; inputs fill the rail width. */
+.calc-eval-body .seg {
+  display: flex;
+  width: 100%;
+}
+.calc-eval-body .seg-btn {
+  flex: 1;
+  padding: 0.45rem 0.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.calc-eval-body .calc-t {
+  width: 100%;
+}
+.calc-eval-body .calc-t input {
+  width: 100%;
+}
+
+.calc-axis-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 12px 16px 14px;
+}
+.calc-axis-body .calc-cov {
+  width: 100%;
+}
+.calc-axis-body .calc-cov input {
+  width: 100%;
+}
+.calc-axis-reset {
+  align-self: flex-start;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.7rem;
+}
+.cov-rail-toggle {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 400;
+  color: var(--faint);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.cov-rail-toggle:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
+.cov-rail-expand {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: none;
+  color: var(--muted);
+  padding: 0.15rem 0.4rem;
+  line-height: 1;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.cov-rail-expand:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--line);
+}
+/* Baseline parameters card at the top of the rail (PH models). */
+.calc-rail-params .gofh {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 13px 16px 11px;
+  border-bottom: 1px solid var(--line2);
+}
+.calc-rail-params .gofr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line2);
+  font-size: 13px;
+}
+.calc-rail-params .gofr:last-child {
+  border-bottom: none;
+}
+.calc-rail-params .gk {
+  color: var(--muted);
+}
+.calc-rail-params .gv {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.calc-rail-params .gv-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+.calc-rail-params .gv-col .param-ci {
+  margin-top: 0;
+}
+
+.calc-cov-rail-body {
+  padding: 4px 16px 14px;
+}
+/* Narrow rail: stack each combination's covariate fields vertically. */
+.calc-cov-rail-body .combo-row {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.calc-cov-rail-body .combo-dot {
+  margin-top: 0.35rem;
+  margin-bottom: 0;
+}
+.calc-cov-rail-body .calc-cov-fields {
+  flex: 1;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+.calc-cov-rail-body .calc-cov {
+  width: 100%;
+}
+.calc-cov-rail-body .calc-cov input,
+.calc-cov-rail-body .calc-cov .select-wrap select {
+  width: 100%;
+}
+
+/* Stack the rail under the chart on narrow viewports. */
+@media (max-width: 900px) {
+  .calc-body {
+    flex-direction: column;
+  }
+  .calc-side-rail {
+    width: 100%;
+    flex-basis: auto;
+    align-self: stretch;
+  }
+}
+
 /* Multi-series at-t table */
 .calc-table {
   border-collapse: collapse;
@@ -2518,6 +2774,17 @@ button.secondary:hover:not(:disabled) {
   background: rgba(47, 109, 246, 0.08);
   color: var(--accent-strong);
   font-weight: 600;
+}
+
+.cov-chip.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cov-chip.disabled:hover {
+  border-color: var(--border);
+}
+.cov-chip.disabled input {
+  cursor: not-allowed;
 }
 
 .cov-formula input {

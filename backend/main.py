@@ -172,7 +172,8 @@ def distributions_endpoint() -> dict:
         for key, entry in NONPARAMETRIC.items()
     ]
     regression = [
-        {"id": key, "name": entry["name"], "covariates": True, "params": []}
+        {"id": key, "name": entry["name"], "covariates": True, "params": [],
+         "effect": entry.get("effect")}
         for key, entry in REGRESSION_MODELS.items()
     ]
     return {"distributions": plain + discrete + nonparametric + regression}
