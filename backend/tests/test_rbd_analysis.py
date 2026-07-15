@@ -422,3 +422,49 @@ def test_conditional_survival_matches_ratio():
     assert res["conditional_age"] == s
     # Mean residual life at s is shorter than the unconditional MTTF here.
     assert res["mttf"] < analyze(graph, t_max=100)["mttf"]
+
+
+def test_pinned_working_and_failed_override_the_model():
+    """A node pinned working/failed (manual what-if) contributes as perfectly
+    reliable / unreliable regardless of its life model."""
+    import json
+
+    io = _io_nodes()
+
+    def pinned(comp, state):
+        return {**comp, "data": {**comp["data"], "state": state}}
+
+    c1 = _component("c1", "Pump", "weibull", [("alpha", 100), ("beta", 2)])
+    c2 = _component("c2", "Valve", "exponential", [("failure_rate", 0.01)])
+
+    # Series with c2 pinned failed -> the system is always failed.
+    g = {
+        "unit": "Hours",
+        "nodes": io + [c1, pinned(c2, "failed")],
+        "edges": [_edge("input", "c1"), _edge("c1", "c2"), _edge("c2", "output")],
+    }
+    r = analyze(g)
+    json.dumps(r, allow_nan=False)  # forced 0/1 must not leak NaN/inf
+    assert max(r["system"]["sf"]) == pytest.approx(0.0, abs=1e-9)
+
+    # Parallel with c2 pinned working -> the system is always working.
+    g2 = {
+        "unit": "Hours",
+        "nodes": io + [c1, pinned(c2, "working")],
+        "edges": [
+            _edge("input", "c1"), _edge("input", "c2"),
+            _edge("c1", "output"), _edge("c2", "output"),
+        ],
+    }
+    r2 = analyze(g2)
+    assert min(r2["system"]["sf"]) == pytest.approx(1.0, abs=1e-9)
+
+    # A pinned node needs no life model of its own.
+    nomodel = {"id": "c3", "type": "component", "data": {"label": "spare", "state": "working"}}
+    g3 = {
+        "unit": "Hours",
+        "nodes": io + [nomodel],
+        "edges": [_edge("input", "c3"), _edge("c3", "output")],
+    }
+    r3 = analyze(g3)
+    assert min(r3["system"]["sf"]) == pytest.approx(1.0, abs=1e-9)

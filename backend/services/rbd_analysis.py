@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS
-from repyability.rbd.helper_classes import PerfectReliability
+from repyability.rbd.helper_classes import PerfectReliability, PerfectUnreliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 from repyability.rbd.standby_node import StandbyModel
 from repyability.utils.wrappers import conditional_survival
@@ -270,6 +270,14 @@ def _node_reliability(
     data = node.get("data") or {}
     label = data.get("label") or node.get("id")
     cov_values = (covariates or {}).get(node.get("id"))
+
+    # Manual what-if override: a node pinned "working" / "failed" ignores its
+    # life model and contributes as perfectly reliable / perfectly unreliable.
+    state = data.get("state")
+    if state == "working":
+        return PerfectReliability, None
+    if state == "failed":
+        return PerfectUnreliability, None
 
     if ntype == "component":
         model = _build_distribution(data.get("model"), label, resolve_model, cov_values)
