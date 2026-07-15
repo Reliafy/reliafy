@@ -23,7 +23,13 @@ import os
 import urllib.error
 import urllib.request
 
-__all__ = ["configure", "push", "push_params", "ReliafyError"]
+__all__ = [
+    "configure", "push", "push_params",
+    "list_models", "get_model", "reliability",
+    "upload_dataset", "fit",
+    "fleet_forecast", "optimal_replacement", "failure_finding",
+    "ReliafyError",
+]
 
 _DEFAULT_BASE = "https://reliafy.com"
 
@@ -105,23 +111,24 @@ def _extract(model, include_data: bool):
     return body
 
 
-def _post(payload: dict) -> dict:
+def _request(method: str, path: str, payload: dict | None = None) -> dict:
+    """Call the Reliafy API with the configured token. Pure standard library."""
     token = _config.get("token")
     if not token:
         raise ReliafyError(
             "No API token. Call reliafy.configure(token='rlf_...') or set "
             "RELIAFY_TOKEN. Create a token on the API access page (Pro)."
         )
-    url = _config["base_url"].rstrip("/") + "/api/import/models"
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode(),
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        method="POST",
-    )
+    url = _config["base_url"].rstrip("/") + path
+    headers = {"Authorization": f"Bearer {token}"}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode()
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read())
+            return json.loads(resp.read())
     except urllib.error.HTTPError as exc:
         try:
             detail = json.loads(exc.read()).get("detail", exc.reason)
@@ -130,7 +137,10 @@ def _post(payload: dict) -> dict:
         raise ReliafyError(f"Reliafy returned {exc.code}: {detail}") from None
     except urllib.error.URLError as exc:
         raise ReliafyError(f"Couldn't reach Reliafy at {url}: {exc.reason}") from None
-    return result
+
+
+def _post(payload: dict) -> dict:
+    return _request("POST", "/api/import/models", payload)
 
 
 def push(model, name: str, *, data: bool = True, unit: str | None = None) -> str:
@@ -171,3 +181,86 @@ def push_params(distribution: str, params, name: str, *, unit: str | None = None
         body["extras"] = {k: float(v) for k, v in extras.items()}
     result = _post(body)
     return _config["base_url"].rstrip("/") + result["url"]
+
+
+# ---- read models & reliability --------------------------------------------
+
+def list_models() -> list:
+    """Your saved models: ``[{id, name, distribution, kind, n, unit, url}, …]``."""
+    return _request("GET", "/api/v1/models").get("models", [])
+
+
+def get_model(model_id: str) -> dict:
+    """One model's fit: parameters (with CIs), life metrics, goodness-of-fit."""
+    return _request("GET", f"/api/v1/models/{model_id}")
+
+
+def reliability(model_id: str, t=None, covariates: dict | None = None) -> dict:
+    """Evaluate a model's reliability functions.
+
+    With ``t`` you get R/F/hazard/etc. at that time (under ``"at"``); without
+    it, the whole function grid (under ``"curves"``). ``covariates`` targets a
+    proportional-hazards model at a given combination.
+    """
+    body = {}
+    if t is not None:
+        body["t"] = t
+    if covariates:
+        body["covariates"] = covariates
+    return _request("POST", f"/api/v1/models/{model_id}/reliability", body)
+
+
+# ---- datasets & fitting ----------------------------------------------------
+
+def upload_dataset(name: str, *, csv: str | None = None, data: dict | None = None) -> dict:
+    """Create a dataset from CSV text (``csv=``) or column arrays (``data=``)."""
+    body = {"name": name}
+    if csv is not None:
+        body["csv"] = csv
+    elif data is not None:
+        body["data"] = data
+    else:
+        raise ReliafyError("Provide csv= text or data= arrays.")
+    return _request("POST", "/api/v1/datasets", body)
+
+
+def fit(dataset_id: str, distribution: str, name: str, *, mapping: dict | None = None,
+        unit: str | None = None, covariates=None, formula: str | None = None) -> dict:
+    """Fit and save a model from one of your datasets. Returns the model.
+
+    ``mapping`` maps roles to columns, e.g. ``{"x": "hours", "c": "failed"}``.
+    """
+    body = {"name": name, "dataset_id": dataset_id, "distribution": distribution,
+            "mapping": mapping or {}}
+    if unit:
+        body["unit"] = unit
+    if covariates:
+        body["covariates"] = covariates
+    if formula:
+        body["formula"] = formula
+    return _request("POST", "/api/v1/fit", body)
+
+
+# ---- fleet & strategy ------------------------------------------------------
+
+def fleet_forecast(fleet_id: str) -> dict:
+    """The live failure forecast for one of your fleets."""
+    return _request("GET", f"/api/v1/fleets/{fleet_id}/forecast")
+
+
+def optimal_replacement(distribution: str, params, planned_cost: float,
+                        unplanned_cost: float, *, unit: str | None = None) -> dict:
+    """Cost-optimal preventive-replacement interval from a distribution + params."""
+    return _request("POST", "/api/v1/strategy/optimal-replacement", {
+        "distribution_id": distribution, "params": list(params),
+        "planned_cost": planned_cost, "unplanned_cost": unplanned_cost, "unit": unit,
+    })
+
+
+def failure_finding(distribution: str, params, target_availability: float,
+                    *, unit: str | None = None) -> dict:
+    """Failure-finding inspection interval for a hidden (protective) function."""
+    return _request("POST", "/api/v1/strategy/failure-finding", {
+        "distribution_id": distribution, "params": list(params),
+        "target_availability": target_availability, "unit": unit,
+    })

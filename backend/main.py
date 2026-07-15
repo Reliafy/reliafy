@@ -50,6 +50,7 @@ from backend.routers import admin as admin_router
 from backend.routers import fleet as fleet_router
 from backend.routers import public as public_router
 from backend.routers import ingest as ingest_router
+from backend.routers import public_api as public_api_router
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
@@ -82,6 +83,7 @@ app.include_router(admin_router.router)
 app.include_router(fleet_router.router)
 app.include_router(public_router.router)
 app.include_router(ingest_router.router)
+app.include_router(public_api_router.router)
 
 # ---------------------------------------------------------------------------
 # API routes

@@ -35,63 +35,67 @@ function ClientDocs({ base }) {
   return (
     <div className="api-section">
       <p className="muted-line">
-        <code>reliafy-client</code> turns a fit you did in a notebook into a
-        Reliafy model with one call — you keep the full probability plot and
-        confidence bounds, and it stays editable, citable as RCM evidence, and
-        usable in RBDs and fleet forecasts. Pure standard library; you bring{" "}
-        <a className="evidence-link" href="https://github.com/derrynknife/SurPyval" target="_blank" rel="noreferrer">SurPyval</a>{" "}
-        to do the fit.
+        <code>reliafy-client</code> is a thin Python wrapper over the HTTP API —
+        push SurPyval fits, create datasets, fit models, read reliability, and
+        run the strategy calculators, all from a notebook or script. Pure
+        standard library; you bring{" "}
+        <a className="evidence-link" href="https://github.com/derrynknife/SurPyval" target="_blank" rel="noreferrer">SurPyval</a>.
       </p>
 
-      <h3>Install</h3>
-      <Code>{`pip install reliafy-client   # installed as reliafy-client, imported as \`reliafy\``}</Code>
+      <h3>Install &amp; authenticate</h3>
+      <Code>{`pip install reliafy-client        # installed as reliafy-client, imported as \`reliafy\`
 
-      <h3>Authenticate</h3>
+import reliafy
+reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-hosted`}</Code>
       <p className="muted-line">
-        Create a personal token under <b>Settings → API access</b> (Pro on
-        Reliafy Cloud). Configure it once per session, or set{" "}
-        <code>RELIAFY_TOKEN</code> in the environment.
+        Create a token under <b>Settings → API access</b> (Pro on Reliafy Cloud).
       </p>
-      <Code>{`import reliafy
-
-reliafy.configure(token="rlf_...")
-# self-hosted instance:
-reliafy.configure(token="rlf_...", base_url="${base}")`}</Code>
 
       <h3>Push a fitted model</h3>
       <p className="muted-line">
-        <code>push(model, name, *, data=True, unit=None)</code> uploads a fitted
-        SurPyval model and returns the URL to open it. With{" "}
-        <code>data=True</code> (default) the fitted observations go up too, so
-        Reliafy shows the probability plot and the model stays refittable;{" "}
-        <code>data=False</code> uploads parameters only. Offset / limited-failure
-        -population / zero-inflated fits are detected and reproduced.
+        <code>push(model, name, *, data=True, unit=None)</code> uploads a SurPyval
+        model and returns its URL. <code>data=True</code> (default) sends the
+        fitted observations too, so Reliafy shows the probability plot and the
+        model stays refittable; <code>data=False</code> is parameters only.
+        Offset / LFP / zero-inflated fits are detected and reproduced.
       </p>
-      <Code>{`import surpyval as sp
-import reliafy
-
+      <Code>{`import surpyval as sp, reliafy
 model = sp.Weibull.fit(x=failures, c=censoring_flags)
+url = reliafy.push(model, name="Pump bearings — 2026", unit="hours")
 
-reliafy.configure(token="rlf_...")
-url = reliafy.push(model, name="Pump bearings — 2026 refit", unit="hours")
-print(url)                       # open it in Reliafy
+# no SurPyval object — just numbers:
+reliafy.push_params("weibull", [1200.0, 2.3], name="Handbook value", unit="hours")`}</Code>
 
-reliafy.push(model, name="From a report", data=False)   # params only, no plot`}</Code>
+      <h3>Read your models &amp; reliability</h3>
+      <Code>{`reliafy.list_models()                       # [{id, name, distribution, ...}, ...]
+m = reliafy.get_model(model_id)             # params (+CIs), metrics, goodness-of-fit
 
-      <h3>Push from parameters</h3>
-      <p className="muted-line">
-        No SurPyval object — just a distribution id and its parameter values.{" "}
-        <code>extras</code> carries <code>gamma</code> / <code>p</code> /{" "}
-        <code>f0</code> for offset / LFP / zero-inflated models.
-      </p>
-      <Code>{`reliafy.push_params("weibull", [1200.0, 2.3], name="Handbook value", unit="hours")
-reliafy.push_params("weibull", [1200.0, 2.3], name="With offset", extras={"gamma": 50})`}</Code>
+r = reliafy.reliability(model_id, t=1000)   # {"at": {reliability, failure, hazard, ...}}
+print(r["at"]["reliability"])               # R(1000)
+
+# proportional-hazards model at a covariate combination:
+reliafy.reliability(model_id, t=1000, covariates={"temp_C": 90, "load": 0.8})`}</Code>
+
+      <h3>Create a dataset &amp; fit</h3>
+      <Code>{`ds = reliafy.upload_dataset("Bearings", csv="hours,failed\\n120,1\\n340,0\\n510,1")
+#   or:  reliafy.upload_dataset("Bearings", data={"hours": [...], "failed": [...]})
+
+model = reliafy.fit(ds["id"], "weibull", "Bearing life",
+                    mapping={"x": "hours", "c": "failed"}, unit="hours")
+print(model["url"])`}</Code>
+
+      <h3>Fleet &amp; strategy</h3>
+      <Code>{`reliafy.fleet_forecast(fleet_id)            # expected failures per period
+
+reliafy.optimal_replacement("weibull", [1435, 2.5],
+                            planned_cost=200, unplanned_cost=1500, unit="hours")
+reliafy.failure_finding("exponential", [1/8760], target_availability=0.99, unit="hours")`}</Code>
 
       <h3>Notes</h3>
       <ul className="api-list">
-        <li>Supported distributions: Weibull, Exponential, Normal, LogNormal, Gamma, LogLogistic, Exponentiated Weibull, Gumbel, Logistic.</li>
-        <li>Errors raise <code>reliafy.ReliafyError</code> (missing token, unreachable host, unsupported distribution, or a server 4xx with its message).</li>
-        <li>Under the hood <code>push</code>/<code>push_params</code> call the <code>POST /api/import/models</code> endpoint on the HTTP API tab.</li>
+        <li>Supported distributions for <code>push</code>: Weibull, Exponential, Normal, LogNormal, Gamma, LogLogistic, Exponentiated Weibull, Gumbel, Logistic.</li>
+        <li>Errors raise <code>reliafy.ReliafyError</code> (missing token, unreachable host, or a server 4xx with its message).</li>
+        <li>Every call maps to an endpoint on the HTTP API tab; reads and writes are scoped to your own data.</li>
       </ul>
     </div>
   );
@@ -102,108 +106,151 @@ function HttpDocs({ base }) {
   return (
     <div className="api-section">
       <p className="muted-line">
-        Raw endpoints for scripts, cron jobs and CMMS integrations — push meter
-        readings, degradation measurements and new failure data straight into
-        your Reliafy artifacts. (The <code>reliafy-client</code> package wraps
-        the model-import endpoint below.)
+        Token-authed endpoints scoped to your own data — read models and
+        reliability, create datasets and fit, read fleet forecasts, run strategy
+        calculators, and push operational data. The <code>reliafy-client</code>{" "}
+        package wraps these.
       </p>
 
       <h3>Authentication</h3>
       <p className="muted-line">
         A personal token (<code>rlf_…</code>) from <b>Settings → API access</b>,
-        sent as a bearer header. Tokens are <b>write-only</b> — they work on the{" "}
-        <code>/api/ingest</code> and <code>/api/import</code> endpoints and
-        nothing else.
+        sent as a bearer header. Tokens read and write <b>your own</b> data —
+        they can't touch the account, billing, tokens, or team artifacts.
       </p>
       <Code>{`-H "Authorization: Bearer rlf_your_token_here"`}</Code>
 
       <h3>Conventions</h3>
       <ul className="api-list">
-        <li><b>Body</b>: JSON or a raw CSV (exactly what a CMMS exports) — set <code>Content-Type</code> to <code>application/json</code> or <code>text/csv</code>.</li>
-        <li><b>Matching</b>: items match by <code>id</code>, else case-insensitive <code>name</code>.</li>
-        <li><b>Atomic</b>: one bad row means a <code>422</code> and no changes applied.</li>
-        <li><b>Limits</b>: 120 requests / minute, 5,000 rows / request.</li>
+        <li><b>Bodies</b> are JSON; the data-push endpoints also accept raw CSV (<code>Content-Type: text/csv</code>) as a CMMS exports it.</li>
+        <li><b>Scope</b>: reads see your models/datasets/fleets (plus shared samples); writes create under your account.</li>
+        <li><b>Errors</b>: a bad request is a <code>422</code> with a message; unknown/foreign ids are <code>404</code>.</li>
+        <li><b>Limits</b>: 120 requests / minute per user.</li>
       </ul>
 
-      <h3>Endpoints</h3>
+      <h3>Models &amp; reliability</h3>
+      <Endpoint method="GET" path="/api/v1/models">
+        <p className="muted-line">List your saved models.</p>
+      </Endpoint>
+      <Endpoint method="GET" path="/api/v1/models/{id}">
+        <p className="muted-line">
+          A model's fit: <code>params</code> (with 95% CIs),{" "}
+          <code>coefficients</code> (PH), <code>metrics</code>, <code>gof</code>.
+        </p>
+      </Endpoint>
+      <Endpoint method="POST" path="/api/v1/models/{id}/reliability">
+        <p className="muted-line">
+          Evaluate reliability. Body: optional <code>t</code>, and{" "}
+          <code>covariates</code> for a PH model. With <code>t</code> you get{" "}
+          <code>{`{ at: { reliability, failure, hazard, cumulative_hazard, density } }`}</code>;
+          without it, the full function grid.
+        </p>
+        <Code>{`curl -X POST ${base}/api/v1/models/MODEL_ID/reliability \\
+  -H "Authorization: Bearer rlf_..." -H "Content-Type: application/json" \\
+  -d '{"t": 1000}'`}</Code>
+      </Endpoint>
 
+      <h3>Datasets &amp; fitting</h3>
+      <Endpoint method="POST" path="/api/v1/datasets">
+        <p className="muted-line">
+          Create a dataset. Body: <code>name</code> plus <code>csv</code> (text)
+          or <code>data</code> (column arrays). Returns{" "}
+          <code>{`{ id, n_rows, columns, url }`}</code>.
+        </p>
+        <Code>{`curl -X POST ${base}/api/v1/datasets \\
+  -H "Authorization: Bearer rlf_..." -H "Content-Type: application/json" \\
+  -d '{"name": "Bearings", "csv": "hours,failed\\n120,1\\n340,0"}'`}</Code>
+      </Endpoint>
+      <Endpoint method="POST" path="/api/v1/fit">
+        <p className="muted-line">
+          Fit and save a model from a dataset. Body: <code>name</code>,{" "}
+          <code>dataset_id</code>, <code>distribution</code>,{" "}
+          <code>mapping</code>, optional <code>unit</code> /{" "}
+          <code>covariates</code> / <code>formula</code>.
+        </p>
+        <Code>{`curl -X POST ${base}/api/v1/fit \\
+  -H "Authorization: Bearer rlf_..." -H "Content-Type: application/json" \\
+  -d '{"name": "Bearing life", "dataset_id": "DS_ID", "distribution": "weibull",
+       "mapping": {"x": "hours", "c": "failed"}, "unit": "hours"}'`}</Code>
+      </Endpoint>
+
+      <h3>Fleet forecasts</h3>
+      <Endpoint method="GET" path="/api/v1/fleets/{id}/forecast">
+        <p className="muted-line">
+          The live forecast — expected failures per period, spares demand. Id is
+          in <code>/fleet/forecasts/&lt;id&gt;</code>.
+        </p>
+      </Endpoint>
+
+      <h3>Strategy calculators</h3>
+      <Endpoint method="POST" path="/api/v1/strategy/optimal-replacement">
+        <p className="muted-line">
+          Body: <code>distribution_id</code>, <code>params</code>,{" "}
+          <code>planned_cost</code>, <code>unplanned_cost</code>, optional{" "}
+          <code>unit</code>. Returns the optimal interval and cost rate.
+        </p>
+      </Endpoint>
+      <Endpoint method="POST" path="/api/v1/strategy/failure-finding">
+        <p className="muted-line">
+          Body: <code>distribution_id</code>, <code>params</code>,{" "}
+          <code>target_availability</code>, optional <code>unit</code>.
+        </p>
+      </Endpoint>
+
+      <h3>Push operational data (ingest)</h3>
+      <p className="muted-line">
+        Append data to existing artifacts from cron jobs / CMMS exports — JSON or
+        raw CSV, idempotent, atomic (a bad row is a 422 with no changes).
+      </p>
       <Endpoint method="POST" path="/api/ingest/fleets/{fleet_id}/usage">
         <p className="muted-line">
-          Update forecast items' current use (and optional rate), then recompute
-          the forecast. The id is in the fleet's URL{" "}
-          <code>/fleet/forecasts/&lt;id&gt;</code>. Columns:{" "}
-          <code>name</code> (or <code>id</code>), <code>current_use</code>,
-          optional <code>rate</code>. Returns the recomputed forecast.
+          Update forecast items' current use (columns <code>name</code>,{" "}
+          <code>current_use</code>, optional <code>rate</code>) and recompute.
         </p>
         <Code>{`curl -X POST ${base}/api/ingest/fleets/FLEET_ID/usage \\
-  -H "Authorization: Bearer rlf_..." \\
-  -H "Content-Type: text/csv" \\
-  --data-binary @meter_readings.csv
-# meter_readings.csv:  name,current_use
-#                      Truck 01,5230`}</Code>
+  -H "Authorization: Bearer rlf_..." -H "Content-Type: text/csv" \\
+  --data-binary @meter_readings.csv          # name,current_use`}</Code>
       </Endpoint>
-
       <Endpoint method="POST" path="/api/ingest/tracking/{fleet_id}/measurements">
         <p className="muted-line">
-          Append <code>(item, time, value)</code> readings to a tracked fleet's
-          items and re-predict remaining life. Idempotent — re-sending the same
-          export is safe. Id is in <code>/fleet/tracking/&lt;id&gt;</code>.
+          Append <code>(item, time, value)</code> readings to a tracked fleet and
+          re-predict remaining life.
         </p>
-        <Code>{`curl -X POST ${base}/api/ingest/tracking/FLEET_ID/measurements \\
-  -H "Authorization: Bearer rlf_..." \\
-  -H "Content-Type: application/json" \\
-  -d '{"measurements": [{"item": "Pump 7", "time": 5300, "value": 6.1}]}'`}</Code>
       </Endpoint>
-
       <Endpoint method="POST" path="/api/ingest/datasets/{dataset_id}/lives">
         <p className="muted-line">
-          Append failure rows to a dataset (columns must match), then refit every
-          model built from it in place — RCM evidence, RBD blocks and forecasts
-          update immediately. Add <code>?refit=false</code> to skip refitting.
+          Append failure rows to a dataset and refit its models in place
+          (<code>?refit=false</code> to skip).
         </p>
-        <Code>{`curl -X POST ${base}/api/ingest/datasets/DATASET_ID/lives \\
-  -H "Authorization: Bearer rlf_..." \\
-  -H "Content-Type: text/csv" \\
-  --data-binary @new_failures.csv`}</Code>
       </Endpoint>
 
+      <h3>Model import</h3>
       <Endpoint method="POST" path="/api/import/models">
         <p className="muted-line">
-          Create a model from a fit done elsewhere (what <code>reliafy-client</code>{" "}
-          wraps). JSON body: <code>name</code>, <code>distribution</code>,
-          optional <code>unit</code>; then either <code>data</code> (
-          <code>{`{x, c?, n?}`}</code> arrays — refit server-side into a full
-          model) or <code>params</code> (<code>{`[{name, value}, …]`}</code>).
-          Returns <code>{`{ id, name, distribution, url }`}</code>.
+          Create a model from a fit done elsewhere (what <code>reliafy.push</code>{" "}
+          wraps). JSON: <code>name</code>, <code>distribution</code>, optional{" "}
+          <code>unit</code>; then <code>data</code> (<code>{`{x, c?, n?}`}</code>)
+          or <code>params</code> (<code>{`[{name, value}]`}</code>).
         </p>
-        <Code>{`curl -X POST ${base}/api/import/models \\
-  -H "Authorization: Bearer rlf_..." \\
-  -H "Content-Type: application/json" \\
-  -d '{"name": "Pump bearings", "distribution": "weibull",
-       "unit": "hours", "data": {"x": [120, 340, 510], "c": [0, 0, 1]}}'`}</Code>
       </Endpoint>
 
-      <h3>Scheduled job (Python)</h3>
+      <h3>Scheduled job (Python, no dependencies)</h3>
       <Code>{`import requests
 
-TOKEN = "rlf_..."          # from Settings → API access
-FLEET = "your-fleet-id"
-
+TOKEN = "rlf_..."
 with open("meter_readings.csv", "rb") as f:
     r = requests.post(
-        f"${base}/api/ingest/fleets/{FLEET}/usage",
-        headers={"Authorization": f"Bearer {TOKEN}",
-                 "Content-Type": "text/csv"},
+        "${base}/api/ingest/fleets/FLEET_ID/usage",
+        headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "text/csv"},
         data=f.read(), timeout=60,
     )
-r.raise_for_status()
-print(r.json()["forecast"])`}</Code>
+r.raise_for_status()`}</Code>
     </div>
   );
 }
 
-// In-app reference for the ingestion API + the reliafy-client package. Examples
-// use the live origin, so self-hosted instances show their own base URL.
+// In-app reference for the programmatic API + the reliafy-client package.
+// Examples use the live origin, so self-hosted instances show their own base URL.
 export default function ApiReference() {
   const base = (typeof window !== "undefined" && window.location.origin) || "https://reliafy.com";
   const [tab, setTab] = useState("client");
