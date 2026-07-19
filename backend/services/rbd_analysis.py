@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS
-from repyability.rbd.helper_classes import PerfectReliability, PerfectUnreliability
+from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 from repyability.rbd.standby_node import StandbyModel
 from repyability.utils.wrappers import conditional_survival
@@ -271,14 +271,6 @@ def _node_reliability(
     label = data.get("label") or node.get("id")
     cov_values = (covariates or {}).get(node.get("id"))
 
-    # Manual what-if override: a node pinned "working" / "failed" ignores its
-    # life model and contributes as perfectly reliable / perfectly unreliable.
-    state = data.get("state")
-    if state == "working":
-        return PerfectReliability, None
-    if state == "failed":
-        return PerfectUnreliability, None
-
     if ntype == "component":
         model = _build_distribution(data.get("model"), label, resolve_model, cov_values)
         return model, None
@@ -339,9 +331,10 @@ def _build_rbd(
 ):
     """Translate a builder graph into a NonRepairableRBD.
 
-    Returns ``(rbd, labels, node_types, reliabilities)`` where ``labels`` and
-    ``node_types`` map node id -> display label / builder type for the nodes
-    that participate in the RBD (i.e. everything but input/output).
+    Returns ``(rbd, labels, node_types, reliabilities, working_nodes,
+    broken_nodes)`` where ``labels`` and ``node_types`` map node id -> display
+    label / builder type for the participating nodes (everything but
+    input/output), and the last two are the ids pinned working/failed.
     """
     visited = visited or set()
     nodes = graph.get("nodes") or []
@@ -359,6 +352,11 @@ def _build_rbd(
     k: dict[Any, int] = {}
     labels: dict[Any, str] = {}
     node_types: dict[Any, str] = {}
+    # Manual what-if overrides: nodes pinned working/failed keep their real
+    # life model in the RBD but are forced perfectly reliable/unreliable via
+    # RePyability's native ``working_nodes``/``broken_nodes`` arguments.
+    working_nodes: set = set()
+    broken_nodes: set = set()
 
     for node in nodes:
         nid = node.get("id")
@@ -368,9 +366,22 @@ def _build_rbd(
         data = node.get("data") or {}
         labels[nid] = data.get("label") or nid
         node_types[nid] = ntype
-        reliability, k_required = _node_reliability(
-            node, resolve_subsystem, visited, resolve_model, covariates
-        )
+        state = data.get("state")
+        pinned = state in ("working", "failed")
+        if state == "working":
+            working_nodes.add(nid)
+        elif state == "failed":
+            broken_nodes.add(nid)
+        try:
+            reliability, k_required = _node_reliability(
+                node, resolve_subsystem, visited, resolve_model, covariates
+            )
+        except AnalysisError:
+            # A pinned node is overridden anyway, so it needs no life model of
+            # its own — stand in with a placeholder (never actually evaluated).
+            if not pinned:
+                raise
+            reliability, k_required = PerfectReliability, None
         reliabilities[nid] = reliability
         if k_required is not None:
             k[nid] = k_required
@@ -397,7 +408,7 @@ def _build_rbd(
             "and output."
         ) from exc
 
-    return rbd, labels, node_types, reliabilities
+    return rbd, labels, node_types, reliabilities, working_nodes, broken_nodes
 
 
 def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
@@ -506,6 +517,9 @@ def validate_graph(
             continue
         nid = node.get("id")
         labels[nid] = (node.get("data") or {}).get("label") or nid
+        # A node pinned working/failed is overridden in analysis, so it needs
+        # no life model — don't flag one as missing here.
+        pinned = (node.get("data") or {}).get("state") in ("working", "failed")
         try:
             reliability, k_required = _node_reliability(
                 node, resolve_subsystem, visited
@@ -514,7 +528,8 @@ def validate_graph(
             if k_required is not None:
                 k[nid] = k_required
         except AnalysisError as exc:
-            errors.append(str(exc))
+            if not pinned:
+                errors.append(str(exc))
             reliabilities[nid] = PerfectReliability  # structural placeholder
 
     if edges and reliabilities:
@@ -593,7 +608,7 @@ def _time_grid(reliabilities: dict, t_max: Optional[float] = None) -> np.ndarray
     return np.linspace(0.0, hi, _GRID_POINTS)
 
 
-def _conditional_sf(model, times, s: float = 0.0) -> np.ndarray:
+def _conditional_sf(model, times, s: float = 0.0, **sf_kwargs) -> np.ndarray:
     """Survival of a model over ``times``, conditioned on having survived to
     ``s`` when ``s > 0``.
 
@@ -601,16 +616,18 @@ def _conditional_sf(model, times, s: float = 0.0) -> np.ndarray:
     distributions, the redundancy/PH adapters, standby nodes and nested RBDs —
     expose ``cs(x, X)``, so the conditional survival ``R(t | s)`` is delegated
     to that method across the board. With ``s == 0`` this is just ``R(t)``.
+    ``sf_kwargs`` (e.g. ``working_nodes``/``broken_nodes``) are forwarded to the
+    RBD's ``sf``/``cs`` — pass none for a plain node model.
     """
     times = np.atleast_1d(np.asarray(times, dtype=float))
     if not s or s <= 0:
-        return np.asarray(model.sf(times), dtype=float)
-    out = np.asarray(model.cs(times, float(s)), dtype=float)
+        return np.asarray(model.sf(times, **sf_kwargs), dtype=float)
+    out = np.asarray(model.cs(times, float(s), **sf_kwargs), dtype=float)
     out = np.where(np.isfinite(out), out, 0.0)
     return np.clip(out, 0.0, 1.0)
 
 
-def _mttf(rbd, base_hi: float, s: float = 0.0) -> Optional[float]:
+def _mttf(rbd, base_hi: float, s: float = 0.0, **sf_kwargs) -> Optional[float]:
     """Mean time to failure as ``integral_0^inf R(t) dt``, or — when ``s > 0`` —
     the mean residual life ``integral_0^inf R(t | s) dt`` at age ``s``.
 
@@ -622,11 +639,11 @@ def _mttf(rbd, base_hi: float, s: float = 0.0) -> Optional[float]:
         return None
     t_max = base_hi
     for _ in range(8):  # extend up to 2^8 = 256x the base horizon
-        if _conditional_sf(rbd, np.array([t_max]), s)[0] < 1e-4:
+        if _conditional_sf(rbd, np.array([t_max]), s, **sf_kwargs)[0] < 1e-4:
             break
         t_max *= 2.0
     grid = np.linspace(0.0, t_max, 4000)
-    sf = _conditional_sf(rbd, grid, s)
+    sf = _conditional_sf(rbd, grid, s, **sf_kwargs)
     if not np.all(np.isfinite(sf)):
         return None
     # np.trapz was renamed to np.trapezoid in NumPy 2.0.
@@ -663,27 +680,35 @@ def analyze(
     life at ``s``. Raises :class:`AnalysisError` with a user-facing message if
     the graph can't be turned into a valid RBD.
     """
-    rbd, labels, node_types, reliabilities = _build_rbd(
+    rbd, labels, node_types, reliabilities, working_nodes, broken_nodes = _build_rbd(
         graph, resolve_subsystem, None, resolve_model, covariates
     )
+    # RePyability's native what-if override for the system-level calls.
+    overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
 
     s = float(conditional_age) if conditional_age and conditional_age > 0 else 0.0
     grid = _time_grid(reliabilities, t_max)
-    system_sf = _conditional_sf(rbd, grid, s)
+    system_sf = _conditional_sf(rbd, grid, s, **overrides)
 
     # Per-node reliability over the same grid (skip pure voting gates, which
-    # are perfectly reliable and not informative to plot).
+    # are perfectly reliable and not informative to plot). A pinned node shows
+    # the constant it's forced to (1 working, 0 failed), not its life model.
     node_payloads = []
     for nid in rbd.nodes:
         if node_types.get(nid) == "knode":
             continue
-        model = reliabilities[nid]
+        if nid in working_nodes:
+            node_sf = np.ones_like(grid)
+        elif nid in broken_nodes:
+            node_sf = np.zeros_like(grid)
+        else:
+            node_sf = _conditional_sf(reliabilities[nid], grid, s)
         node_payloads.append(
             {
                 "id": nid,
                 "label": labels.get(nid, nid),
                 "type": node_types.get(nid),
-                "sf": _clean(_conditional_sf(model, grid, s)),
+                "sf": _clean(node_sf),
             }
         )
 
@@ -697,11 +722,15 @@ def analyze(
     importance: dict[str, dict] = {}
     try:
         # Evaluate importances at the (conditional) node reliabilities so they
-        # are consistent with the displayed curves.
-        node_probs = {
-            n: _conditional_sf(reliabilities[n], np.array([t_rep]), s)
-            for n in rbd.nodes
-        }
+        # are consistent with the displayed curves; pinned nodes sit at 1 / 0.
+        def _node_prob(n):
+            if n in working_nodes:
+                return np.array([1.0])
+            if n in broken_nodes:
+                return np.array([0.0])
+            return _conditional_sf(reliabilities[n], np.array([t_rep]), s)
+
+        node_probs = {n: _node_prob(n) for n in rbd.nodes}
         birnbaum = rbd._birnbaum_importance(node_probs)
         fv = rbd._fussel_vesely(node_probs, fv_type="c")
         importance = {
@@ -723,7 +752,7 @@ def analyze(
     # Mean time to failure (or mean residual life at s), integrated from the
     # system reliability curve.
     try:
-        mttf = _mttf(rbd, float(grid[-1]), s)
+        mttf = _mttf(rbd, float(grid[-1]), s, **overrides)
     except Exception:
         mttf = None
 

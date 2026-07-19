@@ -9,7 +9,7 @@ numpy
 # repyability.rbd.non_repairable_rbd this app imports. Pinned to commit SHAs so
 # builds are reproducible. (Requires git at build time — see Dockerfile.)
 git+https://github.com/derrynknife/SurPyval.git@3c80d5a0de17288938ec0ad5c2a220b81d0c8c51
-git+https://github.com/derrynknife/RePyability.git@84b91c0975b47043bb69d3234acc243a633bd66e
+git+https://github.com/derrynknife/RePyability.git@0a82ceeab4b7d1fe23caa333f30522aabdc698a2
 # Transitive deps not declared by the above packages:
 joblib
 dd
