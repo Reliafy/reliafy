@@ -5462,3 +5462,73 @@ button.danger:hover { background: #fdeeee; }
   cursor: pointer;
   text-decoration: underline;
 }
+
+/* ---- Reliability Agent (POC) ---------------------------------------------- */
+.agent-poc {
+  font-size: 0.6em;
+  vertical-align: middle;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--acc-t);
+  color: var(--acc-d);
+  letter-spacing: 0.06em;
+}
+.agent-chat {
+  margin-top: 1rem;
+  min-height: 220px;
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.agent-empty { color: var(--muted); font-style: italic; }
+.agent-msg { display: flex; flex-direction: column; gap: 0.4rem; }
+.agent-role {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+}
+.agent-user .agent-role { color: var(--acc-d); }
+.agent-text { margin: 0; white-space: pre-wrap; line-height: 1.5; }
+.agent-code, .agent-result {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surf);
+  overflow: hidden;
+}
+.agent-code-h {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line2);
+}
+.agent-code pre, .agent-result pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.agent-err { color: #b91c1c; }
+.agent-status {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  text-transform: lowercase;
+}
+.agent-file {
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.7rem;
+}

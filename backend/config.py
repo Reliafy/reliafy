@@ -154,6 +154,33 @@ TOKEN_PRICES = {
     "gpt-4o-mini": {"in": 0.15, "cached_in": 0.075, "out": 0.6},
 }
 TOKEN_PRICE_FALLBACK = {"in": 5.0, "out": 30.0}
+
+# ---- Reliability Agent (Anthropic Managed Agents) --------------------------
+# A separate, self-contained agent on Anthropic's Managed Agents runtime: Claude
+# runs in a managed cloud sandbox we provision with surpyval + the scientific
+# stack, so it can fit real models on uploaded data and stream its work back.
+# Kept apart from the metered assistant (its own module + metering reason) so it
+# can be proven out and the old assistant retired cleanly. Runs on the shared
+# ANTHROPIC_API_KEY.
+RELIABILITY_AGENT_MODEL = os.environ.get("RELIABILITY_AGENT_MODEL") or "claude-opus-4-8"
+# Managed Agents beta header (the SDK usually sets this; kept overridable).
+MANAGED_AGENTS_BETA = os.environ.get("MANAGED_AGENTS_BETA") or "managed-agents-2026-04-01"
+# Pre-created Environment / Agent ids. If unset, they're created on first use
+# and cached in-process (fine for a single instance / POC).
+RELIABILITY_AGENT_ENV_ID = os.environ.get("RELIABILITY_AGENT_ENV_ID") or None
+RELIABILITY_AGENT_AGENT_ID = os.environ.get("RELIABILITY_AGENT_AGENT_ID") or None
+# Packages pre-installed into the sandbox (space-separated env override).
+# Defaults match the app's stack — surpyval from the same git pin as
+# requirements.txt so the agent's models match production.
+RELIABILITY_AGENT_PIP = (os.environ.get("RELIABILITY_AGENT_PIP") or "").split() or [
+    "git+https://github.com/derrynknife/SurPyval.git@3c80d5a0de17288938ec0ad5c2a220b81d0c8c51",
+    "numpy", "scipy", "pandas", "matplotlib",
+]
+# Managed Agents session runtime price (USD per session-hour), for metering.
+try:
+    MANAGED_AGENT_USD_PER_HOUR = float(os.environ.get("MANAGED_AGENT_USD_PER_HOUR", "0.08"))
+except ValueError:
+    MANAGED_AGENT_USD_PER_HOUR = 0.08
 # Firebase/GCP project whose ID tokens we accept. Cloud Run usually injects
 # GOOGLE_CLOUD_PROJECT; FIREBASE_PROJECT_ID overrides it if the Firebase project
 # differs from the GCP project.

@@ -36,6 +36,7 @@ import RcmStudyPage from "./views/RcmStudyPage.jsx";
 import TeamSettingsPage from "./views/TeamSettingsPage.jsx";
 import SettingsPage from "./views/SettingsPage.jsx";
 import ApiDocsPage from "./views/ApiDocsPage.jsx";
+import ReliabilityAgent from "./views/ReliabilityAgent.jsx";
 import AdminPage from "./views/AdminPage.jsx";
 import { useAppConfig } from "./ConfigProvider.jsx";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
@@ -97,6 +98,7 @@ export default function AppShell() {
             <Route path="/fleet/forecasts/:id" element={<FleetForecastPage />} />
             <Route path="/strategy/analyses" element={<StrategyAnalyses />} />
             <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
+            <Route path="/agent" element={<ReliabilityAgent />} />
             <Route path="/rcm" element={<RcmDashboard />} />
             <Route path="/rcm/studies" element={<RcmHome />} />
             <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />

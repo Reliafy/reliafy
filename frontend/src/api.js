@@ -403,6 +403,59 @@ export function assistantStep(system, messages, tools) {
   });
 }
 
+// ---- Reliability Agent (Anthropic Managed Agents) --------------------------
+// Separate from the assistant above, with its own metering; runs Python (with
+// surpyval) in Anthropic's managed sandbox and streams its work back.
+export function reliabilityAgentInfo() {
+  return request("/api/reliability-agent/info");
+}
+
+// Upload a CSV into the agent's sandbox; returns { file_id, filename }.
+export function reliabilityAgentUpload(file) {
+  const form = new FormData();
+  form.append("file", file);
+  return request("/api/reliability-agent/upload", { method: "POST", body: form });
+}
+
+// Run one agent turn, streaming Server-Sent Events. `onEvent(ev)` is called for
+// each parsed event (text / tool_use / tool_result / status / error / done).
+// Resolves when the stream ends. Pass an AbortSignal to cancel.
+export async function reliabilityAgentStream(message, fileId, { onEvent, signal } = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...workspaceHeaders(),
+    ...(await authHeaders()),
+  };
+  const res = await fetch("/api/reliability-agent/run", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ message, file_id: fileId || null }),
+    signal,
+  });
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`;
+    try { detail = (await res.json()).detail || detail; } catch { /* non-JSON */ }
+    throw new Error(detail);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    // SSE frames are separated by a blank line.
+    let sep;
+    while ((sep = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      const line = frame.split("\n").find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      try { onEvent?.(JSON.parse(line.slice(5).trim())); } catch { /* skip */ }
+    }
+  }
+}
+
 // Analyse an (unsaved) RBD graph with RePyability: returns the system
 // reliability over time, per-node reliability, MTTF, importances, and the
 // minimal path/cut sets. ``tMax`` sets the upper limit of the time axis;

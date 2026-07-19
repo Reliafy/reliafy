@@ -68,6 +68,13 @@ const DatasetsIcon = () => (
   </svg>
 );
 
+const AgentIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="4" y="7" width="16" height="12" rx="2" />
+    <path d="M12 7V4M9 12h.01M15 12h.01M9 16h6" />
+  </svg>
+);
+
 const GuidesIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="12" cy="12" r="9" />
@@ -137,6 +144,11 @@ const ITEMS = [
     label: "RCM",
     icon: <RcmSectionIcon />,
     children: [{ to: "/rcm/studies", label: "Studies" }],
+  },
+  {
+    to: "/agent",
+    label: "Reliability Agent",
+    icon: <AgentIcon />,
   },
   {
     to: "/datasets",

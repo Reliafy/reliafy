@@ -41,6 +41,7 @@ from backend.routers import rbds as rbds_router
 from backend.routers import strategy as strategy_router
 from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
+from backend.routers import reliability_agent as reliability_agent_router
 from backend.routers import degradation as degradation_router
 from backend.routers import rcm as rcm_router
 from backend.routers import teams as teams_router
@@ -74,6 +75,7 @@ app.include_router(rbds_router.router)
 app.include_router(strategy_router.router)
 app.include_router(billing_router.router)
 app.include_router(assistant_router.router)
+app.include_router(reliability_agent_router.router)
 app.include_router(degradation_router.router)
 app.include_router(rcm_router.router)
 app.include_router(teams_router.router)

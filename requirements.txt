@@ -20,3 +20,7 @@ mongomock
 firebase-admin
 stripe
 httpx
+# Managed Agents live in the beta namespace (beta.agents/environments/sessions);
+# event-delta streaming (for our SSE) landed in 0.115.0. Pinned for reproducible
+# builds against the still-evolving Managed Agents beta API.
+anthropic==0.117.0
