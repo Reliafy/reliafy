@@ -3,17 +3,20 @@ uvicorn[standard]
 python-multipart
 pandas
 numpy
-# SurPyval/RePyability from git: the PyPI releases are stale and miss the
-# proportional-hazards classes (GammaPH, …), the discrete distributions
-# (DiscreteWeibull, Geometric, NegativeBinomial) and
-# repyability.rbd.non_repairable_rbd this app imports. Pinned to commit SHAs so
-# builds are reproducible. (Requires git at build time — see Dockerfile.)
+# SurPyval from git: the PyPI releases are stale and miss the proportional-
+# hazards / AFT / PO / AH classes, the discrete distributions, and more. Pinned
+# to a commit SHA so builds are reproducible. (Requires git at build time.)
 git+https://github.com/derrynknife/SurPyval.git@3c80d5a0de17288938ec0ad5c2a220b81d0c8c51
-git+https://github.com/derrynknife/RePyability.git@0a82ceeab4b7d1fe23caa333f30522aabdc698a2
-# Transitive deps not declared by the above packages:
+# RePyability is installed --no-deps in the Dockerfile: its published metadata
+# pins surpyval>=0.13,<0.14, but surpyval's version jumped 0.12.0 -> 0.14.0 with
+# no 0.13.x, so no surpyval satisfies it — while the code is fine against our
+# 0.12.0 pin (full suite passes). Its runtime deps (numpy/scipy via surpyval,
+# networkx, tqdm) are provided explicitly here.
+# Transitive deps not declared by the above / for the --no-deps repyability:
 joblib
 dd
 tqdm
+networkx>=3.0
 pydantic
 pymongo
 mongomock

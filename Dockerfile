@@ -28,8 +28,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
+# RePyability is installed --no-deps: its metadata pins surpyval>=0.13,<0.14, but
+# no surpyval version satisfies that (0.12.0 -> 0.14.0, no 0.13.x). The code runs
+# fine against our surpyval 0.12.0 pin; its real deps are in requirements.txt.
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@0a82ceeab4b7d1fe23caa333f30522aabdc698a2" \
     && apt-get purge -y git build-essential && apt-get autoremove -y
 
 COPY backend/ ./backend/
