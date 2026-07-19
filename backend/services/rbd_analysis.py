@@ -731,20 +731,27 @@ def analyze(
             return _conditional_sf(reliabilities[n], np.array([t_rep]), s)
 
         node_probs = {n: _node_prob(n) for n in rbd.nodes}
-        birnbaum = rbd._birnbaum_importance(node_probs)
-        fv = rbd._fussel_vesely(node_probs, fv_type="c")
+
+        def _imp(measure: dict) -> dict:
+            out = {}
+            for n, v in measure.items():
+                if node_types.get(n) == "knode":  # voting gates aren't components
+                    continue
+                val = float(np.atleast_1d(v)[0])
+                out[str(n)] = val if np.isfinite(val) else None
+            return out
+
+        # All six RePyability importance measures, at the representative time.
+        # (fussell_vesely is the correct double-l private method; the single-l
+        # spelling was renamed upstream.)
         importance = {
             "time": t_rep,
-            "birnbaum": {
-                str(n): float(np.atleast_1d(v)[0])
-                for n, v in birnbaum.items()
-                if node_types.get(n) != "knode"
-            },
-            "fussell_vesely": {
-                str(n): float(np.atleast_1d(v)[0])
-                for n, v in fv.items()
-                if node_types.get(n) != "knode"
-            },
+            "birnbaum": _imp(rbd._birnbaum_importance(node_probs)),
+            "fussell_vesely": _imp(rbd._fussell_vesely(node_probs, fv_type="c")),
+            "risk_achievement_worth": _imp(rbd._risk_achievement_worth(node_probs)),
+            "risk_reduction_worth": _imp(rbd._risk_reduction_worth(node_probs)),
+            "criticality": _imp(rbd._criticality_importance(node_probs)),
+            "improvement_potential": _imp(rbd._improvement_potential(node_probs)),
         }
     except Exception:
         importance = {}
@@ -755,6 +762,25 @@ def analyze(
         mttf = _mttf(rbd, float(grid[-1]), s, **overrides)
     except Exception:
         mttf = None
+
+    # System B-lives: time by which x% of systems have failed (R = 1 − x/100),
+    # read off the (conditional) system reliability curve. None if beyond the
+    # computed horizon.
+    def _blife(frac: float):
+        target = 1.0 - frac
+        sf = np.asarray(system_sf, dtype=float)
+        if not sf.size or sf[0] <= target:
+            return float(grid[0]) if sf.size else None
+        for i in range(1, len(grid)):
+            if sf[i] <= target:
+                s0, s1 = sf[i - 1], sf[i]
+                if s1 == s0:
+                    return float(grid[i])
+                f = (s0 - target) / (s0 - s1)
+                return float(grid[i - 1] + f * (grid[i] - grid[i - 1]))
+        return None
+
+    blife = {"b10": _blife(0.10), "b50": _blife(0.50)}
 
     def _named_sets(sets) -> list:
         return sorted(
@@ -772,6 +798,7 @@ def analyze(
         "time": grid.tolist(),
         "system": {"sf": _clean(system_sf), "ff": _clean(1.0 - system_sf)},
         "mttf": mttf,
+        "blife": blife,
         "conditional_age": s,
         "nodes": node_payloads,
         "importance": importance,

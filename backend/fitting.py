@@ -54,6 +54,20 @@ from surpyval import (
     NormalAFT,
     WeibullAFT,
 )
+from surpyval import (
+    ExponentialPO,
+    GammaPO,
+    LogNormalPO,
+    NormalPO,
+    WeibullPO,
+)
+from surpyval import (
+    ExponentialAH,
+    GammaAH,
+    LogNormalAH,
+    NormalAH,
+    WeibullAH,
+)
 from surpyval.univariate.regression import CoxPH
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
@@ -111,7 +125,21 @@ REGRESSION_MODELS = {
     "lognormal_aft": {"name": "Lognormal AFT", "fitter": LogNormalAFT, "effect": "aft"},
     "normal_aft": {"name": "Normal AFT", "fitter": NormalAFT, "effect": "aft"},
     "gamma_aft": {"name": "Gamma AFT", "fitter": GammaAFT, "effect": "aft"},
+    "weibull_po": {"name": "Weibull PO", "fitter": WeibullPO, "effect": "odds"},
+    "exponential_po": {"name": "Exponential PO", "fitter": ExponentialPO, "effect": "odds"},
+    "lognormal_po": {"name": "Lognormal PO", "fitter": LogNormalPO, "effect": "odds"},
+    "normal_po": {"name": "Normal PO", "fitter": NormalPO, "effect": "odds"},
+    "gamma_po": {"name": "Gamma PO", "fitter": GammaPO, "effect": "odds"},
+    "weibull_ah": {"name": "Weibull AH", "fitter": WeibullAH, "effect": "additive"},
+    "exponential_ah": {"name": "Exponential AH", "fitter": ExponentialAH, "effect": "additive"},
+    "lognormal_ah": {"name": "Lognormal AH", "fitter": LogNormalAH, "effect": "additive"},
+    "normal_ah": {"name": "Normal AH", "fitter": NormalAH, "effect": "additive"},
+    "gamma_ah": {"name": "Gamma AH", "fitter": GammaAH, "effect": "additive"},
 }
+
+# What exp(coefficient) means per regression effect (None = no natural ratio;
+# additive-hazards coefficients are additive, shown as the coefficient only).
+_RATIO_LABELS = {"hazard": "hazard ratio", "aft": "time ratio", "odds": "odds ratio"}
 
 # Probabilities are clipped away from 0/1 before the y-transform, which would
 # otherwise map them to +/- infinity.
@@ -927,30 +955,51 @@ def _fit_regression(
     params_arr = np.asarray(model.params, dtype=float)
     k_dist = int(getattr(model, "k_dist", 0) or 0)
 
+    # Standard errors (baseline params then coefficients) for 95% Wald intervals.
+    # Unavailable for semi-parametric Cox / when the Hessian is singular.
+    try:
+        ses = np.asarray(model.standard_errors(), dtype=float).ravel()
+        if ses.size != params_arr.size:
+            ses = None
+    except Exception:  # noqa: BLE001
+        ses = None
+
+    _Z95 = 1.959963984540054
+
+    def _ci(i):
+        if ses is None or not np.isfinite(ses[i]):
+            return None
+        v = float(params_arr[i])
+        return [v - _Z95 * float(ses[i]), v + _Z95 * float(ses[i])]
+
     # Baseline distribution parameters (empty for semi-parametric Cox).
     base_dist = getattr(model, "distribution", None)
     base_names = getattr(base_dist, "param_names", None) or [
         f"p{i}" for i in range(k_dist)
     ]
     baseline = [
-        {"name": name, "value": float(value)}
-        for name, value in zip(base_names, params_arr[:k_dist])
+        {"name": name, "value": float(params_arr[i]), "ci": _ci(i)}
+        for i, name in enumerate(base_names)
     ]
 
-    # Regression coefficients. exp(coefficient) is a hazard ratio for PH models
-    # and a time ratio (acceleration factor) for AFT models; ``ratio_label`` (in
-    # the payload) tells the UI which. The ``hazard_ratio`` key is kept for
-    # backward compatibility with saved models.
+    # Regression coefficients with a 95% CI. exp(coefficient) is a hazard ratio
+    # (PH), time ratio (AFT) or odds ratio (PO); additive-hazards coefficients
+    # have no natural ratio, so ``ratio``/``ratio_label`` are omitted for AH.
+    # ``ratio_label`` in the payload tells the UI which; ``hazard_ratio`` is kept
+    # for backward compatibility with saved models.
     effect = entry.get("effect", "hazard")
-    ratio_label = "time ratio" if effect == "aft" else "hazard ratio"
+    ratio_label = _RATIO_LABELS.get(effect)  # None for additive hazards
     feature_names = getattr(model, "feature_names", None) or [
         f"b{i}" for i in range(len(params_arr) - k_dist)
     ]
-    coefficients = [
-        {"name": name, "value": float(value), "ratio": float(np.exp(value)),
-         "hazard_ratio": float(np.exp(value))}
-        for name, value in zip(feature_names, params_arr[k_dist:])
-    ]
+    coefficients = []
+    for j, name in enumerate(feature_names):
+        value = float(params_arr[k_dist + j])
+        coef = {"name": name, "value": value, "ci": _ci(k_dist + j)}
+        if ratio_label is not None:
+            coef["ratio"] = float(np.exp(value))
+            coef["hazard_ratio"] = coef["ratio"]  # backward compat
+        coefficients.append(coef)
 
     x_col = mapping.get("x")
     x_vals = (

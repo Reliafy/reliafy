@@ -26,6 +26,16 @@ const DESCRIPTIONS = {
   lognormal_aft: "Lognormal baseline accelerated-failure-time model.",
   normal_aft: "Normal baseline accelerated-failure-time model.",
   gamma_aft: "Gamma baseline accelerated-failure-time model.",
+  weibull_po: "Weibull baseline; covariates scale the odds of failure (proportional odds).",
+  exponential_po: "Exponential baseline proportional-odds model.",
+  lognormal_po: "Lognormal baseline proportional-odds model.",
+  normal_po: "Normal baseline proportional-odds model.",
+  gamma_po: "Gamma baseline proportional-odds model.",
+  weibull_ah: "Weibull baseline; covariates add to the hazard (additive hazards, Aalen).",
+  exponential_ah: "Exponential baseline additive-hazards model.",
+  lognormal_ah: "Lognormal baseline additive-hazards model.",
+  normal_ah: "Normal baseline additive-hazards model.",
+  gamma_ah: "Gamma baseline additive-hazards model.",
   kaplan_meier: "Non-parametric survival estimate — no distribution assumed.",
   nelson_aalen: "Non-parametric survival via cumulative hazard.",
   fleming_harrington: "Non-parametric, tie-corrected cumulative hazard.",
@@ -71,8 +81,10 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
   const isCovariateList = options.some((d) => d.covariates);
   const groups = isCovariateList
     ? [
-        ["Proportional hazards", options.filter((d) => d.effect !== "aft")],
+        ["Proportional hazards", options.filter((d) => !d.effect || d.effect === "hazard")],
         ["Accelerated failure time", options.filter((d) => d.effect === "aft")],
+        ["Proportional odds", options.filter((d) => d.effect === "odds")],
+        ["Additive hazards", options.filter((d) => d.effect === "additive")],
       ].filter(([, list]) => list.length)
     : [
         ["Continuous", options.filter((d) => !d.nonparametric && !d.discrete)],

@@ -151,6 +151,22 @@ function Results({ result, t, tMax, conditionalAge = 0 }) {
             {unit ? ` (${unit})` : ""}
           </div>
         </div>
+        {result.blife && (
+          <>
+            <div className="stat">
+              <div className="value">{fmt(result.blife.b10)}</div>
+              <div className="name" title="Time by which 10% of systems have failed">
+                B10 life{unit ? ` (${unit})` : ""}
+              </div>
+            </div>
+            <div className="stat">
+              <div className="value">{fmt(result.blife.b50)}</div>
+              <div className="name" title="Median system life (50% failed)">
+                B50 life{unit ? ` (${unit})` : ""}
+              </div>
+            </div>
+          </>
+        )}
         <div className="stat">
           <div className="value">{fmt(sysAtT)}</div>
           <div className="name">
@@ -197,8 +213,12 @@ function Results({ result, t, tMax, conditionalAge = 0 }) {
             <thead>
               <tr>
                 <th>Component</th>
-                <th title="Birnbaum importance">Birnbaum</th>
-                <th title="Fussell-Vesely importance">Fussell-Vesely</th>
+                <th title="Birnbaum importance — sensitivity of system reliability to this component">Birnbaum</th>
+                <th title="Fussell-Vesely — fraction of system unreliability this component contributes to">F-V</th>
+                <th title="Risk Achievement Worth — how much worse the system gets if this component fails">RAW</th>
+                <th title="Risk Reduction Worth — how much better the system gets if this component were perfect">RRW</th>
+                <th title="Criticality importance">Crit.</th>
+                <th title="Improvement potential — gain available from perfecting this component">Improv.</th>
               </tr>
             </thead>
             <tbody>
@@ -207,6 +227,10 @@ function Results({ result, t, tMax, conditionalAge = 0 }) {
                   <td className="calc-row-label">{idToLabel[id] || id}</td>
                   <td>{fmt(importance.birnbaum?.[id])}</td>
                   <td>{fmt(importance.fussell_vesely?.[id])}</td>
+                  <td>{fmt(importance.risk_achievement_worth?.[id])}</td>
+                  <td>{fmt(importance.risk_reduction_worth?.[id])}</td>
+                  <td>{fmt(importance.criticality?.[id])}</td>
+                  <td>{fmt(importance.improvement_potential?.[id])}</td>
                 </tr>
               ))}
             </tbody>

@@ -424,6 +424,29 @@ def test_conditional_survival_matches_ratio():
     assert res["mttf"] < analyze(graph, t_max=100)["mttf"]
 
 
+def test_all_importance_measures_present_and_populated():
+    """All six RePyability importance measures compute and are non-empty — guards
+    against the whole importance block silently emptying (e.g. a renamed method)."""
+    import json
+
+    io = _io_nodes()
+    c1 = _component("c1", "Pump", "weibull", [("alpha", 100), ("beta", 2)])
+    c2 = _component("c2", "Valve", "exponential", [("failure_rate", 0.01)])
+    graph = {
+        "unit": "Hours",
+        "nodes": io + [c1, c2],
+        "edges": [_edge("input", "c1"), _edge("c1", "c2"), _edge("c2", "output")],
+    }
+    r = analyze(graph)
+    json.dumps(r, allow_nan=False)  # no inf/nan leaks (RAW can blow up)
+    imp = r["importance"]
+    for key in ("birnbaum", "fussell_vesely", "risk_achievement_worth",
+                "risk_reduction_worth", "criticality", "improvement_potential"):
+        assert key in imp, key
+        assert imp[key], f"{key} should be populated"
+        assert set(imp[key]) == {"c1", "c2"}
+
+
 def test_pinned_working_and_failed_override_the_model():
     """A node pinned working/failed (manual what-if) contributes as perfectly
     reliable / unreliable regardless of its life model."""

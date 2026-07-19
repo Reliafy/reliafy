@@ -101,7 +101,7 @@ COLUMN MAPPING for create_model — map the dataset's column names:
 - x: the failure/observation times column (required for most fits).
 - c: censoring-flag column (surpyval codes: 0 = exact failure, 1 = right-censored, -1 = left-censored).
 - n: counts/quantities column. xl/xr: interval bounds. tl/tr: truncation bounds.
-- For regression distributions — proportional-hazards (ids ending in _ph) or accelerated-failure-time (ids ending in _aft) — pass covariates: [column, ...] instead of fitting a plain distribution.
+- For regression distributions — proportional-hazards (_ph), accelerated-failure-time (_aft), proportional-odds (_po) or additive-hazards (_ah) — pass covariates: [column, ...] instead of fitting a plain distribution.
 Use ONLY column names that exist in the dataset (check via list_datasets or the save_dataset result).
 
 RBD GRAPH schema (for set_current_rbd / save_rbd / validate_rbd). A diagram is { nodes:[...], edges:[...] }. NEVER include positions — layout is automatic.
@@ -212,7 +212,7 @@ export const TOOLS = [
         unit: { type: "string", description: "Optional unit of the time axis, e.g. 'hours'." },
         covariates: {
           type: "array", items: { type: "string" },
-          description: "Covariate column names — only for regression distributions (_ph proportional-hazards or _aft accelerated-failure-time).",
+          description: "Covariate column names — only for regression distributions (_ph / _aft / _po / _ah).",
         },
       },
       required: ["name", "distribution", "dataset_id", "mapping"],

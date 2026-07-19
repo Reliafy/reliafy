@@ -241,6 +241,32 @@ def test_fit_aft_models(dist_id):
     assert result["functions"] is not None  # calculator curves available
 
 
+@pytest.mark.parametrize("dist_id,effect,ratio_label", [
+    ("weibull_po", "odds", "odds ratio"),
+    ("gamma_po", "odds", "odds ratio"),
+    ("weibull_ah", "additive", None),
+    ("lognormal_ah", "additive", None),
+])
+def test_fit_po_ah_models(dist_id, effect, ratio_label):
+    import json
+
+    df = _covariate_df()
+    result = fit(dist_id, df, {"x": "time", "c": "censored"}, formula="age + sex")
+    json.dumps(result, allow_nan=False)
+    assert result["kind"] == "regression"
+    assert result["effect"] == effect
+    assert result["ratio_label"] == ratio_label
+    c0 = result["coefficients"][0]
+    assert "value" in c0 and "ci" in c0  # coefficient + 95% CI
+    if ratio_label is None:
+        assert "ratio" not in c0  # additive hazards has no ratio
+    else:
+        assert c0["ratio"] == pytest.approx(c0["hazard_ratio"])
+    # Baseline params now carry a CI too.
+    assert "ci" in result["params"][0]
+    assert result["functions"] is not None
+
+
 def test_fit_cox_ph_has_coefficients_no_baseline():
     df = _covariate_df()
     result = fit("cox_ph", df, {"x": "time", "c": "censored"}, formula="age + sex")
