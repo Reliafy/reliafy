@@ -84,6 +84,25 @@ class DegradationModelDoc(BaseModel):
     error: Optional[str] = None
 
 
+class RecurrentModelDoc(BaseModel):
+    """A saved recurrent-event (repairable-system) model: the fit recipe
+    (dataset + column mapping + model form) plus cached results. Like the other
+    fits, the live SurPyval object can't be pickled, so it re-fits on demand."""
+
+    id: str
+    name: str
+    owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+    dataset_id: str = ""
+    spec: dict = Field(default_factory=dict)
+    results: dict = Field(default_factory=dict)
+    surpyval_version: Optional[str] = None
+    status: str = "ready"
+    error: Optional[str] = None
+
+
 class RcmStudy(BaseModel):
     """A Reliability Centred Maintenance study: an embedded worksheet tree
     (Function → Functional Failure → Failure Mode) where each failure mode can

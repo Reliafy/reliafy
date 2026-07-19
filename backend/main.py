@@ -43,6 +43,7 @@ from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
 from backend.routers import reliability_agent as reliability_agent_router
 from backend.routers import degradation as degradation_router
+from backend.routers import recurrent as recurrent_router
 from backend.routers import rcm as rcm_router
 from backend.routers import teams as teams_router
 from backend.routers import shares as shares_router
@@ -77,6 +78,7 @@ app.include_router(billing_router.router)
 app.include_router(assistant_router.router)
 app.include_router(reliability_agent_router.router)
 app.include_router(degradation_router.router)
+app.include_router(recurrent_router.router)
 app.include_router(rcm_router.router)
 app.include_router(teams_router.router)
 app.include_router(shares_router.router)

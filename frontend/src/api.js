@@ -499,6 +499,52 @@ export function getDegradationOptions() {
   return request("/api/degradation/options");
 }
 
+// ---- Recurrent-event (repairable-system) models ----------------------------
+export function getRecurrentOptions() {
+  return request("/api/recurrent/options");
+}
+
+function recurrentForm(file, { datasetId, mapping, model, unit, name } = {}) {
+  const form = new FormData();
+  if (name) form.append("name", name);
+  if (datasetId) form.append("dataset_id", datasetId);
+  else if (file) form.append("file", file);
+  form.append("i", mapping.i);
+  form.append("x", mapping.x);
+  if (mapping.t) form.append("t", mapping.t);
+  if (model) form.append("model", model);
+  if (unit) form.append("unit", unit);
+  return form;
+}
+
+export function fitRecurrent(file, opts) {
+  return request("/api/recurrent/fit", { method: "POST", body: recurrentForm(file, opts) });
+}
+
+export function saveRecurrentModel(name, file, opts) {
+  return request("/api/recurrent/models", { method: "POST", body: recurrentForm(file, { ...opts, name }) });
+}
+
+export function listRecurrentModels() {
+  return request("/api/recurrent/models");
+}
+
+export function getRecurrentModel(id) {
+  return request(`/api/recurrent/models/${id}`);
+}
+
+export function deleteRecurrentModel(id) {
+  return request(`/api/recurrent/models/${id}`, { method: "DELETE" });
+}
+
+export function predictRecurrent(id, horizon) {
+  return request(`/api/recurrent/models/${id}/predict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ horizon }),
+  });
+}
+
 function degradationForm(file, { datasetId, mapping, threshold, path, distribution, populationMethod, unit, measurementUnit, name } = {}) {
   const form = new FormData();
   if (name) form.append("name", name);

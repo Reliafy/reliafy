@@ -49,6 +49,13 @@ export default function ModellingDashboard() {
       cta: "Open",
     },
     {
+      to: "/modelling/recurrent",
+      icon: <DegradeIcon />,
+      title: "Recurrent events",
+      body: "Repairable systems — fit an MCF and Crow-AMSAA growth model to a fleet's failure history. Is it improving or worsening?",
+      cta: "Open",
+    },
+    {
       to: "/modelling/compare",
       icon: <CompareIcon />,
       title: "Model comparison",
