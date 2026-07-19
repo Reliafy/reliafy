@@ -32,7 +32,7 @@ def test_config_is_public_and_reports_capabilities(client, monkeypatch):
 
     r = client.get("/api/config")  # no Authorization header
     assert r.status_code == 200
-    assert r.json() == {"auth": True, "ai": True, "billing": True}
+    assert r.json() == {"auth": True, "ai": True, "billing": True, "reliability_agent": False}
 
 
 def test_config_single_user_self_host(client, monkeypatch):
@@ -50,6 +50,7 @@ def test_config_single_user_self_host(client, monkeypatch):
         "auth": False,
         "ai": False,
         "billing": False,
+        "reliability_agent": False,
     }
 
 
@@ -67,4 +68,5 @@ def test_config_byo_key_self_host_enables_ai_only(client, monkeypatch):
         "auth": False,
         "ai": True,
         "billing": False,
+        "reliability_agent": False,
     }

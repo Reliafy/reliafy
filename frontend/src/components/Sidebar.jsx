@@ -160,7 +160,9 @@ const ITEMS = [
 
 export default function Sidebar({ collapsed, onToggle }) {
   const { user, signOut } = useAuth();
-  const { billing } = useAppConfig();
+  const { billing, reliability_agent: agentEnabled } = useAppConfig();
+  // The Reliability Agent surface is behind a feature flag (hidden until ready).
+  const items = ITEMS.filter((it) => it.to !== "/agent" || agentEnabled);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -191,7 +193,7 @@ export default function Sidebar({ collapsed, onToggle }) {
         </button>
       </div>
       <nav className="sidebar-nav">
-        {ITEMS.map((it) => {
+        {items.map((it) => {
           // Forthcoming sections (no route) render as a disabled "soon" item.
           if (!it.to) {
             return (

@@ -117,6 +117,7 @@ def app_config() -> dict:
         "auth": not config.AUTH_DISABLED,
         "ai": assistant_service.enabled(),
         "billing": bool(config.BILLING_ENABLED or config.STRIPE_API_KEY),
+        "reliability_agent": bool(config.RELIABILITY_AGENT_ENABLED),
     }
 
 

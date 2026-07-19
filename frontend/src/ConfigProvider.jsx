@@ -5,7 +5,7 @@ import { getAppConfig } from "./api.js";
 // Defaults hide the optional features (AI assistant, billing) so a self-hosted
 // build never flashes affordances that can't work there; on cloud they appear
 // as soon as the fetch resolves.
-const DEFAULT = { auth: true, ai: false, billing: false };
+const DEFAULT = { auth: true, ai: false, billing: false, reliability_agent: false };
 
 const ConfigContext = createContext(DEFAULT);
 

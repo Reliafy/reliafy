@@ -22,6 +22,19 @@ def _sse_events(text: str) -> list:
     return out
 
 
+def test_config_exposes_agent_feature_flag(monkeypatch):
+    from backend import config, db
+    from backend.main import app
+
+    monkeypatch.setattr(db, "_db", mongomock.MongoClient()["reliafy_test"])
+    monkeypatch.setattr(db, "_simulated", True)
+    client = TestClient(app)
+    monkeypatch.setattr(config, "RELIABILITY_AGENT_ENABLED", False)
+    assert client.get("/api/config").json()["reliability_agent"] is False
+    monkeypatch.setattr(config, "RELIABILITY_AGENT_ENABLED", True)
+    assert client.get("/api/config").json()["reliability_agent"] is True
+
+
 def test_cost_millicents_tokens_plus_session_runtime(monkeypatch):
     from backend import config
     from backend.services import reliability_agent as agent

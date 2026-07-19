@@ -162,6 +162,10 @@ TOKEN_PRICE_FALLBACK = {"in": 5.0, "out": 30.0}
 # Kept apart from the metered assistant (its own module + metering reason) so it
 # can be proven out and the old assistant retired cleanly. Runs on the shared
 # ANTHROPIC_API_KEY.
+# Feature flag: show the Reliability Agent surface at all. Off by default so the
+# in-progress POC stays hidden in production until it's ready (and a funded
+# Anthropic account is in place); flip on per environment.
+RELIABILITY_AGENT_ENABLED = (os.environ.get("RELIABILITY_AGENT_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
 RELIABILITY_AGENT_MODEL = os.environ.get("RELIABILITY_AGENT_MODEL") or "claude-opus-4-8"
 # Managed Agents beta header (the SDK usually sets this; kept overridable).
 MANAGED_AGENTS_BETA = os.environ.get("MANAGED_AGENTS_BETA") or "managed-agents-2026-04-01"

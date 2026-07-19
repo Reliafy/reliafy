@@ -57,7 +57,7 @@ export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   // Deployment capabilities: hide the assistant and billing entirely when this
   // deployment can't offer them (e.g. an open-source self-hosted instance).
-  const { ai, billing } = useAppConfig();
+  const { ai, billing, reliability_agent: agentEnabled } = useAppConfig();
   // Keying the routed content on the workspace remounts every view on switch,
   // so all lists refetch under the new X-Workspace-Id without any per-view code.
   const { workspace } = useWorkspace();
@@ -98,7 +98,7 @@ export default function AppShell() {
             <Route path="/fleet/forecasts/:id" element={<FleetForecastPage />} />
             <Route path="/strategy/analyses" element={<StrategyAnalyses />} />
             <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
-            <Route path="/agent" element={<ReliabilityAgent />} />
+            {agentEnabled && <Route path="/agent" element={<ReliabilityAgent />} />}
             <Route path="/rcm" element={<RcmDashboard />} />
             <Route path="/rcm/studies" element={<RcmHome />} />
             <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />
