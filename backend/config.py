@@ -177,7 +177,7 @@ RELIABILITY_AGENT_AGENT_ID = os.environ.get("RELIABILITY_AGENT_AGENT_ID") or Non
 # Defaults match the app's stack — surpyval from the same git pin as
 # requirements.txt so the agent's models match production.
 RELIABILITY_AGENT_PIP = (os.environ.get("RELIABILITY_AGENT_PIP") or "").split() or [
-    "git+https://github.com/derrynknife/SurPyval.git@3c80d5a0de17288938ec0ad5c2a220b81d0c8c51",
+    "surpyval", "repyability",
     "numpy", "scipy", "pandas", "matplotlib",
 ]
 # Managed Agents session runtime price (USD per session-hour), for metering.

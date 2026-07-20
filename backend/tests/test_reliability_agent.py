@@ -22,6 +22,42 @@ def _sse_events(text: str) -> list:
     return out
 
 
+def test_norm_matches_managed_agents_event_schema():
+    """Pin the normalisation to the REAL Managed Agents event shapes (captured
+    from a live run): text on agent.message.content, bash command on
+    agent.tool_use.input, output on agent.tool_result.content, idle on
+    session.thread_status_idle, and usage on span.model_request_end.model_usage.
+    """
+    from backend.services import reliability_agent as agent
+
+    assert agent._norm({"type": "span.model_request_start"}) is None
+    assert agent._norm({"type": "user.message", "content": [{"text": "hi"}]}) is None
+
+    text = agent._norm({"type": "agent.message", "content": [{"text": "Forty-two."}]})
+    assert text == {"type": "text", "text": "Forty-two."}
+
+    tu = agent._norm({"type": "agent.tool_use", "name": "bash",
+                      "input": {"command": 'python -c "print(6*7)"'}})
+    assert tu["type"] == "tool_use" and tu["name"] == "bash"
+    assert tu["code"] == 'python -c "print(6*7)"'
+
+    tr = agent._norm({"type": "agent.tool_result", "content": [{"text": "42\n"}]})
+    assert tr == {"type": "tool_result", "output": "42\n"}
+
+    assert agent._norm({"type": "agent.thinking"}) == {"type": "status", "status": "thinking"}
+    idle = agent._norm({"type": "session.thread_status_idle"})
+    assert idle == {"type": "status", "status": "thread_status_idle"}
+
+    assert agent._is_idle({"type": "session.thread_status_idle"}) is True
+    assert agent._is_idle({"type": "agent.message"}) is False
+
+    assert agent._event_usage({"type": "agent.message"}) == (0, 0)
+    assert agent._event_usage({
+        "type": "span.model_request_end",
+        "model_usage": {"input_tokens": 1200, "output_tokens": 300},
+    }) == (1200, 300)
+
+
 def test_config_exposes_agent_feature_flag(monkeypatch):
     from backend import config, db
     from backend.main import app

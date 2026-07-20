@@ -27,12 +27,16 @@ from backend.services import billing as billing_service
 SYSTEM_PROMPT = (
     "You are the Reliafy Reliability Agent. You help reliability engineers with "
     "life-data analysis, failure distributions, censoring/truncation, degradation, "
-    "and maintenance decisions. You run in a sandbox with Python and surpyval "
-    "installed. Prefer WRITING AND RUNNING CODE to do real work on the user's "
-    "uploaded data — load and clean the CSV, fit models with surpyval, compute "
-    "metrics, make plots — over describing what you would do. When you fit a "
-    "model, report the distribution, parameters, and a goodness-of-fit summary. "
-    "Be concise and show the numbers you actually computed."
+    "and maintenance decisions. You run in a sandbox with Python, surpyval and "
+    "repyability installed. Prefer WRITING AND RUNNING CODE to do real work on the "
+    "user's uploaded data — load and clean the CSV, fit models with surpyval, "
+    "compute metrics, make plots — over describing what you would do. "
+    "surpyval basics: fit with `import surpyval; m = surpyval.Weibull.fit(x, c=..., n=...)` "
+    "(c = censoring flags 0/1/-1, n = counts, both optional); read results from "
+    "`m.params`, `m.aic()`, `m.bic()`, and the functions `m.sf(t)`, `m.ff(t)`, "
+    "`m.hf(t)`, `m.mean()`, `m.qf(p)`. When you fit a model, report the "
+    "distribution, parameters, and a goodness-of-fit summary. Be concise and show "
+    "the numbers you actually computed."
 )
 
 
@@ -123,10 +127,17 @@ def _norm(event) -> dict | None:
                 return v
         return None
 
+    # Internal spans (model request start/end) carry no user-facing content.
+    if etype.startswith("span."):
+        return None
+
     # Assistant text.
     if etype in ("agent.message", "agent.message.delta", "message"):
         text = _get(event, "text", "content")
         return {"type": "text", "text": _flatten_text(text)}
+    # Extended thinking — surfaced as a subtle status, not full content.
+    if etype in ("agent.thinking", "agent.thinking.delta"):
+        return {"type": "status", "status": "thinking"}
     # The agent invoking a built-in tool (bash/read/write/…) — show the command/code.
     if etype in ("agent.tool_use", "tool_use"):
         inp = _get(event, "input") or {}
@@ -139,9 +150,10 @@ def _norm(event) -> dict | None:
     # The agent calling one of *our* custom tools (e.g. save to Reliafy) — later.
     if etype in ("agent.custom_tool_use",):
         return {"type": "custom_tool_use", "name": _get(event, "name"), "input": _get(event, "input")}
-    if etype.startswith("session.status"):
-        return {"type": "status", "status": etype}
-    return {"type": "raw", "event": etype}
+    # Session-level status transitions (…thread_status_idle / …status_running).
+    if "status" in etype:
+        return {"type": "status", "status": etype.rsplit(".", 1)[-1]}
+    return None  # user.message echo, unknown internal events — nothing to render
 
 
 def _flatten_text(value) -> str:
@@ -159,42 +171,61 @@ def _flatten_text(value) -> str:
 
 
 def _event_usage(event) -> tuple[int, int]:
-    """(input_tokens, output_tokens) from an event that carries usage, else (0,0)."""
-    usage = getattr(event, "usage", None)
+    """(input_tokens, output_tokens) from an event that carries usage, else (0,0).
+
+    Managed Agents reports per-model-request usage as ``model_usage`` on
+    ``span.model_request_end`` events (there's no top-level ``usage``)."""
+    usage = getattr(event, "model_usage", None) or getattr(event, "usage", None)
     if usage is None and isinstance(event, dict):
-        usage = event.get("usage")
+        usage = event.get("model_usage") or event.get("usage")
     if not usage:
         return (0, 0)
+
     def _f(name):
         v = getattr(usage, name, None)
         if v is None and isinstance(usage, dict):
             v = usage.get(name)
         return int(v or 0)
+
     return (_f("input_tokens"), _f("output_tokens"))
 
 
 def _is_idle(event) -> bool:
     etype = getattr(event, "type", None) or (event.get("type") if isinstance(event, dict) else None)
-    return etype in ("session.status_idle", "session.idle", "session.completed")
+    # e.g. session.thread_status_idle / session.status_idle.
+    return bool(etype) and ("idle" in etype or etype.endswith("completed"))
+
+
+# Where an uploaded CSV is mounted inside the sandbox for the agent to read.
+_UPLOAD_MOUNT = "/mnt/session/uploads/data.csv"
 
 
 def stream_run(message: str, file_id: str | None = None):
     """Run one turn on a fresh session and yield normalised events as they
     arrive, then a final ``{"type": "_meter", ...}`` with the session runtime and
-    token totals for billing. A generator so the router can stream it as SSE."""
+    token totals for billing. A generator so the router can stream it as SSE.
+
+    An uploaded ``file_id`` is mounted into the session sandbox as a file the
+    agent reads with pandas (not a message content block — Managed Agents mounts
+    files as session *resources*)."""
     client = _client()
     agent_id, env_id = _ensure_agent(client)
-    session = client.beta.sessions.create(agent=agent_id, environment_id=env_id)
-
-    content: list = [{"type": "text", "text": message}]
+    resources = None
+    text = message
     if file_id:
-        content.append({"type": "container_upload", "file_id": file_id})
+        resources = [{"type": "file", "file_id": file_id, "mount_path": _UPLOAD_MOUNT}]
+        text = f"{message}\n\nThe uploaded CSV is available in the sandbox at {_UPLOAD_MOUNT}."
+    session = (
+        client.beta.sessions.create(agent=agent_id, environment_id=env_id, resources=resources)
+        if resources
+        else client.beta.sessions.create(agent=agent_id, environment_id=env_id)
+    )
 
     started = time.monotonic()
     in_tok = out_tok = 0
     try:
         client.beta.sessions.events.send(
-            session.id, events=[{"type": "user.message", "content": content}]
+            session.id, events=[{"type": "user.message", "content": [{"type": "text", "text": text}]}]
         )
         with client.beta.sessions.events.stream(session.id) as stream:
             for event in stream:
