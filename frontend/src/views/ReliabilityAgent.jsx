@@ -42,6 +42,8 @@ function Part({ p }) {
   // The agent invoking a Reliafy tool (the approved load), then its outcome.
   if (p.type === "tool_call")
     return <div className="agent-load">→ {TOOL_LABEL[p.name] || p.name}…</div>;
+  if (p.type === "tool_blocked")
+    return <div className="agent-load blocked">⏸ {TOOL_LABEL[p.name] || p.name} — needs your approval</div>;
   if (p.type === "tool_done")
     return <div className={"agent-load done" + (p.ok ? "" : " err")}>{p.ok ? "✓ " : "✕ "}{p.summary}</div>;
   if (p.type === "error")
@@ -115,14 +117,13 @@ export default function ReliabilityAgent() {
       return [...ms.slice(0, -1), { ...last, pending: false, status: null }];
     });
 
-  const send = async () => {
-    const text = input.trim();
+  // Run one turn. `approved` arms the create tools for this turn only (the
+  // "Approve & run" button); a normal Send is never approved, so the agent can
+  // only propose and ask.
+  const runTurn = async (text, { attach = null, approved = false } = {}) => {
     if (!text || busy) return;
     setBusy(true);
     setError(null);
-    const attach = file;
-    setFile(null);
-    setInput("");
     setMessages((ms) => [
       ...ms,
       { role: "user", text: attach ? `${text}  📎 ${attach.name}` : text },
@@ -136,6 +137,7 @@ export default function ReliabilityAgent() {
       }
       await reliabilityAgentStream(text, {
         fileId,
+        approved,
         sessionId: sessionRef.current,
         onEvent: (ev) => {
           switch (ev.type) {
@@ -143,6 +145,7 @@ export default function ReliabilityAgent() {
             case "tool_use": pushPart({ type: "code", name: ev.name, code: ev.code || "" }); break;
             case "tool_result": pushPart({ type: "result", output: ev.output }); break;
             case "reliafy_tool": pushPart({ type: "tool_call", name: ev.name }); break;
+            case "reliafy_tool_blocked": pushPart({ type: "tool_blocked", name: ev.name }); break;
             case "reliafy_tool_result": pushPart({ type: "tool_done", ok: ev.ok, summary: ev.summary }); break;
             case "status": setAgentStatus(ev.status); break;
             case "error": pushPart({ type: "error", detail: ev.detail }); break;
@@ -163,7 +166,21 @@ export default function ReliabilityAgent() {
     }
   };
 
+  const send = () => {
+    const text = input.trim();
+    if (!text) return;
+    const attach = file;
+    setFile(null);
+    setInput("");
+    runTurn(text, { attach });
+  };
+
+  const approve = () => runTurn("Approved — go ahead with the plan.", { approved: true });
+
   const disabled = busy || !info?.enabled;
+  // Offer the greenlight once the agent has spoken and it's the user's move.
+  const lastMsg = messages[messages.length - 1];
+  const canApprove = !disabled && lastMsg?.role === "agent" && lastMsg.parts.length > 0;
 
   return (
     <div className="app agent-page">
@@ -197,6 +214,15 @@ export default function ReliabilityAgent() {
       </div>
 
       {error && <div className="card error" style={{ marginTop: "0.6rem" }}>{error}</div>}
+
+      {canApprove && (
+        <div className="chat-approve">
+          <button className="chat-approve-btn" onClick={approve}>✓ Approve &amp; run plan</button>
+          <span className="muted-line" style={{ margin: 0 }}>
+            Arms the create tools for the next step only. Keep typing to refine instead.
+          </span>
+        </div>
+      )}
 
       <div className="chat-composer">
         <label className="chat-attach" title={file ? file.name : "Attach a CSV"}>

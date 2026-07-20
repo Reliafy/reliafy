@@ -345,15 +345,17 @@ def _is_idle(event) -> bool:
 # ---- Agentic run ------------------------------------------------------------
 
 def stream_run(db, uid: str, message: str, file_id: str | None = None,
-               session_id: str | None = None):
+               session_id: str | None = None, approved: bool = False):
     """Advance the conversation one turn, executing any Reliafy tools the agent
     calls, and yield normalised events. Ends with ``{"type": "_meter", ...}``
     (session runtime, token totals, session_id to reuse next turn). A generator
     the router streams as SSE.
 
-    When the agent calls a custom tool the session goes idle 'requires action';
-    we run the tool on the Reliafy side, send a ``user.custom_tool_result``, and
-    continue streaming — up to ``_MAX_TOOL_ROUNDS`` rounds."""
+    When the agent calls a custom tool the session goes idle 'requires action'.
+    ``approved`` is the HARD gate: the create tools only run when the turn is
+    approved (the user clicked 'Approve & run'). An un-approved tool call is
+    blocked — we hand the agent an error so it presents its plan and waits — so
+    nothing is created without an explicit greenlight, whatever the model does."""
     client = _client()
     text = message
 
@@ -401,14 +403,20 @@ def stream_run(db, uid: str, message: str, file_id: str | None = None,
             if not pending:
                 break  # normal end of turn
 
-            # Execute the Reliafy tools, stream a result line each, and hand the
-            # outcomes back to the agent to continue.
+            # Execute the Reliafy tools (only when the turn is approved), stream a
+            # result line each, and hand the outcomes back to the agent.
             results = []
             for call in pending:
-                res = _execute_tool(db, uid, call["name"], call["input"])
-                yield {"type": "reliafy_tool_result", "name": call["name"],
-                       "ok": "error" not in res,
-                       "summary": res.get("summary") or res.get("error") or "done"}
+                if not approved:
+                    yield {"type": "reliafy_tool_blocked", "name": call["name"]}
+                    res = {"error": "The user has NOT approved yet. Present your "
+                           "plan clearly and ask them to approve — do not call any "
+                           "create tool until the turn is approved."}
+                else:
+                    res = _execute_tool(db, uid, call["name"], call["input"])
+                    yield {"type": "reliafy_tool_result", "name": call["name"],
+                           "ok": "error" not in res,
+                           "summary": res.get("summary") or res.get("error") or "done"}
                 results.append({
                     "type": "user.custom_tool_result",
                     "custom_tool_use_id": call["id"],

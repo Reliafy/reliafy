@@ -5650,7 +5650,38 @@ button.danger:hover { background: #fdeeee; }
   padding: 4px 10px;
 }
 .agent-load.done.err { color: #b91c1c; background: rgba(185, 28, 28, 0.08); }
+.agent-load.blocked {
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
 .chat-error { color: #b91c1c; white-space: pre-wrap; }
+
+/* Arm-and-go approval bar above the composer. */
+.chat-approve {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.7rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--acc);
+  background: var(--acc-t);
+  border-radius: 10px;
+}
+.chat-approve-btn {
+  flex: 0 0 auto;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+.chat-approve-btn:hover:not(:disabled) { background: var(--acc-d); }
 .chat-typing, .chat-status {
   font-family: var(--mono);
   font-size: 11px;

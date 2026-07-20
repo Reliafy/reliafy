@@ -65,6 +65,7 @@ def agent_run(
     message: str = Body(...),
     file_id: str | None = Body(default=None),
     session_id: str | None = Body(default=None),
+    approved: bool = Body(default=False),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> StreamingResponse | JSONResponse:
@@ -84,7 +85,7 @@ def agent_run(
 
     def event_stream():
         try:
-            for ev in agent_service.stream_run(session, uid, message, file_id, session_id):
+            for ev in agent_service.stream_run(session, uid, message, file_id, session_id, approved):
                 if ev.get("type") == "_meter":
                     cost_mc = agent_service.cost_millicents(
                         ev.get("seconds", 0.0), ev.get("input_tokens", 0), ev.get("output_tokens", 0)

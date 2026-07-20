@@ -421,7 +421,7 @@ export function reliabilityAgentUpload(file) {
 // each parsed event (text / tool_use / tool_result / image / status / error /
 // done). Pass `sessionId` to continue an existing conversation (the `done`
 // event carries the session_id to reuse). Resolves when the stream ends.
-export async function reliabilityAgentStream(message, { fileId, sessionId, onEvent, signal } = {}) {
+export async function reliabilityAgentStream(message, { fileId, sessionId, approved, onEvent, signal } = {}) {
   const headers = {
     "Content-Type": "application/json",
     ...workspaceHeaders(),
@@ -430,7 +430,7 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, onEve
   const res = await fetch("/api/reliability-agent/run", {
     method: "POST",
     headers,
-    body: JSON.stringify({ message, file_id: fileId || null, session_id: sessionId || null }),
+    body: JSON.stringify({ message, file_id: fileId || null, session_id: sessionId || null, approved: !!approved }),
     signal,
   });
   if (!res.ok) {

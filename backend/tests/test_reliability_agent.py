@@ -137,6 +137,62 @@ def test_create_life_model_full_inputs():
     assert saved_r["kind"] == "regression"
 
 
+class _FakeStream:
+    def __init__(self, events): self._events = events
+    def __enter__(self): return iter(self._events)
+    def __exit__(self, *a): return False
+
+
+class _FakeClient:
+    """Scripts two stream rounds: the agent calls create_dataset, goes idle; then
+    (after we return the tool result) a final message + idle. Captures sends."""
+    def __init__(self):
+        self.sent = []
+        rounds = [
+            [{"type": "agent.custom_tool_use", "id": "tu1", "name": "create_dataset",
+              "input": {"name": "X", "csv": "t\n1\n2\n3\n"}},
+             {"type": "session.thread_status_idle"}],
+            [{"type": "agent.message", "content": [{"text": "done"}]},
+             {"type": "session.thread_status_idle"}],
+        ]
+        outer = self
+        class _Events:
+            def send(self, sid, events=None): outer.sent.append(events)
+            def stream(self, sid): return _FakeStream(rounds.pop(0) if rounds else [])
+        class _Sessions:
+            events = _Events()
+            def create(self, **kw): return type("S", (), {"id": "s1"})()
+        self.beta = type("B", (), {"sessions": _Sessions()})()
+
+
+def test_hard_approval_gate_blocks_tools_until_approved(monkeypatch):
+    """The create tools only run when the turn is approved — the gate is enforced
+    in code, not just the prompt."""
+    from backend.services import reliability_agent as agent
+
+    # Unapproved: the tool call is BLOCKED — nothing is created, agent gets an error.
+    db1 = mongomock.MongoClient()["reliafy_test"]
+    fake1 = _FakeClient()
+    monkeypatch.setattr(agent, "_client", lambda: fake1)
+    evs = list(agent.stream_run(db1, U, "go", session_id="s1", approved=False))
+    kinds = [e["type"] for e in evs]
+    assert "reliafy_tool_blocked" in kinds
+    assert "reliafy_tool_result" not in kinds
+    assert db1.datasets.count_documents({}) == 0            # nothing created
+    result_sent = fake1.sent[-1][0]                          # the user.custom_tool_result
+    assert result_sent["is_error"] is True
+
+    # Approved: the same call executes and the dataset lands.
+    db2 = mongomock.MongoClient()["reliafy_test"]
+    fake2 = _FakeClient()
+    monkeypatch.setattr(agent, "_client", lambda: fake2)
+    evs2 = list(agent.stream_run(db2, U, "go", session_id="s1", approved=True))
+    kinds2 = [e["type"] for e in evs2]
+    assert "reliafy_tool_result" in kinds2 and "reliafy_tool_blocked" not in kinds2
+    assert db2.datasets.count_documents({"owner_id": U}) == 1
+    assert fake2.sent[-1][0]["is_error"] is False
+
+
 def test_config_exposes_agent_feature_flag(monkeypatch):
     from backend import config, db
     from backend.main import app
@@ -215,8 +271,8 @@ def test_run_streams_events_and_meters(monkeypatch):
         app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
         billing.grant_credits(test_db, U, 1000, "test")
         monkeypatch.setattr(agent, "enabled", lambda: True)
-        # stream_run's new signature: (db, uid, message, file_id=None, session_id=None).
-        monkeypatch.setattr(agent, "stream_run", lambda db, uid, message, file_id=None, session_id=None: iter([
+        # stream_run signature: (db, uid, message, file_id=None, session_id=None, approved=False).
+        monkeypatch.setattr(agent, "stream_run", lambda db, uid, message, file_id=None, session_id=None, approved=False: iter([
             {"type": "text", "text": "here's my plan…"},
             {"type": "reliafy_tool", "name": "create_dataset", "input": {}},
             {"type": "reliafy_tool_result", "name": "create_dataset", "ok": True, "summary": "Created dataset “X” (10 rows)."},
