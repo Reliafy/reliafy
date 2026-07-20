@@ -5508,51 +5508,88 @@ button.danger:hover { background: #fdeeee; }
   background: var(--surf);
   border: 1px solid var(--line);
   border-bottom-left-radius: 4px;
+  white-space: pre-wrap;
+}
+
+/* An agent turn is a left-aligned stack of prose bubbles + step chips. */
+.agent-stack {
+  max-width: 88%;
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  align-items: flex-start;
+  gap: 0.5rem;
 }
-.chat-text { white-space: pre-wrap; }
+.agent-stack > * { max-width: 100%; align-self: stretch; }
+.agent-stack > .chat-bubble.agent { align-self: flex-start; max-width: 100%; }
 
-/* Collapsible code / output blocks inside an agent turn. */
-.chat-code, .chat-result {
+/* Sandbox activity: a compact collapsed "step" chip, distinct from messages.
+   Collapsed by default (the <details> has no `open`); a chevron flips on open. */
+.agent-step {
   border: 1px solid var(--line2);
   border-radius: 8px;
   background: var(--panel-2);
   overflow: hidden;
 }
-.chat-code > summary, .chat-result > summary {
+.agent-step > summary {
   cursor: pointer;
   list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-family: var(--mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--faint);
-  padding: 7px 12px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 6px 11px;
+  user-select: none;
 }
-.chat-code > summary::-webkit-details-marker, .chat-result > summary::-webkit-details-marker { display: none; }
-.chat-code pre, .chat-result pre {
+.agent-step > summary:hover { color: var(--text); }
+.agent-step > summary::-webkit-details-marker { display: none; }
+.agent-step > summary::after {
+  content: "▸";
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--faint);
+  transition: transform 0.12s ease;
+}
+.agent-step[open] > summary::after { transform: rotate(90deg); }
+.agent-step-k {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--line2);
+  color: var(--faint);
+  font-weight: 700;
+}
+.agent-step pre {
   margin: 0;
-  padding: 0 12px 10px;
+  padding: 4px 11px 10px;
   overflow-x: auto;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
+  border-top: 1px solid var(--line2);
 }
-/* Reliafy tool call + outcome (the approved load). */
-.chat-toolcall {
+
+/* Reliafy tool call + outcome (the approved load) — distinct accented chips. */
+.agent-load {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--muted);
+  padding: 2px 2px;
 }
-.chat-tooldone {
-  font-size: 13px;
+.agent-load.done {
   font-weight: 600;
   color: var(--acc-d);
+  background: var(--acc-t);
+  border-radius: 6px;
+  padding: 4px 10px;
 }
-.chat-tooldone.err { color: #b91c1c; }
+.agent-load.done.err { color: #b91c1c; background: rgba(185, 28, 28, 0.08); }
 .chat-error { color: #b91c1c; white-space: pre-wrap; }
 .chat-typing, .chat-status {
   font-family: var(--mono);

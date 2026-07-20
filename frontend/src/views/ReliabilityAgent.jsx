@@ -13,28 +13,31 @@ import {
 
 const TOOL_LABEL = { create_dataset: "Create dataset", create_life_model: "Create life model" };
 
-// One streamed part within an agent turn.
+// One streamed part within an agent turn. Conversational text is a message
+// bubble; sandbox activity (bash/code + output) is a distinct collapsed "step"
+// chip, so the agent's thinking is legible without a wall of code.
 function Part({ p }) {
-  if (p.type === "text") return p.text ? <div className="chat-text">{p.text}</div> : null;
+  if (p.type === "text")
+    return p.text ? <div className="chat-bubble agent">{p.text}</div> : null;
   if (p.type === "code")
     return (
-      <details className="chat-code" open>
-        <summary>{p.name || "ran code"}</summary>
+      <details className="agent-step">
+        <summary><span className="agent-step-k">$</span> {p.name || "ran code"}</summary>
         <pre>{p.code}</pre>
       </details>
     );
   if (p.type === "result")
     return (
-      <details className="chat-result">
-        <summary>output</summary>
+      <details className="agent-step">
+        <summary><span className="agent-step-k">»</span> output</summary>
         <pre>{p.output}</pre>
       </details>
     );
   // The agent invoking a Reliafy tool (the approved load), then its outcome.
   if (p.type === "tool_call")
-    return <div className="chat-toolcall">→ {TOOL_LABEL[p.name] || p.name}…</div>;
+    return <div className="agent-load">→ {TOOL_LABEL[p.name] || p.name}…</div>;
   if (p.type === "tool_done")
-    return <div className={"chat-tooldone" + (p.ok ? "" : " err")}>{p.ok ? "✓ " : "✕ "}{p.summary}</div>;
+    return <div className={"agent-load done" + (p.ok ? "" : " err")}>{p.ok ? "✓ " : "✕ "}{p.summary}</div>;
   if (p.type === "error")
     return <div className="chat-error">{p.detail}</div>;
   return null;
@@ -48,9 +51,10 @@ function Bubble({ msg }) {
       </div>
     );
   }
+  // The agent turn is a left-aligned stack of bubbles + step chips (not one card).
   return (
     <div className="chat-row agent">
-      <div className="chat-bubble agent">
+      <div className="agent-stack">
         {msg.parts.length === 0 && msg.pending && <span className="chat-typing">Working…</span>}
         {msg.parts.map((p, i) => <Part key={i} p={p} />)}
         {msg.status && msg.pending && <span className="chat-status">{msg.status}…</span>}
