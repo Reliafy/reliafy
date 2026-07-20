@@ -185,6 +185,14 @@ try:
     MANAGED_AGENT_USD_PER_HOUR = float(os.environ.get("MANAGED_AGENT_USD_PER_HOUR", "0.08"))
 except ValueError:
     MANAGED_AGENT_USD_PER_HOUR = 0.08
+# Public base URL the agent's cloud sandbox can reach to POST chart/artifact
+# files back to us (the sandbox has unrestricted egress + curl). Defaults to the
+# site's public origin; unset (e.g. local dev, where the sandbox can't reach
+# localhost) falls back to inline base64 chart markers.
+RELIABILITY_AGENT_ARTIFACT_BASE = (
+    (os.environ.get("RELIABILITY_AGENT_ARTIFACT_BASE") or "").strip().rstrip("/")
+    or PUBLIC_BASE_URL
+)
 # Firebase/GCP project whose ID tokens we accept. Cloud Run usually injects
 # GOOGLE_CLOUD_PROJECT; FIREBASE_PROJECT_ID overrides it if the Firebase project
 # differs from the GCP project.

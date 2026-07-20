@@ -38,15 +38,19 @@ SYSTEM_PROMPT = (
     "distribution, parameters, and a goodness-of-fit summary. Be concise and show "
     "the numbers you actually computed.\n\n"
     "DISPLAYING CHARTS — CRITICAL: the user CANNOT see the sandbox filesystem, so "
-    "saving a PNG is NOT enough — a saved plot is invisible to them. The ONLY way "
-    "the user sees an image is if you print its base64 to stdout with markers. In "
-    "the SAME python script that builds each plot, end with these exact lines:\n"
+    "saving a PNG is NOT enough — a saved plot is invisible to them. There are two "
+    "ways to show a chart:\n"
+    "1) PREFERRED — if the conversation gives you a chart upload URL, save the PNG "
+    "(dpi=90, bbox_inches='tight') and run:  curl -s -F \"file=@/tmp/c.png\" \"<that url>\"\n"
+    "   The command prints a small placement marker — that's all that's needed. Do "
+    "NOT print base64 when an upload URL is available.\n"
+    "2) FALLBACK — only when NO upload URL was provided, print the image as base64 "
+    "in the SAME python script that builds the plot:\n"
     "    fig.savefig('/tmp/c.png', dpi=90, bbox_inches='tight')\n"
     "    import base64, sys\n"
     "    sys.stdout.write('<<RELIAFY_IMG>>' + base64.b64encode(open('/tmp/c.png','rb').read()).decode() + '<<END_IMG>>')\n"
-    "Do this for every chart, immediately, in the same code cell. Never just say "
-    "'the chart is saved' — always emit the base64. Don't print the base64 in any "
-    "other format and don't describe it."
+    "Do one of these for every chart, immediately. Never just say 'the chart is "
+    "saved'."
 )
 
 
@@ -121,23 +125,81 @@ def upload_csv(data: bytes, filename: str = "data.csv") -> str:
 
 
 import re
+import uuid
+from datetime import datetime, timedelta, timezone
 
-# Charts are emitted by the agent as base64 PNG wrapped in these markers (see the
-# system prompt), because the sandbox filesystem isn't visible to the client.
+# Two chart channels (see the system prompt). Preferred: the agent curls the
+# PNG to our artifact endpoint (the sandbox has unrestricted egress), which
+# responds with a tiny placement marker — no image bytes ride through the model.
+# Fallback (local dev, where the sandbox can't reach localhost): inline base64.
 _IMG_RE = re.compile(r"<<RELIAFY_IMG>>(.*?)<<END_IMG>>", re.DOTALL)
+_ARTIFACT_RE = re.compile(r"<<RELIAFY_ARTIFACT:([A-Za-z0-9_-]+)>>")
+
+# Artifact upload limits (per run token / per file).
+_ARTIFACT_TOKEN_TTL = timedelta(minutes=30)
+_ARTIFACT_MAX_USES = 12
+_ARTIFACT_MAX_BYTES = 3 * 1024 * 1024
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
-def _extract_images(text: str) -> tuple[str, list[str]]:
-    """Pull any base64 chart(s) out of tool output. Returns the text with the
-    markers removed and a list of ``data:image/png;base64,…`` URIs."""
-    if not text or "<<RELIAFY_IMG>>" not in text:
+def _extract_images(text: str) -> tuple[str, list[dict]]:
+    """Pull chart references out of agent output. Returns the text with markers
+    removed and image events — ``{"type": "image", "url": …}`` for uploaded
+    artifacts, ``{"type": "image", "data": …}`` for inline base64."""
+    if not text or ("<<RELIAFY" not in text):
         return text, []
-    uris = []
+    images: list[dict] = []
+    for aid in _ARTIFACT_RE.findall(text):
+        images.append({"type": "image", "url": f"/api/reliability-agent/artifacts/{aid}"})
     for m in _IMG_RE.findall(text):
         b64 = "".join(m.split())  # strip whitespace/newlines the shell may add
         if b64:
-            uris.append(f"data:image/png;base64,{b64}")
-    return _IMG_RE.sub("", text).strip(), uris
+            images.append({"type": "image", "data": f"data:image/png;base64,{b64}"})
+    cleaned = _ARTIFACT_RE.sub("", _IMG_RE.sub("", text)).strip()
+    return cleaned, images
+
+
+# ---- Chart artifacts (sandbox -> backend uploads) ---------------------------
+
+def mint_artifact_token(db, uid: str) -> str:
+    """A short-lived, single-run token the sandbox uses to POST charts back."""
+    token = uuid.uuid4().hex
+    db.agent_artifact_tokens.insert_one({
+        "_id": token, "uid": uid, "uses": 0,
+        "expires_at": datetime.now(timezone.utc) + _ARTIFACT_TOKEN_TTL,
+    })
+    return token
+
+
+def save_artifact(db, token: str, data: bytes) -> str:
+    """Validate the token + PNG payload and store the chart; returns its id.
+    Raises ``AgentError`` with a short reason on any failure."""
+    doc = db.agent_artifact_tokens.find_one({"_id": token})
+    now = datetime.now(timezone.utc)
+    expires = doc.get("expires_at") if doc else None
+    if expires is not None and expires.tzinfo is None:  # mongo returns naive UTC
+        expires = expires.replace(tzinfo=timezone.utc)
+    if doc is None or expires is None or expires < now:
+        raise AgentError("invalid or expired upload token")
+    if doc.get("uses", 0) >= _ARTIFACT_MAX_USES:
+        raise AgentError("upload limit reached for this run")
+    if len(data) > _ARTIFACT_MAX_BYTES:
+        raise AgentError("file too large")
+    if not data.startswith(_PNG_MAGIC):
+        raise AgentError("only PNG charts are accepted")
+    artifact_id = uuid.uuid4().hex
+    db.agent_artifacts.insert_one({
+        "_id": artifact_id, "uid": doc["uid"], "data": data,
+        "mime": "image/png", "created_at": now,
+    })
+    db.agent_artifact_tokens.update_one({"_id": token}, {"$inc": {"uses": 1}})
+    return artifact_id
+
+
+def get_artifact(db, uid: str, artifact_id: str) -> bytes | None:
+    """The chart bytes, scoped to its owner. None when unknown/not yours."""
+    doc = db.agent_artifacts.find_one({"_id": artifact_id, "uid": uid})
+    return bytes(doc["data"]) if doc else None
 
 
 def _norm(event) -> list[dict]:
@@ -160,9 +222,13 @@ def _norm(event) -> list[dict]:
     if etype.startswith("span."):
         return []
 
-    # Assistant text.
+    # Assistant text — the model may echo a placement marker in its prose, so
+    # extract/strip chart markers here too (the UI dedupes repeats).
     if etype in ("agent.message", "agent.message.delta", "message"):
-        return [{"type": "text", "text": _flatten_text(_get(event, "text", "content"))}]
+        text, images = _extract_images(_flatten_text(_get(event, "text", "content")))
+        out = [{"type": "text", "text": text}] if text else []
+        out.extend(images)
+        return out
     # Extended thinking — surfaced as a subtle status, not full content.
     if etype in ("agent.thinking", "agent.thinking.delta"):
         return [{"type": "status", "status": "thinking"}]
@@ -171,13 +237,14 @@ def _norm(event) -> list[dict]:
         inp = _get(event, "input") or {}
         return [{"type": "tool_use", "name": _get(event, "name"),
                  "code": (isinstance(inp, dict) and (inp.get("command") or inp.get("code") or inp.get("content"))) or None}]
-    # Tool output — split out any inline chart(s).
+    # Tool output — split out any chart marker(s): uploaded-artifact refs and/or
+    # inline base64.
     if etype in ("agent.tool_result", "tool_result"):
         text, images = _extract_images(_flatten_text(_get(event, "content", "output", "stdout")))
         out = []
         if text:
             out.append({"type": "tool_result", "output": text})
-        out.extend({"type": "image", "data": uri} for uri in images)
+        out.extend(images)
         return out
     # The agent calling one of *our* custom tools (e.g. save to Reliafy) — later.
     if etype in ("agent.custom_tool_use",):
@@ -232,7 +299,8 @@ def _is_idle(event) -> bool:
 _UPLOAD_MOUNT = "/mnt/session/uploads/data.csv"
 
 
-def stream_run(message: str, file_id: str | None = None, session_id: str | None = None):
+def stream_run(message: str, file_id: str | None = None, session_id: str | None = None,
+               artifact_url: str | None = None):
     """Advance the conversation one turn and yield normalised events as they
     arrive, then a final ``{"type": "_meter", ...}`` (with the session runtime,
     token totals, and the ``session_id`` to reuse for the next turn). A generator
@@ -241,9 +309,20 @@ def stream_run(message: str, file_id: str | None = None, session_id: str | None 
     Multi-turn: pass ``session_id`` to continue an existing conversation (its
     history + sandbox state persist server-side); omit it to start a new one. An
     uploaded ``file_id`` is mounted into the sandbox as a file the agent reads
-    with pandas (Managed Agents mounts files as session *resources*)."""
+    with pandas (Managed Agents mounts files as session *resources*).
+    ``artifact_url`` is the signed endpoint the sandbox curls charts to (the
+    preferred channel — no image bytes through the model); when absent the agent
+    falls back to inline base64 markers."""
     client = _client()
     text = message
+    if artifact_url:
+        text = (
+            f"{message}\n\n"
+            f"[chart uploads for this conversation: after saving each chart PNG run "
+            f"`curl -s -F \"file=@/tmp/c.png\" \"{artifact_url}\"` — it prints the "
+            f"placement marker. Do NOT print base64.]"
+        )
+        message = text  # the file-mount appendix below builds on this
 
     if session_id:
         # Continue the conversation; attach a new file mid-thread if given.

@@ -3,7 +3,26 @@ import {
   reliabilityAgentInfo,
   reliabilityAgentUpload,
   reliabilityAgentStream,
+  fetchImageObjectURL,
 } from "../api.js";
+
+// A chart served from the artifact endpoint needs the auth header, which an
+// <img src> can't carry — fetch it as a blob and render the object URL.
+function AuthImage({ url }) {
+  const [src, setSrc] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    let obj = null;
+    fetchImageObjectURL(url)
+      .then((u) => { obj = u; if (alive) setSrc(u); else URL.revokeObjectURL(u); })
+      .catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; if (obj) URL.revokeObjectURL(obj); };
+  }, [url]);
+  if (failed) return <span className="chat-status">chart unavailable</span>;
+  if (!src) return <span className="chat-status">loading chart…</span>;
+  return <img className="chat-image" src={src} alt="chart from the agent" />;
+}
 
 // A regular conversational chat with the code-running Reliability Agent
 // (Anthropic Managed Agents). Messages persist in a scrolling thread; the
@@ -29,7 +48,9 @@ function Part({ p }) {
       </details>
     );
   if (p.type === "image")
-    return <img className="chat-image" src={p.data} alt="chart from the agent" />;
+    return p.url
+      ? <AuthImage url={p.url} />
+      : <img className="chat-image" src={p.data} alt="chart from the agent" />;
   if (p.type === "error")
     return <div className="chat-error">{p.detail}</div>;
   return null;
@@ -71,11 +92,19 @@ export default function ReliabilityAgent() {
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages]);
 
   // Append a streamed part to the last (agent) message. Consecutive text parts
-  // merge so the reply reads as one paragraph, not fragments.
+  // merge so the reply reads as one paragraph; duplicate images are dropped (a
+  // chart marker can surface in both the tool output and the model's prose).
   const pushPart = (part) =>
     setMessages((ms) => {
       const last = ms[ms.length - 1];
       if (!last || last.role !== "agent") return ms;
+      if (
+        part.type === "image" &&
+        last.parts.some((q) => q.type === "image" &&
+          ((part.url && q.url === part.url) || (part.data && q.data === part.data)))
+      ) {
+        return ms;
+      }
       const parts = [...last.parts];
       const prev = parts[parts.length - 1];
       if (part.type === "text" && prev?.type === "text") {
@@ -127,7 +156,7 @@ export default function ReliabilityAgent() {
             case "text": pushPart({ type: "text", text: ev.text }); break;
             case "tool_use": pushPart({ type: "code", name: ev.name, code: ev.code || "" }); break;
             case "tool_result": pushPart({ type: "result", output: ev.output }); break;
-            case "image": pushPart({ type: "image", data: ev.data }); break;
+            case "image": pushPart({ type: "image", data: ev.data, url: ev.url }); break;
             case "status": setAgentStatus(ev.status); break;
             case "error": pushPart({ type: "error", detail: ev.detail }); break;
             case "done":

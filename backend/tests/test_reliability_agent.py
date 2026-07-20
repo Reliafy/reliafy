@@ -78,6 +78,71 @@ def test_norm_extracts_inline_chart():
     assert [e["type"] for e in only] == ["image"]
 
 
+def test_norm_extracts_artifact_marker():
+    """The preferred channel: the sandbox curls the PNG to our artifact endpoint,
+    whose response marker lands in tool output — it becomes an image-URL event.
+    A marker echoed in the model's prose is stripped there too."""
+    from backend.services import reliability_agent as agent
+
+    aid = "a" * 32
+    out = agent._norm({
+        "type": "agent.tool_result",
+        "content": [{"text": f"<<RELIAFY_ARTIFACT:{aid}>>"}],
+    })
+    assert out == [{"type": "image", "url": f"/api/reliability-agent/artifacts/{aid}"}]
+
+    prose = agent._norm({
+        "type": "agent.message",
+        "content": [{"text": f"Here's the chart: <<RELIAFY_ARTIFACT:{aid}>> Enjoy."}],
+    })
+    kinds = [e["type"] for e in prose]
+    assert kinds == ["text", "image"]
+    assert "RELIAFY_ARTIFACT" not in prose[0]["text"]
+
+
+def test_artifact_upload_and_download_roundtrip(monkeypatch):
+    """Sandbox POSTs a PNG with a minted token -> marker response; the owner
+    (and only the owner) can GET the bytes back."""
+    from backend import config, db
+    from backend.auth import get_current_user
+    from backend.main import app
+    from backend.services import reliability_agent as agent
+
+    monkeypatch.setattr(config, "AUTH_DISABLED", False)
+    test_db = mongomock.MongoClient()["reliafy_test"]
+    monkeypatch.setattr(db, "_db", test_db)
+    monkeypatch.setattr(db, "_simulated", True)
+    client = TestClient(app)
+    png = b"\x89PNG\r\n\x1a\n" + b"fakechartdata"
+
+    try:
+        token = agent.mint_artifact_token(test_db, U)
+
+        # Upload (no user auth — the token is the auth), response IS the marker.
+        r = client.post(f"/api/reliability-agent/artifacts/upload/{token}",
+                        files={"file": ("c.png", png, "image/png")})
+        assert r.status_code == 200, r.text
+        assert r.text.startswith("<<RELIAFY_ARTIFACT:") and r.text.endswith(">>")
+        artifact_id = r.text[len("<<RELIAFY_ARTIFACT:"):-2]
+
+        # Bad token and non-PNG payloads are rejected.
+        assert client.post("/api/reliability-agent/artifacts/upload/nope",
+                           files={"file": ("c.png", png, "image/png")}).status_code == 403
+        assert client.post(f"/api/reliability-agent/artifacts/upload/{token}",
+                           files={"file": ("c.txt", b"not a png", "text/plain")}).status_code == 403
+
+        # Owner downloads it; another user gets 404.
+        app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
+        got = client.get(f"/api/reliability-agent/artifacts/{artifact_id}")
+        assert got.status_code == 200
+        assert got.content == png and got.headers["content-type"] == "image/png"
+
+        app.dependency_overrides[get_current_user] = lambda: {"uid": "someone-else", "email": "b", "name": "B"}
+        assert client.get(f"/api/reliability-agent/artifacts/{artifact_id}").status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_config_exposes_agent_feature_flag(monkeypatch):
     from backend import config, db
     from backend.main import app
@@ -158,7 +223,7 @@ def test_run_streams_events_and_meters(monkeypatch):
         app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
         billing.grant_credits(test_db, U, 1000, "test")
         monkeypatch.setattr(agent, "enabled", lambda: True)
-        monkeypatch.setattr(agent, "stream_run", lambda message, file_id=None, session_id=None: iter([
+        monkeypatch.setattr(agent, "stream_run", lambda message, file_id=None, session_id=None, artifact_url=None: iter([
             {"type": "text", "text": "fitting…"},
             {"type": "tool_use", "name": "bash", "code": "import surpyval"},
             {"type": "tool_result", "output": "Weibull alpha=100 beta=2"},
