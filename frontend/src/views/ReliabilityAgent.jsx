@@ -3,32 +3,15 @@ import {
   reliabilityAgentInfo,
   reliabilityAgentUpload,
   reliabilityAgentStream,
-  fetchImageObjectURL,
 } from "../api.js";
 
-// A chart served from the artifact endpoint needs the auth header, which an
-// <img src> can't carry — fetch it as a blob and render the object URL.
-function AuthImage({ url }) {
-  const [src, setSrc] = useState(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    let obj = null;
-    fetchImageObjectURL(url)
-      .then((u) => { obj = u; if (alive) setSrc(u); else URL.revokeObjectURL(u); })
-      .catch(() => { if (alive) setFailed(true); });
-    return () => { alive = false; if (obj) URL.revokeObjectURL(obj); };
-  }, [url]);
-  if (failed) return <span className="chat-status">chart unavailable</span>;
-  if (!src) return <span className="chat-status">loading chart…</span>;
-  return <img className="chat-image" src={src} alt="chart from the agent" />;
-}
+// A conversational chat with the Reliability Agent (Anthropic Managed Agents).
+// The agent assesses the task, builds the solution with surpyval/repyability in
+// its sandbox, proposes a plan, and — after the user approves — calls Reliafy
+// tools to load datasets + life models into the workspace. Messages persist in a
+// scrolling thread; the session is reused across turns.
 
-// A regular conversational chat with the code-running Reliability Agent
-// (Anthropic Managed Agents). Messages persist in a scrolling thread; the
-// session is reused across turns so the agent keeps its context and sandbox
-// state. Each agent turn renders its streamed parts inline — text, the code it
-// runs, results, and any charts it produces.
+const TOOL_LABEL = { create_dataset: "Create dataset", create_life_model: "Create life model" };
 
 // One streamed part within an agent turn.
 function Part({ p }) {
@@ -47,10 +30,11 @@ function Part({ p }) {
         <pre>{p.output}</pre>
       </details>
     );
-  if (p.type === "image")
-    return p.url
-      ? <AuthImage url={p.url} />
-      : <img className="chat-image" src={p.data} alt="chart from the agent" />;
+  // The agent invoking a Reliafy tool (the approved load), then its outcome.
+  if (p.type === "tool_call")
+    return <div className="chat-toolcall">→ {TOOL_LABEL[p.name] || p.name}…</div>;
+  if (p.type === "tool_done")
+    return <div className={"chat-tooldone" + (p.ok ? "" : " err")}>{p.ok ? "✓ " : "✕ "}{p.summary}</div>;
   if (p.type === "error")
     return <div className="chat-error">{p.detail}</div>;
   return null;
@@ -92,19 +76,11 @@ export default function ReliabilityAgent() {
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages]);
 
   // Append a streamed part to the last (agent) message. Consecutive text parts
-  // merge so the reply reads as one paragraph; duplicate images are dropped (a
-  // chart marker can surface in both the tool output and the model's prose).
+  // merge so the reply reads as one paragraph.
   const pushPart = (part) =>
     setMessages((ms) => {
       const last = ms[ms.length - 1];
       if (!last || last.role !== "agent") return ms;
-      if (
-        part.type === "image" &&
-        last.parts.some((q) => q.type === "image" &&
-          ((part.url && q.url === part.url) || (part.data && q.data === part.data)))
-      ) {
-        return ms;
-      }
       const parts = [...last.parts];
       const prev = parts[parts.length - 1];
       if (part.type === "text" && prev?.type === "text") {
@@ -156,7 +132,8 @@ export default function ReliabilityAgent() {
             case "text": pushPart({ type: "text", text: ev.text }); break;
             case "tool_use": pushPart({ type: "code", name: ev.name, code: ev.code || "" }); break;
             case "tool_result": pushPart({ type: "result", output: ev.output }); break;
-            case "image": pushPart({ type: "image", data: ev.data, url: ev.url }); break;
+            case "reliafy_tool": pushPart({ type: "tool_call", name: ev.name }); break;
+            case "reliafy_tool_result": pushPart({ type: "tool_done", ok: ev.ok, summary: ev.summary }); break;
             case "status": setAgentStatus(ev.status); break;
             case "error": pushPart({ type: "error", detail: ev.detail }); break;
             case "done":
@@ -185,7 +162,7 @@ export default function ReliabilityAgent() {
           <h1>Reliability Agent <span className="agent-poc">POC</span></h1>
           <p>
             {info?.enabled
-              ? <>Runs Python (with surpyval) in a managed sandbox on your data. Model: <code>{info.model}</code>.</>
+              ? <>Analyses your data with surpyval/repyability, proposes a plan, and — once you approve — loads datasets and life models into your workspace. Model: <code>{info.model}</code>.</>
               : "Not configured yet — set ANTHROPIC_API_KEY on the server to enable."}
           </p>
         </div>
@@ -199,10 +176,11 @@ export default function ReliabilityAgent() {
           <div className="chat-empty">
             <p>Attach a CSV of failure data and ask, for example:</p>
             <ul>
-              <li>“Fit the best distribution to these failure times and plot the survival curve.”</li>
-              <li>“Compare Weibull vs lognormal by AIC and show a probability plot.”</li>
-              <li>“Estimate the B10 life and 90% confidence interval.”</li>
+              <li>“Fit the best distribution to these failure times and save it to my workspace.”</li>
+              <li>“Clean this data, compare Weibull vs lognormal by AIC, and load the winner.”</li>
+              <li>“This has a censoring column — fit a Weibull and save the dataset and model.”</li>
             </ul>
+            <p className="muted-line">It proposes a plan and asks before creating anything.</p>
           </div>
         )}
         {messages.map((m, i) => <Bubble key={i} msg={m} />)}

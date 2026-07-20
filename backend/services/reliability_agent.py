@@ -1,57 +1,111 @@
 """Reliability Agent — Anthropic Managed Agents.
 
 Runs Claude on Anthropic's **Managed Agents** runtime in a managed cloud sandbox
-we provision with ``surpyval`` + the scientific stack, so it can fit real
-reliability models on uploaded data and stream its work back over SSE.
+we provision with ``surpyval`` + ``repyability``. The agent assesses the user's
+task, builds the best solution in the sandbox (with those two libraries only),
+proposes a plan, and — after the user approves — calls Reliafy-side tools to load
+the results (datasets + life models) into the user's workspace.
 
 Self-contained and independent of the metered assistant
 (``backend.services.assistant``): its own module, its own metering reason
-(``"reliability_agent"``), its own config. When it's ready to take over, the old
-assistant can be deleted without touching this.
+(``"reliability_agent"``), its own config.
 
 BETA NOTE: the Managed Agents API is beta (``managed-agents-2026-04-01``). The
-SDK calls here follow the docs as of 2026-07 and *will* need adjusting as the
-API firms up — they're deliberately isolated in this one module (``_client``,
-``_ensure_agent``, ``upload_csv``, ``stream_run``) so that's a one-file change.
-The ``anthropic`` SDK is imported lazily so this module (and the whole app)
-imports fine even where the SDK isn't installed; only live calls need it.
+SDK calls are isolated in this one module. The ``anthropic`` SDK is imported
+lazily so the app imports fine even where it isn't installed; only live calls
+need it.
 """
 
 from __future__ import annotations
 
+import json
 import time
 
 from backend import config
 from backend.services import billing as billing_service
 
 SYSTEM_PROMPT = (
-    "You are the Reliafy Reliability Agent. You help reliability engineers with "
-    "life-data analysis, failure distributions, censoring/truncation, degradation, "
-    "and maintenance decisions. You run in a sandbox with Python, surpyval and "
-    "repyability installed. Prefer WRITING AND RUNNING CODE to do real work on the "
-    "user's uploaded data — load and clean the CSV, fit models with surpyval, "
-    "compute metrics, make plots — over describing what you would do. "
-    "surpyval basics: fit with `import surpyval; m = surpyval.Weibull.fit(x, c=..., n=...)` "
-    "(c = censoring flags 0/1/-1, n = counts, both optional); read results from "
-    "`m.params`, `m.aic()`, `m.bic()`, and the functions `m.sf(t)`, `m.ff(t)`, "
-    "`m.hf(t)`, `m.mean()`, `m.qf(p)`. When you fit a model, report the "
-    "distribution, parameters, and a goodness-of-fit summary. Be concise and show "
-    "the numbers you actually computed.\n\n"
-    "DISPLAYING CHARTS — CRITICAL: the user CANNOT see the sandbox filesystem, so "
-    "saving a PNG is NOT enough — a saved plot is invisible to them. There are two "
-    "ways to show a chart:\n"
-    "1) PREFERRED — if the conversation gives you a chart upload URL, save the PNG "
-    "(dpi=90, bbox_inches='tight') and run:  curl -s -F \"file=@/tmp/c.png\" \"<that url>\"\n"
-    "   The command prints a small placement marker — that's all that's needed. Do "
-    "NOT print base64 when an upload URL is available.\n"
-    "2) FALLBACK — only when NO upload URL was provided, print the image as base64 "
-    "in the SAME python script that builds the plot:\n"
-    "    fig.savefig('/tmp/c.png', dpi=90, bbox_inches='tight')\n"
-    "    import base64, sys\n"
-    "    sys.stdout.write('<<RELIAFY_IMG>>' + base64.b64encode(open('/tmp/c.png','rb').read()).decode() + '<<END_IMG>>')\n"
-    "Do one of these for every chart, immediately. Never just say 'the chart is "
-    "saved'."
+    "You are the Reliafy Reliability Agent. You help reliability engineers analyse "
+    "life data and build reliability models. You work in a sandbox with Python "
+    "where ONLY surpyval and repyability are available for the reliability maths — "
+    "use them for all fitting/analysis (do NOT use lifelines, the `reliability` "
+    "package, scipy.stats survival, statsmodels, etc.). You also have two tools "
+    "that write results into the user's Reliafy workspace: create_dataset and "
+    "create_life_model.\n\n"
+    "WORKFLOW — follow this every time:\n"
+    "1. ASSESS the user's task and their data (load and inspect the uploaded CSV "
+    "if there is one).\n"
+    "2. BUILD the solution in the sandbox with surpyval/repyability — clean the "
+    "data, try candidate distributions, check goodness-of-fit, decide the best "
+    "model. Show the key numbers you computed.\n"
+    "3. PLAN: state exactly what you will save to Reliafy — which dataset(s) and "
+    "which life model(s), each with its distribution and columns — as a short "
+    "numbered list.\n"
+    "4. ASK the user to approve the plan, then STOP and wait. Do NOT call "
+    "create_dataset or create_life_model until the user has clearly approved (e.g. "
+    "'yes', 'go ahead'). If they change it, revise and ask again.\n"
+    "5. LOAD once approved: call create_dataset first (it returns a dataset_id), "
+    "then create_life_model referencing that id. Report what was created.\n\n"
+    "surpyval fitting: `import surpyval; m = surpyval.Weibull.fit(x, c=..., n=...)` "
+    "(c = censoring flags 0 observed / 1 right / -1 left; n = counts; both "
+    "optional); read m.params, m.aic(), m.sf(t), m.mean(), m.qf(p). "
+    "create_life_model refits on Reliafy's side with surpyval, so just give it the "
+    "dataset_id, the distribution (a surpyval id or 'best' to auto-select by AIC), "
+    "the time column, and optionally a censoring column.\n\n"
+    "SCOPE: for now you can only create datasets and life models — not RBDs, "
+    "degradation, or other objects. If asked for those, say they're not available "
+    "yet. Be concise."
 )
+
+# Reliafy-side tools the agent can call. exp(...) execution happens in
+# ``_execute_tool`` on our backend, not in the sandbox.
+_DIST_IDS = "weibull, exponential, normal, lognormal, gamma, loglogistic, expo_weibull, gumbel, logistic, or 'best'"
+TOOLS = [
+    {
+        "type": "custom",
+        "name": "create_dataset",
+        "description": (
+            "Save a dataset to the user's Reliafy workspace. Provide the full CSV "
+            "content (header + rows). Returns a dataset_id to use with "
+            "create_life_model. Only call after the user approves the plan."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "A short name for the dataset."},
+                "csv": {"type": "string", "description": "The full CSV content (header row + data rows)."},
+            },
+            "required": ["name", "csv"],
+        },
+    },
+    {
+        "type": "custom",
+        "name": "create_life_model",
+        "description": (
+            "Fit and save a life-distribution model to a dataset in the user's "
+            "Reliafy workspace. Reliafy performs the fit with surpyval and stores "
+            "the probability plot, parameters and goodness-of-fit. Use after "
+            "create_dataset. Only call after the user approves the plan."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "A short name for the model."},
+                "dataset_id": {"type": "string", "description": "From a prior create_dataset call."},
+                "distribution": {"type": "string", "description": f"A surpyval distribution id: {_DIST_IDS}."},
+                "time_column": {"type": "string", "description": "Column of failure/censoring times (maps to x)."},
+                "censored_column": {"type": "string", "description": "Optional column of censoring flags (0 observed, 1 right, -1 left)."},
+                "unit": {"type": "string", "description": "Optional time unit, e.g. hours."},
+            },
+            "required": ["name", "dataset_id", "distribution", "time_column"],
+        },
+    },
+]
+
+# Bound the agentic tool loop so a misbehaving turn can't run forever.
+_MAX_TOOL_ROUNDS = 10
+# Where an uploaded CSV is mounted inside the sandbox for the agent to read.
+_UPLOAD_MOUNT = "/mnt/session/uploads/data.csv"
 
 
 class AgentError(RuntimeError):
@@ -63,11 +117,8 @@ def enabled() -> bool:
 
 
 def info() -> dict:
-    return {
-        "enabled": enabled(),
-        "model": config.RELIABILITY_AGENT_MODEL,
-        "packages": config.RELIABILITY_AGENT_PIP,
-    }
+    return {"enabled": enabled(), "model": config.RELIABILITY_AGENT_MODEL,
+            "packages": config.RELIABILITY_AGENT_PIP}
 
 
 # ---- SDK boundary (everything Managed-Agents-specific lives below) ----------
@@ -110,7 +161,7 @@ def _ensure_agent(client) -> tuple[str, str]:
         name="Reliafy Reliability Agent",
         model=config.RELIABILITY_AGENT_MODEL,
         system=SYSTEM_PROMPT,
-        tools=[{"type": "agent_toolset_20260401"}],
+        tools=[{"type": "agent_toolset_20260401"}, *TOOLS],
     )
     _BOOTSTRAP["agent_id"] = agent.id
     _BOOTSTRAP["environment_id"] = env.id
@@ -124,135 +175,65 @@ def upload_csv(data: bytes, filename: str = "data.csv") -> str:
     return uploaded.id
 
 
-import re
-import uuid
-from datetime import datetime, timedelta, timezone
+# ---- Reliafy-side tool execution --------------------------------------------
 
-# Two chart channels (see the system prompt). Preferred: the agent curls the
-# PNG to our artifact endpoint (the sandbox has unrestricted egress), which
-# responds with a tiny placement marker — no image bytes ride through the model.
-# Fallback (local dev, where the sandbox can't reach localhost): inline base64.
-_IMG_RE = re.compile(r"<<RELIAFY_IMG>>(.*?)<<END_IMG>>", re.DOTALL)
-_ARTIFACT_RE = re.compile(r"<<RELIAFY_ARTIFACT:([A-Za-z0-9_-]+)>>")
+def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
+    """Run a custom tool on the Reliafy side and return a small JSON-safe result
+    (the ``summary`` is shown to the user; the rest is fed back to the agent)."""
+    from backend.fitting import FitError  # local: avoid heavy import at module load
+    from backend.services import datasets as datasets_service
+    from backend.services import models as models_service
 
-# Artifact upload limits (per run token / per file).
-_ARTIFACT_TOKEN_TTL = timedelta(minutes=30)
-_ARTIFACT_MAX_USES = 12
-_ARTIFACT_MAX_BYTES = 3 * 1024 * 1024
-_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+    inp = inp or {}
+    try:
+        if name == "create_dataset":
+            csv = inp.get("csv") or ""
+            if not csv.strip():
+                return {"error": "empty CSV"}
+            ds = datasets_service.create_dataset(
+                db, (inp.get("name") or "dataset").strip() or "dataset", csv.encode(), uid)
+            return {"ok": True, "dataset_id": ds.id, "name": ds.name, "n_rows": ds.n_rows,
+                    "summary": f"Created dataset “{ds.name}” ({ds.n_rows} rows)."}
 
+        if name == "create_life_model":
+            ds = datasets_service.get_dataset(db, inp.get("dataset_id", ""), owner_id=uid)
+            if ds is None:
+                return {"error": "dataset not found — create it first"}
+            mapping = {"x": inp.get("time_column")}
+            if inp.get("censored_column"):
+                mapping["c"] = inp["censored_column"]
+            model = models_service.save_model(
+                db, (inp.get("name") or "model").strip() or "model", ds,
+                inp.get("distribution") or "best", mapping, None, None,
+                inp.get("unit"), owner_id=uid,
+            )
+            r = model.results or {}
+            params = [{"name": p["name"], "value": p["value"]} for p in (r.get("params") or [])]
+            return {"ok": True, "model_id": model.id, "distribution": r.get("distribution"),
+                    "params": params,
+                    "summary": f"Created life model “{model.name}” — {r.get('distribution')}."}
 
-def _extract_images(text: str) -> tuple[str, list[dict]]:
-    """Pull chart references out of agent output. Returns the text with markers
-    removed and image events — ``{"type": "image", "url": …}`` for uploaded
-    artifacts, ``{"type": "image", "data": …}`` for inline base64."""
-    if not text or ("<<RELIAFY" not in text):
-        return text, []
-    images: list[dict] = []
-    for aid in _ARTIFACT_RE.findall(text):
-        images.append({"type": "image", "url": f"/api/reliability-agent/artifacts/{aid}"})
-    for m in _IMG_RE.findall(text):
-        b64 = "".join(m.split())  # strip whitespace/newlines the shell may add
-        if b64:
-            images.append({"type": "image", "data": f"data:image/png;base64,{b64}"})
-    cleaned = _ARTIFACT_RE.sub("", _IMG_RE.sub("", text)).strip()
-    return cleaned, images
-
-
-# ---- Chart artifacts (sandbox -> backend uploads) ---------------------------
-
-def mint_artifact_token(db, uid: str) -> str:
-    """A short-lived, single-run token the sandbox uses to POST charts back."""
-    token = uuid.uuid4().hex
-    db.agent_artifact_tokens.insert_one({
-        "_id": token, "uid": uid, "uses": 0,
-        "expires_at": datetime.now(timezone.utc) + _ARTIFACT_TOKEN_TTL,
-    })
-    return token
+        return {"error": f"unknown tool {name}"}
+    except FitError as exc:
+        return {"error": str(exc)}
+    except Exception as exc:  # noqa: BLE001 - surface a clean tool error to the agent
+        return {"error": f"{type(exc).__name__}: {exc}"}
 
 
-def save_artifact(db, token: str, data: bytes) -> str:
-    """Validate the token + PNG payload and store the chart; returns its id.
-    Raises ``AgentError`` with a short reason on any failure."""
-    doc = db.agent_artifact_tokens.find_one({"_id": token})
-    now = datetime.now(timezone.utc)
-    expires = doc.get("expires_at") if doc else None
-    if expires is not None and expires.tzinfo is None:  # mongo returns naive UTC
-        expires = expires.replace(tzinfo=timezone.utc)
-    if doc is None or expires is None or expires < now:
-        raise AgentError("invalid or expired upload token")
-    if doc.get("uses", 0) >= _ARTIFACT_MAX_USES:
-        raise AgentError("upload limit reached for this run")
-    if len(data) > _ARTIFACT_MAX_BYTES:
-        raise AgentError("file too large")
-    if not data.startswith(_PNG_MAGIC):
-        raise AgentError("only PNG charts are accepted")
-    artifact_id = uuid.uuid4().hex
-    db.agent_artifacts.insert_one({
-        "_id": artifact_id, "uid": doc["uid"], "data": data,
-        "mime": "image/png", "created_at": now,
-    })
-    db.agent_artifact_tokens.update_one({"_id": token}, {"$inc": {"uses": 1}})
-    return artifact_id
+# ---- Event normalisation ----------------------------------------------------
+
+def _etype(event):
+    return getattr(event, "type", None) or (event.get("type") if isinstance(event, dict) else None)
 
 
-def get_artifact(db, uid: str, artifact_id: str) -> bytes | None:
-    """The chart bytes, scoped to its owner. None when unknown/not yours."""
-    doc = db.agent_artifacts.find_one({"_id": artifact_id, "uid": uid})
-    return bytes(doc["data"]) if doc else None
-
-
-def _norm(event) -> list[dict]:
-    """Map a Managed Agents stream event to zero or more small dicts the UI
-    renders. Defensive on purpose — the exact event schema is beta."""
-    etype = getattr(event, "type", None) or (event.get("type") if isinstance(event, dict) else None)
-    if not etype:
-        return []
-
-    def _get(obj, *names):
-        for n in names:
-            v = getattr(obj, n, None)
-            if v is None and isinstance(obj, dict):
-                v = obj.get(n)
-            if v is not None:
-                return v
-        return None
-
-    # Internal spans (model request start/end) carry no user-facing content.
-    if etype.startswith("span."):
-        return []
-
-    # Assistant text — the model may echo a placement marker in its prose, so
-    # extract/strip chart markers here too (the UI dedupes repeats).
-    if etype in ("agent.message", "agent.message.delta", "message"):
-        text, images = _extract_images(_flatten_text(_get(event, "text", "content")))
-        out = [{"type": "text", "text": text}] if text else []
-        out.extend(images)
-        return out
-    # Extended thinking — surfaced as a subtle status, not full content.
-    if etype in ("agent.thinking", "agent.thinking.delta"):
-        return [{"type": "status", "status": "thinking"}]
-    # The agent invoking a built-in tool (bash/read/write/…) — show the command/code.
-    if etype in ("agent.tool_use", "tool_use"):
-        inp = _get(event, "input") or {}
-        return [{"type": "tool_use", "name": _get(event, "name"),
-                 "code": (isinstance(inp, dict) and (inp.get("command") or inp.get("code") or inp.get("content"))) or None}]
-    # Tool output — split out any chart marker(s): uploaded-artifact refs and/or
-    # inline base64.
-    if etype in ("agent.tool_result", "tool_result"):
-        text, images = _extract_images(_flatten_text(_get(event, "content", "output", "stdout")))
-        out = []
-        if text:
-            out.append({"type": "tool_result", "output": text})
-        out.extend(images)
-        return out
-    # The agent calling one of *our* custom tools (e.g. save to Reliafy) — later.
-    if etype in ("agent.custom_tool_use",):
-        return [{"type": "custom_tool_use", "name": _get(event, "name"), "input": _get(event, "input")}]
-    # Session-level status transitions (…thread_status_idle / …status_running).
-    if "status" in etype:
-        return [{"type": "status", "status": etype.rsplit(".", 1)[-1]}]
-    return []  # user.message echo, unknown internal events — nothing to render
+def _get(obj, *names):
+    for n in names:
+        v = getattr(obj, n, None)
+        if v is None and isinstance(obj, dict):
+            v = obj.get(n)
+        if v is not None:
+            return v
+    return None
 
 
 def _flatten_text(value) -> str:
@@ -269,11 +250,35 @@ def _flatten_text(value) -> str:
     return str(value)
 
 
-def _event_usage(event) -> tuple[int, int]:
-    """(input_tokens, output_tokens) from an event that carries usage, else (0,0).
+def _norm(event) -> list[dict]:
+    """Map a Managed Agents stream event to zero or more small dicts the UI
+    renders. Defensive — the exact event schema is beta."""
+    etype = _etype(event)
+    if not etype or etype.startswith("span."):
+        return []
 
-    Managed Agents reports per-model-request usage as ``model_usage`` on
-    ``span.model_request_end`` events (there's no top-level ``usage``)."""
+    if etype in ("agent.message", "agent.message.delta", "message"):
+        text = _flatten_text(_get(event, "text", "content"))
+        return [{"type": "text", "text": text}] if text else []
+    if etype in ("agent.thinking", "agent.thinking.delta"):
+        return [{"type": "status", "status": "thinking"}]
+    if etype in ("agent.tool_use", "tool_use"):
+        inp = _get(event, "input") or {}
+        code = isinstance(inp, dict) and (inp.get("command") or inp.get("code") or inp.get("content"))
+        return [{"type": "tool_use", "name": _get(event, "name"), "code": code or None}]
+    if etype in ("agent.tool_result", "tool_result"):
+        text = _flatten_text(_get(event, "content", "output", "stdout"))
+        return [{"type": "tool_result", "output": text}] if text else []
+    # The agent calling one of OUR Reliafy tools (create_dataset / create_life_model).
+    if etype == "agent.custom_tool_use":
+        return [{"type": "reliafy_tool", "name": _get(event, "name"), "input": _get(event, "input") or {}}]
+    if "status" in etype:
+        return [{"type": "status", "status": etype.rsplit(".", 1)[-1]}]
+    return []
+
+
+def _event_usage(event) -> tuple[int, int]:
+    """(input_tokens, output_tokens) from ``model_usage`` on span.model_request_end."""
     usage = getattr(event, "model_usage", None) or getattr(event, "usage", None)
     if usage is None and isinstance(event, dict):
         usage = event.get("model_usage") or event.get("usage")
@@ -290,55 +295,39 @@ def _event_usage(event) -> tuple[int, int]:
 
 
 def _is_idle(event) -> bool:
-    etype = getattr(event, "type", None) or (event.get("type") if isinstance(event, dict) else None)
-    # e.g. session.thread_status_idle / session.status_idle.
+    etype = _etype(event)
     return bool(etype) and ("idle" in etype or etype.endswith("completed"))
 
 
-# Where an uploaded CSV is mounted inside the sandbox for the agent to read.
-_UPLOAD_MOUNT = "/mnt/session/uploads/data.csv"
+# ---- Agentic run ------------------------------------------------------------
 
+def stream_run(db, uid: str, message: str, file_id: str | None = None,
+               session_id: str | None = None):
+    """Advance the conversation one turn, executing any Reliafy tools the agent
+    calls, and yield normalised events. Ends with ``{"type": "_meter", ...}``
+    (session runtime, token totals, session_id to reuse next turn). A generator
+    the router streams as SSE.
 
-def stream_run(message: str, file_id: str | None = None, session_id: str | None = None,
-               artifact_url: str | None = None):
-    """Advance the conversation one turn and yield normalised events as they
-    arrive, then a final ``{"type": "_meter", ...}`` (with the session runtime,
-    token totals, and the ``session_id`` to reuse for the next turn). A generator
-    so the router can stream it as SSE.
-
-    Multi-turn: pass ``session_id`` to continue an existing conversation (its
-    history + sandbox state persist server-side); omit it to start a new one. An
-    uploaded ``file_id`` is mounted into the sandbox as a file the agent reads
-    with pandas (Managed Agents mounts files as session *resources*).
-    ``artifact_url`` is the signed endpoint the sandbox curls charts to (the
-    preferred channel — no image bytes through the model); when absent the agent
-    falls back to inline base64 markers."""
+    When the agent calls a custom tool the session goes idle 'requires action';
+    we run the tool on the Reliafy side, send a ``user.custom_tool_result``, and
+    continue streaming — up to ``_MAX_TOOL_ROUNDS`` rounds."""
     client = _client()
     text = message
-    if artifact_url:
-        text = (
-            f"{message}\n\n"
-            f"[chart uploads for this conversation: after saving each chart PNG run "
-            f"`curl -s -F \"file=@/tmp/c.png\" \"{artifact_url}\"` — it prints the "
-            f"placement marker. Do NOT print base64.]"
-        )
-        message = text  # the file-mount appendix below builds on this
 
     if session_id:
-        # Continue the conversation; attach a new file mid-thread if given.
-        if file_id:
+        if file_id:  # attach a new file mid-thread
             try:
                 client.beta.sessions.resources.add(
                     session_id, file_id=file_id, type="file", mount_path=_UPLOAD_MOUNT)
-                text = f"{message}\n\nThe uploaded CSV is available in the sandbox at {_UPLOAD_MOUNT}."
-            except Exception:  # noqa: BLE001 - non-fatal; carry on without the mount
+                text = f"{message}\n\nThe uploaded CSV is at {_UPLOAD_MOUNT} in the sandbox."
+            except Exception:  # noqa: BLE001 - non-fatal
                 pass
     else:
         agent_id, env_id = _ensure_agent(client)
         resources = None
         if file_id:
             resources = [{"type": "file", "file_id": file_id, "mount_path": _UPLOAD_MOUNT}]
-            text = f"{message}\n\nThe uploaded CSV is available in the sandbox at {_UPLOAD_MOUNT}."
+            text = f"{message}\n\nThe uploaded CSV is at {_UPLOAD_MOUNT} in the sandbox."
         session = (
             client.beta.sessions.create(agent=agent_id, environment_id=env_id, resources=resources)
             if resources
@@ -352,15 +341,38 @@ def stream_run(message: str, file_id: str | None = None, session_id: str | None 
         client.beta.sessions.events.send(
             session_id, events=[{"type": "user.message", "content": [{"type": "text", "text": text}]}]
         )
-        with client.beta.sessions.events.stream(session_id) as stream:
-            for event in stream:
-                di, do = _event_usage(event)
-                in_tok += di
-                out_tok += do
-                for norm in _norm(event):
-                    yield norm
-                if _is_idle(event):
-                    break
+        for _round in range(_MAX_TOOL_ROUNDS):
+            pending: list[dict] = []
+            with client.beta.sessions.events.stream(session_id) as stream:
+                for event in stream:
+                    di, do = _event_usage(event)
+                    in_tok += di
+                    out_tok += do
+                    if _etype(event) == "agent.custom_tool_use":
+                        pending.append({"id": _get(event, "id"), "name": _get(event, "name"),
+                                        "input": _get(event, "input") or {}})
+                    for norm in _norm(event):
+                        yield norm
+                    if _is_idle(event):
+                        break
+            if not pending:
+                break  # normal end of turn
+
+            # Execute the Reliafy tools, stream a result line each, and hand the
+            # outcomes back to the agent to continue.
+            results = []
+            for call in pending:
+                res = _execute_tool(db, uid, call["name"], call["input"])
+                yield {"type": "reliafy_tool_result", "name": call["name"],
+                       "ok": "error" not in res,
+                       "summary": res.get("summary") or res.get("error") or "done"}
+                results.append({
+                    "type": "user.custom_tool_result",
+                    "custom_tool_use_id": call["id"],
+                    "content": [{"type": "text", "text": json.dumps(res)}],
+                    "is_error": "error" in res,
+                })
+            client.beta.sessions.events.send(session_id, events=results)
     except AgentError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface a clean error to the stream

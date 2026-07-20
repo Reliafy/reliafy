@@ -5541,12 +5541,18 @@ button.danger:hover { background: #fdeeee; }
   line-height: 1.45;
   white-space: pre-wrap;
 }
-.chat-image {
-  max-width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+/* Reliafy tool call + outcome (the approved load). */
+.chat-toolcall {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
 }
+.chat-tooldone {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--acc-d);
+}
+.chat-tooldone.err { color: #b91c1c; }
 .chat-error { color: #b91c1c; white-space: pre-wrap; }
 .chat-typing, .chat-status {
   font-family: var(--mono);

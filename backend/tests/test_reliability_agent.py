@@ -1,13 +1,17 @@
-"""Reliability Agent (Anthropic Managed Agents) — metering + SSE route.
+"""Reliability Agent (Anthropic Managed Agents) — tool execution, event
+normalisation, metering + SSE route.
 
-Mocks at the service boundary (``stream_run`` / ``upload_csv`` / ``enabled``), so
-the tests are stable regardless of the exact — still beta — Managed Agents SDK
-shapes. Kept in its own file, mirroring the self-contained service/router.
+The SDK/streaming boundary is mocked at ``stream_run`` / ``upload_csv`` /
+``enabled`` so tests are stable against the still-beta Managed Agents API; the
+Reliafy-side tool execution (``_execute_tool``) is tested for real against a
+mongomock db.
 """
 
+import io
 import json
 
 import mongomock
+import pandas as pd
 from fastapi.testclient import TestClient
 
 U = "agent-user"
@@ -23,18 +27,17 @@ def _sse_events(text: str) -> list:
 
 
 def test_norm_matches_managed_agents_event_schema():
-    """Pin the normalisation to the REAL Managed Agents event shapes (captured
-    from a live run): text on agent.message.content, bash command on
-    agent.tool_use.input, output on agent.tool_result.content, idle on
-    session.thread_status_idle, and usage on span.model_request_end.model_usage.
-    """
+    """Pin normalisation to the REAL Managed Agents event shapes (captured live):
+    text on agent.message.content, bash command on agent.tool_use.input, output
+    on agent.tool_result.content, our tools on agent.custom_tool_use, idle on
+    session.thread_status_idle, usage on span.model_request_end.model_usage."""
     from backend.services import reliability_agent as agent
 
     assert agent._norm({"type": "span.model_request_start"}) == []
     assert agent._norm({"type": "user.message", "content": [{"text": "hi"}]}) == []
 
-    assert agent._norm({"type": "agent.message", "content": [{"text": "Forty-two."}]}) == \
-        [{"type": "text", "text": "Forty-two."}]
+    assert agent._norm({"type": "agent.message", "content": [{"text": "Done."}]}) == \
+        [{"type": "text", "text": "Done."}]
 
     tu = agent._norm({"type": "agent.tool_use", "name": "bash",
                       "input": {"command": 'python -c "print(6*7)"'}})[0]
@@ -44,103 +47,53 @@ def test_norm_matches_managed_agents_event_schema():
     assert agent._norm({"type": "agent.tool_result", "content": [{"text": "42\n"}]}) == \
         [{"type": "tool_result", "output": "42\n"}]
 
+    # Our Reliafy tools surface as a distinct event the UI renders specially.
+    ct = agent._norm({"type": "agent.custom_tool_use", "name": "create_dataset",
+                      "input": {"name": "X", "csv": "t\n1\n"}})
+    assert ct == [{"type": "reliafy_tool", "name": "create_dataset",
+                   "input": {"name": "X", "csv": "t\n1\n"}}]
+
     assert agent._norm({"type": "agent.thinking"}) == [{"type": "status", "status": "thinking"}]
     assert agent._norm({"type": "session.thread_status_idle"}) == \
         [{"type": "status", "status": "thread_status_idle"}]
 
     assert agent._is_idle({"type": "session.thread_status_idle"}) is True
     assert agent._is_idle({"type": "agent.message"}) is False
-
     assert agent._event_usage({"type": "agent.message"}) == (0, 0)
-    assert agent._event_usage({
-        "type": "span.model_request_end",
-        "model_usage": {"input_tokens": 1200, "output_tokens": 300},
-    }) == (1200, 300)
+    assert agent._event_usage({"type": "span.model_request_end",
+                               "model_usage": {"input_tokens": 1200, "output_tokens": 300}}) == (1200, 300)
 
 
-def test_norm_extracts_inline_chart():
-    """A base64 PNG the agent prints in tool output becomes an image event, with
-    the marker stripped from the shown text."""
+def _csv() -> str:
+    rows = "\n".join(str(v) for v in [120, 340, 560, 780, 910, 1100, 1350, 1600, 1820, 2050])
+    return f"hours\n{rows}\n"
+
+
+def test_execute_tool_creates_dataset_then_life_model():
+    """The build→load tools run on the Reliafy side against a real (mock) db:
+    create_dataset returns an id, create_life_model fits + saves against it."""
     from backend.services import reliability_agent as agent
 
-    b64 = "iVBORw0KGgoAAAANS"  # not a real PNG; only the marker handling matters
-    out = agent._norm({
-        "type": "agent.tool_result",
-        "content": [{"text": f"Saved chart.\n<<RELIAFY_IMG>>{b64}<<END_IMG>>\n"}],
-    })
-    kinds = [e["type"] for e in out]
-    assert kinds == ["tool_result", "image"]
-    assert "RELIAFY_IMG" not in out[0]["output"] and out[0]["output"].strip() == "Saved chart."
-    assert out[1]["data"] == f"data:image/png;base64,{b64}"
+    db = mongomock.MongoClient()["reliafy_test"]
 
-    # Pure-image output yields only the image (no empty text bubble).
-    only = agent._norm({"type": "agent.tool_result", "content": [{"text": f"<<RELIAFY_IMG>>{b64}<<END_IMG>>"}]})
-    assert [e["type"] for e in only] == ["image"]
+    ds = agent._execute_tool(db, U, "create_dataset", {"name": "Bearings", "csv": _csv()})
+    assert ds["ok"] and ds["n_rows"] == 10
+    assert db.datasets.find_one({"_id": ds["dataset_id"], "owner_id": U}) is not None
+    assert "Created dataset" in ds["summary"]
 
+    lm = agent._execute_tool(db, U, "create_life_model", {
+        "name": "Bearing life", "dataset_id": ds["dataset_id"],
+        "distribution": "weibull", "time_column": "hours", "unit": "hours"})
+    assert lm["ok"] and lm["distribution"] and lm["params"]
+    saved = db.models.find_one({"_id": lm["model_id"], "owner_id": U})
+    assert saved is not None and saved["dataset_id"] == ds["dataset_id"]
 
-def test_norm_extracts_artifact_marker():
-    """The preferred channel: the sandbox curls the PNG to our artifact endpoint,
-    whose response marker lands in tool output — it becomes an image-URL event.
-    A marker echoed in the model's prose is stripped there too."""
-    from backend.services import reliability_agent as agent
-
-    aid = "a" * 32
-    out = agent._norm({
-        "type": "agent.tool_result",
-        "content": [{"text": f"<<RELIAFY_ARTIFACT:{aid}>>"}],
-    })
-    assert out == [{"type": "image", "url": f"/api/reliability-agent/artifacts/{aid}"}]
-
-    prose = agent._norm({
-        "type": "agent.message",
-        "content": [{"text": f"Here's the chart: <<RELIAFY_ARTIFACT:{aid}>> Enjoy."}],
-    })
-    kinds = [e["type"] for e in prose]
-    assert kinds == ["text", "image"]
-    assert "RELIAFY_ARTIFACT" not in prose[0]["text"]
-
-
-def test_artifact_upload_and_download_roundtrip(monkeypatch):
-    """Sandbox POSTs a PNG with a minted token -> marker response; the owner
-    (and only the owner) can GET the bytes back."""
-    from backend import config, db
-    from backend.auth import get_current_user
-    from backend.main import app
-    from backend.services import reliability_agent as agent
-
-    monkeypatch.setattr(config, "AUTH_DISABLED", False)
-    test_db = mongomock.MongoClient()["reliafy_test"]
-    monkeypatch.setattr(db, "_db", test_db)
-    monkeypatch.setattr(db, "_simulated", True)
-    client = TestClient(app)
-    png = b"\x89PNG\r\n\x1a\n" + b"fakechartdata"
-
-    try:
-        token = agent.mint_artifact_token(test_db, U)
-
-        # Upload (no user auth — the token is the auth), response IS the marker.
-        r = client.post(f"/api/reliability-agent/artifacts/upload/{token}",
-                        files={"file": ("c.png", png, "image/png")})
-        assert r.status_code == 200, r.text
-        assert r.text.startswith("<<RELIAFY_ARTIFACT:") and r.text.endswith(">>")
-        artifact_id = r.text[len("<<RELIAFY_ARTIFACT:"):-2]
-
-        # Bad token and non-PNG payloads are rejected.
-        assert client.post("/api/reliability-agent/artifacts/upload/nope",
-                           files={"file": ("c.png", png, "image/png")}).status_code == 403
-        assert client.post(f"/api/reliability-agent/artifacts/upload/{token}",
-                           files={"file": ("c.txt", b"not a png", "text/plain")}).status_code == 403
-
-        # Owner downloads it; another user gets 404.
-        app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
-        got = client.get(f"/api/reliability-agent/artifacts/{artifact_id}")
-        assert got.status_code == 200
-        assert got.content == png and got.headers["content-type"] == "image/png"
-
-        app.dependency_overrides[get_current_user] = lambda: {"uid": "someone-else", "email": "b", "name": "B"}
-        assert client.get(f"/api/reliability-agent/artifacts/{artifact_id}").status_code == 404
-    finally:
-        app.dependency_overrides.clear()
+    # Errors come back as {"error": ...}, not exceptions.
+    assert "error" in agent._execute_tool(db, U, "create_dataset", {"name": "x", "csv": ""})
+    assert "error" in agent._execute_tool(db, U, "create_life_model",
+                                          {"name": "x", "dataset_id": "missing",
+                                           "distribution": "weibull", "time_column": "hours"})
+    assert "error" in agent._execute_tool(db, U, "bogus_tool", {})
 
 
 def test_config_exposes_agent_feature_flag(monkeypatch):
@@ -165,9 +118,7 @@ def test_cost_millicents_tokens_plus_session_runtime(monkeypatch):
     monkeypatch.setattr(config, "AI_MARKUP", 1.0)
     monkeypatch.setattr(config, "MANAGED_AGENT_USD_PER_HOUR", 0.08)
 
-    # tokens: (1000*3 + 1000*15)/1e6 * 1e5 = 1800 mc
     assert agent.cost_millicents(0.0, 1000, 1000) == 1800
-    # + session runtime: 0.08 * 60/3600 * 1e5 = 133.3 -> 133 mc
     assert agent.cost_millicents(60.0, 1000, 1000) == 1800 + 133
 
 
@@ -223,11 +174,11 @@ def test_run_streams_events_and_meters(monkeypatch):
         app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
         billing.grant_credits(test_db, U, 1000, "test")
         monkeypatch.setattr(agent, "enabled", lambda: True)
-        monkeypatch.setattr(agent, "stream_run", lambda message, file_id=None, session_id=None, artifact_url=None: iter([
-            {"type": "text", "text": "fitting…"},
-            {"type": "tool_use", "name": "bash", "code": "import surpyval"},
-            {"type": "tool_result", "output": "Weibull alpha=100 beta=2"},
-            {"type": "image", "data": "data:image/png;base64,AAAA"},
+        # stream_run's new signature: (db, uid, message, file_id=None, session_id=None).
+        monkeypatch.setattr(agent, "stream_run", lambda db, uid, message, file_id=None, session_id=None: iter([
+            {"type": "text", "text": "here's my plan…"},
+            {"type": "reliafy_tool", "name": "create_dataset", "input": {}},
+            {"type": "reliafy_tool_result", "name": "create_dataset", "ok": True, "summary": "Created dataset “X” (10 rows)."},
             {"type": "_meter", "session_id": "sesn_xyz", "seconds": 60.0, "input_tokens": 1000, "output_tokens": 1000},
         ]))
 
@@ -235,11 +186,10 @@ def test_run_streams_events_and_meters(monkeypatch):
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("text/event-stream")
         evs = _sse_events(r.text)
-        kinds = [e["type"] for e in evs]
-        assert kinds == ["text", "tool_use", "tool_result", "image", "done"]
+        assert [e["type"] for e in evs] == ["text", "reliafy_tool", "reliafy_tool_result", "done"]
 
         done = evs[-1]
-        assert done["session_id"] == "sesn_xyz"  # returned so the client reuses it
+        assert done["session_id"] == "sesn_xyz"
         # 1800 (tokens) + 133 (session runtime) = 1933 mc -> 2 credits; 998 left
         assert done["cost_millicents"] == 1933
         assert done["cost_cents"] == 2

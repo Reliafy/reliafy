@@ -1,10 +1,10 @@
 """Reliability Agent API (Anthropic Managed Agents).
 
 Self-contained sibling of the metered assistant router: upload a CSV, then run
-the managed agent and stream its work back over SSE. Charges the user's credit
-balance under its own metering reason (``"reliability_agent"``) — token cost plus
-the Managed Agents session-runtime charge — so usage is tracked separately and
-the old assistant can be retired without disturbing this.
+the managed agent and stream its work back over SSE. The agent proposes a plan
+and, once the user approves, calls Reliafy-side tools to load datasets + life
+models into the user's workspace. Charges the user's credit balance under its
+own metering reason (``"reliability_agent"``).
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Body, Depends, File, UploadFile
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from backend import config
 from backend.auth import get_current_user
@@ -82,16 +82,9 @@ def agent_run(
                 content={"detail": "You're out of AI credits. Top up to keep using the agent.", "code": "no_credits"},
             )
 
-    # Preferred chart channel: a signed URL the sandbox curls PNGs to (needs a
-    # publicly reachable base — unset in local dev, where base64 fallback kicks in).
-    artifact_url = None
-    if config.RELIABILITY_AGENT_ARTIFACT_BASE:
-        token = agent_service.mint_artifact_token(session, uid)
-        artifact_url = f"{config.RELIABILITY_AGENT_ARTIFACT_BASE}/api/reliability-agent/artifacts/upload/{token}"
-
     def event_stream():
         try:
-            for ev in agent_service.stream_run(message, file_id, session_id, artifact_url):
+            for ev in agent_service.stream_run(session, uid, message, file_id, session_id):
                 if ev.get("type") == "_meter":
                     cost_mc = agent_service.cost_millicents(
                         ev.get("seconds", 0.0), ev.get("input_tokens", 0), ev.get("output_tokens", 0)
@@ -119,36 +112,3 @@ def agent_run(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
-@router.post("/reliability-agent/artifacts/upload/{token}", response_model=None)
-async def artifact_upload(
-    token: str,
-    file: UploadFile = File(...),
-    session=Depends(get_session),
-) -> Response | JSONResponse:
-    """Chart upload from the agent's cloud sandbox (via curl). Deliberately NOT
-    user-authenticated — the sandbox has no user credentials; the short-lived,
-    size/type/use-capped ``token`` minted per run IS the auth. Responds with the
-    plain-text placement marker so ``curl -s`` prints exactly what the stream
-    parser needs."""
-    data = await file.read()
-    try:
-        artifact_id = agent_service.save_artifact(session, token, data)
-    except agent_service.AgentError as exc:
-        return JSONResponse(status_code=403, content={"detail": str(exc)})
-    return Response(content=f"<<RELIAFY_ARTIFACT:{artifact_id}>>", media_type="text/plain")
-
-
-@router.get("/reliability-agent/artifacts/{artifact_id}", response_model=None)
-def artifact_get(
-    artifact_id: str,
-    session=Depends(get_session),
-    user: dict = Depends(get_current_user),
-) -> Response | JSONResponse:
-    """Serve a chart the agent produced, scoped to its owner."""
-    data = agent_service.get_artifact(session, user["uid"], artifact_id)
-    if data is None:
-        return JSONResponse(status_code=404, content={"detail": "Not found."})
-    return Response(content=data, media_type="image/png",
-                    headers={"Cache-Control": "private, max-age=86400"})

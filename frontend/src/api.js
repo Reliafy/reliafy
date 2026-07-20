@@ -410,16 +410,6 @@ export function reliabilityAgentInfo() {
   return request("/api/reliability-agent/info");
 }
 
-// Fetch an agent-produced chart (auth header required — <img src> can't send
-// it) and return an object URL for an <img> tag.
-export async function fetchImageObjectURL(path) {
-  const res = await fetch(path, {
-    headers: { ...workspaceHeaders(), ...(await authHeaders()) },
-  });
-  if (!res.ok) throw new Error(`Image failed (${res.status})`);
-  return URL.createObjectURL(await res.blob());
-}
-
 // Upload a CSV into the agent's sandbox; returns { file_id, filename }.
 export function reliabilityAgentUpload(file) {
   const form = new FormData();
