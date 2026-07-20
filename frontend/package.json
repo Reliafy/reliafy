@@ -10,6 +10,7 @@
     "prerender": "vite build --config vite.ssr.config.js && node scripts/prerender.mjs"
   },
   "dependencies": {
+    "dompurify": "^3.4.12",
     "firebase": "^11.10.0",
     "marked": "^14.1.4",
     "plotly.js-dist-min": "^2.35.2",

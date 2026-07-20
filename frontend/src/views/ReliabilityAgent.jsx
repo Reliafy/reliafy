@@ -4,6 +4,7 @@ import {
   reliabilityAgentUpload,
   reliabilityAgentStream,
 } from "../api.js";
+import { renderAgentMarkdown } from "../agentMarkdown.js";
 
 // A conversational chat with the Reliability Agent (Anthropic Managed Agents).
 // The agent assesses the task, builds the solution with surpyval/repyability in
@@ -18,7 +19,12 @@ const TOOL_LABEL = { create_dataset: "Create dataset", create_life_model: "Creat
 // chip, so the agent's thinking is legible without a wall of code.
 function Part({ p }) {
   if (p.type === "text")
-    return p.text ? <div className="chat-bubble agent">{p.text}</div> : null;
+    return p.text ? (
+      <div
+        className="chat-bubble agent md"
+        dangerouslySetInnerHTML={{ __html: renderAgentMarkdown(p.text) }}
+      />
+    ) : null;
   if (p.type === "code")
     return (
       <details className="agent-step">
