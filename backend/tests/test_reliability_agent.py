@@ -94,6 +94,47 @@ def test_execute_tool_creates_dataset_then_life_model():
                                           {"name": "x", "dataset_id": "missing",
                                            "distribution": "weibull", "time_column": "hours"})
     assert "error" in agent._execute_tool(db, U, "bogus_tool", {})
+    # No time column and no interval pair -> a clear error, not a fit crash.
+    assert "error" in agent._execute_tool(db, U, "create_life_model",
+                                          {"name": "x", "dataset_id": ds["dataset_id"],
+                                           "distribution": "weibull"})
+
+
+def test_create_life_model_full_inputs():
+    """The expanded tool passes censoring, counts, the offset/zi/lfp modifiers,
+    fixed params, and covariates through to the fit."""
+    from backend.services import reliability_agent as agent
+
+    db = mongomock.MongoClient()["reliafy_test"]
+
+    # Censored data with a count column + a 3-parameter (offset) Weibull.
+    rows = [("100", "0", "3"), ("250", "0", "2"), ("400", "1", "5"), ("600", "0", "4"),
+            ("820", "1", "6"), ("1050", "0", "3")]
+    csv = "t,censored,qty\n" + "\n".join(",".join(r) for r in rows) + "\n"
+    ds = agent._execute_tool(db, U, "create_dataset", {"name": "Censored", "csv": csv})
+    m = agent._execute_tool(db, U, "create_life_model", {
+        "name": "Weibull 3p", "dataset_id": ds["dataset_id"], "distribution": "weibull",
+        "time_column": "t", "censored_column": "censored", "count_column": "qty",
+        "offset": True, "unit": "hours"})
+    assert m["ok"], m
+    saved = db.models.find_one({"_id": m["model_id"]})
+    spec = saved["spec"]
+    assert spec["mapping"] == {"x": "t", "c": "censored", "n": "qty"}
+    assert spec["options"]["offset"] is True
+
+    # Regression: a proportional-hazards fit with a covariate column.
+    reg_rows = [("120", "0", "40"), ("300", "0", "55"), ("470", "1", "60"),
+                ("640", "0", "48"), ("910", "1", "70"), ("1180", "0", "52"),
+                ("150", "0", "44"), ("520", "0", "63")]
+    reg = "time,censored,temp\n" + "\n".join(",".join(r) for r in reg_rows) + "\n"
+    dsr = agent._execute_tool(db, U, "create_dataset", {"name": "ALT", "csv": reg})
+    mr = agent._execute_tool(db, U, "create_life_model", {
+        "name": "Weibull PH", "dataset_id": dsr["dataset_id"], "distribution": "weibull_ph",
+        "time_column": "time", "censored_column": "censored", "covariates": ["temp"]})
+    assert mr["ok"], mr
+    saved_r = db.models.find_one({"_id": mr["model_id"]})
+    assert saved_r["spec"]["covariates"] == ["temp"]
+    assert saved_r["kind"] == "regression"
 
 
 def test_config_exposes_agent_feature_flag(monkeypatch):

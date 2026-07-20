@@ -49,17 +49,35 @@ SYSTEM_PROMPT = (
     "surpyval fitting: `import surpyval; m = surpyval.Weibull.fit(x, c=..., n=...)` "
     "(c = censoring flags 0 observed / 1 right / -1 left; n = counts; both "
     "optional); read m.params, m.aic(), m.sf(t), m.mean(), m.qf(p). "
-    "create_life_model refits on Reliafy's side with surpyval, so just give it the "
-    "dataset_id, the distribution (a surpyval id or 'best' to auto-select by AIC), "
-    "the time column, and optionally a censoring column.\n\n"
+    "create_life_model refits on Reliafy's side with surpyval and takes the FULL "
+    "surpyval input surface — match what the data needs: the column mapping "
+    "(time/censoring/counts, interval bounds, left/right truncation), the "
+    "distribution (plain, discrete, non-parametric, or a regression id with "
+    "covariates/formula), the offset / zero-inflation / limited-failure-population "
+    "modifiers, and fixed parameters. Choose these from your analysis; don't leave "
+    "out censoring or covariates the data clearly has.\n\n"
     "SCOPE: for now you can only create datasets and life models — not RBDs, "
     "degradation, or other objects. If asked for those, say they're not available "
     "yet. Be concise."
 )
 
-# Reliafy-side tools the agent can call. exp(...) execution happens in
-# ``_execute_tool`` on our backend, not in the sandbox.
-_DIST_IDS = "weibull, exponential, normal, lognormal, gamma, loglogistic, expo_weibull, gumbel, logistic, or 'best'"
+# Reliafy-side tools the agent can call. Execution happens in ``_execute_tool``
+# on our backend, not in the sandbox.
+_DIST_IDS = (
+    "plain: weibull, exponential, normal, lognormal, gamma, loglogistic, "
+    "expo_weibull, gumbel, logistic; discrete: discrete_weibull, geometric, "
+    "negative_binomial; non-parametric: kaplan_meier, nelson_aalen, "
+    "fleming_harrington, turnbull; regression (need covariates or a formula) — "
+    "proportional-hazards {weibull,exponential,lognormal,normal,gamma}_ph and "
+    "cox_ph, accelerated-failure-time *_aft, proportional-odds *_po, "
+    "additive-hazards *_ah; or 'best' to auto-select the plain distribution by AIC"
+)
+# Column mapping: tool field -> surpyval x/c/n/xl/xr/tl/tr key.
+_MAP_FIELDS = [
+    ("time_column", "x"), ("censored_column", "c"), ("count_column", "n"),
+    ("interval_lower_column", "xl"), ("interval_upper_column", "xr"),
+    ("left_truncation_column", "tl"), ("right_truncation_column", "tr"),
+]
 TOOLS = [
     {
         "type": "custom",
@@ -82,22 +100,39 @@ TOOLS = [
         "type": "custom",
         "name": "create_life_model",
         "description": (
-            "Fit and save a life-distribution model to a dataset in the user's "
-            "Reliafy workspace. Reliafy performs the fit with surpyval and stores "
-            "the probability plot, parameters and goodness-of-fit. Use after "
-            "create_dataset. Only call after the user approves the plan."
+            "Fit and save a life model to a dataset in the user's Reliafy "
+            "workspace. Reliafy performs the fit with surpyval (probability plot, "
+            "parameters, CIs, goodness-of-fit). Supports full surpyval inputs: "
+            "exact/censored/interval data, counts, truncation, the offset / "
+            "zero-inflation / limited-failure-population modifiers, fixed "
+            "parameters, and covariates/formula for regression models. Use after "
+            "create_dataset; only call after the user approves the plan."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "A short name for the model."},
                 "dataset_id": {"type": "string", "description": "From a prior create_dataset call."},
-                "distribution": {"type": "string", "description": f"A surpyval distribution id: {_DIST_IDS}."},
-                "time_column": {"type": "string", "description": "Column of failure/censoring times (maps to x)."},
-                "censored_column": {"type": "string", "description": "Optional column of censoring flags (0 observed, 1 right, -1 left)."},
+                "distribution": {"type": "string", "description": f"A surpyval id — {_DIST_IDS}."},
+                # x/c/n/xl/xr/tl/tr column mapping.
+                "time_column": {"type": "string", "description": "Column of exact/censored times (surpyval x). Use this, OR the interval pair below."},
+                "censored_column": {"type": "string", "description": "Optional censoring-flag column (surpyval c): 0 observed, 1 right, -1 left, 2 interval."},
+                "count_column": {"type": "string", "description": "Optional counts/quantities column (surpyval n) — repeats per row."},
+                "interval_lower_column": {"type": "string", "description": "Interval-censoring lower bound (surpyval xl); pair with interval_upper_column instead of time_column."},
+                "interval_upper_column": {"type": "string", "description": "Interval-censoring upper bound (surpyval xr)."},
+                "left_truncation_column": {"type": "string", "description": "Left-truncation bound (surpyval tl) — e.g. left-entry / staggered start."},
+                "right_truncation_column": {"type": "string", "description": "Right-truncation bound (surpyval tr)."},
+                # Regression (used only for _ph/_aft/_po/_ah/cox_ph distributions).
+                "covariates": {"type": "array", "items": {"type": "string"}, "description": "Covariate column names for a regression model. Give these OR a formula, not both."},
+                "formula": {"type": "string", "description": "A formulaic formula over the columns for a regression model (e.g. 'age + sex + age:temp'). Handles categoricals."},
+                # Modifiers (plain distributions only).
+                "offset": {"type": "boolean", "description": "3-parameter fit: a failure-free period γ before which nothing fails (half-line distributions)."},
+                "zero_inflated": {"type": "boolean", "description": "Zero-inflation: a fraction f0 failed at t=0 (dead on arrival)."},
+                "limited_failure_population": {"type": "boolean", "description": "Limited failure population: only a fraction p can ever fail (cure fraction)."},
+                "fixed": {"type": "object", "description": "Pin parameters by name to fixed values, e.g. {\"beta\": 2}.", "additionalProperties": {"type": "number"}},
                 "unit": {"type": "string", "description": "Optional time unit, e.g. hours."},
             },
-            "required": ["name", "dataset_id", "distribution", "time_column"],
+            "required": ["name", "dataset_id", "distribution"],
         },
     },
 ]
@@ -199,13 +234,21 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
             ds = datasets_service.get_dataset(db, inp.get("dataset_id", ""), owner_id=uid)
             if ds is None:
                 return {"error": "dataset not found — create it first"}
-            mapping = {"x": inp.get("time_column")}
-            if inp.get("censored_column"):
-                mapping["c"] = inp["censored_column"]
+            mapping = {key: inp[field] for field, key in _MAP_FIELDS if inp.get(field)}
+            if not mapping.get("x") and not (mapping.get("xl") and mapping.get("xr")):
+                return {"error": "map time_column, or both interval_lower_column and interval_upper_column"}
+            covariates = list(inp.get("covariates") or []) or None
+            options = {
+                "offset": bool(inp.get("offset")),
+                "zi": bool(inp.get("zero_inflated")),
+                "lfp": bool(inp.get("limited_failure_population")),
+                "fixed": inp.get("fixed") or None,
+            }
             model = models_service.save_model(
                 db, (inp.get("name") or "model").strip() or "model", ds,
-                inp.get("distribution") or "best", mapping, None, None,
-                inp.get("unit"), owner_id=uid,
+                inp.get("distribution") or "best", mapping, covariates,
+                inp.get("formula") or None, inp.get("unit"), owner_id=uid,
+                options=options,
             )
             r = model.results or {}
             params = [{"name": p["name"], "value": p["value"]} for p in (r.get("params") or [])]
