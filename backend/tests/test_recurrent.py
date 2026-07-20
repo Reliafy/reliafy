@@ -128,3 +128,30 @@ def test_api_fit_save_get_predict_delete(monkeypatch):
         assert client.get(f"/api/recurrent/models/{model_id}").status_code == 404
     finally:
         app.dependency_overrides.clear()
+
+
+def test_api_fit_and_save_from_saved_dataset(monkeypatch):
+    from backend.auth import get_current_user
+
+    test_db = mongomock.MongoClient()["reliafy_test"]
+    client, app = _client(monkeypatch, test_db)
+    try:
+        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A"}
+
+        # Upload a dataset once, then drive the recurrent flow off its id (no file).
+        ds = client.post("/api/datasets", files={"file": ("ev.csv", _events_csv(), "text/csv")},
+                         data={"name": "Events"})
+        assert ds.status_code == 200, ds.text
+        dataset_id = ds.json()["id"]
+        form = {"dataset_id": dataset_id, "i": "system", "x": "time", "t": "obs_end",
+                "model": "crow_amsaa", "unit": "hours"}
+
+        r = client.post("/api/recurrent/fit", data=form)
+        assert r.status_code == 200, r.text
+        assert r.json()["dataset_id"] == dataset_id  # reused, not re-uploaded
+
+        r = client.post("/api/recurrent/models", data={**form, "name": "From saved dataset"})
+        assert r.status_code == 200, r.text
+        assert r.json()["dataset_id"] == dataset_id
+    finally:
+        app.dependency_overrides.clear()
