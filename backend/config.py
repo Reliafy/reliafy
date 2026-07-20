@@ -130,7 +130,9 @@ STRIPE_PRO_PRICE_ID = (
 AI_PROVIDER = (os.environ.get("AI_PROVIDER") or "anthropic").strip().lower()
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-_DEFAULT_AI_MODEL = {"anthropic": "claude-sonnet-4-6", "openai": "gpt-5.5"}
+# The metered assistant runs a cost-efficient model — it handles transactions
+# and app operation (heavy model-building goes to the Reliability Agent on Opus).
+_DEFAULT_AI_MODEL = {"anthropic": "claude-sonnet-4-6", "openai": "gpt-5.6-luna"}
 AI_MODEL = os.environ.get("AI_MODEL") or _DEFAULT_AI_MODEL.get(AI_PROVIDER, "")
 
 # Markup applied to the provider's token cost when charging credits.
@@ -146,7 +148,8 @@ except ValueError:
 # tokens (OpenAI prompt caching / Anthropic cache reads). Models without a
 # cached_in entry bill cached tokens at the full input rate (never undercharge).
 TOKEN_PRICES = {
-    "gpt-5.5": {"in": 5.0, "cached_in": 0.5, "out": 30.0},  # the one production model
+    "gpt-5.6-luna": {"in": 1.0, "cached_in": 0.1, "out": 6.0},  # metered assistant
+    "gpt-5.5": {"in": 5.0, "cached_in": 0.5, "out": 30.0},
     "claude-sonnet-4-6": {"in": 3.0, "cached_in": 0.3, "out": 15.0},
     "claude-haiku-4-5-20251001": {"in": 0.8, "cached_in": 0.08, "out": 4.0},
     "claude-opus-4-8": {"in": 15.0, "cached_in": 1.5, "out": 75.0},
