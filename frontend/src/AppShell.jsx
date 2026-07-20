@@ -14,6 +14,7 @@ import ModellingCompare from "./views/ModellingCompare.jsx";
 import DegradationHome from "./views/DegradationHome.jsx";
 import DegradationModelPage from "./views/DegradationModelPage.jsx";
 import RecurrentHome from "./views/RecurrentHome.jsx";
+import RecurrentNewPage from "./views/RecurrentNewPage.jsx";
 import RecurrentModelPage from "./views/RecurrentModelPage.jsx";
 import RbdDashboard from "./views/RbdDashboard.jsx";
 import RbdHome from "./views/RbdHome.jsx";
@@ -80,6 +81,7 @@ export default function AppShell() {
             <Route path="/modelling/degradation" element={<DegradationHome />} />
             <Route path="/modelling/degradation/:id" element={<DegradationModelPage />} />
             <Route path="/modelling/recurrent" element={<RecurrentHome />} />
+            <Route path="/modelling/recurrent/new" element={<RecurrentNewPage />} />
             <Route path="/modelling/recurrent/:id" element={<RecurrentModelPage />} />
             <Route path="/modelling/m/:id" element={<ModelPage />} />
             <Route path="/rbds" element={<RbdDashboard />} />
