@@ -56,6 +56,31 @@ def test_fit_errors():
         rec.fit(df, {"i": "system", "x": "missing"}, "crow_amsaa")
 
 
+def test_sample_seeds_and_is_read_only(monkeypatch):
+    from backend import config
+    from backend.services import samples
+
+    monkeypatch.setattr(config, "SEED_SAMPLES", True)
+    db = mongomock.MongoClient()["reliafy_test"]
+    samples.seed_samples(db)
+
+    doc = db.recurrent_models.find_one({"_id": "sample-rec-compressors"})
+    assert doc is not None
+    assert doc["owner_id"] == config.SAMPLE_OWNER  # shared sample owner
+    r = doc["results"]
+    assert r["n_systems"] == 4 and r["growth"] == "deteriorating" and r["beta"] > 1
+
+    # Re-seeding is idempotent.
+    samples.seed_samples(db)
+    assert db.recurrent_models.count_documents({}) == 1
+
+    # It surfaces to a normal user's list (read-only sample).
+    from backend.services import recurrent as svc
+
+    models = svc.list_models(db, ["someone", config.SAMPLE_OWNER])
+    assert [m.id for m in models] == ["sample-rec-compressors"]
+
+
 def _client(monkeypatch, test_db):
     from fastapi.testclient import TestClient
 

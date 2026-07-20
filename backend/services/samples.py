@@ -80,11 +80,32 @@ _SEAL_ALT_CSV = (
     "320,0,100,0.9\n510,0,100,0.9\n380,0,100,0.9\n610,0,100,0.9\n450,0,100,0.9\n"
 ).encode()
 
+# Long-format recurrent-event history: 4 compressors, each run to a 5000-hour
+# test, with repair (failure) times. Gaps between failures SHRINK over each
+# system's life — a deteriorating repairable fleet (Crow-AMSAA β ≈ 2), the
+# textbook reliability-growth / repairable-systems demo.
+_COMPRESSOR_EVENTS_CSV = (
+    "compressor,hours,test_end\n"
+    "CMP-1,1150,5000\nCMP-1,2050,5000\nCMP-1,2800,5000\nCMP-1,3400,5000\n"
+    "CMP-1,3900,5000\nCMP-1,4350,5000\nCMP-1,4700,5000\nCMP-1,4980,5000\n"
+    "CMP-2,1400,5000\nCMP-2,2350,5000\nCMP-2,3100,5000\nCMP-2,3650,5000\n"
+    "CMP-2,4150,5000\nCMP-2,4550,5000\nCMP-2,4900,5000\n"
+    "CMP-3,980,5000\nCMP-3,1850,5000\nCMP-3,2600,5000\nCMP-3,3250,5000\n"
+    "CMP-3,3800,5000\nCMP-3,4250,5000\nCMP-3,4650,5000\nCMP-3,4950,5000\n"
+    "CMP-4,1250,5000\nCMP-4,2200,5000\nCMP-4,2950,5000\nCMP-4,3550,5000\n"
+    "CMP-4,4050,5000\nCMP-4,4500,5000\nCMP-4,4850,5000\n"
+).encode()
+
 SAMPLE_DATASETS = [
     {
         "id": "sample-ds-bearings",
         "name": "Bearing fatigue test (sample)",
         "csv": _BEARINGS_CSV,
+    },
+    {
+        "id": "sample-ds-compressor-events",
+        "name": "Compressor fleet — repair history (sample)",
+        "csv": _COMPRESSOR_EVENTS_CSV,
     },
     {
         "id": "sample-ds-seal-alt",
@@ -116,6 +137,19 @@ SAMPLE_DEGRADATION_MODELS = [
             "population_method": "moments",
             "unit": "hours",
             "measurement_unit": "mm",
+        },
+    },
+]
+
+SAMPLE_RECURRENT_MODELS = [
+    {
+        "id": "sample-rec-compressors",
+        "name": "Compressor fleet — Crow-AMSAA (sample)",
+        "dataset_id": "sample-ds-compressor-events",
+        "spec": {
+            "mapping": {"i": "compressor", "x": "hours", "t": "test_end"},
+            "model_id": "crow_amsaa",
+            "unit": "hours",
         },
     },
 ]
@@ -394,6 +428,32 @@ def seed_samples(db) -> None:
                 logger.info("Seeded sample tracked item %r.", it["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample degradation %r: %s", spec["id"], exc)
+
+    for spec in SAMPLE_RECURRENT_MODELS:
+        try:
+            if db.recurrent_models.find_one({"_id": spec["id"]}) is not None:
+                continue
+            ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
+            if ds_doc is None:
+                continue
+            from backend import recurrent as recurrent_fit  # local: heavy import
+            from backend.schema import RecurrentModelDoc
+            import surpyval
+
+            dataset = from_doc(Dataset, ds_doc)
+            df = fitting.read_dataframe(bytes(dataset.data))
+            s = spec["spec"]
+            payload, _ = recurrent_fit.fit(df, s["mapping"], s["model_id"], s["unit"])
+            doc = RecurrentModelDoc(
+                id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER,
+                dataset_id=spec["dataset_id"], spec=s, results=payload,
+                surpyval_version=getattr(surpyval, "__version__", None),
+                status="ready",
+            )
+            db.recurrent_models.insert_one(to_doc(doc))
+            logger.info("Seeded sample recurrent model %r.", spec["id"])
+        except Exception as exc:  # pragma: no cover - defensive; never block boot
+            logger.warning("Failed to seed sample recurrent %r: %s", spec["id"], exc)
 
     # Last: groups the sample tracked items (needs the degradation model above).
     _seed_tracked_fleet(db)
