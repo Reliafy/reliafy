@@ -30,23 +30,23 @@ def test_norm_matches_managed_agents_event_schema():
     """
     from backend.services import reliability_agent as agent
 
-    assert agent._norm({"type": "span.model_request_start"}) is None
-    assert agent._norm({"type": "user.message", "content": [{"text": "hi"}]}) is None
+    assert agent._norm({"type": "span.model_request_start"}) == []
+    assert agent._norm({"type": "user.message", "content": [{"text": "hi"}]}) == []
 
-    text = agent._norm({"type": "agent.message", "content": [{"text": "Forty-two."}]})
-    assert text == {"type": "text", "text": "Forty-two."}
+    assert agent._norm({"type": "agent.message", "content": [{"text": "Forty-two."}]}) == \
+        [{"type": "text", "text": "Forty-two."}]
 
     tu = agent._norm({"type": "agent.tool_use", "name": "bash",
-                      "input": {"command": 'python -c "print(6*7)"'}})
+                      "input": {"command": 'python -c "print(6*7)"'}})[0]
     assert tu["type"] == "tool_use" and tu["name"] == "bash"
     assert tu["code"] == 'python -c "print(6*7)"'
 
-    tr = agent._norm({"type": "agent.tool_result", "content": [{"text": "42\n"}]})
-    assert tr == {"type": "tool_result", "output": "42\n"}
+    assert agent._norm({"type": "agent.tool_result", "content": [{"text": "42\n"}]}) == \
+        [{"type": "tool_result", "output": "42\n"}]
 
-    assert agent._norm({"type": "agent.thinking"}) == {"type": "status", "status": "thinking"}
-    idle = agent._norm({"type": "session.thread_status_idle"})
-    assert idle == {"type": "status", "status": "thread_status_idle"}
+    assert agent._norm({"type": "agent.thinking"}) == [{"type": "status", "status": "thinking"}]
+    assert agent._norm({"type": "session.thread_status_idle"}) == \
+        [{"type": "status", "status": "thread_status_idle"}]
 
     assert agent._is_idle({"type": "session.thread_status_idle"}) is True
     assert agent._is_idle({"type": "agent.message"}) is False
@@ -56,6 +56,26 @@ def test_norm_matches_managed_agents_event_schema():
         "type": "span.model_request_end",
         "model_usage": {"input_tokens": 1200, "output_tokens": 300},
     }) == (1200, 300)
+
+
+def test_norm_extracts_inline_chart():
+    """A base64 PNG the agent prints in tool output becomes an image event, with
+    the marker stripped from the shown text."""
+    from backend.services import reliability_agent as agent
+
+    b64 = "iVBORw0KGgoAAAANS"  # not a real PNG; only the marker handling matters
+    out = agent._norm({
+        "type": "agent.tool_result",
+        "content": [{"text": f"Saved chart.\n<<RELIAFY_IMG>>{b64}<<END_IMG>>\n"}],
+    })
+    kinds = [e["type"] for e in out]
+    assert kinds == ["tool_result", "image"]
+    assert "RELIAFY_IMG" not in out[0]["output"] and out[0]["output"].strip() == "Saved chart."
+    assert out[1]["data"] == f"data:image/png;base64,{b64}"
+
+    # Pure-image output yields only the image (no empty text bubble).
+    only = agent._norm({"type": "agent.tool_result", "content": [{"text": f"<<RELIAFY_IMG>>{b64}<<END_IMG>>"}]})
+    assert [e["type"] for e in only] == ["image"]
 
 
 def test_config_exposes_agent_feature_flag(monkeypatch):
@@ -138,11 +158,12 @@ def test_run_streams_events_and_meters(monkeypatch):
         app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
         billing.grant_credits(test_db, U, 1000, "test")
         monkeypatch.setattr(agent, "enabled", lambda: True)
-        monkeypatch.setattr(agent, "stream_run", lambda message, file_id=None: iter([
+        monkeypatch.setattr(agent, "stream_run", lambda message, file_id=None, session_id=None: iter([
             {"type": "text", "text": "fitting…"},
             {"type": "tool_use", "name": "bash", "code": "import surpyval"},
             {"type": "tool_result", "output": "Weibull alpha=100 beta=2"},
-            {"type": "_meter", "seconds": 60.0, "input_tokens": 1000, "output_tokens": 1000},
+            {"type": "image", "data": "data:image/png;base64,AAAA"},
+            {"type": "_meter", "session_id": "sesn_xyz", "seconds": 60.0, "input_tokens": 1000, "output_tokens": 1000},
         ]))
 
         r = client.post("/api/reliability-agent/run", json={"message": "fit weibull", "file_id": "f1"})
@@ -150,9 +171,10 @@ def test_run_streams_events_and_meters(monkeypatch):
         assert r.headers["content-type"].startswith("text/event-stream")
         evs = _sse_events(r.text)
         kinds = [e["type"] for e in evs]
-        assert kinds == ["text", "tool_use", "tool_result", "done"]
+        assert kinds == ["text", "tool_use", "tool_result", "image", "done"]
 
         done = evs[-1]
+        assert done["session_id"] == "sesn_xyz"  # returned so the client reuses it
         # 1800 (tokens) + 133 (session runtime) = 1933 mc -> 2 credits; 998 left
         assert done["cost_millicents"] == 1933
         assert done["cost_cents"] == 2

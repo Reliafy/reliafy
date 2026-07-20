@@ -418,9 +418,10 @@ export function reliabilityAgentUpload(file) {
 }
 
 // Run one agent turn, streaming Server-Sent Events. `onEvent(ev)` is called for
-// each parsed event (text / tool_use / tool_result / status / error / done).
-// Resolves when the stream ends. Pass an AbortSignal to cancel.
-export async function reliabilityAgentStream(message, fileId, { onEvent, signal } = {}) {
+// each parsed event (text / tool_use / tool_result / image / status / error /
+// done). Pass `sessionId` to continue an existing conversation (the `done`
+// event carries the session_id to reuse). Resolves when the stream ends.
+export async function reliabilityAgentStream(message, { fileId, sessionId, onEvent, signal } = {}) {
   const headers = {
     "Content-Type": "application/json",
     ...workspaceHeaders(),
@@ -429,7 +430,7 @@ export async function reliabilityAgentStream(message, fileId, { onEvent, signal 
   const res = await fetch("/api/reliability-agent/run", {
     method: "POST",
     headers,
-    body: JSON.stringify({ message, file_id: fileId || null }),
+    body: JSON.stringify({ message, file_id: fileId || null, session_id: sessionId || null }),
     signal,
   });
   if (!res.ok) {

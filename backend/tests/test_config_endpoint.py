@@ -29,6 +29,7 @@ def test_config_is_public_and_reports_capabilities(client, monkeypatch):
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setattr(config, "STRIPE_API_KEY", "sk_test_x")
     monkeypatch.setattr(config, "BILLING_ENABLED", True)
+    monkeypatch.setattr(config, "RELIABILITY_AGENT_ENABLED", False)
 
     r = client.get("/api/config")  # no Authorization header
     assert r.status_code == 200
@@ -45,6 +46,7 @@ def test_config_single_user_self_host(client, monkeypatch):
     monkeypatch.setattr(config, "OPENAI_API_KEY", None)
     monkeypatch.setattr(config, "STRIPE_API_KEY", None)
     monkeypatch.setattr(config, "BILLING_ENABLED", False)
+    monkeypatch.setattr(config, "RELIABILITY_AGENT_ENABLED", False)
 
     assert client.get("/api/config").json() == {
         "auth": False,
@@ -63,6 +65,7 @@ def test_config_byo_key_self_host_enables_ai_only(client, monkeypatch):
     monkeypatch.setattr(config, "OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(config, "STRIPE_API_KEY", None)
     monkeypatch.setattr(config, "BILLING_ENABLED", False)
+    monkeypatch.setattr(config, "RELIABILITY_AGENT_ENABLED", False)
 
     assert client.get("/api/config").json() == {
         "auth": False,

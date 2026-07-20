@@ -5463,7 +5463,7 @@ button.danger:hover { background: #fdeeee; }
   text-decoration: underline;
 }
 
-/* ---- Reliability Agent (POC) ---------------------------------------------- */
+/* ---- Reliability Agent — chat UX ------------------------------------------ */
 .agent-poc {
   font-size: 0.6em;
   vertical-align: middle;
@@ -5473,62 +5473,126 @@ button.danger:hover { background: #fdeeee; }
   color: var(--acc-d);
   letter-spacing: 0.06em;
 }
-.agent-chat {
-  margin-top: 1rem;
-  min-height: 220px;
-  max-height: 60vh;
+/* Fill the viewport: thread scrolls, composer pinned at the bottom. */
+.agent-page { display: flex; flex-direction: column; min-height: 0; }
+.agent-page header { flex: 0 0 auto; }
+.chat {
+  flex: 1 1 auto;
+  min-height: 300px;
   overflow-y: auto;
+  padding: 0.5rem 0.2rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 1rem;
 }
-.agent-empty { color: var(--muted); font-style: italic; }
-.agent-msg { display: flex; flex-direction: column; gap: 0.4rem; }
-.agent-role {
+.chat-empty { color: var(--muted); }
+.chat-empty ul { margin: 0.4rem 0 0; padding-left: 1.1rem; }
+.chat-empty li { margin: 0.2rem 0; }
+
+.chat-row { display: flex; }
+.chat-row.user { justify-content: flex-end; }
+.chat-row.agent { justify-content: flex-start; }
+.chat-bubble {
+  max-width: 78%;
+  border-radius: 14px;
+  padding: 0.6rem 0.85rem;
+  line-height: 1.5;
+}
+.chat-bubble.user {
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+  white-space: pre-wrap;
+}
+.chat-bubble.agent {
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.chat-text { white-space: pre-wrap; }
+
+/* Collapsible code / output blocks inside an agent turn. */
+.chat-code, .chat-result {
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.chat-code > summary, .chat-result > summary {
+  cursor: pointer;
+  list-style: none;
   font-family: var(--mono);
   font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--faint);
-}
-.agent-user .agent-role { color: var(--acc-d); }
-.agent-text { margin: 0; white-space: pre-wrap; line-height: 1.5; }
-.agent-code, .agent-result {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surf);
-  overflow: hidden;
-}
-.agent-code-h {
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--faint);
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--line2);
+  padding: 7px 12px;
 }
-.agent-code pre, .agent-result pre {
+.chat-code > summary::-webkit-details-marker, .chat-result > summary::-webkit-details-marker { display: none; }
+.chat-code pre, .chat-result pre {
   margin: 0;
-  padding: 10px 12px;
+  padding: 0 12px 10px;
   overflow-x: auto;
   font-family: var(--mono);
   font-size: 12.5px;
   line-height: 1.45;
   white-space: pre-wrap;
 }
-.agent-err { color: #b91c1c; }
-.agent-status {
-  margin: 0;
+.chat-image {
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.chat-error { color: #b91c1c; white-space: pre-wrap; }
+.chat-typing, .chat-status {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--faint);
-  text-transform: lowercase;
 }
-.agent-file {
+
+/* Composer pinned at the bottom. */
+.chat-composer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line2);
+}
+.chat-composer textarea {
+  flex: 1 1 auto;
+  resize: none;
+  max-height: 160px;
+  min-height: 42px;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.4;
+}
+.chat-composer textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 109, 246, 0.18);
+}
+.chat-attach {
   cursor: pointer;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  height: 42px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
   white-space: nowrap;
   font-size: 0.85rem;
-  padding: 0.4rem 0.7rem;
+}
+.chat-composer button {
+  height: 42px;
 }

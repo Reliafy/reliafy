@@ -36,7 +36,17 @@ SYSTEM_PROMPT = (
     "`m.params`, `m.aic()`, `m.bic()`, and the functions `m.sf(t)`, `m.ff(t)`, "
     "`m.hf(t)`, `m.mean()`, `m.qf(p)`. When you fit a model, report the "
     "distribution, parameters, and a goodness-of-fit summary. Be concise and show "
-    "the numbers you actually computed."
+    "the numbers you actually computed.\n\n"
+    "DISPLAYING CHARTS — CRITICAL: the user CANNOT see the sandbox filesystem, so "
+    "saving a PNG is NOT enough — a saved plot is invisible to them. The ONLY way "
+    "the user sees an image is if you print its base64 to stdout with markers. In "
+    "the SAME python script that builds each plot, end with these exact lines:\n"
+    "    fig.savefig('/tmp/c.png', dpi=90, bbox_inches='tight')\n"
+    "    import base64, sys\n"
+    "    sys.stdout.write('<<RELIAFY_IMG>>' + base64.b64encode(open('/tmp/c.png','rb').read()).decode() + '<<END_IMG>>')\n"
+    "Do this for every chart, immediately, in the same code cell. Never just say "
+    "'the chart is saved' — always emit the base64. Don't print the base64 in any "
+    "other format and don't describe it."
 )
 
 
@@ -110,13 +120,32 @@ def upload_csv(data: bytes, filename: str = "data.csv") -> str:
     return uploaded.id
 
 
-def _norm(event) -> dict | None:
-    """Best-effort map of a Managed Agents stream event to a small dict the UI
-    renders. Unknown shapes are forwarded generically. Defensive on purpose —
-    the exact event schema is beta."""
+import re
+
+# Charts are emitted by the agent as base64 PNG wrapped in these markers (see the
+# system prompt), because the sandbox filesystem isn't visible to the client.
+_IMG_RE = re.compile(r"<<RELIAFY_IMG>>(.*?)<<END_IMG>>", re.DOTALL)
+
+
+def _extract_images(text: str) -> tuple[str, list[str]]:
+    """Pull any base64 chart(s) out of tool output. Returns the text with the
+    markers removed and a list of ``data:image/png;base64,…`` URIs."""
+    if not text or "<<RELIAFY_IMG>>" not in text:
+        return text, []
+    uris = []
+    for m in _IMG_RE.findall(text):
+        b64 = "".join(m.split())  # strip whitespace/newlines the shell may add
+        if b64:
+            uris.append(f"data:image/png;base64,{b64}")
+    return _IMG_RE.sub("", text).strip(), uris
+
+
+def _norm(event) -> list[dict]:
+    """Map a Managed Agents stream event to zero or more small dicts the UI
+    renders. Defensive on purpose — the exact event schema is beta."""
     etype = getattr(event, "type", None) or (event.get("type") if isinstance(event, dict) else None)
     if not etype:
-        return None
+        return []
 
     def _get(obj, *names):
         for n in names:
@@ -129,31 +158,34 @@ def _norm(event) -> dict | None:
 
     # Internal spans (model request start/end) carry no user-facing content.
     if etype.startswith("span."):
-        return None
+        return []
 
     # Assistant text.
     if etype in ("agent.message", "agent.message.delta", "message"):
-        text = _get(event, "text", "content")
-        return {"type": "text", "text": _flatten_text(text)}
+        return [{"type": "text", "text": _flatten_text(_get(event, "text", "content"))}]
     # Extended thinking — surfaced as a subtle status, not full content.
     if etype in ("agent.thinking", "agent.thinking.delta"):
-        return {"type": "status", "status": "thinking"}
+        return [{"type": "status", "status": "thinking"}]
     # The agent invoking a built-in tool (bash/read/write/…) — show the command/code.
     if etype in ("agent.tool_use", "tool_use"):
         inp = _get(event, "input") or {}
-        return {"type": "tool_use", "name": _get(event, "name"),
-                "code": (isinstance(inp, dict) and (inp.get("command") or inp.get("code") or inp.get("content"))) or None,
-                "input": inp}
-    # Tool output.
+        return [{"type": "tool_use", "name": _get(event, "name"),
+                 "code": (isinstance(inp, dict) and (inp.get("command") or inp.get("code") or inp.get("content"))) or None}]
+    # Tool output — split out any inline chart(s).
     if etype in ("agent.tool_result", "tool_result"):
-        return {"type": "tool_result", "output": _flatten_text(_get(event, "content", "output", "stdout"))}
+        text, images = _extract_images(_flatten_text(_get(event, "content", "output", "stdout")))
+        out = []
+        if text:
+            out.append({"type": "tool_result", "output": text})
+        out.extend({"type": "image", "data": uri} for uri in images)
+        return out
     # The agent calling one of *our* custom tools (e.g. save to Reliafy) — later.
     if etype in ("agent.custom_tool_use",):
-        return {"type": "custom_tool_use", "name": _get(event, "name"), "input": _get(event, "input")}
+        return [{"type": "custom_tool_use", "name": _get(event, "name"), "input": _get(event, "input")}]
     # Session-level status transitions (…thread_status_idle / …status_running).
     if "status" in etype:
-        return {"type": "status", "status": etype.rsplit(".", 1)[-1]}
-    return None  # user.message echo, unknown internal events — nothing to render
+        return [{"type": "status", "status": etype.rsplit(".", 1)[-1]}]
+    return []  # user.message echo, unknown internal events — nothing to render
 
 
 def _flatten_text(value) -> str:
@@ -200,40 +232,53 @@ def _is_idle(event) -> bool:
 _UPLOAD_MOUNT = "/mnt/session/uploads/data.csv"
 
 
-def stream_run(message: str, file_id: str | None = None):
-    """Run one turn on a fresh session and yield normalised events as they
-    arrive, then a final ``{"type": "_meter", ...}`` with the session runtime and
-    token totals for billing. A generator so the router can stream it as SSE.
+def stream_run(message: str, file_id: str | None = None, session_id: str | None = None):
+    """Advance the conversation one turn and yield normalised events as they
+    arrive, then a final ``{"type": "_meter", ...}`` (with the session runtime,
+    token totals, and the ``session_id`` to reuse for the next turn). A generator
+    so the router can stream it as SSE.
 
-    An uploaded ``file_id`` is mounted into the session sandbox as a file the
-    agent reads with pandas (not a message content block — Managed Agents mounts
-    files as session *resources*)."""
+    Multi-turn: pass ``session_id`` to continue an existing conversation (its
+    history + sandbox state persist server-side); omit it to start a new one. An
+    uploaded ``file_id`` is mounted into the sandbox as a file the agent reads
+    with pandas (Managed Agents mounts files as session *resources*)."""
     client = _client()
-    agent_id, env_id = _ensure_agent(client)
-    resources = None
     text = message
-    if file_id:
-        resources = [{"type": "file", "file_id": file_id, "mount_path": _UPLOAD_MOUNT}]
-        text = f"{message}\n\nThe uploaded CSV is available in the sandbox at {_UPLOAD_MOUNT}."
-    session = (
-        client.beta.sessions.create(agent=agent_id, environment_id=env_id, resources=resources)
-        if resources
-        else client.beta.sessions.create(agent=agent_id, environment_id=env_id)
-    )
+
+    if session_id:
+        # Continue the conversation; attach a new file mid-thread if given.
+        if file_id:
+            try:
+                client.beta.sessions.resources.add(
+                    session_id, file_id=file_id, type="file", mount_path=_UPLOAD_MOUNT)
+                text = f"{message}\n\nThe uploaded CSV is available in the sandbox at {_UPLOAD_MOUNT}."
+            except Exception:  # noqa: BLE001 - non-fatal; carry on without the mount
+                pass
+    else:
+        agent_id, env_id = _ensure_agent(client)
+        resources = None
+        if file_id:
+            resources = [{"type": "file", "file_id": file_id, "mount_path": _UPLOAD_MOUNT}]
+            text = f"{message}\n\nThe uploaded CSV is available in the sandbox at {_UPLOAD_MOUNT}."
+        session = (
+            client.beta.sessions.create(agent=agent_id, environment_id=env_id, resources=resources)
+            if resources
+            else client.beta.sessions.create(agent=agent_id, environment_id=env_id)
+        )
+        session_id = session.id
 
     started = time.monotonic()
     in_tok = out_tok = 0
     try:
         client.beta.sessions.events.send(
-            session.id, events=[{"type": "user.message", "content": [{"type": "text", "text": text}]}]
+            session_id, events=[{"type": "user.message", "content": [{"type": "text", "text": text}]}]
         )
-        with client.beta.sessions.events.stream(session.id) as stream:
+        with client.beta.sessions.events.stream(session_id) as stream:
             for event in stream:
                 di, do = _event_usage(event)
                 in_tok += di
                 out_tok += do
-                norm = _norm(event)
-                if norm:
+                for norm in _norm(event):
                     yield norm
                 if _is_idle(event):
                     break
@@ -244,6 +289,7 @@ def stream_run(message: str, file_id: str | None = None):
     finally:
         yield {
             "type": "_meter",
+            "session_id": session_id,
             "seconds": max(0.0, time.monotonic() - started),
             "input_tokens": in_tok,
             "output_tokens": out_tok,

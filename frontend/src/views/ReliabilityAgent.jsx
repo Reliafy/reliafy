@@ -5,86 +5,152 @@ import {
   reliabilityAgentStream,
 } from "../api.js";
 
-// Proof-of-concept surface for the code-running Reliability Agent (Anthropic
-// Managed Agents). Kept entirely separate from the existing sidebar assistant so
-// it can grow (and the old assistant retire) independently. Upload a CSV, ask a
-// question, and watch the agent run Python (with surpyval) in a managed sandbox,
-// streamed step by step.
+// A regular conversational chat with the code-running Reliability Agent
+// (Anthropic Managed Agents). Messages persist in a scrolling thread; the
+// session is reused across turns so the agent keeps its context and sandbox
+// state. Each agent turn renders its streamed parts inline — text, the code it
+// runs, results, and any charts it produces.
 
-// One streamed event → a rendered block.
-function EventBlock({ ev }) {
-  if (ev.type === "text") return ev.text ? <p className="agent-text">{ev.text}</p> : null;
-  if (ev.type === "tool_use") {
+// One streamed part within an agent turn.
+function Part({ p }) {
+  if (p.type === "text") return p.text ? <div className="chat-text">{p.text}</div> : null;
+  if (p.type === "code")
     return (
-      <div className="agent-code">
-        <div className="agent-code-h">{ev.name || "ran"}{ev.code ? " · code" : ""}</div>
-        {ev.code
-          ? <pre>{ev.code}</pre>
-          : <pre>{JSON.stringify(ev.input, null, 2)}</pre>}
+      <details className="chat-code" open>
+        <summary>{p.name || "ran code"}</summary>
+        <pre>{p.code}</pre>
+      </details>
+    );
+  if (p.type === "result")
+    return (
+      <details className="chat-result">
+        <summary>output</summary>
+        <pre>{p.output}</pre>
+      </details>
+    );
+  if (p.type === "image")
+    return <img className="chat-image" src={p.data} alt="chart from the agent" />;
+  if (p.type === "error")
+    return <div className="chat-error">{p.detail}</div>;
+  return null;
+}
+
+function Bubble({ msg }) {
+  if (msg.role === "user") {
+    return (
+      <div className="chat-row user">
+        <div className="chat-bubble user">{msg.text}</div>
       </div>
     );
   }
-  if (ev.type === "tool_result") {
-    return ev.output ? (
-      <div className="agent-result"><div className="agent-code-h">result</div><pre>{ev.output}</pre></div>
-    ) : null;
-  }
-  if (ev.type === "custom_tool_use") {
-    return <p className="agent-text"><em>calling {ev.name}…</em></p>;
-  }
-  if (ev.type === "status") {
-    return <p className="agent-status">{ev.status.replace("session.status_", "")}</p>;
-  }
-  if (ev.type === "error") {
-    return <div className="agent-result agent-err"><pre>{ev.detail}</pre></div>;
-  }
-  return null; // raw / done handled elsewhere
+  return (
+    <div className="chat-row agent">
+      <div className="chat-bubble agent">
+        {msg.parts.length === 0 && msg.pending && <span className="chat-typing">Working…</span>}
+        {msg.parts.map((p, i) => <Part key={i} p={p} />)}
+        {msg.status && msg.pending && <span className="chat-status">{msg.status}…</span>}
+      </div>
+    </div>
+  );
 }
 
 export default function ReliabilityAgent() {
   const [info, setInfo] = useState(null);
-  const [events, setEvents] = useState([]); // streamed blocks for the current run
+  const [messages, setMessages] = useState([]); // [{role, text} | {role:'agent', parts:[], status, pending}]
   const [input, setInput] = useState("");
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [lastCost, setLastCost] = useState(null);
+  const [credit, setCredit] = useState(null);
+  const sessionRef = useRef(null); // reused across turns
   const scrollRef = useRef(null);
 
-  useEffect(() => { reliabilityAgentInfo().then(setInfo).catch((e) => setError(e.message)); }, []);
-  useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [events]);
+  useEffect(() => {
+    reliabilityAgentInfo().then((i) => { setInfo(i); setCredit(i.credit_cents); }).catch((e) => setError(e.message));
+  }, []);
+  useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages]);
 
-  const run = async () => {
+  // Append a streamed part to the last (agent) message. Consecutive text parts
+  // merge so the reply reads as one paragraph, not fragments.
+  const pushPart = (part) =>
+    setMessages((ms) => {
+      const last = ms[ms.length - 1];
+      if (!last || last.role !== "agent") return ms;
+      const parts = [...last.parts];
+      const prev = parts[parts.length - 1];
+      if (part.type === "text" && prev?.type === "text") {
+        parts[parts.length - 1] = { ...prev, text: prev.text + part.text };
+      } else {
+        parts.push(part);
+      }
+      return [...ms.slice(0, -1), { ...last, parts }];
+    });
+
+  const setAgentStatus = (status) =>
+    setMessages((ms) => {
+      const last = ms[ms.length - 1];
+      if (!last || last.role !== "agent") return ms;
+      return [...ms.slice(0, -1), { ...last, status }];
+    });
+
+  const finishAgent = () =>
+    setMessages((ms) => {
+      const last = ms[ms.length - 1];
+      if (!last || last.role !== "agent") return ms;
+      return [...ms.slice(0, -1), { ...last, pending: false, status: null }];
+    });
+
+  const send = async () => {
     const text = input.trim();
     if (!text || busy) return;
     setBusy(true);
     setError(null);
-    setLastCost(null);
-    setEvents([{ type: "text", text: `You: ${text}` }]);
+    const attach = file;
+    setFile(null);
+    setInput("");
+    setMessages((ms) => [
+      ...ms,
+      { role: "user", text: attach ? `${text}  📎 ${attach.name}` : text },
+      { role: "agent", parts: [], status: null, pending: true },
+    ]);
     try {
       let fileId = null;
-      if (file) {
-        setEvents((e) => [...e, { type: "status", status: `session.status_uploading ${file.name}` }]);
-        fileId = (await reliabilityAgentUpload(file)).file_id;
+      if (attach) {
+        setAgentStatus("uploading");
+        fileId = (await reliabilityAgentUpload(attach)).file_id;
       }
-      await reliabilityAgentStream(text, fileId, {
+      await reliabilityAgentStream(text, {
+        fileId,
+        sessionId: sessionRef.current,
         onEvent: (ev) => {
-          if (ev.type === "done") {
-            setLastCost({ cents: ev.cost_cents, credit: ev.credit_cents });
-          } else {
-            setEvents((e) => [...e, ev]);
+          switch (ev.type) {
+            case "text": pushPart({ type: "text", text: ev.text }); break;
+            case "tool_use": pushPart({ type: "code", name: ev.name, code: ev.code || "" }); break;
+            case "tool_result": pushPart({ type: "result", output: ev.output }); break;
+            case "image": pushPart({ type: "image", data: ev.data }); break;
+            case "status": setAgentStatus(ev.status); break;
+            case "error": pushPart({ type: "error", detail: ev.detail }); break;
+            case "done":
+              if (ev.session_id) sessionRef.current = ev.session_id;
+              if (ev.credit_cents != null) setCredit(ev.credit_cents);
+              break;
+            default: break;
           }
         },
       });
     } catch (e) {
       setError(e.message);
+      pushPart({ type: "error", detail: e.message });
     } finally {
+      finishAgent();
       setBusy(false);
     }
   };
 
+  const disabled = busy || !info?.enabled;
+
   return (
-    <div className="app">
+    <div className="app agent-page">
       <header>
         <div>
           <h1>Reliability Agent <span className="agent-poc">POC</span></h1>
@@ -92,58 +158,44 @@ export default function ReliabilityAgent() {
             {info?.enabled
               ? <>Runs Python (with surpyval) in a managed sandbox on your data. Model: <code>{info.model}</code>.</>
               : "Not configured yet — set ANTHROPIC_API_KEY on the server to enable."}
-            {" "}Separate from the existing assistant, with its own metering.
           </p>
         </div>
-        {lastCost && (
-          <span className="muted-line" style={{ margin: 0 }}>
-            Last run: {lastCost.cents} credit{lastCost.cents === 1 ? "" : "s"} · {lastCost.credit} left
-          </span>
+        {credit != null && info?.billing_enabled && (
+          <span className="muted-line" style={{ margin: 0 }}>{credit} credits</span>
         )}
       </header>
 
-      <div className="card note">
-        POC (Anthropic Managed Agents, beta). Upload a CSV and ask the agent to
-        explore or fit models — surpyval is installed in the sandbox. Saving back
-        into Reliafy comes next.
-      </div>
-
-      <div className="card agent-chat" ref={scrollRef}>
-        {events.length === 0 && !busy && (
-          <p className="agent-empty">
-            Upload a CSV of failure times (and a censoring column) and ask, e.g.
-            “Fit the best distribution and report the parameters, MTTF and B10.”
-          </p>
+      <div className="chat" ref={scrollRef}>
+        {messages.length === 0 && (
+          <div className="chat-empty">
+            <p>Attach a CSV of failure data and ask, for example:</p>
+            <ul>
+              <li>“Fit the best distribution to these failure times and plot the survival curve.”</li>
+              <li>“Compare Weibull vs lognormal by AIC and show a probability plot.”</li>
+              <li>“Estimate the B10 life and 90% confidence interval.”</li>
+            </ul>
+          </div>
         )}
-        {events.map((ev, i) => <EventBlock key={i} ev={ev} />)}
-        {busy && <p className="agent-status">working…</p>}
+        {messages.map((m, i) => <Bubble key={i} msg={m} />)}
       </div>
 
-      {error && <div className="card error">{error}</div>}
+      {error && <div className="card error" style={{ marginTop: "0.6rem" }}>{error}</div>}
 
-      <div className="row" style={{ gap: "0.6rem", alignItems: "flex-end", marginTop: "0.6rem" }}>
-        <label className="login-field" style={{ flex: 1 }}>
-          <span>Message</span>
-          <textarea
-            rows={3}
-            value={input}
-            disabled={busy || !info?.enabled}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) run(); }}
-            placeholder="Ask the agent to analyse your data… (⌘/Ctrl+Enter to send)"
-          />
+      <div className="chat-composer">
+        <label className="chat-attach" title={file ? file.name : "Attach a CSV"}>
+          <input type="file" accept=".csv,text/csv" style={{ display: "none" }}
+                 disabled={disabled} onChange={(e) => setFile(e.target.files?.[0] || null)} />
+          {file ? `📎 ${file.name.length > 18 ? file.name.slice(0, 16) + "…" : file.name}` : "📎"}
         </label>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-          <label className="secondary agent-file" title={file ? file.name : "Attach a CSV"}>
-            <input type="file" accept=".csv,text/csv" style={{ display: "none" }}
-                   disabled={busy || !info?.enabled}
-                   onChange={(e) => setFile(e.target.files?.[0] || null)} />
-            {file ? `📎 ${file.name.slice(0, 16)}` : "Attach CSV"}
-          </label>
-          <button onClick={run} disabled={busy || !info?.enabled || !input.trim()}>
-            {busy ? "Running…" : "Run"}
-          </button>
-        </div>
+        <textarea
+          rows={1}
+          value={input}
+          disabled={disabled}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          placeholder={info?.enabled ? "Message the agent…  (Enter to send, Shift+Enter for newline)" : "Agent not configured"}
+        />
+        <button onClick={send} disabled={disabled || !input.trim()}>{busy ? "…" : "Send"}</button>
       </div>
     </div>
   );
