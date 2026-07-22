@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
 import OverflowMenu from "../components/OverflowMenu.jsx";
+import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getModel, deleteModel } from "../api.js";
 import { distColor, relativeTime } from "../instrument.js";
@@ -55,6 +56,7 @@ export default function ModelPage() {
               </span>
             )}
           </div>
+          {model && <CopyId id={model.id} />}
         </div>
         {model && (
           <div className="head-actions">

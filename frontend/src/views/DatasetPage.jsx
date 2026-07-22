@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getDataset, deleteDataset } from "../api.js";
 import PreviewTable from "../components/PreviewTable.jsx";
+import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { distColor, parseTimestamp } from "../instrument.js";
 
@@ -47,6 +48,7 @@ export default function DatasetPage() {
               {parseTimestamp(ds.created_at).toLocaleString()}
             </p>
           )}
+          {ds && <CopyId id={ds.id} />}
         </div>
         {ds && (
           <div className="head-actions">

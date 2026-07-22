@@ -1206,7 +1206,7 @@ body {
 }
 
 .lib-row:hover td {
-  background: #fcfcfb;
+  background: rgba(47, 109, 246, 0.04);
 }
 
 .lib-row td {
@@ -1266,8 +1266,8 @@ body {
 }
 
 .lib-acts .act:hover {
-  background: var(--bg);
-  color: var(--ink);
+  background: rgba(47, 109, 246, 0.06);
+  color: var(--acc);
 }
 
 .lib-acts .act.del:hover {
@@ -1395,9 +1395,12 @@ button.secondary {
   font-weight: 500;
 }
 
+/* Default outlined-element hover — the "model flow" hover: accent border + a
+   faint accent tint (not the heavy dark-blue fill of solid buttons). */
 button.secondary:hover:not(:disabled) {
-  background: var(--bg);
-  color: var(--ink);
+  border-color: var(--acc);
+  background: rgba(47, 109, 246, 0.05);
+  color: var(--acc);
 }
 
 /* Distribution pill — accent dot + name, optional PH flag (Instrument). */
@@ -3282,7 +3285,7 @@ select:disabled {
 }
 
 .ds-model-row:hover {
-  background: #fcfcfb;
+  background: rgba(47, 109, 246, 0.04);
 }
 
 .ds-model-name {
@@ -4458,7 +4461,7 @@ select:disabled {
   color: var(--ink);
   cursor: pointer;
 }
-.chat-suggest button:hover { border-color: var(--acc); }
+.chat-suggest button:hover { border-color: var(--acc); background: rgba(47, 109, 246, 0.05); color: var(--acc); }
 
 .chat-msg {
   max-width: 88%;
@@ -4944,6 +4947,39 @@ select:disabled {
   white-space: nowrap;
 }
 .title-row { flex-wrap: wrap; }
+
+/* Copyable artifact ID chip (for the API / reliafy-client). */
+.copy-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surf);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+/* :not(:disabled) beats the global button:hover so the tint wins over the fill. */
+.copy-id:hover:not(:disabled) { border-color: var(--acc); background: rgba(47, 109, 246, 0.05); color: var(--acc); }
+.copy-id-k {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.copy-id code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.copy-id-done { color: var(--acc); font-weight: 600; }
 /* Pull the result up: less gap under the header, and a tighter top padding so
    the tabs sit near the top of the card. */
 .model-page .card { margin-top: 0.85rem; padding-top: 1rem; }
@@ -5215,7 +5251,7 @@ select:disabled {
 }
 .nav-workspace select {
   padding: 6px 30px 6px 10px;
-  width: 248px;
+  width: 288px;
 }
 .nav-team-settings {
   display: inline-flex;

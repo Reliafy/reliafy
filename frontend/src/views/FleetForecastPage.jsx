@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import CopyId from "../components/CopyId.jsx";
 import Plot from "react-plotly.js";
 import Select from "../components/Select.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
@@ -138,6 +139,7 @@ export default function FleetForecastPage() {
             {unit ? ` · time in ${unit}` : ""}
             {fleet.updated_by ? ` · last edited by ${fleet.updated_by}` : ""}
           </p>
+          <CopyId id={fleet.id} />
         </div>
         <div className="head-actions">
           <ShareButton collection="fleets" artifactId={fleet.id} name={fleet.name} readOnly={readOnly} />

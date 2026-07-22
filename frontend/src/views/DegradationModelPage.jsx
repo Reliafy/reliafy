@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import CopyId from "../components/CopyId.jsx";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getDegradationModel } from "../api.js";
@@ -50,6 +51,7 @@ export default function DegradationModelPage() {
             {mUnit ? ` ${mUnit}` : ""} · {model.n_units} historical items
             {unit ? ` · time in ${unit}` : ""}
           </p>
+          <CopyId id={model.id || id} />
         </div>
         <div className="head-actions">
           <ShareButton

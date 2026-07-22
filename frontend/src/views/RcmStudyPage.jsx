@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import CopyId from "../components/CopyId.jsx";
 import RcmTree from "../components/RcmTree.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
@@ -153,6 +154,7 @@ export default function RcmStudyPage() {
               Last edited by {study.updated_by}
             </p>
           )}
+          <CopyId id={study.id} />
         </div>
         <div className="head-actions">
           <ShareButton

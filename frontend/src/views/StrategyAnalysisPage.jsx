@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import CopyId from "../components/CopyId.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
@@ -48,6 +49,7 @@ export default function StrategyAnalysisPage() {
             {doc.shared_by && <span className="sample-tag shared" style={{ verticalAlign: "middle" }} title={`Shared by ${doc.shared_by}`}>Shared</span>}
           </h1>
           <p>{KIND_LABEL[doc.kind] || doc.kind} — computed when saved; results are stored, not refreshed.</p>
+          <CopyId id={doc.id} />
         </div>
         <ShareButton
           collection="strategy_analyses"

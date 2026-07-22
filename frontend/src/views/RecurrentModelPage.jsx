@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import OverflowMenu from "../components/OverflowMenu.jsx";
+import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getRecurrentModel, deleteRecurrentModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
@@ -53,6 +54,7 @@ export default function RecurrentModelPage() {
               </span>
             )}
           </div>
+          {model && <CopyId id={model.id} />}
         </div>
         {model && (
           <div className="head-actions">

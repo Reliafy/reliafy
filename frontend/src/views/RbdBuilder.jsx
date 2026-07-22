@@ -25,6 +25,7 @@ import RbdCalculator from "../components/RbdCalculator.jsx";
 import ValidationPanel, { graphSignature } from "../components/RbdValidation.jsx";
 import { saveRbd, getRbd, validateRbd } from "../api.js";
 import { ShareButton } from "../components/ShareDialog.jsx";
+import CopyId from "../components/CopyId.jsx";
 import { registerRbdCanvas } from "../rbdBridge.js";
 import { normalizeRbdGraph } from "../rbdGraph.js";
 
@@ -1159,6 +1160,7 @@ export default function RbdBuilder() {
             <Link className="crumb-link" to="/rbds">RBDs</Link> / <b>Builder</b>
           </div>
           <h1>Reliability block diagram</h1>
+          <CopyId id={id} />
         </div>
       </header>
       <div className="card rbd-wrap">
