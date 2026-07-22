@@ -45,6 +45,30 @@ def test_fit_payload_shape_and_json_safety():
         rec.predict(rec.get_live(cache_id), 300)["expected_events"]
 
 
+def test_build_inputs_full_surface_and_legacy_alias():
+    from backend import recurrent as rec
+
+    rows = []
+    for sys_id, times in {"A": [100, 240], "B": [120, 270]}.items():
+        for t in times:
+            rows.append({"system": sys_id, "time": t, "qty": 1, "start": 0, "obs_end": 300})
+    df = pd.DataFrame(rows)
+
+    # Full modifier surface: c/n/tl/tr all extracted alongside i/x.
+    ins = rec.build_inputs(df, {"i": "system", "x": "time", "n": "qty", "tl": "start", "tr": "obs_end"})
+    assert set(ins) == {"i", "x", "n", "tl", "tr"}
+    assert ins["x"].tolist() == [100, 240, 120, 270]
+    assert ins["n"].tolist() == [1, 1, 1, 1]
+
+    # Legacy 't' is accepted as an alias for the observation window (tr).
+    legacy = rec.build_inputs(df, {"i": "system", "x": "time", "t": "obs_end"})
+    assert "tr" in legacy and "t" not in legacy
+
+    # A recurrent fit works with the extended mapping (counts + window).
+    payload, _ = rec.fit(df, {"i": "system", "x": "time", "n": "qty", "tr": "obs_end"}, "crow_amsaa")
+    assert payload["n_systems"] == 2 and payload["n_events"] == 4
+
+
 def test_fit_errors():
     from backend import recurrent as rec
     from backend.fitting import FitError
@@ -126,6 +150,38 @@ def test_api_fit_save_get_predict_delete(monkeypatch):
         # Delete.
         assert client.delete(f"/api/recurrent/models/{model_id}").json()["ok"] is True
         assert client.get(f"/api/recurrent/models/{model_id}").status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_api_from_params_save_and_predict(monkeypatch):
+    from backend.auth import get_current_user
+
+    test_db = mongomock.MongoClient()["reliafy_test"]
+    client, app = _client(monkeypatch, test_db)
+    try:
+        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A"}
+
+        # Build a simple model straight from parameters — no dataset.
+        r = client.post("/api/recurrent/from-params", data={
+            "name": "Growth target", "model": "crow_amsaa",
+            "alpha": 1200, "beta": 1.3, "horizon": 5000, "unit": "hours"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        res = body["results"]
+        assert res["from_params"] is True and res["beta"] == 1.3 and res["growth"] == "deteriorating"
+        assert res["mcf"]["observed"] is None and len(res["mcf"]["fitted"]["x"]) == 200
+        assert res["n_systems"] is None and body["dataset_id"] == ""
+
+        # Reads back and predicts (refits via the params-only path).
+        mid = body["id"]
+        assert client.get(f"/api/recurrent/models/{mid}").json()["results"]["from_params"] is True
+        pred = client.post(f"/api/recurrent/models/{mid}/predict", json={"horizon": 3000})
+        assert pred.status_code == 200 and pred.json()["expected_events"] > 0
+
+        # Bad inputs -> 422 (not a crash).
+        assert client.post("/api/recurrent/from-params", data={
+            "name": "x", "model": "crow_amsaa", "alpha": 1200, "beta": 1.3, "horizon": 0}).status_code == 422
     finally:
         app.dependency_overrides.clear()
 

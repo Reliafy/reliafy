@@ -26,14 +26,43 @@ router = APIRouter(prefix="/api")
 
 _MAX_CSV_BYTES = 8 * 1024 * 1024  # 8 MB — plenty for a fitting dataset
 
+# The Reliability Agent is a paid feature (its Opus sandbox runs cost far more
+# than the metered assistant): a purely free-tier user — only the starter grant,
+# never paid — can't spend credits here. Pro subscribers and anyone who has
+# bought AI credits are entitled; the ordinary balance check still applies.
+_PRO_MSG = (
+    "The Reliability Agent is a paid feature. Subscribe to Pro or buy AI credits "
+    "to build and save models with it."
+)
+
+
+def _agent_access(session, user):
+    """``(allowed, admin, acct)`` for the Reliability Agent. When billing is on,
+    a purely free-tier user (only the free starter grant, never paid) can't use
+    it even with a balance. Entitled: admins, self-host (billing off), Pro
+    subscribers, and anyone who has purchased AI credits."""
+    uid = user["uid"]
+    admin = billing_service.is_admin_user(user)
+    acct = billing_service.account(session, uid)
+    allowed = (
+        admin
+        or not config.BILLING_ENABLED
+        or acct["is_pro"]
+        or billing_service.has_purchased_credits(session, uid)
+    )
+    return allowed, admin, acct
+
 
 @router.get("/reliability-agent/info")
 def agent_info(session=Depends(get_session), user: dict = Depends(get_current_user)) -> dict:
-    acct = billing_service.account(session, user["uid"])
+    allowed, admin, acct = _agent_access(session, user)
     return {
         **agent_service.info(),
         "billing_enabled": config.BILLING_ENABLED,
-        "admin": billing_service.is_admin_user(user),  # admins aren't charged
+        "admin": admin,  # admins aren't charged
+        "is_pro": acct["is_pro"],
+        "allowed": allowed,  # False -> free tier: UI shows an upgrade prompt
+        "upgrade_required": config.BILLING_ENABLED and not allowed,
         "credit_cents": acct["credit_cents"],
     }
 
@@ -46,6 +75,9 @@ async def agent_upload(
 ) -> JSONResponse:
     if not agent_service.enabled():
         return JSONResponse(status_code=503, content={"detail": "The Reliability Agent isn't configured yet."})
+    allowed, _admin, _acct = _agent_access(session, user)
+    if not allowed:
+        return JSONResponse(status_code=403, content={"detail": _PRO_MSG, "code": "pro_required"})
     data = await file.read()
     if len(data) > _MAX_CSV_BYTES:
         return JSONResponse(status_code=413, content={"detail": "File too large (max 8 MB)."})
@@ -75,13 +107,14 @@ def agent_run(
         return JSONResponse(status_code=503, content={"detail": "The Reliability Agent isn't configured yet."})
 
     uid = user["uid"]
-    admin = billing_service.is_admin_user(user)  # operator accounts aren't charged
-    if config.BILLING_ENABLED and not admin:
-        if billing_service.account(session, uid)["credit_cents"] <= 0:
-            return JSONResponse(
-                status_code=402,
-                content={"detail": "You're out of AI credits. Top up to keep using the agent.", "code": "no_credits"},
-            )
+    allowed, admin, acct = _agent_access(session, user)  # operator/self-host aren't gated
+    if not allowed:
+        return JSONResponse(status_code=403, content={"detail": _PRO_MSG, "code": "pro_required"})
+    if config.BILLING_ENABLED and not admin and acct["credit_cents"] <= 0:
+        return JSONResponse(
+            status_code=402,
+            content={"detail": "You're out of AI credits. Top up to keep using the agent.", "code": "no_credits"},
+        )
 
     def event_stream():
         try:

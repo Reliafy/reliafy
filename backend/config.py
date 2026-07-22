@@ -135,6 +135,13 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 _DEFAULT_AI_MODEL = {"anthropic": "claude-sonnet-4-6", "openai": "gpt-5.6-luna"}
 AI_MODEL = os.environ.get("AI_MODEL") or _DEFAULT_AI_MODEL.get(AI_PROVIDER, "")
 
+# Reasoning effort for the OpenAI assistant on the Responses API
+# (/v1/responses). gpt-5.x are reasoning models; 'medium' balances quality
+# against latency/cost, and Responses preserves the reasoning across tool
+# round-trips within a turn (unlike chat/completions). Values: minimal|low|
+# medium|high. Blank it ("") to omit reasoning entirely (non-reasoning models).
+OPENAI_REASONING_EFFORT = os.environ.get("OPENAI_REASONING_EFFORT", "medium").strip()
+
 # Markup applied to the provider's token cost when charging credits.
 try:
     AI_MARKUP = float(os.environ.get("AI_MARKUP", "1.30"))

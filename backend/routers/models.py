@@ -329,18 +329,21 @@ def create_per_demand(
     name: str = Body(...),
     demands: int = Body(...),
     failures: int = Body(...),
+    confidence: float = Body(default=0.95),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Create a per-demand (Binomial) model from demands + failures counts.
-    A one-shot / protective-device reliability. Counts against the model cap."""
+    A one-shot / protective-device reliability. With zero failures it's a
+    success-run demonstration test (``confidence`` sets the demonstrated
+    reliability lower bound). Counts against the model cap."""
     denied = _creation_denied(session, ctx, "models")
     if denied is not None:
         return denied
     if not (name or "").strip():
         return JSONResponse(status_code=422, content={"detail": "A name is required."})
     try:
-        model = models_service.create_per_demand(session, ctx.write_owner, name.strip(), demands, failures)
+        model = models_service.create_per_demand(session, ctx.write_owner, name.strip(), demands, failures, confidence)
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})

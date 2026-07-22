@@ -110,8 +110,8 @@ const ITEMS = [
     children: [
       { to: "/modelling/models", label: "Saved" },
       { to: "/modelling/life", label: "Life data" },
-      { to: "/modelling/degradation", label: "Degradation" },
       { to: "/modelling/recurrent", label: "Recurrent" },
+      { to: "/modelling/degradation", label: "Degradation" },
     ],
   },
   {
@@ -260,14 +260,16 @@ export default function Sidebar({ collapsed, onToggle }) {
           {!collapsed && <span className="side-label">Billing &amp; credits</span>}
         </NavLink>
       )}
-      <NavLink
-        to="/api-docs"
-        className={({ isActive }) => "side-item" + (isActive ? " active" : "")}
-        title="API docs — the ingestion API reference"
+      <a
+        className="side-item"
+        href="/api-docs"
+        target="_blank"
+        rel="noreferrer"
+        title="API docs — the reliability API reference (opens in a new tab)"
       >
         <span className="side-icon"><ApiIcon /></span>
         {!collapsed && <span className="side-label">API docs</span>}
-      </NavLink>
+      </a>
       <a
         className="side-item"
         href="/blog"

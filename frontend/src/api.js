@@ -247,12 +247,12 @@ export function deleteModel(id) {
 }
 
 // Create a per-demand (Binomial) model from demands + failures counts.
-export function createPerDemandModel(name, demands, failures) {
+export function createPerDemandModel(name, demands, failures, confidence = 0.95) {
   return withEvent(
     request("/api/models/per-demand", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, demands: Number(demands), failures: Number(failures) }),
+      body: JSON.stringify({ name, demands: Number(demands), failures: Number(failures), confidence: Number(confidence) }),
     }),
     "model_save"
   );
@@ -403,6 +403,55 @@ export function assistantStep(system, messages, tools) {
   });
 }
 
+// Streaming variant of assistantStep. `onDelta(text)` fires for each chunk of
+// assistant text as it's written; resolves to the final payload
+// ({ message, stop_reason, usage, credit_cents, ... }) — identical to what
+// assistantStep returns — so the caller can continue the tool loop. Throws on a
+// non-2xx response (credit/availability errors) or a mid-stream provider error.
+export async function assistantStepStream(system, messages, tools, { onDelta, signal } = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...workspaceHeaders(),
+    ...(await authHeaders()),
+  };
+  const res = await fetch("/api/assistant/stream", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ system, messages, tools }),
+    signal,
+  });
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`;
+    let code;
+    try { const j = await res.json(); detail = j.detail || detail; code = j.code; } catch { /* non-JSON */ }
+    const err = new Error(detail); err.status = res.status; err.code = code;
+    throw err;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let final = null;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let sep;
+    while ((sep = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      const line = frame.split("\n").find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      let ev;
+      try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
+      if (ev.type === "delta") onDelta?.(ev.text);
+      else if (ev.type === "final") final = ev;
+      else if (ev.type === "error") { const e = new Error(ev.detail || "Assistant error"); e.code = ev.code; throw e; }
+    }
+  }
+  if (!final) throw new Error("The assistant stream ended without a result.");
+  return final;
+}
+
 // ---- Reliability Agent (Anthropic Managed Agents) --------------------------
 // Separate from the assistant above, with its own metering; runs Python (with
 // surpyval) in Anthropic's managed sandbox and streams its work back.
@@ -512,7 +561,8 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name } = {}) {
   else if (file) form.append("file", file);
   form.append("i", mapping.i);
   form.append("x", mapping.x);
-  if (mapping.t) form.append("t", mapping.t);
+  // Optional modifiers, matching the life-data column surface.
+  ["c", "n", "tl", "tr", "t"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
   if (model) form.append("model", model);
   if (unit) form.append("unit", unit);
   return form;
@@ -524,6 +574,19 @@ export function fitRecurrent(file, opts) {
 
 export function saveRecurrentModel(name, file, opts) {
   return request("/api/recurrent/models", { method: "POST", body: recurrentForm(file, { ...opts, name }) });
+}
+
+// Build a recurrent model from known parameters (no dataset) — a "simple model"
+// for repairable-system decisions (e.g. optimal repairs before replacement).
+export function createRecurrentFromParams(name, model, { alpha, beta, horizon, unit } = {}) {
+  const form = new FormData();
+  form.append("name", name);
+  form.append("model", model);
+  form.append("alpha", alpha);
+  form.append("beta", beta);
+  form.append("horizon", horizon);
+  if (unit) form.append("unit", unit);
+  return request("/api/recurrent/from-params", { method: "POST", body: form });
 }
 
 export function listRecurrentModels() {

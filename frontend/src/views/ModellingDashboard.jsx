@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import DashboardSection from "../components/DashboardSection.jsx";
 import { useModels } from "../useModels.js";
-import { WaveIcon, PlusIcon, CompareIcon, DegradeIcon } from "../components/icons.jsx";
+import { WaveIcon, PlusIcon, CompareIcon, DegradeIcon, RecurrentIcon } from "../components/icons.jsx";
 
 export default function ModellingDashboard() {
   const { models } = useModels();
@@ -42,17 +42,17 @@ export default function ModellingDashboard() {
       cta: "Open",
     },
     {
+      to: "/modelling/recurrent",
+      icon: <RecurrentIcon />,
+      title: "Recurrent events",
+      body: "Repairable systems — fit an MCF and Crow-AMSAA growth model to a fleet's failure history. Is it improving or worsening?",
+      cta: "Open",
+    },
+    {
       to: "/modelling/degradation",
       icon: <DegradeIcon />,
       title: "Degradation models",
       body: "Model wear toward a failure threshold — then monitor your fleet under Fleet → Degradation tracking.",
-      cta: "Open",
-    },
-    {
-      to: "/modelling/recurrent",
-      icon: <DegradeIcon />,
-      title: "Recurrent events",
-      body: "Repairable systems — fit an MCF and Crow-AMSAA growth model to a fleet's failure history. Is it improving or worsening?",
       cta: "Open",
     },
     {

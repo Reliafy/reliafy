@@ -46,12 +46,28 @@ function PerDemandPanel({ result }) {
           <div className="value">{d.failures} / {d.demands}</div>
           <div className="name">failures / demands</div>
         </div>
+        {d.success_run && (
+          <div className="stat">
+            <div className="value">≥ {pct(d.success_run.reliability_lower)}</div>
+            <div className="name">demonstrated @ {Math.round(d.success_run.confidence * 100)}% conf.</div>
+          </div>
+        )}
       </div>
-      <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
-        Estimated from {d.failures} failure{d.failures === 1 ? "" : "s"} in {d.demands} demands
-        (Binomial, Wilson 95% interval). For one-shot and protective equipment — feeds
-        failure-finding intervals.
-      </p>
+      {d.success_run ? (
+        <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
+          Success run — {d.demands} demand{d.demands === 1 ? "" : "s"} with zero failures
+          demonstrates reliability <b>≥ {pct(d.success_run.reliability_lower)}</b> at{" "}
+          {Math.round(d.success_run.confidence * 100)}% confidence (one-sided lower bound,
+          R ≥ (1 − C)<sup>1/n</sup>). For one-shot and protective equipment — feeds
+          failure-finding intervals.
+        </p>
+      ) : (
+        <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
+          Estimated from {d.failures} failure{d.failures === 1 ? "" : "s"} in {d.demands} demands
+          (Binomial, Wilson 95% interval). For one-shot and protective equipment — feeds
+          failure-finding intervals.
+        </p>
+      )}
     </>
   );
 }

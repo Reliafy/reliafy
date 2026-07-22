@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { SYSTEM_PROMPT, TOOLS, makeExecutor } from "../agent.js";
 import { runTurn } from "../llm.js";
 import { getAssistantInfo } from "../api.js";
+import { renderAgentMarkdown } from "../agentMarkdown.js";
 
 const OPEN_KEY = "reliafy_chat_open";
 const WIDTH_KEY = "reliafy_chat_width";
@@ -35,6 +36,7 @@ const credits = (cents) => (cents || 0).toLocaleString();
 // usage is billed against the signed-in user's AI credit balance.
 export default function ChatPanel() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [open, setOpen] = useState(() => localStorage.getItem(OPEN_KEY) === "1");
   const [width, setWidth] = useState(() => {
     const w = parseInt(localStorage.getItem(WIDTH_KEY) || "", 10);
@@ -49,6 +51,7 @@ export default function ChatPanel() {
   const history = useRef([]);
   const scroller = useRef(null);
   const stopRef = useRef(false);
+  const streamKey = useRef(null); // key of the assistant bubble currently streaming
 
   const execute = useMemo(() => makeExecutor({ navigate }), [navigate]);
 
@@ -90,6 +93,28 @@ export default function ChatPanel() {
 
   const push = useCallback((m) => setMessages((xs) => [...xs, { key: `${Date.now()}-${Math.random()}`, ...m }]), []);
 
+  // Append a streamed text delta to the live assistant bubble (creating it on
+  // the first delta of a segment). onStreamEnd closes the segment so a tool
+  // chip or the next step's text starts a fresh bubble.
+  const onDelta = useCallback((delta) => {
+    if (!delta) return;
+    setMessages((xs) => {
+      if (streamKey.current) {
+        const i = xs.findIndex((m) => m.key === streamKey.current);
+        if (i !== -1) {
+          const next = xs.slice();
+          next[i] = { ...next[i], text: (next[i].text || "") + delta };
+          return next;
+        }
+      }
+      const key = `a-${Date.now()}-${Math.random()}`;
+      streamKey.current = key;
+      return [...xs, { key, role: "assistant", text: delta }];
+    });
+  }, []);
+
+  const onStreamEnd = useCallback(() => { streamKey.current = null; }, []);
+
   const upsertTool = useCallback((evt) => {
     setMessages((xs) => {
       const i = xs.findIndex((m) => m.role === "tool" && m.toolId === evt.id);
@@ -126,6 +151,7 @@ export default function ChatPanel() {
     history.current.push({ role: "user", content: text });
     setBusy(true);
     stopRef.current = false;
+    streamKey.current = null;
     try {
       history.current = await runTurn({
         provider: conf.provider || "anthropic",
@@ -134,6 +160,8 @@ export default function ChatPanel() {
         tools: TOOLS,
         executeTool: execute,
         onText: (t) => push({ role: "assistant", text: t }),
+        onDelta,
+        onStreamEnd,
         onTool: upsertTool,
         onBalance: (c) => setBalance(c),
         shouldStop: () => stopRef.current,
@@ -147,15 +175,18 @@ export default function ChatPanel() {
     } finally {
       setBusy(false);
     }
-  }, [input, busy, info, push, upsertTool, execute]);
+  }, [input, busy, info, push, upsertTool, execute, onDelta, onStreamEnd]);
 
   const onKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  const newChat = () => { stopRef.current = true; history.current = []; setMessages([]); setBusy(false); };
+  const newChat = () => { stopRef.current = true; streamKey.current = null; history.current = []; setMessages([]); setBusy(false); };
 
   if (!open) {
+    // The Reliability Agent page has its own composer; the floating launcher
+    // would sit on top of its Send button, so hide it there.
+    if (location.pathname === "/agent") return null;
     return (
       <button className="chat-fab" onClick={() => setOpen(true)} title="Open the assistant">
         <ChatIcon /><span>Assistant</span>
@@ -221,7 +252,9 @@ export default function ChatPanel() {
           }
           return (
             <div key={m.key} className={`chat-msg chat-${m.role}`}>
-              {m.text}
+              {m.role === "assistant" && m.text
+                ? <div className="chat-md" dangerouslySetInnerHTML={{ __html: renderAgentMarkdown(m.text) }} />
+                : m.text}
               {m.action === "billing" && (
                 <div><button className="chat-buybtn" onClick={() => navigate("/billing")}>Buy credits →</button></div>
               )}

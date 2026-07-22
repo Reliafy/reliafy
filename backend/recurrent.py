@@ -50,9 +50,14 @@ def get_live(cache_id: str):
     return _STORE.get(cache_id)
 
 
-def build_inputs(df: pd.DataFrame, mapping: dict) -> tuple:
-    """Extract ``(x, i, t)`` from a DataFrame: event time, system id, and each
-    system's observation window (``t`` optional → last event = observation end).
+def build_inputs(df: pd.DataFrame, mapping: dict) -> dict:
+    """Extract the SurPyval recurrent inputs from a long-format DataFrame.
+
+    Required: ``i`` (system id) and ``x`` (event time). Optional modifiers,
+    matching the life-data column surface: ``c`` (censor flag), ``n`` (count of
+    events per row), ``tl``/``tr`` (left/right truncation) — ``tr`` is each
+    system's observation window; the legacy ``t`` key is accepted as an alias
+    for ``tr``. Returns a fitter kwargs dict with only the provided inputs.
     """
     for key in ("i", "x"):
         col = mapping.get(key)
@@ -67,22 +72,38 @@ def build_inputs(df: pd.DataFrame, mapping: dict) -> tuple:
         raise FitError("No usable rows: event time must be numeric.")
     x = x[keep].to_numpy(dtype=float)
     i = i[keep].to_numpy()
+    out: dict = {"x": x, "i": i}
 
-    # Right-truncation / observation window as a per-event array aligned with x
-    # (each event carries its system's observation end). Optional — when absent,
-    # surpyval treats each system as observed until its last event.
-    t = None
-    tcol = mapping.get("t")
-    if tcol:
-        if tcol not in df.columns:
-            raise FitError(f"Column '{tcol}' is not in the dataset.")
-        tt = pd.to_numeric(df[tcol], errors="coerce")[keep].to_numpy(dtype=float)
-        if not np.isnan(tt).all():
-            # Fill any gaps so the window is never before the event itself.
-            fill = float(np.nanmax(tt))
-            tt = np.where(np.isnan(tt), np.maximum(x, fill), tt)
-            t = np.maximum(tt, x)  # observation end can't precede the event
-    return x, i, t
+    def _numeric(key):
+        col = mapping.get(key)
+        if not col:
+            return None
+        if col not in df.columns:
+            raise FitError(f"Column '{col}' is not in the dataset.")
+        return pd.to_numeric(df[col], errors="coerce")[keep].to_numpy(dtype=float)
+
+    c = _numeric("c")
+    if c is not None:
+        out["c"] = np.nan_to_num(c, nan=0.0).astype(int)  # missing -> observed
+    n = _numeric("n")
+    if n is not None:
+        nn = np.nan_to_num(n, nan=1.0)
+        nn[nn < 1] = 1
+        out["n"] = nn.astype(int)
+    tl = _numeric("tl")
+    if tl is not None and not np.isnan(tl).all():
+        out["tl"] = np.nan_to_num(tl, nan=0.0)  # missing -> observed from 0
+
+    # Right-truncation / observation window: each event carries its system's
+    # observation end. Optional; ``t`` is the legacy key for the same input.
+    tr = _numeric("tr")
+    if tr is None:
+        tr = _numeric("t")
+    if tr is not None and not np.isnan(tr).all():
+        fill = float(np.nanmax(tr))
+        tr = np.where(np.isnan(tr), np.maximum(x, fill), tr)
+        out["tr"] = np.maximum(tr, x)  # window can't precede the event
+    return out
 
 
 def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str = "") -> tuple[dict, str]:
@@ -92,13 +113,16 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
     """
     if model_id not in MODELS:
         raise FitError(f"Unknown model '{model_id}'. Choose one of: {', '.join(MODEL_CHOICES)}.")
-    x, i, t = build_inputs(df, mapping)
+    inputs = build_inputs(df, mapping)
+    x, i = inputs["x"], inputs["i"]
+    # The nonparametric MCF estimator doesn't support right truncation (tr) —
+    # the parametric fitter does. Give each what it accepts.
+    np_inputs = {k: v for k, v in inputs.items() if k != "tr"}
 
     try:
-        np_model = NonParametricCounting.fit(x=x, i=i)
+        np_model = NonParametricCounting.fit(**np_inputs)
         fitter = MODELS[model_id]["fitter"]
-        # ``tr`` = per-event right-truncation (the system's observation window).
-        para = fitter.fit(x=x, i=i, tr=t) if t is not None else fitter.fit(x=x, i=i)
+        para = fitter.fit(**inputs)
     except FitError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
@@ -191,6 +215,67 @@ def _gof(model) -> list:
         if v is not None and np.isfinite(float(v)):
             out.append({"id": attr, "label": label, "value": float(v)})
     return out
+
+
+def fit_from_params(model_id: str, params: list, horizon: float, unit: str = "") -> tuple:
+    """Build a recurrent model from known parameters — no data. ``params`` is an
+    ordered list of ``{name, value}`` (Crow-AMSAA / Duane: alpha, beta).
+    ``horizon`` sets the time range for the fitted MCF curve and the point at
+    which ROCOF/MTBF are reported. Returns ``(payload, cache_id)``. The observed
+    MCF step, confidence band, and trend test need data, so are omitted."""
+    if model_id not in MODELS:
+        raise FitError(f"Unknown model '{model_id}'. Choose one of: {', '.join(MODEL_CHOICES)}.")
+    fitter = MODELS[model_id]["fitter"]
+    if not hasattr(fitter, "from_params"):
+        raise FitError(f"“{MODELS[model_id]['name']}” can't be built from parameters.")
+    values = [float(p["value"]) for p in (params or []) if p.get("value") is not None]
+    if len(values) < 2:
+        raise FitError("Provide both parameters (alpha and beta).")
+    try:
+        horizon = float(horizon)
+    except (TypeError, ValueError):
+        raise FitError("Horizon must be a number.")
+    if horizon <= 0:
+        raise FitError("Horizon must be a positive time.")
+    try:
+        para = fitter.from_params(values)
+    except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
+        raise FitError(str(exc)) from exc
+    return _params_payload(para, model_id, values, horizon, unit), store_live(para)
+
+
+def _params_payload(para, model_id: str, values: list, horizon: float, unit: str) -> dict:
+    grid = np.linspace(0.0, horizon, 200)
+    with np.errstate(all="ignore"):
+        fitted = np.asarray(para.mcf(grid), dtype=float)
+    alpha = float(values[0])
+    beta = float(values[1])
+    # Same power-law ROCOF/MTBF (at the horizon) and growth verdict as a data fit.
+    rocof = mtbf = None
+    with np.errstate(all="ignore"):
+        if alpha:
+            rocof = float((beta / alpha) * (horizon / alpha) ** (beta - 1.0))
+    if rocof is not None and np.isfinite(rocof) and rocof > 0:
+        mtbf = 1.0 / rocof
+    growth = "improving" if beta < 0.95 else "deteriorating" if beta > 1.05 else "stable"
+    payload = {
+        "kind": "recurrent",
+        "unit": (unit or "").strip(),
+        "n_systems": None,
+        "n_events": None,
+        "model": {"id": model_id, "name": MODELS[model_id]["name"]},
+        "params": [{"name": n, "value": float(v)} for n, v in zip(("alpha", "beta"), values)],
+        "beta": beta,
+        "growth": growth,
+        "rocof": rocof,
+        "mtbf": mtbf,
+        "mcf": {"observed": None, "fitted": {"x": grid.tolist(), "mcf": fitted.tolist()}},
+        "trend": None,
+        "gof": [],  # no likelihood for a params-built model
+        "from_params": True,
+        "horizon": horizon,
+    }
+    return _json_safe(payload)
 
 
 def predict(model, horizon: float) -> dict:

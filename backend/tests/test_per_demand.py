@@ -30,6 +30,23 @@ def test_per_demand_edge_cases():
             fitting.result_per_demand(*bad)
 
 
+def test_success_run_zero_failures():
+    # Classic "59 for 95/95": 59 clean demands demonstrate ~95% reliability at 95%.
+    r = fitting.result_per_demand(59, 0, confidence=0.95)
+    sr = r["per_demand"]["success_run"]
+    assert sr["confidence"] == 0.95
+    assert sr["reliability_lower"] == pytest.approx(0.95, abs=5e-3)
+    # Formula check: R = (1 - C)^(1/n).
+    assert fitting.result_per_demand(22, 0, confidence=0.90)["per_demand"]["success_run"]["reliability_lower"] \
+        == pytest.approx((1 - 0.90) ** (1 / 22))
+    # Only applies with zero failures.
+    assert "success_run" not in fitting.result_per_demand(100, 3)["per_demand"]
+    # Confidence is validated.
+    for bad in (0.0, 1.0, 1.5, -0.1):
+        with pytest.raises(fitting.FitError):
+            fitting.result_per_demand(59, 0, confidence=bad)
+
+
 @pytest.fixture()
 def client(monkeypatch):
     from fastapi.testclient import TestClient
@@ -66,3 +83,10 @@ def test_per_demand_endpoint(client):
     # Validation.
     assert client.post("/api/models/per-demand", json={"name": "x", "demands": 10, "failures": 20}).status_code == 422
     assert client.post("/api/models/per-demand", json={"name": "", "demands": 10, "failures": 1}).status_code == 422
+
+    # Success run: zero failures + confidence -> demonstrated reliability bound.
+    sr = client.post("/api/models/per-demand",
+                     json={"name": "Igniter demo", "demands": 59, "failures": 0, "confidence": 0.95})
+    assert sr.status_code == 200, sr.text
+    block = sr.json()["results"]["per_demand"]["success_run"]
+    assert block["confidence"] == 0.95 and block["reliability_lower"] == pytest.approx(0.95, abs=5e-3)

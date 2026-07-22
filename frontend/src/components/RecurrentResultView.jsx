@@ -1,4 +1,6 @@
+import { useState } from "react";
 import Plot from "react-plotly.js";
+import RecurrentCalculator from "./RecurrentCalculator.jsx";
 
 const fmt = (v, d = 2) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: d });
@@ -9,11 +11,20 @@ const GROWTH = {
   deteriorating: { label: "Deteriorating", note: "failures are accelerating (β > 1)", cls: "health-red" },
 };
 
-// A fitted recurrent-event (repairable-system) model: the mean cumulative
-// function (observed step + confidence band + fitted curve), the reliability-
-// growth verdict from the Crow-AMSAA shape, ROCOF/MTBF, and the trend test.
+const TABS = [
+  { id: "mcf", label: "MCF plot" },
+  { id: "calc", label: "Calculator" },
+  { id: "detail", label: "Trend & fit" },
+];
+
+// A fitted recurrent-event (repairable-system) model, laid out like the life-
+// data result view: a tabbed panel with the mean-cumulative-function plot (plus
+// a parameter side-rail) and a "Trend & fit" detail tab, and a growth verdict
+// footer. Handles both data fits and models built from parameters (no observed
+// step / trend test).
 export default function RecurrentResultView({ results }) {
   const r = results || {};
+  const [tab, setTab] = useState("mcf");
   const unit = r.unit ? ` ${r.unit}` : "";
   const xTitle = r.unit ? `Time (${r.unit})` : "Time";
   const obs = r.mcf?.observed || {};
@@ -29,11 +40,13 @@ export default function RecurrentResultView({ results }) {
       hoverinfo: "skip", name: "95% band", type: "scatter",
     });
   }
-  traces.push({
-    x: obs.x, y: obs.mcf, mode: "lines+markers", type: "scatter",
-    line: { color: "#6c727c", width: 1.4, shape: "hv" },
-    marker: { color: "#6c727c", size: 5 }, name: "observed (MCF)",
-  });
+  if (obs.x?.length) {
+    traces.push({
+      x: obs.x, y: obs.mcf, mode: "lines+markers", type: "scatter",
+      line: { color: "#6c727c", width: 1.4, shape: "hv" },
+      marker: { color: "#6c727c", size: 5 }, name: "observed (MCF)",
+    });
+  }
   if (fit.x) {
     traces.push({
       x: fit.x, y: fit.mcf, mode: "lines", type: "scatter",
@@ -60,54 +73,91 @@ export default function RecurrentResultView({ results }) {
 
   return (
     <>
-      <div className="stats">
-        <div className="stat"><div className="k">Systems</div><div className="v">{r.n_systems ?? "—"}</div></div>
-        <div className="stat"><div className="k">Failures</div><div className="v">{r.n_events ?? "—"}</div></div>
-        <div className="stat">
-          <div className="k">Reliability growth</div>
-          <div className="v sm">
-            {growth ? <span className={`health-badge ${growth.cls}`}>{growth.label}</span> : "—"}
+      <div className="tabs">
+        {TABS.map((tb) => (
+          <button
+            key={tb.id}
+            className={"tab" + (tab === tb.id ? " active" : "")}
+            onClick={() => setTab(tb.id)}
+          >
+            {tb.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="tab-panel">
+        {tab === "mcf" && (
+          <div className="detail-panel">
+            <div className="plotwrap">
+              <div className="plottitle">{r.model?.name || "Recurrent"} — mean cumulative function</div>
+              <Plot data={traces} layout={layout} config={{ displayModeBar: true, responsive: true }} style={{ width: "100%" }} useResizeHandler />
+            </div>
+            <div className="aside">
+              {(r.params || []).length > 0 && (
+                <div className="gof-card">
+                  <div className="gofh">Parameters</div>
+                  {r.params.map((p) => (
+                    <div className="gofr" key={p.name}>
+                      <span className="gk">{p.name}</span>
+                      <span className="gv">{fmt(p.value, 3)}</span>
+                    </div>
+                  ))}
+                  {r.beta != null && (
+                    <div className="gofr"><span className="gk">β (shape)</span><span className="gv">{fmt(r.beta, 3)}</span></div>
+                  )}
+                </div>
+              )}
+              <div className="detail-note">
+                {r.n_systems != null
+                  ? <>Fitted to <b>{r.n_events} events</b> across {r.n_systems} systems. The step is the observed MCF (95% band); the line is the fitted {r.model?.name || "model"}.</>
+                  : <>Built from parameters — the line is the fitted {r.model?.name || "model"}; there's no observed data.</>}
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="stat"><div className="k">Current MTBF</div><div className="v sm">{fmt(r.mtbf, 1)}{unit}</div></div>
-      </div>
+        )}
 
-      <div className="card" style={{ marginTop: "1rem" }}>
-        <Plot data={traces} layout={layout} config={{ displayModeBar: true, responsive: true }} style={{ width: "100%" }} useResizeHandler />
-      </div>
+        {tab === "calc" && <RecurrentCalculator r={r} />}
 
-      <div className="row" style={{ gap: "1rem", alignItems: "flex-start", marginTop: "1rem" }}>
-        <div className="card" style={{ flex: 1 }}>
-          <h2 style={{ marginTop: 0 }}>{r.model?.name || "Model"}</h2>
-          {growth && (
-            <p className="muted-line" style={{ marginTop: 0 }}>
-              <b>{growth.label}</b> — {growth.note}. Current rate of occurrence of
-              failures (ROCOF): {fmt(r.rocof, 5)} per{unit || " unit"}.
-            </p>
-          )}
-          <table className="lib-table">
-            <tbody>
-              {(r.params || []).map((p) => (
-                <tr key={p.name}><td className="mono">{p.name}</td><td className="lib-n">{fmt(p.value, 3)}</td></tr>
-              ))}
-              {r.beta != null && <tr><td className="mono">β (shape)</td><td className="lib-n">{fmt(r.beta, 3)}</td></tr>}
-            </tbody>
-          </table>
-        </div>
-        <div className="card" style={{ flex: 1 }}>
-          <h2 style={{ marginTop: 0 }}>Trend test</h2>
-          {trendText ? <p className="muted-line">{trendText}</p> : <p className="muted-line">—</p>}
-          {(r.gof || []).length > 0 && (
-            <table className="lib-table">
-              <tbody>
+        {tab === "detail" && (
+          <div className="detail-panel" style={{ flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div className="gof-card" style={{ flex: "1 1 220px" }}>
+              <div className="gofh">Rates</div>
+              <div className="gofr">
+                <span className="gk">Reliability growth</span>
+                <span className="gv">{growth ? <span className={`health-badge ${growth.cls}`}>{growth.label}</span> : "—"}</span>
+              </div>
+              <div className="gofr"><span className="gk">Current MTBF</span><span className="gv">{fmt(r.mtbf, 1)}{unit}</span></div>
+              <div className="gofr"><span className="gk">ROCOF</span><span className="gv">{fmt(r.rocof, 5)}</span></div>
+              {r.n_systems != null && (
+                <div className="gofr"><span className="gk">Systems / failures</span><span className="gv">{r.n_systems} / {r.n_events}</span></div>
+              )}
+            </div>
+            <div className="gof-card" style={{ flex: "1 1 220px" }}>
+              <div className="gofh">Trend test</div>
+              <div className="detail-note" style={{ margin: 0, padding: "11px 16px" }}>
+                {trendText || "Not available for a model built from parameters — the trend test needs event data."}
+              </div>
+            </div>
+            {(r.gof || []).length > 0 && (
+              <div className="gof-card" style={{ flex: "1 1 220px" }}>
+                <div className="gofh">Goodness of fit</div>
                 {r.gof.map((g) => (
-                  <tr key={g.id}><td className="mono">{g.label}</td><td className="lib-n">{fmt(g.value, 2)}</td></tr>
+                  <div className="gofr" key={g.id}><span className="gk">{g.label}</span><span className="gv">{fmt(g.value, 2)}</span></div>
                 ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {growth && (
+        <div className="result-foot">
+          <p className="verdict-line">
+            <b>{growth.label}</b> — {growth.note}. Current ROCOF {fmt(r.rocof, 5)} per{unit || " unit"}
+            {r.mtbf != null ? `, MTBF ≈ ${fmt(r.mtbf, 1)}${unit}` : ""}.
+          </p>
+        </div>
+      )}
     </>
   );
 }

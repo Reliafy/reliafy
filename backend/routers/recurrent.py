@@ -22,10 +22,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
-def _spec_from_form(i, x, t, model, unit) -> dict:
+def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=None) -> dict:
     mapping = {"i": i, "x": x}
-    if t:
-        mapping["t"] = t
+    # Optional modifiers (c/n/tl/tr); ``t`` is the legacy alias for ``tr``.
+    for key, val in (("c", c), ("n", n), ("tl", tl), ("tr", tr or t)):
+        if val:
+            mapping[key] = val
     return {"mapping": mapping, "model_id": (model or "crow_amsaa"), "unit": (unit or "").strip()}
 
 
@@ -74,6 +76,10 @@ async def fit_preview(
     dataset_id: str | None = Form(default=None),
     i: str = Form(...),
     x: str = Form(...),
+    c: str | None = Form(default=None),
+    n: str | None = Form(default=None),
+    tl: str | None = Form(default=None),
+    tr: str | None = Form(default=None),
     t: str | None = Form(default=None),
     model: str = Form(default="crow_amsaa"),
     unit: str | None = Form(default=None),
@@ -83,7 +89,7 @@ async def fit_preview(
     """Fit a recurrent model for preview (only the uploaded dataset is stored)."""
     try:
         dataset = await _resolve_dataset(session, ctx, dataset_id, file)
-        spec = _spec_from_form(i, x, t, model, unit)
+        spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t)
         df = datasets_service.load_dataframe(dataset)
         payload, _ = recurrent_fit.fit(df, spec["mapping"], spec["model_id"], spec["unit"])
     except FitError as exc:
@@ -101,6 +107,10 @@ async def save_model(
     dataset_id: str | None = Form(default=None),
     i: str = Form(...),
     x: str = Form(...),
+    c: str | None = Form(default=None),
+    n: str | None = Form(default=None),
+    tl: str | None = Form(default=None),
+    tr: str | None = Form(default=None),
     t: str | None = Form(default=None),
     model: str = Form(default="crow_amsaa"),
     unit: str | None = Form(default=None),
@@ -113,13 +123,41 @@ async def save_model(
         return JSONResponse(status_code=status, content=payload)
     try:
         dataset = await _resolve_dataset(session, ctx, dataset_id, file)
-        spec = _spec_from_form(i, x, t, model, unit)
+        spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t)
         doc = recurrent_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Failed to save recurrent model")
+        return JSONResponse(status_code=500, content={"detail": f"Failed to save: {exc}"})
+    return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": doc.results})
+
+
+@router.post("/recurrent/from-params")
+def save_from_params(
+    name: str = Form(...),
+    model: str = Form(default="crow_amsaa"),
+    alpha: float = Form(...),
+    beta: float = Form(...),
+    horizon: float = Form(...),
+    unit: str | None = Form(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Build and save a recurrent model from known parameters — no dataset."""
+    denied = access_service.workspace_write_denial(ctx)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
+    try:
+        params = [{"name": "alpha", "value": alpha}, {"name": "beta", "value": beta}]
+        doc = recurrent_service.save_from_params(session, name, model, params, horizon, unit or "", ctx.write_owner)
+        access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Failed to save recurrent model from params")
         return JSONResponse(status_code=500, content={"detail": f"Failed to save: {exc}"})
     return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": doc.results})
 

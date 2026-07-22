@@ -46,6 +46,7 @@ from surpyval import (
 )
 from surpyval import ExpoWeibull, Gumbel, Logistic, LogLogistic
 from surpyval import Binomial, FlemingHarrington, KaplanMeier, NelsonAalen, Turnbull
+from surpyval import success_run as _success_run
 from surpyval import DiscreteWeibull, Geometric, NegativeBinomial
 from surpyval import (
     ExponentialAFT,
@@ -553,12 +554,18 @@ def result_from_params(
     return _json_safe(result)
 
 
-def result_per_demand(demands: int, failures: int) -> dict:
+def result_per_demand(demands: int, failures: int, confidence: float = 0.95) -> dict:
     """Per-demand (Binomial) reliability: probability of failure per demand.
 
     For one-shot / protective equipment where "reliability" is per-demand, not
     over time. ``p = failures / demands`` with a Wilson-score 95% interval
     (robust near 0 and 1). Reconstructs downstream via ``Binomial.from_params``.
+
+    When ``failures == 0`` this is a reliability-demonstration ("success run")
+    test: SurPyval's ``success_run`` gives the demonstrated one-sided lower bound
+    on per-demand reliability at ``confidence`` — R ≥ (1 − C)**(1/n) — the
+    standard "n trials, zero failures" result (e.g. 59 clean demands demonstrate
+    95% reliability at 95% confidence).
     """
     try:
         demands = int(demands)
@@ -569,6 +576,12 @@ def result_per_demand(demands: int, failures: int) -> dict:
         raise FitError("Number of demands must be a positive integer.")
     if not (0 <= failures <= demands):
         raise FitError("Failures must be between 0 and the number of demands.")
+    try:
+        confidence = float(confidence)
+    except (TypeError, ValueError):
+        raise FitError("Confidence must be a number between 0 and 1.")
+    if not (0.0 < confidence < 1.0):
+        raise FitError("Confidence must be between 0 and 1 (e.g. 0.95).")
 
     p = failures / demands
     z = 1.959963984540054  # 95%
@@ -577,16 +590,25 @@ def result_per_demand(demands: int, failures: int) -> dict:
     half = z * math.sqrt(p * (1 - p) / demands + z * z / (4 * demands * demands)) / denom
     ci = [max(0.0, centre - half), min(1.0, centre + half)]
 
+    per_demand = {
+        "demands": demands, "failures": failures,
+        "p": p, "ci": ci, "reliability": 1.0 - p,
+    }
+    # Zero-failure demonstration test: the success-run lower bound on reliability.
+    if failures == 0:
+        r_lower = float(_success_run(demands, confidence=confidence))
+        per_demand["success_run"] = {
+            "confidence": confidence,
+            "reliability_lower": r_lower,
+        }
+
     return _json_safe({
         "distribution": "Per-demand (Binomial)",
         "distribution_id": "binomial",
         "kind": "per_demand",
         "params": [{"name": "p", "value": p, "se": None, "ci": ci}],
         "n": demands,
-        "per_demand": {
-            "demands": demands, "failures": failures,
-            "p": p, "ci": ci, "reliability": 1.0 - p,
-        },
+        "per_demand": per_demand,
         "functions": None,
         "gof": [],
     })
@@ -1206,15 +1228,36 @@ FUNCTIONS = [
 
 
 def _eval_functions(model, grid, Z=None) -> dict:
-    """Evaluate sf/ff/hf/Hf/df over ``grid`` (optionally at covariates ``Z``)."""
+    """Evaluate sf/ff/hf/Hf/df over ``grid`` (optionally at covariates ``Z``).
+
+    Additive-hazards models allow the hazard — and thus the cumulative hazard —
+    to go negative, which makes sf = exp(-H) exceed 1 (an impossible reliability).
+    We do NOT silently clamp that away: the fit is unreliable and the user should
+    pick a different model form. Instead we flag it with ``curves["warning"]`` so
+    the calculator can show it, while returning the true (out-of-range) values.
+    """
     grid = np.asarray(grid, dtype=float)
     curves = {"x": grid.tolist()}
+    raw = {}
     for fn in ("sf", "ff", "hf", "Hf", "df"):
         with np.errstate(all="ignore"):
             func = getattr(model, fn)
             y = np.asarray(func(grid) if Z is None else func(grid, Z), dtype=float)
+        raw[fn] = y
         # JSON can't carry inf/nan; null them so the frontend skips those points.
         curves[fn] = [None if not np.isfinite(v) else float(v) for v in y]
+
+    Hf, sf = raw["Hf"], raw["sf"]
+    negative_hazard = bool(
+        (np.isfinite(Hf) & (Hf < -1e-9)).any() or (np.isfinite(sf) & (sf > 1.0 + 1e-6)).any()
+    )
+    if negative_hazard:
+        curves["warning"] = (
+            "The cumulative hazard goes negative here, so the reliability rises "
+            "above 1 — which is impossible. This additive-hazards fit is unreliable "
+            "at these covariate values; try a proportional-hazards (…_ph / cox_ph) "
+            "or accelerated-failure-time (…_aft) model instead."
+        )
     return curves
 
 

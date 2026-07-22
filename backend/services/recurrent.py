@@ -64,6 +64,30 @@ def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> RecurrentMo
     return doc
 
 
+def save_from_params(db, name: str, model_id: str, params: list, horizon, unit: str, owner_id: str) -> RecurrentModelDoc:
+    """Fit and persist a recurrent model from known parameters (no dataset)."""
+    payload, cache_id = recurrent_fit.fit_from_params(model_id, params, horizon, unit)
+    doc = RecurrentModelDoc(
+        id=uuid.uuid4().hex,
+        name=name,
+        owner_id=owner_id,
+        dataset_id="",
+        spec={
+            "params_only": True,
+            "model_id": model_id,
+            "params": [{"name": p["name"], "value": float(p["value"])} for p in params],
+            "horizon": float(horizon),
+            "unit": (unit or "").strip(),
+        },
+        results=payload,
+        surpyval_version=getattr(surpyval, "__version__", None),
+        status="ready",
+    )
+    db.recurrent_models.insert_one(to_doc(doc))
+    _remember_live(doc.id, cache_id)
+    return doc
+
+
 def list_models(db, owner_id, hidden=frozenset(), shared=frozenset()) -> list[RecurrentModelDoc]:
     return [
         from_doc(RecurrentModelDoc, d)
@@ -118,6 +142,16 @@ def get_live_model(db, model_id: str, owner_id):
 
 
 def _refit(db, doc: RecurrentModelDoc):
+    spec = doc.spec or {}
+    if spec.get("params_only"):
+        _, cache_id = recurrent_fit.fit_from_params(
+            spec.get("model_id", "crow_amsaa"),
+            spec.get("params", []),
+            spec.get("horizon", 1.0),
+            spec.get("unit", ""),
+        )
+        _remember_live(doc.id, cache_id)
+        return recurrent_fit.get_live(cache_id)
     dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
     if dataset is None:
         raise ModelNotFound(doc.id)

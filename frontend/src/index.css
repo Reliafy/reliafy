@@ -4122,10 +4122,22 @@ select:disabled {
 
 /* Single post */
 .blog-article {
-  max-width: 720px;
+  max-width: 820px;
   margin: 0 auto;
   width: 100%;
   padding: 48px 40px 24px;
+}
+
+/* Public API reference — wider than the prose pages (code blocks + field tables
+   need the room). */
+.api-doc-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 48px 40px 40px;
+}
+@media (max-width: 760px) {
+  .api-doc-page { padding: 32px 22px 24px; }
 }
 
 .blog-back,
@@ -4478,6 +4490,53 @@ select:disabled {
   font-size: 12.5px;
 }
 
+/* Markdown rendered inside an assistant bubble (sanitized HTML from
+   renderAgentMarkdown). Reset the bubble's pre-wrap since this is real HTML. */
+.chat-md { white-space: normal; }
+.chat-md > :first-child { margin-top: 0; }
+.chat-md > :last-child { margin-bottom: 0; }
+.chat-md p { margin: 0.45rem 0; }
+.chat-md h1, .chat-md h2, .chat-md h3, .chat-md h4 {
+  margin: 0.7rem 0 0.3rem;
+  line-height: 1.25;
+  font-weight: 650;
+}
+.chat-md h1 { font-size: 1.1rem; }
+.chat-md h2 { font-size: 1.02rem; }
+.chat-md h3 { font-size: 0.96rem; }
+.chat-md h4 { font-size: 0.9rem; color: var(--muted); }
+.chat-md ul, .chat-md ol { margin: 0.35rem 0; padding-left: 1.25rem; }
+.chat-md li { margin: 0.12rem 0; }
+.chat-md li > p { margin: 0.12rem 0; }
+.chat-md strong { font-weight: 650; }
+.chat-md a { color: var(--acc-d); text-decoration: underline; }
+.chat-md code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: var(--panel-2);
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  padding: 0.05em 0.35em;
+}
+.chat-md pre {
+  margin: 0.45rem 0;
+  padding: 0.55rem 0.7rem;
+  overflow-x: auto;
+  background: var(--panel-2);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+}
+.chat-md pre code { background: none; border: none; padding: 0; font-size: 0.82em; }
+.chat-md blockquote {
+  margin: 0.45rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+.chat-md table { border-collapse: collapse; margin: 0.45rem 0; font-size: 0.9em; }
+.chat-md th, .chat-md td { border: 1px solid var(--line2); padding: 0.28rem 0.5rem; text-align: left; }
+.chat-md hr { border: none; border-top: 1px solid var(--line); margin: 0.6rem 0; }
+
 .chat-tool {
   align-self: flex-start;
   display: inline-flex;
@@ -4622,6 +4681,19 @@ select:disabled {
 .bill-pack-credits { font-size: 12px; color: var(--muted); }
 
 .notice-ok { border-color: #bfe3cd; background: #eef8f1; color: #2f7a52; }
+
+/* Calculator warning banner (e.g. additive-hazards fit with negative cumulative
+   hazard, so the reliability rises above 1). */
+.calc-warn {
+  margin: 0 0 0.6rem;
+  padding: 9px 12px;
+  border: 1px solid #e6c15a;
+  background: #fff8e6;
+  color: #8a6400;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.5;
+}
 
 /* ---- Landing pricing ------------------------------------------------------ */
 .landing-pricing {
@@ -5143,7 +5215,7 @@ select:disabled {
 }
 .nav-workspace select {
   padding: 6px 30px 6px 10px;
-  max-width: 220px;
+  width: 248px;
 }
 .nav-team-settings {
   display: inline-flex;
@@ -5474,11 +5546,20 @@ button.danger:hover { background: #fdeeee; }
   letter-spacing: 0.06em;
 }
 /* Fill the viewport: thread scrolls, composer pinned at the bottom. */
-.agent-page { display: flex; flex-direction: column; min-height: 0; }
+/* Full-height page: header + chat (scrolls) + composer pinned to the bottom,
+   like .rbd-app. Overrides .app's tall padding so it fits the viewport. */
+.agent-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 58px);
+  padding: 20px 38px 20px;
+  overflow: hidden;
+}
 .agent-page header { flex: 0 0 auto; }
+.agent-upgrade { flex: 0 0 auto; margin: 0.4rem 0 0.2rem; border-left: 3px solid var(--acc); }
 .chat {
   flex: 1 1 auto;
-  min-height: 300px;
+  min-height: 0;
   overflow-y: auto;
   padding: 0.5rem 0.2rem 1rem;
   display: flex;
@@ -5486,6 +5567,7 @@ button.danger:hover { background: #fdeeee; }
   gap: 1rem;
 }
 .chat-empty { color: var(--muted); }
+.chat-empty-head { margin: 0; font-size: 1.05rem; font-weight: 600; color: var(--muted); }
 .chat-empty ul { margin: 0.4rem 0 0; padding-left: 1.1rem; }
 .chat-empty li { margin: 0.2rem 0; }
 

@@ -100,6 +100,49 @@ def test_execute_tool_creates_dataset_then_life_model():
                                            "distribution": "weibull"})
 
 
+def test_execute_tool_creates_rbd_series_parallel():
+    """create_rbd expands a series-of-parallel spec into a valid, analysable RBD
+    (controller in series with two redundant pumps) and saves it."""
+    from backend.services import reliability_agent as agent
+    from backend.services import rbds as rbds_service
+
+    db = mongomock.MongoClient()["reliafy_test"]
+    inp = {
+        "name": "Pump station",
+        "stages": [
+            {"label": "Controller", "components": [
+                {"label": "PLC", "distribution": "weibull",
+                 "params": [{"name": "alpha", "value": 1500}, {"name": "beta", "value": 1.8}]},
+            ]},
+            {"label": "Pumps", "k_of_n": 1, "components": [
+                {"label": "Pump A", "distribution": "weibull",
+                 "params": [{"name": "alpha", "value": 900}, {"name": "beta", "value": 1.4}]},
+                {"label": "Pump B", "distribution": "weibull",
+                 "params": [{"name": "alpha", "value": 900}, {"name": "beta", "value": 1.4}]},
+            ]},
+        ],
+    }
+    res = agent._execute_tool(db, U, "create_rbd", inp)
+    assert res["ok"], res
+    assert res["n_stages"] == 2 and res["n_components"] == 3
+
+    rbd = rbds_service.get_rbd(db, res["rbd_id"], owner_id=U)
+    assert rbd is not None
+    # The laid-out graph is a valid, closed-form-solvable RBD.
+    v = rbds_service.validate_graph(db, rbd.graph, owner_id=U)
+    assert v["valid"] and v["can_calculate"], v
+    # A parallel stage (>1 component) gets a k-of-n voting node as its exit.
+    assert any(n["type"] == "knode" for n in rbd.graph["nodes"])
+    # And it actually analyses end to end.
+    out = rbds_service.analyze_rbd(db, res["rbd_id"], owner_id=U, t_max=1000.0)
+    assert out is not None
+
+    # Bad spec -> a clean error, not an exception.
+    assert "error" in agent._execute_tool(db, U, "create_rbd", {"name": "x", "stages": []})
+    assert "error" in agent._execute_tool(db, U, "create_rbd", {"name": "x", "stages": [
+        {"components": [{"label": "c", "distribution": "weibull"}]}]})  # no params
+
+
 def test_create_life_model_full_inputs():
     """The expanded tool passes censoring, counts, the offset/zi/lfp modifiers,
     fixed params, and covariates through to the fit."""
@@ -247,16 +290,50 @@ def _client(monkeypatch):
 
 def test_run_config_and_credit_gates(monkeypatch):
     from backend.auth import get_current_user
+    from backend.services import billing
     from backend.services import reliability_agent as agent
 
-    client, app, _ = _client(monkeypatch)
+    client, app, test_db = _client(monkeypatch)
     body = {"message": "hi"}
     try:
         app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
         monkeypatch.setattr(agent, "enabled", lambda: False)
         assert client.post("/api/reliability-agent/run", json=body).status_code == 503
         monkeypatch.setattr(agent, "enabled", lambda: True)
-        assert client.post("/api/reliability-agent/run", json=body).status_code == 402
+        # Free tier (only the starter grant, never paid) is blocked as a paid
+        # feature — even holding those free credits.
+        billing.grant_credits(test_db, U, 1000, "starter")
+        r_free = client.post("/api/reliability-agent/run", json=body)
+        assert r_free.status_code == 403 and r_free.json()["code"] == "pro_required"
+        # Pro but out of credits -> the ordinary credit gate (402).
+        billing.set_plan(test_db, U, "pro")
+        billing.charge_credits(test_db, U, 1000, "reset")  # -> 0 credits
+        r_broke = client.post("/api/reliability-agent/run", json=body)
+        assert r_broke.status_code == 402 and r_broke.json()["code"] == "no_credits"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_purchased_credits_unlock_agent_without_pro(monkeypatch):
+    """A non-Pro user who has BOUGHT credits (ledger reason 'purchase') is
+    entitled to the agent — the paid gate passes and the run streams."""
+    from backend.auth import get_current_user
+    from backend.services import billing
+    from backend.services import reliability_agent as agent
+
+    client, app, test_db = _client(monkeypatch)
+    try:
+        app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
+        monkeypatch.setattr(agent, "enabled", lambda: True)
+        monkeypatch.setattr(agent, "stream_run", lambda db, uid, message, file_id=None, session_id=None, approved=False: iter([
+            {"type": "text", "text": "plan"},
+            {"type": "_meter", "session_id": "s1", "seconds": 0.0, "input_tokens": 0, "output_tokens": 0},
+        ]))
+        billing.grant_credits(test_db, U, 500, "purchase", "cs_test")  # bought a pack, still free plan
+        assert billing.account(test_db, U)["is_pro"] is False
+        r = client.post("/api/reliability-agent/run", json={"message": "hi"})
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/event-stream")
     finally:
         app.dependency_overrides.clear()
 
@@ -270,6 +347,7 @@ def test_run_streams_events_and_meters(monkeypatch):
     try:
         app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
         billing.grant_credits(test_db, U, 1000, "test")
+        billing.set_plan(test_db, U, "pro")  # the agent is Pro-only
         monkeypatch.setattr(agent, "enabled", lambda: True)
         # stream_run signature: (db, uid, message, file_id=None, session_id=None, approved=False).
         monkeypatch.setattr(agent, "stream_run", lambda db, uid, message, file_id=None, session_id=None, approved=False: iter([
@@ -298,14 +376,21 @@ def test_run_streams_events_and_meters(monkeypatch):
 
 def test_upload_endpoint(monkeypatch):
     from backend.auth import get_current_user
+    from backend.services import billing
     from backend.services import reliability_agent as agent
 
-    client, app, _ = _client(monkeypatch)
+    client, app, test_db = _client(monkeypatch)
+    files = {"file": ("d.csv", b"t\n1\n2\n", "text/csv")}
     try:
         app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
         monkeypatch.setattr(agent, "enabled", lambda: True)
         monkeypatch.setattr(agent, "upload_csv", lambda data, filename="data.csv": "file-123")
-        r = client.post("/api/reliability-agent/upload", files={"file": ("d.csv", b"t\n1\n2\n", "text/csv")})
+        # Free tier can't upload to the agent sandbox either (Pro-only).
+        r_free = client.post("/api/reliability-agent/upload", files=files)
+        assert r_free.status_code == 403 and r_free.json()["code"] == "pro_required"
+        # Pro succeeds.
+        billing.set_plan(test_db, U, "pro")
+        r = client.post("/api/reliability-agent/upload", files=files)
         assert r.status_code == 200
         assert r.json()["file_id"] == "file-123"
     finally:

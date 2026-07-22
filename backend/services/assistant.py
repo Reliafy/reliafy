@@ -10,6 +10,8 @@ the tool loop (tools execute in the browser), calling here again for each step.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 
 from backend import config
@@ -39,8 +41,10 @@ def _anthropic_tools(tools):
 
 
 def _openai_tools(tools):
+    # Responses API function-tool shape is flat (name/description/parameters at
+    # the top level), unlike chat/completions' nested {"function": {...}}.
     return [
-        {"type": "function", "function": {"name": t["name"], "description": t.get("description", ""), "parameters": t["parameters"]}}
+        {"type": "function", "name": t["name"], "description": t.get("description", ""), "parameters": t["parameters"]}
         for t in (tools or [])
     ]
 
@@ -94,39 +98,131 @@ def _anthropic(system, messages, tools):
     }
 
 
+# OpenAI Responses API (/v1/responses). `messages` is the running list of
+# Responses *input items* the client maintains — user turns plus the raw
+# `output` items from each prior step (assistant messages, function_call, and
+# reasoning items) with function_call_output items spliced in after each tool
+# runs. We resend the whole list every step (store=False, stateless), and
+# request reasoning.encrypted_content so reasoning carries across the tool loop
+# within a turn.
+def _openai_body(system, messages, tools, *, stream: bool):
+    body = {
+        "model": config.AI_MODEL,
+        "input": messages,
+        "tools": _openai_tools(tools),
+        "tool_choice": "auto",
+        "store": False,
+        "stream": stream,
+    }
+    if system:
+        body["instructions"] = system
+    if config.OPENAI_REASONING_EFFORT:
+        body["reasoning"] = {"effort": config.OPENAI_REASONING_EFFORT}
+        body["include"] = ["reasoning.encrypted_content"]
+    return body
+
+
+_OPENAI_HEADERS = {"content-type": "application/json"}
+
+
+def _openai_result(output, usage):
+    # input_tokens INCLUDES cached tokens; split them out so input_tokens is the
+    # full-rate count (normalised contract). output_tokens already includes
+    # reasoning tokens, which is what we bill. The client appends every output
+    # item to its history verbatim and resends them next step (llm.js:runOpenAI).
+    output = output or []
+    usage = usage or {}
+    cached = int((usage.get("input_tokens_details") or {}).get("cached_tokens", 0) or 0)
+    prompt = int(usage.get("input_tokens", 0))
+    has_calls = any(it.get("type") == "function_call" for it in output)
+    return {
+        "message": output,
+        "stop_reason": "tool_use" if has_calls else "completed",
+        "usage": {
+            "input_tokens": max(0, prompt - cached),
+            "cached_input_tokens": min(cached, prompt),
+            "output_tokens": int(usage.get("output_tokens", 0)),
+        },
+    }
+
+
 def _openai(system, messages, tools):
+    body = _openai_body(system, messages, tools, stream=False)
     try:
         r = httpx.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {config.OPENAI_API_KEY}", "content-type": "application/json"},
-            json={
-                "model": config.AI_MODEL,
-                "messages": [{"role": "system", "content": system}, *messages],
-                "tools": _openai_tools(tools),
-                "tool_choice": "auto",
-            },
-            timeout=90.0,
+            "https://api.openai.com/v1/responses",
+            headers={"Authorization": f"Bearer {config.OPENAI_API_KEY}", **_OPENAI_HEADERS},
+            json=body,
+            timeout=120.0,
         )
     except httpx.HTTPError as exc:
         raise AssistantError(f"Could not reach OpenAI: {exc}") from exc
     if r.status_code >= 400:
         raise AssistantError(_err(r, "OpenAI"))
     data = r.json()
-    usage = data.get("usage", {})
-    # OpenAI's prompt_tokens INCLUDES cached tokens; split them out so
-    # input_tokens is the full-rate count (normalised contract).
-    details = usage.get("prompt_tokens_details") or {}
-    cached = int(details.get("cached_tokens", 0) or 0)
-    prompt = int(usage.get("prompt_tokens", 0))
-    return {
-        "message": data["choices"][0]["message"],
-        "stop_reason": data["choices"][0].get("finish_reason"),
-        "usage": {
-            "input_tokens": max(0, prompt - cached),
-            "cached_input_tokens": min(cached, prompt),
-            "output_tokens": int(usage.get("completion_tokens", 0)),
-        },
-    }
+    return _openai_result(data.get("output", []), data.get("usage", {}))
+
+
+def stream(system: str, messages: list, tools: list):
+    """One provider round-trip, streamed. Yields dicts:
+    ``{"type": "delta", "text": ...}`` for incremental assistant text, then a
+    single terminal ``{"type": "final", "message", "stop_reason", "usage"}``
+    (same shape :func:`step` returns) the client uses to run the tool loop.
+    Raises :class:`AssistantError` on transport/provider failure."""
+    if not enabled():
+        raise AssistantError("AI is not configured on the server.")
+    if config.AI_PROVIDER == "anthropic":
+        # Anthropic path isn't wired for token streaming yet: emit the whole
+        # message as one delta so the stream endpoint still works if flipped.
+        res = _anthropic(system, messages, tools)
+        text = "".join(
+            c.get("text", "") for c in res["message"].get("content", []) if c.get("type") == "text"
+        )
+        if text:
+            yield {"type": "delta", "text": text}
+        yield {"type": "final", **res}
+        return
+    yield from _openai_stream(system, messages, tools)
+
+
+def _openai_stream(system, messages, tools):
+    body = _openai_body(system, messages, tools, stream=True)
+    try:
+        with httpx.stream(
+            "POST",
+            "https://api.openai.com/v1/responses",
+            headers={"Authorization": f"Bearer {config.OPENAI_API_KEY}", **_OPENAI_HEADERS},
+            json=body,
+            timeout=httpx.Timeout(120.0, read=None),
+        ) as r:
+            if r.status_code >= 400:
+                r.read()
+                raise AssistantError(_err(r, "OpenAI"))
+            for line in r.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if not data:
+                    continue
+                try:
+                    ev = json.loads(data)
+                except ValueError:
+                    continue
+                etype = ev.get("type")
+                if etype == "response.output_text.delta":
+                    delta = ev.get("delta") or ""
+                    if delta:
+                        yield {"type": "delta", "text": delta}
+                elif etype == "response.completed":
+                    resp = ev.get("response", {}) or {}
+                    yield {"type": "final", **_openai_result(resp.get("output", []), resp.get("usage", {}))}
+                elif etype in ("response.failed", "response.incomplete", "error"):
+                    resp = ev.get("response", {}) or {}
+                    err = resp.get("error") or resp.get("incomplete_details") or ev.get("error") or {}
+                    detail = err.get("message") if isinstance(err, dict) else str(err)
+                    raise AssistantError(f"OpenAI stream error: {detail or etype}")
+    except httpx.HTTPError as exc:
+        raise AssistantError(f"Could not reach OpenAI: {exc}") from exc
 
 
 def _err(resp, label):

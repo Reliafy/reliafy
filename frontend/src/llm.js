@@ -4,7 +4,7 @@
 // this just drives the loop. The server picks the provider, so the caller passes
 // `provider` (from /api/assistant/info) only so we shape messages/tool results
 // the way that provider expects.
-import { assistantStep } from "./api.js";
+import { assistantStep, assistantStepStream } from "./api.js";
 
 const MAX_STEPS = 8; // safety cap on tool round-trips per user message
 
@@ -43,25 +43,32 @@ async function runAnthropic({ system, messages, tools, executeTool, onText, onTo
   return msgs;
 }
 
-async function runOpenAI({ system, messages, tools, executeTool, onText, onTool, onBalance, shouldStop }) {
+// OpenAI Responses API. `msgs` is a flat list of Responses *input items*: the
+// first user turn (`{role:"user", content}`), then the raw `output` items the
+// server returns each step (assistant message / function_call / reasoning),
+// with a `function_call_output` item spliced in after each tool runs. The
+// server (backend/services/assistant.py:_openai) returns `res.message` as that
+// output-item array; we append it verbatim and resend everything next step.
+async function runOpenAI({ system, messages, tools, executeTool, onText, onDelta, onTool, onBalance, onStreamEnd, shouldStop }) {
   let msgs = [...messages];
   for (let step = 0; step < MAX_STEPS; step++) {
     if (shouldStop?.()) return msgs;
-    const res = await assistantStep(system, msgs, tools);
+    // Assistant text streams in via onDelta; the resolved payload carries the
+    // full output items (message/function_call/reasoning) to continue the loop.
+    const res = await assistantStepStream(system, msgs, tools, { onDelta: (t) => onDelta?.(t) });
     onBalance?.(res.credit_cents);
-    const m = res.message;
-    msgs.push(m);
+    onStreamEnd?.(); // close the live text bubble; tool chips / next step start fresh
+    const output = Array.isArray(res.message) ? res.message : [];
+    msgs.push(...output);
 
-    if (m.content) onText(m.content);
-
-    const calls = m.tool_calls || [];
+    const calls = output.filter((it) => it.type === "function_call");
     if (calls.length === 0) return msgs;
 
     for (const call of calls) {
       let args = {};
-      try { args = JSON.parse(call.function.arguments || "{}"); } catch { args = {}; }
-      const result = await runTool(executeTool, onTool, call.function.name, args);
-      msgs.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+      try { args = JSON.parse(call.arguments || "{}"); } catch { args = {}; }
+      const result = await runTool(executeTool, onTool, call.name, args);
+      msgs.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(result) });
     }
   }
   onText("(Stopped after too many tool steps.)");

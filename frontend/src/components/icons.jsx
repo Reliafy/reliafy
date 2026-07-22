@@ -14,5 +14,8 @@ export const StrategyIcon = () => svg(<><circle cx="12" cy="12" r="8.5" /><path 
 export const CostIcon = () => svg(<><path d="M4 19h16" /><path d="M5 6c4 9 10 9 14 1" /></>);
 export const DatabaseIcon = () => svg(<><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" /></>);
 export const DegradeIcon = () => svg(<><path d="M4 5c2 6 4 9 7 11s6 2.5 9 2.5" /><path d="M3 19h18" strokeDasharray="3 3" /></>);
+// Recurrent events (repairable systems): the mean-cumulative-function staircase —
+// repeated failures accumulating over time, with an event tick at each step up.
+export const RecurrentIcon = () => svg(<><path d="M3 21h18" strokeDasharray="2 3" /><path d="M4 19h3v-3h3v-3h3v-3h3v-3h3" /><circle cx="7" cy="16" r="1.15" fill="currentColor" stroke="none" /><circle cx="13" cy="10" r="1.15" fill="currentColor" stroke="none" /><circle cx="19" cy="7" r="1.15" fill="currentColor" stroke="none" /></>);
 export const RcmIcon = () => svg(<><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1" /><path d="m8.5 12 2 2 4-4.5" /></>);
 export const UploadIcon = () => svg(<><path d="M12 16V4m0 0 4 4m-4-4-4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></>);

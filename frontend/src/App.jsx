@@ -14,6 +14,7 @@ import TermsPage from "./views/TermsPage.jsx";
 import PrivacyPage from "./views/PrivacyPage.jsx";
 import LearnIndex from "./views/LearnIndex.jsx";
 import LearnArticle from "./views/LearnArticle.jsx";
+import ApiDocsPublicPage from "./views/ApiDocsPublicPage.jsx";
 import ProductPage from "./views/ProductPage.jsx";
 import { PRODUCT_PAGES } from "./productPages.jsx";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
@@ -67,6 +68,7 @@ export default function App() {
             {!AUTH_DISABLED && <Route path="/blog/:slug" element={<BlogPost />} />}
             {!AUTH_DISABLED && <Route path="/learn" element={<LearnIndex />} />}
             {!AUTH_DISABLED && <Route path="/learn/:slug" element={<LearnArticle />} />}
+            {!AUTH_DISABLED && <Route path="/api-docs" element={<ApiDocsPublicPage />} />}
             {!AUTH_DISABLED &&
               PRODUCT_PAGES.map((p) => (
                 <Route key={p.path} path={p.path} element={<ProductPage page={p} />} />

@@ -1,41 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
+import OverflowMenu from "../components/OverflowMenu.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getModel, deleteModel } from "../api.js";
 import { distColor, relativeTime } from "../instrument.js";
-
-// Compact overflow ("…") menu for secondary actions. Closes on outside click.
-function OverflowMenu({ children }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
-  return (
-    <div className="ovm" ref={ref}>
-      <button
-        className="secondary ovm-trigger"
-        aria-label="More actions"
-        title="More actions"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-          <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
-        </svg>
-      </button>
-      {open && (
-        <div className="ovm-menu" onClick={() => setOpen(false)}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // Reopen a saved model by id and render its cached results.
 export default function ModelPage() {

@@ -13,6 +13,7 @@ import TermsPage from "./views/TermsPage.jsx";
 import PrivacyPage from "./views/PrivacyPage.jsx";
 import LearnIndex from "./views/LearnIndex.jsx";
 import LearnArticle from "./views/LearnArticle.jsx";
+import ApiDocsPublicPage from "./views/ApiDocsPublicPage.jsx";
 import ProductPage from "./views/ProductPage.jsx";
 import { PRODUCT_PAGES } from "./productPages.jsx";
 import { posts } from "./blog.js";
@@ -42,6 +43,12 @@ export function routes() {
       title: "Learn Reliability Engineering — Guides & Worked Examples | Reliafy",
       description:
         "Practical guides to reliability engineering methods: Weibull analysis, censored data, MTBF vs MTTF, B10 life, and more — with worked examples.",
+    },
+    {
+      path: "/api-docs",
+      title: "API Reference — Reliafy Reliability API",
+      description:
+        "The Reliafy HTTP API and reliafy-client Python package: read fitted models and reliability, create datasets and fit distributions, read fleet forecasts, run strategy calculators, and push operational data.",
     },
     {
       path: "/terms",
@@ -109,6 +116,7 @@ export function render(path) {
             <Route path="/blog/:slug" element={<BlogPost />} />
             <Route path="/learn" element={<LearnIndex />} />
             <Route path="/learn/:slug" element={<LearnArticle />} />
+            <Route path="/api-docs" element={<ApiDocsPublicPage />} />
             {PRODUCT_PAGES.map((p) => (
               <Route key={p.path} path={p.path} element={<ProductPage page={p} />} />
             ))}

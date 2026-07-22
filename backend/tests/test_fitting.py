@@ -212,6 +212,35 @@ def test_regression_calculator_and_evaluate():
     assert abs(zoom[0] - 10) < 1e-6 and abs(zoom[-1] - 50) < 1e-6
 
 
+def test_additive_hazards_negative_cumhazard_warns_not_clamps():
+    """An additive-hazards fit can drive the cumulative hazard negative, so the
+    reliability rises above 1. We surface that as a warning (and leave the true,
+    out-of-range values) rather than silently clamp it — and other model forms
+    stay silent."""
+    import pandas as pd
+    from backend.fitting import evaluate
+
+    rng = np.random.default_rng(0)
+    z = rng.normal(0, 1, 120)
+    x = rng.weibull(1.6, 120) * 900 * np.exp(-0.15 * z) + 1
+    df = pd.DataFrame({"time": x, "z": z})
+
+    ah = fit("weibull_ah", df, {"x": "time"}, covariates=["z"])
+    ah_id = ah["functions"]["model_id"]
+    warned = False
+    for zval in (-4, -3, 3, 4):
+        curves = evaluate(ah_id, {"z": zval})["curves"]
+        if "warning" in curves:
+            warned = True
+            # Values pass through unclamped — the impossible sf > 1 is visible.
+            assert max(v for v in curves["sf"] if v is not None) > 1.0
+    assert warned, "additive-hazards fit should warn where the cumulative hazard goes negative"
+
+    # A proportional-hazards fit keeps the hazard non-negative -> no warning.
+    ph = fit("weibull_ph", df, {"x": "time"}, covariates=["z"])
+    assert "warning" not in evaluate(ph["functions"]["model_id"], {"z": -4})["curves"]
+
+
 def test_confidence_bounds_custom_range():
     from backend.fitting import confidence_bounds
 

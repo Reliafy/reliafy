@@ -161,9 +161,12 @@ def import_model(
     return model
 
 
-def create_per_demand(db, uid: str, name: str, demands, failures) -> Model:
-    """Create a per-demand (Binomial) model from a demands/failures count."""
-    result = fitting.result_per_demand(demands, failures)
+def create_per_demand(db, uid: str, name: str, demands, failures, confidence: float = 0.95) -> Model:
+    """Create a per-demand (Binomial) model from a demands/failures count.
+
+    With zero failures this is a success-run reliability-demonstration test;
+    ``confidence`` sets the demonstrated lower-bound level (default 95%)."""
+    result = fitting.result_per_demand(demands, failures, confidence)
     model = Model(
         id=uuid.uuid4().hex,
         name=name,
@@ -172,7 +175,8 @@ def create_per_demand(db, uid: str, name: str, demands, failures) -> Model:
         kind="per_demand",
         distribution_id="binomial",
         spec={"distribution_id": "binomial", "params_only": True,
-              "per_demand": {"demands": int(demands), "failures": int(failures)}},
+              "per_demand": {"demands": int(demands), "failures": int(failures),
+                             "confidence": float(confidence)}},
         results=result,
         surpyval_version=getattr(surpyval, "__version__", None),
         status="ready",

@@ -84,6 +84,15 @@ def is_pro(account: dict) -> bool:
     return until > _now()
 
 
+def has_purchased_credits(db, uid: str) -> bool:
+    """True if the user has ever *bought* AI credits (a one-time pack), as
+    opposed to only the free starter grant. Purchases are ledgered with
+    reason ``"purchase"`` (routers/billing.py checkout webhook); the starter
+    grant uses ``"starter"``. Used to entitle non-Pro payers to premium AI
+    features like the Reliability Agent."""
+    return db.credit_ledger.find_one({"uid": uid, "kind": "grant", "reason": "purchase"}) is not None
+
+
 def account(db, uid: str) -> dict:
     """The user's billing snapshot (defaults when no doc/fields exist yet).
 

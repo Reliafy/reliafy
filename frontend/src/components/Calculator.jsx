@@ -262,6 +262,10 @@ export default function Calculator({ functions, unit, params, state, setState, n
   // Per-series curves, conditioned on the survived age when set.
   const views = series.map((s) => view(s.curves));
 
+  // Backend flags impossible reliability (sf > 1 from a negative cumulative
+  // hazard — additive-hazards models). Surface it rather than hide it.
+  const curveWarning = series.map((s) => s.curves?.warning).find(Boolean);
+
   // Confidence band for the active function (raw scale only — it isn't
   // conditionalised, so it's hidden when a survived-age is set).
   const band = ci.bound !== "none" && ci.data && ci.data.on === active && cond === 0 ? ci.data : null;
@@ -363,6 +367,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
     <div className="calc">
       <div className="calc-body">
         <div className="calc-main">
+      {curveWarning && <p className="calc-warn">⚠ {curveWarning}</p>}
       {confidencePath && ci.error && (
         <p className="hint" style={{ margin: "0 0 0.4rem" }}>
           Couldn't compute confidence bounds: {ci.error}

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
+import OverflowMenu from "../components/OverflowMenu.jsx";
+import { ShareButton } from "../components/ShareDialog.jsx";
 import { getRecurrentModel, deleteRecurrentModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 
@@ -52,15 +54,30 @@ export default function RecurrentModelPage() {
             )}
           </div>
         </div>
-        {model && !model.read_only && (
+        {model && (
           <div className="head-actions">
-            <button className="secondary" onClick={onDelete}>Delete</button>
+            <OverflowMenu>
+              <ShareButton
+                collection="recurrent_models"
+                artifactId={model.id}
+                name={model.name}
+                readOnly={model.read_only}
+                className="ovm-item"
+              />
+              <button className="ovm-item danger" onClick={onDelete}>
+                {model.read_only ? "Remove from my view" : "Delete"}
+              </button>
+            </OverflowMenu>
           </div>
         )}
       </header>
 
       {error && <div className="card error">{error}</div>}
-      {model && <RecurrentResultView results={model.results} />}
+      {model && (
+        <div className="card">
+          <RecurrentResultView results={model.results} />
+        </div>
+      )}
     </div>
   );
 }

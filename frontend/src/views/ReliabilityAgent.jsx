@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   reliabilityAgentInfo,
   reliabilityAgentUpload,
@@ -12,7 +13,7 @@ import { renderAgentMarkdown } from "../agentMarkdown.js";
 // tools to load datasets + life models into the workspace. Messages persist in a
 // scrolling thread; the session is reused across turns.
 
-const TOOL_LABEL = { create_dataset: "Create dataset", create_life_model: "Create life model" };
+const TOOL_LABEL = { create_dataset: "Create dataset", create_life_model: "Create life model", create_rbd: "Create RBD" };
 
 // One streamed part within an agent turn. Conversational text is a message
 // bubble; sandbox activity (bash/code + output) is a distinct collapsed "step"
@@ -72,6 +73,7 @@ function Bubble({ msg }) {
 }
 
 export default function ReliabilityAgent() {
+  const navigate = useNavigate();
   const [info, setInfo] = useState(null);
   const [messages, setMessages] = useState([]); // [{role, text} | {role:'agent', parts:[], status, pending}]
   const [input, setInput] = useState("");
@@ -177,7 +179,9 @@ export default function ReliabilityAgent() {
 
   const approve = () => runTurn("Approved — go ahead with the plan.", { approved: true });
 
-  const disabled = busy || !info?.enabled;
+  // Pro-only feature: free tier is locked out (server enforces it too).
+  const upgradeRequired = !!info?.enabled && info?.upgrade_required;
+  const disabled = busy || !info?.enabled || upgradeRequired;
   // Offer the greenlight once the agent has spoken and it's the user's move.
   const lastMsg = messages[messages.length - 1];
   const canApprove = !disabled && lastMsg?.role === "agent" && lastMsg.parts.length > 0;
@@ -187,27 +191,32 @@ export default function ReliabilityAgent() {
       <header>
         <div>
           <h1>Reliability Agent <span className="agent-poc">POC</span></h1>
-          <p>
-            {info?.enabled
-              ? <>Analyses your data with surpyval/repyability, proposes a plan, and — once you approve — loads datasets and life models into your workspace. Model: <code>{info.model}</code>.</>
-              : "Not configured yet — set ANTHROPIC_API_KEY on the server to enable."}
-          </p>
+          {!info?.enabled && (
+            <p className="muted-line" style={{ margin: 0 }}>
+              Not configured yet — set ANTHROPIC_API_KEY on the server to enable.
+            </p>
+          )}
         </div>
         {credit != null && info?.billing_enabled && (
           <span className="muted-line" style={{ margin: 0 }}>{credit} credits</span>
         )}
       </header>
 
+      {upgradeRequired && (
+        <div className="card agent-upgrade">
+          <strong>The Reliability Agent is a paid feature.</strong>
+          <p className="muted-line" style={{ margin: "0.35rem 0 0.7rem" }}>
+            It runs Python (surpyval/repyability) in a managed sandbox to build and save models
+            for you. Subscribe to Pro or buy AI credits to use it — the everyday assistant stays free.
+          </p>
+          <button className="chat-approve-btn" onClick={() => navigate("/billing")}>Get Pro or credits →</button>
+        </div>
+      )}
+
       <div className="chat" ref={scrollRef}>
-        {messages.length === 0 && (
+        {info?.enabled && messages.length === 0 && !upgradeRequired && (
           <div className="chat-empty">
-            <p>Attach a CSV of failure data and ask, for example:</p>
-            <ul>
-              <li>“Fit the best distribution to these failure times and save it to my workspace.”</li>
-              <li>“Clean this data, compare Weibull vs lognormal by AIC, and load the winner.”</li>
-              <li>“This has a censoring column — fit a Weibull and save the dataset and model.”</li>
-            </ul>
-            <p className="muted-line">It proposes a plan and asks before creating anything.</p>
+            <p className="chat-empty-head">Tell me what to build — attach data if you have it.</p>
           </div>
         )}
         {messages.map((m, i) => <Bubble key={i} msg={m} />)}
@@ -236,7 +245,13 @@ export default function ReliabilityAgent() {
           disabled={disabled}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder={info?.enabled ? "Message the agent…  (Enter to send, Shift+Enter for newline)" : "Agent not configured"}
+          placeholder={
+            upgradeRequired
+              ? "Get Pro or buy AI credits to use the Reliability Agent"
+              : info?.enabled
+                ? "Message the agent…  (Enter to send, Shift+Enter for newline)"
+                : "Agent not configured"
+          }
         />
         <button onClick={send} disabled={disabled || !input.trim()}>{busy ? "…" : "Send"}</button>
       </div>
