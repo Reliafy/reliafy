@@ -60,6 +60,26 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Reliafy", version="0.1.0")
 
+# CORS — normally the frontend is same-origin, but SSE streaming (the metered
+# assistant) is served straight from Cloud Run to bypass Firebase Hosting's CDN,
+# which buffers Server-Sent Events. Those requests are cross-origin (from the
+# public site to the run.app host), so allow them explicitly. Auth is a Bearer
+# ID token (no cookies), so credentials aren't needed.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+from backend import config as _config  # noqa: E402
+
+_CORS_ORIGINS = sorted({
+    o for o in (_config.PUBLIC_BASE_URL, "https://reliafy.com", "https://www.reliafy.com") if o
+})
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_CORS_ORIGINS,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Workspace-Id"],
+    max_age=3600,
+)
+
 
 @app.on_event("startup")
 def _startup() -> None:

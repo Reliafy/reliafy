@@ -2,6 +2,15 @@
 import { auth } from "./firebase.js";
 import { trackEvent } from "./telemetry.js";
 
+// SSE streaming (the metered assistant) is served straight from Cloud Run to
+// bypass Firebase Hosting's CDN, which buffers Server-Sent Events. Cross-origin
+// to the run.app host (allowed via backend CORS). Same-origin everywhere the CDN
+// isn't in front: self-host (auth disabled) and local dev (no VITE_STREAM_ORIGIN).
+const STREAM_ORIGIN =
+  import.meta.env.VITE_AUTH_DISABLED === "true"
+    ? ""
+    : (import.meta.env.VITE_STREAM_ORIGIN || "").replace(/\/+$/, "");
+
 // Activation milestones: fire a product event when the promise resolves.
 // These are the funnel steps between "signed up" and "getting value" —
 // visible in /admin traffic so acquisition posts can be judged on
@@ -414,7 +423,7 @@ export async function assistantStepStream(system, messages, tools, { onDelta, si
     ...workspaceHeaders(),
     ...(await authHeaders()),
   };
-  const res = await fetch("/api/assistant/stream", {
+  const res = await fetch(STREAM_ORIGIN + "/api/assistant/stream", {
     method: "POST",
     headers,
     body: JSON.stringify({ system, messages, tools }),
