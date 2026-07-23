@@ -60,14 +60,34 @@ def normalize_pasted(content: str) -> bytes:
     return df.to_csv(index=False).encode()
 
 
-def create_dataset(db, name: str, file_bytes: bytes, owner_id: str) -> Dataset:
+def _apply_generic_header(file_bytes: bytes) -> bytes:
+    """No-header upload: parse the file with ``header=None``, name the columns
+    ``col 1``, ``col 2``, … and re-serialise, so the first row (which would
+    otherwise be consumed as column names) is kept as data."""
+    import io
+
+    try:
+        df = pd.read_csv(io.BytesIO(file_bytes), header=None)
+    except Exception as exc:  # pragma: no cover - pandas raises many types
+        raise FitError(f"Could not parse the file as CSV: {exc}") from exc
+    if df.empty or df.shape[1] == 0:
+        raise FitError("The uploaded CSV is empty.")
+    df.columns = [f"col {i + 1}" for i in range(df.shape[1])]
+    return df.to_csv(index=False).encode()
+
+
+def create_dataset(db, name: str, file_bytes: bytes, owner_id: str, no_header: bool = False) -> Dataset:
     """Persist a CSV (content-addressed) and return the Dataset.
 
     Datasets are de-duplicated by checksum *per owner* so saving several models
     from the same upload reuses one dataset, while different users keep their
-    own isolated copies.
+    own isolated copies. ``no_header`` treats the file as having no header row:
+    generic ``col N`` names are added so the first data row isn't lost.
     """
     from backend import config
+
+    if no_header:
+        file_bytes = _apply_generic_header(file_bytes)
 
     if len(file_bytes) > config.MAX_UPLOAD_BYTES:
         mb = config.MAX_UPLOAD_BYTES / (1024 * 1024)

@@ -2915,6 +2915,23 @@ button.secondary:hover:not(:disabled) {
 .ds-choice-h { font-size: 15px; font-weight: 600; }
 .ds-choice-b { font-size: 13px; color: var(--muted); }
 
+/* "No header row" toggle on the upload / paste steps. */
+.ds-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ds-check input { margin-top: 0.15rem; flex-shrink: 0; }
+.ds-check code {
+  font-size: 0.8rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--panel-2, rgba(127, 127, 127, 0.12));
+}
+
 /* Structured entry: one comma-separated value list per field (badge + input). */
 .ds-form { display: flex; flex-direction: column; gap: 0.5rem; }
 .ds-pair { display: flex; gap: 0.5rem; }

@@ -57,6 +57,7 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   const [step, setStep] = useState("choose"); // choose | upload | enter
   const [enterMode, setEnterMode] = useState("paste"); // paste | form
   const [name, setName] = useState("");
+  const [noHeader, setNoHeader] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const fileRef = useRef(null);
@@ -77,7 +78,7 @@ export default function NewDatasetModal({ onClose, onCreated }) {
     if (!file) return;
     setBusy(true); setError(null);
     try {
-      const ds = await uploadDataset(file, name.trim() || undefined);
+      const ds = await uploadDataset(file, name.trim() || undefined, noHeader);
       onCreated(ds);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -86,7 +87,7 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   const pasteValid = name.trim() && preview && preview.nCols > 1;
   const onPaste = async () => {
     setBusy(true); setError(null);
-    try { onCreated(await pasteDataset(name.trim(), text)); }
+    try { onCreated(await pasteDataset(name.trim(), text, noHeader)); }
     catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
@@ -184,6 +185,10 @@ export default function NewDatasetModal({ onClose, onCreated }) {
             <span className="dz-big">{busy ? "Reading…" : <>Drop a CSV here or <strong>click to browse</strong></>}</span>
             <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={(e) => onFile(e.target.files?.[0])} />
           </div>
+          <label className="ds-check">
+            <input type="checkbox" checked={noHeader} onChange={(e) => setNoHeader(e.target.checked)} />
+            <span>No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, …</span>
+          </label>
           {error && <div className="error">{error}</div>}
         </div>
       )}
@@ -215,6 +220,10 @@ export default function NewDatasetModal({ onClose, onCreated }) {
                   {preview.nCols === 1 && <p className="hint">Only one column detected — separate columns with commas or tabs.</p>}
                 </div>
               ) : text.trim() ? <p className="hint">Add a header row and at least one data row.</p> : null}
+              <label className="ds-check">
+                <input type="checkbox" checked={noHeader} onChange={(e) => setNoHeader(e.target.checked)} />
+                <span>No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, …</span>
+              </label>
             </>
           ) : (
             <div className="ds-form">

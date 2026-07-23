@@ -121,6 +121,7 @@ def list_datasets(session=Depends(get_session), ctx: AccessCtx = Depends(get_acc
 async def upload_dataset(
     file: UploadFile = File(...),
     name: str | None = Form(default=None),
+    no_header: bool = Form(default=False),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -134,7 +135,8 @@ async def upload_dataset(
             return denied
     try:
         dataset = datasets_service.create_dataset(
-            session, name or file.filename or "dataset.csv", contents, ctx.write_owner
+            session, name or file.filename or "dataset.csv", contents, ctx.write_owner,
+            no_header=no_header,
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
@@ -150,6 +152,7 @@ async def upload_dataset(
 def paste_dataset(
     name: str = Body(default=""),
     content: str = Body(default=""),
+    no_header: bool = Body(default=False),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -167,7 +170,8 @@ def paste_dataset(
             return denied
     try:
         dataset = datasets_service.create_dataset(
-            session, (name or "").strip() or "Pasted data", csv_bytes, ctx.write_owner
+            session, (name or "").strip() or "Pasted data", csv_bytes, ctx.write_owner,
+            no_header=no_header,
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})

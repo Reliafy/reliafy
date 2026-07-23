@@ -312,21 +312,22 @@ export function getDataset(id) {
 }
 
 // Upload a CSV as a standalone dataset (deduped by content on the server).
-export function uploadDataset(file, name) {
+export function uploadDataset(file, name, noHeader = false) {
   const form = new FormData();
   form.append("file", file);
   if (name) form.append("name", name);
+  if (noHeader) form.append("no_header", "true");
   return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
 }
 
 // Create a dataset from pasted tabular text (CSV or TSV; delimiter sniffed
 // server-side). Used by the paste-data form and the assistant.
-export function pasteDataset(name, content) {
+export function pasteDataset(name, content, noHeader = false) {
   return withEvent(
     request("/api/datasets/paste", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name || "", content: content || "" }),
+      body: JSON.stringify({ name: name || "", content: content || "", no_header: !!noHeader }),
     }),
     "dataset_upload"
   );

@@ -54,6 +54,18 @@ def test_dataset_dedup_by_checksum(session):
     assert d1.n_rows == 120
 
 
+def test_no_header_upload_keeps_first_row(session):
+    from backend.services import datasets as ds
+
+    # No header — first row (10, 20) must survive as data, not become names.
+    csv = b"10,20\n30,40\n50,60\n"
+    d = ds.create_dataset(session, "raw.csv", csv, OWNER, no_header=True)
+    assert [c["name"] for c in d.columns] == ["col 1", "col 2"]
+    assert d.n_rows == 3
+    df = ds.load_dataframe(d)
+    assert list(df["col 1"]) == [10, 30, 50]
+
+
 def test_save_list_reopen_distribution(session):
     from backend.services import datasets as ds
     from backend.services import models as ms
