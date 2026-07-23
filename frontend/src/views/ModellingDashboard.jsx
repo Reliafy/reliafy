@@ -1,7 +1,7 @@
 import DashboardSection from "../components/DashboardSection.jsx";
 import GettingStarted from "../components/GettingStarted.jsx";
 import { useModels } from "../useModels.js";
-import { WaveIcon, PlusIcon, CompareIcon, DegradeIcon, RecurrentIcon } from "../components/icons.jsx";
+import { WaveIcon, PlusIcon, CompareIcon, DegradeIcon, RecurrentIcon, AltIcon } from "../components/icons.jsx";
 
 export default function ModellingDashboard() {
   const { models, loading } = useModels();
@@ -45,6 +45,13 @@ export default function ModellingDashboard() {
       icon: <RecurrentIcon />,
       title: "Recurrent events",
       body: "Repairable systems — fit an MCF and Crow-AMSAA growth model to a fleet's failure history. Is it improving or worsening?",
+      cta: "Open",
+    },
+    {
+      to: "/modelling/alt",
+      icon: <AltIcon />,
+      title: "Accelerated life (ALT)",
+      body: "Fit failure data from elevated-stress tests (temperature, voltage, load), then extrapolate to use level and read the acceleration factor.",
       cta: "Open",
     },
     {

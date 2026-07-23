@@ -18,4 +18,5 @@ export const DegradeIcon = () => svg(<><path d="M4 5c2 6 4 9 7 11s6 2.5 9 2.5" /
 // repeated failures accumulating over time, with an event tick at each step up.
 export const RecurrentIcon = () => svg(<><path d="M3 21h18" strokeDasharray="2 3" /><path d="M4 19h3v-3h3v-3h3v-3h3v-3h3" /><circle cx="7" cy="16" r="1.15" fill="currentColor" stroke="none" /><circle cx="13" cy="10" r="1.15" fill="currentColor" stroke="none" /><circle cx="19" cy="7" r="1.15" fill="currentColor" stroke="none" /></>);
 export const RcmIcon = () => svg(<><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1" /><path d="m8.5 12 2 2 4-4.5" /></>);
+export const AltIcon = () => svg(<><path d="M4 20h16" /><path d="M4 20c3-2 5-11 8-11s5 6 8-1" /><path d="M18 4v4M16 6h4" strokeWidth="1.5" /></>);
 export const UploadIcon = () => svg(<><path d="M12 16V4m0 0 4 4m-4-4-4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></>);

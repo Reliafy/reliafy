@@ -111,6 +111,7 @@ const ITEMS = [
       { to: "/modelling/models", label: "Saved" },
       { to: "/modelling/life", label: "Life data" },
       { to: "/modelling/recurrent", label: "Recurrent" },
+      { to: "/modelling/alt", label: "Accelerated life" },
       { to: "/modelling/degradation", label: "Degradation" },
     ],
   },

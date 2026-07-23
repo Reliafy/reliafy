@@ -619,6 +619,66 @@ export function predictRecurrent(id, horizon) {
   });
 }
 
+// ---- Accelerated Life Testing (ALT) ----------------------------------------
+export function getAltOptions() {
+  return request("/api/alt/options");
+}
+
+function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, unit, name } = {}) {
+  const form = new FormData();
+  if (name) form.append("name", name);
+  if (datasetId) form.append("dataset_id", datasetId);
+  else if (file) form.append("file", file);
+  form.append("x", mapping.x);
+  ["c", "n"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
+  // stress = [{col,label}, …]; s1 required, s2 optional.
+  if (stress[0]) { form.append("s1", stress[0].col); if (stress[0].label) form.append("s1_label", stress[0].label); }
+  if (stress[1]) { form.append("s2", stress[1].col); if (stress[1].label) form.append("s2_label", stress[1].label); }
+  if (distribution) form.append("distribution", distribution);
+  if (lifeModel) form.append("life_model", lifeModel);
+  if (unit) form.append("unit", unit);
+  return form;
+}
+
+export function fitAlt(file, opts) {
+  return request("/api/alt/fit", { method: "POST", body: altForm(file, opts) });
+}
+
+export function saveAltModel(name, file, opts) {
+  return withEvent(
+    request("/api/alt/models", { method: "POST", body: altForm(file, { ...opts, name }) }),
+    "alt_save"
+  );
+}
+
+export function listAltModels() {
+  return request("/api/alt/models");
+}
+
+export function getAltModel(id) {
+  return request(`/api/alt/models/${id}`);
+}
+
+export function renameAltModel(id, name) {
+  return request(`/api/alt/models/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteAltModel(id) {
+  return request(`/api/alt/models/${id}`, { method: "DELETE" });
+}
+
+export function evaluateAlt(id, useStress, refStress) {
+  return request(`/api/alt/models/${id}/evaluate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ use_stress: useStress, ...(refStress ? { ref_stress: refStress } : {}) }),
+  });
+}
+
 function degradationForm(file, { datasetId, mapping, threshold, path, distribution, populationMethod, unit, measurementUnit, name } = {}) {
   const form = new FormData();
   if (name) form.append("name", name);
