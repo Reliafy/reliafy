@@ -6,12 +6,12 @@ numpy
 # SurPyval from git: the PyPI releases are stale and miss the proportional-
 # hazards / AFT / PO / AH classes, the discrete distributions, and more. Pinned
 # to a commit SHA so builds are reproducible. (Requires git at build time.)
-git+https://github.com/derrynknife/SurPyval.git@3c80d5a0de17288938ec0ad5c2a220b81d0c8c51
-# RePyability is installed --no-deps in the Dockerfile: its published metadata
-# pins surpyval>=0.13,<0.14, but surpyval's version jumped 0.12.0 -> 0.14.0 with
-# no 0.13.x, so no surpyval satisfies it — while the code is fine against our
-# 0.12.0 pin (full suite passes). Its runtime deps (numpy/scipy via surpyval,
-# networkx, tqdm) are provided explicitly here.
+git+https://github.com/derrynknife/SurPyval.git@v0.16.0
+# RePyability is installed --no-deps in the Dockerfile. Its metadata now pins
+# surpyval>=0.16,<0.17 (satisfied by our 0.16.0 git pin), so the old version
+# conflict is gone — but we keep --no-deps so the git-pinned surpyval above stays
+# authoritative and pip never re-resolves it from PyPI. RePyability's runtime deps
+# (numpy/scipy via surpyval, networkx, tqdm) are provided explicitly here.
 # Transitive deps not declared by the above / for the --no-deps repyability:
 joblib
 dd
