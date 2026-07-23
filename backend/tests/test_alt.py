@@ -51,6 +51,15 @@ def test_single_stress_arrhenius_fit_and_extrapolate():
     assert len(payload["life_stress_plot"]["lines"]) == 1
     assert payload["life_stress_plot"]["log_y"] is True
 
+    # Probability plot: one series per tested stress level, each with a fitted
+    # line and (here, uncensored) scatter points.
+    pp = payload["probability_plot"]
+    assert pp is not None and pp["distribution"] == "Weibull"
+    assert len(pp["series"]) == 3
+    for s in pp["series"]:
+        assert s["line"]["x"] and s["scatter"]["x"]
+    assert pp["y_ticks"]["labels"][0].endswith("%")
+
     # Extrapolate below the tested stresses.
     ev = alt.evaluate(alt.get_live(cid), [300.0], "arrhenius", ref_stress=[360.0])
     json.dumps(ev)

@@ -331,6 +331,9 @@ def _build_payload(
         "coefficients": coeffs,
         "levels": levels,
         "life_stress_plot": _life_stress_plot(model, Z, uniq, life_at_uniq, entry, labels),
+        "probability_plot": _probability_plot(
+            model, dist_of(distribution_id), inputs, k_dist, uniq, life_at_uniq, labels
+        ),
         "gof": _gof(model),
         "functions": {"evaluate_path": None},  # filled by the service with the model id
     }
@@ -397,6 +400,151 @@ def _life_stress_plot(model, Z, uniq, life_at_uniq, entry, labels) -> dict:
         "points": points,
         "secondary_label": labels[1] if Z.shape[1] > 1 else None,
     }
+
+
+_EPS = 1e-6
+
+
+def _stress_label(row, labels) -> str:
+    """A short legend label for a stress row: value for one stress, joined for two."""
+    if len(row) == 1:
+        return _num(float(row[0]))
+    return " · ".join(f"{labels[j]}={_num(float(v))}" for j, v in enumerate(row))
+
+
+def _num(v: float) -> str:
+    return f"{v:g}"
+
+
+def _probability_plot(model, dist, inputs, k_dist, uniq, life_at_uniq, labels) -> dict | None:
+    """Per-stress-level probability plot on the distribution's own paper.
+
+    For each tested stress level: the failure points (empirical plotting
+    positions) as a scatter, and the model's fitted CDF for that level as a
+    line — all linearised with the distribution's ``mpp`` transforms, so a good
+    fit at every level plots as parallel straight lines (common shape) and the
+    data hugging them confirms the fit. Returns ``None`` if the distribution has
+    no probability paper.
+    """
+    if not (hasattr(dist, "mpp_x_transform") and hasattr(dist, "mpp_y_transform")):
+        return None
+    x, Z = inputs["x"], inputs["Z"]
+    c = inputs.get("c")
+    n = inputs.get("n")
+    shape = [float(v) for v in np.asarray(model.params, dtype=float)[1:k_dist]]
+
+    def tx(vals):
+        return np.asarray(dist.mpp_x_transform(np.asarray(vals, dtype=float)), dtype=float)
+
+    def ty(p):
+        p = np.clip(np.asarray(p, dtype=float), _EPS, 1 - _EPS)
+        return np.asarray(dist.mpp_y_transform(p, *shape), dtype=float)
+
+    series = []
+    all_x, all_t = [], []
+    for row, life in zip(uniq, life_at_uniq):
+        if not np.isfinite(life) or life <= 0:
+            continue
+        mask = np.all(np.isclose(Z, row, rtol=0, atol=0), axis=1)
+        xs = x[mask]
+        if xs.size == 0:
+            continue
+        cs = c[mask] if c is not None else None
+        ns = n[mask] if n is not None else None
+
+        # Empirical plotting positions from a quick per-level fit of the base
+        # distribution (positions are the data's median ranks — the line we draw
+        # is the ALT model's, not this throwaway fit).
+        scatter = None
+        try:
+            fit_kwargs = {"x": xs}
+            if cs is not None:
+                fit_kwargs["c"] = cs
+            if ns is not None:
+                fit_kwargs["n"] = ns
+            pdata = dist.fit(**fit_kwargs).get_plot_data()
+            sx = np.asarray(pdata["x_"], dtype=float)
+            sF = np.asarray(pdata["F"], dtype=float)
+            keep = np.isfinite(sx) & (sx > 0) & np.isfinite(sF)
+            if keep.any():
+                scatter = {"x": tx(sx[keep]).tolist(), "y": ty(sF[keep]).tolist()}
+                all_t.extend(sx[keep].tolist())
+        except Exception:  # noqa: BLE001 - a level may be too small / all-censored
+            scatter = None
+
+        # Fitted line for this level: the base distribution at (characteristic
+        # life, shape) evaluated over the level's time range.
+        lv = dist.from_params([float(life), *shape])
+        obs = xs[np.isfinite(xs) & (xs > 0)]
+        lo = float(obs.min()) * 0.6 if obs.size else float(life) * 0.1
+        hi = float(obs.max()) * 1.4 if obs.size else float(life) * 2.0
+        grid = np.linspace(max(lo, _EPS), hi, 80)
+        with np.errstate(all="ignore"):
+            cdf = np.asarray(lv.ff(grid), dtype=float)
+        lk = np.isfinite(cdf) & (cdf > _EPS) & (cdf < 1 - _EPS)
+        line = {"x": tx(grid[lk]).tolist(), "y": ty(cdf[lk]).tolist()}
+        all_t.extend(grid[lk].tolist())
+
+        series.append({
+            "label": _stress_label(row, labels),
+            "stress": [float(v) for v in row],
+            "scatter": scatter,
+            "line": line,
+        })
+        all_x.extend(line["x"])
+
+    if not series:
+        return None
+
+    # Axis ticks: real times on the (transformed) x-axis, standard probability
+    # levels on the y-axis.
+    t_arr = np.asarray(all_t, dtype=float)
+    x_ticks = _time_ticks(dist, t_arr, tx)
+    probs = [0.01, 0.05, 0.1, 0.25, 0.5, 0.9, 0.99]
+    y_ticks = {
+        "vals": ty(np.asarray(probs)).tolist(),
+        "labels": [f"{int(p * 100)}%" if p * 100 >= 1 else f"{p * 100:g}%" for p in probs],
+    }
+    return {
+        "distribution": _dist_name(dist),
+        "series": series,
+        "x_ticks": x_ticks,
+        "y_ticks": y_ticks,
+    }
+
+
+def _dist_name(dist) -> str:
+    for entry in DISTRIBUTIONS.values():
+        if entry["dist"] is dist:
+            return entry["name"]
+    return getattr(dist, "name", "")
+
+
+def _time_ticks(dist, times: np.ndarray, tx) -> dict:
+    """Nice real-time ticks placed on the transformed x-axis. Uses decades when
+    the x-transform is logarithmic (Weibull/Lognormal/…), else linear ticks."""
+    times = times[np.isfinite(times) & (times > 0)]
+    if times.size == 0:
+        return {"vals": [], "labels": []}
+    lo, hi = float(times.min()), float(times.max())
+    # Detect a log-like transform: ln stretches [1,10] by ~2.30.
+    d1 = float(tx(np.array([1.0, 10.0]))[1] - tx(np.array([1.0, 10.0]))[0])
+    log_like = abs(d1 - np.log(10.0)) < 1e-6
+    if log_like:
+        import math
+        e0, e1 = math.floor(math.log10(lo)), math.ceil(math.log10(hi))
+        vals = [10.0 ** e for e in range(e0, e1 + 1)]
+    else:
+        vals = list(np.linspace(lo, hi, 6))
+    vals = [v for v in vals if v > 0]
+    return {"vals": tx(np.asarray(vals)).tolist(), "labels": [_tick_label(v) for v in vals]}
+
+
+def _tick_label(v: float) -> str:
+    """Readable axis label: plain integers with separators up to 1e7, else 1e/sci."""
+    if v >= 1 and v < 1e7 and abs(v - round(v)) < 1e-6:
+        return f"{int(round(v)):,}"
+    return f"{v:g}"
 
 
 def _gof(model) -> list:

@@ -59,8 +59,10 @@ export default function AltResultView({ results, modelId }) {
     showlegend: twoStress,
   };
 
+  const prob = r.probability_plot || null;
   const TABS = [
     { id: "plot", label: "Life–stress" },
+    ...(prob ? [{ id: "prob", label: "Probability plot" }] : []),
     ...(modelId ? [{ id: "calc", label: "Use-level calculator" }] : []),
     { id: "detail", label: "Coefficients & fit" },
   ];
@@ -85,6 +87,8 @@ export default function AltResultView({ results, modelId }) {
           </p>
         </div>
       )}
+
+      {tab === "prob" && prob && <ProbabilityPanel prob={prob} unit={r.unit} twoStress={twoStress} />}
 
       {tab === "calc" && modelId && (
         <AltCalculator modelId={modelId} results={r} />
@@ -134,6 +138,61 @@ export default function AltResultView({ results, modelId }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Per-stress-level probability plot: each level's failure points on the
+// distribution's probability paper, with its fitted CDF line. Data is already
+// linearised server-side, so the axes are plain — a good fit shows parallel
+// straight lines (common shape) with the points hugging them.
+function ProbabilityPanel({ prob, unit, twoStress }) {
+  const traces = [];
+  (prob.series || []).forEach((s, i) => {
+    const color = SERIES[i % SERIES.length];
+    if (s.line) {
+      traces.push({
+        x: s.line.x, y: s.line.y, mode: "lines", type: "scatter",
+        line: { color, width: 2 }, name: s.label, legendgroup: `p${i}`,
+      });
+    }
+    if (s.scatter) {
+      traces.push({
+        x: s.scatter.x, y: s.scatter.y, mode: "markers", type: "scatter",
+        marker: { color, size: 6, line: { color: "#fff", width: 0.5 } },
+        name: s.label, legendgroup: `p${i}`, showlegend: !s.line,
+        hovertemplate: `${s.label}<extra></extra>`,
+      });
+    }
+  });
+
+  const layout = {
+    autosize: true, height: 440,
+    margin: { l: 62, r: 20, t: 20, b: 50 },
+    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
+    xaxis: {
+      title: unit ? `Time (${unit})` : "Time",
+      tickvals: prob.x_ticks?.vals, ticktext: prob.x_ticks?.labels,
+      gridcolor: "#eef1f5", zeroline: false,
+    },
+    yaxis: {
+      title: "Unreliability, F(t)",
+      tickvals: prob.y_ticks?.vals, ticktext: prob.y_ticks?.labels,
+      gridcolor: "#eef1f5", zeroline: false,
+    },
+    legend: { orientation: "h", y: -0.16 },
+  };
+
+  return (
+    <div className="alt-plot-wrap">
+      <Plot data={traces} layout={layout} useResizeHandler style={{ width: "100%" }}
+            config={{ displayModeBar: false, responsive: true }} />
+      <p className="muted-line" style={{ margin: 0 }}>
+        Each colour is a tested stress level: points are the observed failures on
+        {" "}{prob.distribution} probability paper, the line is the model's fit for
+        that level. A good fit shows the points tracking parallel straight lines
+        (a shared shape across stresses).
+      </p>
     </div>
   );
 }
