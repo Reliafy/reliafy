@@ -109,6 +109,27 @@ class RecurrentModelDoc(BaseModel):
     error: Optional[str] = None
 
 
+class AltModelDoc(BaseModel):
+    """A saved Accelerated Life Testing model: the fit recipe (dataset + time /
+    stress column mapping + distribution + life-stress relationship) plus cached
+    results. The live SurPyval object is serialised for rehydration without a
+    re-fit; ``spec`` holds the mapping, stress columns/labels, and model ids."""
+
+    id: str
+    name: str
+    owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+    dataset_id: str = ""
+    spec: dict = Field(default_factory=dict)
+    results: dict = Field(default_factory=dict)
+    serialized: Optional[dict] = None  # persisted fit; rehydrated w/o refit
+    surpyval_version: Optional[str] = None
+    status: str = "ready"
+    error: Optional[str] = None
+
+
 class RcmStudy(BaseModel):
     """A Reliability Centred Maintenance study: an embedded worksheet tree
     (Function → Functional Failure → Failure Mode) where each failure mode can
