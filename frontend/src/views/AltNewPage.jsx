@@ -212,16 +212,16 @@ export default function AltNewPage() {
         {step === 2 && (
           <div className="fit-step">
             <div className="alt-model-pick">
-              <label className="dist-field" style={{ width: 260 }}>
+              <div className="dist-field" style={{ width: 260 }}>
                 <span className="dist-label">Life distribution</span>
                 <Select value={distribution} onChange={setDistribution}
                         options={dists.map((d) => ({ value: d.id, label: d.name }))} />
-              </label>
-              <label className="dist-field" style={{ width: 320 }}>
+              </div>
+              <div className="dist-field" style={{ width: 320 }}>
                 <span className="dist-label">Life-stress relationship</span>
                 <Select value={lifeModel} onChange={setLifeModel}
                         options={lifeModels.map((m) => ({ value: m.id, label: `${m.name} · ${m.n_stress} stress${m.n_stress > 1 ? "es" : ""}` }))} />
-              </label>
+              </div>
             </div>
             {lm?.desc && <p className="muted-line" style={{ margin: 0 }}>{lm.desc}</p>}
             <p className="muted-line" style={{ margin: 0 }}>
@@ -235,10 +235,10 @@ export default function AltNewPage() {
             <p className="muted-line">{sourceName} · {csv.n_rows} rows · {csv.columns.length} columns</p>
             <PreviewTable columns={csv.columns} rows={csv.preview} />
             <div className="alt-map">
-              <label className="alt-map-row">
+              <div className="alt-map-row">
                 <span className="alt-map-k">Failure time (x)</span>
                 <Select value={map.x} onChange={(v) => setMap((m) => ({ ...m, x: v }))} options={colOpts} placeholder="column…" />
-              </label>
+              </div>
               {stress.slice(0, nStress).map((s, j) => (
                 <div className="alt-map-row" key={j}>
                   <span className="alt-map-k">Stress {nStress > 1 ? j + 1 : ""}</span>
@@ -247,16 +247,16 @@ export default function AltNewPage() {
                          value={s.label} onChange={(e) => setStressAt(j, { label: e.target.value })} />
                 </div>
               ))}
-              <label className="alt-map-row">
+              <div className="alt-map-row">
                 <span className="alt-map-k">Censor flag (c) <span className="muted">optional</span></span>
                 <Select value={map.c} onChange={(v) => setMap((m) => ({ ...m, c: v }))}
                         options={[{ value: "", label: "— none —" }, ...colOpts]} />
-              </label>
-              <label className="alt-map-row">
+              </div>
+              <div className="alt-map-row">
                 <span className="alt-map-k">Count (n) <span className="muted">optional</span></span>
                 <Select value={map.n} onChange={(v) => setMap((m) => ({ ...m, n: v }))}
                         options={[{ value: "", label: "— none —" }, ...colOpts]} />
-              </label>
+              </div>
               <label className="alt-map-row">
                 <span className="alt-map-k">Time unit <span className="muted">optional</span></span>
                 <input className="alt-map-label" type="text" placeholder="e.g. hours"
