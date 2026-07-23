@@ -17,12 +17,15 @@ app runs with zero external dependencies).
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import Depends, Header, HTTPException
 
 from backend import config
 from backend.db import get_session
+
+logger = logging.getLogger(__name__)
 
 _initialized = False
 
@@ -96,6 +99,14 @@ def upsert_user(db, user: dict) -> dict:
         from backend.services import metrics as metrics_service
 
         metrics_service.record_event(db, name="signup", path="/login")
+        # Notify the operators (ADMIN_EMAILS) that a new account signed up.
+        # Non-blocking (daemon thread) and never allowed to break login.
+        try:
+            from backend.services import email as email_service
+
+            email_service.new_signup(email, user.get("name"))
+        except Exception:  # noqa: BLE001 - notification must not fail signup
+            logger.exception("new-signup notification failed")
     return user
 
 
