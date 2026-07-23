@@ -1,11 +1,10 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
 import DashboardSection from "../components/DashboardSection.jsx";
+import GettingStarted from "../components/GettingStarted.jsx";
 import { useModels } from "../useModels.js";
 import { WaveIcon, PlusIcon, CompareIcon, DegradeIcon, RecurrentIcon } from "../components/icons.jsx";
 
 export default function ModellingDashboard() {
-  const { models } = useModels();
+  const { models, loading } = useModels();
   // Stats reflect the user's own work — shared samples would inflate them.
   const own = models.filter((m) => !m.is_sample);
   const observations = own.reduce((s, m) => s + (m.n || 0), 0);
@@ -64,38 +63,9 @@ export default function ModellingDashboard() {
     },
   ];
 
-  const [showIntro, setShowIntro] = useState(
-    () => localStorage.getItem("reliafy_intro_dismissed") !== "1"
-  );
-  const dismissIntro = () => {
-    localStorage.setItem("reliafy_intro_dismissed", "1");
-    setShowIntro(false);
-  };
-
   return (
     <>
-      {showIntro && (
-        <div className="intro-card">
-          <div className="intro-head">
-            <h3>New here? Three steps with the sample data</h3>
-            <button className="modal-close" onClick={dismissIntro} aria-label="Dismiss">×</button>
-          </div>
-          <ol className="intro-steps">
-            <li>
-              <Link to="/modelling/m/sample-model-bearings-weibull">Open the bearing Weibull</Link>{" "}
-              — a fitted life model with confidence bounds and a randomness verdict.
-            </li>
-            <li>
-              <Link to="/strategy/replacement">Find its optimal replacement interval</Link>{" "}
-              — pick “Saved model”, choose the bearing, add costs.
-            </li>
-            <li>
-              <Link to="/rcm/studies/sample-rcm-truck">See the RCM demo study</Link>{" "}
-              — every decision linked to evidence, one deliberately contradicted.
-            </li>
-          </ol>
-        </div>
-      )}
+      <GettingStarted own={own} loading={loading} />
       <DashboardSection
       crumb={<>Modelling / <b>Overview</b></>}
       title="Modelling"

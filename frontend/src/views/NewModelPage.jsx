@@ -9,9 +9,15 @@ import PerDemandPanel from "../components/PerDemandPanel.jsx";
 // a parameters option, and a button on the fit-to-data source step.
 export default function NewModelPage() {
   const navigate = useNavigate();
-  const initialMode = new URLSearchParams(useLocation().search).get("mode");
+  const query = new URLSearchParams(useLocation().search);
+  const initialMode = query.get("mode");
+  // Guided first-run deep link: ?dataset=<id>&auto=1 jumps straight into the
+  // fit flow pre-loaded with a dataset (used by the activation panel).
+  const initialDatasetId = query.get("dataset") || null;
+  const autoFit = query.get("auto") === "1";
   const [mode, setMode] = useState(
-    ["data", "params", "perdemand"].includes(initialMode) ? initialMode : null
+    initialDatasetId ? "data"
+    : ["data", "params", "perdemand"].includes(initialMode) ? initialMode : null
   ); // null | "data" | "params" | "perdemand"
 
   const openModel = (model) => navigate(`/modelling/m/${model.id}`);
@@ -68,6 +74,8 @@ export default function NewModelPage() {
           onSaved={openModel}
           onCancel={() => setMode(null)}
           onPerDemand={() => setMode("perdemand")}
+          initialDatasetId={initialDatasetId}
+          autoFit={autoFit}
         />
       )}
 

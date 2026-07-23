@@ -5563,18 +5563,59 @@ button.danger:hover { background: #fdeeee; }
 .cell-input::placeholder { color: var(--faint); font-size: 12px; }
 
 /* First-run intro card (Modelling dashboard) */
-.intro-card {
+/* Guided first-run / activation (GettingStarted.jsx) */
+.gs-hero {
   max-width: 1120px;
-  margin: 0 0 4px;
+  margin: 0 0 18px;
+  border: 1px solid #cfdeed;
+  background: #eef3f9;
+  border-radius: 14px;
+  padding: 22px 24px;
+}
+.gs-hero-head h2 { margin: 0 0 4px; font-size: 20px; }
+.gs-hero-head p { margin: 0 0 16px; font-size: 13.5px; color: var(--muted); max-width: 64ch; }
+.gs-choose { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .gs-choose { grid-template-columns: 1fr; } }
+.gs-choice { background: #fff; position: relative; }
+.gs-choice-ic {
+  display: inline-flex; width: 30px; height: 30px; margin-bottom: 6px;
+  align-items: center; justify-content: center; color: var(--acc);
+}
+.gs-choice-ic svg { width: 22px; height: 22px; }
+.gs-rec {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--acc); background: rgba(47, 109, 246, 0.1);
+  border-radius: 999px; padding: 2px 8px; margin-left: 8px; vertical-align: middle;
+}
+
+.gs-check {
+  max-width: 1120px;
+  margin: 0 0 14px;
   border: 1px solid #cfdeed;
   background: #eef3f9;
   border-radius: 12px;
-  padding: 16px 20px;
+  padding: 14px 18px;
 }
-.intro-head { display: flex; align-items: center; justify-content: space-between; }
-.intro-head h3 { margin: 0; font-size: 15px; }
-.intro-steps { margin: 8px 0 2px; padding-left: 20px; font-size: 13.5px; line-height: 1.9; color: var(--muted); }
-.intro-steps a { color: var(--acc); }
+.gs-check-head { display: flex; align-items: center; justify-content: space-between; }
+.gs-check-head h3 { margin: 0; font-size: 14.5px; }
+.gs-steps { list-style: none; margin: 8px 0 12px; padding: 0; }
+.gs-steps li { display: flex; align-items: center; gap: 9px; font-size: 13.5px; padding: 3px 0; color: var(--text); }
+.gs-steps li.done { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(0,0,0,0.25); }
+.gs-tick {
+  flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+  border: 1.5px solid #b9cbe0; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff;
+}
+.gs-steps li.done .gs-tick { background: var(--acc); border-color: var(--acc); }
+.gs-check-cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.btn-like {
+  background: var(--acc); color: #fff; border-radius: 9px; padding: 9px 15px;
+  font-size: 13px; font-weight: 600; text-decoration: none;
+  box-shadow: 0 1px 2px rgba(47, 109, 246, 0.25);
+}
+.btn-like:hover { opacity: 0.92; }
+.gs-secondary { font-size: 13px; color: var(--acc); text-decoration: none; }
+.gs-secondary:hover { text-decoration: underline; }
 
 /* Inline link-styled button (compare demo) */
 .link-btn {

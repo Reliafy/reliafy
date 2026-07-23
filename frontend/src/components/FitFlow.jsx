@@ -20,7 +20,7 @@ const STEPS = ["Source", "Data", "Model", "Result"];
 // (+ unit, covariates), (3) pick a model and fit, (4) review the fit, name it,
 // and save — with Back to change anything and re-fit before saving. Calls
 // ``onSaved`` with the saved model; ``onCancel`` backs out to the list.
-export default function FitFlow({ onSaved, onCancel, onPerDemand }) {
+export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDatasetId, autoFit }) {
   const [step, setStep] = useState(1);
   const [file, setFile] = useState(null);
   const [datasetId, setDatasetId] = useState(null);
@@ -122,6 +122,45 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand }) {
       setLoading(false);
     }
   };
+
+  // Guided first-run: when handed a dataset id (e.g. the bearings sample), skip
+  // the source step. Load its columns and jump to Data; with autoFit, fit a
+  // Weibull straight away and land on the Result so a new user sees a finished
+  // model — β verdict, curve, calculator — one save away from activation.
+  const booted = useRef(false);
+  useEffect(() => {
+    if (!initialDatasetId || booted.current) return;
+    booted.current = true;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const full = await getDataset(initialDatasetId);
+        const columns = full.preview_columns || [];
+        const map = { ...EMPTY_MAPPING, x: columns[0] || "" };
+        setFile(null);
+        setDatasetId(initialDatasetId);
+        setSourceName(full.name || "dataset");
+        setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows });
+        setMapping(map);
+        setCovariates([]);
+        if (autoFit && map.x) {
+          const res = await fitModel("weibull", null, map, { datasetId: initialDatasetId });
+          setResult(res);
+          setName(`${res.distribution} — ${(full.name || "dataset").replace(/\s*\(sample\)\s*$/i, "")}`);
+          setStep(4);
+        } else {
+          setStep(2);
+        }
+      } catch (err) {
+        setError(err.message);
+        setStep(1);
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDatasetId, autoFit]);
 
   const onDrop = (e) => {
     e.preventDefault();
