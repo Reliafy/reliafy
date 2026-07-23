@@ -47,6 +47,10 @@ class Model(BaseModel):
     distribution_id: str = ""
     spec: dict = Field(default_factory=dict)
     results: dict = Field(default_factory=dict)
+    # Serialised live model (surpyval to_dict + grid/fields) so the calculator /
+    # confidence bounds rehydrate it directly instead of re-fitting on demand.
+    # None for older docs or per-demand models — those fall back to refit.
+    serialized: Optional[dict] = None
 
     surpyval_version: Optional[str] = None
     status: str = "ready"  # 'ready' | 'error'
@@ -79,6 +83,7 @@ class DegradationModelDoc(BaseModel):
     dataset_id: str = ""
     spec: dict = Field(default_factory=dict)
     results: dict = Field(default_factory=dict)
+    serialized: Optional[dict] = None  # persisted fit; rehydrated w/o refit
     surpyval_version: Optional[str] = None
     status: str = "ready"
     error: Optional[str] = None
@@ -98,6 +103,7 @@ class RecurrentModelDoc(BaseModel):
     dataset_id: str = ""
     spec: dict = Field(default_factory=dict)
     results: dict = Field(default_factory=dict)
+    serialized: Optional[dict] = None  # persisted fit; rehydrated w/o refit
     surpyval_version: Optional[str] = None
     status: str = "ready"
     error: Optional[str] = None

@@ -130,3 +130,30 @@ def test_rename_and_delete(session):
     assert ms.get_model(session, model.id, OWNER) is None
     with pytest.raises(ms.ModelNotFound):
         ms.rename_model(session, model.id, "x", OWNER)
+
+
+def test_serialised_fit_rehydrates_without_refit(session, monkeypatch):
+    """A saved plain-distribution model persists its fit and rehydrates it for
+    the calculator / confidence bounds WITHOUT re-fitting from the dataset;
+    regression models are not serialised (they still refit)."""
+    from backend import fitting
+    from backend.services import datasets as dsvc, models as msvc
+
+    csv = b"time,censored\n" + b"\n".join(
+        f"{100 + i * 13},{1 if i % 5 == 0 else 0}".encode() for i in range(40)
+    )
+    ds = dsvc.create_dataset(session, "d", csv, OWNER)
+    m = msvc.save_model(session, "W", ds, "weibull", {"x": "time", "c": "censored"},
+                        None, None, "hours", owner_id=OWNER)
+    assert session.models.find_one({"_id": m.id})["serialized"], "fit should be persisted"
+
+    base = msvc.evaluate(session, m.id, {}, OWNER)["curves"]["sf"][50]
+
+    # Wipe both caches and forbid refitting — the serialised path must serve it.
+    fitting._MODEL_STORE.clear(); msvc._LIVE.clear()
+    monkeypatch.setattr(msvc, "_refit",
+                        lambda *a, **k: pytest.fail("refit called — serialisation path failed"))
+    got = msvc.evaluate(session, m.id, {}, OWNER)["curves"]["sf"][50]
+    assert round(got, 8) == round(base, 8)  # identical to the fresh fit
+    cb = msvc.confidence(session, m.id, {"on": "sf", "alpha_ci": 0.05, "bound": "two-sided"}, OWNER)
+    assert cb.get("lower") and cb.get("upper")

@@ -63,6 +63,12 @@ def save_model(
     # "Best fit" resolves to a concrete winner at fit time: persist that, so
     # the saved model (and its refit-on-demand spec) is stable forever.
     resolved_id = result.get("distribution_id", distribution_id)
+    # Persist the fitted model itself so the calculator/confidence bounds
+    # rehydrate it directly instead of re-fitting from the dataset on demand.
+    # Skip regression models: surpyval's from_dict doesn't restore the formula /
+    # design-matrix transformer, so those still refit on demand (#59 follow-up).
+    fcache = (result.get("functions") or {}).get("model_id")
+    serialized = fitting.serialize_live(fcache) if (fcache and result.get("kind") != "regression") else None
 
     model = Model(
         id=uuid.uuid4().hex,
@@ -80,6 +86,7 @@ def save_model(
             "options": result.get("options") or None,
         },
         results=result,
+        serialized=serialized,
         surpyval_version=getattr(surpyval, "__version__", None),
         status="ready",
     )
@@ -248,6 +255,8 @@ def update_fit(
         "options": result.get("options") or None,
     }
     model.updated_at = datetime.now(timezone.utc)
+    fcache = (result.get("functions") or {}).get("model_id")
+    model.serialized = fitting.serialize_live(fcache) if (fcache and result.get("kind") != "regression") else None
     db.models.update_one(
         {"_id": model_id, "owner_id": owner_id},
         {"$set": {
@@ -255,6 +264,7 @@ def update_fit(
             "kind": model.kind,
             "distribution_id": resolved_id,
             "spec": model.spec,
+            "serialized": model.serialized,
             "surpyval_version": getattr(surpyval, "__version__", None),
             "updated_at": model.updated_at,
         }},
@@ -313,7 +323,16 @@ def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
 
     cache_id = _LIVE.get(model_id)
     if cache_id is None or cache_id not in fitting._MODEL_STORE:
-        cache_id = _refit(model)
+        # Prefer rehydrating the persisted fit; only re-fit from the dataset if
+        # there's no serialised model (older docs / per-demand) or it won't load.
+        cache_id = None
+        if model.serialized:
+            try:
+                cache_id = fitting.restore_live(model.serialized)
+            except Exception:  # noqa: BLE001 - fall back to a fresh fit
+                cache_id = None
+        if cache_id is None:
+            cache_id = _refit(model)
         _LIVE[model_id] = cache_id
         while len(_LIVE) > _LIVE_MAX:
             _LIVE.popitem(last=False)

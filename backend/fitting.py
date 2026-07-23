@@ -166,6 +166,39 @@ def _store_model(model, grid: np.ndarray, fields: list) -> str:
     return model_id
 
 
+def serialize_live(cache_id: str) -> dict | None:
+    """Serialise a stored live model (surpyval ``to_dict``) plus its evaluation
+    grid and covariate fields, so it can be persisted in Mongo and rehydrated
+    without re-fitting from the dataset. Returns ``None`` when there's nothing
+    serialisable (e.g. a per-demand result has no surpyval model). Never raises —
+    a failed serialisation just falls back to refit-on-demand."""
+    entry = _MODEL_STORE.get(cache_id)
+    if not entry:
+        return None
+    model = entry.get("model")
+    if model is None or not hasattr(model, "to_dict"):
+        return None
+    try:
+        return {
+            "model": model.to_dict(),  # BSON-safe per surpyval 0.15+
+            "grid": np.asarray(entry.get("grid"), dtype=float).tolist(),
+            "fields": entry.get("fields") or [],
+        }
+    except Exception:  # noqa: BLE001 - never block a save on serialisation
+        return None
+
+
+def restore_live(serialized: dict) -> str:
+    """Rehydrate a serialised model (from :func:`serialize_live`) into the live
+    store; returns a fresh cache id. Raises on a bad payload — callers fall back
+    to refit-on-demand."""
+    import surpyval
+
+    model = surpyval.from_dict(serialized["model"])
+    grid = np.asarray(serialized.get("grid") or [], dtype=float)
+    return _store_model(model, grid, serialized.get("fields") or [])
+
+
 class FitError(ValueError):
     """Raised when the uploaded data cannot be turned into a fitted model."""
 

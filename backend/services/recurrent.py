@@ -56,6 +56,7 @@ def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> RecurrentMo
         dataset_id=dataset.id,
         spec=spec,
         results=payload,
+        serialized=recurrent_fit.serialize_live(cache_id),
         surpyval_version=getattr(surpyval, "__version__", None),
         status="ready",
     )
@@ -80,6 +81,7 @@ def save_from_params(db, name: str, model_id: str, params: list, horizon, unit: 
             "unit": (unit or "").strip(),
         },
         results=payload,
+        serialized=recurrent_fit.serialize_live(cache_id),
         surpyval_version=getattr(surpyval, "__version__", None),
         status="ready",
     )
@@ -137,6 +139,15 @@ def get_live_model(db, model_id: str, owner_id):
     cache_id = _LIVE.get(model_id)
     live = recurrent_fit.get_live(cache_id) if cache_id else None
     if live is None:
+        # Prefer rehydrating the persisted fit; only re-fit if there's no
+        # serialised model (older docs) or it fails to load.
+        if doc.serialized:
+            try:
+                cid = recurrent_fit.restore_live(doc.serialized)
+                _remember_live(doc.id, cid)
+                return recurrent_fit.get_live(cid)
+            except Exception:  # noqa: BLE001 - fall back to a fresh fit
+                pass
         live = _refit(db, doc)
     return live
 

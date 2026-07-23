@@ -72,6 +72,7 @@ def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> Degradation
         dataset_id=dataset.id,
         spec=spec,
         results=payload,
+        serialized=degradation_fit.serialize_live(cache_id),
         surpyval_version=getattr(surpyval, "__version__", None),
         status="ready",
     )
@@ -133,6 +134,15 @@ def get_live_model(db, model_id: str, owner_id: str | list[str]):
     cache_id = _LIVE.get(model_id)
     live = degradation_fit.get_live(cache_id) if cache_id else None
     if live is None:
+        # Prefer rehydrating the persisted fit; only re-fit if there's no
+        # serialised model (older docs) or it fails to load.
+        if doc.serialized:
+            try:
+                cid = degradation_fit.restore_live(doc.serialized)
+                _remember_live(doc.id, cid)
+                return degradation_fit.get_live(cid)
+            except Exception:  # noqa: BLE001 - fall back to a fresh fit
+                pass
         live = _refit(db, doc)
     return live
 

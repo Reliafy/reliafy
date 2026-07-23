@@ -54,6 +54,25 @@ def get_live(cache_id: str):
     return _DEG_STORE.get(cache_id)
 
 
+def serialize_live(cache_id: str) -> dict | None:
+    """Serialise a stored live degradation model for persistence (rehydrated
+    without re-fitting). ``None`` if there's nothing to serialise."""
+    m = _DEG_STORE.get(cache_id)
+    if m is None or not hasattr(m, "to_dict"):
+        return None
+    try:
+        return {"model": m.to_dict()}
+    except Exception:  # noqa: BLE001 - never block a save on serialisation
+        return None
+
+
+def restore_live(serialized: dict) -> str:
+    """Rehydrate a serialised degradation model into the store; returns a cache id."""
+    import surpyval
+
+    return store_live(surpyval.from_dict(serialized["model"]))
+
+
 def build_inputs(df: pd.DataFrame, mapping: dict) -> tuple:
     """Extract (x, y, i) long-format arrays from a DataFrame via the column
     mapping ``{"i": <item col>, "x": <time col>, "y": <measurement col>}``."""
