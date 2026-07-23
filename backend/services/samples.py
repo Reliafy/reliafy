@@ -154,6 +154,25 @@ SAMPLE_RECURRENT_MODELS = [
     },
 ]
 
+# Accelerated Life Testing: the valve-seal ALT dataset is a crossed
+# temperature × load design, so a two-stress temperature–nonthermal
+# (power-exponential) life-stress model fits it and extrapolates to use level.
+SAMPLE_ALT_MODELS = [
+    {
+        "id": "sample-alt-seal",
+        "name": "Valve seal — Weibull ALT on temp & load (sample)",
+        "dataset_id": "sample-ds-seal-alt",
+        "spec": {
+            "mapping": {"x": "hours", "c": "censored"},
+            "stress_cols": ["temp_C", "load"],
+            "stress_labels": ["Temperature (°C)", "Load"],
+            "distribution_id": "weibull",
+            "life_model_id": "power_exponential",
+            "unit": "hours",
+        },
+    },
+]
+
 # Two monitored assets on the sample degradation model, so the fleet table has
 # life the moment a user opens it. Measurements are literal (idempotent seed).
 SAMPLE_TRACKED_ITEMS = [
@@ -454,6 +473,40 @@ def seed_samples(db) -> None:
             logger.info("Seeded sample recurrent model %r.", spec["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample recurrent %r: %s", spec["id"], exc)
+
+    for spec in SAMPLE_ALT_MODELS:
+        try:
+            if db.alt_models.find_one({"_id": spec["id"]}) is not None:
+                continue
+            ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
+            if ds_doc is None:
+                continue
+            from backend import alt as alt_fit  # local: heavy import
+            from backend.schema import AltModelDoc
+            import surpyval
+
+            dataset = from_doc(Dataset, ds_doc)
+            df = fitting.read_dataframe(bytes(dataset.data))
+            s = spec["spec"]
+            payload, cache_id = alt_fit.fit(
+                df, s["mapping"], s["stress_cols"],
+                distribution_id=s["distribution_id"], life_model_id=s["life_model_id"],
+                unit=s["unit"], stress_labels=s.get("stress_labels"),
+            )
+            fns = dict(payload.get("functions") or {})
+            fns["evaluate_path"] = f"/api/alt/models/{spec['id']}/evaluate"
+            payload["functions"] = fns
+            doc = AltModelDoc(
+                id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER,
+                dataset_id=spec["dataset_id"], spec=s, results=payload,
+                serialized=alt_fit.serialize_live(cache_id),
+                surpyval_version=getattr(surpyval, "__version__", None),
+                status="ready",
+            )
+            db.alt_models.insert_one(to_doc(doc))
+            logger.info("Seeded sample ALT model %r.", spec["id"])
+        except Exception as exc:  # pragma: no cover - defensive; never block boot
+            logger.warning("Failed to seed sample ALT %r: %s", spec["id"], exc)
 
     # Last: groups the sample tracked items (needs the degradation model above).
     _seed_tracked_fleet(db)

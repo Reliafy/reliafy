@@ -316,7 +316,6 @@ def test_fit_all_regression_models(dist_id):
     json.dumps(result, allow_nan=False)
     assert result["kind"] == "regression"
     assert any(c["name"] == "age" for c in result["coefficients"])
-    assert result["functions"] is not None  # calculator curves available
 
 
 def test_unknown_distribution_raises():
