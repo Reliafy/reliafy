@@ -10,6 +10,7 @@ import pytest
 from backend.fitting import (
     DISCRETE,
     DISTRIBUTIONS,
+    REGRESSION_MODELS,
     FitError,
     build_fit_inputs,
     extract_times,
@@ -304,10 +305,24 @@ def test_fit_cox_ph_has_coefficients_no_baseline():
     assert any(c["name"] == "age" for c in result["coefficients"])
 
 
+@pytest.mark.parametrize("dist_id", list(REGRESSION_MODELS))
+def test_fit_all_regression_models(dist_id):
+    """Every regression family in the registry fits and shapes a JSON-safe
+    payload with covariate coefficients — guards the Logistic/Gumbel families."""
+    import json
+
+    df = _covariate_df()
+    result = fit(dist_id, df, {"x": "time", "c": "censored"}, formula="age + sex")
+    json.dumps(result, allow_nan=False)
+    assert result["kind"] == "regression"
+    assert any(c["name"] == "age" for c in result["coefficients"])
+    assert result["functions"] is not None  # calculator curves available
+
+
 def test_unknown_distribution_raises():
     df = _df("x\n10\n20\n30\n")
     with pytest.raises(FitError, match="Unknown model"):
-        fit("rayleigh", df, {"x": "x"})
+        fit("not_a_distribution", df, {"x": "x"})
 
 
 @pytest.mark.parametrize("dist_id", list(DISCRETE))

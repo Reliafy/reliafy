@@ -45,12 +45,15 @@ from surpyval import (
     WeibullPH,
 )
 from surpyval import ExpoWeibull, Gumbel, Logistic, LogLogistic
+from surpyval import GumbelLEV, Rayleigh
 from surpyval import Binomial, FlemingHarrington, KaplanMeier, NelsonAalen, Turnbull
 from surpyval import success_run as _success_run
-from surpyval import DiscreteWeibull, Geometric, NegativeBinomial
+from surpyval import BetaGeometric, DiscreteWeibull, Geometric, NegativeBinomial, Poisson
 from surpyval import (
     ExponentialAFT,
     GammaAFT,
+    GumbelAFT,
+    LogisticAFT,
     LogNormalAFT,
     NormalAFT,
     WeibullAFT,
@@ -58,6 +61,8 @@ from surpyval import (
 from surpyval import (
     ExponentialPO,
     GammaPO,
+    GumbelPO,
+    LogisticPO,
     LogNormalPO,
     NormalPO,
     WeibullPO,
@@ -65,10 +70,13 @@ from surpyval import (
 from surpyval import (
     ExponentialAH,
     GammaAH,
+    GumbelAH,
+    LogisticAH,
     LogNormalAH,
     NormalAH,
     WeibullAH,
 )
+from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
@@ -83,8 +91,10 @@ DISTRIBUTIONS = {
     "gamma": {"name": "Gamma", "dist": Gamma, "offsetable": True},
     "loglogistic": {"name": "LogLogistic", "dist": LogLogistic, "offsetable": True},
     "expo_weibull": {"name": "Exponentiated Weibull", "dist": ExpoWeibull, "offsetable": True},
-    "gumbel": {"name": "Gumbel", "dist": Gumbel, "offsetable": False},
+    "gumbel": {"name": "Gumbel (smallest EV)", "dist": Gumbel, "offsetable": False},
+    "gumbel_lev": {"name": "Gumbel (largest EV)", "dist": GumbelLEV, "offsetable": False},
     "logistic": {"name": "Logistic", "dist": Logistic, "offsetable": False},
+    "rayleigh": {"name": "Rayleigh", "dist": Rayleigh, "offsetable": True},
 }
 
 # Discrete lifetime distributions: for life measured in whole counts — cycles,
@@ -97,7 +107,9 @@ DISTRIBUTIONS = {
 DISCRETE = {
     "discrete_weibull": {"name": "Discrete Weibull", "dist": DiscreteWeibull},
     "geometric": {"name": "Geometric", "dist": Geometric},
+    "beta_geometric": {"name": "Beta-Geometric", "dist": BetaGeometric},
     "negative_binomial": {"name": "Negative Binomial", "dist": NegativeBinomial},
+    "poisson": {"name": "Poisson", "dist": Poisson},
 }
 
 # Non-parametric estimators (no distribution assumed): the "estimation axis"
@@ -120,22 +132,30 @@ REGRESSION_MODELS = {
     "lognormal_ph": {"name": "Lognormal PH", "fitter": LogNormalPH, "effect": "hazard"},
     "normal_ph": {"name": "Normal PH", "fitter": NormalPH, "effect": "hazard"},
     "gamma_ph": {"name": "Gamma PH", "fitter": GammaPH, "effect": "hazard"},
+    "logistic_ph": {"name": "Logistic PH", "fitter": LogisticPH, "effect": "hazard"},
+    "gumbel_ph": {"name": "Gumbel PH", "fitter": GumbelPH, "effect": "hazard"},
     "cox_ph": {"name": "Cox PH (semi-parametric)", "fitter": CoxPH, "effect": "hazard"},
     "weibull_aft": {"name": "Weibull AFT", "fitter": WeibullAFT, "effect": "aft"},
     "exponential_aft": {"name": "Exponential AFT", "fitter": ExponentialAFT, "effect": "aft"},
     "lognormal_aft": {"name": "Lognormal AFT", "fitter": LogNormalAFT, "effect": "aft"},
     "normal_aft": {"name": "Normal AFT", "fitter": NormalAFT, "effect": "aft"},
     "gamma_aft": {"name": "Gamma AFT", "fitter": GammaAFT, "effect": "aft"},
+    "logistic_aft": {"name": "Logistic AFT", "fitter": LogisticAFT, "effect": "aft"},
+    "gumbel_aft": {"name": "Gumbel AFT", "fitter": GumbelAFT, "effect": "aft"},
     "weibull_po": {"name": "Weibull PO", "fitter": WeibullPO, "effect": "odds"},
     "exponential_po": {"name": "Exponential PO", "fitter": ExponentialPO, "effect": "odds"},
     "lognormal_po": {"name": "Lognormal PO", "fitter": LogNormalPO, "effect": "odds"},
     "normal_po": {"name": "Normal PO", "fitter": NormalPO, "effect": "odds"},
     "gamma_po": {"name": "Gamma PO", "fitter": GammaPO, "effect": "odds"},
+    "logistic_po": {"name": "Logistic PO", "fitter": LogisticPO, "effect": "odds"},
+    "gumbel_po": {"name": "Gumbel PO", "fitter": GumbelPO, "effect": "odds"},
     "weibull_ah": {"name": "Weibull AH", "fitter": WeibullAH, "effect": "additive"},
     "exponential_ah": {"name": "Exponential AH", "fitter": ExponentialAH, "effect": "additive"},
     "lognormal_ah": {"name": "Lognormal AH", "fitter": LogNormalAH, "effect": "additive"},
     "normal_ah": {"name": "Normal AH", "fitter": NormalAH, "effect": "additive"},
     "gamma_ah": {"name": "Gamma AH", "fitter": GammaAH, "effect": "additive"},
+    "logistic_ah": {"name": "Logistic AH", "fitter": LogisticAH, "effect": "additive"},
+    "gumbel_ah": {"name": "Gumbel AH", "fitter": GumbelAH, "effect": "additive"},
 }
 
 # What exp(coefficient) means per regression effect (None = no natural ratio;
