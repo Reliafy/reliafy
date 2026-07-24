@@ -4,8 +4,11 @@ import {
   reliabilityAgentInfo,
   reliabilityAgentUpload,
   reliabilityAgentStream,
+  listAgentSessions,
+  getAgentSession,
 } from "../api.js";
 import { renderAgentMarkdown } from "../agentMarkdown.js";
+import { relativeTime } from "../instrument.js";
 
 // A conversational chat with the Reliability Agent (Anthropic Managed Agents).
 // The agent assesses the task, builds the solution with surpyval/repyability in
@@ -81,12 +84,46 @@ export default function ReliabilityAgent() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [credit, setCredit] = useState(null);
+  const [sessions, setSessions] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [loadingTx, setLoadingTx] = useState(false);
   const sessionRef = useRef(null); // reused across turns
   const scrollRef = useRef(null);
 
+  const refreshSessions = () =>
+    listAgentSessions().then((r) => setSessions(r.sessions || [])).catch(() => {});
+
   useEffect(() => {
     reliabilityAgentInfo().then((i) => { setInfo(i); setCredit(i.credit_cents); }).catch((e) => setError(e.message));
+    refreshSessions();
   }, []);
+
+  // Start a fresh conversation (new session on the next message).
+  const newChat = () => {
+    if (busy) return;
+    sessionRef.current = null;
+    setMessages([]);
+    setError(null);
+    setShowHistory(false);
+  };
+
+  // Reopen a past run: load its transcript and point the session at it so the
+  // next message resumes the same conversation on the platform.
+  const openSession = async (id) => {
+    if (busy) return;
+    setShowHistory(false);
+    setLoadingTx(true);
+    setError(null);
+    try {
+      const tx = await getAgentSession(id);
+      setMessages(tx.messages || []);
+      sessionRef.current = id;
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoadingTx(false);
+    }
+  };
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages]);
 
   // Append a streamed part to the last (agent) message. Consecutive text parts
@@ -154,6 +191,7 @@ export default function ReliabilityAgent() {
             case "done":
               if (ev.session_id) sessionRef.current = ev.session_id;
               if (ev.credit_cents != null) setCredit(ev.credit_cents);
+              refreshSessions();  // keep the history list current
               break;
             default: break;
           }
@@ -197,9 +235,38 @@ export default function ReliabilityAgent() {
             </p>
           )}
         </div>
-        {credit != null && info?.billing_enabled && (
-          <span className="muted-line" style={{ margin: 0 }}>{credit} credits</span>
-        )}
+        <div className="row" style={{ margin: 0, gap: "0.6rem", alignItems: "center" }}>
+          {credit != null && info?.billing_enabled && (
+            <span className="muted-line" style={{ margin: 0 }}>{credit} credits</span>
+          )}
+          {info?.enabled && (
+            <>
+              <button className="secondary" onClick={newChat} disabled={busy}>New chat</button>
+              <div className="agent-hist-wrap">
+                <button className="secondary" onClick={() => { setShowHistory((s) => !s); refreshSessions(); }}>
+                  History {sessions.length > 0 ? `(${sessions.length})` : ""}
+                </button>
+                {showHistory && (
+                  <div className="agent-hist">
+                    {sessions.length === 0 ? (
+                      <div className="agent-hist-empty">No past runs yet.</div>
+                    ) : (
+                      sessions.map((s) => (
+                        <button key={s.id} className="agent-hist-row" onClick={() => openSession(s.id)}
+                                title={s.title}>
+                          <span className="agent-hist-title">{s.title}</span>
+                          <span className="agent-hist-meta">
+                            {relativeTime(s.updated_at)} · {s.turns} turn{s.turns === 1 ? "" : "s"}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </header>
 
       {upgradeRequired && (
@@ -214,7 +281,8 @@ export default function ReliabilityAgent() {
       )}
 
       <div className="chat" ref={scrollRef}>
-        {info?.enabled && messages.length === 0 && !upgradeRequired && (
+        {loadingTx && <div className="chat-empty"><p className="chat-empty-head">Loading conversation…</p></div>}
+        {info?.enabled && messages.length === 0 && !upgradeRequired && !loadingTx && (
           <div className="chat-empty">
             <p className="chat-empty-head">Tell me what to build — attach data if you have it.</p>
           </div>

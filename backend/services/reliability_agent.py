@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timezone
 
 from backend import config
 from backend.services import billing as billing_service
@@ -544,6 +545,12 @@ def stream_run(db, uid: str, message: str, file_id: str | None = None,
 
     started = time.monotonic()
     in_tok = out_tok = 0
+    # Remember this session for the user's history (title set on first turn) so
+    # they can reopen and resume it later. Never let bookkeeping break a run.
+    try:
+        record_session_turn(db, uid, session_id, message)
+    except Exception:  # noqa: BLE001
+        pass
     try:
         client.beta.sessions.events.send(
             session_id, events=[{"type": "user.message", "content": [{"type": "text", "text": text}]}]
@@ -609,3 +616,103 @@ def cost_millicents(seconds: float, input_tokens: int, output_tokens: int) -> in
     usd = (max(0.0, seconds) / 3600.0) * config.MANAGED_AGENT_USD_PER_HOUR
     session_mc = round(usd * 100_000.0 * config.AI_MARKUP)
     return tokens_mc + session_mc
+
+
+# ---- Session history (list / reopen / resume past runs) --------------------
+
+def record_session_turn(db, uid: str, session_id: str, message: str) -> None:
+    """Link a platform session to its owner for the history list. The title is
+    the first message; each turn bumps ``updated_at`` and the turn count."""
+    now = datetime.now(timezone.utc)
+    title = (message or "").strip().splitlines()[0][:100] if (message or "").strip() else "Untitled analysis"
+    db.agent_sessions.update_one(
+        {"_id": session_id},
+        {
+            "$setOnInsert": {"owner_id": uid, "title": title, "created_at": now},
+            "$set": {"updated_at": now},
+            "$inc": {"turns": 1},
+        },
+        upsert=True,
+    )
+
+
+def list_sessions(db, uid: str) -> list[dict]:
+    """The user's past agent runs, newest activity first."""
+    out = []
+    for d in db.agent_sessions.find({"owner_id": uid}).sort("updated_at", -1):
+        out.append({
+            "id": d["_id"],
+            "title": d.get("title") or "Untitled analysis",
+            "turns": int(d.get("turns") or 0),
+            "created_at": d["created_at"].isoformat() if d.get("created_at") else None,
+            "updated_at": d["updated_at"].isoformat() if d.get("updated_at") else None,
+        })
+    return out
+
+
+def owns_session(db, uid: str, session_id: str) -> bool:
+    d = db.agent_sessions.find_one({"_id": session_id, "owner_id": uid})
+    return d is not None
+
+
+_IMG_MARK = None
+
+
+def _strip_images(text: str) -> str:
+    """Replace chart base64 (``<<RELIAFY_IMG>>…``) — complete or platform-
+    truncated — with a short note; the stored copy can't reliably re-render it."""
+    global _IMG_MARK
+    if _IMG_MARK is None:
+        import re
+        _IMG_MARK = re.compile(r"<<RELIAFY_IMG>>[A-Za-z0-9+/=\s]*(?:<<END_IMG>>)?")
+    return _IMG_MARK.sub("\n[chart rendered here during the run]\n", text or "")
+
+
+def get_transcript(db, session_id: str) -> list[dict]:
+    """Rebuild a saved conversation as the frontend's message shape:
+    ``[{role:'user', text} | {role:'agent', parts:[…]}]``, reusing the same
+    event normalisation as the live stream."""
+    client = _client()
+    events = list(client.beta.sessions.events.list(session_id))
+    messages: list[dict] = []
+    agent: dict | None = None
+
+    def flush():
+        nonlocal agent
+        if agent and agent["parts"]:
+            messages.append(agent)
+        agent = None
+
+    for ev in events:
+        et = _etype(ev)
+        if et in ("user.message", "user_message"):
+            flush()
+            messages.append({"role": "user", "text": _flatten_text(_get(ev, "content", "text"))})
+            continue
+        for norm in _norm(ev):
+            part = _to_part(norm)
+            if part is None:
+                continue
+            if agent is None:
+                agent = {"role": "agent", "parts": []}
+            prev = agent["parts"][-1] if agent["parts"] else None
+            if part["type"] == "text" and prev and prev.get("type") == "text":
+                prev["text"] += part["text"]
+            else:
+                agent["parts"].append(part)
+    flush()
+    return messages
+
+
+def _to_part(norm: dict) -> dict | None:
+    """Map a normalised stream event to the frontend Part shape (skip status)."""
+    t = norm.get("type")
+    if t == "text":
+        return {"type": "text", "text": norm.get("text", "")}
+    if t == "tool_use":
+        return {"type": "code", "name": norm.get("name"), "code": norm.get("code") or ""}
+    if t == "tool_result":
+        return {"type": "result", "output": _strip_images(norm.get("output", ""))}
+    if t == "reliafy_tool":
+        return {"type": "tool_call", "name": norm.get("name")}
+    return None  # status / thinking aren't part of the saved view

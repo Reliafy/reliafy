@@ -465,6 +465,14 @@ export async function assistantStepStream(system, messages, tools, { onDelta, si
 // ---- Reliability Agent (Anthropic Managed Agents) --------------------------
 // Separate from the assistant above, with its own metering; runs Python (with
 // surpyval) in Anthropic's managed sandbox and streams its work back.
+export function listAgentSessions() {
+  return request("/api/reliability-agent/sessions");
+}
+
+export function getAgentSession(id) {
+  return request(`/api/reliability-agent/sessions/${id}`);
+}
+
 export function reliabilityAgentInfo() {
   return request("/api/reliability-agent/info");
 }

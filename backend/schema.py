@@ -130,6 +130,20 @@ class AltModelDoc(BaseModel):
     error: Optional[str] = None
 
 
+class AgentSessionDoc(BaseModel):
+    """A saved Reliability Agent conversation. The transcript itself lives on the
+    Managed Agents platform (keyed by ``id`` = the platform session id); this row
+    just links the session to its owner so the user can list, reopen, and resume
+    their past runs."""
+
+    id: str  # the platform session id (sesn_…)
+    owner_id: str
+    title: str = "Untitled analysis"
+    turns: int = 0
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
 class RcmStudy(BaseModel):
     """A Reliability Centred Maintenance study: an embedded worksheet tree
     (Function → Functional Failure → Failure Mode) where each failure mode can
