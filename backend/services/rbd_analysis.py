@@ -820,6 +820,18 @@ def analyze(
 _AVAIL_SIMS = 2000  # Monte-Carlo replications for the availability estimate
 
 
+def _always_up():
+    """A repairable stand-in that never fails — used for pure logic/voting
+    (k-of-n) gates, which carry no failure or repair behaviour of their own but
+    must still be a repairable component for RePyability's availability solver."""
+    import surpyval as sp
+
+    return NonRepairable(
+        sp.Weibull.from_params([1e12, 1.0]),  # effectively never fails
+        sp.LogNormal.from_params([0.1, 0.1]),
+    )
+
+
 def _repair_distribution(data: dict, label: str, resolve_model=None):
     """Build a component's time-to-repair distribution from its ``repair`` spec
     (same shape as a life model: distribution_id + params). Repairable
@@ -854,6 +866,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
     components: dict[Any, Any] = {}
     k: dict[Any, int] = {}
     labels: dict[Any, str] = {}
+    gate_ids: set = set()  # synthetic voting gates — excluded from downtime
 
     for node in nodes:
         nid = node.get("id")
@@ -864,8 +877,9 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
         label = data.get("label") or nid
         labels[nid] = label
         if ntype == "knode":
-            components[nid] = PerfectReliability
+            components[nid] = _always_up()
             k[nid] = max(int(data.get("n") or 1), 1)
+            gate_ids.add(nid)
             continue
         if ntype != "component":
             raise AnalysisError(
@@ -891,7 +905,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
             "The diagram isn't a valid reliability block diagram: "
             f"{exc}. Check that every component is wired between the input and output."
         ) from exc
-    return rbd, labels
+    return rbd, labels, gate_ids
 
 
 def analyze_availability(
@@ -901,7 +915,7 @@ def analyze_availability(
 ) -> dict:
     """Availability analysis of a repairable RBD: steady-state uptime, mean up/
     down time, failure frequency, and each component's share of downtime."""
-    rbd, labels = _build_repairable_rbd(graph, resolve_model)
+    rbd, labels, gate_ids = _build_repairable_rbd(graph, resolve_model)
 
     try:
         steady = float(rbd.mean_availability())
@@ -923,8 +937,11 @@ def analyze_availability(
         mean_down = _f(getattr(res, "mean_down_time", None))
         failure_freq = _f(getattr(res, "failure_frequency", None))
         downtime = getattr(res, "node_downtime", None) or {}
-        total_dt = sum(v for v in downtime.values() if v) or 1.0
-        for nid, dt in downtime.items():
+        # Exclude synthetic voting gates (they never fail); share is over real
+        # components only.
+        real = {nid: dt for nid, dt in downtime.items() if nid not in gate_ids}
+        total_dt = sum(v for v in real.values() if v) or 1.0
+        for nid, dt in real.items():
             per_node.append({
                 "id": str(nid), "label": labels.get(nid, str(nid)),
                 "downtime": _f(dt),

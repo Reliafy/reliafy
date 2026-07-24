@@ -70,7 +70,12 @@ SYSTEM_PROMPT = (
     "= redundancy where any one suffices, n = all required in series). Each "
     "component's life model is either an inline distribution + params or a "
     "model_id from a create_life_model call. Reliafy lays it out (input → stages → "
-    "output), validates, and saves it.\n\n"
+    "output), validates, and saves it. An RBD is EITHER non-repairable (default — "
+    "reliability over time) OR repairable (repairable=true — analysed for "
+    "AVAILABILITY/uptime); in a repairable RBD every component ALSO needs a "
+    "repair-time distribution (repair_distribution + repair_params, e.g. a "
+    "lognormal mean-time-to-repair). Choose repairable when the user cares about "
+    "uptime/availability of a system that is fixed and returned to service.\n\n"
     "UPLOADED DATA IS OPTIONAL. If the user gives no data (e.g. 'research this "
     "pump / truck type and build an RBD'), research the typical components and "
     "their failure distributions/parameters and build the RBD from those inline — "
@@ -164,12 +169,19 @@ TOOLS = [
             "it out (input → stages → output), validates it, and saves it. Each "
             "component needs a life model — either an inline distribution + params "
             "(e.g. researched/typical values; NO dataset required) or a model_id "
-            "from create_life_model. Only call after the user approves the plan."
+            "from create_life_model.\n\n"
+            "An RBD is EITHER non-repairable (default — analysed for reliability "
+            "over time) OR repairable (set repairable=true — analysed for "
+            "AVAILABILITY/uptime). In a repairable RBD EVERY component must ALSO "
+            "have a repair-time distribution (repair_distribution + repair_params, "
+            "e.g. a lognormal mean-time-to-repair). Only call after the user "
+            "approves the plan."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "A short name for the RBD."},
+                "repairable": {"type": "boolean", "description": "True = a repairable system analysed for availability (uptime); every component then also needs repair_distribution + repair_params. False/omitted = non-repairable (reliability over time)."},
                 "stages": {
                     "type": "array",
                     "description": "Stages in series order (left → right). Components within a stage are in parallel.",
@@ -188,6 +200,8 @@ TOOLS = [
                                         "distribution": {"type": "string", "description": "Inline life model: a plain surpyval distribution id — weibull, exponential, normal, lognormal, gamma, loglogistic, expo_weibull, gumbel, logistic. Pair with params. Give this OR model_id."},
                                         "params": {"type": "array", "description": "Distribution parameters by surpyval name, e.g. [{\"name\":\"alpha\",\"value\":900},{\"name\":\"beta\",\"value\":1.4}] for weibull.", "items": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "number"}}, "required": ["name", "value"]}},
                                         "model_id": {"type": "string", "description": "Alternatively, a saved plain life model id (from create_life_model) to use for this component instead of inline params."},
+                                        "repair_distribution": {"type": "string", "description": "Repairable RBDs only: the time-to-repair distribution id (e.g. lognormal, exponential, weibull, normal, gamma). Pair with repair_params."},
+                                        "repair_params": {"type": "array", "description": "Repairable RBDs only: repair-time distribution parameters by surpyval name, e.g. [{\"name\":\"mu\",\"value\":1.5},{\"name\":\"sigma\",\"value\":0.4}] for a lognormal MTTR.", "items": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "number"}}, "required": ["name", "value"]}},
                                     },
                                     "required": ["label"],
                                 },
@@ -341,11 +355,38 @@ def _rbd_component_model(db, uid: str, comp: dict) -> dict:
             "distribution_id": dist_id, "params": params}
 
 
-def _build_rbd_graph(db, uid: str, stages: list) -> dict:
+def _rbd_repair_model(comp: dict) -> dict:
+    """Node ``data.repair`` — the inline time-to-repair distribution for a
+    component in a repairable RBD (params only; no saved-model reference)."""
+    from backend import fitting
+
+    dist = (comp.get("repair_distribution") or "").strip()
+    if not dist:
+        raise ValueError(
+            f"repairable RBD: component “{comp.get('label') or '?'}” needs a "
+            "repair_distribution + repair_params (e.g. a lognormal MTTR)")
+    try:
+        dist_id = fitting.resolve_distribution_id(dist)
+    except fitting.FitError:
+        dist_id = dist.lower()
+    if dist_id not in fitting.DISTRIBUTIONS:
+        raise ValueError(f"unsupported repair_distribution '{dist}'")
+    params = [{"name": p.get("name"), "value": float(p.get("value"))}
+              for p in (comp.get("repair_params") or [])
+              if p.get("name") is not None and p.get("value") is not None]
+    if not params:
+        raise ValueError(f"component “{comp.get('label') or dist_id}” needs repair_params [{{name, value}}]")
+    return {"source": "params", "distribution": fitting.DISTRIBUTIONS[dist_id]["name"],
+            "distribution_id": dist_id, "params": params}
+
+
+def _build_rbd_graph(db, uid: str, stages: list, repairable: bool = False) -> dict:
     """Expand the agent's series-of-parallel stage spec into a React-Flow graph
     (input → stages → output) the RBD builder and analysis understand. A stage
     with >1 component gets a single k-of-n voting node (k=1 → plain parallel) as
-    its exit, so consecutive parallel stages converge cleanly instead of meshing."""
+    its exit, so consecutive parallel stages converge cleanly instead of meshing.
+    When ``repairable``, every component also carries a repair-time distribution
+    and the graph is flagged for availability analysis."""
     nodes = [{"id": "input", "type": "input", "position": {"x": 0, "y": 160}, "data": {"label": "Input"}}]
     edges = []
     prev_exit = "input"
@@ -359,9 +400,11 @@ def _build_rbd_graph(db, uid: str, stages: list) -> dict:
         for ci, comp in enumerate(comps):
             cid = f"s{si}c{ci}"
             y = round(160 + (ci - (m - 1) / 2) * 120)
-            nodes.append({"id": cid, "type": "component", "position": {"x": x, "y": y},
-                          "data": {"label": comp.get("label") or f"Component {ci + 1}",
-                                   "model": _rbd_component_model(db, uid, comp)}})
+            data = {"label": comp.get("label") or f"Component {ci + 1}",
+                    "model": _rbd_component_model(db, uid, comp)}
+            if repairable:
+                data["repair"] = _rbd_repair_model(comp)
+            nodes.append({"id": cid, "type": "component", "position": {"x": x, "y": y}, "data": data})
             edges.append({"id": f"e-{prev_exit}-{cid}", "source": prev_exit, "target": cid})
             comp_ids.append(cid)
         if m > 1:
@@ -377,7 +420,10 @@ def _build_rbd_graph(db, uid: str, stages: list) -> dict:
     out_x = _RBD_COL_W * (len(stages) + 1)
     nodes.append({"id": "output", "type": "output", "position": {"x": out_x, "y": 160}, "data": {"label": "Output"}})
     edges.append({"id": f"e-{prev_exit}-output", "source": prev_exit, "target": "output"})
-    return {"nodes": nodes, "edges": edges}
+    graph = {"nodes": nodes, "edges": edges}
+    if repairable:
+        graph["repairable"] = True
+    return graph
 
 
 def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
@@ -429,18 +475,21 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
             stages = inp.get("stages") or []
             if not stages:
                 return {"error": "provide at least one stage"}
-            graph = _build_rbd_graph(db, uid, stages)  # ValueError -> clean error below
+            repairable = bool(inp.get("repairable"))
+            graph = _build_rbd_graph(db, uid, stages, repairable)  # ValueError -> clean error below
             check = rbds_service.validate_graph(db, graph, owner_id=uid)
             if not check.get("valid", False):
                 return {"error": "invalid RBD structure: " + "; ".join(check.get("errors") or ["unknown"])}
             rbd = rbds_service.save_rbd(
                 db, (inp.get("name") or "RBD").strip() or "RBD", graph, owner_id=uid)
             n_comp = sum(1 for n in graph["nodes"] if n["type"] == "component")
+            kind = "repairable (availability)" if repairable else "non-repairable"
             return {"ok": True, "rbd_id": rbd.id, "name": rbd.name,
+                    "repairable": repairable,
                     "n_stages": len(stages), "n_components": n_comp,
                     "analytic": check.get("analytic", True),
                     "warnings": check.get("warnings") or [],
-                    "summary": f"Created RBD “{rbd.name}” — {len(stages)} stages, {n_comp} components."}
+                    "summary": f"Created {kind} RBD “{rbd.name}” — {len(stages)} stages, {n_comp} components."}
 
         return {"error": f"unknown tool {name}"}
     except FitError as exc:

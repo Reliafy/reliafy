@@ -143,6 +143,48 @@ def test_execute_tool_creates_rbd_series_parallel():
         {"components": [{"label": "c", "distribution": "weibull"}]}]})  # no params
 
 
+def test_execute_tool_creates_repairable_rbd_with_availability():
+    """create_rbd with repairable=true builds an availability RBD: every
+    component carries a repair-time distribution and it analyses to availability."""
+    from backend.services import reliability_agent as agent
+    from backend.services import rbds as rbds_service
+
+    db = mongomock.MongoClient()["reliafy_test"]
+
+    def comp(label, a, b, mu):
+        return {"label": label, "distribution": "weibull",
+                "params": [{"name": "alpha", "value": a}, {"name": "beta", "value": b}],
+                "repair_distribution": "lognormal",
+                "repair_params": [{"name": "mu", "value": mu}, {"name": "sigma", "value": 0.4}]}
+
+    inp = {
+        "name": "Repairable pump station", "repairable": True,
+        "stages": [
+            {"label": "Controller", "components": [comp("PLC", 2000, 1.6, 2.0)]},
+            {"label": "Pumps", "k_of_n": 1, "components": [comp("Pump A", 900, 1.4, 2.3), comp("Pump B", 900, 1.4, 2.3)]},
+        ],
+    }
+    res = agent._execute_tool(db, U, "create_rbd", inp)
+    assert res["ok"] and res["repairable"], res
+
+    rbd = rbds_service.get_rbd(db, res["rbd_id"], owner_id=U)
+    assert rbd.graph.get("repairable") is True
+    assert all(n["data"].get("repair") for n in rbd.graph["nodes"] if n["type"] == "component")
+
+    out = rbds_service.analyze_rbd(db, res["rbd_id"], owner_id=U)
+    assert out["kind"] == "repairable"
+    assert 0.9 < out["steady_state_availability"] < 1.0
+    # The synthetic voting gate is excluded from the downtime breakdown.
+    labels = {n["label"] for n in out["per_node"]}
+    assert labels == {"PLC", "Pump A", "Pump B"}
+
+    # Repairable but a component lacks a repair distribution -> clean error.
+    bad = {"name": "x", "repairable": True, "stages": [
+        {"components": [{"label": "c", "distribution": "weibull",
+                         "params": [{"name": "alpha", "value": 100}, {"name": "beta", "value": 2}]}]}]}
+    assert "error" in agent._execute_tool(db, U, "create_rbd", bad)
+
+
 def test_create_life_model_full_inputs():
     """The expanded tool passes censoring, counts, the offset/zi/lfp modifiers,
     fixed params, and covariates through to the fit."""
