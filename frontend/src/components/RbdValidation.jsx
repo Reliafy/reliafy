@@ -44,12 +44,16 @@ export default function ValidationPanel({ validation, stale }) {
   } = validation;
   const nonAnalyticList = Object.entries(nonAnalytic || {});
 
-  if (valid && analytic) {
+  // Valid + closed-form, OR valid + whole-diagram simulation (availability /
+  // load-sharing) where there are no specific "problem" nodes to call out.
+  if (valid && (analytic || nonAnalyticList.length === 0)) {
     return (
       <div className="rbd-check rbd-check-ok">
         <span className="rbd-check-icon">✓</span>
         <div>
-          <strong>Valid and analytically solvable.</strong>
+          <strong>
+            {analytic ? "Valid and analytically solvable." : "Valid — estimated by simulation."}
+          </strong>
           {warnings && warnings.length > 0 && (
             <ul className="rbd-check-list rbd-check-warn">
               {warnings.map((w, i) => (

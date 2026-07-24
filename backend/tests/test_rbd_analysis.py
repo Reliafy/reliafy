@@ -147,6 +147,51 @@ def test_common_cause_lowers_redundant_reliability():
     assert analyze(g2)["ccf"] is None
 
 
+def test_validate_repairable_requires_repair_times():
+    """Validation reflects the repairable contract: a component without a repair
+    time is invalid (no false green), and availability is never 'analytic'."""
+    base = {
+        "unit": "hours", "repairable": True,
+        "nodes": _io_nodes() + [_component("c1", "Pump", "weibull", [("alpha", 100), ("beta", 2)])],
+        "edges": [_edge("input", "c1"), _edge("c1", "output")],
+    }
+    v = validate_graph(base)
+    assert not v["valid"] and not v["can_calculate"]
+    assert any("repair-time" in e for e in v["errors"])
+
+    with_repair = {**base}
+    with_repair["nodes"][2]["data"]["repair"] = {
+        "source": "params", "distribution_id": "lognormal",
+        "params": [{"name": "mu", "value": 1.0}, {"name": "sigma", "value": 0.4}]}
+    v2 = validate_graph(with_repair)
+    assert v2["valid"] and v2["can_calculate"] and v2["analytic"] is False
+
+
+def test_validate_repairable_rejects_unsupported_blocks():
+    graph = {
+        "unit": "hours", "repairable": True,
+        "nodes": _io_nodes() + [{"id": "sb", "type": "standby", "data": {"label": "Bank"}}],
+        "edges": [_edge("input", "sb"), _edge("sb", "output")],
+    }
+    v = validate_graph(graph)
+    assert not v["valid"]
+    assert any("isn't supported in a repairable" in e for e in v["errors"])
+
+
+def test_validate_warns_on_asymmetric_common_cause():
+    graph = {
+        "unit": "hours",
+        "nodes": _io_nodes() + [
+            _component("a", "A", "weibull", [("alpha", 100), ("beta", 2)]),
+            _component("b", "B", "weibull", [("alpha", 300), ("beta", 2)]),  # different
+        ],
+        "edges": [_edge("input", "a"), _edge("input", "b"), _edge("a", "output"), _edge("b", "output")],
+        "ccf_groups": [{"id": "g", "members": ["a", "b"], "beta": 0.1}],
+    }
+    v = validate_graph(graph)
+    assert any("different life models" in w for w in v["warnings"])
+
+
 def test_series_system_is_product_of_components():
     graph = {
         "unit": "Hours",

@@ -638,6 +638,46 @@ def validate_graph(
         except Exception as exc:  # pragma: no cover - defensive
             errors.append(f"The diagram could not be analysed: {exc}")
 
+    repairable = bool(graph.get("repairable"))
+    if repairable:
+        # Availability mode is a distinct contract: every component needs a
+        # repair-time distribution, only component + k-of-n blocks are supported,
+        # and common-cause coupling is reliability-only. Check that here so the
+        # Validate step reflects what Calculate will actually accept.
+        for node in nodes:
+            ntype = node.get("type")
+            if ntype in ("input", "output"):
+                continue
+            lbl = labels.get(node.get("id"), node.get("id"))
+            data = node.get("data") or {}
+            if ntype == "knode":
+                continue
+            if ntype != "component":
+                errors.append(
+                    f"“{lbl}” isn't supported in a repairable diagram — availability "
+                    "uses component blocks (each with a life model and a repair time) "
+                    "and k-of-n gates. Switch to a non-repairable diagram to use it.")
+            elif data.get("state") not in ("working", "failed") and not data.get("repair"):
+                errors.append(
+                    f"“{lbl}” has no repair-time distribution. Repairable diagrams "
+                    "analyse availability, so every component needs one (double-click "
+                    "the block to set it).")
+        if graph.get("ccf_groups"):
+            warnings.append(
+                "Common-cause groups are a reliability-only feature and are "
+                "ignored in a repairable (availability) diagram.")
+        valid = len(errors) == 0
+        # Availability is always estimated by simulation — never "analytic".
+        return {
+            "valid": valid, "analytic": False, "can_calculate": valid,
+            "errors": errors, "warnings": warnings, "non_analytic_nodes": {},
+        }
+
+    # Non-repairable (reliability): common-cause groups should couple identical
+    # (symmetric) components — warn if the members' life models differ.
+    for msg in _ccf_symmetry_warnings(graph, labels):
+        warnings.append(msg)
+
     valid = len(errors) == 0
     analytic = valid and len(non_analytic) == 0
     return {
@@ -648,6 +688,35 @@ def validate_graph(
         "warnings": warnings,
         "non_analytic_nodes": non_analytic,
     }
+
+
+def _ccf_symmetry_warnings(graph: dict, labels: dict) -> list:
+    """Beta-factor common cause assumes symmetric groups (identical member
+    models). Warn when a group's members carry different life models."""
+    out = []
+    by_id = {n.get("id"): (n.get("data") or {}) for n in (graph.get("nodes") or [])}
+
+    def _model_key(nid):
+        m = (by_id.get(nid) or {}).get("model") or {}
+        # Compare the distribution + parameter values (a saved model by its id).
+        if m.get("modelId"):
+            return ("saved", m.get("modelId"))
+        params = tuple(sorted((p.get("name"), round(float(p.get("value")), 6))
+                              for p in (m.get("params") or []) if p.get("name") is not None))
+        return (m.get("distribution_id"), params)
+
+    for g in graph.get("ccf_groups") or []:
+        members = [m for m in (g.get("members") or []) if m in by_id]
+        if len(members) < 2:
+            continue
+        keys = {_model_key(m) for m in members}
+        if len(keys) > 1:
+            names = ", ".join(labels.get(m, str(m)) for m in members)
+            out.append(
+                f"Common-cause group ({names}) mixes different life models. The "
+                "beta-factor model assumes identical redundant components, so give "
+                "them the same model for a meaningful result.")
+    return out
 
 
 def _model_hi(model) -> Optional[float]:

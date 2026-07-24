@@ -21,6 +21,7 @@ import KNodeModal from "../components/KNodeModal.jsx";
 import CountModal from "../components/CountModal.jsx";
 import StandbyModal from "../components/StandbyModal.jsx";
 import LoadShareModal from "../components/LoadShareModal.jsx";
+import Select from "../components/Select.jsx";
 import SubsystemModal from "../components/SubsystemModal.jsx";
 import RbdSaveModal from "../components/RbdSaveModal.jsx";
 import RbdCalculator from "../components/RbdCalculator.jsx";
@@ -936,17 +937,17 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
               ))}
             </datalist>
           </label>
-          <label className="rbd-unit-field" title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time.">
+          <div className="rbd-unit-field" title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time.">
             <span>System</span>
-            <select
-              className="rbd-unit-input"
+            <Select
               value={repairable ? "repairable" : "non"}
-              onChange={(e) => setRepairable(e.target.value === "repairable")}
-            >
-              <option value="non">Non-repairable · reliability</option>
-              <option value="repairable">Repairable · availability</option>
-            </select>
-          </label>
+              onChange={(v) => setRepairable(v === "repairable")}
+              options={[
+                { value: "non", label: "Non-repairable · reliability" },
+                { value: "repairable", label: "Repairable · availability" },
+              ]}
+            />
+          </div>
         </Panel>
         {!repairable && selectedComponentIds.length >= 2 && (
           <Panel position="top-center">
@@ -1041,21 +1042,25 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
               >
                 Add n-out-of-k node
               </button>
-              <button onClick={() => { addBlock("standby", menu.flow); closeMenu(); }}>
-                Add standby node
-              </button>
-              <button onClick={() => { addBlock("loadshare", menu.flow); closeMenu(); }}>
-                Add load-sharing node
-              </button>
-              <button onClick={() => { addBlock("series", menu.flow); closeMenu(); }}>
-                Add series node
-              </button>
-              <button onClick={() => { addBlock("parallel", menu.flow); closeMenu(); }}>
-                Add parallel node
-              </button>
-              <button onClick={() => { addBlock("subsystem", menu.flow); closeMenu(); }}>
-                Add sub-system
-              </button>
+              {!repairable && (
+                <>
+                  <button onClick={() => { addBlock("standby", menu.flow); closeMenu(); }}>
+                    Add standby node
+                  </button>
+                  <button onClick={() => { addBlock("loadshare", menu.flow); closeMenu(); }}>
+                    Add load-sharing node
+                  </button>
+                  <button onClick={() => { addBlock("series", menu.flow); closeMenu(); }}>
+                    Add series node
+                  </button>
+                  <button onClick={() => { addBlock("parallel", menu.flow); closeMenu(); }}>
+                    Add parallel node
+                  </button>
+                  <button onClick={() => { addBlock("subsystem", menu.flow); closeMenu(); }}>
+                    Add sub-system
+                  </button>
+                </>
+              )}
               <div className="rbd-menu-sep" />
               <button onClick={() => { autoLayout(); closeMenu(); }}>
                 Auto-arrange
@@ -1228,8 +1233,11 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       )}
 
       <div className="rbd-hint">
-        Right-click the canvas to add a component · right-click a node or edge to
-        delete · drag between handles to connect
+        Right-click the canvas to add a component · drag between handles to connect ·
+        double-click a block to edit
+        {repairable
+          ? " · double-click each component to set its repair time"
+          : " · shift-click 2+ redundant components to add a common-cause group"}
       </div>
 
       {modal === "lifemodel" && (
