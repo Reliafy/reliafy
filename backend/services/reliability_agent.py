@@ -42,16 +42,21 @@ SYSTEM_PROMPT = (
     "2. BUILD the solution in the sandbox with surpyval/repyability — clean the "
     "data, try candidate distributions, check goodness-of-fit, decide the best "
     "model. Show the key numbers you computed.\n"
-    "3. PLAN: state exactly what you will save to Reliafy as a numbered list — "
-    "EVERY dataset, life model, and RBD you intend to create, each with its "
-    "distribution/columns or structure. There may be one, or many, of each.\n"
-    "4. ASK the user to approve the whole plan, then STOP and wait. Do NOT call "
-    "any create tool until the user has clearly approved (e.g. 'yes', 'go ahead'). "
-    "One approval covers the entire plan. If they change it, revise and ask "
-    "again.\n"
-    "5. LOAD once approved: create each dataset (each returns a dataset_id), then "
-    "each life model referencing the right dataset_id, then any RBDs. Do the full "
-    "batch — don't stop after one. Report everything you created.\n\n"
+    "3. PLAN: state exactly what you will save to Reliafy as a short numbered "
+    "list — EVERY dataset, life model, and RBD you intend to create, each with "
+    "its distribution/columns or structure. There may be one, or many, of each.\n"
+    "4. PROPOSE: right after the plan, CALL the create tools for the whole plan — "
+    "create_dataset, then create_life_model, then any create_rbd, in order. These "
+    "calls are automatically HELD for the user's approval: NOTHING is created "
+    "yet, and the user sees exactly what you propose and clicks Approve. After "
+    "issuing the calls, STOP and wait — do NOT repeat them or take further steps. "
+    "Only call the create tools when you're genuinely ready to build (never "
+    "during exploration). Don't just describe the plan and stop — proposing IS "
+    "calling the tools, so the user gets a concrete approval prompt.\n"
+    "5. Once the user approves, the SAME calls run for real — each create_dataset "
+    "returns a dataset_id; use it for the life models; then any RBDs. Do the full "
+    "batch and report everything you created. If the user asks to change the "
+    "plan instead of approving, revise and propose again.\n\n"
     "surpyval fitting: `import surpyval; m = surpyval.Weibull.fit(x, c=..., n=...)` "
     "(c = censoring flags 0 observed / 1 right / -1 left; n = counts; both "
     "optional); read m.params, m.aic(), m.sf(t), m.mean(), m.qf(p). "
@@ -578,9 +583,10 @@ def stream_run(db, uid: str, message: str, file_id: str | None = None,
             for call in pending:
                 if not approved:
                     yield {"type": "reliafy_tool_blocked", "name": call["name"]}
-                    res = {"error": "The user has NOT approved yet. Present your "
-                           "plan clearly and ask them to approve — do not call any "
-                           "create tool until the turn is approved."}
+                    res = {"error": "Held for the user's approval — this action is "
+                           "now shown to them and will run when they click Approve. "
+                           "STOP here: do not call the create tools again or take "
+                           "further steps until the turn is approved."}
                 else:
                     res = _execute_tool(db, uid, call["name"], call["input"])
                     yield {"type": "reliafy_tool_result", "name": call["name"],

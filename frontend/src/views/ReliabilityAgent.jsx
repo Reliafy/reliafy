@@ -18,6 +18,17 @@ import { relativeTime } from "../instrument.js";
 
 const TOOL_LABEL = { create_dataset: "Create dataset", create_life_model: "Create life model", create_rbd: "Create RBD" };
 
+// A compact summary of the held create-tool calls awaiting approval, e.g.
+// "2 datasets, 1 model". Drives the Approve button label.
+const PENDING_NOUN = { create_dataset: "dataset", create_life_model: "model", create_rbd: "RBD" };
+function summarizePending(pending) {
+  const counts = {};
+  for (const p of pending) counts[p.name] = (counts[p.name] || 0) + 1;
+  return Object.entries(counts)
+    .map(([name, n]) => `${n} ${PENDING_NOUN[name] || name}${n === 1 ? "" : "s"}`)
+    .join(", ");
+}
+
 // One streamed part within an agent turn. Conversational text is a message
 // bubble; sandbox activity (bash/code + output) is a distinct collapsed "step"
 // chip, so the agent's thinking is legible without a wall of code.
@@ -220,9 +231,15 @@ export default function ReliabilityAgent() {
   // Pro-only feature: free tier is locked out (server enforces it too).
   const upgradeRequired = !!info?.enabled && info?.upgrade_required;
   const disabled = busy || !info?.enabled || upgradeRequired;
-  // Offer the greenlight once the agent has spoken and it's the user's move.
+  // Offer the greenlight ONLY when the agent has actually proposed actions and
+  // is waiting — i.e. its last turn holds create-tool calls pending approval.
+  // (Not a standing button after every agent message.)
   const lastMsg = messages[messages.length - 1];
-  const canApprove = !disabled && lastMsg?.role === "agent" && lastMsg.parts.length > 0;
+  const pending = lastMsg?.role === "agent" && !lastMsg.pending
+    ? lastMsg.parts.filter((p) => p.type === "tool_blocked")
+    : [];
+  const canApprove = !disabled && pending.length > 0;
+  const pendingSummary = summarizePending(pending);
 
   return (
     <div className="app agent-page">
@@ -294,9 +311,11 @@ export default function ReliabilityAgent() {
 
       {canApprove && (
         <div className="chat-approve">
-          <button className="chat-approve-btn" onClick={approve}>✓ Approve &amp; run plan</button>
+          <button className="chat-approve-btn" onClick={approve}>
+            ✓ Approve &amp; build{pendingSummary ? ` — ${pendingSummary}` : ""}
+          </button>
           <span className="muted-line" style={{ margin: 0 }}>
-            Arms the create tools for the next step only. Keep typing to refine instead.
+            The agent is asking to proceed. Approve to run it, or keep typing to change the plan.
           </span>
         </div>
       )}
