@@ -20,6 +20,7 @@ import CcfModal from "../components/CcfModal.jsx";
 import KNodeModal from "../components/KNodeModal.jsx";
 import CountModal from "../components/CountModal.jsx";
 import StandbyModal from "../components/StandbyModal.jsx";
+import LoadShareModal from "../components/LoadShareModal.jsx";
 import SubsystemModal from "../components/SubsystemModal.jsx";
 import RbdSaveModal from "../components/RbdSaveModal.jsx";
 import RbdCalculator from "../components/RbdCalculator.jsx";
@@ -159,6 +160,7 @@ function KNode({ data }) {
 // parallel blocks hold a life model and a count n of identical units.
 const BLOCK_TYPES = {
   standby: { label: "Standby", sub: "redundancy", cls: "rbd-standby" },
+  loadshare: { label: "Load-sharing", sub: "shared load", cls: "rbd-loadshare" },
   series: { label: "Series", sub: "subsystem", cls: "rbd-series", count: true },
   parallel: { label: "Parallel", sub: "subsystem", cls: "rbd-parallel", count: true },
   subsystem: { label: "Sub-system", sub: "nested RBD", cls: "rbd-subsystem" },
@@ -189,6 +191,17 @@ function StructureNode({ data }) {
         {data.model && (
           <div className="rbd-block-model">{modelSummary(data.model)}</div>
         )}
+      </>
+    );
+  } else if (data.kind === "loadshare") {
+    body = (
+      <>
+        <div className="rbd-block-sub">
+          {`${data.units ?? 2} units · load ${data.load ?? "?"} · k=${data.k ?? 1}`}
+        </div>
+        <div className={data.model ? "rbd-block-model" : "rbd-block-sub"}>
+          {data.model ? modelSummary(data.model) : "No load-life model"}
+        </div>
       </>
     );
   } else if (data.kind === "subsystem") {
@@ -227,6 +240,7 @@ const TYPE_PREFIX = {
   component: "c",
   knode: "k",
   standby: "sb",
+  loadshare: "ls",
   series: "sr",
   parallel: "pl",
   subsystem: "ss",
@@ -339,6 +353,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   const [knodeCtx, setKnodeCtx] = useState(null); // { mode, flowPos?, nodeId?, n, k }
   const [countCtx, setCountCtx] = useState(null); // { nodeId, kind, label, n }
   const [standbyCtx, setStandbyCtx] = useState(null); // node data for the modal
+  const [loadshareCtx, setLoadshareCtx] = useState(null); // load-sharing node data
   const [subsystemNodeId, setSubsystemNodeId] = useState(null);
   const [savedRbdId, setSavedRbdId] = useState(null);
   const [savedRbdName, setSavedRbdName] = useState("");
@@ -368,6 +383,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       component: ComponentNode,
       knode: KNode,
       standby: StructureNode,
+      loadshare: StructureNode,
       series: StructureNode,
       parallel: StructureNode,
       subsystem: StructureNode,
@@ -482,6 +498,8 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
           startProb: 1,
           standbyModel: null,
         });
+      } else if (kind === "loadshare") {
+        Object.assign(data, { model: null, load: "", units: 2, k: 1 });
       } else if (kind === "subsystem") {
         data.rbd = null;
       }
@@ -566,6 +584,22 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setStandbyCtx(null);
     },
     [standbyCtx, setNodes]
+  );
+
+  // Apply the load-sharing configuration to the targeted node.
+  const submitLoadshare = useCallback(
+    (config) => {
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === loadshareCtx?.nodeId
+            ? { ...node, data: { ...node.data, ...config } }
+            : node
+        )
+      );
+      setModal(null);
+      setLoadshareCtx(null);
+    },
+    [loadshareCtx, setNodes]
   );
 
   // Assign a saved RBD to the targeted sub-system node.
@@ -782,6 +816,10 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         case "standby":
           setStandbyCtx({ nodeId: node.id, ...node.data });
           setModal("standby");
+          break;
+        case "loadshare":
+          setLoadshareCtx({ nodeId: node.id, ...node.data });
+          setModal("loadshare");
           break;
         case "subsystem":
           setSubsystemNodeId(node.id);
@@ -1006,6 +1044,9 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
               <button onClick={() => { addBlock("standby", menu.flow); closeMenu(); }}>
                 Add standby node
               </button>
+              <button onClick={() => { addBlock("loadshare", menu.flow); closeMenu(); }}>
+                Add load-sharing node
+              </button>
               <button onClick={() => { addBlock("series", menu.flow); closeMenu(); }}>
                 Add series node
               </button>
@@ -1091,6 +1132,21 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
                       }}
                     >
                       Edit standby
+                    </button>
+                    <div className="rbd-menu-sep" />
+                  </>
+                )}
+                {menu.nodeType === "loadshare" && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const node = nodes.find((nd) => nd.id === menu.id);
+                        setLoadshareCtx({ nodeId: menu.id, ...node?.data });
+                        setModal("loadshare");
+                        closeMenu();
+                      }}
+                    >
+                      Edit load-sharing
                     </button>
                     <div className="rbd-menu-sep" />
                   </>
@@ -1213,6 +1269,13 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
             setCountCtx(null);
           }}
           onSubmit={submitCount}
+        />
+      )}
+      {modal === "loadshare" && (
+        <LoadShareModal
+          initial={loadshareCtx}
+          onClose={() => { setModal(null); setLoadshareCtx(null); }}
+          onSubmit={submitLoadshare}
         />
       )}
       {modal === "standby" && (

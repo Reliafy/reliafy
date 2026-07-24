@@ -6038,3 +6038,9 @@ button.danger:hover { background: #fdeeee; }
 @media (prefers-color-scheme: dark) {
   .rbd-ccf-list { background: #161a20; border-color: #262c34; }
 }
+
+/* Load-sharing RBD node */
+.rbd-block.rbd-loadshare { border-color: #0f9ab0; }
+.rbd-block.rbd-loadshare .rbd-block-title { color: #0c7d8f; }
+.ls-fields { display: flex; gap: 12px; margin-top: 10px; }
+.ls-fields .login-field { flex: 1; }
