@@ -5978,3 +5978,16 @@ button.danger:hover { background: #fdeeee; }
   .agent-hist { background: #161a20; border-color: #262c34; }
   .agent-hist-row:hover { background: rgba(90, 140, 246, 0.16); }
 }
+
+/* Reliability Agent — inline "request approval" control in the chat thread */
+.agent-approve-inline {
+  display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+  margin: 6px 0; padding: 12px 14px;
+  border: 1px solid var(--acc); border-radius: 12px;
+  background: rgba(47, 109, 246, 0.06);
+}
+.agent-approve-msg { font-size: 14px; line-height: 1.4; }
+.agent-approve-done { font-size: 12.5px; color: var(--muted); font-style: italic; }
+@media (prefers-color-scheme: dark) {
+  .agent-approve-inline { background: rgba(90, 140, 246, 0.12); }
+}

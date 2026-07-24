@@ -18,21 +18,25 @@ import { relativeTime } from "../instrument.js";
 
 const TOOL_LABEL = { create_dataset: "Create dataset", create_life_model: "Create life model", create_rbd: "Create RBD" };
 
-// A compact summary of the held create-tool calls awaiting approval, e.g.
-// "2 datasets, 1 model". Drives the Approve button label.
-const PENDING_NOUN = { create_dataset: "dataset", create_life_model: "model", create_rbd: "RBD" };
-function summarizePending(pending) {
-  const counts = {};
-  for (const p of pending) counts[p.name] = (counts[p.name] || 0) + 1;
-  return Object.entries(counts)
-    .map(([name, n]) => `${n} ${PENDING_NOUN[name] || name}${n === 1 ? "" : "s"}`)
-    .join(", ");
-}
-
 // One streamed part within an agent turn. Conversational text is a message
 // bubble; sandbox activity (bash/code + output) is a distinct collapsed "step"
 // chip, so the agent's thinking is legible without a wall of code.
-function Part({ p }) {
+function Part({ p, onApprove, approvable }) {
+  // The agent's explicit request to proceed — an inline Approve control in the
+  // thread. Actionable only on the latest turn; otherwise it shows as resolved.
+  if (p.type === "approval")
+    return (
+      <div className="agent-approve-inline">
+        <div className="agent-approve-msg">
+          Ready to build{p.summary ? <> — <strong>{p.summary}</strong></> : ""}. Approve to proceed?
+        </div>
+        {approvable ? (
+          <button className="chat-approve-btn" onClick={onApprove}>✓ Approve &amp; build</button>
+        ) : (
+          <span className="agent-approve-done">Approval requested</span>
+        )}
+      </div>
+    );
   if (p.type === "text")
     return p.text ? (
       <div
@@ -66,7 +70,7 @@ function Part({ p }) {
   return null;
 }
 
-function Bubble({ msg }) {
+function Bubble({ msg, onApprove, approvable }) {
   if (msg.role === "user") {
     return (
       <div className="chat-row user">
@@ -79,7 +83,7 @@ function Bubble({ msg }) {
     <div className="chat-row agent">
       <div className="agent-stack">
         {msg.parts.length === 0 && msg.pending && <span className="chat-typing">Working…</span>}
-        {msg.parts.map((p, i) => <Part key={i} p={p} />)}
+        {msg.parts.map((p, i) => <Part key={i} p={p} onApprove={onApprove} approvable={approvable} />)}
         {msg.status && msg.pending && <span className="chat-status">{msg.status}…</span>}
       </div>
     </div>
@@ -195,6 +199,7 @@ export default function ReliabilityAgent() {
             case "tool_use": pushPart({ type: "code", name: ev.name, code: ev.code || "" }); break;
             case "tool_result": pushPart({ type: "result", output: ev.output }); break;
             case "reliafy_tool": pushPart({ type: "tool_call", name: ev.name }); break;
+            case "approval_request": pushPart({ type: "approval", summary: ev.summary || "" }); break;
             case "reliafy_tool_blocked": pushPart({ type: "tool_blocked", name: ev.name }); break;
             case "reliafy_tool_result": pushPart({ type: "tool_done", ok: ev.ok, summary: ev.summary }); break;
             case "status": setAgentStatus(ev.status); break;
@@ -231,15 +236,8 @@ export default function ReliabilityAgent() {
   // Pro-only feature: free tier is locked out (server enforces it too).
   const upgradeRequired = !!info?.enabled && info?.upgrade_required;
   const disabled = busy || !info?.enabled || upgradeRequired;
-  // Offer the greenlight ONLY when the agent has actually proposed actions and
-  // is waiting — i.e. its last turn holds create-tool calls pending approval.
-  // (Not a standing button after every agent message.)
-  const lastMsg = messages[messages.length - 1];
-  const pending = lastMsg?.role === "agent" && !lastMsg.pending
-    ? lastMsg.parts.filter((p) => p.type === "tool_blocked")
-    : [];
-  const canApprove = !disabled && pending.length > 0;
-  const pendingSummary = summarizePending(pending);
+  // Approval is inline in the thread: the agent calls request_approval, which
+  // renders an Approve control on its latest turn (see the "approval" Part).
 
   return (
     <div className="app agent-page">
@@ -304,21 +302,13 @@ export default function ReliabilityAgent() {
             <p className="chat-empty-head">Tell me what to build — attach data if you have it.</p>
           </div>
         )}
-        {messages.map((m, i) => <Bubble key={i} msg={m} />)}
+        {messages.map((m, i) => (
+          <Bubble key={i} msg={m} onApprove={approve}
+                  approvable={i === messages.length - 1 && !disabled && !m.pending} />
+        ))}
       </div>
 
       {error && <div className="card error" style={{ marginTop: "0.6rem" }}>{error}</div>}
-
-      {canApprove && (
-        <div className="chat-approve">
-          <button className="chat-approve-btn" onClick={approve}>
-            ✓ Approve &amp; build{pendingSummary ? ` — ${pendingSummary}` : ""}
-          </button>
-          <span className="muted-line" style={{ margin: 0 }}>
-            The agent is asking to proceed. Approve to run it, or keep typing to change the plan.
-          </span>
-        </div>
-      )}
 
       <div className="chat-composer">
         <label className="chat-attach" title={file ? file.name : "Attach a CSV"}>

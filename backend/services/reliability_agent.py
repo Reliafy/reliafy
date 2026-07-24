@@ -45,18 +45,15 @@ SYSTEM_PROMPT = (
     "3. PLAN: state exactly what you will save to Reliafy as a short numbered "
     "list — EVERY dataset, life model, and RBD you intend to create, each with "
     "its distribution/columns or structure. There may be one, or many, of each.\n"
-    "4. PROPOSE: right after the plan, CALL the create tools for the whole plan — "
-    "create_dataset, then create_life_model, then any create_rbd, in order. These "
-    "calls are automatically HELD for the user's approval: NOTHING is created "
-    "yet, and the user sees exactly what you propose and clicks Approve. After "
-    "issuing the calls, STOP and wait — do NOT repeat them or take further steps. "
-    "Only call the create tools when you're genuinely ready to build (never "
-    "during exploration). Don't just describe the plan and stop — proposing IS "
-    "calling the tools, so the user gets a concrete approval prompt.\n"
-    "5. Once the user approves, the SAME calls run for real — each create_dataset "
-    "returns a dataset_id; use it for the life models; then any RBDs. Do the full "
-    "batch and report everything you created. If the user asks to change the "
-    "plan instead of approving, revise and propose again.\n\n"
+    "4. REQUEST APPROVAL: right after the plan, call the request_approval tool "
+    "with a one-line summary of what you'll build. That shows the user an Approve "
+    "button in the chat — nothing is created yet. Then STOP and wait. Do NOT call "
+    "any create tool until the user approves.\n"
+    "5. Once approved, LOAD the whole plan: call create_dataset (each returns a "
+    "dataset_id), then each life model referencing the right dataset_id, then any "
+    "RBDs. Do the full batch — don't stop after one — and report everything you "
+    "created. If the user asks to change the plan instead of approving, revise it "
+    "and call request_approval again.\n\n"
     "surpyval fitting: `import surpyval; m = surpyval.Weibull.fit(x, c=..., n=...)` "
     "(c = censoring flags 0 observed / 1 right / -1 left; n = counts; both "
     "optional); read m.params, m.aic(), m.sf(t), m.mean(), m.qf(p). "
@@ -201,6 +198,29 @@ TOOLS = [
                 },
             },
             "required": ["name", "stages"],
+        },
+    },
+    {
+        "type": "custom",
+        "name": "request_approval",
+        "description": (
+            "Ask the user to approve building your plan. Call this ONCE, right "
+            "after you've stated the plan, to request the go-ahead. It shows the "
+            "user an Approve button in the chat — nothing is created until they "
+            "click it. After calling this, STOP and wait; do not call "
+            "create_dataset / create_life_model / create_rbd until the user has "
+            "approved."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "One line naming what you'll build, e.g. "
+                    "'1 dataset + 2 Weibull life models' or '1 dataset, 1 model, 1 RBD'.",
+                },
+            },
+            "required": ["summary"],
         },
     },
 ]
@@ -482,7 +502,10 @@ def _norm(event) -> list[dict]:
         return [{"type": "tool_result", "output": text}] if text else []
     # The agent calling one of OUR Reliafy tools (create_dataset / create_life_model).
     if etype == "agent.custom_tool_use":
-        return [{"type": "reliafy_tool", "name": _get(event, "name"), "input": _get(event, "input") or {}}]
+        name = _get(event, "name")
+        if name == "request_approval":
+            return []  # handled by the inline approval control, not a tool chip
+        return [{"type": "reliafy_tool", "name": name, "input": _get(event, "input") or {}}]
     if "status" in etype:
         return [{"type": "status", "status": etype.rsplit(".", 1)[-1]}]
     return []
@@ -581,12 +604,28 @@ def stream_run(db, uid: str, message: str, file_id: str | None = None,
             # result line each, and hand the outcomes back to the agent.
             results = []
             for call in pending:
+                if call["name"] == "request_approval":
+                    # The agent's explicit "may I proceed?" — surface the inline
+                    # Approve control in the chat and tell the agent to wait. Never
+                    # gated (it creates nothing); the create tools stay gated below.
+                    yield {"type": "approval_request",
+                           "summary": (call["input"] or {}).get("summary") or ""}
+                    res = {"status": "awaiting_user_approval",
+                           "message": "Your plan is shown to the user with an Approve "
+                           "button. Stop and wait — do not call any create tool until "
+                           "they approve."}
+                    results.append({
+                        "type": "user.custom_tool_result",
+                        "custom_tool_use_id": call["id"],
+                        "content": [{"type": "text", "text": json.dumps(res)}],
+                        "is_error": False,
+                    })
+                    continue
                 if not approved:
                     yield {"type": "reliafy_tool_blocked", "name": call["name"]}
-                    res = {"error": "Held for the user's approval — this action is "
-                           "now shown to them and will run when they click Approve. "
-                           "STOP here: do not call the create tools again or take "
-                           "further steps until the turn is approved."}
+                    res = {"error": "Not approved yet — call request_approval to ask "
+                           "the user, then wait. Do not call any create tool until "
+                           "the user has approved."}
                 else:
                     res = _execute_tool(db, uid, call["name"], call["input"])
                     yield {"type": "reliafy_tool_result", "name": call["name"],
