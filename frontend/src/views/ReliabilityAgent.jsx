@@ -99,14 +99,14 @@ export default function ReliabilityAgent() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [credit, setCredit] = useState(null);
-  const [sessions, setSessions] = useState([]);
-  const [showHistory, setShowHistory] = useState(false);
+  const [sessions, setSessions] = useState(null); // null while loading
+  const [view, setView] = useState("list"); // "list" (landing) | "chat"
   const [loadingTx, setLoadingTx] = useState(false);
   const sessionRef = useRef(null); // reused across turns
   const scrollRef = useRef(null);
 
   const refreshSessions = () =>
-    listAgentSessions().then((r) => setSessions(r.sessions || [])).catch(() => {});
+    listAgentSessions().then((r) => setSessions(r.sessions || [])).catch(() => setSessions([]));
 
   useEffect(() => {
     reliabilityAgentInfo().then((i) => { setInfo(i); setCredit(i.credit_cents); }).catch((e) => setError(e.message));
@@ -119,14 +119,23 @@ export default function ReliabilityAgent() {
     sessionRef.current = null;
     setMessages([]);
     setError(null);
-    setShowHistory(false);
+    setView("chat");
+  };
+
+  // Back to the landing list of saved runs.
+  const backToList = () => {
+    if (busy) return;
+    setView("list");
+    setError(null);
+    refreshSessions();
   };
 
   // Reopen a past run: load its transcript and point the session at it so the
   // next message resumes the same conversation on the platform.
   const openSession = async (id) => {
     if (busy) return;
-    setShowHistory(false);
+    setView("chat");
+    setMessages([]);
     setLoadingTx(true);
     setError(null);
     try {
@@ -243,7 +252,18 @@ export default function ReliabilityAgent() {
     <div className="app agent-page">
       <header>
         <div>
+          {view === "chat" && (
+            <div className="crumb">
+              <button className="crumb-link" onClick={backToList}>Reliability Agent</button> /{" "}
+              <b>Chat</b>
+            </div>
+          )}
           <h1>Reliability Agent <span className="agent-poc">POC</span></h1>
+          {view === "list" && info?.enabled && (
+            <p className="muted-line" style={{ margin: 0 }}>
+              Analyse data, fit models, and build RBDs — each run is saved here to reopen or continue.
+            </p>
+          )}
           {!info?.enabled && (
             <p className="muted-line" style={{ margin: 0 }}>
               Not configured yet — set ANTHROPIC_API_KEY on the server to enable.
@@ -254,32 +274,11 @@ export default function ReliabilityAgent() {
           {credit != null && info?.billing_enabled && (
             <span className="muted-line" style={{ margin: 0 }}>{credit} credits</span>
           )}
-          {info?.enabled && (
-            <>
-              <button className="secondary" onClick={newChat} disabled={busy}>New chat</button>
-              <div className="agent-hist-wrap">
-                <button className="secondary" onClick={() => { setShowHistory((s) => !s); refreshSessions(); }}>
-                  History {sessions.length > 0 ? `(${sessions.length})` : ""}
-                </button>
-                {showHistory && (
-                  <div className="agent-hist">
-                    {sessions.length === 0 ? (
-                      <div className="agent-hist-empty">No past runs yet.</div>
-                    ) : (
-                      sessions.map((s) => (
-                        <button key={s.id} className="agent-hist-row" onClick={() => openSession(s.id)}
-                                title={s.title}>
-                          <span className="agent-hist-title">{s.title}</span>
-                          <span className="agent-hist-meta">
-                            {relativeTime(s.updated_at)} · {s.turns} turn{s.turns === 1 ? "" : "s"}
-                          </span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-            </>
+          {view === "chat" && (
+            <button className="secondary" onClick={backToList} disabled={busy}>← All chats</button>
+          )}
+          {info?.enabled && !upgradeRequired && (
+            <button onClick={newChat} disabled={busy}>New chat</button>
           )}
         </div>
       </header>
@@ -295,43 +294,73 @@ export default function ReliabilityAgent() {
         </div>
       )}
 
-      <div className="chat" ref={scrollRef}>
-        {loadingTx && <div className="chat-empty"><p className="chat-empty-head">Loading conversation…</p></div>}
-        {info?.enabled && messages.length === 0 && !upgradeRequired && !loadingTx && (
-          <div className="chat-empty">
-            <p className="chat-empty-head">Tell me what to build — attach data if you have it.</p>
+      {view === "list" ? (
+        // Landing: every saved run, newest first. Click to reopen/continue.
+        sessions === null ? (
+          <div className="card"><p className="muted-line">Loading…</p></div>
+        ) : sessions.length === 0 ? (
+          <div className="card empty-note">
+            <p>No conversations yet.</p>
+            <p className="muted-line">
+              Start a new chat — attach a CSV and tell the agent what to analyse or build.
+            </p>
+            {info?.enabled && !upgradeRequired && <button onClick={newChat}>New chat</button>}
           </div>
-        )}
-        {messages.map((m, i) => (
-          <Bubble key={i} msg={m} onApprove={approve}
-                  approvable={i === messages.length - 1 && !disabled && !m.pending} />
-        ))}
-      </div>
+        ) : (
+          <div className="card">
+            <div className="agent-sess-list">
+              {sessions.map((s) => (
+                <button key={s.id} className="agent-sess-row" onClick={() => openSession(s.id)} title={s.title}>
+                  <span className="agent-sess-title">{s.title}</span>
+                  <span className="agent-sess-meta">
+                    {relativeTime(s.updated_at)} · {s.turns} turn{s.turns === 1 ? "" : "s"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )
+      ) : (
+        <>
+          <div className="chat" ref={scrollRef}>
+            {loadingTx && <div className="chat-empty"><p className="chat-empty-head">Loading conversation…</p></div>}
+            {info?.enabled && messages.length === 0 && !upgradeRequired && !loadingTx && (
+              <div className="chat-empty">
+                <p className="chat-empty-head">Tell me what to build — attach data if you have it.</p>
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <Bubble key={i} msg={m} onApprove={approve}
+                      approvable={i === messages.length - 1 && !disabled && !m.pending} />
+            ))}
+          </div>
 
-      {error && <div className="card error" style={{ marginTop: "0.6rem" }}>{error}</div>}
+          {error && <div className="card error" style={{ marginTop: "0.6rem" }}>{error}</div>}
 
-      <div className="chat-composer">
-        <label className="chat-attach" title={file ? file.name : "Attach a CSV"}>
-          <input type="file" accept=".csv,text/csv" style={{ display: "none" }}
-                 disabled={disabled} onChange={(e) => setFile(e.target.files?.[0] || null)} />
-          {file ? `📎 ${file.name.length > 18 ? file.name.slice(0, 16) + "…" : file.name}` : "📎"}
-        </label>
-        <textarea
-          rows={1}
-          value={input}
-          disabled={disabled}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder={
-            upgradeRequired
-              ? "Get Pro or buy AI credits to use the Reliability Agent"
-              : info?.enabled
-                ? "Message the agent…  (Enter to send, Shift+Enter for newline)"
-                : "Agent not configured"
-          }
-        />
-        <button onClick={send} disabled={disabled || !input.trim()}>{busy ? "…" : "Send"}</button>
-      </div>
+          <div className="chat-composer">
+            <label className="chat-attach" title={file ? file.name : "Attach a CSV"}>
+              <input type="file" accept=".csv,text/csv" style={{ display: "none" }}
+                     disabled={disabled} onChange={(e) => setFile(e.target.files?.[0] || null)} />
+              {file ? `📎 ${file.name.length > 18 ? file.name.slice(0, 16) + "…" : file.name}` : "📎"}
+            </label>
+            <textarea
+              rows={1}
+              value={input}
+              disabled={disabled}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder={
+                upgradeRequired
+                  ? "Get Pro or buy AI credits to use the Reliability Agent"
+                  : info?.enabled
+                    ? "Message the agent…  (Enter to send, Shift+Enter for newline)"
+                    : "Agent not configured"
+              }
+            />
+            <button onClick={send} disabled={disabled || !input.trim()}>{busy ? "…" : "Send"}</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

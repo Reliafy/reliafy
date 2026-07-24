@@ -5954,29 +5954,23 @@ button.danger:hover { background: #fdeeee; }
 .empty-note { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .empty-note button { margin-top: 6px; }
 
-/* Reliability Agent — run history dropdown */
-.agent-hist-wrap { position: relative; }
-.agent-hist {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
-  width: 320px; max-height: 60vh; overflow-y: auto;
-  background: var(--panel, #fff); border: 1px solid var(--line, #dde3ea);
-  border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14); padding: 6px;
-}
-.agent-hist-empty { padding: 14px; color: var(--muted); font-size: 13px; text-align: center; }
-.agent-hist-row {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+/* Reliability Agent — saved-runs landing list */
+.agent-sess-list { display: flex; flex-direction: column; }
+.agent-sess-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
   width: 100%; text-align: left; background: none; border: none; color: inherit;
-  padding: 9px 11px; border-radius: 8px; cursor: pointer;
+  padding: 12px 12px; border-radius: 9px; cursor: pointer;
+  border-bottom: 1px solid var(--line, #eef1f5);
 }
-.agent-hist-row:hover { background: rgba(47, 109, 246, 0.08); }
-.agent-hist-title {
-  font-size: 13.5px; font-weight: 500; line-height: 1.3;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+.agent-sess-row:last-child { border-bottom: none; }
+.agent-sess-row:hover { background: rgba(47, 109, 246, 0.06); }
+.agent-sess-title {
+  font-size: 14px; font-weight: 500; line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
-.agent-hist-meta { font-size: 11.5px; color: var(--muted); }
+.agent-sess-meta { font-size: 12px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
 @media (prefers-color-scheme: dark) {
-  .agent-hist { background: #161a20; border-color: #262c34; }
-  .agent-hist-row:hover { background: rgba(90, 140, 246, 0.16); }
+  .agent-sess-row:hover { background: rgba(90, 140, 246, 0.14); }
 }
 
 /* Reliability Agent — inline "request approval" control in the chat thread */
