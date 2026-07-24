@@ -32,6 +32,9 @@ import { normalizeRbdGraph } from "../rbdGraph.js";
 // The RBD's unit is provided to node components so they can flag a model whose
 // unit doesn't match.
 const RbdUnitContext = createContext("");
+// Whether the RBD is repairable — component blocks then also show/prompt for a
+// repair-time distribution.
+const RbdRepairableContext = createContext(false);
 
 const TIME_UNITS = [
   "Seconds",
@@ -98,6 +101,7 @@ function modelSummary(model) {
 // one) with left/right handles for the left-to-right flow.
 function ComponentNode({ data }) {
   const rbdUnit = useContext(RbdUnitContext);
+  const repairable = useContext(RbdRepairableContext);
   const warn = unitWarning(data.model, rbdUnit);
   return (
     <div className={"rbd-comp" + (warn ? " unit-warn" : "") + stateClass(data.state)}>
@@ -108,7 +112,14 @@ function ComponentNode({ data }) {
       {data.model ? (
         <div className="rbd-comp-model">{modelSummary(data.model)}</div>
       ) : (
-        <div className="rbd-comp-empty">No life model — right-click to set</div>
+        <div className="rbd-comp-empty">No life model — double-click to set</div>
+      )}
+      {repairable && (
+        data.repair ? (
+          <div className="rbd-comp-repair">🛠 {modelSummary(data.repair)}</div>
+        ) : (
+          <div className="rbd-comp-empty warn">No repair time — double-click to set</div>
+        )
       )}
       <Handle type="source" position={Position.Right} />
     </div>
@@ -326,6 +337,9 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   const [savedRbdUpdatedAt, setSavedRbdUpdatedAt] = useState(null);
   const [savedRbdReadOnly, setSavedRbdReadOnly] = useState(false);
   const [rbdUnit, setRbdUnit] = useState("");
+  // Repairable RBD: a distinct modelling choice — components carry a repair-time
+  // distribution and the system is analysed for availability, not reliability.
+  const [repairable, setRepairable] = useState(false);
   const [tab, setTab] = useState("builder"); // 'builder' | 'calc'
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -335,7 +349,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // Always-current snapshot of the canvas, so the AI assistant can read the
   // live diagram via the bridge without stale-closure issues.
   const liveRef = useRef({ nodes: [], edges: [], unit: "" });
-  liveRef.current = { nodes, edges, unit: rbdUnit };
+  liveRef.current = { nodes, edges, unit: rbdUnit, repairable };
   const { screenToFlowPosition, fitView } = useReactFlow();
   const nodeTypes = useMemo(
     () => ({
@@ -357,17 +371,17 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // position-independent signature lets us flag the result as stale once the
   // diagram changes.
   const sig = useMemo(
-    () => graphSignature({ nodes, edges, unit: rbdUnit }),
-    [nodes, edges, rbdUnit]
+    () => graphSignature({ nodes, edges, unit: rbdUnit, repairable }),
+    [nodes, edges, rbdUnit, repairable]
   );
   const validationStale = validation != null && sig !== checkedSig;
 
   const runValidate = useCallback(async () => {
     setValidating(true);
     try {
-      const v = await validateRbd({ nodes, edges, unit: rbdUnit });
+      const v = await validateRbd({ nodes, edges, unit: rbdUnit, repairable });
       setValidation(v);
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit }));
+      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable }));
     } catch (err) {
       setValidation({
         valid: false,
@@ -377,11 +391,11 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         warnings: [],
         non_analytic_nodes: {},
       });
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit }));
+      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable }));
     } finally {
       setValidating(false);
     }
-  }, [nodes, edges, rbdUnit]);
+  }, [nodes, edges, rbdUnit, repairable]);
 
   const onConnect = useCallback(
     (params) => setEdges((eds) => addEdge({ ...params, ...EDGE_OPTIONS }, eds)),
@@ -561,7 +575,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // Persist the current diagram as a saved RBD (updates the open one if any).
   const onSaveRbd = useCallback(
     async (name) => {
-      const graph = { nodes, edges, unit: rbdUnit };
+      const graph = { nodes, edges, unit: rbdUnit, repairable };
       const saved = await saveRbd(name, graph, savedRbdId, savedRbdUpdatedAt);
       setSavedRbdId(saved.id);
       setSavedRbdName(name);
@@ -570,7 +584,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setModal(null);
       onSaved?.(saved.id);
     },
-    [nodes, edges, rbdUnit, savedRbdId, savedRbdUpdatedAt, onSaved]
+    [nodes, edges, rbdUnit, repairable, savedRbdId, savedRbdUpdatedAt, onSaved]
   );
 
   // Replace the canvas with a saved graph; bump the id counter past loaded ids.
@@ -597,6 +611,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setNodes(loadedNodes);
       setEdges(graph?.edges || []);
       setRbdUnit(graph?.unit || "");
+      setRepairable(!!graph?.repairable);
       setSavedRbdId(id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
@@ -620,6 +635,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     setNodes(INITIAL_NODES);
     setEdges([]);
     setRbdUnit("");
+    setRepairable(false);
     setSavedRbdId(null);
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
@@ -639,6 +655,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     setNodes(norm.nodes);
     setEdges(norm.edges);
     if (graph.unit != null) setRbdUnit(graph.unit);
+    if (graph.repairable != null) setRepairable(!!graph.repairable);
     window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
   }, [setNodes, setEdges, fitView]);
 
@@ -662,11 +679,11 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
 
   // Assign a life model (saved or from parameters) to the node the modal targets.
   const setNodeModel = useCallback(
-    (model) => {
+    ({ model, repair }) => {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === modalNodeId
-            ? { ...node, data: { ...node.data, model } }
+            ? { ...node, data: { ...node.data, model, ...(repair !== undefined ? { repair } : {}) } }
             : node
         )
       );
@@ -777,6 +794,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
 
   return (
     <RbdUnitContext.Provider value={rbdUnit}>
+    <RbdRepairableContext.Provider value={repairable}>
     <div className="rbd-shell">
     <div className="tabs rbd-tabs">
       <button
@@ -833,6 +851,17 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
                 <option value={u} key={u} />
               ))}
             </datalist>
+          </label>
+          <label className="rbd-unit-field" title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time.">
+            <span>System</span>
+            <select
+              className="rbd-unit-input"
+              value={repairable ? "repairable" : "non"}
+              onChange={(e) => setRepairable(e.target.value === "repairable")}
+            >
+              <option value="non">Non-repairable · reliability</option>
+              <option value="repairable">Repairable · availability</option>
+            </select>
           </label>
         </Panel>
         <Panel position="top-right">
@@ -1080,6 +1109,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       {modal === "lifemodel" && (
         <LifeModelModal
           initial={nodes.find((n) => n.id === modalNodeId)?.data}
+          repairable={repairable}
           onClose={() => {
             setModal(null);
             setModalNodeId(null);
@@ -1139,12 +1169,13 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       style={{ display: tab === "calc" ? undefined : "none" }}
     >
       <RbdCalculator
-        graph={{ nodes, edges, unit: rbdUnit }}
+        graph={{ nodes, edges, unit: rbdUnit, repairable }}
         validation={validation}
         stale={validationStale}
       />
     </div>
     </div>
+    </RbdRepairableContext.Provider>
     </RbdUnitContext.Provider>
   );
 }

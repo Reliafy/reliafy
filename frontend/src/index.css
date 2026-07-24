@@ -5985,3 +5985,22 @@ button.danger:hover { background: #fdeeee; }
 @media (prefers-color-scheme: dark) {
   .agent-approve-inline { background: rgba(90, 140, 246, 0.12); }
 }
+
+/* Repairable RBD — component repair line + availability results */
+.rbd-comp-repair { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.rbd-comp-empty.warn { color: #c67a1e; }
+
+.rbd-avail { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
+.rbd-avail-hero { text-align: center; padding: 10px 0 4px; }
+.rbd-avail-big { font-size: 40px; font-weight: 700; color: var(--acc); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.rbd-avail-cap { font-size: 13px; color: var(--muted); }
+.rbd-avail-metrics { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.rbd-avail-nodes { display: flex; flex-direction: column; gap: 6px; }
+.rbd-avail-bar { display: grid; grid-template-columns: minmax(90px, 160px) 1fr 46px; align-items: center; gap: 10px; font-size: 12.5px; }
+.rbd-avail-bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rbd-avail-bar-track { height: 9px; border-radius: 5px; background: var(--panel-2, #eef1f5); overflow: hidden; }
+.rbd-avail-bar-fill { display: block; height: 100%; background: var(--acc); border-radius: 5px; }
+.rbd-avail-bar-pct { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (prefers-color-scheme: dark) {
+  .rbd-avail-bar-track { background: #232a33; }
+}

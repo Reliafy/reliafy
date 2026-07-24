@@ -264,6 +264,65 @@ function Results({ result, t, tMax, conditionalAge = 0 }) {
 // consumes the shared result (``validation`` + ``stale``) and only offers the
 // reliability calculation once the diagram is a valid, analytically solvable
 // RBD.
+// Availability results for a repairable RBD: the headline uptime, up/down-time
+// figures, and each component's share of downtime (what drags uptime down).
+function AvailabilityView({ result, unit }) {
+  const u = unit ? ` ${unit}` : "";
+  const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
+  const a = result.steady_state_availability;
+  const per = result.per_node || [];
+  const curve = result.curve;
+
+  return (
+    <div className="rbd-avail">
+      <div className="rbd-avail-hero">
+        <div className="rbd-avail-big">{pct(a)}</div>
+        <div className="rbd-avail-cap">Steady-state availability (uptime)</div>
+      </div>
+      <div className="rbd-avail-metrics">
+        <div className="alt-metric"><span className="k">Unavailability</span><span className="v">{pct(result.unavailability)}</span></div>
+        <div className="alt-metric"><span className="k">Mean up time</span><span className="v">{fmt(result.mean_up_time)}{u}</span></div>
+        <div className="alt-metric"><span className="k">Mean down time</span><span className="v">{fmt(result.mean_down_time)}{u}</span></div>
+        <div className="alt-metric"><span className="k">Failure frequency</span><span className="v">{fmt(result.failure_frequency)}{u ? ` /${unit}` : ""}</span></div>
+      </div>
+
+      {per.length > 0 && (
+        <div className="rbd-avail-nodes">
+          <div className="ds-section-h">What drives downtime</div>
+          {per.map((n) => (
+            <div className="rbd-avail-bar" key={n.id}>
+              <span className="rbd-avail-bar-label" title={n.label}>{n.label}</span>
+              <span className="rbd-avail-bar-track">
+                <span className="rbd-avail-bar-fill" style={{ width: `${Math.round((n.share || 0) * 100)}%` }} />
+              </span>
+              <span className="rbd-avail-bar-pct">{((n.share || 0) * 100).toFixed(1)}%</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {curve && curve.t?.length > 1 && (
+        <Plot
+          data={[{ x: curve.t, y: curve.availability, mode: "lines", type: "scatter", line: { color: "#2f6df6", width: 2 } }]}
+          layout={{
+            autosize: true, height: 300, margin: { l: 56, r: 16, t: 16, b: 44 },
+            paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
+            xaxis: { title: unit ? `Time (${unit})` : "Time", gridcolor: "#eef1f5", zeroline: false },
+            yaxis: { title: "Availability", gridcolor: "#eef1f5", rangemode: "tozero" },
+            showlegend: false,
+          }}
+          useResizeHandler style={{ width: "100%" }} config={{ displayModeBar: false, responsive: true }}
+        />
+      )}
+      <p className="muted-line" style={{ margin: 0 }}>
+        Availability estimated by {result.n_simulations?.toLocaleString()} Monte-Carlo
+        replications over {fmt(result.t_simulation)}{u}.
+      </p>
+    </div>
+  );
+}
+
+
 export default function RbdCalculator({ graph, validation, stale }) {
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | calculating | error
@@ -327,14 +386,17 @@ export default function RbdCalculator({ graph, validation, stale }) {
       );
       setResult(res);
       let usedTMax = tMax;
-      // Prefill the prompts with the range actually used so the user can see
-      // and adjust them.
-      const limit = res.time[res.time.length - 1];
-      if (tMax === "") {
-        usedTMax = Number(limit.toPrecision(4));
-        setTMax(usedTMax);
+      // Repairable diagrams return an availability payload (no reliability grid).
+      if (res.kind !== "repairable") {
+        // Prefill the prompts with the range actually used so the user can see
+        // and adjust them.
+        const limit = res.time[res.time.length - 1];
+        if (tMax === "") {
+          usedTMax = Number(limit.toPrecision(4));
+          setTMax(usedTMax);
+        }
+        if (evalT === "") setEvalT(Number((limit / 2).toPrecision(4)));
       }
-      if (evalT === "") setEvalT(Number((limit / 2).toPrecision(4)));
       setCalcSig(JSON.stringify({ t: usedTMax, s: condAge, cov }));
       setPhase("idle");
     } catch (err) {
@@ -387,7 +449,7 @@ export default function RbdCalculator({ graph, validation, stale }) {
         </div>
       )}
 
-      {canCalculate && (
+      {canCalculate && !graph.repairable && (
         <div className="calc-controls rbd-calc-inputs">
           <label className="calc-t">
             <span>To{unitLabel} — x-axis limit</span>
@@ -443,7 +505,11 @@ export default function RbdCalculator({ graph, validation, stale }) {
 
       {error && <div className="card error">{error}</div>}
 
-      {result && !stale && (
+      {result && !stale && result.kind === "repairable" && (
+        <AvailabilityView result={result} unit={graph.unit} />
+      )}
+
+      {result && !stale && result.kind !== "repairable" && (
         <Results
           result={result}
           t={evalT === "" ? null : Number(evalT)}
