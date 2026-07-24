@@ -16,6 +16,7 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import LifeModelModal from "../components/LifeModelModal.jsx";
+import CcfModal from "../components/CcfModal.jsx";
 import KNodeModal from "../components/KNodeModal.jsx";
 import CountModal from "../components/CountModal.jsx";
 import StandbyModal from "../components/StandbyModal.jsx";
@@ -35,6 +36,8 @@ const RbdUnitContext = createContext("");
 // Whether the RBD is repairable — component blocks then also show/prompt for a
 // repair-time distribution.
 const RbdRepairableContext = createContext(false);
+// Map of component id -> common-cause beta, so grouped blocks show a CC badge.
+const RbdCcfContext = createContext({});
 
 const TIME_UNITS = [
   "Seconds",
@@ -99,15 +102,20 @@ function modelSummary(model) {
 
 // Custom component block: shows the assigned life model (or a prompt to set
 // one) with left/right handles for the left-to-right flow.
-function ComponentNode({ data }) {
+function ComponentNode({ id, data }) {
   const rbdUnit = useContext(RbdUnitContext);
   const repairable = useContext(RbdRepairableContext);
+  const ccf = useContext(RbdCcfContext);
+  const beta = ccf[id];
   const warn = unitWarning(data.model, rbdUnit);
   return (
-    <div className={"rbd-comp" + (warn ? " unit-warn" : "") + stateClass(data.state)}>
+    <div className={"rbd-comp" + (warn ? " unit-warn" : "") + (beta != null ? " ccf-member" : "") + stateClass(data.state)}>
       <Handle type="target" position={Position.Left} />
       <StatusBadge state={data.state} />
       {warn && <UnitWarn title={warn} />}
+      {beta != null && (
+        <span className="rbd-ccf-chip" title={`Common-cause group — β = ${beta}`}>CC β={beta}</span>
+      )}
       <div className="rbd-comp-title">{data.label}</div>
       {data.model ? (
         <div className="rbd-comp-model">{modelSummary(data.model)}</div>
@@ -340,6 +348,10 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // Repairable RBD: a distinct modelling choice — components carry a repair-time
   // distribution and the system is analysed for availability, not reliability.
   const [repairable, setRepairable] = useState(false);
+  // Common-cause groups: [{id, members:[nodeId], beta}] — redundant components
+  // coupled by a shared failure cause (reliability analysis only).
+  const [ccfGroups, setCcfGroups] = useState([]);
+  const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
   const [tab, setTab] = useState("builder"); // 'builder' | 'calc'
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -349,7 +361,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // Always-current snapshot of the canvas, so the AI assistant can read the
   // live diagram via the bridge without stale-closure issues.
   const liveRef = useRef({ nodes: [], edges: [], unit: "" });
-  liveRef.current = { nodes, edges, unit: rbdUnit, repairable };
+  liveRef.current = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups };
   const { screenToFlowPosition, fitView } = useReactFlow();
   const nodeTypes = useMemo(
     () => ({
@@ -371,17 +383,17 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // position-independent signature lets us flag the result as stale once the
   // diagram changes.
   const sig = useMemo(
-    () => graphSignature({ nodes, edges, unit: rbdUnit, repairable }),
-    [nodes, edges, rbdUnit, repairable]
+    () => graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }),
+    [nodes, edges, rbdUnit, repairable, ccfGroups]
   );
   const validationStale = validation != null && sig !== checkedSig;
 
   const runValidate = useCallback(async () => {
     setValidating(true);
     try {
-      const v = await validateRbd({ nodes, edges, unit: rbdUnit, repairable });
+      const v = await validateRbd({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups });
       setValidation(v);
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable }));
+      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }));
     } catch (err) {
       setValidation({
         valid: false,
@@ -391,11 +403,11 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         warnings: [],
         non_analytic_nodes: {},
       });
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable }));
+      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }));
     } finally {
       setValidating(false);
     }
-  }, [nodes, edges, rbdUnit, repairable]);
+  }, [nodes, edges, rbdUnit, repairable, ccfGroups]);
 
   const onConnect = useCallback(
     (params) => setEdges((eds) => addEdge({ ...params, ...EDGE_OPTIONS }, eds)),
@@ -575,7 +587,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // Persist the current diagram as a saved RBD (updates the open one if any).
   const onSaveRbd = useCallback(
     async (name) => {
-      const graph = { nodes, edges, unit: rbdUnit, repairable };
+      const graph = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups };
       const saved = await saveRbd(name, graph, savedRbdId, savedRbdUpdatedAt);
       setSavedRbdId(saved.id);
       setSavedRbdName(name);
@@ -584,7 +596,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setModal(null);
       onSaved?.(saved.id);
     },
-    [nodes, edges, rbdUnit, repairable, savedRbdId, savedRbdUpdatedAt, onSaved]
+    [nodes, edges, rbdUnit, repairable, ccfGroups, savedRbdId, savedRbdUpdatedAt, onSaved]
   );
 
   // Replace the canvas with a saved graph; bump the id counter past loaded ids.
@@ -612,6 +624,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setEdges(graph?.edges || []);
       setRbdUnit(graph?.unit || "");
       setRepairable(!!graph?.repairable);
+      setCcfGroups(graph?.ccf_groups || []);
       setSavedRbdId(id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
@@ -636,6 +649,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     setEdges([]);
     setRbdUnit("");
     setRepairable(false);
+    setCcfGroups([]);
     setSavedRbdId(null);
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
@@ -656,6 +670,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     setEdges(norm.edges);
     if (graph.unit != null) setRbdUnit(graph.unit);
     if (graph.repairable != null) setRepairable(!!graph.repairable);
+    if (graph.ccf_groups != null) setCcfGroups(graph.ccf_groups);
     window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
   }, [setNodes, setEdges, fitView]);
 
@@ -792,9 +807,40 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     [setEdges]
   );
 
+  // Common-cause: id -> beta (for the node badge), and the currently-selected
+  // component nodes (the candidates for a new group).
+  const ccfMap = useMemo(() => {
+    const m = {};
+    for (const g of ccfGroups) for (const id of g.members || []) m[id] = g.beta;
+    return m;
+  }, [ccfGroups]);
+  const selectedComponentIds = useMemo(
+    () => nodes.filter((n) => n.selected && n.type === "component").map((n) => n.id),
+    [nodes]
+  );
+  const labelFor = (id) => nodes.find((n) => n.id === id)?.data?.label || id;
+
+  const openCcfForSelection = () => {
+    if (selectedComponentIds.length < 2) return;
+    setCcfCtx({ members: selectedComponentIds, beta: 0.1 });
+    setModal("ccf");
+  };
+  const submitCcf = ({ beta }) => {
+    setCcfGroups((prev) => {
+      if (ccfCtx?.groupId) return prev.map((g) => (g.id === ccfCtx.groupId ? { ...g, beta } : g));
+      const id = `ccf-${Date.now().toString(36)}-${Math.round(Math.random() * 1e4)}`;
+      return [...prev, { id, members: ccfCtx.members, beta }];
+    });
+    setModal(null);
+    setCcfCtx(null);
+  };
+  const editCcf = (g) => { setCcfCtx({ members: g.members, beta: g.beta, groupId: g.id }); setModal("ccf"); };
+  const removeCcf = (gid) => setCcfGroups((prev) => prev.filter((g) => g.id !== gid));
+
   return (
     <RbdUnitContext.Provider value={rbdUnit}>
     <RbdRepairableContext.Provider value={repairable}>
+    <RbdCcfContext.Provider value={ccfMap}>
     <div className="rbd-shell">
     <div className="tabs rbd-tabs">
       <button
@@ -864,6 +910,30 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
             </select>
           </label>
         </Panel>
+        {!repairable && selectedComponentIds.length >= 2 && (
+          <Panel position="top-center">
+            <button className="rbd-btn accent" onClick={openCcfForSelection}
+                    title="Couple these redundant components by a shared failure cause">
+              ⚭ Common-cause group ({selectedComponentIds.length})
+            </button>
+          </Panel>
+        )}
+        {!repairable && ccfGroups.length > 0 && (
+          <Panel position="bottom-left">
+            <div className="rbd-ccf-list">
+              <div className="rbd-ccf-list-h">Common-cause groups</div>
+              {ccfGroups.map((g) => (
+                <div className="rbd-ccf-row" key={g.id}>
+                  <span className="rbd-ccf-row-members" title={(g.members || []).map(labelFor).join(", ")}>
+                    {(g.members || []).map(labelFor).join(" · ")}
+                  </span>
+                  <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β={g.beta}</button>
+                  <button className="rbd-ccf-row-x" onClick={() => removeCcf(g.id)} title="Ungroup" aria-label="Ungroup">×</button>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
         <Panel position="top-right">
           <button className="rbd-btn" onClick={() => setModal("saverbd")}>
             Save RBD
@@ -1117,6 +1187,14 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
           onSubmit={setNodeModel}
         />
       )}
+      {modal === "ccf" && ccfCtx && (
+        <CcfModal
+          initial={ccfCtx}
+          memberLabels={(ccfCtx.members || []).map(labelFor)}
+          onClose={() => { setModal(null); setCcfCtx(null); }}
+          onSubmit={submitCcf}
+        />
+      )}
       {modal === "knode" && (
         <KNodeModal
           initial={knodeCtx}
@@ -1169,12 +1247,13 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       style={{ display: tab === "calc" ? undefined : "none" }}
     >
       <RbdCalculator
-        graph={{ nodes, edges, unit: rbdUnit, repairable }}
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }}
         validation={validation}
         stale={validationStale}
       />
     </div>
     </div>
+    </RbdCcfContext.Provider>
     </RbdRepairableContext.Provider>
     </RbdUnitContext.Provider>
   );

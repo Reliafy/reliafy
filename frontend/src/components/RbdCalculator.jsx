@@ -143,6 +143,17 @@ function Results({ result, t, tMax, conditionalAge = 0 }) {
 
   return (
     <div className="calc">
+      {result.ccf && result.ccf.groups?.length > 0 && (
+        <div className="rbd-ccf-impact">
+          <span>Common cause cuts system reliability at the design point from</span>
+          <span className="drop">{(result.ccf.reliability_without * 100).toFixed(1)}%</span>
+          <span>to</span>
+          <span className="drop">{(result.ccf.reliability_with * 100).toFixed(1)}%</span>
+          <span className="muted-line" style={{ margin: 0 }}>
+            ({result.ccf.groups.map((g) => `${g.members.join(" & ")} β=${g.beta}`).join("; ")}, at t={fmt(result.ccf.time)}{unit ? ` ${unit}` : ""})
+          </span>
+        </div>
+      )}
       <div className="params">
         <div className="stat">
           <div className="value">{fmt(result.mttf)}</div>
