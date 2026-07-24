@@ -32,7 +32,7 @@ from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 from repyability.rbd.repairable_rbd import RepairableRBD
 from repyability.rbd.ccf import CCFGroup
-from repyability import BetaFactor
+from repyability import BetaFactor, LoadSharingModel
 from repyability.non_repairable import NonRepairable
 from repyability.rbd.standby_node import StandbyModel
 from repyability.utils.wrappers import conditional_survival
@@ -236,6 +236,50 @@ def _build_distribution(
         raise AnalysisError(f"{where}: {exc}") from exc
 
 
+_LOADSHARE_SIMS = 2000  # MC replicates for the load-sharing group's KM fit
+
+
+def _loadshare_model(data: dict, label: str, resolve_model=None):
+    """Build a load-sharing group's reliability. The units share a total load L;
+    each of ``s`` survivors carries ``L / s``, so survivors fail faster. The unit
+    is a saved accelerated-failure-time (AFT) model with the load as its single
+    covariate (``phi(load)``). ``units`` identical units, ``k`` required."""
+    model = data.get("model") or {}
+    model_id = model.get("modelId") or model.get("model_id")
+    if not model_id:
+        raise AnalysisError(f"{label}: pick the load-life (AFT) model for the units.")
+    if resolve_model is None:
+        # Structural/validation context: a load-sharing node is analytic; stand
+        # in with a perfectly-reliable node (the real fit isn't needed here).
+        return PerfectReliability
+    entry = resolve_model(model_id)
+    if not entry:
+        raise AnalysisError(f"{label}: saved load-life model not found — re-fit it or pick another.")
+    fitted = entry["model"]
+    fields = entry.get("fields") or []
+    if len(fields) != 1:
+        raise AnalysisError(
+            f"{label}: the load-life model must be an AFT model with exactly one "
+            "covariate — the load. Fit an accelerated-failure-time model (e.g. "
+            "weibull_aft) with a single load column.")
+    try:
+        n = max(int(data.get("units") or 2), 2)
+        k = max(int(data.get("k") or 1), 1)
+        load = float(data.get("load"))
+    except (TypeError, ValueError):
+        raise AnalysisError(f"{label}: set the total load, the number of units, and k.")
+    if load <= 0:
+        raise AnalysisError(f"{label}: the total load must be a positive number.")
+    if k > n:
+        raise AnalysisError(f"{label}: k ({k}) can't exceed the number of units ({n}).")
+    try:
+        return LoadSharingModel([fitted] * n, load=load, k=k, n_sims=_LOADSHARE_SIMS, seed=1)
+    except Exception as exc:  # RePyability validates the AFT unit
+        raise AnalysisError(
+            f"{label}: {exc} — load-sharing needs an accelerated-failure-time (AFT) "
+            "life model with the load as its covariate.") from exc
+
+
 def _standby_model(data: dict, label: str, resolve_model=None, cov_values=None):
     """Build the reliability of a standby node from its builder data."""
     primary = _build_distribution(data.get("model"), label, resolve_model, cov_values)
@@ -294,6 +338,9 @@ def _node_reliability(
 
     if ntype == "standby":
         return _standby_model(data, label, resolve_model, cov_values), None
+
+    if ntype == "loadshare":
+        return _loadshare_model(data, label, resolve_model), None
 
     if ntype == "subsystem":
         ref = data.get("rbd")

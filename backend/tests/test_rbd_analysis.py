@@ -83,6 +83,45 @@ def test_repairable_requires_repair_time_on_components():
         ra.analyze_availability(graph)
 
 
+def test_load_sharing_node_analyses_and_k_lowers_reliability():
+    """A load-sharing node (units are a saved AFT load-life model) analyses end
+    to end; requiring more survivors (higher k) lowers system reliability."""
+    import mongomock
+    import numpy as np
+    import pandas as pd
+    import surpyval as sp
+
+    from backend import db as dbmod
+
+    db = mongomock.MongoClient()["reliafy_test"]
+    dbmod._db = db
+    dbmod._simulated = True
+    from backend.services import datasets as dsvc, models as msvc, rbds as rbds_service
+
+    U = "u1"
+    rng = np.random.default_rng(2)
+    rows = []
+    for L in (1.0, 2.0, 4.0):
+        for xv in np.abs(sp.Weibull.random(60, max(1000.0 * L ** -1.5, 1.0), 2.0)):
+            rows.append({"life": round(float(xv), 3), "load": L})
+    ds = dsvc.create_dataset(db, "loadlife.csv", pd.DataFrame(rows).to_csv(index=False).encode(), U)
+    m = msvc.save_model(db, "Pump load-life", ds, "weibull_aft", {"x": "life"}, None, "load", owner_id=U)
+
+    def graph(k):
+        return {"unit": "hours", "nodes": [
+            {"id": "input", "type": "input", "data": {}},
+            {"id": "ls", "type": "loadshare", "data": {
+                "label": "Pump bank", "model": {"source": "saved", "modelId": m.id},
+                "load": 3.0, "units": 3, "k": k}},
+            {"id": "output", "type": "output", "data": {}}],
+            "edges": [{"source": "input", "target": "ls"}, {"source": "ls", "target": "output"}]}
+
+    r1 = rbds_service.analyze_graph(db, graph(1), U)
+    r2 = rbds_service.analyze_graph(db, graph(2), U)
+    assert r1["mttf"] and r2["mttf"]
+    assert r2["mttf"] < r1["mttf"]  # needing 2 of 3 survivors is less reliable
+
+
 def test_common_cause_lowers_redundant_reliability():
     # Two identical redundant pumps, coupled by a beta-factor common cause.
     graph = {
