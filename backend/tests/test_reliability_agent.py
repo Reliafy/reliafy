@@ -185,6 +185,27 @@ def test_execute_tool_creates_repairable_rbd_with_availability():
     assert "error" in agent._execute_tool(db, U, "create_rbd", bad)
 
 
+def test_create_rbd_common_cause_beta():
+    """A stage's common_cause_beta couples its redundant components, and the
+    saved RBD analyses to a lower (more honest) reliability."""
+    from backend.services import reliability_agent as agent
+    from backend.services import rbds as rbds_service
+
+    db = mongomock.MongoClient()["reliafy_test"]
+    pump = {"distribution": "weibull", "params": [{"name": "alpha", "value": 900}, {"name": "beta", "value": 1.4}]}
+    inp = {"name": "Redundant pumps", "stages": [
+        {"label": "Pumps", "k_of_n": 1, "common_cause_beta": 0.1,
+         "components": [{"label": "Pump A", **pump}, {"label": "Pump B", **pump}]}]}
+    res = agent._execute_tool(db, U, "create_rbd", inp)
+    assert res["ok"], res
+    rbd = rbds_service.get_rbd(db, res["rbd_id"], owner_id=U)
+    assert len(rbd.graph.get("ccf_groups") or []) == 1
+
+    out = rbds_service.analyze_rbd(db, res["rbd_id"], owner_id=U)
+    assert out["ccf"] is not None
+    assert out["ccf"]["reliability_with"] < out["ccf"]["reliability_without"]
+
+
 def test_create_life_model_full_inputs():
     """The expanded tool passes censoring, counts, the offset/zi/lfp modifiers,
     fixed params, and covariates through to the fit."""

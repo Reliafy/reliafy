@@ -75,7 +75,10 @@ SYSTEM_PROMPT = (
     "AVAILABILITY/uptime); in a repairable RBD every component ALSO needs a "
     "repair-time distribution (repair_distribution + repair_params, e.g. a "
     "lognormal mean-time-to-repair). Choose repairable when the user cares about "
-    "uptime/availability of a system that is fixed and returned to service.\n\n"
+    "uptime/availability of a system that is fixed and returned to service. For "
+    "redundant components that share a failure cause (same batch/environment/"
+    "power supply), set the stage's common_cause_beta (non-repairable RBDs) so "
+    "the redundancy isn't over-credited.\n\n"
     "UPLOADED DATA IS OPTIONAL. If the user gives no data (e.g. 'research this "
     "pump / truck type and build an RBD'), research the typical components and "
     "their failure distributions/parameters and build the RBD from those inline — "
@@ -190,6 +193,7 @@ TOOLS = [
                         "properties": {
                             "label": {"type": "string", "description": "Name of this stage/block."},
                             "k_of_n": {"type": "integer", "description": "Components required to keep the stage working (k of the n components). Omit or 1 = plain parallel redundancy (any one); equal to the component count = all required (series)."},
+                            "common_cause_beta": {"type": "number", "description": "Optional (non-repairable RBDs, stages with 2+ components): couple this stage's redundant components by a beta-factor common cause — the fraction (0–1, e.g. 0.1) of each component's failures that are shared-cause and take out the whole group at once. Use for identical redundant units that share a cause (same batch, environment, power)."},
                             "components": {
                                 "type": "array",
                                 "description": "One or more parallel components in this stage.",
@@ -389,6 +393,7 @@ def _build_rbd_graph(db, uid: str, stages: list, repairable: bool = False) -> di
     and the graph is flagged for availability analysis."""
     nodes = [{"id": "input", "type": "input", "position": {"x": 0, "y": 160}, "data": {"label": "Input"}}]
     edges = []
+    ccf_groups = []
     prev_exit = "input"
     for si, stage in enumerate(stages):
         comps = stage.get("components") or []
@@ -407,6 +412,14 @@ def _build_rbd_graph(db, uid: str, stages: list, repairable: bool = False) -> di
             nodes.append({"id": cid, "type": "component", "position": {"x": x, "y": y}, "data": data})
             edges.append({"id": f"e-{prev_exit}-{cid}", "source": prev_exit, "target": cid})
             comp_ids.append(cid)
+        # Optional common-cause coupling for this stage's redundant components.
+        if not repairable and m > 1 and stage.get("common_cause_beta") is not None:
+            try:
+                beta = float(stage["common_cause_beta"])
+            except (TypeError, ValueError):
+                beta = None
+            if beta is not None and 0.0 < beta < 1.0:
+                ccf_groups.append({"id": f"ccf-s{si}", "members": list(comp_ids), "beta": beta})
         if m > 1:
             k = max(1, min(int(stage.get("k_of_n") or 1), m))
             kid = f"s{si}k"
@@ -423,6 +436,8 @@ def _build_rbd_graph(db, uid: str, stages: list, repairable: bool = False) -> di
     graph = {"nodes": nodes, "edges": edges}
     if repairable:
         graph["repairable"] = True
+    if ccf_groups:
+        graph["ccf_groups"] = ccf_groups
     return graph
 
 
