@@ -31,6 +31,8 @@ from backend.fitting import DISTRIBUTIONS
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 from repyability.rbd.repairable_rbd import RepairableRBD
+from repyability.rbd.ccf import CCFGroup
+from repyability import BetaFactor
 from repyability.non_repairable import NonRepairable
 from repyability.rbd.standby_node import StandbyModel
 from repyability.utils.wrappers import conditional_survival
@@ -394,23 +396,49 @@ def _build_rbd(
     input_node = "input" if "input" in node_ids else None
     output_node = "output" if "output" in node_ids else None
 
-    try:
-        rbd = NonRepairableRBD(
-            edges,
-            reliabilities,
-            k=k,
-            input_node=input_node,
-            output_node=output_node,
-            on_infeasible_rbd="raise",
-        )
-    except ValueError as exc:
-        raise AnalysisError(
-            "The diagram isn't a valid reliability block diagram: "
-            f"{exc}. Check that every component is wired between the input "
-            "and output."
-        ) from exc
+    ccf_groups = _ccf_groups(graph, reliabilities)
 
-    return rbd, labels, node_types, reliabilities, working_nodes, broken_nodes
+    def _make(with_ccf: bool):
+        try:
+            return NonRepairableRBD(
+                edges,
+                reliabilities,
+                k=k,
+                input_node=input_node,
+                output_node=output_node,
+                on_infeasible_rbd="raise",
+                ccf_groups=ccf_groups if (with_ccf and ccf_groups) else None,
+            )
+        except ValueError as exc:
+            raise AnalysisError(
+                "The diagram isn't a valid reliability block diagram: "
+                f"{exc}. Check that every component is wired between the input "
+                "and output."
+            ) from exc
+
+    rbd = _make(with_ccf=True)
+    # Keep a common-cause-free twin so the analysis can show the CCF impact.
+    baseline = _make(with_ccf=False) if ccf_groups else None
+    return rbd, labels, node_types, reliabilities, working_nodes, broken_nodes, baseline
+
+
+def _ccf_groups(graph: dict, reliabilities: dict) -> list:
+    """Build RePyability CCFGroups from ``graph['ccf_groups']`` — each a set of
+    ≥2 redundant components coupled by a beta-factor shared cause. Groups whose
+    members aren't all present (or fewer than two) are skipped."""
+    out = []
+    for g in graph.get("ccf_groups") or []:
+        members = [m for m in (g.get("members") or []) if m in reliabilities]
+        if len(set(members)) < 2:
+            continue
+        try:
+            beta = float(g.get("beta"))
+        except (TypeError, ValueError):
+            continue
+        if not (0.0 < beta < 1.0):
+            continue
+        out.append(CCFGroup(members=list(dict.fromkeys(members)), model=BetaFactor(beta)))
+    return out
 
 
 def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
@@ -682,7 +710,7 @@ def analyze(
     life at ``s``. Raises :class:`AnalysisError` with a user-facing message if
     the graph can't be turned into a valid RBD.
     """
-    rbd, labels, node_types, reliabilities, working_nodes, broken_nodes = _build_rbd(
+    rbd, labels, node_types, reliabilities, working_nodes, broken_nodes, baseline = _build_rbd(
         graph, resolve_subsystem, None, resolve_model, covariates
     )
     # RePyability's native what-if override for the system-level calls.
@@ -795,6 +823,30 @@ def analyze(
         "min_cut_sets": _named_sets(rbd.get_min_cut_sets(include_in_out_nodes=False)),
     }
 
+    # Common-cause impact: system reliability WITH vs WITHOUT the coupling, at the
+    # representative time and across the grid — the headline "CCF cost".
+    ccf = None
+    if baseline is not None:
+        try:
+            base_sf = _conditional_sf(baseline, grid, s, **overrides)
+            r_with = float(system_sf[target_idx])
+            r_without = float(base_sf[target_idx])
+            ccf = {
+                "groups": [
+                    {"members": [labels.get(m, str(m)) for m in (g.get("members") or [])],
+                     "beta": float(g.get("beta"))}
+                    for g in (graph.get("ccf_groups") or [])
+                    if len([m for m in (g.get("members") or []) if m in reliabilities]) >= 2
+                    and _valid_beta(g.get("beta"))
+                ],
+                "time": t_rep,
+                "reliability_with": r_with,
+                "reliability_without": r_without,
+                "baseline_sf": _clean(base_sf),
+            }
+        except Exception:  # noqa: BLE001 - the main result still stands
+            ccf = None
+
     return {
         "unit": (graph.get("unit") or "").strip(),
         "time": grid.tolist(),
@@ -805,8 +857,16 @@ def analyze(
         "nodes": node_payloads,
         "importance": importance,
         "structure": structure,
+        "ccf": ccf,
         "repyability_version": _repyability_version(),
     }
+
+
+def _valid_beta(v) -> bool:
+    try:
+        return 0.0 < float(v) < 1.0
+    except (TypeError, ValueError):
+        return False
 
 
 # ---------------------------------------------------------------------------

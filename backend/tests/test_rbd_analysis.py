@@ -83,6 +83,31 @@ def test_repairable_requires_repair_time_on_components():
         ra.analyze_availability(graph)
 
 
+def test_common_cause_lowers_redundant_reliability():
+    # Two identical redundant pumps, coupled by a beta-factor common cause.
+    graph = {
+        "unit": "hours",
+        "nodes": _io_nodes() + [
+            _component("pA", "Pump A", "weibull", [("alpha", 900), ("beta", 1.4)]),
+            _component("pB", "Pump B", "weibull", [("alpha", 900), ("beta", 1.4)]),
+        ],
+        "edges": [
+            _edge("input", "pA"), _edge("input", "pB"),
+            _edge("pA", "output"), _edge("pB", "output"),
+        ],
+        "ccf_groups": [{"id": "g1", "members": ["pA", "pB"], "beta": 0.1}],
+    }
+    res = analyze(graph)
+    ccf = res["ccf"]
+    assert ccf is not None
+    assert ccf["groups"] == [{"members": ["Pump A", "Pump B"], "beta": 0.1}]
+    # Common cause erodes the redundancy benefit.
+    assert ccf["reliability_with"] < ccf["reliability_without"]
+    # A graph without groups carries no ccf payload.
+    g2 = {k: v for k, v in graph.items() if k != "ccf_groups"}
+    assert analyze(g2)["ccf"] is None
+
+
 def test_series_system_is_product_of_components():
     graph = {
         "unit": "Hours",
