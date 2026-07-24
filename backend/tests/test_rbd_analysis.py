@@ -34,6 +34,55 @@ def _edge(src, tgt):
     return {"id": f"{src}-{tgt}", "source": src, "target": tgt}
 
 
+def _repairable_component(node_id, label, alpha, beta, mttr_mu):
+    node = _component(node_id, label, "weibull", [("alpha", alpha), ("beta", beta)])
+    node["data"]["repair"] = {
+        "source": "params", "distribution_id": "lognormal",
+        "params": [{"name": "mu", "value": mttr_mu}, {"name": "sigma", "value": 0.4}],
+    }
+    return node
+
+
+def test_repairable_rbd_reports_availability_and_downtime_split():
+    # Controller in series with two redundant pumps — a repairable diagram.
+    graph = {
+        "unit": "hours",
+        "repairable": True,
+        "nodes": _io_nodes() + [
+            _repairable_component("ctrl", "Controller", 2000, 1.6, 2.0),
+            _repairable_component("pumpA", "Pump A", 900, 1.4, 2.3),
+            _repairable_component("pumpB", "Pump B", 900, 1.4, 2.3),
+        ],
+        "edges": [
+            _edge("input", "ctrl"), _edge("ctrl", "pumpA"), _edge("ctrl", "pumpB"),
+            _edge("pumpA", "output"), _edge("pumpB", "output"),
+        ],
+    }
+    res = ra.analyze_availability(graph)
+    import json
+    json.dumps(res)  # JSON-safe
+
+    assert res["kind"] == "repairable"
+    a = res["steady_state_availability"]
+    assert 0.9 < a < 1.0
+    assert res["unavailability"] == pytest.approx(1.0 - a, abs=1e-9)
+    # Every component contributes downtime; the redundant pumps dominate.
+    ids = {n["id"] for n in res["per_node"]}
+    assert ids == {"ctrl", "pumpA", "pumpB"}
+    assert sum(n["share"] for n in res["per_node"]) == pytest.approx(1.0, abs=1e-6)
+    assert res["per_node"][0]["id"] in ("pumpA", "pumpB")  # sorted by share desc
+
+
+def test_repairable_requires_repair_time_on_components():
+    graph = {
+        "unit": "hours", "repairable": True,
+        "nodes": _io_nodes() + [_component("c1", "Pump", "weibull", [("alpha", 100), ("beta", 2)])],
+        "edges": [_edge("input", "c1"), _edge("c1", "output")],
+    }
+    with pytest.raises(AnalysisError, match="repair-time"):
+        ra.analyze_availability(graph)
+
+
 def test_series_system_is_product_of_components():
     graph = {
         "unit": "Hours",
