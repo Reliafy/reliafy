@@ -30,9 +30,9 @@ function parseFrontmatter(raw) {
   return { meta, body: match[2] };
 }
 
-// Number of numbered steps = top-level ordered-list items in the body.
-function countSteps(body) {
-  return (body.match(/^\d+\.\s/gm) || []).length;
+function readingTime(body) {
+  const words = body.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / 200));
 }
 
 export const guides = Object.entries(files)
@@ -44,8 +44,7 @@ export const guides = Object.entries(files)
       title: meta.title || "Untitled",
       task: meta.task || "",
       category: meta.category || "General",
-      minutes: Number(meta.minutes) || Math.max(1, Math.round(countSteps(body) * 0.75)),
-      steps: countSteps(body),
+      minutes: Number(meta.minutes) || readingTime(body),
       prerequisites: meta.prerequisites || "",
       related: meta.related_href
         ? { href: meta.related_href, label: meta.related_label || "Open in Reliafy" }

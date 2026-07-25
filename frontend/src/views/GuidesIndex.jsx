@@ -28,8 +28,7 @@ export default function GuidesIndex() {
                 <li key={g.slug}>
                   <Link className="blog-card" to={`/guides/${g.slug}`}>
                     <div className="blog-card-meta">
-                      <span>{g.steps} steps</span>
-                      <span>· {g.minutes} min</span>
+                      <span>{g.minutes} min read</span>
                     </div>
                     <h3>{g.title}</h3>
                     <p>{g.task}</p>

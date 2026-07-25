@@ -6051,20 +6051,16 @@ button.danger:hover { background: #fdeeee; }
 .guide-head .guide-meta { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
 .guide-cat { padding: 1px 8px; border: 1px solid var(--line, #dde3ea); border-radius: 999px; }
 .guide-prereq { color: var(--muted); font-size: 14px; }
-.guide-prose { max-width: 720px; line-height: 1.7; }
-.guide-prose ol { counter-reset: step; list-style: none; padding: 0; }
-.guide-prose ol > li {
-  counter-increment: step; position: relative; padding: 4px 0 20px 44px; margin: 0;
-}
-.guide-prose ol > li::before {
-  content: counter(step); position: absolute; left: 0; top: 2px;
-  width: 28px; height: 28px; border-radius: 50%; background: var(--acc); color: #fff;
-  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
-}
+/* Guides read as articles: prose first, screenshots supporting it. */
+.guide-prose { max-width: 720px; line-height: 1.75; font-size: 16px; }
+.guide-prose h2 { margin: 32px 0 10px; font-size: 20px; }
+.guide-prose p { margin: 0 0 16px; }
+.guide-prose ul, .guide-prose ol { margin: 0 0 16px; padding-left: 22px; }
+.guide-prose li { margin: 4px 0; }
 .guide-prose img {
-  display: block; width: 100%; max-width: 640px; margin: 12px 0 4px;
+  display: block; width: 100%; max-width: 660px; margin: 18px 0 22px;
   border: 1px solid var(--line, #e3e7ee); border-radius: 10px;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.07);
 }
 /* A screenshot the capture harness hasn't produced yet. */
 .guide-prose img.guide-img-pending {

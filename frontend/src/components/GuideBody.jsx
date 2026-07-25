@@ -27,8 +27,7 @@ export default function GuideBody({ guide, compact = false }) {
     <article className={"guide" + (compact ? " guide-compact" : "")}>
       <header className="guide-head">
         <div className="guide-meta">
-          <span>{guide.steps} steps</span>
-          <span>· {guide.minutes} min</span>
+          <span>{guide.minutes} min read</span>
           <span className="guide-cat">{guide.category}</span>
         </div>
         <h1>{guide.title}</h1>
