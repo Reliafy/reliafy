@@ -6216,20 +6216,19 @@ button.danger:hover { background: #fdeeee; }
 }
 .rbd-hint-flash { font-weight: 600; color: var(--acc); }
 
-/* RBD join node — a k-node with n = 1, drawn as a compact junction rather than
-   a full "1-out-of-k voting" block. Same node type and same maths (a perfectly
-   reliable gate); it only merges branches, so it needs no room for a life model. */
-.rbd-join {
+/* RBD junction — a k-node with n = 1, drawn as a bare dot rather than a full
+   "1-out-of-k voting" block. Same node type and same maths (a perfectly reliable
+   gate); it only merges branches, so it needs no room for a life model. */
+.rbd-junction {
   position: relative;
   box-sizing: border-box;
-  width: 46px;
-  height: 46px;
-  display: grid;
-  place-items: center;
+  /* A bare dot: it carries no life model and no number, so anything drawn
+     inside it would only invite the question "what does that mean?". */
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  border: 1px solid #c4b5fd;
-  background: #f5f3ff;
+  border: 1.5px solid #a78bfa;
+  background: #ede9fe;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
-.rbd-join-mark { font-size: 20px; line-height: 1; color: #6d28d9; }
-.react-flow__node.selected .rbd-join { box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.3); }
+.react-flow__node.selected .rbd-junction { box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.3); }

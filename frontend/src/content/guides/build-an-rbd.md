@@ -39,10 +39,11 @@ a whole region wires its stages in one press. Links that already exist are left
 alone, so pressing `C` twice does nothing the second time.
 
 When several branches converge and then fan out again, wiring every branch to
-every successor gets messy. Right-click → **Add join** drops in a junction that
-merges them: everything feeds the join, and the join feeds what comes next. A
-join is perfectly reliable and changes no number in the results — it only tidies
-the wiring. (It's the voting node with n = 1, so any one branch is enough.)
+every successor gets messy. Right-click → **Add junction** drops in a dot that
+merges them: everything feeds the junction, and the junction feeds what comes
+next. A junction is perfectly reliable and changes no number in the results — it
+only tidies the wiring. (It's the voting node with n = 1, so any one branch is
+enough.)
 
 ![A pump station diagram: input, controller, redundant pumps, output](/guides/img/rbd-01-builder.png)
 

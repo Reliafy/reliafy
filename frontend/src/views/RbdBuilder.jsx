@@ -143,16 +143,17 @@ function ComponentNode({ id, data }) {
 function KNode({ data }) {
   const valid =
     Number(data.n) >= 1 && Number(data.k) >= 1 && Number(data.n) <= Number(data.k);
-  // n = 1 is a plain join: any one branch is enough. Same node, same maths (a
-  // perfectly reliable gate), but drawn as a small junction because "1-out-of-k
-  // voting" is a confusing way to describe merging branches back together.
-  const isJoin = valid && Number(data.n) === 1;
-  if (isJoin) {
+  // n = 1 is a junction: any one branch is enough. Same node and same maths (a
+  // perfectly reliable gate), but drawn as a bare dot, because "1-out-of-k
+  // voting" is a confusing way to describe merging branches back together and
+  // there is no number worth showing inside it.
+  const isJunction = valid && Number(data.n) === 1;
+  if (isJunction) {
     return (
-      <div className={"rbd-join" + stateClass(data.state)} title="Join — any one branch is enough">
+      <div className={"rbd-junction" + stateClass(data.state)}
+           title="Junction — merges branches back into one path">
         <Handle type="target" position={Position.Left} />
         <StatusBadge state={data.state} />
-        <span className="rbd-join-mark">⋔</span>
         <Handle type="source" position={Position.Right} />
       </div>
     );
@@ -1147,7 +1148,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
                 }}
                 title="Merge parallel branches back into one — any branch is enough"
               >
-                Add join
+                Add junction
               </button>
               <button
                 onClick={() => {

@@ -651,8 +651,8 @@ def test_pinned_working_and_failed_override_the_model():
     assert min(r3["system"]["sf"]) == pytest.approx(1.0, abs=1e-9)
 
 
-def test_join_node_is_a_knode_with_n_of_1_and_changes_nothing():
-    """The builder's "join" is a k-node with n = 1: a perfectly reliable gate
+def test_junction_is_a_knode_with_n_of_1_and_changes_nothing():
+    """The builder's "junction" is a k-node with n = 1: a perfectly reliable gate
     that merges branches. It must be numerically invisible — funnelling a fan-in
     through one gives the same answer as wiring every branch to every successor,
     which is what makes it safe to offer as a tidying-up affordance."""
@@ -667,23 +667,23 @@ def test_join_node_is_a_knode_with_n_of_1_and_changes_nothing():
         "nodes": _io_nodes() + left + right,
         "edges": ins + [_edge(s["id"], t["id"]) for s in left for t in right] + outs,
     })
-    join = analyze({
+    junction = analyze({
         "nodes": _io_nodes() + left + right
-        + [{"id": "j", "type": "knode", "data": {"label": "Join", "n": 1, "k": 3}}],
+        + [{"id": "j", "type": "knode", "data": {"label": "Junction", "n": 1, "k": 3}}],
         "edges": ins + [_edge(n["id"], "j") for n in left]
         + [_edge("j", n["id"]) for n in right] + outs,
     })
 
-    assert join["mttf"] == pytest.approx(mesh["mttf"], rel=1e-12)
-    assert np.allclose(join["system"]["sf"], mesh["system"]["sf"], rtol=1e-12)
+    assert junction["mttf"] == pytest.approx(mesh["mttf"], rel=1e-12)
+    assert np.allclose(junction["system"]["sf"], mesh["system"]["sf"], rtol=1e-12)
     # And it really did cut the wiring down: 9 cross-edges become 3 + 3.
     assert len([e for s in left for e in right]) == 9
 
 
-def test_bridge_network_is_supported_so_joins_must_stay_optional():
+def test_bridge_network_is_supported_so_junctions_must_stay_optional():
     """A bridge is not series-parallel: c and d are cross-linked, so it can only
     be expressed with implicit joins. This is why the builder must never *force*
-    branches through a join node."""
+    branches through a junction."""
     comps = [_component(c, c.upper(), "weibull", [("alpha", 900), ("beta", 1.4)])
              for c in ("a", "b", "c", "d")]
     result = analyze({
