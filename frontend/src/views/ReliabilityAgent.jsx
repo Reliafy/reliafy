@@ -16,7 +16,20 @@ import { relativeTime } from "../instrument.js";
 // tools to load datasets + life models into the workspace. Messages persist in a
 // scrolling thread; the session is reused across turns.
 
-const TOOL_LABEL = { create_dataset: "Create dataset", create_life_model: "Create life model", create_rbd: "Create RBD" };
+// Human labels for the Reliafy-side tools. Reads are phrased as looking, not
+// doing — they run before approval, so they shouldn't read as changes.
+const TOOL_LABEL = {
+  list_datasets: "Read your datasets",
+  get_dataset: "Read a dataset",
+  list_models: "Read your saved models",
+  get_model: "Read a saved model",
+  create_dataset: "Create dataset",
+  create_life_model: "Create life model",
+  create_recurrent_model: "Create recurrent model",
+  create_alt_model: "Create accelerated-life model",
+  create_degradation_model: "Create degradation model",
+  create_rbd: "Create RBD",
+};
 
 // One streamed part within an agent turn. Conversational text is a message
 // bubble; sandbox activity (bash/code + output) is a distinct collapsed "step"

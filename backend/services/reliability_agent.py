@@ -4,7 +4,8 @@ Runs Claude on Anthropic's **Managed Agents** runtime in a managed cloud sandbox
 we provision with ``surpyval`` + ``repyability``. The agent assesses the user's
 task, builds the best solution in the sandbox (with those two libraries only),
 proposes a plan, and — after the user approves — calls Reliafy-side tools to load
-the results (datasets + life models) into the user's workspace.
+the results into the user's workspace. It can also READ the workspace (datasets and
+every kind of saved model) without approval, so a plan can build on existing work.
 
 Self-contained and independent of the metered assistant
 (``backend.services.assistant``): its own module, its own metering reason
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import json
 import time
+from functools import lru_cache
 from datetime import datetime, timezone
 
 from backend import config
@@ -30,15 +32,29 @@ SYSTEM_PROMPT = (
     "life data and build reliability models. You work in a sandbox with Python "
     "where ONLY surpyval and repyability are available for the reliability maths — "
     "use them for all fitting/analysis (do NOT use lifelines, the `reliability` "
-    "package, scipy.stats survival, statsmodels, etc.). You also have three tools "
-    "that write results into the user's Reliafy workspace: create_dataset, "
-    "create_life_model, and create_rbd. You may call them AS MANY TIMES as the "
-    "task needs — a single plan can create several datasets, several life models "
-    "(e.g. one dataset per failure mode or subgroup, and multiple candidate "
-    "models on the same dataset), and one or more RBDs.\n\n"
+    "package, scipy.stats survival, statsmodels, etc.).\n\n"
+    "TOOLS. Four READ tools see what is already in the user's workspace — "
+    "list_datasets, get_dataset, list_models, get_model. They need no approval, "
+    "so use them freely and EARLY: if the user mentions data or a model they "
+    "already have, look it up instead of asking them to re-upload or re-describe "
+    "it. Six WRITE tools save results: create_dataset, create_life_model, "
+    "create_recurrent_model, create_alt_model, create_degradation_model, and "
+    "create_rbd. You may call them AS MANY TIMES as the task needs — a single "
+    "plan can create several datasets and several models of different kinds.\n\n"
+    "PICK THE RIGHT MODEL KIND — this is the most consequential choice you make:\n"
+    "* create_life_model — times to a SINGLE failure per unit, run to failure or "
+    "replaced (censoring, covariates, truncation all supported).\n"
+    "* create_recurrent_model — an EVENT HISTORY: repeated failures on the same "
+    "repairable units. Fitting a Weibull to times between failures is the most "
+    "common serious error in reliability analysis; if there is a system/unit id "
+    "with multiple rows, you are almost certainly here.\n"
+    "* create_alt_model — failure times at several elevated STRESS levels, to "
+    "extrapolate down to a use condition.\n"
+    "* create_degradation_model — repeated CONDITION MEASUREMENTS (wear, crack "
+    "length, vibration) extrapolated to a failure threshold.\n\n"
     "WORKFLOW — follow this every time:\n"
-    "1. ASSESS the user's task and their data (load and inspect the uploaded CSV "
-    "if there is one).\n"
+    "1. ASSESS the user's task and their data — load and inspect the uploaded CSV "
+    "if there is one, and call the read tools to see what is already saved.\n"
     "2. BUILD the solution in the sandbox with surpyval/repyability — clean the "
     "data, try candidate distributions, check goodness-of-fit, decide the best "
     "model. Show the key numbers you computed.\n"
@@ -50,7 +66,7 @@ SYSTEM_PROMPT = (
     "button in the chat — nothing is created yet. Then STOP and wait. Do NOT call "
     "any create tool until the user approves.\n"
     "5. Once approved, LOAD the whole plan: call create_dataset (each returns a "
-    "dataset_id), then each life model referencing the right dataset_id, then any "
+    "dataset_id), then each model referencing the right dataset_id, then any "
     "RBDs. Do the full batch — don't stop after one — and report everything you "
     "created. If the user asks to change the plan instead of approving, revise it "
     "and call request_approval again.\n\n"
@@ -83,165 +99,362 @@ SYSTEM_PROMPT = (
     "pump / truck type and build an RBD'), research the typical components and "
     "their failure distributions/parameters and build the RBD from those inline — "
     "an RBD needs no dataset. (Life models still need a dataset to fit.)\n\n"
-    "SCOPE: you can create datasets, life models, and RBDs. Degradation, RCM, "
-    "fleet, and other objects aren't available yet — if asked, say so. Be concise."
+    "SCOPE: you can read and create datasets and every kind of model in the "
+    "Modelling section — life, recurrent, accelerated-life and degradation — plus "
+    "RBDs. RCM studies, fleet tracking and strategy analyses are not available to "
+    "you; if asked for those, say so. Be concise."
 )
 
 # Reliafy-side tools the agent can call. Execution happens in ``_execute_tool``
 # on our backend, not in the sandbox.
-_DIST_IDS = (
-    "plain: weibull, exponential, normal, lognormal, gamma, loglogistic, "
-    "expo_weibull, gumbel, logistic; discrete: discrete_weibull, geometric, "
-    "negative_binomial; non-parametric: kaplan_meier, nelson_aalen, "
-    "fleming_harrington, turnbull; regression (need covariates or a formula) — "
-    "proportional-hazards {weibull,exponential,lognormal,normal,gamma}_ph and "
-    "cox_ph, accelerated-failure-time *_aft, proportional-odds *_po, "
-    "additive-hazards *_ah; or 'best' to auto-select the plain distribution by AIC"
-)
+
+
+def _dist_ids() -> str:
+    """The distributions the agent may choose, read from the fitting registries.
+
+    Hand-maintaining this list let it drift: it silently omitted gumbel_lev,
+    rayleigh, beta_geometric, poisson and the logistic/gumbel regression
+    baselines, so the agent believed they didn't exist. Generate it instead —
+    add a distribution and the agent can use it the same day.
+    """
+    from backend import fitting
+
+    def ids(registry):
+        return ", ".join(registry)
+
+    reg = fitting.REGRESSION_MODELS
+    return (
+        f"plain: {ids(fitting.DISTRIBUTIONS)}; "
+        f"discrete: {ids(fitting.DISCRETE)}; "
+        f"non-parametric: {ids(fitting.NONPARAMETRIC)}; "
+        f"regression (need covariates or a formula): {ids(reg)}; "
+        "or 'best' to auto-select the plain distribution by AIC"
+    )
 # Column mapping: tool field -> surpyval x/c/n/xl/xr/tl/tr key.
 _MAP_FIELDS = [
     ("time_column", "x"), ("censored_column", "c"), ("count_column", "n"),
     ("interval_lower_column", "xl"), ("interval_upper_column", "xr"),
     ("left_truncation_column", "tl"), ("right_truncation_column", "tr"),
 ]
-TOOLS = [
-    {
-        "type": "custom",
-        "name": "create_dataset",
-        "description": (
-            "Save a dataset to the user's Reliafy workspace. Provide the full CSV "
-            "content (header + rows). Returns a dataset_id to use with "
-            "create_life_model. Only call after the user approves the plan."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "A short name for the dataset."},
-                "csv": {"type": "string", "description": "The full CSV content (header row + data rows)."},
-            },
-            "required": ["name", "csv"],
+
+# Tools that only READ the workspace. These bypass the approval gate — the agent
+# must be able to look at what's already saved *before* it can propose a plan,
+# and nothing here writes.
+READ_TOOLS = frozenset({"list_datasets", "get_dataset", "list_models", "get_model"})
+
+
+@lru_cache(maxsize=1)
+def tools() -> list:
+    """Reliafy-side tool schemas. Cached: the registry read is cheap but the
+    heavy ``backend.fitting`` import is deliberately kept off module load.
+    """
+    from backend import alt as alt_fit
+    from backend import degradation as deg_fit
+    from backend import recurrent as rec_fit
+
+    return [
+        # ---- Read: inspect the workspace before planning -------------------
+        {
+            "type": "custom",
+            "name": "list_datasets",
+            "description": (
+                "List the datasets already in the user's Reliafy workspace, with "
+                "their columns and row counts. Use this FIRST when the user refers "
+                "to data they already have ('my pump data', 'the dataset I "
+                "uploaded') instead of asking them to re-upload it. Read-only — "
+                "safe to call before the plan is approved."
+            ),
+            "input_schema": {"type": "object", "properties": {}},
         },
-    },
-    {
-        "type": "custom",
-        "name": "create_life_model",
-        "description": (
-            "Fit and save a life model to a dataset in the user's Reliafy "
-            "workspace. Reliafy performs the fit with surpyval (probability plot, "
-            "parameters, CIs, goodness-of-fit). Supports full surpyval inputs: "
-            "exact/censored/interval data, counts, truncation, the offset / "
-            "zero-inflation / limited-failure-population modifiers, fixed "
-            "parameters, and covariates/formula for regression models. Use after "
-            "create_dataset; only call after the user approves the plan."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "A short name for the model."},
-                "dataset_id": {"type": "string", "description": "From a prior create_dataset call."},
-                "distribution": {"type": "string", "description": f"A surpyval id — {_DIST_IDS}."},
-                # x/c/n/xl/xr/tl/tr column mapping.
-                "time_column": {"type": "string", "description": "Column of exact/censored times (surpyval x). Use this, OR the interval pair below."},
-                "censored_column": {"type": "string", "description": "Optional censoring-flag column (surpyval c): 0 observed, 1 right, -1 left, 2 interval."},
-                "count_column": {"type": "string", "description": "Optional counts/quantities column (surpyval n) — repeats per row."},
-                "interval_lower_column": {"type": "string", "description": "Interval-censoring lower bound (surpyval xl); pair with interval_upper_column instead of time_column."},
-                "interval_upper_column": {"type": "string", "description": "Interval-censoring upper bound (surpyval xr)."},
-                "left_truncation_column": {"type": "string", "description": "Left-truncation bound (surpyval tl) — e.g. left-entry / staggered start."},
-                "right_truncation_column": {"type": "string", "description": "Right-truncation bound (surpyval tr)."},
-                # Regression (used only for _ph/_aft/_po/_ah/cox_ph distributions).
-                "covariates": {"type": "array", "items": {"type": "string"}, "description": "Covariate column names for a regression model. Give these OR a formula, not both."},
-                "formula": {"type": "string", "description": "A formulaic formula over the columns for a regression model (e.g. 'age + sex + age:temp'). Handles categoricals."},
-                # Modifiers (plain distributions only).
-                "offset": {"type": "boolean", "description": "3-parameter fit: a failure-free period γ before which nothing fails (half-line distributions)."},
-                "zero_inflated": {"type": "boolean", "description": "Zero-inflation: a fraction f0 failed at t=0 (dead on arrival)."},
-                "limited_failure_population": {"type": "boolean", "description": "Limited failure population: only a fraction p can ever fail (cure fraction)."},
-                "fixed": {"type": "object", "description": "Pin parameters by name to fixed values, e.g. {\"beta\": 2}.", "additionalProperties": {"type": "number"}},
-                "unit": {"type": "string", "description": "Optional time unit, e.g. hours."},
+        {
+            "type": "custom",
+            "name": "get_dataset",
+            "description": (
+                "Read a dataset's columns and first rows so you can see its shape "
+                "before choosing a column mapping. Read-only."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "dataset_id": {"type": "string", "description": "From list_datasets."},
+                    "rows": {"type": "integer", "description": "How many preview rows (default 8, max 50)."},
+                },
+                "required": ["dataset_id"],
             },
-            "required": ["name", "dataset_id", "distribution"],
         },
-    },
-    {
-        "type": "custom",
-        "name": "create_rbd",
-        "description": (
-            "Build and save a reliability block diagram (RBD) to the user's "
-            "Reliafy workspace. Give a simple structure: an ordered list of STAGES "
-            "in series, each stage holding one or more COMPONENTS in parallel "
-            "(redundancy), with an optional k_of_n voting requirement. Reliafy lays "
-            "it out (input → stages → output), validates it, and saves it. Each "
-            "component needs a life model — either an inline distribution + params "
-            "(e.g. researched/typical values; NO dataset required) or a model_id "
-            "from create_life_model.\n\n"
-            "An RBD is EITHER non-repairable (default — analysed for reliability "
-            "over time) OR repairable (set repairable=true — analysed for "
-            "AVAILABILITY/uptime). In a repairable RBD EVERY component must ALSO "
-            "have a repair-time distribution (repair_distribution + repair_params, "
-            "e.g. a lognormal mean-time-to-repair). Only call after the user "
-            "approves the plan."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "A short name for the RBD."},
-                "repairable": {"type": "boolean", "description": "True = a repairable system analysed for availability (uptime); every component then also needs repair_distribution + repair_params. False/omitted = non-repairable (reliability over time)."},
-                "stages": {
-                    "type": "array",
-                    "description": "Stages in series order (left → right). Components within a stage are in parallel.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "label": {"type": "string", "description": "Name of this stage/block."},
-                            "k_of_n": {"type": "integer", "description": "Components required to keep the stage working (k of the n components). Omit or 1 = plain parallel redundancy (any one); equal to the component count = all required (series)."},
-                            "common_cause_beta": {"type": "number", "description": "Optional (non-repairable RBDs, stages with 2+ components): couple this stage's redundant components by a beta-factor common cause — the fraction (0–1, e.g. 0.1) of each component's failures that are shared-cause and take out the whole group at once. Use for identical redundant units that share a cause (same batch, environment, power)."},
-                            "components": {
-                                "type": "array",
-                                "description": "One or more parallel components in this stage.",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "label": {"type": "string", "description": "Component name."},
-                                        "distribution": {"type": "string", "description": "Inline life model: a plain surpyval distribution id — weibull, exponential, normal, lognormal, gamma, loglogistic, expo_weibull, gumbel, logistic. Pair with params. Give this OR model_id."},
-                                        "params": {"type": "array", "description": "Distribution parameters by surpyval name, e.g. [{\"name\":\"alpha\",\"value\":900},{\"name\":\"beta\",\"value\":1.4}] for weibull.", "items": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "number"}}, "required": ["name", "value"]}},
-                                        "model_id": {"type": "string", "description": "Alternatively, a saved plain life model id (from create_life_model) to use for this component instead of inline params."},
-                                        "repair_distribution": {"type": "string", "description": "Repairable RBDs only: the time-to-repair distribution id (e.g. lognormal, exponential, weibull, normal, gamma). Pair with repair_params."},
-                                        "repair_params": {"type": "array", "description": "Repairable RBDs only: repair-time distribution parameters by surpyval name, e.g. [{\"name\":\"mu\",\"value\":1.5},{\"name\":\"sigma\",\"value\":0.4}] for a lognormal MTTR.", "items": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "number"}}, "required": ["name", "value"]}},
+        {
+            "type": "custom",
+            "name": "list_models",
+            "description": (
+                "List the models already saved in the user's workspace — life, "
+                "recurrent, accelerated-life and degradation — with their id, kind, "
+                "distribution and headline numbers. Use this when the user refers to "
+                "earlier work ('the model I fitted last week', 'compare against my "
+                "existing one') or when you need a model_id to put in an RBD. "
+                "Read-only."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["life", "recurrent", "alt", "degradation"],
+                             "description": "Optional filter; omit for every kind."},
+                },
+            },
+        },
+        {
+            "type": "custom",
+            "name": "get_model",
+            "description": (
+                "Read one saved model in full — its fitted parameters, confidence "
+                "intervals, goodness-of-fit and the spec it was fitted with. Use it "
+                "to reason about, compare against, or build on existing work. "
+                "Read-only."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "model_id": {"type": "string", "description": "From list_models."},
+                    "kind": {"type": "string", "enum": ["life", "recurrent", "alt", "degradation"],
+                             "description": "Optional hint; omit and every kind is searched."},
+                },
+                "required": ["model_id"],
+            },
+        },
+        # ---- Write ---------------------------------------------------------
+        {
+            "type": "custom",
+            "name": "create_dataset",
+            "description": (
+                "Save a dataset to the user's Reliafy workspace. Provide the full CSV "
+                "content (header + rows). Returns a dataset_id to use with "
+                "create_life_model. Only call after the user approves the plan."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "A short name for the dataset."},
+                    "csv": {"type": "string", "description": "The full CSV content (header row + data rows)."},
+                },
+                "required": ["name", "csv"],
+            },
+        },
+        {
+            "type": "custom",
+            "name": "create_life_model",
+            "description": (
+                "Fit and save a life model to a dataset in the user's Reliafy "
+                "workspace. Reliafy performs the fit with surpyval (probability plot, "
+                "parameters, CIs, goodness-of-fit). Supports full surpyval inputs: "
+                "exact/censored/interval data, counts, truncation, the offset / "
+                "zero-inflation / limited-failure-population modifiers, fixed "
+                "parameters, and covariates/formula for regression models. Use after "
+                "create_dataset; only call after the user approves the plan."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "A short name for the model."},
+                    "dataset_id": {"type": "string", "description": "From a prior create_dataset call."},
+                    "distribution": {"type": "string", "description": f"A surpyval id — {_dist_ids()}."},
+                    # x/c/n/xl/xr/tl/tr column mapping.
+                    "time_column": {"type": "string", "description": "Column of exact/censored times (surpyval x). Use this, OR the interval pair below."},
+                    "censored_column": {"type": "string", "description": "Optional censoring-flag column (surpyval c): 0 observed, 1 right, -1 left, 2 interval."},
+                    "count_column": {"type": "string", "description": "Optional counts/quantities column (surpyval n) — repeats per row."},
+                    "interval_lower_column": {"type": "string", "description": "Interval-censoring lower bound (surpyval xl); pair with interval_upper_column instead of time_column."},
+                    "interval_upper_column": {"type": "string", "description": "Interval-censoring upper bound (surpyval xr)."},
+                    "left_truncation_column": {"type": "string", "description": "Left-truncation bound (surpyval tl) — e.g. left-entry / staggered start."},
+                    "right_truncation_column": {"type": "string", "description": "Right-truncation bound (surpyval tr)."},
+                    # Regression (used only for _ph/_aft/_po/_ah/cox_ph distributions).
+                    "covariates": {"type": "array", "items": {"type": "string"}, "description": "Covariate column names for a regression model. Give these OR a formula, not both."},
+                    "formula": {"type": "string", "description": "A formulaic formula over the columns for a regression model (e.g. 'age + sex + age:temp'). Handles categoricals."},
+                    # Modifiers (plain distributions only).
+                    "offset": {"type": "boolean", "description": "3-parameter fit: a failure-free period γ before which nothing fails (half-line distributions)."},
+                    "zero_inflated": {"type": "boolean", "description": "Zero-inflation: a fraction f0 failed at t=0 (dead on arrival)."},
+                    "limited_failure_population": {"type": "boolean", "description": "Limited failure population: only a fraction p can ever fail (cure fraction)."},
+                    "fixed": {"type": "object", "description": "Pin parameters by name to fixed values, e.g. {\"beta\": 2}.", "additionalProperties": {"type": "number"}},
+                    "unit": {"type": "string", "description": "Optional time unit, e.g. hours."},
+                },
+                "required": ["name", "dataset_id", "distribution"],
+            },
+        },
+        {
+            "type": "custom",
+            "name": "create_recurrent_model",
+            "description": (
+                "Fit and save a RECURRENT-EVENT (repairable-system) model. Use this "
+                "— not create_life_model — when the data is an event history: "
+                "repeated failures on the same units, one row per event, with a "
+                "system/unit id. It answers 'how often does this fail, and is it "
+                "getting better or worse?' (mean cumulative function + growth "
+                "trend). Only call after the user approves the plan."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "A short name for the model."},
+                    "dataset_id": {"type": "string", "description": "From create_dataset or list_datasets."},
+                    "system_column": {"type": "string", "description": "Column identifying the system/unit the event belongs to (surpyval i)."},
+                    "time_column": {"type": "string", "description": "Event time column (surpyval x)."},
+                    "model": {"type": "string", "enum": list(rec_fit.MODEL_CHOICES),
+                              "description": "crow_amsaa = the standard NHPP power-law growth model (default); "
+                                             "duane = the log-log cumulative-MTBF fit; hpp = constant rate, the null model."},
+                    "censored_column": {"type": "string", "description": "Optional censoring column (surpyval c) — marks the end-of-observation row per system."},
+                    "count_column": {"type": "string", "description": "Optional counts column (surpyval n)."},
+                    "left_truncation_column": {"type": "string", "description": "Optional left-truncation column (surpyval tl)."},
+                    "right_truncation_column": {"type": "string", "description": "Optional right-truncation column (surpyval tr)."},
+                    "unit": {"type": "string", "description": "Optional time unit, e.g. hours."},
+                },
+                "required": ["name", "dataset_id", "system_column", "time_column"],
+            },
+        },
+        {
+            "type": "custom",
+            "name": "create_alt_model",
+            "description": (
+                "Fit and save an ACCELERATED LIFE (ALT) model. Use this when failure "
+                "times were collected at several elevated STRESS levels "
+                "(temperature, voltage, load) and the user wants to extrapolate to a "
+                "lower use-level stress, or wants an acceleration factor. Fits a "
+                "life distribution plus a life-stress relationship. Only call after "
+                "the user approves the plan."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "A short name for the model."},
+                    "dataset_id": {"type": "string", "description": "From create_dataset or list_datasets."},
+                    "time_column": {"type": "string", "description": "Failure/censoring time column (surpyval x)."},
+                    "stress_columns": {
+                        "type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 2,
+                        "description": "One or two stress columns. Must match the life model's stress count, "
+                                       "and for two-stress models the FIRST is the thermal one.",
+                    },
+                    "distribution": {"type": "string", "enum": list(alt_fit.ALT_DISTRIBUTIONS),
+                                     "description": "The life distribution; its shape is held common across stress levels."},
+                    "life_model": {"type": "string", "enum": list(alt_fit.LIFE_MODELS),
+                                   "description": "; ".join(f"{k} — {v['desc']}" for k, v in alt_fit.LIFE_MODELS.items())},
+                    "censored_column": {"type": "string", "description": "Optional censoring column (surpyval c)."},
+                    "count_column": {"type": "string", "description": "Optional counts column (surpyval n)."},
+                    "stress_labels": {"type": "array", "items": {"type": "string"},
+                                      "description": "Optional display labels for the stresses, e.g. ['Temperature (K)']."},
+                    "unit": {"type": "string", "description": "Optional time unit, e.g. hours."},
+                },
+                "required": ["name", "dataset_id", "time_column", "stress_columns", "life_model"],
+            },
+        },
+        {
+            "type": "custom",
+            "name": "create_degradation_model",
+            "description": (
+                "Fit and save a DEGRADATION model. Use this when the data is "
+                "repeated CONDITION MEASUREMENTS over time (wear, crack length, "
+                "vibration, oil analysis) rather than failure times — it fits each "
+                "unit's degradation path, extrapolates to a failure threshold, and "
+                "turns the crossing times into a life distribution. Only call after "
+                "the user approves the plan."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "A short name for the model."},
+                    "dataset_id": {"type": "string", "description": "From create_dataset or list_datasets."},
+                    "item_column": {"type": "string", "description": "Column identifying the unit each measurement belongs to."},
+                    "time_column": {"type": "string", "description": "Measurement time/age column."},
+                    "measurement_column": {"type": "string", "description": "The measured condition value."},
+                    "threshold": {"type": "number", "description": "The value at which the unit is considered failed."},
+                    "path": {"type": "string", "enum": list(deg_fit.PATH_CHOICES),
+                             "description": "Shape of the degradation path; 'best' picks by fit."},
+                    "distribution": {"type": "string", "description": "Life distribution fitted to the threshold-crossing times (default weibull)."},
+                    "population_method": {"type": "string", "enum": list(deg_fit.POPULATION_METHODS),
+                                          "description": "How the population model is estimated (default moments)."},
+                    "unit": {"type": "string", "description": "Optional time unit, e.g. hours."},
+                    "measurement_unit": {"type": "string", "description": "Optional unit of the measured value, e.g. mm."},
+                },
+                "required": ["name", "dataset_id", "item_column", "time_column",
+                             "measurement_column", "threshold"],
+            },
+        },
+        {
+            "type": "custom",
+            "name": "create_rbd",
+            "description": (
+                "Build and save a reliability block diagram (RBD) to the user's "
+                "Reliafy workspace. Give a simple structure: an ordered list of STAGES "
+                "in series, each stage holding one or more COMPONENTS in parallel "
+                "(redundancy), with an optional k_of_n voting requirement. Reliafy lays "
+                "it out (input → stages → output), validates it, and saves it. Each "
+                "component needs a life model — either an inline distribution + params "
+                "(e.g. researched/typical values; NO dataset required) or a model_id "
+                "from create_life_model.\n\n"
+                "An RBD is EITHER non-repairable (default — analysed for reliability "
+                "over time) OR repairable (set repairable=true — analysed for "
+                "AVAILABILITY/uptime). In a repairable RBD EVERY component must ALSO "
+                "have a repair-time distribution (repair_distribution + repair_params, "
+                "e.g. a lognormal mean-time-to-repair). Only call after the user "
+                "approves the plan."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "A short name for the RBD."},
+                    "repairable": {"type": "boolean", "description": "True = a repairable system analysed for availability (uptime); every component then also needs repair_distribution + repair_params. False/omitted = non-repairable (reliability over time)."},
+                    "stages": {
+                        "type": "array",
+                        "description": "Stages in series order (left → right). Components within a stage are in parallel.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string", "description": "Name of this stage/block."},
+                                "k_of_n": {"type": "integer", "description": "Components required to keep the stage working (k of the n components). Omit or 1 = plain parallel redundancy (any one); equal to the component count = all required (series)."},
+                                "common_cause_beta": {"type": "number", "description": "Optional (non-repairable RBDs, stages with 2+ components): couple this stage's redundant components by a beta-factor common cause — the fraction (0–1, e.g. 0.1) of each component's failures that are shared-cause and take out the whole group at once. Use for identical redundant units that share a cause (same batch, environment, power)."},
+                                "components": {
+                                    "type": "array",
+                                    "description": "One or more parallel components in this stage.",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "label": {"type": "string", "description": "Component name."},
+                                            "distribution": {"type": "string", "description": "Inline life model: a plain surpyval distribution id — weibull, exponential, normal, lognormal, gamma, loglogistic, expo_weibull, gumbel, logistic. Pair with params. Give this OR model_id."},
+                                            "params": {"type": "array", "description": "Distribution parameters by surpyval name, e.g. [{\"name\":\"alpha\",\"value\":900},{\"name\":\"beta\",\"value\":1.4}] for weibull.", "items": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "number"}}, "required": ["name", "value"]}},
+                                            "model_id": {"type": "string", "description": "Alternatively, a saved plain life model id (from create_life_model) to use for this component instead of inline params."},
+                                            "repair_distribution": {"type": "string", "description": "Repairable RBDs only: the time-to-repair distribution id (e.g. lognormal, exponential, weibull, normal, gamma). Pair with repair_params."},
+                                            "repair_params": {"type": "array", "description": "Repairable RBDs only: repair-time distribution parameters by surpyval name, e.g. [{\"name\":\"mu\",\"value\":1.5},{\"name\":\"sigma\",\"value\":0.4}] for a lognormal MTTR.", "items": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "number"}}, "required": ["name", "value"]}},
+                                        },
+                                        "required": ["label"],
                                     },
-                                    "required": ["label"],
                                 },
                             },
+                            "required": ["components"],
                         },
-                        "required": ["components"],
                     },
                 },
+                "required": ["name", "stages"],
             },
-            "required": ["name", "stages"],
         },
-    },
-    {
-        "type": "custom",
-        "name": "request_approval",
-        "description": (
-            "Ask the user to approve building your plan. Call this ONCE, right "
-            "after you've stated the plan, to request the go-ahead. It shows the "
-            "user an Approve button in the chat — nothing is created until they "
-            "click it. After calling this, STOP and wait; do not call "
-            "create_dataset / create_life_model / create_rbd until the user has "
-            "approved."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "summary": {
-                    "type": "string",
-                    "description": "One line naming what you'll build, e.g. "
-                    "'1 dataset + 2 Weibull life models' or '1 dataset, 1 model, 1 RBD'.",
+        {
+            "type": "custom",
+            "name": "request_approval",
+            "description": (
+                "Ask the user to approve building your plan. Call this ONCE, right "
+                "after you've stated the plan, to request the go-ahead. It shows the "
+                "user an Approve button in the chat — nothing is created until they "
+                "click it. After calling this, STOP and wait; do not call "
+                "create_dataset / create_life_model / create_rbd until the user has "
+                "approved."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": "One line naming what you'll build, e.g. "
+                        "'1 dataset + 2 Weibull life models' or '1 dataset, 1 model, 1 RBD'.",
+                    },
                 },
+                "required": ["summary"],
             },
-            "required": ["summary"],
         },
-    },
-]
+    ]
 
 # Bound the agentic tool loop so a misbehaving turn can't run forever.
 _MAX_TOOL_ROUNDS = 10
@@ -302,7 +515,7 @@ def _ensure_agent(client) -> tuple[str, str]:
         name="Reliafy Reliability Agent",
         model=config.RELIABILITY_AGENT_MODEL,
         system=SYSTEM_PROMPT,
-        tools=[{"type": "agent_toolset_20260401"}, *TOOLS],
+        tools=[{"type": "agent_toolset_20260401"}, *tools()],
     )
     _BOOTSTRAP["agent_id"] = agent.id
     _BOOTSTRAP["environment_id"] = env.id
@@ -441,6 +654,57 @@ def _build_rbd_graph(db, uid: str, stages: list, repairable: bool = False) -> di
     return graph
 
 
+def _MODEL_SERVICES() -> dict:
+    """The four modelling services, keyed by the ``kind`` the agent uses.
+
+    All four expose the same ``list_models`` / ``get_model`` shape, which is what
+    makes one pair of read tools cover the whole Modelling section.
+    """
+    from backend.services import alt as alt_service
+    from backend.services import degradation as degradation_service
+    from backend.services import models as models_service
+    from backend.services import recurrent as recurrent_service
+
+    return {"life": models_service, "recurrent": recurrent_service,
+            "alt": alt_service, "degradation": degradation_service}
+
+
+def _headline(kind: str, m) -> dict:
+    """The few numbers worth putting in a list — enough for the agent to choose
+    which model to open with ``get_model`` without pulling every full result."""
+    r = m.results or {}
+    common = {"dataset_id": getattr(m, "dataset_id", "") or None,
+              "created_at": m.created_at.isoformat() if getattr(m, "created_at", None) else None}
+    if kind == "life":
+        return {**common, "distribution": r.get("distribution"),
+                "params": [{"name": p.get("name"), "value": p.get("value")}
+                           for p in (r.get("params") or [])]}
+    if kind == "recurrent":
+        return {**common, "model": (r.get("model") or {}).get("name"),
+                "beta": r.get("beta"), "growth": r.get("growth"),
+                "n_systems": r.get("n_systems"), "n_events": r.get("n_events")}
+    if kind == "alt":
+        return {**common, "distribution": r.get("distribution"),
+                "life_model": r.get("life_model"), "life_model_id": r.get("life_model_id")}
+    return {**common, "distribution": r.get("distribution"),
+            "path": (r.get("path") or {}).get("name") if isinstance(r.get("path"), dict) else r.get("path"),
+            "threshold": r.get("threshold")}
+
+
+def _find_model(db, uid: str, model_id: str, kind: str | None):
+    """Locate a saved model across the four kinds. ``kind`` is a hint, not a
+    requirement — the agent often has an id from a list and nothing else."""
+    if not model_id:
+        return None
+    services = _MODEL_SERVICES()
+    order = [kind] if kind in services else list(services)
+    for k in order:
+        m = services[k].get_model(db, model_id, uid)
+        if m is not None:
+            return k, m
+    return None
+
+
 def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
     """Run a custom tool on the Reliafy side and return a small JSON-safe result
     (the ``summary`` is shown to the user; the rest is fed back to the agent)."""
@@ -450,6 +714,46 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
 
     inp = inp or {}
     try:
+        # ---- Read -----------------------------------------------------------
+        if name == "list_datasets":
+            out = []
+            for ds in datasets_service.list_datasets(db, uid):
+                out.append({"dataset_id": ds.id, "name": ds.name,
+                            "n_rows": ds.n_rows, "columns": list(ds.columns or [])})
+            return {"ok": True, "datasets": out,
+                    "summary": f"Read {len(out)} dataset{'' if len(out) == 1 else 's'}."}
+
+        if name == "get_dataset":
+            ds = datasets_service.get_dataset(db, inp.get("dataset_id", ""), owner_id=uid)
+            if ds is None:
+                return {"error": "dataset not found"}
+            rows = max(1, min(int(inp.get("rows") or 8), 50))
+            return {"ok": True, "dataset_id": ds.id, "name": ds.name, "n_rows": ds.n_rows,
+                    **datasets_service.preview_rows(ds, rows),
+                    "summary": f"Read dataset “{ds.name}” ({ds.n_rows} rows)."}
+
+        if name == "list_models":
+            want = inp.get("kind")
+            out = []
+            for kind, svc in _MODEL_SERVICES().items():
+                if want and want != kind:
+                    continue
+                for m in svc.list_models(db, uid):
+                    out.append({"model_id": m.id, "kind": kind, "name": m.name,
+                                **_headline(kind, m)})
+            return {"ok": True, "models": out,
+                    "summary": f"Read {len(out)} saved model{'' if len(out) == 1 else 's'}."}
+
+        if name == "get_model":
+            found = _find_model(db, uid, inp.get("model_id", ""), inp.get("kind"))
+            if found is None:
+                return {"error": "model not found"}
+            kind, m = found
+            return {"ok": True, "model_id": m.id, "kind": kind, "name": m.name,
+                    "spec": getattr(m, "spec", None), "results": m.results or {},
+                    "summary": f"Read {kind} model “{m.name}”."}
+
+        # ---- Write ----------------------------------------------------------
         if name == "create_dataset":
             csv = inp.get("csv") or ""
             if not csv.strip():
@@ -484,6 +788,89 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
             return {"ok": True, "model_id": model.id, "distribution": r.get("distribution"),
                     "params": params,
                     "summary": f"Created life model “{model.name}” — {r.get('distribution')}."}
+
+        if name == "create_recurrent_model":
+            from backend.services import recurrent as recurrent_service
+            ds = datasets_service.get_dataset(db, inp.get("dataset_id", ""), owner_id=uid)
+            if ds is None:
+                return {"error": "dataset not found — create it first"}
+            mapping = {"i": inp.get("system_column"), "x": inp.get("time_column")}
+            if not mapping["i"] or not mapping["x"]:
+                return {"error": "system_column and time_column are both required"}
+            for field, key in (("censored_column", "c"), ("count_column", "n"),
+                               ("left_truncation_column", "tl"), ("right_truncation_column", "tr")):
+                if inp.get(field):
+                    mapping[key] = inp[field]
+            spec = {"mapping": mapping, "model_id": inp.get("model") or "crow_amsaa",
+                    "unit": (inp.get("unit") or "").strip()}
+            doc = recurrent_service.save_model(
+                db, (inp.get("name") or "model").strip() or "model", ds, spec, uid)
+            r = doc.results or {}
+            return {"ok": True, "model_id": doc.id, "kind": "recurrent",
+                    "model": (r.get("model") or {}).get("name"), "beta": r.get("beta"),
+                    "growth": r.get("growth"),
+                    "summary": f"Created recurrent model “{doc.name}” — "
+                               f"{(r.get('model') or {}).get('name')}, {r.get('growth') or 'no trend'}."}
+
+        if name == "create_alt_model":
+            from backend.services import alt as alt_service
+            ds = datasets_service.get_dataset(db, inp.get("dataset_id", ""), owner_id=uid)
+            if ds is None:
+                return {"error": "dataset not found — create it first"}
+            if not inp.get("time_column"):
+                return {"error": "time_column is required"}
+            stress_cols = [s for s in (inp.get("stress_columns") or []) if s]
+            if not stress_cols:
+                return {"error": "give one or two stress_columns"}
+            mapping = {"x": inp["time_column"]}
+            for field, key in (("censored_column", "c"), ("count_column", "n")):
+                if inp.get(field):
+                    mapping[key] = inp[field]
+            labels = list(inp.get("stress_labels") or []) or None
+            spec = {
+                "mapping": mapping,
+                "stress_cols": stress_cols,
+                "stress_labels": labels or list(stress_cols),
+                "distribution_id": inp.get("distribution") or "weibull",
+                "life_model_id": inp.get("life_model") or "arrhenius",
+                "unit": (inp.get("unit") or "").strip(),
+            }
+            doc = alt_service.save_model(
+                db, (inp.get("name") or "model").strip() or "model", ds, spec, uid)
+            r = doc.results or {}
+            return {"ok": True, "model_id": doc.id, "kind": "alt",
+                    "distribution": r.get("distribution"), "life_model": r.get("life_model"),
+                    "coefficients": r.get("coefficients"),
+                    "summary": f"Created ALT model “{doc.name}” — "
+                               f"{r.get('distribution')} / {r.get('life_model')}."}
+
+        if name == "create_degradation_model":
+            from backend.services import degradation as degradation_service
+            ds = datasets_service.get_dataset(db, inp.get("dataset_id", ""), owner_id=uid)
+            if ds is None:
+                return {"error": "dataset not found — create it first"}
+            mapping = {"i": inp.get("item_column"), "x": inp.get("time_column"),
+                       "y": inp.get("measurement_column")}
+            if not all(mapping.values()):
+                return {"error": "item_column, time_column and measurement_column are all required"}
+            if inp.get("threshold") is None:
+                return {"error": "threshold is required"}
+            spec = {
+                "mapping": mapping,
+                "threshold": float(inp["threshold"]),
+                "path": inp.get("path") or "best",
+                "distribution_id": inp.get("distribution") or "weibull",
+                "population_method": inp.get("population_method") or "moments",
+                "unit": (inp.get("unit") or "").strip(),
+                "measurement_unit": (inp.get("measurement_unit") or "").strip(),
+            }
+            doc = degradation_service.save_model(
+                db, (inp.get("name") or "model").strip() or "model", ds, spec, uid)
+            r = doc.results or {}
+            return {"ok": True, "model_id": doc.id, "kind": "degradation",
+                    "distribution": r.get("distribution"),
+                    "summary": f"Created degradation model “{doc.name}” — "
+                               f"{r.get('distribution')} to threshold {spec['threshold']}."}
 
         if name == "create_rbd":
             from backend.services import rbds as rbds_service
@@ -685,7 +1072,9 @@ def stream_run(db, uid: str, message: str, file_id: str | None = None,
                         "is_error": False,
                     })
                     continue
-                if not approved:
+                if not approved and call["name"] not in READ_TOOLS:
+                    # Read tools are exempt: the agent has to be able to look at the
+                    # workspace to write a plan worth approving.
                     yield {"type": "reliafy_tool_blocked", "name": call["name"]}
                     res = {"error": "Not approved yet — call request_approval to ask "
                            "the user, then wait. Do not call any create tool until "

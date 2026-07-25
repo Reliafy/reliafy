@@ -458,3 +458,186 @@ def test_upload_endpoint(monkeypatch):
         assert r.json()["file_id"] == "file-123"
     finally:
         app.dependency_overrides.clear()
+
+
+# --- Full read + write coverage of the Modelling section --------------------
+
+def _recurrent_csv() -> str:
+    """Three repairable systems, several failures each — an event history."""
+    rows = ["system,hours,censored"]
+    for sysid, times in (("A", [120, 340, 700, 1150]),
+                         ("B", [200, 520, 880, 1400]),
+                         ("C", [90, 410, 760, 1220])):
+        for t in times:
+            rows.append(f"{sysid},{t},0")
+        rows.append(f"{sysid},1500,1")          # end of observation
+    return "\n".join(rows) + "\n"
+
+
+def _alt_csv() -> str:
+    """Failures at three voltage levels — life falls as stress rises."""
+    rows = ["minutes,kV"]
+    for kv, times in ((32, [280, 350, 410, 470, 560]),
+                      (36, [95, 130, 160, 195, 240]),
+                      (40, [30, 42, 55, 68, 85])):
+        for t in times:
+            rows.append(f"{t},{kv}")
+    return "\n".join(rows) + "\n"
+
+
+def _degradation_csv() -> str:
+    """Five units wearing linearly at slightly different rates."""
+    rows = ["unit,hours,wear_mm"]
+    for unit, rate in enumerate([0.010, 0.012, 0.009, 0.011, 0.013], start=1):
+        for t in (100, 200, 300, 400, 500):
+            rows.append(f"u{unit},{t},{round(rate * t, 4)}")
+    return "\n".join(rows) + "\n"
+
+
+def test_agent_can_create_every_modelling_kind():
+    """One tool per Modelling sub-section: life, recurrent, ALT, degradation.
+    Each fits for real against a mongomock db and lands in its own collection."""
+    from backend.services import reliability_agent as agent
+
+    db = mongomock.MongoClient()["reliafy_test"]
+    new = lambda name, csv: agent._execute_tool(  # noqa: E731
+        db, U, "create_dataset", {"name": name, "csv": csv})["dataset_id"]
+
+    rec = agent._execute_tool(db, U, "create_recurrent_model", {
+        "name": "Fleet growth", "dataset_id": new("Events", _recurrent_csv()),
+        "system_column": "system", "time_column": "hours",
+        "censored_column": "censored", "model": "crow_amsaa", "unit": "hours"})
+    assert rec["ok"] and rec["kind"] == "recurrent"
+    assert rec["beta"] is not None
+    assert db.recurrent_models.find_one({"_id": rec["model_id"], "owner_id": U}) is not None
+
+    alt = agent._execute_tool(db, U, "create_alt_model", {
+        "name": "Insulation ALT", "dataset_id": new("Voltage", _alt_csv()),
+        "time_column": "minutes", "stress_columns": ["kV"],
+        "distribution": "weibull", "life_model": "inverse_power", "unit": "minutes"})
+    assert alt["ok"] and alt["kind"] == "alt" and alt["coefficients"]
+    assert db.alt_models.find_one({"_id": alt["model_id"], "owner_id": U}) is not None
+
+    deg = agent._execute_tool(db, U, "create_degradation_model", {
+        "name": "Liner wear", "dataset_id": new("Wear", _degradation_csv()),
+        "item_column": "unit", "time_column": "hours",
+        "measurement_column": "wear_mm", "threshold": 8.0, "path": "linear"})
+    assert deg["ok"] and deg["kind"] == "degradation"
+    assert db.degradation_models.find_one({"_id": deg["model_id"], "owner_id": U}) is not None
+
+
+def test_missing_required_columns_are_clear_errors_not_crashes():
+    from backend.services import reliability_agent as agent
+
+    db = mongomock.MongoClient()["reliafy_test"]
+    ds = agent._execute_tool(db, U, "create_dataset",
+                             {"name": "Events", "csv": _recurrent_csv()})["dataset_id"]
+
+    for tool, inp in (
+        ("create_recurrent_model", {"name": "x", "dataset_id": ds, "time_column": "hours"}),
+        ("create_alt_model", {"name": "x", "dataset_id": ds, "time_column": "hours",
+                              "stress_columns": [], "life_model": "arrhenius"}),
+        ("create_alt_model", {"name": "x", "dataset_id": ds, "stress_columns": ["kV"],
+                              "life_model": "arrhenius"}),
+        ("create_degradation_model", {"name": "x", "dataset_id": ds, "item_column": "system",
+                                      "time_column": "hours", "threshold": 1.0}),
+        ("create_degradation_model", {"name": "x", "dataset_id": ds, "item_column": "system",
+                                      "time_column": "hours", "measurement_column": "hours"}),
+    ):
+        assert "error" in agent._execute_tool(db, U, tool, inp), f"{tool} {inp}"
+
+    for tool in ("create_recurrent_model", "create_alt_model", "create_degradation_model"):
+        assert "error" in agent._execute_tool(db, U, tool, {"name": "x", "dataset_id": "missing"})
+
+
+def test_read_tools_see_datasets_and_every_model_kind():
+    """The read half: the agent can find what's already saved and open it."""
+    from backend.services import reliability_agent as agent
+
+    db = mongomock.MongoClient()["reliafy_test"]
+    ds = agent._execute_tool(db, U, "create_dataset",
+                             {"name": "Bearings", "csv": _csv()})["dataset_id"]
+    lm = agent._execute_tool(db, U, "create_life_model", {
+        "name": "Bearing life", "dataset_id": ds, "distribution": "weibull",
+        "time_column": "hours"})
+    rec = agent._execute_tool(db, U, "create_recurrent_model", {
+        "name": "Fleet growth",
+        "dataset_id": agent._execute_tool(db, U, "create_dataset",
+                                          {"name": "Events", "csv": _recurrent_csv()})["dataset_id"],
+        "system_column": "system", "time_column": "hours", "censored_column": "censored"})
+
+    listed = agent._execute_tool(db, U, "list_datasets", {})
+    assert listed["ok"] and {d["name"] for d in listed["datasets"]} == {"Bearings", "Events"}
+    # Columns carry their dtype, so the agent can pick a time column on sight.
+    cols = next(d for d in listed["datasets"] if d["name"] == "Bearings")["columns"]
+    assert [c["name"] for c in cols] == ["hours"] and cols[0]["dtype"]
+
+    got = agent._execute_tool(db, U, "get_dataset", {"dataset_id": ds, "rows": 3})
+    assert got["ok"] and got["n_rows"] == 10
+    assert got["columns"] == ["hours"] and len(got["preview"]) == 3
+
+    models = agent._execute_tool(db, U, "list_models", {})
+    by_kind = {m["kind"]: m for m in models["models"]}
+    assert set(by_kind) == {"life", "recurrent"}
+    assert by_kind["life"]["model_id"] == lm["model_id"]
+    assert by_kind["life"]["params"]
+    assert by_kind["recurrent"]["beta"] is not None
+
+    assert [m["kind"] for m in
+            agent._execute_tool(db, U, "list_models", {"kind": "life"})["models"]] == ["life"]
+
+    # get_model finds a model without being told its kind, and returns the fit.
+    full = agent._execute_tool(db, U, "get_model", {"model_id": rec["model_id"]})
+    assert full["ok"] and full["kind"] == "recurrent" and full["results"]
+    assert full["spec"]["mapping"]["i"] == "system"
+
+    assert "error" in agent._execute_tool(db, U, "get_model", {"model_id": "nope"})
+    assert "error" in agent._execute_tool(db, U, "get_dataset", {"dataset_id": "nope"})
+
+
+def test_read_tools_do_not_leak_across_owners():
+    from backend.services import reliability_agent as agent
+
+    db = mongomock.MongoClient()["reliafy_test"]
+    ds = agent._execute_tool(db, U, "create_dataset",
+                             {"name": "Mine", "csv": _csv()})["dataset_id"]
+    agent._execute_tool(db, U, "create_life_model", {
+        "name": "Mine", "dataset_id": ds, "distribution": "weibull", "time_column": "hours"})
+
+    assert agent._execute_tool(db, "someone-else", "list_datasets", {})["datasets"] == []
+    assert agent._execute_tool(db, "someone-else", "list_models", {})["models"] == []
+    assert "error" in agent._execute_tool(db, "someone-else", "get_dataset", {"dataset_id": ds})
+
+
+def test_read_tools_bypass_the_approval_gate_and_writes_do_not():
+    """Read tools must run before approval — the agent has to see the workspace
+    to write a plan worth approving. Every write tool stays gated."""
+    from backend.services import reliability_agent as agent
+
+    write = {t["name"] for t in agent.tools()} - agent.READ_TOOLS - {"request_approval"}
+    assert write == {"create_dataset", "create_life_model", "create_recurrent_model",
+                     "create_alt_model", "create_degradation_model", "create_rbd"}
+    assert agent.READ_TOOLS == {"list_datasets", "get_dataset", "list_models", "get_model"}
+
+
+def test_advertised_distributions_track_the_registries():
+    """The distribution list is generated, so it can't drift from what we fit."""
+    from backend import fitting
+    from backend.services import reliability_agent as agent
+
+    advertised = agent._dist_ids()
+    for registry in (fitting.DISTRIBUTIONS, fitting.DISCRETE,
+                     fitting.NONPARAMETRIC, fitting.REGRESSION_MODELS):
+        for dist_id in registry:
+            assert dist_id in advertised, f"{dist_id} hidden from the agent"
+
+
+def test_alt_and_recurrent_choices_track_their_registries():
+    from backend import alt as alt_fit
+    from backend import recurrent as rec_fit
+    from backend.services import reliability_agent as agent
+
+    schemas = {t["name"]: t["input_schema"]["properties"] for t in agent.tools()}
+    assert schemas["create_alt_model"]["life_model"]["enum"] == list(alt_fit.LIFE_MODELS)
+    assert schemas["create_alt_model"]["distribution"]["enum"] == list(alt_fit.ALT_DISTRIBUTIONS)
+    assert schemas["create_recurrent_model"]["model"]["enum"] == list(rec_fit.MODEL_CHOICES)
