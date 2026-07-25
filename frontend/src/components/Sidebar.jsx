@@ -3,7 +3,6 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
-import { publicUrl } from "../firebase.js";
 
 const SignOutIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -73,13 +72,6 @@ const AgentIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <rect x="4" y="7" width="16" height="12" rx="2" />
     <path d="M12 7V4M9 12h.01M15 12h.01M9 16h6" />
-  </svg>
-);
-
-const GuidesIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="9" />
-    <path d="M9.5 9a2.5 2.5 0 0 1 4 1.5c0 1.5-2 2-2 3M12 17h.01" />
   </svg>
 );
 
@@ -271,16 +263,6 @@ export default function Sidebar({ collapsed, onToggle }) {
       >
         <span className="side-icon"><ApiIcon /></span>
         {!collapsed && <span className="side-label">API docs</span>}
-      </a>
-      <a
-        className="side-item"
-        href={publicUrl("/guides")}
-        target="_blank"
-        rel="noreferrer"
-        title="How-to guides for Reliafy"
-      >
-        <span className="side-icon"><GuidesIcon /></span>
-        {!collapsed && <span className="side-label">Guides</span>}
       </a>
 
       <div className="side-foot">
