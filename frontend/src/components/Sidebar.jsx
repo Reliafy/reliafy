@@ -273,10 +273,10 @@ export default function Sidebar({ collapsed, onToggle }) {
       </a>
       <a
         className="side-item"
-        href="/blog"
+        href="/guides"
         target="_blank"
         rel="noreferrer"
-        title="Guides & articles (opens the blog)"
+        title="How-to guides for Reliafy"
       >
         <span className="side-icon"><GuidesIcon /></span>
         {!collapsed && <span className="side-label">Guides</span>}
