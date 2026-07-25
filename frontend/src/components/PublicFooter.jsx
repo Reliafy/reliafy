@@ -15,6 +15,7 @@ export default function PublicFooter() {
         <span>© Reliafy</span>
         <span className="foot-links">
           <Link to="/guides">Guides</Link>
+          <Link to="/reference">Reference</Link>
           <Link to="/blog">Blog</Link>
           <Link to="/api-docs">API docs</Link>
           <Link to="/terms">Terms</Link>

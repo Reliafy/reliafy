@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Select from "../components/Select.jsx";
+import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import AltResultView from "../components/AltResultView.jsx";
 import {
@@ -223,7 +224,13 @@ export default function AltNewPage() {
                         options={lifeModels.map((m) => ({ value: m.id, label: `${m.name} · ${m.n_stress} stress${m.n_stress > 1 ? "es" : ""}` }))} />
               </div>
             </div>
-            {lm?.desc && <p className="muted-line" style={{ margin: 0 }}>{lm.desc}</p>}
+            {lm?.desc && (
+              <p className="muted-line" style={{ margin: 0 }}>
+                {lm.desc}
+                <RefLink entryId={lifeModel} label="What is this life-stress relationship?" />
+                <RefLink entryId={distribution} label="What is this distribution?" />
+              </p>
+            )}
             <p className="muted-line" style={{ margin: 0 }}>
               You'll map <b>{nStress}</b> stress column{nStress > 1 ? "s" : ""} on the next step.
             </p>

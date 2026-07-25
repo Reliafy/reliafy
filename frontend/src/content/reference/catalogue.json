@@ -1,0 +1,791 @@
+{
+  "families": [
+    {
+      "id": "distributions",
+      "title": "Life distributions",
+      "blurb": "Continuous distributions for time to a single failure.",
+      "entries": [
+        {
+          "id": "weibull",
+          "name": "Weibull",
+          "params": [
+            {
+              "name": "alpha",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "beta",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": true,
+          "probability_plot": true
+        },
+        {
+          "id": "exponential",
+          "name": "Exponential",
+          "params": [
+            {
+              "name": "failure_rate",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": true,
+          "probability_plot": true
+        },
+        {
+          "id": "normal",
+          "name": "Normal",
+          "params": [
+            {
+              "name": "mu",
+              "min": null,
+              "max": null
+            },
+            {
+              "name": "sigma",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": null,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": true
+        },
+        {
+          "id": "lognormal",
+          "name": "Lognormal",
+          "params": [
+            {
+              "name": "mu",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "sigma",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": true,
+          "probability_plot": true
+        },
+        {
+          "id": "gamma",
+          "name": "Gamma",
+          "params": [
+            {
+              "name": "alpha",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "beta",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": true,
+          "probability_plot": true
+        },
+        {
+          "id": "loglogistic",
+          "name": "LogLogistic",
+          "params": [
+            {
+              "name": "alpha",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "beta",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": true,
+          "probability_plot": true
+        },
+        {
+          "id": "expo_weibull",
+          "name": "Exponentiated Weibull",
+          "params": [
+            {
+              "name": "alpha",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "beta",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "mu",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": true,
+          "probability_plot": true
+        },
+        {
+          "id": "gumbel",
+          "name": "Gumbel (smallest EV)",
+          "params": [
+            {
+              "name": "mu",
+              "min": null,
+              "max": null
+            },
+            {
+              "name": "sigma",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": null,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": true
+        },
+        {
+          "id": "gumbel_lev",
+          "name": "Gumbel (largest EV)",
+          "params": [
+            {
+              "name": "mu",
+              "min": null,
+              "max": null
+            },
+            {
+              "name": "sigma",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": null,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": true
+        },
+        {
+          "id": "logistic",
+          "name": "Logistic",
+          "params": [
+            {
+              "name": "mu",
+              "min": null,
+              "max": null
+            },
+            {
+              "name": "sigma",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": null,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": true
+        },
+        {
+          "id": "rayleigh",
+          "name": "Rayleigh",
+          "params": [
+            {
+              "name": "sigma",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": true,
+          "probability_plot": true
+        }
+      ]
+    },
+    {
+      "id": "discrete",
+      "title": "Discrete distributions",
+      "blurb": "For life measured in whole counts — cycles, shocks, or demands.",
+      "entries": [
+        {
+          "id": "discrete_weibull",
+          "name": "Discrete Weibull",
+          "params": [
+            {
+              "name": "q",
+              "min": 0.0,
+              "max": 1.0
+            },
+            {
+              "name": "beta",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": false
+        },
+        {
+          "id": "geometric",
+          "name": "Geometric",
+          "params": [
+            {
+              "name": "p",
+              "min": 0.0,
+              "max": 1.0
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": false
+        },
+        {
+          "id": "beta_geometric",
+          "name": "Beta-Geometric",
+          "params": [
+            {
+              "name": "a",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "b",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": false
+        },
+        {
+          "id": "negative_binomial",
+          "name": "Negative Binomial",
+          "params": [
+            {
+              "name": "r",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "p",
+              "min": 0.0,
+              "max": 1.0
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": false
+        },
+        {
+          "id": "poisson",
+          "name": "Poisson",
+          "params": [
+            {
+              "name": "mu",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": -1.0,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": false
+        }
+      ]
+    },
+    {
+      "id": "nonparametric",
+      "title": "Non-parametric estimators",
+      "blurb": "Empirical survival estimates that assume no distribution.",
+      "entries": [
+        {
+          "id": "kaplan_meier",
+          "name": "Kaplan-Meier",
+          "params": [],
+          "support": null,
+          "offsetable": false,
+          "probability_plot": false
+        },
+        {
+          "id": "nelson_aalen",
+          "name": "Nelson-Aalen",
+          "params": [],
+          "support": null,
+          "offsetable": false,
+          "probability_plot": false
+        },
+        {
+          "id": "fleming_harrington",
+          "name": "Fleming-Harrington",
+          "params": [],
+          "support": null,
+          "offsetable": false,
+          "probability_plot": false
+        },
+        {
+          "id": "turnbull",
+          "name": "Turnbull",
+          "params": [],
+          "support": null,
+          "offsetable": false,
+          "probability_plot": false
+        }
+      ]
+    },
+    {
+      "id": "regression",
+      "title": "Regression models",
+      "blurb": "Life as a function of covariates — how conditions change reliability.",
+      "entries": [
+        {
+          "id": "weibull_ph",
+          "name": "Weibull PH",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "exponential_ph",
+          "name": "Exponential PH",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "lognormal_ph",
+          "name": "Lognormal PH",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "normal_ph",
+          "name": "Normal PH",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "gamma_ph",
+          "name": "Gamma PH",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "logistic_ph",
+          "name": "Logistic PH",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "gumbel_ph",
+          "name": "Gumbel PH",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "cox_ph",
+          "name": "Cox PH (semi-parametric)",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "weibull_aft",
+          "name": "Weibull AFT",
+          "effect": "aft",
+          "ratio_label": "time ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "exponential_aft",
+          "name": "Exponential AFT",
+          "effect": "aft",
+          "ratio_label": "time ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "lognormal_aft",
+          "name": "Lognormal AFT",
+          "effect": "aft",
+          "ratio_label": "time ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "normal_aft",
+          "name": "Normal AFT",
+          "effect": "aft",
+          "ratio_label": "time ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "gamma_aft",
+          "name": "Gamma AFT",
+          "effect": "aft",
+          "ratio_label": "time ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "logistic_aft",
+          "name": "Logistic AFT",
+          "effect": "aft",
+          "ratio_label": "time ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "gumbel_aft",
+          "name": "Gumbel AFT",
+          "effect": "aft",
+          "ratio_label": "time ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "weibull_po",
+          "name": "Weibull PO",
+          "effect": "odds",
+          "ratio_label": "odds ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "exponential_po",
+          "name": "Exponential PO",
+          "effect": "odds",
+          "ratio_label": "odds ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "lognormal_po",
+          "name": "Lognormal PO",
+          "effect": "odds",
+          "ratio_label": "odds ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "normal_po",
+          "name": "Normal PO",
+          "effect": "odds",
+          "ratio_label": "odds ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "gamma_po",
+          "name": "Gamma PO",
+          "effect": "odds",
+          "ratio_label": "odds ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "logistic_po",
+          "name": "Logistic PO",
+          "effect": "odds",
+          "ratio_label": "odds ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "gumbel_po",
+          "name": "Gumbel PO",
+          "effect": "odds",
+          "ratio_label": "odds ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "weibull_ah",
+          "name": "Weibull AH",
+          "effect": "additive",
+          "ratio_label": null,
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "exponential_ah",
+          "name": "Exponential AH",
+          "effect": "additive",
+          "ratio_label": null,
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "lognormal_ah",
+          "name": "Lognormal AH",
+          "effect": "additive",
+          "ratio_label": null,
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "normal_ah",
+          "name": "Normal AH",
+          "effect": "additive",
+          "ratio_label": null,
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "gamma_ah",
+          "name": "Gamma AH",
+          "effect": "additive",
+          "ratio_label": null,
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "logistic_ah",
+          "name": "Logistic AH",
+          "effect": "additive",
+          "ratio_label": null,
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "gumbel_ah",
+          "name": "Gumbel AH",
+          "effect": "additive",
+          "ratio_label": null,
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        }
+      ]
+    },
+    {
+      "id": "accelerated-life",
+      "title": "Life-stress relationships",
+      "blurb": "How characteristic life responds to stress, for accelerated tests.",
+      "entries": [
+        {
+          "id": "arrhenius",
+          "name": "Arrhenius",
+          "n_stress": 1,
+          "log_life_axis": true,
+          "summary": "Thermal acceleration — life = b·exp(a / stress). Use absolute temperature (K). The classic model for chemical/thermal ageing.",
+          "coefficients": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "id": "eyring",
+          "name": "Eyring",
+          "n_stress": 1,
+          "log_life_axis": true,
+          "summary": "Thermal model derived from reaction-rate theory — a physically grounded alternative to Arrhenius.",
+          "coefficients": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "id": "inverse_power",
+          "name": "Inverse power law",
+          "n_stress": 1,
+          "log_life_axis": true,
+          "summary": "Life = 1/(a·stress^n). The standard model for voltage, load or pressure acceleration.",
+          "coefficients": [
+            "a",
+            "n"
+          ]
+        },
+        {
+          "id": "linear",
+          "name": "Linear",
+          "n_stress": 1,
+          "log_life_axis": false,
+          "summary": "Life = a + b·stress. A simple straight-line relationship.",
+          "coefficients": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "id": "dual_exponential",
+          "name": "Dual exponential (temp–humidity)",
+          "n_stress": 2,
+          "log_life_axis": true,
+          "summary": "Two stresses combined exponentially — e.g. temperature and humidity (the Peck-style model).",
+          "coefficients": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        {
+          "id": "power_exponential",
+          "name": "Temperature–nonthermal",
+          "n_stress": 2,
+          "log_life_axis": true,
+          "summary": "Temperature (exponential) with a second non-thermal stress (power) — e.g. temperature and voltage.",
+          "coefficients": [
+            "c",
+            "a",
+            "n"
+          ]
+        },
+        {
+          "id": "dual_power",
+          "name": "Dual power",
+          "n_stress": 2,
+          "log_life_axis": true,
+          "summary": "Two stresses combined by a power law.",
+          "coefficients": [
+            "c",
+            "m",
+            "n"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recurrent",
+      "title": "Recurrent-event models",
+      "blurb": "Repairable systems — how often a fleet fails, and whether it's improving.",
+      "entries": [
+        {
+          "id": "crow_amsaa",
+          "name": "Crow-AMSAA (NHPP)"
+        },
+        {
+          "id": "duane",
+          "name": "Duane"
+        },
+        {
+          "id": "hpp",
+          "name": "Homogeneous Poisson (HPP)"
+        }
+      ]
+    }
+  ],
+  "modifiers": [
+    {
+      "id": "offset",
+      "name": "Offset (3-parameter)",
+      "applies_to": "Distributions marked offsetable"
+    },
+    {
+      "id": "lfp",
+      "name": "Limited failure population",
+      "applies_to": "Plain distributions"
+    },
+    {
+      "id": "zi",
+      "name": "Zero-inflation",
+      "applies_to": "Plain distributions"
+    },
+    {
+      "id": "fixed",
+      "name": "Fixed parameters",
+      "applies_to": "Any parametric fit"
+    }
+  ],
+  "total": 59
+}

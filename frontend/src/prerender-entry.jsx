@@ -14,12 +14,15 @@ import PrivacyPage from "./views/PrivacyPage.jsx";
 import LearnArticle from "./views/LearnArticle.jsx";
 import GuidesIndex from "./views/GuidesIndex.jsx";
 import GuidePage from "./views/GuidePage.jsx";
+import ReferenceIndex from "./views/ReferenceIndex.jsx";
+import ReferenceFamily from "./views/ReferenceFamily.jsx";
 import ApiDocsPublicPage from "./views/ApiDocsPublicPage.jsx";
 import ProductPage from "./views/ProductPage.jsx";
 import { PRODUCT_PAGES } from "./productPages.jsx";
 import { posts } from "./blog.js";
 import { articles } from "./learn.js";
 import { guides } from "./guides.js";
+import { families as refFamilies, totalEntries } from "./reference.js";
 
 const SITE = "https://reliafy.com";
 
@@ -46,6 +49,12 @@ export function routes() {
       title: "Guides — How to use Reliafy | Step-by-step",
       description:
         "Task-oriented walkthroughs for Reliafy: build repairable RBDs and read availability, model common-cause failures and load-sharing, fit accelerated-life models, and more — a screenshot for every step.",
+    },
+    {
+      path: "/reference",
+      title: "Model Reference — every reliability model Reliafy fits",
+      description:
+        `Reference for all ${totalEntries} models Reliafy fits: life distributions, discrete and non-parametric estimators, survival regression, accelerated-life relationships and recurrent-event models — parameters, functional forms and when to use each.`,
     },
     {
       path: "/api-docs",
@@ -120,7 +129,12 @@ export function routes() {
       },
     ],
   }));
-  return [...base, ...product, ...learn, ...blog, ...guidePages];
+  const referencePages = refFamilies.map((f) => ({
+    path: `/reference/${f.id}`,
+    title: `${f.title} — Reliafy Model Reference`,
+    description: f.description,
+  }));
+  return [...base, ...product, ...learn, ...blog, ...guidePages, ...referencePages];
 }
 
 export function render(path) {
@@ -135,6 +149,8 @@ export function render(path) {
             <Route path="/learn/:slug" element={<LearnArticle />} />
             <Route path="/guides" element={<GuidesIndex />} />
             <Route path="/guides/:slug" element={<GuidePage />} />
+            <Route path="/reference" element={<ReferenceIndex />} />
+            <Route path="/reference/:family" element={<ReferenceFamily />} />
             <Route path="/api-docs" element={<ApiDocsPublicPage />} />
             {PRODUCT_PAGES.map((p) => (
               <Route key={p.path} path={p.path} element={<ProductPage page={p} />} />

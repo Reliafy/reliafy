@@ -44,22 +44,24 @@ _LM = _al.LIFE_MODELS
 # ``model`` is the SurPyval life model; ``n_stress`` is how many stress columns
 # it consumes; ``log_y`` hints the life-vs-stress plot should use a log life
 # axis (multiplicative acceleration). Ordered single-stress first, then dual.
+#
+# SurPyval ships each single-stress relationship twice, once inverted — the pairs
+# ``Exponential``/``InverseExponential`` and ``Power``/``InversePower`` describe
+# the *same* family of curves, reparameterised, and fit to identical likelihoods.
+# Only one of each is offered: two dropdown entries that silently do the same
+# thing is worse than one. We keep the parameterisation whose coefficients read
+# the right way round — ``Exponential`` so Arrhenius' ``a`` is Ea/k (positive,
+# life rising as temperature falls) and ``InversePower`` so ``n`` is the usual
+# positive exponent — because the inverted forms drive one coefficient to
+# extreme magnitudes (a ~ 1e18) for the same fit.
 LIFE_MODELS = {
     "arrhenius": {
         "name": "Arrhenius",
-        "model": _LM["InverseExponential"],
-        "n_stress": 1,
-        "log_y": True,
-        "desc": "Thermal acceleration — life ∝ exp(b / stress). Use absolute "
-                "temperature (K). The classic model for chemical/thermal ageing.",
-    },
-    "exponential": {
-        "name": "Exponential",
         "model": _LM["Exponential"],
         "n_stress": 1,
         "log_y": True,
-        "desc": "Log-linear in stress — life ∝ exp(a + b·stress). For a stress "
-                "whose effect is exponential and doesn't need inverting.",
+        "desc": "Thermal acceleration — life = b·exp(a / stress). Use absolute "
+                "temperature (K). The classic model for chemical/thermal ageing.",
     },
     "eyring": {
         "name": "Eyring",
@@ -74,16 +76,8 @@ LIFE_MODELS = {
         "model": _LM["InversePower"],
         "n_stress": 1,
         "log_y": True,
-        "desc": "Life ∝ stress^−n. The standard model for voltage, load or "
+        "desc": "Life = 1/(a·stress^n). The standard model for voltage, load or "
                 "pressure acceleration.",
-    },
-    "power": {
-        "name": "Power law",
-        "model": _LM["Power"],
-        "n_stress": 1,
-        "log_y": True,
-        "desc": "Life ∝ a·stress^n — a power relationship where higher stress "
-                "raises life (rare; use inverse power for the usual case).",
     },
     "linear": {
         "name": "Linear",

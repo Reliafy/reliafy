@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Select from "./Select.jsx";
+import RefLink from "./RefLink.jsx";
 // Short blurbs shown under the dropdown for context (keyed by distribution id).
 const DESCRIPTIONS = {
   best: "Fits every distribution and keeps the lowest-AIC winner — let the data decide.",
@@ -114,7 +115,12 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
         <span className="dist-label">Model</span>
         <Select value={value} onChange={onChange} options={selectOptions} />
       </div>
-      {DESCRIPTIONS[value] && <p className="dist-blurb">{DESCRIPTIONS[value]}</p>}
+      {DESCRIPTIONS[value] && (
+        <p className="dist-blurb">
+          {DESCRIPTIONS[value]}
+          <RefLink entryId={value} />
+        </p>
+      )}
 
       {isPlain && (
         <div className="fitopts">

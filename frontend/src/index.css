@@ -6071,3 +6071,86 @@ button.danger:hover { background: #fdeeee; }
 /* "Open the full guide" link in the Help drawer */
 .guide-full-link { font-size: 13px; color: var(--acc); text-decoration: none; }
 .guide-full-link:hover { text-decoration: underline; }
+
+/* ── Model reference (/reference) ─────────────────────────────────────────── */
+
+/* Filter box on the reference index */
+.ref-search { margin: 0 0 18px; }
+.ref-search input {
+  width: 100%; max-width: 460px; padding: 9px 13px; font-size: 14px;
+  border: 1px solid var(--line, #dde3ea); border-radius: 9px;
+  background: var(--card, #fff); color: inherit;
+}
+.ref-search input:focus {
+  outline: none; border-color: var(--acc);
+  box-shadow: 0 0 0 3px rgba(47, 109, 246, 0.15);
+}
+
+.ref-hits { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.ref-hits a {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 9px 12px; border-radius: 8px; text-decoration: none; color: inherit;
+}
+.ref-hits a:hover { background: rgba(47, 109, 246, 0.07); }
+.ref-hits code { font-size: 12px; color: var(--muted); }
+.ref-hit-family { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+.ref-empty { padding: 12px; color: var(--muted); }
+
+.ref-modifier-intro { color: var(--muted); font-size: 14px; margin: 0 0 10px; }
+.ref-modifiers { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.ref-modifiers li {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline;
+  padding: 10px 14px; border: 1px solid var(--line, #dde3ea); border-radius: 10px;
+}
+.ref-modifiers span { color: var(--muted); font-size: 13.5px; }
+
+/* Family page: jump list, then one section per entry */
+.ref-toc {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 20px 0 4px; padding: 14px 0; border-top: 1px solid var(--line, #dde3ea);
+  border-bottom: 1px solid var(--line, #dde3ea);
+}
+.ref-toc a {
+  font-size: 12.5px; text-decoration: none; color: var(--muted);
+  border: 1px solid var(--line, #dde3ea); border-radius: 999px; padding: 3px 11px;
+}
+.ref-toc a:hover { color: var(--acc); border-color: var(--acc); }
+
+.ref-entry { scroll-margin-top: 84px; padding: 26px 0; border-bottom: 1px solid var(--line, #dde3ea); }
+.ref-entry:last-child { border-bottom: none; }
+.ref-entry-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
+.ref-id {
+  font-size: 12px; font-weight: 400; color: var(--muted);
+  background: rgba(0, 0, 0, 0.04); border-radius: 5px; padding: 2px 7px;
+}
+
+.ref-facts { display: grid; gap: 6px; margin: 0 0 14px; }
+.ref-facts > div { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.ref-facts dt {
+  min-width: 122px; font-size: 12px; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--muted);
+}
+.ref-facts dd { margin: 0; display: flex; gap: 12px; flex-wrap: wrap; font-size: 13.5px; }
+.ref-param { display: inline-flex; gap: 5px; align-items: baseline; }
+.ref-param code { font-size: 14px; }
+.ref-bound { color: var(--muted); font-size: 12.5px; }
+
+.ref-prose { font-size: 15px; line-height: 1.65; }
+.ref-prose p { margin: 0 0 12px; }
+.ref-prose pre {
+  background: rgba(0, 0, 0, 0.035); border: 1px solid var(--line, #dde3ea);
+  border-radius: 8px; padding: 12px 14px; overflow-x: auto;
+  font-size: 13.5px; line-height: 1.55; margin: 0 0 12px;
+}
+.ref-prose h3 { font-size: 15px; margin: 20px 0 8px; }
+.ref-intro { margin-bottom: 4px; }
+
+/* The contextual "?" beside a model picker — opens the entry in the Help drawer */
+.ref-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; margin-left: 6px; padding: 0; vertical-align: middle;
+  border: 1px solid var(--line, #dde3ea); border-radius: 50%;
+  background: none; color: var(--muted); box-shadow: none;
+  font-size: 11px; line-height: 1; cursor: pointer;
+}
+.ref-link:hover { color: var(--acc); border-color: var(--acc); background: none; }

@@ -15,6 +15,8 @@ import PrivacyPage from "./views/PrivacyPage.jsx";
 import LearnArticle from "./views/LearnArticle.jsx";
 import GuidesIndex from "./views/GuidesIndex.jsx";
 import GuidePage from "./views/GuidePage.jsx";
+import ReferenceIndex from "./views/ReferenceIndex.jsx";
+import ReferenceFamily from "./views/ReferenceFamily.jsx";
 import ApiDocsPublicPage from "./views/ApiDocsPublicPage.jsx";
 import ProductPage from "./views/ProductPage.jsx";
 import { PRODUCT_PAGES } from "./productPages.jsx";
@@ -73,6 +75,8 @@ export default function App() {
             {!AUTH_DISABLED && <Route path="/learn/:slug" element={<LearnArticle />} />}
             {!AUTH_DISABLED && <Route path="/guides" element={<GuidesIndex />} />}
             {!AUTH_DISABLED && <Route path="/guides/:slug" element={<GuidePage />} />}
+            {!AUTH_DISABLED && <Route path="/reference" element={<ReferenceIndex />} />}
+            {!AUTH_DISABLED && <Route path="/reference/:family" element={<ReferenceFamily />} />}
             {!AUTH_DISABLED && <Route path="/api-docs" element={<ApiDocsPublicPage />} />}
             {!AUTH_DISABLED &&
               PRODUCT_PAGES.map((p) => (

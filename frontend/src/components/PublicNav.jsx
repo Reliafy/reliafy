@@ -15,6 +15,7 @@ export default function PublicNav() {
         <Link className="landing-nav-link" to="/#features">Features</Link>
         <Link className="landing-nav-link" to="/#pricing">Pricing</Link>
         <Link className="landing-nav-link" to="/guides">Guides</Link>
+        <Link className="landing-nav-link" to="/reference">Reference</Link>
         <Link className="landing-nav-link" to="/blog">Blog</Link>
         <Link className="landing-nav-link" to="/api-docs">API</Link>
         {user ? (
