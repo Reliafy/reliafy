@@ -13,11 +13,14 @@ import TermsPage from "./views/TermsPage.jsx";
 import PrivacyPage from "./views/PrivacyPage.jsx";
 import LearnIndex from "./views/LearnIndex.jsx";
 import LearnArticle from "./views/LearnArticle.jsx";
+import GuidesIndex from "./views/GuidesIndex.jsx";
+import GuidePage from "./views/GuidePage.jsx";
 import ApiDocsPublicPage from "./views/ApiDocsPublicPage.jsx";
 import ProductPage from "./views/ProductPage.jsx";
 import { PRODUCT_PAGES } from "./productPages.jsx";
 import { posts } from "./blog.js";
 import { articles } from "./learn.js";
+import { guides } from "./guides.js";
 
 const SITE = "https://reliafy.com";
 
@@ -43,6 +46,12 @@ export function routes() {
       title: "Learn Reliability Engineering — Guides & Worked Examples | Reliafy",
       description:
         "Practical guides to reliability engineering methods: Weibull analysis, censored data, MTBF vs MTTF, B10 life, and more — with worked examples.",
+    },
+    {
+      path: "/guides",
+      title: "Guides — How to use Reliafy | Step-by-step",
+      description:
+        "Task-oriented walkthroughs for Reliafy: build repairable RBDs and read availability, model common-cause failures and load-sharing, fit accelerated-life models, and more — a screenshot for every step.",
     },
     {
       path: "/api-docs",
@@ -102,7 +111,22 @@ export function routes() {
     description: p.summary || "",
     lastmod: p.date || null,
   }));
-  return [...base, ...product, ...learn, ...blog];
+  const guidePages = guides.map((g) => ({
+    path: `/guides/${g.slug}`,
+    title: `${g.title} — Reliafy Guide`,
+    description: g.task,
+    jsonld: [
+      {
+        "@context": "https://schema.org",
+        "@type": "HowTo",
+        name: g.title,
+        description: g.task,
+        totalTime: `PT${g.minutes}M`,
+        url: `${SITE}/guides/${g.slug}`,
+      },
+    ],
+  }));
+  return [...base, ...product, ...learn, ...blog, ...guidePages];
 }
 
 export function render(path) {
@@ -116,6 +140,8 @@ export function render(path) {
             <Route path="/blog/:slug" element={<BlogPost />} />
             <Route path="/learn" element={<LearnIndex />} />
             <Route path="/learn/:slug" element={<LearnArticle />} />
+            <Route path="/guides" element={<GuidesIndex />} />
+            <Route path="/guides/:slug" element={<GuidePage />} />
             <Route path="/api-docs" element={<ApiDocsPublicPage />} />
             {PRODUCT_PAGES.map((p) => (
               <Route key={p.path} path={p.path} element={<ProductPage page={p} />} />
