@@ -55,12 +55,16 @@ columns, and choose a model:
 You can also build one **from parameters** if you already know α and β and just
 want the calculator — handy for growth planning before you have data.
 
+![Mapping a repair history and choosing a growth model](/guides/img/recurrent-01-new.png)
+
 ## Reading the result
 
 The **mean cumulative function (MCF)** plot is the heart of it: cumulative
 failures against time, with the observed step function and the fitted curve. Its
 *shape* is the finding. Curving upward means failures are accelerating; flattening
 means they're slowing; a straight line means a steady rate.
+
+![The mean cumulative function: observed steps against the fitted curve](/guides/img/recurrent-02-mcf.png)
 
 The number that formalises this is **β**:
 

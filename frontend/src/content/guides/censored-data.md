@@ -44,6 +44,8 @@ hours,censored
 Map that column to **c** when you fit. That's the whole change, and it will often
 move your fitted life substantially.
 
+![A right-censored Weibull fit — the survivors are counted properly](/guides/img/censored-01-model.png)
+
 Right censoring covers more cases than people realise: units still in service,
 units removed for an unrelated reason, units that survived to the end of a test,
 and units whose records simply stop.

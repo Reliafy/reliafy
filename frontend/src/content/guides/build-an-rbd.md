@@ -31,6 +31,8 @@ Right-click the canvas to add a component, then drag from one block's handle to
 another to connect them. Series is a straight chain; parallel is two blocks that
 both branch from the same predecessor and both feed the same successor.
 
+![A pump station diagram: input, controller, redundant pumps, output](/guides/img/rbd-01-builder.png)
+
 Set the **unit** in the top-left. Everything in the diagram should share one time
 base, and Reliafy will warn you if you drop in a saved model that was fitted in
 different units.
@@ -101,6 +103,8 @@ answer.
 takes the system down. A cut set of size one is a single point of failure, and
 seeing them listed explicitly is often the most immediately useful output of the
 whole exercise.
+
+![System reliability results with importance measures and cut sets](/guides/img/rbd-02-results.png)
 
 ## Where to go next
 

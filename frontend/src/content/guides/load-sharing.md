@@ -52,6 +52,8 @@ then double-click it to configure:
 The block shows a summary (`3 units · load 3 · k=1`) so the configuration is
 visible on the canvas without opening it.
 
+![The load-sharing node configured with a load-life model, total load, units and k](/guides/img/loadshare-01-config.png)
+
 Reliafy validates the model you pick. If it isn't an AFT model, or has more than
 one covariate, you'll get told directly rather than getting a plausible-looking
 wrong answer — the maths genuinely requires `phi(load)`, a single scalar stress.

@@ -58,6 +58,8 @@ plateaus. What the model does is fit a path to each item, extrapolate each to th
 threshold, and then fit a life distribution to the resulting crossing times —
 which is how a set of wear curves becomes a reliability model of the population.
 
+![A fitted degradation model: wear paths extrapolated to the threshold](/guides/img/degradation-01-model.png)
+
 ## From population to individual
 
 The population model is useful, but the real payoff is per-asset.
@@ -71,6 +73,8 @@ confidence to place in that.
 That's the loop that makes condition monitoring worth the effort. A reading taken
 on Tuesday can change a replacement date by Wednesday, for one named asset,
 rather than feeding a fleet-wide average that nobody acts on.
+
+![Per-asset degradation tracking, with projected threshold crossings](/guides/img/degradation-02-tracking.png)
 
 ## A caution about extrapolation
 

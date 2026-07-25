@@ -106,6 +106,56 @@ async function seedCcfUngroupedRbd() {
   return (await api("/rbds", { name: "Common-cause example (ungrouped)", graph })).id;
 }
 
+// Load-sharing needs a fitted AFT (load-life) model, so build one for real:
+// upload failure times gathered at three loads, fit weibull_aft with load as
+// the covariate, then reference it from a load-sharing node.
+async function seedLoadSharingRbd() {
+  let csv = "life,load\n";
+  for (const L of [1, 2, 4]) {
+    // Deterministic pseudo-sample around an inverse-power life ~ 1000·L^-1.5.
+    const scale = 1000 * Math.pow(L, -1.5);
+    for (let k = 1; k <= 25; k++) {
+      const q = k / 26; // quantiles of a Weibull(scale, 2)
+      csv += `${(scale * Math.pow(-Math.log(1 - q), 1 / 2)).toFixed(2)},${L}\n`;
+    }
+  }
+  const form = new FormData();
+  form.append("file", new Blob([csv], { type: "text/csv" }), "load-life.csv");
+  form.append("name", "Pump load-life (guide fixture)");
+  const ds = await (await fetch(`${BASE}/api/datasets`, { method: "POST", body: form })).json();
+
+  const mf = new FormData();
+  mf.append("name", "Pump load-life (guide fixture)");
+  mf.append("distribution", "weibull_aft"); // AFT: load as the covariate
+  mf.append("dataset_id", ds.id);
+  mf.append("x", "life");
+  mf.append("formula", "load");
+  mf.append("unit", "hours");
+  const mres = await fetch(`${BASE}/api/models`, { method: "POST", body: mf });
+  if (!mres.ok) throw new Error(`save model → ${mres.status} ${await mres.text()}`);
+  const model = await mres.json();
+
+  const graph = {
+    unit: "hours",
+    nodes: [
+      { id: "input", type: "input", position: { x: 0, y: 160 }, data: { label: "Input" } },
+      { id: "ls", type: "loadshare", position: { x: 240, y: 160 },
+        data: { kind: "loadshare", label: "Pump bank", model: { source: "saved", modelId: model.id },
+                load: 3, units: 3, k: 1 } },
+      { id: "output", type: "output", position: { x: 520, y: 160 }, data: { label: "Output" } },
+    ],
+    edges: [
+      { id: "e1", source: "input", target: "ls" },
+      { id: "e2", source: "ls", target: "output" },
+    ],
+  };
+  const rbd = await (await fetch(`${BASE}/api/rbds`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Load-sharing example", graph }),
+  })).json();
+  return { rbdId: rbd.id, modelId: model.id, datasetId: ds.id };
+}
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Select the two pump blocks (click + shift-click) so the group button appears.
@@ -138,11 +188,62 @@ async function calculate(page) {
 
 async function main() {
   await mkdir(OUT, { recursive: true });
+  // ONLY=loadshare (etc.) re-captures just the shots whose filename starts with
+  // that prefix — much faster than a full run when iterating on one guide.
+  const only = process.env.ONLY || "";
+
   const repairableId = await seedRepairableRbd();
   const ccfId = await seedCcfRbd();
   const ccfUngroupedId = await seedCcfUngroupedRbd();
+  const loadshare = await seedLoadSharingRbd();
+
+  // Guides that document existing flows are shot against the seeded sample
+  // data, so they need no fixtures of their own.
+  const S = {
+    bearings: "sample-model-bearings-weibull",
+    pumps: "sample-model-pumps-weibull",
+    seal: "sample-ds-seal-alt",
+    events: "sample-ds-compressor-events",
+    wear: "sample-ds-brake-wear",
+    altModel: "sample-alt-seal",
+    recurrent: "sample-rec-compressors",
+    degradation: "sample-deg-brake-wear",
+  };
 
   const shots = [
+    // --- Fit your first model ---
+    { file: "fit-01-new.png", url: "/modelling/new?mode=data", settle: 1200 },
+    { file: "fit-02-result.png", url: `/modelling/m/${S.bearings}`, settle: 2500 },
+    { file: "fit-03-calculator.png", url: `/modelling/m/${S.bearings}`, settle: 2000,
+      async act(page) { await page.getByRole("button", { name: /^Calculator$/i }).first().click().catch(() => {}); await wait(1800); } },
+    // --- Censored data (the pump model is right-censored) ---
+    { file: "censored-01-model.png", url: `/modelling/m/${S.pumps}`, settle: 2500 },
+    // --- Accelerated life ---
+    { file: "alt-01-new.png", url: "/modelling/alt/new", settle: 1200 },
+    { file: "alt-02-lifestress.png", url: `/modelling/alt/${S.altModel}`, settle: 2500 },
+    { file: "alt-03-probplot.png", url: `/modelling/alt/${S.altModel}`, settle: 1800,
+      async act(page) { await page.getByRole("button", { name: /Probability plot/i }).click().catch(() => {}); await wait(1800); } },
+    { file: "alt-04-uselevel.png", url: `/modelling/alt/${S.altModel}`, settle: 1800,
+      async act(page) { await page.getByRole("button", { name: /Use-level calculator/i }).click().catch(() => {}); await wait(1200);
+                        await page.getByRole("button", { name: /Compute at use level/i }).click().catch(() => {}); await wait(3000); } },
+    // --- Recurrent events ---
+    { file: "recurrent-01-new.png", url: "/modelling/recurrent/new", settle: 1200 },
+    { file: "recurrent-02-mcf.png", url: `/modelling/recurrent/${S.recurrent}`, settle: 2500 },
+    // --- Degradation ---
+    { file: "degradation-01-model.png", url: `/modelling/degradation/${S.degradation}`, settle: 2500 },
+    { file: "degradation-02-tracking.png", url: "/fleet/tracking", settle: 2000 },
+    // --- Optimal replacement ---
+    { file: "replacement-01-inputs.png", url: "/strategy/replacement", settle: 1800 },
+    // --- Reliability Agent ---
+    { file: "agent-01-landing.png", url: "/agent", settle: 1800 },
+    // --- Sharing / saved work ---
+    { file: "share-01-models.png", url: "/modelling/models", settle: 1800 },
+    // --- Load-sharing ---
+    { file: "loadshare-01-config.png", url: `/rbds/b/${loadshare.rbdId}`, settle: 1600,
+      async act(page) { await page.locator(".rbd-loadshare").dblclick().catch(() => {}); await wait(1500); } },
+    // --- Build an RBD (the seeded sample diagram) ---
+    { file: "rbd-01-builder.png", url: "/rbds/b/sample-rbd-pump-station", settle: 2000, act: arrange },
+    { file: "rbd-02-results.png", url: "/rbds/b/sample-rbd-pump-station", settle: 1200, act: calculate },
     // Availability guide.
     { file: "availability-01-new.png", url: "/rbds/b", settle: 900 },
     { file: "availability-02-system.png", url: `/rbds/b/${repairableId}`, settle: 1200,
@@ -163,11 +264,22 @@ async function main() {
     { file: "ccf-04-impact.png", url: `/rbds/b/${ccfId}`, settle: 900, act: calculate },
   ];
 
+  const selected = only ? shots.filter((s) => s.file.startsWith(only)) : shots;
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2 });
-  for (const s of shots) {
+  for (const s of selected) {
     await page.goto(`${BASE}${s.url}`, { waitUntil: "networkidle" });
     await wait(s.settle || 500);
+    // Guard: the served bundle must be the auth-disabled build, or every shot
+    // is silently a screenshot of the sign-in page. Fail loudly instead.
+    if (await page.locator("text=Continue with Google").count()) {
+      throw new Error(
+        `Landed on the sign-in page at ${s.url}.\n` +
+        "The served bundle is the production (auth-enabled) build. Rebuild with:\n" +
+        "  VITE_AUTH_DISABLED=true npm run build\n" +
+        "then re-run the capture."
+      );
+    }
     if (s.act) await s.act(page);
     await page.screenshot({ path: resolve(OUT, s.file) });
     console.log("captured", s.file);
@@ -175,10 +287,12 @@ async function main() {
   await browser.close();
 
   // Clean up the fixtures we created (the local DB is shared with prod).
-  for (const id of [repairableId, ccfId, ccfUngroupedId]) {
+  for (const id of [repairableId, ccfId, ccfUngroupedId, loadshare.rbdId]) {
     await fetch(`${BASE}/api/rbds/${id}`, { method: "DELETE" }).catch(() => {});
   }
-  console.log(`\nDone. ${shots.length} screenshots in ${OUT}; fixtures cleaned up.`);
+  await fetch(`${BASE}/api/models/${loadshare.modelId}`, { method: "DELETE" }).catch(() => {});
+  await fetch(`${BASE}/api/datasets/${loadshare.datasetId}`, { method: "DELETE" }).catch(() => {});
+  console.log(`\nDone. ${selected.length} screenshots in ${OUT}; fixtures cleaned up.`);
   console.log("Note: shots needing multi-select / right-click menus (…-02, ccf-01/02) are best captured by hand.");
 }
 

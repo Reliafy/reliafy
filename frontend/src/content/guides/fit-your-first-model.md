@@ -55,6 +55,8 @@ straight onto the page, or pick a dataset you've already uploaded — datasets a
 reusable, so once a CSV is in Reliafy you can fit as many models to it as you
 like without re-uploading.
 
+![The new-model flow: drop a CSV or pick a saved dataset](/guides/img/fit-01-new.png)
+
 If your file has no header row, tick **No header row** when you upload it and
 Reliafy will name the columns `col 1`, `col 2`, … so the first row stays data
 rather than being eaten as titles.
@@ -95,6 +97,8 @@ regression models when failure depends on covariates like temperature or load.
 The result page gives you the fitted parameters with confidence intervals, a
 probability plot, goodness-of-fit statistics, and a calculator.
 
+![A fitted Weibull model: parameters, probability plot and goodness of fit](/guides/img/fit-02-result.png)
+
 The **probability plot** is the one to look at first. It puts your data on paper
 where a good fit is a straight line. If the points track the line, the
 distribution is a reasonable description of your data. If they curve away
@@ -118,6 +122,8 @@ else on the page.
 The **calculator** lets you ask the model direct questions: reliability at a
 given time, the time by which a given fraction will have failed (B10, B50), and
 the mean life — all with confidence bounds.
+
+![The model calculator, reading reliability off the fitted curve](/guides/img/fit-03-calculator.png)
 
 ## Where to go next
 

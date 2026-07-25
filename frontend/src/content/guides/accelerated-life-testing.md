@@ -69,6 +69,8 @@ Match the relationship to the physics:
 Then map your columns — the failure time, the stress column(s), and censoring if
 you have it — and fit.
 
+![Choosing a life distribution and a life-stress relationship](/guides/img/alt-01-new.png)
+
 ## Reading the fit
 
 Two views matter, and they answer different questions.
@@ -78,6 +80,8 @@ stress, with each tested level marked and the fitted relationship drawn through
 them, extended *below* your lowest test stress toward use conditions. This is
 where you see whether the extrapolation is a short reach or a heroic one.
 
+![The life–stress plot with each tested level and the fitted relationship](/guides/img/alt-02-lifestress.png)
+
 The **probability plot** is the honesty check. Each stress level's failures are
 drawn on the distribution's probability paper. A trustworthy fit shows the levels
 as **parallel straight lines** — parallel because the shape parameter is shared
@@ -85,6 +89,8 @@ across stresses, straight because the distribution is right. If they fan out or
 curve, the shape isn't really constant across stress, and the extrapolation is
 resting on an assumption your data doesn't support. Better to find that out here
 than in the field.
+
+![The probability plot: parallel straight lines mean a trustworthy fit](/guides/img/alt-03-probplot.png)
 
 ## Extrapolating to use level
 
@@ -98,6 +104,8 @@ ratio of use life to test life. That's the number that makes test planning
 concrete. At AF = 100, one hour on the bench stands for a hundred hours in
 service, so demonstrating a 10,000-hour field life means surviving about 100
 hours on test.
+
+![The use-level calculator: extrapolated life and the acceleration factor](/guides/img/alt-04-uselevel.png)
 
 Treat the acceleration factor as a sanity check too. If it comes out
 implausibly large, you're either extrapolating much further than the data

@@ -61,6 +61,8 @@ you use with the [API](/api-docs) or the Python client to fetch a specific model
 programmatically — useful when you're pulling results into a notebook, a report,
 or another system.
 
+![Saved models, each with a copyable ID and share options](/guides/img/share-01-models.png)
+
 ## Which one to use
 
 Roughly:

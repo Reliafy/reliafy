@@ -37,6 +37,8 @@ the lost production, the collateral damage, the callout at 3am, the expedited
 freight, and the safety exposure. Most people undercount it dramatically, and
 that single number moves the answer more than anything else on the page.
 
+![The optimal replacement inputs: planned and unplanned cost](/guides/img/replacement-01-inputs.png)
+
 ## The result, and when there isn't one
 
 Reliafy computes the **long-run cost rate** across candidate intervals and finds

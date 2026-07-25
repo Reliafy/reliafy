@@ -23,6 +23,8 @@ save it", or "research a duplex pump station and build me an RBD".
 Open **Reliability Agent** from the sidebar. You'll land on your saved
 conversations; **New chat** at the top right starts a fresh one.
 
+![The Reliability Agent landing page, listing saved conversations](/guides/img/agent-01-landing.png)
+
 Attach a CSV if you have one and describe what you want. Be specific about the
 outcome rather than the method — *"fit the best distribution to this and save it
 as a model"* works better than *"run a Weibull fit"*, because it lets the agent
