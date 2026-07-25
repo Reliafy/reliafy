@@ -40,10 +40,10 @@ function comp(id, label, extra = {}) {
     position: { x: 220 * (extra.col ?? 1), y: extra.y ?? 160 },
     data: {
       label,
-      model: { source: "params", distribution_id: "weibull",
+      model: { source: "params", distribution: "Weibull", distribution_id: "weibull",
                params: [{ name: "alpha", value: extra.alpha ?? 900 }, { name: "beta", value: extra.beta ?? 1.4 }] },
       ...(extra.repair
-        ? { repair: { source: "params", distribution_id: "lognormal",
+        ? { repair: { source: "params", distribution: "Lognormal", distribution_id: "lognormal",
                       params: [{ name: "mu", value: 2.3 }, { name: "sigma", value: 0.4 }] } }
         : {}),
     },
@@ -90,6 +90,27 @@ async function seedCcfRbd() {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Tidy the diagram: click Auto-arrange and let the layout settle.
+async function arrange(page) {
+  await page.getByRole("button", { name: /Auto-arrange/i }).click().catch(() => {});
+  await wait(1200);
+}
+// Validate on the Builder tab (Calculate is gated on it), then show the panel.
+async function validateAndShowPanel(page) {
+  await page.getByRole("button", { name: /^Validate$/i }).click().catch(() => {});
+  await wait(2200);
+  await page.getByRole("button", { name: /^Calculator$/i }).click().catch(() => {});
+  await wait(700);
+}
+// Full run: validate, open Calculator, Calculate, wait for the results to render
+// (availability Monte-Carlo can take several seconds).
+async function calculate(page) {
+  await validateAndShowPanel(page);
+  await page.getByRole("button", { name: /^Calculate$/i }).click().catch(() => {});
+  await page.waitForSelector(".rbd-avail, .calc .params, .rbd-ccf-impact", { timeout: 40000 }).catch(() => {});
+  await wait(1200);
+}
+
 async function main() {
   await mkdir(OUT, { recursive: true });
   const repairableId = await seedRepairableRbd();
@@ -97,14 +118,15 @@ async function main() {
 
   const shots = [
     // Availability guide.
-    { file: "availability-01-new.png", url: "/rbds/b" },
-    { file: "availability-05-wired.png", url: `/rbds/b/${repairableId}`, settle: 1200 },
-    { file: "availability-07-results.png", url: `/rbds/b/${repairableId}`, settle: 800,
-      async act(page) { await page.getByRole("button", { name: /Calculate/i }).first().click().catch(() => {}); await wait(2500); } },
+    { file: "availability-01-new.png", url: "/rbds/b", settle: 900 },
+    { file: "availability-04-models.png", url: `/rbds/b/${repairableId}`, settle: 1400,
+      async act(page) { await page.locator(".rbd-comp", { hasText: "Controller" }).dblclick().catch(() => {}); await wait(900); } },
+    { file: "availability-05-wired.png", url: `/rbds/b/${repairableId}`, settle: 1400, act: arrange },
+    { file: "availability-06-validate.png", url: `/rbds/b/${repairableId}`, settle: 900, act: validateAndShowPanel },
+    { file: "availability-07-results.png", url: `/rbds/b/${repairableId}`, settle: 900, act: calculate },
     // Common-cause guide.
-    { file: "ccf-03-grouped.png", url: `/rbds/b/${ccfId}`, settle: 1200 },
-    { file: "ccf-04-impact.png", url: `/rbds/b/${ccfId}`, settle: 800,
-      async act(page) { await page.getByRole("button", { name: /Calculate/i }).first().click().catch(() => {}); await wait(2500); } },
+    { file: "ccf-03-grouped.png", url: `/rbds/b/${ccfId}`, settle: 1400, act: arrange },
+    { file: "ccf-04-impact.png", url: `/rbds/b/${ccfId}`, settle: 900, act: calculate },
   ];
 
   const browser = await chromium.launch();
@@ -117,8 +139,13 @@ async function main() {
     console.log("captured", s.file);
   }
   await browser.close();
-  console.log(`\nDone. ${shots.length} screenshots in ${OUT}.`);
-  console.log("Note: shots needing drag-to-wire / modal states are best captured by extending SHOTS or by hand.");
+
+  // Clean up the fixtures we created (the local DB is shared with prod).
+  for (const id of [repairableId, ccfId]) {
+    await fetch(`${BASE}/api/rbds/${id}`, { method: "DELETE" }).catch(() => {});
+  }
+  console.log(`\nDone. ${shots.length} screenshots in ${OUT}; fixtures cleaned up.`);
+  console.log("Note: shots needing multi-select / right-click menus (…-02, ccf-01/02) are best captured by hand.");
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
