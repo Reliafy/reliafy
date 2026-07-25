@@ -16,7 +16,7 @@ export default function LearnArticle() {
         <section className="blog-article">
           <h1>Article not found</h1>
           <p>This guide doesn't exist or may have been moved.</p>
-          <Link className="cta cta-ghost" to="/learn">← All guides</Link>
+          <Link className="cta cta-ghost" to="/blog">← All articles</Link>
         </section>
         <PublicFooter />
       </div>
@@ -28,7 +28,7 @@ export default function LearnArticle() {
       <PublicNav />
 
       <article className="blog-article">
-        <Link className="blog-back" to="/learn">← Learn</Link>
+        <Link className="blog-back" to="/blog">← Articles</Link>
         <header className="blog-article-head">
           <div className="blog-card-meta">
             <span>{article.readingMinutes} min read</span>
@@ -49,7 +49,7 @@ export default function LearnArticle() {
         )}
 
         <footer className="blog-article-foot">
-          <Link className="cta cta-ghost" to="/learn">← All guides</Link>
+          <Link className="cta cta-ghost" to="/blog">← All articles</Link>
         </footer>
       </article>
 

@@ -12,7 +12,6 @@ import Blog from "./views/Blog.jsx";
 import BlogPost from "./views/BlogPost.jsx";
 import TermsPage from "./views/TermsPage.jsx";
 import PrivacyPage from "./views/PrivacyPage.jsx";
-import LearnIndex from "./views/LearnIndex.jsx";
 import LearnArticle from "./views/LearnArticle.jsx";
 import GuidesIndex from "./views/GuidesIndex.jsx";
 import GuidePage from "./views/GuidePage.jsx";
@@ -68,7 +67,9 @@ export default function App() {
             {!AUTH_DISABLED && <Route path="/" element={<Landing />} />}
             {!AUTH_DISABLED && <Route path="/blog" element={<Blog />} />}
             {!AUTH_DISABLED && <Route path="/blog/:slug" element={<BlogPost />} />}
-            {!AUTH_DISABLED && <Route path="/learn" element={<LearnIndex />} />}
+            {/* The Learn index is consolidated into /blog; articles keep their
+                own /learn/:slug URLs (those are the indexed pages). */}
+            {!AUTH_DISABLED && <Route path="/learn" element={<Navigate to="/blog" replace />} />}
             {!AUTH_DISABLED && <Route path="/learn/:slug" element={<LearnArticle />} />}
             {!AUTH_DISABLED && <Route path="/guides" element={<GuidesIndex />} />}
             {!AUTH_DISABLED && <Route path="/guides/:slug" element={<GuidePage />} />}

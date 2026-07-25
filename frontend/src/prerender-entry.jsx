@@ -11,7 +11,6 @@ import Blog from "./views/Blog.jsx";
 import BlogPost from "./views/BlogPost.jsx";
 import TermsPage from "./views/TermsPage.jsx";
 import PrivacyPage from "./views/PrivacyPage.jsx";
-import LearnIndex from "./views/LearnIndex.jsx";
 import LearnArticle from "./views/LearnArticle.jsx";
 import GuidesIndex from "./views/GuidesIndex.jsx";
 import GuidePage from "./views/GuidePage.jsx";
@@ -38,14 +37,9 @@ export function routes() {
     },
     {
       path: "/blog",
-      title: "Blog — Reliafy",
-      description: "Product updates and practical notes on reliability engineering from the Reliafy team.",
-    },
-    {
-      path: "/learn",
-      title: "Learn Reliability Engineering — Guides & Worked Examples | Reliafy",
+      title: "Reliability Engineering Articles & Product Updates | Reliafy",
       description:
-        "Practical guides to reliability engineering methods: Weibull analysis, censored data, MTBF vs MTTF, B10 life, and more — with worked examples.",
+        "Practical explainers of reliability engineering methods — Weibull analysis, censored data, MTBF vs MTTF, B10 life, availability and more — plus product updates from the Reliafy team.",
     },
     {
       path: "/guides",
@@ -138,7 +132,6 @@ export function render(path) {
             <Route path="/" element={<Landing />} />
             <Route path="/blog" element={<Blog />} />
             <Route path="/blog/:slug" element={<BlogPost />} />
-            <Route path="/learn" element={<LearnIndex />} />
             <Route path="/learn/:slug" element={<LearnArticle />} />
             <Route path="/guides" element={<GuidesIndex />} />
             <Route path="/guides/:slug" element={<GuidePage />} />

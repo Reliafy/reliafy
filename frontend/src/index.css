@@ -6103,3 +6103,17 @@ button.danger:hover { background: #fdeeee; }
 .nav-help-btn svg { width: 19px; height: 19px; }
 .nav-help-btn:hover { background: rgba(47,109,246,0.08); color: var(--acc); }
 .link-btn:hover { opacity: 0.85; }  /* base .link-btn defined above */
+
+/* Merged writing index: Learn/post tags + filter chips */
+.blog-filters { display: flex; gap: 8px; margin: 0 0 18px; flex-wrap: wrap; }
+.blog-filter {
+  background: none; border: 1px solid var(--line, #dde3ea); color: var(--muted);
+  border-radius: 999px; padding: 5px 14px; font-size: 13px; cursor: pointer; box-shadow: none;
+}
+.blog-filter:hover { border-color: var(--acc); color: var(--acc); }
+.blog-filter.active { background: var(--acc); border-color: var(--acc); color: #fff; }
+.blog-tag {
+  background: rgba(47, 109, 246, 0.12); color: var(--acc);
+  border-radius: 999px; padding: 1px 9px; font-size: 11.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
