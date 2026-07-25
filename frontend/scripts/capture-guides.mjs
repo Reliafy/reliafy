@@ -88,7 +88,32 @@ async function seedCcfRbd() {
   return saved.id;
 }
 
+// Same two-pump diagram but with NO common-cause group yet — for the "select"
+// and "set β" steps that show the before state.
+async function seedCcfUngroupedRbd() {
+  const graph = {
+    unit: "hours",
+    nodes: [
+      { id: "input", type: "input", position: { x: 0, y: 160 }, data: { label: "Input" } },
+      comp("pA", "Pump A", { col: 1, y: 90 }), comp("pB", "Pump B", { col: 1, y: 230 }),
+      { id: "output", type: "output", position: { x: 440, y: 160 }, data: { label: "Output" } },
+    ],
+    edges: [
+      { id: "e1", source: "input", target: "pA" }, { id: "e2", source: "input", target: "pB" },
+      { id: "e3", source: "pA", target: "output" }, { id: "e4", source: "pB", target: "output" },
+    ],
+  };
+  return (await api("/rbds", { name: "Common-cause example (ungrouped)", graph })).id;
+}
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Select the two pump blocks (click + shift-click) so the group button appears.
+async function selectPumps(page) {
+  await page.locator(".rbd-comp", { hasText: "Pump A" }).click().catch(() => {});
+  await page.locator(".rbd-comp", { hasText: "Pump B" }).click({ modifiers: ["Shift"] }).catch(() => {});
+  await wait(600);
+}
 
 // Tidy the diagram: click Auto-arrange and let the layout settle.
 async function arrange(page) {
@@ -115,16 +140,25 @@ async function main() {
   await mkdir(OUT, { recursive: true });
   const repairableId = await seedRepairableRbd();
   const ccfId = await seedCcfRbd();
+  const ccfUngroupedId = await seedCcfUngroupedRbd();
 
   const shots = [
     // Availability guide.
     { file: "availability-01-new.png", url: "/rbds/b", settle: 900 },
+    { file: "availability-02-system.png", url: `/rbds/b/${repairableId}`, settle: 1200,
+      async act(page) { await page.locator(".sel-trigger", { hasText: /repairable/i }).first().click().catch(() => {}); await wait(700); } },
+    { file: "availability-03-add.png", url: `/rbds/b/${repairableId}`, settle: 1200,
+      async act(page) { await page.locator(".react-flow__pane").click({ button: "right", position: { x: 260, y: 180 } }).catch(() => {}); await wait(600); } },
     { file: "availability-04-models.png", url: `/rbds/b/${repairableId}`, settle: 1400,
       async act(page) { await page.locator(".rbd-comp", { hasText: "Controller" }).dblclick().catch(() => {}); await wait(900); } },
     { file: "availability-05-wired.png", url: `/rbds/b/${repairableId}`, settle: 1400, act: arrange },
     { file: "availability-06-validate.png", url: `/rbds/b/${repairableId}`, settle: 900, act: validateAndShowPanel },
     { file: "availability-07-results.png", url: `/rbds/b/${repairableId}`, settle: 900, act: calculate },
     // Common-cause guide.
+    { file: "ccf-01-select.png", url: `/rbds/b/${ccfUngroupedId}`, settle: 1400,
+      async act(page) { await arrange(page); await selectPumps(page); } },
+    { file: "ccf-02-beta.png", url: `/rbds/b/${ccfUngroupedId}`, settle: 1400,
+      async act(page) { await arrange(page); await selectPumps(page); await page.getByRole("button", { name: /Common-cause group/i }).click().catch(() => {}); await wait(900); } },
     { file: "ccf-03-grouped.png", url: `/rbds/b/${ccfId}`, settle: 1400, act: arrange },
     { file: "ccf-04-impact.png", url: `/rbds/b/${ccfId}`, settle: 900, act: calculate },
   ];
@@ -141,7 +175,7 @@ async function main() {
   await browser.close();
 
   // Clean up the fixtures we created (the local DB is shared with prod).
-  for (const id of [repairableId, ccfId]) {
+  for (const id of [repairableId, ccfId, ccfUngroupedId]) {
     await fetch(`${BASE}/api/rbds/${id}`, { method: "DELETE" }).catch(() => {});
   }
   console.log(`\nDone. ${shots.length} screenshots in ${OUT}; fixtures cleaned up.`);

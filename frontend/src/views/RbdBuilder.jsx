@@ -914,6 +914,9 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         onPaneClick={closeMenu}
         onMoveStart={closeMenu}
         deleteKeyCode={["Backspace", "Delete"]}
+        // Shift-click adds to the selection (as the hints/guides say), alongside
+        // the platform Cmd/Ctrl. Shift-drag still box-selects.
+        multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         defaultEdgeOptions={EDGE_OPTIONS}
         fitView
         fitViewOptions={{ padding: 0.35 }}
