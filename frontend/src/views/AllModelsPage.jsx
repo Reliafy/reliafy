@@ -125,8 +125,10 @@ export default function AllModelsPage() {
 
   const loading = rows === null;
   const countOf = (t) => (rows || []).filter((r) => r.type === t).length;
+  // Searchable on name, detail, type — and the id, so an ID copied from a model
+  // page (or an API response) pastes straight in and finds its row.
   const visible = (rows || []).filter((r) =>
-    matches(query, r.name, r.detail, TYPE_LABEL[r.type])
+    matches(query, r.name, r.detail, TYPE_LABEL[r.type], r.id)
   );
 
   return (
@@ -168,7 +170,7 @@ export default function AllModelsPage() {
           <div className="tablebar">
             <span className="count">{visible.length} of {rows.length} models</span>
             <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search models…" />
+            <ListSearch value={query} onChange={setQuery} placeholder="Search by name, type, or ID…" />
           </div>
 
           <div className="lib">

@@ -108,7 +108,7 @@ const ITEMS = [
     label: "Modelling",
     icon: <ModellingIcon />,
     children: [
-      { to: "/modelling/models", label: "Saved" },
+      { to: "/modelling/models", label: "All models" },
       { to: "/modelling/life", label: "Life data" },
       { to: "/modelling/recurrent", label: "Recurrent" },
       { to: "/modelling/alt", label: "Accelerated life" },
