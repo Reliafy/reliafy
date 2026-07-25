@@ -407,9 +407,8 @@ _EPS = 1e-6
 
 
 def _stress_label(row, labels) -> str:
-    """A short legend label for a stress row: value for one stress, joined for two."""
-    if len(row) == 1:
-        return _num(float(row[0]))
+    """Legend label for a stress level, e.g. ``Voltage (kV)=30`` or, for two
+    stresses, ``Temperature (°C)=80 · Load=0.9``."""
     return " · ".join(f"{labels[j]}={_num(float(v))}" for j, v in enumerate(row))
 
 

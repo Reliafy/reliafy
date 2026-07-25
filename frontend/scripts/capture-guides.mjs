@@ -205,7 +205,7 @@ async function main() {
     seal: "sample-ds-seal-alt",
     events: "sample-ds-compressor-events",
     wear: "sample-ds-brake-wear",
-    altModel: "sample-alt-seal",
+    altModel: "sample-alt-fluid",
     recurrent: "sample-rec-compressors",
     degradation: "sample-deg-brake-wear",
   };
