@@ -192,11 +192,6 @@ async function main() {
   // that prefix — much faster than a full run when iterating on one guide.
   const only = process.env.ONLY || "";
 
-  const repairableId = await seedRepairableRbd();
-  const ccfId = await seedCcfRbd();
-  const ccfUngroupedId = await seedCcfUngroupedRbd();
-  const loadshare = await seedLoadSharingRbd();
-
   // Guides that document existing flows are shot against the seeded sample
   // data, so they need no fixtures of their own.
   const S = {
@@ -210,7 +205,10 @@ async function main() {
     degradation: "sample-deg-brake-wear",
   };
 
-  const shots = [
+  // Shots that only need the app's own seeded sample data. These run FIRST,
+  // before any fixture exists — otherwise a fixture model/diagram shows up in
+  // list pages like Saved models, which real users would never see.
+  const sampleShots = [
     // --- Fit your first model ---
     { file: "fit-01-new.png", url: "/modelling/new?mode=data", settle: 1200 },
     { file: "fit-02-result.png", url: `/modelling/m/${S.bearings}`, settle: 2500 },
@@ -238,6 +236,10 @@ async function main() {
     { file: "agent-01-landing.png", url: "/agent", settle: 1800 },
     // --- Sharing / saved work ---
     { file: "share-01-models.png", url: "/modelling/models", settle: 1800 },
+  ];
+
+  // Shots needing purpose-built fixtures (created below, deleted afterwards).
+  const fixtureShots = (repairableId, ccfId, ccfUngroupedId, loadshare) => [
     // --- Load-sharing ---
     { file: "loadshare-01-config.png", url: `/rbds/b/${loadshare.rbdId}`, settle: 1600,
       async act(page) { await page.locator(".rbd-loadshare").dblclick().catch(() => {}); await wait(1500); } },
@@ -264,35 +266,60 @@ async function main() {
     { file: "ccf-04-impact.png", url: `/rbds/b/${ccfId}`, settle: 900, act: calculate },
   ];
 
-  const selected = only ? shots.filter((s) => s.file.startsWith(only)) : shots;
+  const pick = (list) => (only ? list.filter((s) => s.file.startsWith(only)) : list);
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2 });
-  for (const s of selected) {
-    await page.goto(`${BASE}${s.url}`, { waitUntil: "networkidle" });
-    await wait(s.settle || 500);
-    // Guard: the served bundle must be the auth-disabled build, or every shot
-    // is silently a screenshot of the sign-in page. Fail loudly instead.
-    if (await page.locator("text=Continue with Google").count()) {
-      throw new Error(
-        `Landed on the sign-in page at ${s.url}.\n` +
-        "The served bundle is the production (auth-enabled) build. Rebuild with:\n" +
-        "  VITE_AUTH_DISABLED=true npm run build\n" +
-        "then re-run the capture."
-      );
-    }
-    if (s.act) await s.act(page);
-    await page.screenshot({ path: resolve(OUT, s.file) });
-    console.log("captured", s.file);
-  }
-  await browser.close();
+  let n = 0;
 
-  // Clean up the fixtures we created (the local DB is shared with prod).
-  for (const id of [repairableId, ccfId, ccfUngroupedId, loadshare.rbdId]) {
-    await fetch(`${BASE}/api/rbds/${id}`, { method: "DELETE" }).catch(() => {});
+  const shoot = async (list) => {
+    for (const s of list) {
+      await page.goto(`${BASE}${s.url}`, { waitUntil: "networkidle" });
+      await wait(s.settle || 500);
+      // Guard: the served bundle must be the auth-disabled build, or every shot
+      // is silently a screenshot of the sign-in page. Fail loudly instead.
+      if (await page.locator("text=Continue with Google").count()) {
+        throw new Error(
+          `Landed on the sign-in page at ${s.url}.\n` +
+          "The served bundle is the production (auth-enabled) build. Rebuild with:\n" +
+          "  VITE_AUTH_DISABLED=true npm run build\n" +
+          "then re-run the capture."
+        );
+      }
+      if (s.act) await s.act(page);
+      await page.screenshot({ path: resolve(OUT, s.file) });
+      console.log("captured", s.file);
+      n += 1;
+    }
+  };
+
+  // Phase 1 — sample data only, so no fixture can leak into a list page.
+  await shoot(pick(sampleShots));
+
+  // Phase 2 — create fixtures, shoot, then always remove them.
+  const wanted = pick(fixtureShots("", "", "", { rbdId: "" }));
+  let fx = null;
+  if (wanted.length) {
+    fx = {
+      repairableId: await seedRepairableRbd(),
+      ccfId: await seedCcfRbd(),
+      ccfUngroupedId: await seedCcfUngroupedRbd(),
+      loadshare: await seedLoadSharingRbd(),
+    };
+    try {
+      await shoot(pick(fixtureShots(fx.repairableId, fx.ccfId, fx.ccfUngroupedId, fx.loadshare)));
+    } finally {
+      await browser.close();
+      // The local DB is the production one — never leave fixtures behind.
+      for (const id of [fx.repairableId, fx.ccfId, fx.ccfUngroupedId, fx.loadshare.rbdId]) {
+        await fetch(`${BASE}/api/rbds/${id}`, { method: "DELETE" }).catch(() => {});
+      }
+      await fetch(`${BASE}/api/models/${fx.loadshare.modelId}`, { method: "DELETE" }).catch(() => {});
+      await fetch(`${BASE}/api/datasets/${fx.loadshare.datasetId}`, { method: "DELETE" }).catch(() => {});
+    }
+  } else {
+    await browser.close();
   }
-  await fetch(`${BASE}/api/models/${loadshare.modelId}`, { method: "DELETE" }).catch(() => {});
-  await fetch(`${BASE}/api/datasets/${loadshare.datasetId}`, { method: "DELETE" }).catch(() => {});
-  console.log(`\nDone. ${selected.length} screenshots in ${OUT}; fixtures cleaned up.`);
+  console.log(`\nDone. ${n} screenshots in ${OUT}${fx ? "; fixtures cleaned up" : ""}.`);
   console.log("Note: shots needing multi-select / right-click menus (…-02, ccf-01/02) are best captured by hand.");
 }
 

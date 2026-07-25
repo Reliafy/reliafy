@@ -6117,3 +6117,7 @@ button.danger:hover { background: #fdeeee; }
   border-radius: 999px; padding: 1px 9px; font-size: 11.5px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.04em;
 }
+
+/* Saved-models type tags for the newer model kinds */
+.type-tag.alt { background: rgba(15, 154, 176, 0.12); color: #0c7d8f; }
+.type-tag.recurrent { background: rgba(208, 118, 47, 0.12); color: #b0631f; }
