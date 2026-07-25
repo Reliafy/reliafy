@@ -30,6 +30,10 @@ import pandas as pd
 from backend.fitting import DISTRIBUTIONS
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
+from repyability.rbd.repairable_rbd import RepairableRBD
+from repyability.rbd.ccf import CCFGroup
+from repyability import BetaFactor, LoadSharingModel
+from repyability.non_repairable import NonRepairable
 from repyability.rbd.standby_node import StandbyModel
 from repyability.utils.wrappers import conditional_survival
 
@@ -232,6 +236,50 @@ def _build_distribution(
         raise AnalysisError(f"{where}: {exc}") from exc
 
 
+_LOADSHARE_SIMS = 2000  # MC replicates for the load-sharing group's KM fit
+
+
+def _loadshare_model(data: dict, label: str, resolve_model=None):
+    """Build a load-sharing group's reliability. The units share a total load L;
+    each of ``s`` survivors carries ``L / s``, so survivors fail faster. The unit
+    is a saved accelerated-failure-time (AFT) model with the load as its single
+    covariate (``phi(load)``). ``units`` identical units, ``k`` required."""
+    model = data.get("model") or {}
+    model_id = model.get("modelId") or model.get("model_id")
+    if not model_id:
+        raise AnalysisError(f"{label}: pick the load-life (AFT) model for the units.")
+    if resolve_model is None:
+        # Structural/validation context: a load-sharing node is analytic; stand
+        # in with a perfectly-reliable node (the real fit isn't needed here).
+        return PerfectReliability
+    entry = resolve_model(model_id)
+    if not entry:
+        raise AnalysisError(f"{label}: saved load-life model not found — re-fit it or pick another.")
+    fitted = entry["model"]
+    fields = entry.get("fields") or []
+    if len(fields) != 1:
+        raise AnalysisError(
+            f"{label}: the load-life model must be an AFT model with exactly one "
+            "covariate — the load. Fit an accelerated-failure-time model (e.g. "
+            "weibull_aft) with a single load column.")
+    try:
+        n = max(int(data.get("units") or 2), 2)
+        k = max(int(data.get("k") or 1), 1)
+        load = float(data.get("load"))
+    except (TypeError, ValueError):
+        raise AnalysisError(f"{label}: set the total load, the number of units, and k.")
+    if load <= 0:
+        raise AnalysisError(f"{label}: the total load must be a positive number.")
+    if k > n:
+        raise AnalysisError(f"{label}: k ({k}) can't exceed the number of units ({n}).")
+    try:
+        return LoadSharingModel([fitted] * n, load=load, k=k, n_sims=_LOADSHARE_SIMS, seed=1)
+    except Exception as exc:  # RePyability validates the AFT unit
+        raise AnalysisError(
+            f"{label}: {exc} — load-sharing needs an accelerated-failure-time (AFT) "
+            "life model with the load as its covariate.") from exc
+
+
 def _standby_model(data: dict, label: str, resolve_model=None, cov_values=None):
     """Build the reliability of a standby node from its builder data."""
     primary = _build_distribution(data.get("model"), label, resolve_model, cov_values)
@@ -290,6 +338,9 @@ def _node_reliability(
 
     if ntype == "standby":
         return _standby_model(data, label, resolve_model, cov_values), None
+
+    if ntype == "loadshare":
+        return _loadshare_model(data, label, resolve_model), None
 
     if ntype == "subsystem":
         ref = data.get("rbd")
@@ -392,23 +443,49 @@ def _build_rbd(
     input_node = "input" if "input" in node_ids else None
     output_node = "output" if "output" in node_ids else None
 
-    try:
-        rbd = NonRepairableRBD(
-            edges,
-            reliabilities,
-            k=k,
-            input_node=input_node,
-            output_node=output_node,
-            on_infeasible_rbd="raise",
-        )
-    except ValueError as exc:
-        raise AnalysisError(
-            "The diagram isn't a valid reliability block diagram: "
-            f"{exc}. Check that every component is wired between the input "
-            "and output."
-        ) from exc
+    ccf_groups = _ccf_groups(graph, reliabilities)
 
-    return rbd, labels, node_types, reliabilities, working_nodes, broken_nodes
+    def _make(with_ccf: bool):
+        try:
+            return NonRepairableRBD(
+                edges,
+                reliabilities,
+                k=k,
+                input_node=input_node,
+                output_node=output_node,
+                on_infeasible_rbd="raise",
+                ccf_groups=ccf_groups if (with_ccf and ccf_groups) else None,
+            )
+        except ValueError as exc:
+            raise AnalysisError(
+                "The diagram isn't a valid reliability block diagram: "
+                f"{exc}. Check that every component is wired between the input "
+                "and output."
+            ) from exc
+
+    rbd = _make(with_ccf=True)
+    # Keep a common-cause-free twin so the analysis can show the CCF impact.
+    baseline = _make(with_ccf=False) if ccf_groups else None
+    return rbd, labels, node_types, reliabilities, working_nodes, broken_nodes, baseline
+
+
+def _ccf_groups(graph: dict, reliabilities: dict) -> list:
+    """Build RePyability CCFGroups from ``graph['ccf_groups']`` — each a set of
+    ≥2 redundant components coupled by a beta-factor shared cause. Groups whose
+    members aren't all present (or fewer than two) are skipped."""
+    out = []
+    for g in graph.get("ccf_groups") or []:
+        members = [m for m in (g.get("members") or []) if m in reliabilities]
+        if len(set(members)) < 2:
+            continue
+        try:
+            beta = float(g.get("beta"))
+        except (TypeError, ValueError):
+            continue
+        if not (0.0 < beta < 1.0):
+            continue
+        out.append(CCFGroup(members=list(dict.fromkeys(members)), model=BetaFactor(beta)))
+    return out
 
 
 def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
@@ -561,6 +638,46 @@ def validate_graph(
         except Exception as exc:  # pragma: no cover - defensive
             errors.append(f"The diagram could not be analysed: {exc}")
 
+    repairable = bool(graph.get("repairable"))
+    if repairable:
+        # Availability mode is a distinct contract: every component needs a
+        # repair-time distribution, only component + k-of-n blocks are supported,
+        # and common-cause coupling is reliability-only. Check that here so the
+        # Validate step reflects what Calculate will actually accept.
+        for node in nodes:
+            ntype = node.get("type")
+            if ntype in ("input", "output"):
+                continue
+            lbl = labels.get(node.get("id"), node.get("id"))
+            data = node.get("data") or {}
+            if ntype == "knode":
+                continue
+            if ntype != "component":
+                errors.append(
+                    f"“{lbl}” isn't supported in a repairable diagram — availability "
+                    "uses component blocks (each with a life model and a repair time) "
+                    "and k-of-n gates. Switch to a non-repairable diagram to use it.")
+            elif data.get("state") not in ("working", "failed") and not data.get("repair"):
+                errors.append(
+                    f"“{lbl}” has no repair-time distribution. Repairable diagrams "
+                    "analyse availability, so every component needs one (double-click "
+                    "the block to set it).")
+        if graph.get("ccf_groups"):
+            warnings.append(
+                "Common-cause groups are a reliability-only feature and are "
+                "ignored in a repairable (availability) diagram.")
+        valid = len(errors) == 0
+        # Availability is always estimated by simulation — never "analytic".
+        return {
+            "valid": valid, "analytic": False, "can_calculate": valid,
+            "errors": errors, "warnings": warnings, "non_analytic_nodes": {},
+        }
+
+    # Non-repairable (reliability): common-cause groups should couple identical
+    # (symmetric) components — warn if the members' life models differ.
+    for msg in _ccf_symmetry_warnings(graph, labels):
+        warnings.append(msg)
+
     valid = len(errors) == 0
     analytic = valid and len(non_analytic) == 0
     return {
@@ -571,6 +688,35 @@ def validate_graph(
         "warnings": warnings,
         "non_analytic_nodes": non_analytic,
     }
+
+
+def _ccf_symmetry_warnings(graph: dict, labels: dict) -> list:
+    """Beta-factor common cause assumes symmetric groups (identical member
+    models). Warn when a group's members carry different life models."""
+    out = []
+    by_id = {n.get("id"): (n.get("data") or {}) for n in (graph.get("nodes") or [])}
+
+    def _model_key(nid):
+        m = (by_id.get(nid) or {}).get("model") or {}
+        # Compare the distribution + parameter values (a saved model by its id).
+        if m.get("modelId"):
+            return ("saved", m.get("modelId"))
+        params = tuple(sorted((p.get("name"), round(float(p.get("value")), 6))
+                              for p in (m.get("params") or []) if p.get("name") is not None))
+        return (m.get("distribution_id"), params)
+
+    for g in graph.get("ccf_groups") or []:
+        members = [m for m in (g.get("members") or []) if m in by_id]
+        if len(members) < 2:
+            continue
+        keys = {_model_key(m) for m in members}
+        if len(keys) > 1:
+            names = ", ".join(labels.get(m, str(m)) for m in members)
+            out.append(
+                f"Common-cause group ({names}) mixes different life models. The "
+                "beta-factor model assumes identical redundant components, so give "
+                "them the same model for a meaningful result.")
+    return out
 
 
 def _model_hi(model) -> Optional[float]:
@@ -680,7 +826,7 @@ def analyze(
     life at ``s``. Raises :class:`AnalysisError` with a user-facing message if
     the graph can't be turned into a valid RBD.
     """
-    rbd, labels, node_types, reliabilities, working_nodes, broken_nodes = _build_rbd(
+    rbd, labels, node_types, reliabilities, working_nodes, broken_nodes, baseline = _build_rbd(
         graph, resolve_subsystem, None, resolve_model, covariates
     )
     # RePyability's native what-if override for the system-level calls.
@@ -793,6 +939,30 @@ def analyze(
         "min_cut_sets": _named_sets(rbd.get_min_cut_sets(include_in_out_nodes=False)),
     }
 
+    # Common-cause impact: system reliability WITH vs WITHOUT the coupling, at the
+    # representative time and across the grid — the headline "CCF cost".
+    ccf = None
+    if baseline is not None:
+        try:
+            base_sf = _conditional_sf(baseline, grid, s, **overrides)
+            r_with = float(system_sf[target_idx])
+            r_without = float(base_sf[target_idx])
+            ccf = {
+                "groups": [
+                    {"members": [labels.get(m, str(m)) for m in (g.get("members") or [])],
+                     "beta": float(g.get("beta"))}
+                    for g in (graph.get("ccf_groups") or [])
+                    if len([m for m in (g.get("members") or []) if m in reliabilities]) >= 2
+                    and _valid_beta(g.get("beta"))
+                ],
+                "time": t_rep,
+                "reliability_with": r_with,
+                "reliability_without": r_without,
+                "baseline_sf": _clean(base_sf),
+            }
+        except Exception:  # noqa: BLE001 - the main result still stands
+            ccf = None
+
     return {
         "unit": (graph.get("unit") or "").strip(),
         "time": grid.tolist(),
@@ -803,8 +973,209 @@ def analyze(
         "nodes": node_payloads,
         "importance": importance,
         "structure": structure,
+        "ccf": ccf,
         "repyability_version": _repyability_version(),
     }
+
+
+def _valid_beta(v) -> bool:
+    try:
+        return 0.0 < float(v) < 1.0
+    except (TypeError, ValueError):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Repairable systems — availability analysis
+# ---------------------------------------------------------------------------
+# A repairable RBD is a distinct modelling choice: every component carries a
+# failure distribution AND a repair-time (MTTR) distribution, and the system is
+# characterised by its *availability* (long-run uptime), not a one-shot
+# reliability curve. Built on RePyability's RepairableRBD.
+
+_AVAIL_SIMS = 2000  # Monte-Carlo replications for the availability estimate
+
+
+def _always_up():
+    """A repairable stand-in that never fails — used for pure logic/voting
+    (k-of-n) gates, which carry no failure or repair behaviour of their own but
+    must still be a repairable component for RePyability's availability solver."""
+    import surpyval as sp
+
+    return NonRepairable(
+        sp.Weibull.from_params([1e12, 1.0]),  # effectively never fails
+        sp.LogNormal.from_params([0.1, 0.1]),
+    )
+
+
+def _repair_distribution(data: dict, label: str, resolve_model=None):
+    """Build a component's time-to-repair distribution from its ``repair`` spec
+    (same shape as a life model: distribution_id + params). Repairable
+    components must have one."""
+    spec = data.get("repair")
+    if not spec:
+        raise AnalysisError(
+            f"{label}: repairable diagrams need a repair-time distribution on "
+            "every component — add one (e.g. a Lognormal mean-time-to-repair)."
+        )
+    return _build_distribution(spec, f"{label} (repair)", resolve_model, None)
+
+
+def _build_repairable_rbd(graph: dict, resolve_model=None):
+    """Translate a builder graph into a RepairableRBD (availability).
+
+    v1 supports plain component nodes (each a life model + repair) and k-of-n
+    voting gates; other node types raise a clear error. Returns
+    ``(rbd, labels)``.
+    """
+    nodes = graph.get("nodes") or []
+    raw_edges = graph.get("edges") or []
+    edges = [
+        (e["source"], e["target"])
+        for e in raw_edges
+        if e.get("source") and e.get("target")
+    ]
+    if not edges:
+        raise AnalysisError("The diagram has no connections to analyse.")
+
+    node_ids = {n.get("id") for n in nodes}
+    components: dict[Any, Any] = {}
+    k: dict[Any, int] = {}
+    labels: dict[Any, str] = {}
+    gate_ids: set = set()  # synthetic voting gates — excluded from downtime
+
+    for node in nodes:
+        nid = node.get("id")
+        ntype = node.get("type")
+        if ntype in ("input", "output"):
+            continue
+        data = node.get("data") or {}
+        label = data.get("label") or nid
+        labels[nid] = label
+        if ntype == "knode":
+            components[nid] = _always_up()
+            k[nid] = max(int(data.get("n") or 1), 1)
+            gate_ids.add(nid)
+            continue
+        if ntype != "component":
+            raise AnalysisError(
+                f"{label}: “{ntype}” blocks aren't supported in repairable "
+                "diagrams yet — use component blocks (each with a life model and "
+                "a repair time), optionally with a k-of-n voting gate."
+            )
+        reliability = _build_distribution(data.get("model"), label, resolve_model, None)
+        repair = _repair_distribution(data, label, resolve_model)
+        components[nid] = NonRepairable(reliability, repair)
+
+    if not components:
+        raise AnalysisError("The diagram has no component nodes to analyse.")
+
+    input_node = "input" if "input" in node_ids else None
+    output_node = "output" if "output" in node_ids else None
+    try:
+        rbd = RepairableRBD(
+            edges, components, k=k, input_node=input_node, output_node=output_node,
+        )
+    except ValueError as exc:
+        raise AnalysisError(
+            "The diagram isn't a valid reliability block diagram: "
+            f"{exc}. Check that every component is wired between the input and output."
+        ) from exc
+    return rbd, labels, gate_ids
+
+
+def analyze_availability(
+    graph: dict,
+    resolve_model=None,
+    t_simulation: Optional[float] = None,
+) -> dict:
+    """Availability analysis of a repairable RBD: steady-state uptime, mean up/
+    down time, failure frequency, and each component's share of downtime."""
+    rbd, labels, gate_ids = _build_repairable_rbd(graph, resolve_model)
+
+    try:
+        steady = float(rbd.mean_availability())
+    except Exception as exc:  # noqa: BLE001
+        raise AnalysisError(f"Couldn't compute availability: {exc}") from exc
+
+    # A simulation horizon long enough to reach steady state: a few multiples of
+    # the slowest component's characteristic life, unless the user set one.
+    if not t_simulation or t_simulation <= 0:
+        t_simulation = _availability_horizon(graph)
+
+    per_node = []
+    mean_up = mean_down = failure_freq = None
+    curve = None
+    try:
+        res = rbd.availability(t_simulation=float(t_simulation), N=_AVAIL_SIMS,
+                               method="c", seed=1)
+        mean_up = _f(getattr(res, "mean_up_time", None))
+        mean_down = _f(getattr(res, "mean_down_time", None))
+        failure_freq = _f(getattr(res, "failure_frequency", None))
+        downtime = getattr(res, "node_downtime", None) or {}
+        # Exclude synthetic voting gates (they never fail); share is over real
+        # components only.
+        real = {nid: dt for nid, dt in downtime.items() if nid not in gate_ids}
+        total_dt = sum(v for v in real.values() if v) or 1.0
+        for nid, dt in real.items():
+            per_node.append({
+                "id": str(nid), "label": labels.get(nid, str(nid)),
+                "downtime": _f(dt),
+                "share": _f((dt or 0.0) / total_dt),
+            })
+        per_node.sort(key=lambda r: (r["share"] or 0.0), reverse=True)
+        # Time-dependent availability curve, if the result carries one.
+        av_series = getattr(res, "availability", None)
+        if av_series is not None:
+            arr = np.atleast_1d(np.asarray(av_series, dtype=float))
+            if arr.size > 1:
+                # The MC series is per-event (tens of thousands of points) —
+                # resample to a fixed grid so the payload stays small.
+                if arr.size > _GRID_POINTS:
+                    idx = np.linspace(0, arr.size - 1, _GRID_POINTS).round().astype(int)
+                    arr = arr[idx]
+                t = np.linspace(0.0, float(t_simulation), arr.size)
+                curve = {"t": t.tolist(), "availability": _clean(arr)}
+    except Exception:  # noqa: BLE001 - the steady-state figure still stands
+        pass
+
+    return {
+        "kind": "repairable",
+        "unit": (graph.get("unit") or "").strip(),
+        "steady_state_availability": steady,
+        "unavailability": (1.0 - steady) if np.isfinite(steady) else None,
+        "mean_up_time": mean_up,
+        "mean_down_time": mean_down,
+        "failure_frequency": failure_freq,
+        "n_simulations": _AVAIL_SIMS,
+        "t_simulation": float(t_simulation),
+        "per_node": per_node,
+        "curve": curve,
+        "repyability_version": _repyability_version(),
+    }
+
+
+def _f(v) -> Optional[float]:
+    try:
+        v = float(np.atleast_1d(v)[0]) if hasattr(v, "__len__") else float(v)
+        return v if np.isfinite(v) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _availability_horizon(graph: dict) -> float:
+    """A simulation length that reaches steady state: ~10× the largest component
+    scale parameter found in the graph (fallback 1000)."""
+    hi = 0.0
+    for node in graph.get("nodes") or []:
+        data = node.get("data") or {}
+        for spec in (data.get("model"), data.get("repair")):
+            for p in (spec or {}).get("params") or []:
+                try:
+                    hi = max(hi, abs(float(p.get("value"))))
+                except (TypeError, ValueError):
+                    pass
+    return (hi * 10.0) if hi > 0 else 1000.0
 
 
 def _repyability_version() -> Optional[str]:

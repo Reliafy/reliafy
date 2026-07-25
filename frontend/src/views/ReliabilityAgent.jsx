@@ -4,8 +4,11 @@ import {
   reliabilityAgentInfo,
   reliabilityAgentUpload,
   reliabilityAgentStream,
+  listAgentSessions,
+  getAgentSession,
 } from "../api.js";
 import { renderAgentMarkdown } from "../agentMarkdown.js";
+import { relativeTime } from "../instrument.js";
 
 // A conversational chat with the Reliability Agent (Anthropic Managed Agents).
 // The agent assesses the task, builds the solution with surpyval/repyability in
@@ -13,12 +16,40 @@ import { renderAgentMarkdown } from "../agentMarkdown.js";
 // tools to load datasets + life models into the workspace. Messages persist in a
 // scrolling thread; the session is reused across turns.
 
-const TOOL_LABEL = { create_dataset: "Create dataset", create_life_model: "Create life model", create_rbd: "Create RBD" };
+// Human labels for the Reliafy-side tools. Reads are phrased as looking, not
+// doing — they run before approval, so they shouldn't read as changes.
+const TOOL_LABEL = {
+  list_datasets: "Read your datasets",
+  get_dataset: "Read a dataset",
+  list_models: "Read your saved models",
+  get_model: "Read a saved model",
+  create_dataset: "Create dataset",
+  create_life_model: "Create life model",
+  create_recurrent_model: "Create recurrent model",
+  create_alt_model: "Create accelerated-life model",
+  create_degradation_model: "Create degradation model",
+  create_rbd: "Create RBD",
+};
 
 // One streamed part within an agent turn. Conversational text is a message
 // bubble; sandbox activity (bash/code + output) is a distinct collapsed "step"
 // chip, so the agent's thinking is legible without a wall of code.
-function Part({ p }) {
+function Part({ p, onApprove, approvable }) {
+  // The agent's explicit request to proceed — an inline Approve control in the
+  // thread. Actionable only on the latest turn; otherwise it shows as resolved.
+  if (p.type === "approval")
+    return (
+      <div className="agent-approve-inline">
+        <div className="agent-approve-msg">
+          Ready to build{p.summary ? <> — <strong>{p.summary}</strong></> : ""}. Approve to proceed?
+        </div>
+        {approvable ? (
+          <button className="chat-approve-btn" onClick={onApprove}>✓ Approve &amp; build</button>
+        ) : (
+          <span className="agent-approve-done">Approval requested</span>
+        )}
+      </div>
+    );
   if (p.type === "text")
     return p.text ? (
       <div
@@ -52,7 +83,7 @@ function Part({ p }) {
   return null;
 }
 
-function Bubble({ msg }) {
+function Bubble({ msg, onApprove, approvable }) {
   if (msg.role === "user") {
     return (
       <div className="chat-row user">
@@ -65,7 +96,7 @@ function Bubble({ msg }) {
     <div className="chat-row agent">
       <div className="agent-stack">
         {msg.parts.length === 0 && msg.pending && <span className="chat-typing">Working…</span>}
-        {msg.parts.map((p, i) => <Part key={i} p={p} />)}
+        {msg.parts.map((p, i) => <Part key={i} p={p} onApprove={onApprove} approvable={approvable} />)}
         {msg.status && msg.pending && <span className="chat-status">{msg.status}…</span>}
       </div>
     </div>
@@ -81,12 +112,55 @@ export default function ReliabilityAgent() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [credit, setCredit] = useState(null);
+  const [sessions, setSessions] = useState(null); // null while loading
+  const [view, setView] = useState("list"); // "list" (landing) | "chat"
+  const [loadingTx, setLoadingTx] = useState(false);
   const sessionRef = useRef(null); // reused across turns
   const scrollRef = useRef(null);
 
+  const refreshSessions = () =>
+    listAgentSessions().then((r) => setSessions(r.sessions || [])).catch(() => setSessions([]));
+
   useEffect(() => {
     reliabilityAgentInfo().then((i) => { setInfo(i); setCredit(i.credit_cents); }).catch((e) => setError(e.message));
+    refreshSessions();
   }, []);
+
+  // Start a fresh conversation (new session on the next message).
+  const newChat = () => {
+    if (busy) return;
+    sessionRef.current = null;
+    setMessages([]);
+    setError(null);
+    setView("chat");
+  };
+
+  // Back to the landing list of saved runs.
+  const backToList = () => {
+    if (busy) return;
+    setView("list");
+    setError(null);
+    refreshSessions();
+  };
+
+  // Reopen a past run: load its transcript and point the session at it so the
+  // next message resumes the same conversation on the platform.
+  const openSession = async (id) => {
+    if (busy) return;
+    setView("chat");
+    setMessages([]);
+    setLoadingTx(true);
+    setError(null);
+    try {
+      const tx = await getAgentSession(id);
+      setMessages(tx.messages || []);
+      sessionRef.current = id;
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoadingTx(false);
+    }
+  };
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages]);
 
   // Append a streamed part to the last (agent) message. Consecutive text parts
@@ -147,6 +221,7 @@ export default function ReliabilityAgent() {
             case "tool_use": pushPart({ type: "code", name: ev.name, code: ev.code || "" }); break;
             case "tool_result": pushPart({ type: "result", output: ev.output }); break;
             case "reliafy_tool": pushPart({ type: "tool_call", name: ev.name }); break;
+            case "approval_request": pushPart({ type: "approval", summary: ev.summary || "" }); break;
             case "reliafy_tool_blocked": pushPart({ type: "tool_blocked", name: ev.name }); break;
             case "reliafy_tool_result": pushPart({ type: "tool_done", ok: ev.ok, summary: ev.summary }); break;
             case "status": setAgentStatus(ev.status); break;
@@ -154,6 +229,7 @@ export default function ReliabilityAgent() {
             case "done":
               if (ev.session_id) sessionRef.current = ev.session_id;
               if (ev.credit_cents != null) setCredit(ev.credit_cents);
+              refreshSessions();  // keep the history list current
               break;
             default: break;
           }
@@ -182,24 +258,42 @@ export default function ReliabilityAgent() {
   // Pro-only feature: free tier is locked out (server enforces it too).
   const upgradeRequired = !!info?.enabled && info?.upgrade_required;
   const disabled = busy || !info?.enabled || upgradeRequired;
-  // Offer the greenlight once the agent has spoken and it's the user's move.
-  const lastMsg = messages[messages.length - 1];
-  const canApprove = !disabled && lastMsg?.role === "agent" && lastMsg.parts.length > 0;
+  // Approval is inline in the thread: the agent calls request_approval, which
+  // renders an Approve control on its latest turn (see the "approval" Part).
 
   return (
     <div className="app agent-page">
       <header>
         <div>
+          {view === "chat" && (
+            <div className="crumb">
+              <button className="crumb-link" onClick={backToList}>Reliability Agent</button> /{" "}
+              <b>Chat</b>
+            </div>
+          )}
           <h1>Reliability Agent <span className="agent-poc">POC</span></h1>
+          {view === "list" && info?.enabled && (
+            <p className="muted-line" style={{ margin: 0 }}>
+              Analyse data, fit models, and build RBDs — each run is saved here to reopen or continue.
+            </p>
+          )}
           {!info?.enabled && (
             <p className="muted-line" style={{ margin: 0 }}>
               Not configured yet — set ANTHROPIC_API_KEY on the server to enable.
             </p>
           )}
         </div>
-        {credit != null && info?.billing_enabled && (
-          <span className="muted-line" style={{ margin: 0 }}>{credit} credits</span>
-        )}
+        <div className="row" style={{ margin: 0, gap: "0.6rem", alignItems: "center" }}>
+          {credit != null && info?.billing_enabled && (
+            <span className="muted-line" style={{ margin: 0 }}>{credit} credits</span>
+          )}
+          {view === "chat" && (
+            <button className="secondary" onClick={backToList} disabled={busy}>← All chats</button>
+          )}
+          {info?.enabled && !upgradeRequired && (
+            <button onClick={newChat} disabled={busy}>New chat</button>
+          )}
+        </div>
       </header>
 
       {upgradeRequired && (
@@ -213,48 +307,73 @@ export default function ReliabilityAgent() {
         </div>
       )}
 
-      <div className="chat" ref={scrollRef}>
-        {info?.enabled && messages.length === 0 && !upgradeRequired && (
-          <div className="chat-empty">
-            <p className="chat-empty-head">Tell me what to build — attach data if you have it.</p>
+      {view === "list" ? (
+        // Landing: every saved run, newest first. Click to reopen/continue.
+        sessions === null ? (
+          <div className="card"><p className="muted-line">Loading…</p></div>
+        ) : sessions.length === 0 ? (
+          <div className="card empty-note">
+            <p>No conversations yet.</p>
+            <p className="muted-line">
+              Start a new chat — attach a CSV and tell the agent what to analyse or build.
+            </p>
+            {info?.enabled && !upgradeRequired && <button onClick={newChat}>New chat</button>}
           </div>
-        )}
-        {messages.map((m, i) => <Bubble key={i} msg={m} />)}
-      </div>
+        ) : (
+          <div className="card">
+            <div className="agent-sess-list">
+              {sessions.map((s) => (
+                <button key={s.id} className="agent-sess-row" onClick={() => openSession(s.id)} title={s.title}>
+                  <span className="agent-sess-title">{s.title}</span>
+                  <span className="agent-sess-meta">
+                    {relativeTime(s.updated_at)} · {s.turns} turn{s.turns === 1 ? "" : "s"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )
+      ) : (
+        <>
+          <div className="chat" ref={scrollRef}>
+            {loadingTx && <div className="chat-empty"><p className="chat-empty-head">Loading conversation…</p></div>}
+            {info?.enabled && messages.length === 0 && !upgradeRequired && !loadingTx && (
+              <div className="chat-empty">
+                <p className="chat-empty-head">Tell me what to build — attach data if you have it.</p>
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <Bubble key={i} msg={m} onApprove={approve}
+                      approvable={i === messages.length - 1 && !disabled && !m.pending} />
+            ))}
+          </div>
 
-      {error && <div className="card error" style={{ marginTop: "0.6rem" }}>{error}</div>}
+          {error && <div className="card error" style={{ marginTop: "0.6rem" }}>{error}</div>}
 
-      {canApprove && (
-        <div className="chat-approve">
-          <button className="chat-approve-btn" onClick={approve}>✓ Approve &amp; run plan</button>
-          <span className="muted-line" style={{ margin: 0 }}>
-            Arms the create tools for the next step only. Keep typing to refine instead.
-          </span>
-        </div>
+          <div className="chat-composer">
+            <label className="chat-attach" title={file ? file.name : "Attach a CSV"}>
+              <input type="file" accept=".csv,text/csv" style={{ display: "none" }}
+                     disabled={disabled} onChange={(e) => setFile(e.target.files?.[0] || null)} />
+              {file ? `📎 ${file.name.length > 18 ? file.name.slice(0, 16) + "…" : file.name}` : "📎"}
+            </label>
+            <textarea
+              rows={1}
+              value={input}
+              disabled={disabled}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder={
+                upgradeRequired
+                  ? "Get Pro or buy AI credits to use the Reliability Agent"
+                  : info?.enabled
+                    ? "Message the agent…  (Enter to send, Shift+Enter for newline)"
+                    : "Agent not configured"
+              }
+            />
+            <button onClick={send} disabled={disabled || !input.trim()}>{busy ? "…" : "Send"}</button>
+          </div>
+        </>
       )}
-
-      <div className="chat-composer">
-        <label className="chat-attach" title={file ? file.name : "Attach a CSV"}>
-          <input type="file" accept=".csv,text/csv" style={{ display: "none" }}
-                 disabled={disabled} onChange={(e) => setFile(e.target.files?.[0] || null)} />
-          {file ? `📎 ${file.name.length > 18 ? file.name.slice(0, 16) + "…" : file.name}` : "📎"}
-        </label>
-        <textarea
-          rows={1}
-          value={input}
-          disabled={disabled}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder={
-            upgradeRequired
-              ? "Get Pro or buy AI credits to use the Reliability Agent"
-              : info?.enabled
-                ? "Message the agent…  (Enter to send, Shift+Enter for newline)"
-                : "Agent not configured"
-          }
-        />
-        <button onClick={send} disabled={disabled || !input.trim()}>{busy ? "…" : "Send"}</button>
-      </div>
     </div>
   );
 }

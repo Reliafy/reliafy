@@ -7,6 +7,10 @@ import {
   deleteModel,
   listDegradationModels,
   deleteDegradationModel,
+  listAltModels,
+  deleteAltModel,
+  listRecurrentModels,
+  deleteRecurrentModel,
 } from "../api.js";
 
 const PlusIcon = () => (
@@ -27,9 +31,16 @@ const TrashIcon = () => (
 
 const distLabel = (d = "") => String(d).replace(/\s*\(.*$/, "").replace(/\s+PH$/, "");
 
-// Every saved model — life-data and degradation — in one list. Rows link to
-// the right detail page; the type-specific lists live under Life data models
-// and Degradation models.
+const TYPE_LABEL = {
+  life: "Life data",
+  degradation: "Degradation",
+  alt: "Accelerated life",
+  recurrent: "Recurrent",
+};
+
+// Every saved model — life data, accelerated life, recurrent, degradation — in
+// one list. Rows link to the right detail page; the type-specific lists live
+// under each section.
 export default function AllModelsPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState(null);
@@ -37,8 +48,8 @@ export default function AllModelsPage() {
   const [query, setQuery] = useState("");
 
   const load = useCallback(() => {
-    Promise.all([listModels(), listDegradationModels()])
-      .then(([lm, dm]) => {
+    Promise.all([listModels(), listDegradationModels(), listAltModels(), listRecurrentModels()])
+      .then(([lm, dm, am, rm]) => {
         const life = (lm.models || []).map((m) => ({
           id: m.id,
           name: m.name,
@@ -63,7 +74,33 @@ export default function AllModelsPage() {
           shared_by: m.shared_by,
           to: `/modelling/degradation/${m.id}`,
         }));
-        setRows([...life, ...deg].sort((a, b) => (a.created_at > b.created_at ? -1 : 1)));
+        const acc = (am.models || []).map((m) => ({
+          id: m.id,
+          name: m.name,
+          type: "alt",
+          // e.g. "Weibull · Arrhenius" — the distribution and its life-stress law.
+          detail: [distLabel(m.distribution), m.life_model].filter(Boolean).join(" · ") || "—",
+          ph: false,
+          color: "#0f9ab0",
+          created_at: m.created_at,
+          is_sample: m.is_sample,
+          shared_by: m.shared_by,
+          to: `/modelling/alt/${m.id}`,
+        }));
+        const rec = (rm.models || []).map((m) => ({
+          id: m.id,
+          name: m.name,
+          type: "recurrent",
+          detail: m.model || "—",
+          ph: false,
+          color: "#d0762f",
+          created_at: m.created_at,
+          is_sample: m.is_sample,
+          shared_by: m.shared_by,
+          to: `/modelling/recurrent/${m.id}`,
+        }));
+        setRows([...life, ...deg, ...acc, ...rec]
+          .sort((a, b) => (a.created_at > b.created_at ? -1 : 1)));
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -77,7 +114,9 @@ export default function AllModelsPage() {
     if (!window.confirm(msg)) return;
     try {
       if (row.type === "life") await deleteModel(row.id);
-      else await deleteDegradationModel(row.id);
+      else if (row.type === "degradation") await deleteDegradationModel(row.id);
+      else if (row.type === "alt") await deleteAltModel(row.id);
+      else await deleteRecurrentModel(row.id);
       load();
     } catch (err) {
       setError(err.message);
@@ -85,9 +124,12 @@ export default function AllModelsPage() {
   };
 
   const loading = rows === null;
-  const life = (rows || []).filter((r) => r.type === "life").length;
-  const deg = (rows || []).filter((r) => r.type === "degradation").length;
-  const visible = (rows || []).filter((r) => matches(query, r.name, r.detail));
+  const countOf = (t) => (rows || []).filter((r) => r.type === t).length;
+  // Searchable on name, detail, type — and the id, so an ID copied from a model
+  // page (or an API response) pastes straight in and finds its row.
+  const visible = (rows || []).filter((r) =>
+    matches(query, r.name, r.detail, TYPE_LABEL[r.type], r.id)
+  );
 
   return (
     <div className="app">
@@ -97,7 +139,7 @@ export default function AllModelsPage() {
             <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> / <b>Saved models</b>
           </div>
           <h1>Saved models</h1>
-          <p>Every saved model — life-data and degradation — in one place.</p>
+          <p>Every saved model — life data, accelerated life, recurrent events, and degradation — in one place.</p>
         </div>
         <div className="row" style={{ margin: 0 }}>
           <button onClick={() => navigate("/modelling/new")}>
@@ -119,14 +161,16 @@ export default function AllModelsPage() {
         <>
           <div className="stats">
             <div className="stat"><div className="k">Models</div><div className="v">{rows.length}</div></div>
-            <div className="stat"><div className="k">Life data</div><div className="v">{life}</div></div>
-            <div className="stat"><div className="k">Degradation</div><div className="v">{deg}</div></div>
+            <div className="stat"><div className="k">Life data</div><div className="v">{countOf("life")}</div></div>
+            <div className="stat"><div className="k">Accelerated life</div><div className="v">{countOf("alt")}</div></div>
+            <div className="stat"><div className="k">Recurrent</div><div className="v">{countOf("recurrent")}</div></div>
+            <div className="stat"><div className="k">Degradation</div><div className="v">{countOf("degradation")}</div></div>
           </div>
 
           <div className="tablebar">
             <span className="count">{visible.length} of {rows.length} models</span>
             <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search models…" />
+            <ListSearch value={query} onChange={setQuery} placeholder="Search by name, type, or ID…" />
           </div>
 
           <div className="lib">
@@ -151,9 +195,7 @@ export default function AllModelsPage() {
                       </div>
                     </td>
                     <td>
-                      <span className={"type-tag " + r.type}>
-                        {r.type === "life" ? "Life data" : "Degradation"}
-                      </span>
+                      <span className={"type-tag " + r.type}>{TYPE_LABEL[r.type]}</span>
                     </td>
                     <td>
                       <span className="dpill">

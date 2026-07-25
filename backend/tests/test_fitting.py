@@ -10,6 +10,7 @@ import pytest
 from backend.fitting import (
     DISCRETE,
     DISTRIBUTIONS,
+    REGRESSION_MODELS,
     FitError,
     build_fit_inputs,
     extract_times,
@@ -304,10 +305,23 @@ def test_fit_cox_ph_has_coefficients_no_baseline():
     assert any(c["name"] == "age" for c in result["coefficients"])
 
 
+@pytest.mark.parametrize("dist_id", list(REGRESSION_MODELS))
+def test_fit_all_regression_models(dist_id):
+    """Every regression family in the registry fits and shapes a JSON-safe
+    payload with covariate coefficients — guards the Logistic/Gumbel families."""
+    import json
+
+    df = _covariate_df()
+    result = fit(dist_id, df, {"x": "time", "c": "censored"}, formula="age + sex")
+    json.dumps(result, allow_nan=False)
+    assert result["kind"] == "regression"
+    assert any(c["name"] == "age" for c in result["coefficients"])
+
+
 def test_unknown_distribution_raises():
     df = _df("x\n10\n20\n30\n")
     with pytest.raises(FitError, match="Unknown model"):
-        fit("rayleigh", df, {"x": "x"})
+        fit("not_a_distribution", df, {"x": "x"})
 
 
 @pytest.mark.parametrize("dist_id", list(DISCRETE))
@@ -392,6 +406,23 @@ def test_confidence_bounds_available_for_discrete():
     mid = fit("geometric", _df("c\n3\n5\n6\n7\n8\n9\n10\n12\n16\n20\n"), {"x": "c"})["functions"]["model_id"]
     cb = confidence_bounds(mid, on="sf", alpha_ci=0.05, bound="two-sided")
     assert cb["lower"] and cb["upper"]
+
+
+def test_probability_plot_excludes_censored_points():
+    """Only failures are plotted on probability paper. Censored units adjust the
+    failures' plotting positions but must not be drawn as points — SurPyval hands
+    back a position for every observation, reusing the previous failure's F."""
+    # 5 failures + 1 suspension.
+    df = _df("t,c\n1350,0\n1620,0\n1780,0\n2050,0\n2200,0\n2420,1\n")
+    result = fit("weibull", df, {"x": "t", "c": "c"})
+    scatter = result["plot"]["scatter"]
+
+    assert len(scatter["x"]) == 5, "the suspension must not be plotted"
+    # The suspension's time is absent from the plotted points...
+    times = [round(float(np.exp(v)), 3) for v in scatter["x"]]
+    assert not any(abs(t - 2420) < 1 for t in times)
+    # ...and no duplicated plotting position sneaks in.
+    assert len(set(scatter["y"])) == len(scatter["y"])
 
 
 @pytest.mark.parametrize("dist_id", list(DISTRIBUTIONS))

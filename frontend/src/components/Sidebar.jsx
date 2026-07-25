@@ -75,13 +75,6 @@ const AgentIcon = () => (
   </svg>
 );
 
-const GuidesIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="9" />
-    <path d="M9.5 9a2.5 2.5 0 0 1 4 1.5c0 1.5-2 2-2 3M12 17h.01" />
-  </svg>
-);
-
 const ApiIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12" />
@@ -108,9 +101,10 @@ const ITEMS = [
     label: "Modelling",
     icon: <ModellingIcon />,
     children: [
-      { to: "/modelling/models", label: "Saved" },
+      { to: "/modelling/models", label: "All models" },
       { to: "/modelling/life", label: "Life data" },
       { to: "/modelling/recurrent", label: "Recurrent" },
+      { to: "/modelling/alt", label: "Accelerated life" },
       { to: "/modelling/degradation", label: "Degradation" },
     ],
   },
@@ -269,16 +263,6 @@ export default function Sidebar({ collapsed, onToggle }) {
       >
         <span className="side-icon"><ApiIcon /></span>
         {!collapsed && <span className="side-label">API docs</span>}
-      </a>
-      <a
-        className="side-item"
-        href="/blog"
-        target="_blank"
-        rel="noreferrer"
-        title="Guides & articles (opens the blog)"
-      >
-        <span className="side-icon"><GuidesIcon /></span>
-        {!collapsed && <span className="side-label">Guides</span>}
       </a>
 
       <div className="side-foot">

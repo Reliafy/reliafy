@@ -16,9 +16,12 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import LifeModelModal from "../components/LifeModelModal.jsx";
+import CcfModal from "../components/CcfModal.jsx";
 import KNodeModal from "../components/KNodeModal.jsx";
 import CountModal from "../components/CountModal.jsx";
 import StandbyModal from "../components/StandbyModal.jsx";
+import LoadShareModal from "../components/LoadShareModal.jsx";
+import Select from "../components/Select.jsx";
 import SubsystemModal from "../components/SubsystemModal.jsx";
 import RbdSaveModal from "../components/RbdSaveModal.jsx";
 import RbdCalculator from "../components/RbdCalculator.jsx";
@@ -32,6 +35,11 @@ import { normalizeRbdGraph } from "../rbdGraph.js";
 // The RBD's unit is provided to node components so they can flag a model whose
 // unit doesn't match.
 const RbdUnitContext = createContext("");
+// Whether the RBD is repairable — component blocks then also show/prompt for a
+// repair-time distribution.
+const RbdRepairableContext = createContext(false);
+// Map of component id -> common-cause beta, so grouped blocks show a CC badge.
+const RbdCcfContext = createContext({});
 
 const TIME_UNITS = [
   "Seconds",
@@ -96,19 +104,32 @@ function modelSummary(model) {
 
 // Custom component block: shows the assigned life model (or a prompt to set
 // one) with left/right handles for the left-to-right flow.
-function ComponentNode({ data }) {
+function ComponentNode({ id, data }) {
   const rbdUnit = useContext(RbdUnitContext);
+  const repairable = useContext(RbdRepairableContext);
+  const ccf = useContext(RbdCcfContext);
+  const beta = ccf[id];
   const warn = unitWarning(data.model, rbdUnit);
   return (
-    <div className={"rbd-comp" + (warn ? " unit-warn" : "") + stateClass(data.state)}>
+    <div className={"rbd-comp" + (warn ? " unit-warn" : "") + (beta != null ? " ccf-member" : "") + stateClass(data.state)}>
       <Handle type="target" position={Position.Left} />
       <StatusBadge state={data.state} />
       {warn && <UnitWarn title={warn} />}
+      {beta != null && (
+        <span className="rbd-ccf-chip" title={`Common-cause group — β = ${beta}`}>CC β={beta}</span>
+      )}
       <div className="rbd-comp-title">{data.label}</div>
       {data.model ? (
         <div className="rbd-comp-model">{modelSummary(data.model)}</div>
       ) : (
-        <div className="rbd-comp-empty">No life model — right-click to set</div>
+        <div className="rbd-comp-empty">No life model — double-click to set</div>
+      )}
+      {repairable && (
+        data.repair ? (
+          <div className="rbd-comp-repair">🛠 {modelSummary(data.repair)}</div>
+        ) : (
+          <div className="rbd-comp-empty warn">No repair time — double-click to set</div>
+        )
       )}
       <Handle type="source" position={Position.Right} />
     </div>
@@ -122,6 +143,21 @@ function ComponentNode({ data }) {
 function KNode({ data }) {
   const valid =
     Number(data.n) >= 1 && Number(data.k) >= 1 && Number(data.n) <= Number(data.k);
+  // n = 1 is a junction: any one branch is enough. Same node and same maths (a
+  // perfectly reliable gate), but drawn as a bare dot, because "1-out-of-k
+  // voting" is a confusing way to describe merging branches back together and
+  // there is no number worth showing inside it.
+  const isJunction = valid && Number(data.n) === 1;
+  if (isJunction) {
+    return (
+      <div className={"rbd-junction" + stateClass(data.state)}
+           title="Junction — merges branches back into one path">
+        <Handle type="target" position={Position.Left} />
+        <StatusBadge state={data.state} />
+        <Handle type="source" position={Position.Right} />
+      </div>
+    );
+  }
   return (
     <div className={"rbd-knode" + (valid ? "" : " invalid") + stateClass(data.state)}>
       <Handle type="target" position={Position.Left} />
@@ -140,6 +176,7 @@ function KNode({ data }) {
 // parallel blocks hold a life model and a count n of identical units.
 const BLOCK_TYPES = {
   standby: { label: "Standby", sub: "redundancy", cls: "rbd-standby" },
+  loadshare: { label: "Load-sharing", sub: "shared load", cls: "rbd-loadshare" },
   series: { label: "Series", sub: "subsystem", cls: "rbd-series", count: true },
   parallel: { label: "Parallel", sub: "subsystem", cls: "rbd-parallel", count: true },
   subsystem: { label: "Sub-system", sub: "nested RBD", cls: "rbd-subsystem" },
@@ -170,6 +207,17 @@ function StructureNode({ data }) {
         {data.model && (
           <div className="rbd-block-model">{modelSummary(data.model)}</div>
         )}
+      </>
+    );
+  } else if (data.kind === "loadshare") {
+    body = (
+      <>
+        <div className="rbd-block-sub">
+          {`${data.units ?? 2} units · load ${data.load ?? "?"} · k=${data.k ?? 1}`}
+        </div>
+        <div className={data.model ? "rbd-block-model" : "rbd-block-sub"}>
+          {data.model ? modelSummary(data.model) : "No load-life model"}
+        </div>
       </>
     );
   } else if (data.kind === "subsystem") {
@@ -208,6 +256,7 @@ const TYPE_PREFIX = {
   component: "c",
   knode: "k",
   standby: "sb",
+  loadshare: "ls",
   series: "sr",
   parallel: "pl",
   subsystem: "ss",
@@ -315,17 +364,27 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
+  const [connectHint, setConnectHint] = useState(""); // transient note from the C shortcut
+  const [ccfListOpen, setCcfListOpen] = useState(false);
   const [modal, setModal] = useState(null); // 'lifemodel'|'knode'|'count'|...|null
   const [modalNodeId, setModalNodeId] = useState(null);
   const [knodeCtx, setKnodeCtx] = useState(null); // { mode, flowPos?, nodeId?, n, k }
   const [countCtx, setCountCtx] = useState(null); // { nodeId, kind, label, n }
   const [standbyCtx, setStandbyCtx] = useState(null); // node data for the modal
+  const [loadshareCtx, setLoadshareCtx] = useState(null); // load-sharing node data
   const [subsystemNodeId, setSubsystemNodeId] = useState(null);
   const [savedRbdId, setSavedRbdId] = useState(null);
   const [savedRbdName, setSavedRbdName] = useState("");
   const [savedRbdUpdatedAt, setSavedRbdUpdatedAt] = useState(null);
   const [savedRbdReadOnly, setSavedRbdReadOnly] = useState(false);
   const [rbdUnit, setRbdUnit] = useState("");
+  // Repairable RBD: a distinct modelling choice — components carry a repair-time
+  // distribution and the system is analysed for availability, not reliability.
+  const [repairable, setRepairable] = useState(false);
+  // Common-cause groups: [{id, members:[nodeId], beta}] — redundant components
+  // coupled by a shared failure cause (reliability analysis only).
+  const [ccfGroups, setCcfGroups] = useState([]);
+  const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
   const [tab, setTab] = useState("builder"); // 'builder' | 'calc'
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -335,13 +394,14 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // Always-current snapshot of the canvas, so the AI assistant can read the
   // live diagram via the bridge without stale-closure issues.
   const liveRef = useRef({ nodes: [], edges: [], unit: "" });
-  liveRef.current = { nodes, edges, unit: rbdUnit };
+  liveRef.current = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups };
   const { screenToFlowPosition, fitView } = useReactFlow();
   const nodeTypes = useMemo(
     () => ({
       component: ComponentNode,
       knode: KNode,
       standby: StructureNode,
+      loadshare: StructureNode,
       series: StructureNode,
       parallel: StructureNode,
       subsystem: StructureNode,
@@ -357,17 +417,17 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // position-independent signature lets us flag the result as stale once the
   // diagram changes.
   const sig = useMemo(
-    () => graphSignature({ nodes, edges, unit: rbdUnit }),
-    [nodes, edges, rbdUnit]
+    () => graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }),
+    [nodes, edges, rbdUnit, repairable, ccfGroups]
   );
   const validationStale = validation != null && sig !== checkedSig;
 
   const runValidate = useCallback(async () => {
     setValidating(true);
     try {
-      const v = await validateRbd({ nodes, edges, unit: rbdUnit });
+      const v = await validateRbd({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups });
       setValidation(v);
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit }));
+      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }));
     } catch (err) {
       setValidation({
         valid: false,
@@ -377,16 +437,85 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         warnings: [],
         non_analytic_nodes: {},
       });
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit }));
+      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }));
     } finally {
       setValidating(false);
     }
-  }, [nodes, edges, rbdUnit]);
+  }, [nodes, edges, rbdUnit, repairable, ccfGroups]);
 
   const onConnect = useCallback(
     (params) => setEdges((eds) => addEdge({ ...params, ...EDGE_OPTIONS }, eds)),
     [setEdges]
   );
+
+  // Wire up the selected blocks without dragging between handles (press C).
+  //
+  // An RBD is stages in series, each holding components in parallel — so the
+  // selection is grouped into columns by x and consecutive columns are joined
+  // every-to-every. Two blocks side by side become one link; one block plus two
+  // stacked ones becomes a fan-out into a redundant stage; box-select a region
+  // and it wires the whole thing up in one press. addEdge skips connections that
+  // already exist, so pressing it twice is harmless.
+  const connectSelected = useCallback(() => {
+    const chosen = nodes.filter((n) => n.selected);
+    if (chosen.length < 2) {
+      setConnectHint("Select two or more blocks first, then press C.");
+      return;
+    }
+    const columns = [];
+    for (const n of [...chosen].sort((a, b) => (a.position?.x ?? 0) - (b.position?.x ?? 0))) {
+      const last = columns[columns.length - 1];
+      // Same column if within half a column gap of the one being built.
+      if (last && Math.abs((n.position?.x ?? 0) - last.x) < COL_GAP / 2) last.items.push(n);
+      else columns.push({ x: n.position?.x ?? 0, items: [n] });
+    }
+    if (columns.length < 2) {
+      setConnectHint("Those blocks are stacked in one column — nothing to connect in series.");
+      return;
+    }
+    const pairs = [];
+    for (let i = 0; i < columns.length - 1; i += 1)
+      for (const s of columns[i].items)
+        for (const t of columns[i + 1].items) pairs.push([s.id, t.id]);
+
+    let added = 0;
+    setEdges((eds) => {
+      const next = pairs.reduce(
+        (acc, [source, target]) => addEdge({ source, target, ...EDGE_OPTIONS }, acc),
+        eds
+      );
+      added = next.length - eds.length;
+      return next;
+    });
+    setConnectHint(
+      added
+        ? `Connected ${added} link${added === 1 ? "" : "s"}.`
+        : "Those blocks are already connected."
+    );
+  }, [nodes, setEdges]);
+
+  // C connects the selection. Ignored while typing, while a menu or modal is
+  // open, and whenever a modifier is down so Cmd/Ctrl+C still copies.
+  useEffect(() => {
+    if (tab !== "builder" || modal || menu) return undefined;
+    const onKey = (e) => {
+      if (e.key !== "c" && e.key !== "C") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target;
+      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName)) return;
+      e.preventDefault();
+      connectSelected();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, modal, menu, connectSelected]);
+
+  // Clear the transient "connected N links" note after a moment.
+  useEffect(() => {
+    if (!connectHint) return undefined;
+    const t = setTimeout(() => setConnectHint(""), 2600);
+    return () => clearTimeout(t);
+  }, [connectHint]);
 
   const autoLayout = useCallback(() => {
     setNodes((nds) => autoLayoutNodes(nds, edges));
@@ -456,6 +585,8 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
           startProb: 1,
           standbyModel: null,
         });
+      } else if (kind === "loadshare") {
+        Object.assign(data, { model: null, load: "", units: 2, k: 1 });
       } else if (kind === "subsystem") {
         data.rbd = null;
       }
@@ -542,6 +673,22 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     [standbyCtx, setNodes]
   );
 
+  // Apply the load-sharing configuration to the targeted node.
+  const submitLoadshare = useCallback(
+    (config) => {
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === loadshareCtx?.nodeId
+            ? { ...node, data: { ...node.data, ...config } }
+            : node
+        )
+      );
+      setModal(null);
+      setLoadshareCtx(null);
+    },
+    [loadshareCtx, setNodes]
+  );
+
   // Assign a saved RBD to the targeted sub-system node.
   const pickSubsystem = useCallback(
     (rbd) => {
@@ -561,7 +708,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // Persist the current diagram as a saved RBD (updates the open one if any).
   const onSaveRbd = useCallback(
     async (name) => {
-      const graph = { nodes, edges, unit: rbdUnit };
+      const graph = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups };
       const saved = await saveRbd(name, graph, savedRbdId, savedRbdUpdatedAt);
       setSavedRbdId(saved.id);
       setSavedRbdName(name);
@@ -570,7 +717,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setModal(null);
       onSaved?.(saved.id);
     },
-    [nodes, edges, rbdUnit, savedRbdId, savedRbdUpdatedAt, onSaved]
+    [nodes, edges, rbdUnit, repairable, ccfGroups, savedRbdId, savedRbdUpdatedAt, onSaved]
   );
 
   // Replace the canvas with a saved graph; bump the id counter past loaded ids.
@@ -597,6 +744,8 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setNodes(loadedNodes);
       setEdges(graph?.edges || []);
       setRbdUnit(graph?.unit || "");
+      setRepairable(!!graph?.repairable);
+      setCcfGroups(graph?.ccf_groups || []);
       setSavedRbdId(id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
@@ -620,6 +769,8 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     setNodes(INITIAL_NODES);
     setEdges([]);
     setRbdUnit("");
+    setRepairable(false);
+    setCcfGroups([]);
     setSavedRbdId(null);
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
@@ -639,6 +790,8 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     setNodes(norm.nodes);
     setEdges(norm.edges);
     if (graph.unit != null) setRbdUnit(graph.unit);
+    if (graph.repairable != null) setRepairable(!!graph.repairable);
+    if (graph.ccf_groups != null) setCcfGroups(graph.ccf_groups);
     window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
   }, [setNodes, setEdges, fitView]);
 
@@ -662,11 +815,11 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
 
   // Assign a life model (saved or from parameters) to the node the modal targets.
   const setNodeModel = useCallback(
-    (model) => {
+    ({ model, repair }) => {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === modalNodeId
-            ? { ...node, data: { ...node.data, model } }
+            ? { ...node, data: { ...node.data, model, ...(repair !== undefined ? { repair } : {}) } }
             : node
         )
       );
@@ -751,6 +904,10 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
           setStandbyCtx({ nodeId: node.id, ...node.data });
           setModal("standby");
           break;
+        case "loadshare":
+          setLoadshareCtx({ nodeId: node.id, ...node.data });
+          setModal("loadshare");
+          break;
         case "subsystem":
           setSubsystemNodeId(node.id);
           setModal("subsystem");
@@ -775,8 +932,40 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     [setEdges]
   );
 
+  // Common-cause: id -> beta (for the node badge), and the currently-selected
+  // component nodes (the candidates for a new group).
+  const ccfMap = useMemo(() => {
+    const m = {};
+    for (const g of ccfGroups) for (const id of g.members || []) m[id] = g.beta;
+    return m;
+  }, [ccfGroups]);
+  const selectedComponentIds = useMemo(
+    () => nodes.filter((n) => n.selected && n.type === "component").map((n) => n.id),
+    [nodes]
+  );
+  const labelFor = (id) => nodes.find((n) => n.id === id)?.data?.label || id;
+
+  const openCcfForSelection = () => {
+    if (selectedComponentIds.length < 2) return;
+    setCcfCtx({ members: selectedComponentIds, beta: 0.1 });
+    setModal("ccf");
+  };
+  const submitCcf = ({ beta }) => {
+    setCcfGroups((prev) => {
+      if (ccfCtx?.groupId) return prev.map((g) => (g.id === ccfCtx.groupId ? { ...g, beta } : g));
+      const id = `ccf-${Date.now().toString(36)}-${Math.round(Math.random() * 1e4)}`;
+      return [...prev, { id, members: ccfCtx.members, beta }];
+    });
+    setModal(null);
+    setCcfCtx(null);
+  };
+  const editCcf = (g) => { setCcfCtx({ members: g.members, beta: g.beta, groupId: g.id }); setModal("ccf"); };
+  const removeCcf = (gid) => setCcfGroups((prev) => prev.filter((g) => g.id !== gid));
+
   return (
     <RbdUnitContext.Provider value={rbdUnit}>
+    <RbdRepairableContext.Provider value={repairable}>
+    <RbdCcfContext.Provider value={ccfMap}>
     <div className="rbd-shell">
     <div className="tabs rbd-tabs">
       <button
@@ -811,6 +1000,9 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         onPaneClick={closeMenu}
         onMoveStart={closeMenu}
         deleteKeyCode={["Backspace", "Delete"]}
+        // Shift-click adds to the selection (as the hints/guides say), alongside
+        // the platform Cmd/Ctrl. Shift-drag still box-selects.
+        multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         defaultEdgeOptions={EDGE_OPTIONS}
         fitView
         fitViewOptions={{ padding: 0.35 }}
@@ -818,6 +1010,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         proOptions={{ hideAttribution: true }}
       >
         <Panel position="top-left">
+          <div className="rbd-toolbar-row">
           <span className="rbd-name">{savedRbdName || "Untitled RBD"}</span>
           <label className="rbd-unit-field">
             <span>Unit</span>
@@ -834,7 +1027,60 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
               ))}
             </datalist>
           </label>
+          <div className="rbd-unit-field" title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time.">
+            <span>System</span>
+            <Select
+              value={repairable ? "repairable" : "non"}
+              onChange={(v) => setRepairable(v === "repairable")}
+              // Short labels: the toolbar row has to share the canvas width with
+              // the action buttons opposite. What each mode means is on the
+              // field's tooltip and in the results tab.
+              options={[
+                { value: "non", label: "Non-repairable" },
+                { value: "repairable", label: "Repairable" },
+              ]}
+            />
+          </div>
+          {/* Common-cause groups sit with the other diagram-level settings, as a
+              chip that expands on demand. They used to float bottom-left, where
+              they collided with the zoom controls and the hint bubble; a chip
+              keeps the overlay one row tall so it doesn't cover the top of the
+              diagram either. */}
+          {!repairable && ccfGroups.length > 0 && (
+            <div className="rbd-ccf-menu">
+              <button
+                className={"rbd-ccf-toggle" + (ccfListOpen ? " open" : "")}
+                onClick={() => setCcfListOpen((o) => !o)}
+                title="Common-cause groups in this diagram"
+              >
+                ⚭ {ccfGroups.length} CC group{ccfGroups.length === 1 ? "" : "s"}
+              </button>
+              {ccfListOpen && (
+                <div className="rbd-ccf-list">
+                  <div className="rbd-ccf-list-h">Common-cause groups</div>
+                  {ccfGroups.map((g) => (
+                    <div className="rbd-ccf-row" key={g.id}>
+                      <span className="rbd-ccf-row-members" title={(g.members || []).map(labelFor).join(", ")}>
+                        {(g.members || []).map(labelFor).join(" · ")}
+                      </span>
+                      <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β={g.beta}</button>
+                      <button className="rbd-ccf-row-x" onClick={() => removeCcf(g.id)} title="Ungroup" aria-label="Ungroup">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          </div>
         </Panel>
+        {!repairable && selectedComponentIds.length >= 2 && (
+          <Panel position="top-center">
+            <button className="rbd-btn accent" onClick={openCcfForSelection}
+                    title="Couple these redundant components by a shared failure cause">
+              ⚭ Common-cause group ({selectedComponentIds.length})
+            </button>
+          </Panel>
+        )}
         <Panel position="top-right">
           <button className="rbd-btn" onClick={() => setModal("saverbd")}>
             Save RBD
@@ -897,6 +1143,15 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
               </button>
               <button
                 onClick={() => {
+                  addKNode(menu.flow, 1, 2);
+                  closeMenu();
+                }}
+                title="Merge parallel branches back into one — any branch is enough"
+              >
+                Add junction
+              </button>
+              <button
+                onClick={() => {
                   setKnodeCtx({ mode: "add", flowPos: menu.flow, n: 2, k: 3 });
                   setModal("knode");
                   closeMenu();
@@ -904,18 +1159,25 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
               >
                 Add n-out-of-k node
               </button>
-              <button onClick={() => { addBlock("standby", menu.flow); closeMenu(); }}>
-                Add standby node
-              </button>
-              <button onClick={() => { addBlock("series", menu.flow); closeMenu(); }}>
-                Add series node
-              </button>
-              <button onClick={() => { addBlock("parallel", menu.flow); closeMenu(); }}>
-                Add parallel node
-              </button>
-              <button onClick={() => { addBlock("subsystem", menu.flow); closeMenu(); }}>
-                Add sub-system
-              </button>
+              {!repairable && (
+                <>
+                  <button onClick={() => { addBlock("standby", menu.flow); closeMenu(); }}>
+                    Add standby node
+                  </button>
+                  <button onClick={() => { addBlock("loadshare", menu.flow); closeMenu(); }}>
+                    Add load-sharing node
+                  </button>
+                  <button onClick={() => { addBlock("series", menu.flow); closeMenu(); }}>
+                    Add series node
+                  </button>
+                  <button onClick={() => { addBlock("parallel", menu.flow); closeMenu(); }}>
+                    Add parallel node
+                  </button>
+                  <button onClick={() => { addBlock("subsystem", menu.flow); closeMenu(); }}>
+                    Add sub-system
+                  </button>
+                </>
+              )}
               <div className="rbd-menu-sep" />
               <button onClick={() => { autoLayout(); closeMenu(); }}>
                 Auto-arrange
@@ -992,6 +1254,21 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
                       }}
                     >
                       Edit standby
+                    </button>
+                    <div className="rbd-menu-sep" />
+                  </>
+                )}
+                {menu.nodeType === "loadshare" && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const node = nodes.find((nd) => nd.id === menu.id);
+                        setLoadshareCtx({ nodeId: menu.id, ...node?.data });
+                        setModal("loadshare");
+                        closeMenu();
+                      }}
+                    >
+                      Edit load-sharing
                     </button>
                     <div className="rbd-menu-sep" />
                   </>
@@ -1073,18 +1350,36 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       )}
 
       <div className="rbd-hint">
-        Right-click the canvas to add a component · right-click a node or edge to
-        delete · drag between handles to connect
+        {connectHint ? (
+          <span className="rbd-hint-flash">{connectHint}</span>
+        ) : (
+          <>
+            Right-click the canvas to add a component · drag between handles, or
+            select blocks and press <kbd>C</kbd>, to connect · double-click a block to edit
+            {repairable
+              ? " · double-click each component to set its repair time"
+              : " · shift-click 2+ redundant components to add a common-cause group"}
+          </>
+        )}
       </div>
 
       {modal === "lifemodel" && (
         <LifeModelModal
           initial={nodes.find((n) => n.id === modalNodeId)?.data}
+          repairable={repairable}
           onClose={() => {
             setModal(null);
             setModalNodeId(null);
           }}
           onSubmit={setNodeModel}
+        />
+      )}
+      {modal === "ccf" && ccfCtx && (
+        <CcfModal
+          initial={ccfCtx}
+          memberLabels={(ccfCtx.members || []).map(labelFor)}
+          onClose={() => { setModal(null); setCcfCtx(null); }}
+          onSubmit={submitCcf}
         />
       )}
       {modal === "knode" && (
@@ -1105,6 +1400,13 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
             setCountCtx(null);
           }}
           onSubmit={submitCount}
+        />
+      )}
+      {modal === "loadshare" && (
+        <LoadShareModal
+          initial={loadshareCtx}
+          onClose={() => { setModal(null); setLoadshareCtx(null); }}
+          onSubmit={submitLoadshare}
         />
       )}
       {modal === "standby" && (
@@ -1139,12 +1441,14 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       style={{ display: tab === "calc" ? undefined : "none" }}
     >
       <RbdCalculator
-        graph={{ nodes, edges, unit: rbdUnit }}
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }}
         validation={validation}
         stale={validationStale}
       />
     </div>
     </div>
+    </RbdCcfContext.Provider>
+    </RbdRepairableContext.Provider>
     </RbdUnitContext.Provider>
   );
 }

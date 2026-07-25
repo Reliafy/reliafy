@@ -34,6 +34,164 @@ def _edge(src, tgt):
     return {"id": f"{src}-{tgt}", "source": src, "target": tgt}
 
 
+def _repairable_component(node_id, label, alpha, beta, mttr_mu):
+    node = _component(node_id, label, "weibull", [("alpha", alpha), ("beta", beta)])
+    node["data"]["repair"] = {
+        "source": "params", "distribution_id": "lognormal",
+        "params": [{"name": "mu", "value": mttr_mu}, {"name": "sigma", "value": 0.4}],
+    }
+    return node
+
+
+def test_repairable_rbd_reports_availability_and_downtime_split():
+    # Controller in series with two redundant pumps — a repairable diagram.
+    graph = {
+        "unit": "hours",
+        "repairable": True,
+        "nodes": _io_nodes() + [
+            _repairable_component("ctrl", "Controller", 2000, 1.6, 2.0),
+            _repairable_component("pumpA", "Pump A", 900, 1.4, 2.3),
+            _repairable_component("pumpB", "Pump B", 900, 1.4, 2.3),
+        ],
+        "edges": [
+            _edge("input", "ctrl"), _edge("ctrl", "pumpA"), _edge("ctrl", "pumpB"),
+            _edge("pumpA", "output"), _edge("pumpB", "output"),
+        ],
+    }
+    res = ra.analyze_availability(graph)
+    import json
+    json.dumps(res)  # JSON-safe
+
+    assert res["kind"] == "repairable"
+    a = res["steady_state_availability"]
+    assert 0.9 < a < 1.0
+    assert res["unavailability"] == pytest.approx(1.0 - a, abs=1e-9)
+    # Every component contributes downtime; the redundant pumps dominate.
+    ids = {n["id"] for n in res["per_node"]}
+    assert ids == {"ctrl", "pumpA", "pumpB"}
+    assert sum(n["share"] for n in res["per_node"]) == pytest.approx(1.0, abs=1e-6)
+    assert res["per_node"][0]["id"] in ("pumpA", "pumpB")  # sorted by share desc
+
+
+def test_repairable_requires_repair_time_on_components():
+    graph = {
+        "unit": "hours", "repairable": True,
+        "nodes": _io_nodes() + [_component("c1", "Pump", "weibull", [("alpha", 100), ("beta", 2)])],
+        "edges": [_edge("input", "c1"), _edge("c1", "output")],
+    }
+    with pytest.raises(AnalysisError, match="repair-time"):
+        ra.analyze_availability(graph)
+
+
+def test_load_sharing_node_analyses_and_k_lowers_reliability():
+    """A load-sharing node (units are a saved AFT load-life model) analyses end
+    to end; requiring more survivors (higher k) lowers system reliability."""
+    import mongomock
+    import numpy as np
+    import pandas as pd
+    import surpyval as sp
+
+    from backend import db as dbmod
+
+    db = mongomock.MongoClient()["reliafy_test"]
+    dbmod._db = db
+    dbmod._simulated = True
+    from backend.services import datasets as dsvc, models as msvc, rbds as rbds_service
+
+    U = "u1"
+    rng = np.random.default_rng(2)
+    rows = []
+    for L in (1.0, 2.0, 4.0):
+        for xv in np.abs(sp.Weibull.random(60, max(1000.0 * L ** -1.5, 1.0), 2.0)):
+            rows.append({"life": round(float(xv), 3), "load": L})
+    ds = dsvc.create_dataset(db, "loadlife.csv", pd.DataFrame(rows).to_csv(index=False).encode(), U)
+    m = msvc.save_model(db, "Pump load-life", ds, "weibull_aft", {"x": "life"}, None, "load", owner_id=U)
+
+    def graph(k):
+        return {"unit": "hours", "nodes": [
+            {"id": "input", "type": "input", "data": {}},
+            {"id": "ls", "type": "loadshare", "data": {
+                "label": "Pump bank", "model": {"source": "saved", "modelId": m.id},
+                "load": 3.0, "units": 3, "k": k}},
+            {"id": "output", "type": "output", "data": {}}],
+            "edges": [{"source": "input", "target": "ls"}, {"source": "ls", "target": "output"}]}
+
+    r1 = rbds_service.analyze_graph(db, graph(1), U)
+    r2 = rbds_service.analyze_graph(db, graph(2), U)
+    assert r1["mttf"] and r2["mttf"]
+    assert r2["mttf"] < r1["mttf"]  # needing 2 of 3 survivors is less reliable
+
+
+def test_common_cause_lowers_redundant_reliability():
+    # Two identical redundant pumps, coupled by a beta-factor common cause.
+    graph = {
+        "unit": "hours",
+        "nodes": _io_nodes() + [
+            _component("pA", "Pump A", "weibull", [("alpha", 900), ("beta", 1.4)]),
+            _component("pB", "Pump B", "weibull", [("alpha", 900), ("beta", 1.4)]),
+        ],
+        "edges": [
+            _edge("input", "pA"), _edge("input", "pB"),
+            _edge("pA", "output"), _edge("pB", "output"),
+        ],
+        "ccf_groups": [{"id": "g1", "members": ["pA", "pB"], "beta": 0.1}],
+    }
+    res = analyze(graph)
+    ccf = res["ccf"]
+    assert ccf is not None
+    assert ccf["groups"] == [{"members": ["Pump A", "Pump B"], "beta": 0.1}]
+    # Common cause erodes the redundancy benefit.
+    assert ccf["reliability_with"] < ccf["reliability_without"]
+    # A graph without groups carries no ccf payload.
+    g2 = {k: v for k, v in graph.items() if k != "ccf_groups"}
+    assert analyze(g2)["ccf"] is None
+
+
+def test_validate_repairable_requires_repair_times():
+    """Validation reflects the repairable contract: a component without a repair
+    time is invalid (no false green), and availability is never 'analytic'."""
+    base = {
+        "unit": "hours", "repairable": True,
+        "nodes": _io_nodes() + [_component("c1", "Pump", "weibull", [("alpha", 100), ("beta", 2)])],
+        "edges": [_edge("input", "c1"), _edge("c1", "output")],
+    }
+    v = validate_graph(base)
+    assert not v["valid"] and not v["can_calculate"]
+    assert any("repair-time" in e for e in v["errors"])
+
+    with_repair = {**base}
+    with_repair["nodes"][2]["data"]["repair"] = {
+        "source": "params", "distribution_id": "lognormal",
+        "params": [{"name": "mu", "value": 1.0}, {"name": "sigma", "value": 0.4}]}
+    v2 = validate_graph(with_repair)
+    assert v2["valid"] and v2["can_calculate"] and v2["analytic"] is False
+
+
+def test_validate_repairable_rejects_unsupported_blocks():
+    graph = {
+        "unit": "hours", "repairable": True,
+        "nodes": _io_nodes() + [{"id": "sb", "type": "standby", "data": {"label": "Bank"}}],
+        "edges": [_edge("input", "sb"), _edge("sb", "output")],
+    }
+    v = validate_graph(graph)
+    assert not v["valid"]
+    assert any("isn't supported in a repairable" in e for e in v["errors"])
+
+
+def test_validate_warns_on_asymmetric_common_cause():
+    graph = {
+        "unit": "hours",
+        "nodes": _io_nodes() + [
+            _component("a", "A", "weibull", [("alpha", 100), ("beta", 2)]),
+            _component("b", "B", "weibull", [("alpha", 300), ("beta", 2)]),  # different
+        ],
+        "edges": [_edge("input", "a"), _edge("input", "b"), _edge("a", "output"), _edge("b", "output")],
+        "ccf_groups": [{"id": "g", "members": ["a", "b"], "beta": 0.1}],
+    }
+    v = validate_graph(graph)
+    assert any("different life models" in w for w in v["warnings"])
+
+
 def test_series_system_is_product_of_components():
     graph = {
         "unit": "Hours",
@@ -491,3 +649,51 @@ def test_pinned_working_and_failed_override_the_model():
     }
     r3 = analyze(g3)
     assert min(r3["system"]["sf"]) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_junction_is_a_knode_with_n_of_1_and_changes_nothing():
+    """The builder's "junction" is a k-node with n = 1: a perfectly reliable gate
+    that merges branches. It must be numerically invisible — funnelling a fan-in
+    through one gives the same answer as wiring every branch to every successor,
+    which is what makes it safe to offer as a tidying-up affordance."""
+    left = [_component(f"a{i}", f"A{i}", "weibull", [("alpha", 900), ("beta", 1.4)])
+            for i in (1, 2, 3)]
+    right = [_component(f"b{i}", f"B{i}", "weibull", [("alpha", 900), ("beta", 1.4)])
+             for i in (1, 2, 3)]
+    ins = [_edge("input", n["id"]) for n in left]
+    outs = [_edge(n["id"], "output") for n in right]
+
+    mesh = analyze({
+        "nodes": _io_nodes() + left + right,
+        "edges": ins + [_edge(s["id"], t["id"]) for s in left for t in right] + outs,
+    })
+    junction = analyze({
+        "nodes": _io_nodes() + left + right
+        + [{"id": "j", "type": "knode", "data": {"label": "Junction", "n": 1, "k": 3}}],
+        "edges": ins + [_edge(n["id"], "j") for n in left]
+        + [_edge("j", n["id"]) for n in right] + outs,
+    })
+
+    assert junction["mttf"] == pytest.approx(mesh["mttf"], rel=1e-12)
+    assert np.allclose(junction["system"]["sf"], mesh["system"]["sf"], rtol=1e-12)
+    # And it really did cut the wiring down: 9 cross-edges become 3 + 3.
+    assert len([e for s in left for e in right]) == 9
+
+
+def test_bridge_network_is_supported_so_junctions_must_stay_optional():
+    """A bridge is not series-parallel: c and d are cross-linked, so it can only
+    be expressed with implicit joins. This is why the builder must never *force*
+    branches through a junction."""
+    comps = [_component(c, c.upper(), "weibull", [("alpha", 900), ("beta", 1.4)])
+             for c in ("a", "b", "c", "d")]
+    result = analyze({
+        "nodes": _io_nodes() + comps,
+        "edges": [_edge("input", "a"), _edge("input", "b"),
+                  _edge("a", "c"), _edge("b", "d"), _edge("a", "d"),
+                  _edge("c", "output"), _edge("d", "output")],
+    })
+    assert result["mttf"] > 0
+    # The cross-link gives A two routes out, which a series-parallel-only
+    # engine could not represent.
+    paths = [sorted(p) for p in result["structure"]["min_path_sets"]]
+    assert sorted(paths) == [["A", "C"], ["A", "D"], ["B", "D"]]

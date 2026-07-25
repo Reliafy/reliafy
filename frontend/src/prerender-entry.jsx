@@ -11,13 +11,18 @@ import Blog from "./views/Blog.jsx";
 import BlogPost from "./views/BlogPost.jsx";
 import TermsPage from "./views/TermsPage.jsx";
 import PrivacyPage from "./views/PrivacyPage.jsx";
-import LearnIndex from "./views/LearnIndex.jsx";
 import LearnArticle from "./views/LearnArticle.jsx";
+import GuidesIndex from "./views/GuidesIndex.jsx";
+import GuidePage from "./views/GuidePage.jsx";
+import ReferenceIndex from "./views/ReferenceIndex.jsx";
+import ReferenceFamily from "./views/ReferenceFamily.jsx";
 import ApiDocsPublicPage from "./views/ApiDocsPublicPage.jsx";
 import ProductPage from "./views/ProductPage.jsx";
 import { PRODUCT_PAGES } from "./productPages.jsx";
 import { posts } from "./blog.js";
 import { articles } from "./learn.js";
+import { guides } from "./guides.js";
+import { families as refFamilies, totalEntries } from "./reference.js";
 
 const SITE = "https://reliafy.com";
 
@@ -35,14 +40,21 @@ export function routes() {
     },
     {
       path: "/blog",
-      title: "Blog — Reliafy",
-      description: "Product updates and practical notes on reliability engineering from the Reliafy team.",
+      title: "Reliability Engineering Articles & Product Updates | Reliafy",
+      description:
+        "Practical explainers of reliability engineering methods — Weibull analysis, censored data, MTBF vs MTTF, B10 life, availability and more — plus product updates from the Reliafy team.",
     },
     {
-      path: "/learn",
-      title: "Learn Reliability Engineering — Guides & Worked Examples | Reliafy",
+      path: "/guides",
+      title: "Guides — How to use Reliafy | Step-by-step",
       description:
-        "Practical guides to reliability engineering methods: Weibull analysis, censored data, MTBF vs MTTF, B10 life, and more — with worked examples.",
+        "Task-oriented walkthroughs for Reliafy: build repairable RBDs and read availability, model common-cause failures and load-sharing, fit accelerated-life models, and more — a screenshot for every step.",
+    },
+    {
+      path: "/reference",
+      title: "Model Reference — every reliability model Reliafy fits",
+      description:
+        `Reference for all ${totalEntries} models Reliafy fits: life distributions, discrete and non-parametric estimators, survival regression, accelerated-life relationships and recurrent-event models — parameters, functional forms and when to use each.`,
     },
     {
       path: "/api-docs",
@@ -102,7 +114,27 @@ export function routes() {
     description: p.summary || "",
     lastmod: p.date || null,
   }));
-  return [...base, ...product, ...learn, ...blog];
+  const guidePages = guides.map((g) => ({
+    path: `/guides/${g.slug}`,
+    title: `${g.title} — Reliafy Guide`,
+    description: g.task,
+    jsonld: [
+      {
+        "@context": "https://schema.org",
+        "@type": "HowTo",
+        name: g.title,
+        description: g.task,
+        totalTime: `PT${g.minutes}M`,
+        url: `${SITE}/guides/${g.slug}`,
+      },
+    ],
+  }));
+  const referencePages = refFamilies.map((f) => ({
+    path: `/reference/${f.id}`,
+    title: `${f.title} — Reliafy Model Reference`,
+    description: f.description,
+  }));
+  return [...base, ...product, ...learn, ...blog, ...guidePages, ...referencePages];
 }
 
 export function render(path) {
@@ -114,8 +146,11 @@ export function render(path) {
             <Route path="/" element={<Landing />} />
             <Route path="/blog" element={<Blog />} />
             <Route path="/blog/:slug" element={<BlogPost />} />
-            <Route path="/learn" element={<LearnIndex />} />
             <Route path="/learn/:slug" element={<LearnArticle />} />
+            <Route path="/guides" element={<GuidesIndex />} />
+            <Route path="/guides/:slug" element={<GuidePage />} />
+            <Route path="/reference" element={<ReferenceIndex />} />
+            <Route path="/reference/:family" element={<ReferenceFamily />} />
             <Route path="/api-docs" element={<ApiDocsPublicPage />} />
             {PRODUCT_PAGES.map((p) => (
               <Route key={p.path} path={p.path} element={<ProductPage page={p} />} />

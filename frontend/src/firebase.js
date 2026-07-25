@@ -10,6 +10,19 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 export const AUTH_DISABLED =
   String(import.meta.env.VITE_AUTH_DISABLED || "").toLowerCase() === "true";
 
+// Auth-disabled builds (local dev, self-hosted instances) ship only the app —
+// the marketing pages (guides, blog) aren't routed, so an in-app link to
+// /guides would fall through to the app shell and bounce to /modelling. Point
+// those links at the public site instead. Override the host with
+// VITE_PUBLIC_SITE if you mirror the content elsewhere.
+const PUBLIC_SITE =
+  (import.meta.env.VITE_PUBLIC_SITE || "https://reliafy.com").replace(/\/+$/, "");
+
+export function publicUrl(path = "/") {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return AUTH_DISABLED ? `${PUBLIC_SITE}${p}` : p;
+}
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,

@@ -84,6 +84,27 @@ def team_invite_pending(to: str, inviter_name: str, team_name: str) -> None:
     )
 
 
+def new_signup(new_email: str | None, new_name: str | None) -> None:
+    """Notify the operators (``ADMIN_EMAILS``) that a new account signed up.
+
+    Sends one email per configured admin; a no-op when SMTP or ADMIN_EMAILS is
+    unset. Fired from the server-side first-sight hook so it can't be missed."""
+    admins = sorted(config.ADMIN_EMAILS)
+    if not admins:
+        logger.info("new-signup notify skipped (no ADMIN_EMAILS) email=%s", new_email)
+        return
+    subject = f"New Reliafy signup: {new_email or 'unknown'}"
+    body = (
+        "A new user just signed up for Reliafy.\n\n"
+        f"Name:  {new_name or '—'}\n"
+        f"Email: {new_email or '—'}\n\n"
+        f"Operator dashboard: {_app_url('/admin')}\n\n"
+        "— Reliafy"
+    )
+    for to in admins:
+        send(to, subject, body)
+
+
 def artifact_shared(to: str, sharer: str, artifact_name: str, link_path: str) -> None:
     send(
         to,

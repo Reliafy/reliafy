@@ -96,11 +96,34 @@ _COMPRESSOR_EVENTS_CSV = (
     "CMP-4,4050,5000\nCMP-4,4500,5000\nCMP-4,4850,5000\n"
 ).encode()
 
+# Nelson's classic insulating-fluid accelerated life test: time to breakdown of
+# an insulating fluid between electrodes held at constant voltage — the textbook
+# inverse-power-law ALT dataset (Nelson, *Applied Life Data Analysis*, Wiley
+# 1982). Values via the `breakdown` dataset in the R package UsingR, restricted
+# to the four well-populated levels (30–36 kV, n = 11/15/19/15); the 34 kV level
+# is restored to the full precision of the published listing because UsingR
+# truncates times of 8 minutes and over.
+_INSULATING_FLUID_CSV = (
+    "minutes,kV\n7.7,30\n17,30\n20,30\n21,30\n22,30\n43,30\n47,30\n139,30\n"
+    "144,30\n175,30\n194,30\n0.27,32\n0.4,32\n0.69,32\n0.79,32\n2.75,32\n"
+    "3.9,32\n9.8,32\n14,32\n16,32\n27,32\n53,32\n82,32\n89,32\n100,32\n"
+    "215,32\n0.19,34\n0.78,34\n0.96,34\n1.31,34\n2.78,34\n3.16,34\n4.15,34\n"
+    "4.67,34\n4.85,34\n6.5,34\n7.35,34\n8.01,34\n8.27,34\n12.06,34\n"
+    "31.75,34\n32.52,34\n33.91,34\n36.71,34\n72.89,34\n0.35,36\n0.59,36\n"
+    "0.96,36\n0.99,36\n1.69,36\n1.97,36\n2.07,36\n2.58,36\n2.71,36\n2.9,36\n"
+    "3.67,36\n3.99,36\n5.35,36\n13.77,36\n25.5,36\n"
+).encode()
+
 SAMPLE_DATASETS = [
     {
         "id": "sample-ds-bearings",
         "name": "Bearing fatigue test (sample)",
         "csv": _BEARINGS_CSV,
+    },
+    {
+        "id": "sample-ds-insulating-fluid",
+        "name": "Insulating fluid breakdown vs. voltage (sample)",
+        "csv": _INSULATING_FLUID_CSV,
     },
     {
         "id": "sample-ds-compressor-events",
@@ -149,6 +172,41 @@ SAMPLE_RECURRENT_MODELS = [
         "spec": {
             "mapping": {"i": "compressor", "x": "hours", "t": "test_end"},
             "model_id": "crow_amsaa",
+            "unit": "hours",
+        },
+    },
+]
+
+# Accelerated Life Testing: the valve-seal ALT dataset is a crossed
+# temperature × load design, so a two-stress temperature–nonthermal
+# (power-exponential) life-stress model fits it and extrapolates to use level.
+SAMPLE_ALT_MODELS = [
+    {
+        # Single-stress ALT on the classic Nelson insulating-fluid data: enough
+        # observations per level (11–19) that the probability plot shows the
+        # points genuinely tracking the fitted lines.
+        "id": "sample-alt-fluid",
+        "name": "Insulating fluid — Weibull ALT on voltage (sample)",
+        "dataset_id": "sample-ds-insulating-fluid",
+        "spec": {
+            "mapping": {"x": "minutes"},
+            "stress_cols": ["kV"],
+            "stress_labels": ["Voltage (kV)"],
+            "distribution_id": "weibull",
+            "life_model_id": "inverse_power",
+            "unit": "minutes",
+        },
+    },
+    {
+        "id": "sample-alt-seal",
+        "name": "Valve seal — Weibull ALT on temp & load (sample)",
+        "dataset_id": "sample-ds-seal-alt",
+        "spec": {
+            "mapping": {"x": "hours", "c": "censored"},
+            "stress_cols": ["temp_C", "load"],
+            "stress_labels": ["Temperature (°C)", "Load"],
+            "distribution_id": "weibull",
+            "life_model_id": "power_exponential",
             "unit": "hours",
         },
     },
@@ -454,6 +512,40 @@ def seed_samples(db) -> None:
             logger.info("Seeded sample recurrent model %r.", spec["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample recurrent %r: %s", spec["id"], exc)
+
+    for spec in SAMPLE_ALT_MODELS:
+        try:
+            if db.alt_models.find_one({"_id": spec["id"]}) is not None:
+                continue
+            ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
+            if ds_doc is None:
+                continue
+            from backend import alt as alt_fit  # local: heavy import
+            from backend.schema import AltModelDoc
+            import surpyval
+
+            dataset = from_doc(Dataset, ds_doc)
+            df = fitting.read_dataframe(bytes(dataset.data))
+            s = spec["spec"]
+            payload, cache_id = alt_fit.fit(
+                df, s["mapping"], s["stress_cols"],
+                distribution_id=s["distribution_id"], life_model_id=s["life_model_id"],
+                unit=s["unit"], stress_labels=s.get("stress_labels"),
+            )
+            fns = dict(payload.get("functions") or {})
+            fns["evaluate_path"] = f"/api/alt/models/{spec['id']}/evaluate"
+            payload["functions"] = fns
+            doc = AltModelDoc(
+                id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER,
+                dataset_id=spec["dataset_id"], spec=s, results=payload,
+                serialized=alt_fit.serialize_live(cache_id),
+                surpyval_version=getattr(surpyval, "__version__", None),
+                status="ready",
+            )
+            db.alt_models.insert_one(to_doc(doc))
+            logger.info("Seeded sample ALT model %r.", spec["id"])
+        except Exception as exc:  # pragma: no cover - defensive; never block boot
+            logger.warning("Failed to seed sample ALT %r: %s", spec["id"], exc)
 
     # Last: groups the sample tracked items (needs the degradation model above).
     _seed_tracked_fleet(db)

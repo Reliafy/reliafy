@@ -45,12 +45,15 @@ from surpyval import (
     WeibullPH,
 )
 from surpyval import ExpoWeibull, Gumbel, Logistic, LogLogistic
+from surpyval import GumbelLEV, Rayleigh
 from surpyval import Binomial, FlemingHarrington, KaplanMeier, NelsonAalen, Turnbull
 from surpyval import success_run as _success_run
-from surpyval import DiscreteWeibull, Geometric, NegativeBinomial
+from surpyval import BetaGeometric, DiscreteWeibull, Geometric, NegativeBinomial, Poisson
 from surpyval import (
     ExponentialAFT,
     GammaAFT,
+    GumbelAFT,
+    LogisticAFT,
     LogNormalAFT,
     NormalAFT,
     WeibullAFT,
@@ -58,6 +61,8 @@ from surpyval import (
 from surpyval import (
     ExponentialPO,
     GammaPO,
+    GumbelPO,
+    LogisticPO,
     LogNormalPO,
     NormalPO,
     WeibullPO,
@@ -65,10 +70,13 @@ from surpyval import (
 from surpyval import (
     ExponentialAH,
     GammaAH,
+    GumbelAH,
+    LogisticAH,
     LogNormalAH,
     NormalAH,
     WeibullAH,
 )
+from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
@@ -83,8 +91,10 @@ DISTRIBUTIONS = {
     "gamma": {"name": "Gamma", "dist": Gamma, "offsetable": True},
     "loglogistic": {"name": "LogLogistic", "dist": LogLogistic, "offsetable": True},
     "expo_weibull": {"name": "Exponentiated Weibull", "dist": ExpoWeibull, "offsetable": True},
-    "gumbel": {"name": "Gumbel", "dist": Gumbel, "offsetable": False},
+    "gumbel": {"name": "Gumbel (smallest EV)", "dist": Gumbel, "offsetable": False},
+    "gumbel_lev": {"name": "Gumbel (largest EV)", "dist": GumbelLEV, "offsetable": False},
     "logistic": {"name": "Logistic", "dist": Logistic, "offsetable": False},
+    "rayleigh": {"name": "Rayleigh", "dist": Rayleigh, "offsetable": True},
 }
 
 # Discrete lifetime distributions: for life measured in whole counts — cycles,
@@ -97,7 +107,9 @@ DISTRIBUTIONS = {
 DISCRETE = {
     "discrete_weibull": {"name": "Discrete Weibull", "dist": DiscreteWeibull},
     "geometric": {"name": "Geometric", "dist": Geometric},
+    "beta_geometric": {"name": "Beta-Geometric", "dist": BetaGeometric},
     "negative_binomial": {"name": "Negative Binomial", "dist": NegativeBinomial},
+    "poisson": {"name": "Poisson", "dist": Poisson},
 }
 
 # Non-parametric estimators (no distribution assumed): the "estimation axis"
@@ -120,22 +132,30 @@ REGRESSION_MODELS = {
     "lognormal_ph": {"name": "Lognormal PH", "fitter": LogNormalPH, "effect": "hazard"},
     "normal_ph": {"name": "Normal PH", "fitter": NormalPH, "effect": "hazard"},
     "gamma_ph": {"name": "Gamma PH", "fitter": GammaPH, "effect": "hazard"},
+    "logistic_ph": {"name": "Logistic PH", "fitter": LogisticPH, "effect": "hazard"},
+    "gumbel_ph": {"name": "Gumbel PH", "fitter": GumbelPH, "effect": "hazard"},
     "cox_ph": {"name": "Cox PH (semi-parametric)", "fitter": CoxPH, "effect": "hazard"},
     "weibull_aft": {"name": "Weibull AFT", "fitter": WeibullAFT, "effect": "aft"},
     "exponential_aft": {"name": "Exponential AFT", "fitter": ExponentialAFT, "effect": "aft"},
     "lognormal_aft": {"name": "Lognormal AFT", "fitter": LogNormalAFT, "effect": "aft"},
     "normal_aft": {"name": "Normal AFT", "fitter": NormalAFT, "effect": "aft"},
     "gamma_aft": {"name": "Gamma AFT", "fitter": GammaAFT, "effect": "aft"},
+    "logistic_aft": {"name": "Logistic AFT", "fitter": LogisticAFT, "effect": "aft"},
+    "gumbel_aft": {"name": "Gumbel AFT", "fitter": GumbelAFT, "effect": "aft"},
     "weibull_po": {"name": "Weibull PO", "fitter": WeibullPO, "effect": "odds"},
     "exponential_po": {"name": "Exponential PO", "fitter": ExponentialPO, "effect": "odds"},
     "lognormal_po": {"name": "Lognormal PO", "fitter": LogNormalPO, "effect": "odds"},
     "normal_po": {"name": "Normal PO", "fitter": NormalPO, "effect": "odds"},
     "gamma_po": {"name": "Gamma PO", "fitter": GammaPO, "effect": "odds"},
+    "logistic_po": {"name": "Logistic PO", "fitter": LogisticPO, "effect": "odds"},
+    "gumbel_po": {"name": "Gumbel PO", "fitter": GumbelPO, "effect": "odds"},
     "weibull_ah": {"name": "Weibull AH", "fitter": WeibullAH, "effect": "additive"},
     "exponential_ah": {"name": "Exponential AH", "fitter": ExponentialAH, "effect": "additive"},
     "lognormal_ah": {"name": "Lognormal AH", "fitter": LogNormalAH, "effect": "additive"},
     "normal_ah": {"name": "Normal AH", "fitter": NormalAH, "effect": "additive"},
     "gamma_ah": {"name": "Gamma AH", "fitter": GammaAH, "effect": "additive"},
+    "logistic_ah": {"name": "Logistic AH", "fitter": LogisticAH, "effect": "additive"},
+    "gumbel_ah": {"name": "Gumbel AH", "fitter": GumbelAH, "effect": "additive"},
 }
 
 # What exp(coefficient) means per regression effect (None = no natural ratio;
@@ -308,6 +328,29 @@ def _ensure_covariance(model) -> None:
         pass
 
 
+def failure_positions_mask(model, n_points: int):
+    """Mask over ``get_plot_data()``'s ``x_``/``F`` keeping only exact failures.
+
+    On probability paper only failures are plotted; censored units adjust the
+    failures' plotting positions but are not points themselves. SurPyval returns
+    a position for every observation, giving each censored one the *previous
+    failure's* F — which would draw a duplicated, misleading point (and pull the
+    apparent fit away from the line). Filter them out.
+    """
+    data = getattr(model, "data", None)
+    c = None
+    if isinstance(data, dict):
+        c = data.get("c")
+    elif data is not None:
+        c = getattr(data, "c", None)
+    if c is None:
+        return np.ones(n_points, dtype=bool)
+    c = np.asarray(c).ravel()
+    if c.size != n_points:  # counts/aggregation changed the length — don't guess
+        return np.ones(n_points, dtype=bool)
+    return c == 0
+
+
 def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen") -> dict:
     """Shape SurPyval's plot data into Plotly-ready (already-linearised) arrays.
 
@@ -326,6 +369,8 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen") -> dict:
 
     scatter_x = tx(data["x_"])
     scatter_y = ty(data["F"])
+    keep = failure_positions_mask(model, scatter_x.size)
+    scatter_x, scatter_y = scatter_x[keep], scatter_y[keep]
 
     line_x = tx(data["x_model"])
     line_y = ty(data["cdf"])

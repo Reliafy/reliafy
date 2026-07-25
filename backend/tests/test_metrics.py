@@ -128,6 +128,23 @@ def test_signup_event_once_per_account(client):
     assert client.db.metrics_events.count_documents({"name": "signup"}) == 2
 
 
+def test_new_signup_emails_operators(client, monkeypatch):
+    from backend.services import email as email_service
+
+    sent = []
+    monkeypatch.setattr(email_service, "send", lambda to, subject, body: sent.append((to, subject)))
+
+    client.act_as(A)
+    client.get("/api/me")  # first sight of A -> notify operators
+    client.get("/api/me")  # repeat login -> no second notify
+
+    signup_mails = [s for s in sent if "signup" in s[1].lower()]
+    assert len(signup_mails) == 1  # once per new account
+    to, subject = signup_mails[0]
+    assert to == "a@x.com"  # ADMIN_EMAILS recipient (fixture)
+    assert "a@x.com" in subject  # the new user's email is in the subject
+
+
 def test_traffic_days_clamped(client):
     client.act_as(A)
     assert client.get("/api/admin/traffic?days=5000").json()["days"] == 90

@@ -116,6 +116,13 @@ def analyze_graph(
     def resolve_model(model_id: str) -> dict | None:
         return models_service.get_live_model(db, model_id, owner_id)
 
+    # A repairable diagram is a distinct modelling choice: it reports
+    # availability (uptime) rather than a reliability curve.
+    if graph.get("repairable"):
+        return rbd_analysis.analyze_availability(
+            graph, resolve_model=resolve_model, t_simulation=t_max
+        )
+
     return rbd_analysis.analyze(
         graph,
         resolve_subsystem=resolve_subsystem,

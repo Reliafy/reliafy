@@ -67,6 +67,28 @@ def agent_info(session=Depends(get_session), user: dict = Depends(get_current_us
     }
 
 
+@router.get("/reliability-agent/sessions")
+def agent_sessions(session=Depends(get_session), user: dict = Depends(get_current_user)) -> dict:
+    """The user's past agent runs (for the history list). Auth only — reading
+    your own history isn't a metered action."""
+    return {"sessions": agent_service.list_sessions(session, user["uid"])}
+
+
+@router.get("/reliability-agent/sessions/{session_id}")
+def agent_session_transcript(
+    session_id: str, session=Depends(get_session), user: dict = Depends(get_current_user)
+) -> JSONResponse:
+    """Reopen a past run: its saved transcript in the chat's message shape."""
+    if not agent_service.owns_session(session, user["uid"], session_id):
+        return JSONResponse(status_code=404, content={"detail": "Session not found."})
+    try:
+        messages = agent_service.get_transcript(session, session_id)
+    except Exception as exc:  # noqa: BLE001 - platform/SDK error
+        logger.exception("Failed to load agent transcript")
+        return JSONResponse(status_code=502, content={"detail": f"Couldn't load the transcript: {exc}"})
+    return JSONResponse(content={"session_id": session_id, "messages": messages})
+
+
 @router.post("/reliability-agent/upload")
 async def agent_upload(
     file: UploadFile = File(...),

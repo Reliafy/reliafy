@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Select from "../components/Select.jsx";
+import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import RecurrentColumnMapper from "../components/RecurrentColumnMapper.jsx";
 import RecurrentParamsPanel from "../components/RecurrentParamsPanel.jsx";
@@ -321,12 +322,17 @@ export default function RecurrentNewPage() {
         {step === 3 && (
           <div className="fit-step">
             <p className="muted-line">Choose a recurrent-event growth model to fit to the fleet's event history.</p>
-            <label className="dist-field" style={{ width: 280 }}>
+            <div className="dist-field" style={{ width: 280 }}>
               <span className="dist-label">Model</span>
               <Select value={model} onChange={setModel}
                       options={modelOpts.map((m) => ({ value: m.id, label: m.name }))} />
-            </label>
-            {MODEL_DESC[model] && <p className="muted-line" style={{ margin: 0 }}>{MODEL_DESC[model]}</p>}
+            </div>
+            {MODEL_DESC[model] && (
+              <p className="muted-line" style={{ margin: 0 }}>
+                {MODEL_DESC[model]}
+                <RefLink entryId={model} label="What is this growth model?" />
+              </p>
+            )}
           </div>
         )}
 
