@@ -6106,8 +6106,4 @@ button.danger:hover { background: #fdeeee; }
 }
 .nav-help-btn svg { width: 19px; height: 19px; }
 .nav-help-btn:hover { background: rgba(47,109,246,0.08); color: var(--acc); }
-.link-btn {
-  background: none; border: none; padding: 0; color: var(--acc); cursor: pointer;
-  font: inherit; text-decoration: underline; box-shadow: none;
-}
-.link-btn:hover { opacity: 0.85; }
+.link-btn:hover { opacity: 0.85; }  /* base .link-btn defined above */
