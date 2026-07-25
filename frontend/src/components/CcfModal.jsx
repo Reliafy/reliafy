@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Modal from "./Modal.jsx";
+import { openGuide } from "./HelpButton.jsx";
 
 // Set the beta-factor for a common-cause group: the fraction of each member's
 // failures that are shared-cause (and take out the whole group at once).
@@ -41,7 +42,10 @@ export default function CcfModal({ initial, memberLabels, onClose, onSubmit }) {
       <p className="hint">
         {pct}% of each component's failures are shared-cause — they take out all{" "}
         {n} at once; the remaining {100 - pct}% are independent. Higher β erodes
-        the benefit of the redundancy.
+        the benefit of the redundancy.{" "}
+        <button type="button" className="link-btn" onClick={() => openGuide("common-cause-group")}>
+          How do I use this?
+        </button>
       </p>
     </Modal>
   );

@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import Logo from "./Logo.jsx";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
+import HelpButton from "./HelpButton.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { createTeam } from "../api.js";
 
@@ -113,6 +114,7 @@ export default function NavBar() {
           <span className="brand-name">Reliafy</span>
         </NavLink>
         <div className="nav-workspace">
+          <HelpButton />
           {activeTeam && (activeTeam.frozen || activeTeam.can_edit === false) && (
             <span
               className="health-badge health-amber"

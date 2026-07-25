@@ -6097,3 +6097,17 @@ button.danger:hover { background: #fdeeee; }
 @media (prefers-color-scheme: dark) {
   .help-drawer { background: #14181e; border-color: #262c34; }
 }
+
+/* Help trigger in the top bar + inline "how do I…" links */
+.nav-help-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 8px; background: none; border: none;
+  color: var(--muted); cursor: pointer; box-shadow: none;
+}
+.nav-help-btn svg { width: 19px; height: 19px; }
+.nav-help-btn:hover { background: rgba(47,109,246,0.08); color: var(--acc); }
+.link-btn {
+  background: none; border: none; padding: 0; color: var(--acc); cursor: pointer;
+  font: inherit; text-decoration: underline; box-shadow: none;
+}
+.link-btn:hover { opacity: 0.85; }

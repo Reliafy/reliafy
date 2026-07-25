@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Modal from "./Modal.jsx";
 import ModelPicker from "./ModelPicker.jsx";
+import { openGuide } from "./HelpButton.jsx";
 
 // Edit a node's life model — and, in a repairable RBD, its repair-time
 // distribution too — in one place. Pre-filled with the node's current models.
@@ -12,9 +13,16 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
   const footer = (
     <>
       <span className="hint">
-        {repairable
-          ? "Set the life model and the repair-time (MTTR) distribution."
-          : "Pick a saved model or enter parameters."}
+        {repairable ? (
+          <>
+            Set the life model and the repair-time (MTTR) distribution.{" "}
+            <button type="button" className="link-btn" onClick={() => openGuide("repairable-availability")}>
+              How do I model availability?
+            </button>
+          </>
+        ) : (
+          "Pick a saved model or enter parameters."
+        )}
       </span>
       <div className="row" style={{ margin: 0 }}>
         <button className="secondary" onClick={onClose}>Cancel</button>
