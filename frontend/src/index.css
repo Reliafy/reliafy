@@ -6215,3 +6215,21 @@ button.danger:hover { background: #fdeeee; }
   border-radius: 4px; padding: 0 4px; margin: 0 1px; background: var(--panel, #fff);
 }
 .rbd-hint-flash { font-weight: 600; color: var(--acc); }
+
+/* RBD join node — a k-node with n = 1, drawn as a compact junction rather than
+   a full "1-out-of-k voting" block. Same node type and same maths (a perfectly
+   reliable gate); it only merges branches, so it needs no room for a life model. */
+.rbd-join {
+  position: relative;
+  box-sizing: border-box;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid #c4b5fd;
+  background: #f5f3ff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+.rbd-join-mark { font-size: 20px; line-height: 1; color: #6d28d9; }
+.react-flow__node.selected .rbd-join { box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.3); }

@@ -38,6 +38,12 @@ stacked to its right become a fan-out into a redundant stage, and box-selecting
 a whole region wires its stages in one press. Links that already exist are left
 alone, so pressing `C` twice does nothing the second time.
 
+When several branches converge and then fan out again, wiring every branch to
+every successor gets messy. Right-click → **Add join** drops in a junction that
+merges them: everything feeds the join, and the join feeds what comes next. A
+join is perfectly reliable and changes no number in the results — it only tidies
+the wiring. (It's the voting node with n = 1, so any one branch is enough.)
+
 ![A pump station diagram: input, controller, redundant pumps, output](/guides/img/rbd-01-builder.png)
 
 Set the **unit** in the top-left. Everything in the diagram should share one time

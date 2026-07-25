@@ -22,7 +22,7 @@ export default function KNodeModal({ initial, onClose, onSubmit }) {
 
   const footer = (
     <>
-      <span className="hint">At least n of the k branches must work.</span>
+      <span className="hint">At least n of the k branches must work. n = 1 is a plain join.</span>
       <div className="row" style={{ margin: 0 }}>
         <button className="secondary" onClick={onClose}>
           Cancel
