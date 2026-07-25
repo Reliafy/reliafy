@@ -1,14 +1,12 @@
 """Decision-support tools for reliability engineering ("Strategy").
 
-Two tools built on SurPyval + RePyability:
+Built on SurPyval + RePyability:
 
-* ``compare_models`` — fit every parametric distribution to a dataset, rank
-  them by information criteria, and return reliability curves overlaid on the
-  non-parametric (Kaplan-Meier / Turnbull) empirical estimate, plus decision
-  metrics (B-life, median life, MTTF) for each.
 * ``optimal_replacement`` — the age-based preventive-replacement interval that
   minimises the long-run cost rate given planned vs. unplanned costs, with the
   saving versus a run-to-failure policy.
+* ``compare_two`` — put two models side by side on the decision metrics.
+* ``failure_finding`` — the inspection interval for a hidden failure.
 """
 
 from __future__ import annotations
@@ -18,11 +16,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from backend.fitting import (
-    DISTRIBUTIONS,
-    _goodness_of_fit,
-    build_fit_inputs,
-)
+from backend.fitting import DISTRIBUTIONS
 from repyability.non_repairable import NonRepairable
 from surpyval import KaplanMeier, logrank
 
@@ -94,118 +88,6 @@ def _model_from_params(distribution_id: str, params: list, extras: dict | None =
         return dist.from_params(values, **kwargs), entry["name"]
     except Exception as exc:
         raise StrategyError(str(exc)) from exc
-
-
-def compare_models(df: pd.DataFrame, mapping: dict, unit: Optional[str] = None) -> dict:
-    """Fit every parametric distribution and rank them against the data.
-
-    Returns the fitted models (ranked best-first by AIC) with their parameters,
-    goodness-of-fit metrics, life metrics and reliability curves, plus the
-    non-parametric empirical survival to overlay.
-    """
-    try:
-        kwargs = build_fit_inputs(df, mapping)
-    except Exception as exc:
-        raise StrategyError(str(exc)) from exc
-    if "x" not in kwargs and not ("xl" in kwargs and "xr" in kwargs):
-        raise StrategyError(
-            "Map a column to 'x' (or to both 'xl' and 'xr' for interval data)."
-        )
-
-    fitted: list = []
-    for dist_id, entry in DISTRIBUTIONS.items():
-        try:
-            model = entry["dist"].fit(**kwargs)
-            gof = _goodness_of_fit(model)
-            aic = next((g["value"] for g in gof if g["id"] == "aic"), None)
-            param_names = (
-                getattr(model, "param_names", None)
-                or getattr(entry["dist"], "param_names", None)
-                or [f"p{i}" for i in range(len(model.params))]
-            )
-            params = [
-                {"name": name, "value": float(value)}
-                for name, value in zip(param_names, model.params)
-            ]
-            fitted.append(
-                {
-                    "model": model,
-                    "id": dist_id,
-                    "name": entry["name"],
-                    "params": params,
-                    "gof": gof,
-                    "aic": aic,
-                    "metrics": _life_metrics(model),
-                }
-            )
-        except Exception:
-            continue  # a distribution that won't fit this data is simply skipped
-
-    if not fitted:
-        raise StrategyError("None of the distributions could be fit to this data.")
-
-    # Common time grid out to the largest 99th percentile (fallback: data max).
-    his = [m for f in fitted if (m := _scalar(f["model"].qf(0.99)))]
-    if not his:
-        x = kwargs.get("x")
-        his = [float(np.nanmax(x))] if x is not None and len(x) else [1.0]
-    grid = np.linspace(0.0, max(his), _GRID_POINTS)
-
-    for f in fitted:
-        with np.errstate(all="ignore"):
-            f["sf"] = _clean(f["model"].sf(grid))
-
-    # Non-parametric empirical survival (Turnbull for left/interval censoring,
-    # else Nelson-Aalen) taken from SurPyval's plotting positions.
-    empirical = _empirical_survival(fitted[0]["model"])
-
-    fitted.sort(
-        key=lambda f: (f["aic"] is None, f["aic"] if f["aic"] is not None else 0)
-    )
-    best = fitted[0]
-
-    n = 0
-    try:
-        n = int(np.sum(best["model"].data["n"]))
-    except Exception:
-        pass
-
-    return {
-        "unit": (unit or "").strip(),
-        "time": grid.tolist(),
-        "n": n,
-        "best_id": best["id"],
-        "recommendation": _comparison_recommendation(fitted),
-        "models": [{k: v for k, v in f.items() if k != "model"} for f in fitted],
-        "empirical": empirical,
-    }
-
-
-def _empirical_survival(model) -> dict:
-    try:
-        c = np.asarray(model.data["c"])
-        heuristic = "Turnbull" if np.any((c == -1) | (c == 2)) else "Nelson-Aalen"
-        data = model.get_plot_data(heuristic=heuristic)
-        x = np.asarray(data["x_"], dtype=float)
-        R = 1.0 - np.asarray(data["F"], dtype=float)
-        return {"x": _clean(x), "R": _clean(R)}
-    except Exception:
-        return {"x": [], "R": []}
-
-
-def _comparison_recommendation(fitted: list) -> str:
-    best = fitted[0]
-    if best["aic"] is None:
-        return f"{best['name']} is the recommended fit."
-    msg = f"{best['name']} fits best (lowest AIC)."
-    if len(fitted) > 1 and fitted[1]["aic"] is not None:
-        gap = fitted[1]["aic"] - best["aic"]
-        if gap < 2:
-            msg += (
-                f" {fitted[1]['name']} is statistically comparable "
-                f"(ΔAIC = {gap:.1f}); prefer the simpler/physically-motivated one."
-            )
-    return msg
 
 
 def optimal_replacement(

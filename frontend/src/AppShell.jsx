@@ -10,7 +10,6 @@ import ModellingHome from "./views/ModellingHome.jsx";
 import AllModelsPage from "./views/AllModelsPage.jsx";
 import NewModelPage from "./views/NewModelPage.jsx";
 import ModelPage from "./views/ModelPage.jsx";
-import ModellingCompare from "./views/ModellingCompare.jsx";
 import DegradationHome from "./views/DegradationHome.jsx";
 import DegradationModelPage from "./views/DegradationModelPage.jsx";
 import RecurrentHome from "./views/RecurrentHome.jsx";
@@ -80,7 +79,6 @@ export default function AppShell() {
             <Route path="/modelling/models" element={<AllModelsPage />} />
             <Route path="/modelling/life" element={<ModellingHome />} />
             <Route path="/modelling/new" element={<NewModelPage />} />
-            <Route path="/modelling/compare" element={<ModellingCompare />} />
             <Route path="/modelling/degradation" element={<DegradationHome />} />
             <Route path="/modelling/degradation/:id" element={<DegradationModelPage />} />
             <Route path="/modelling/recurrent" element={<RecurrentHome />} />

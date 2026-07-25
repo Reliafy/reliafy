@@ -1,42 +1,10 @@
-"""Tests for the Strategy decision tools (model comparison, optimal replacement)."""
+"""Tests for the Strategy decision tools (optimal replacement, compare-two, failure finding)."""
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from backend.services import strategy as st
 from backend.services.strategy import StrategyError
-
-
-def _weibull_data(alpha=500.0, beta=2.5, n=200, seed=0):
-    from surpyval import Weibull
-
-    rng = np.random.default_rng(seed)
-    x = Weibull.random(n, alpha, beta)
-    return pd.DataFrame({"time": np.round(np.abs(x), 3)})
-
-
-def test_compare_ranks_and_returns_curves():
-    res = st.compare_models(_weibull_data(), {"x": "time"}, unit="Hours")
-    ids = [m["id"] for m in res["models"]]
-    from backend.fitting import DISTRIBUTIONS
-    assert set(ids) <= set(DISTRIBUTIONS)
-    # The classic five are always in the ranking.
-    assert {"weibull", "exponential", "normal", "lognormal", "gamma"} <= set(ids)
-    # Ranked best-first by AIC.
-    aics = [m["aic"] for m in res["models"] if m["aic"] is not None]
-    assert aics == sorted(aics)
-    assert res["best_id"] == ids[0]
-    # Each model has a reliability curve aligned to the grid + life metrics.
-    for m in res["models"]:
-        assert len(m["sf"]) == len(res["time"])
-        assert "b10" in m["metrics"]
-    assert len(res["empirical"]["x"]) > 0
-
-
-def test_compare_needs_x():
-    with pytest.raises(StrategyError):
-        st.compare_models(pd.DataFrame({"time": [1, 2, 3]}), {})
 
 
 def test_optimal_replacement_beneficial_for_wearout():

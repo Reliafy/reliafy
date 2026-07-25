@@ -1,15 +1,14 @@
-"""Strategy / decision-support API: model comparison and optimal replacement."""
+"""Strategy / decision-support API: optimal replacement and decision support."""
 
 from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse
 
 from backend.auth import get_current_user
 from backend.db import get_session
-from backend.fitting import read_dataframe
 from backend.services import samples as samples_service
 from backend.services import strategy as strategy_service
 from backend.services import access as access_service
@@ -21,49 +20,6 @@ from backend.services.strategy import StrategyError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/strategy")
-
-
-@router.post("/compare")
-async def compare_endpoint(
-    file: UploadFile | None = File(default=None),
-    dataset_id: str | None = Form(default=None),
-    x: str | None = Form(default=None),
-    c: str | None = Form(default=None),
-    n: str | None = Form(default=None),
-    xl: str | None = Form(default=None),
-    xr: str | None = Form(default=None),
-    tl: str | None = Form(default=None),
-    tr: str | None = Form(default=None),
-    unit: str | None = Form(default=None),
-    user: dict = Depends(get_current_user),
-) -> JSONResponse:
-    """Fit and rank every parametric distribution against a dataset (an
-    uploaded CSV, or a saved dataset by id — e.g. the samples)."""
-    if dataset_id:
-        from backend.db import get_db
-        from backend.services import datasets as datasets_service
-
-        dataset = datasets_service.get_dataset(get_db(), dataset_id, owner_id=user["uid"])
-        if dataset is None:
-            return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
-        contents = dataset.data
-    elif file is not None:
-        contents = await file.read()
-    else:
-        return JSONResponse(status_code=422, content={"detail": "Provide a CSV file or a dataset_id."})
-    mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}
-    try:
-        df = read_dataframe(contents)
-        return JSONResponse(
-            content=strategy_service.compare_models(df, mapping, unit=unit)
-        )
-    except StrategyError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.exception("Model comparison failed")
-        return JSONResponse(
-            status_code=500, content={"detail": f"Comparison failed: {exc}"}
-        )
 
 
 @router.post("/optimal-replacement")

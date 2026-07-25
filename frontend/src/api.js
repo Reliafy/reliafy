@@ -148,20 +148,6 @@ export function fitModel(distribution, file, mapping, { covariates, formula, uni
 
 // Fit and rank every parametric distribution against a dataset (with the
 // non-parametric empirical estimate). ``mapping`` is { x, c, n, xl, xr, tl, tr }.
-export function compareModels(file, mapping, unit, datasetId) {
-  const form = new FormData();
-  if (datasetId) form.append("dataset_id", datasetId);
-  else if (file) form.append("file", file);
-  for (const [field, column] of Object.entries(mapping)) {
-    if (column) form.append(field, column);
-  }
-  if (unit) form.append("unit", unit);
-  return request("/api/strategy/compare", { method: "POST", body: form });
-}
-
-// Compare two models' reliability. Each side is a spec: a parametric model
-// ({ kind:"parametric", distribution_id, params, label }) or a non-parametric
-// Kaplan-Meier fit of raw data ({ kind:"nonparametric", x:[...], c:[...], label }).
 export function compareTwoModels(a, b, unit) {
   return request("/api/strategy/compare-two", {
     method: "POST",

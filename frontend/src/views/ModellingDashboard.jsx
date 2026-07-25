@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import DashboardSection from "../components/DashboardSection.jsx";
 import { useModels } from "../useModels.js";
 import { trackEvent } from "../telemetry.js";
-import { WaveIcon, PlusIcon, CompareIcon, DegradeIcon, RecurrentIcon, AltIcon } from "../components/icons.jsx";
+import { WaveIcon, PlusIcon, DegradeIcon, RecurrentIcon, AltIcon } from "../components/icons.jsx";
 
 const ACTIVATED_KEY = "reliafy_activated";
 
@@ -72,13 +72,6 @@ export default function ModellingDashboard() {
       icon: <DegradeIcon />,
       title: "Degradation models",
       body: "Model wear toward a failure threshold — then monitor your fleet under Fleet → Degradation tracking.",
-      cta: "Open",
-    },
-    {
-      to: "/modelling/compare",
-      icon: <CompareIcon />,
-      title: "Model comparison",
-      body: "Rank every candidate distribution against your data with the empirical fit.",
       cta: "Open",
     },
   ];
