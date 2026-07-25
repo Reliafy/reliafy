@@ -32,6 +32,7 @@ from backend.fitting import (
     FitError,
     _eval_functions,
     _json_safe,
+    failure_positions_mask,
 )
 from surpyval import AcceleratedLife
 from surpyval.univariate.regression import accelerated_life as _al
@@ -462,10 +463,13 @@ def _probability_plot(model, dist, inputs, k_dist, uniq, life_at_uniq, labels) -
                 fit_kwargs["c"] = cs
             if ns is not None:
                 fit_kwargs["n"] = ns
-            pdata = dist.fit(**fit_kwargs).get_plot_data()
+            per_level = dist.fit(**fit_kwargs)
+            pdata = per_level.get_plot_data()
             sx = np.asarray(pdata["x_"], dtype=float)
             sF = np.asarray(pdata["F"], dtype=float)
-            keep = np.isfinite(sx) & (sx > 0) & np.isfinite(sF)
+            # Only failures are plotted; censored units adjust the positions.
+            keep = failure_positions_mask(per_level, sx.size)
+            keep &= np.isfinite(sx) & (sx > 0) & np.isfinite(sF)
             if keep.any():
                 scatter = {"x": tx(sx[keep]).tolist(), "y": ty(sF[keep]).tolist()}
                 all_t.extend(sx[keep].tolist())
@@ -531,12 +535,17 @@ def _time_ticks(dist, times: np.ndarray, tx) -> dict:
     d1 = float(tx(np.array([1.0, 10.0]))[1] - tx(np.array([1.0, 10.0]))[0])
     log_like = abs(d1 - np.log(10.0)) < 1e-6
     if log_like:
+        # 1-2-5 steps per decade, clipped to the data range: plain decades often
+        # put only a single tick inside the plotted span.
         import math
         e0, e1 = math.floor(math.log10(lo)), math.ceil(math.log10(hi))
-        vals = [10.0 ** e for e in range(e0, e1 + 1)]
+        vals = [m * 10.0 ** e for e in range(e0, e1 + 1) for m in (1, 2, 5)]
+        vals = [v for v in vals if lo * 0.95 <= v <= hi * 1.05]
+        if len(vals) < 2:  # very narrow span — fall back to the endpoints
+            vals = [lo, hi]
     else:
         vals = list(np.linspace(lo, hi, 6))
-    vals = [v for v in vals if v > 0]
+    vals = sorted(v for v in vals if v > 0)
     return {"vals": tx(np.asarray(vals)).tolist(), "labels": [_tick_label(v) for v in vals]}
 
 

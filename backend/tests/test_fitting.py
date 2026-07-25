@@ -408,6 +408,23 @@ def test_confidence_bounds_available_for_discrete():
     assert cb["lower"] and cb["upper"]
 
 
+def test_probability_plot_excludes_censored_points():
+    """Only failures are plotted on probability paper. Censored units adjust the
+    failures' plotting positions but must not be drawn as points — SurPyval hands
+    back a position for every observation, reusing the previous failure's F."""
+    # 5 failures + 1 suspension.
+    df = _df("t,c\n1350,0\n1620,0\n1780,0\n2050,0\n2200,0\n2420,1\n")
+    result = fit("weibull", df, {"x": "t", "c": "c"})
+    scatter = result["plot"]["scatter"]
+
+    assert len(scatter["x"]) == 5, "the suspension must not be plotted"
+    # The suspension's time is absent from the plotted points...
+    times = [round(float(np.exp(v)), 3) for v in scatter["x"]]
+    assert not any(abs(t - 2420) < 1 for t in times)
+    # ...and no duplicated plotting position sneaks in.
+    assert len(set(scatter["y"])) == len(scatter["y"])
+
+
 @pytest.mark.parametrize("dist_id", list(DISTRIBUTIONS))
 def test_fit_all_distributions(dist_id):
     values = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]

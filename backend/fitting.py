@@ -328,6 +328,29 @@ def _ensure_covariance(model) -> None:
         pass
 
 
+def failure_positions_mask(model, n_points: int):
+    """Mask over ``get_plot_data()``'s ``x_``/``F`` keeping only exact failures.
+
+    On probability paper only failures are plotted; censored units adjust the
+    failures' plotting positions but are not points themselves. SurPyval returns
+    a position for every observation, giving each censored one the *previous
+    failure's* F — which would draw a duplicated, misleading point (and pull the
+    apparent fit away from the line). Filter them out.
+    """
+    data = getattr(model, "data", None)
+    c = None
+    if isinstance(data, dict):
+        c = data.get("c")
+    elif data is not None:
+        c = getattr(data, "c", None)
+    if c is None:
+        return np.ones(n_points, dtype=bool)
+    c = np.asarray(c).ravel()
+    if c.size != n_points:  # counts/aggregation changed the length — don't guess
+        return np.ones(n_points, dtype=bool)
+    return c == 0
+
+
 def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen") -> dict:
     """Shape SurPyval's plot data into Plotly-ready (already-linearised) arrays.
 
@@ -346,6 +369,8 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen") -> dict:
 
     scatter_x = tx(data["x_"])
     scatter_y = ty(data["F"])
+    keep = failure_positions_mask(model, scatter_x.size)
+    scatter_x, scatter_y = scatter_x[keep], scatter_y[keep]
 
     line_x = tx(data["x_model"])
     line_y = ty(data["cdf"])
