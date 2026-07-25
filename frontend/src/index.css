@@ -571,7 +571,9 @@ body {
   justify-content: center;
   align-items: center;
   text-align: center;
-  overflow: hidden;
+  /* NOT overflow:hidden — three badges (status, unit warning, common-cause β)
+     are positioned to overhang the card's edge, and clipping the card clipped
+     all three. The text children clamp themselves instead. */
   border-radius: 9px;
   border: 1px solid var(--border);
   background: var(--panel);
@@ -588,6 +590,10 @@ body {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rbd-comp-model {
@@ -596,12 +602,22 @@ body {
   color: var(--accent-strong);
   font-weight: 500;
   word-break: break-word;
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .rbd-comp-empty {
   margin-top: 0.2rem;
   font-size: 0.7rem;
   color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .rbd-menu-sep {
@@ -5954,7 +5970,7 @@ button.danger:hover { background: #fdeeee; }
 /* Common-cause failure groups (RBD builder) */
 .rbd-comp.ccf-member { box-shadow: 0 0 0 2px rgba(208, 118, 47, 0.55), 0 0 0 5px rgba(208, 118, 47, 0.18); }
 .rbd-ccf-chip {
-  position: absolute; top: -9px; right: 6px;
+  position: absolute; top: -8px; right: -4px;
   font-size: 9.5px; font-weight: 700; letter-spacing: 0.02em;
   background: #d0762f; color: #fff; border-radius: 999px; padding: 1px 6px;
 }
@@ -6165,3 +6181,12 @@ button.danger:hover { background: #fdeeee; }
   font-size: 11px; line-height: 1; cursor: pointer;
 }
 .ref-link:hover { color: var(--acc); border-color: var(--acc); background: none; }
+
+/* RBD builder: the C-to-connect shortcut — key cap in the hint bar, and the
+   transient confirmation that replaces the hint after a press. */
+.rbd-hint kbd {
+  font-family: inherit; font-size: 0.9em; font-weight: 600;
+  border: 1px solid var(--line, #dde3ea); border-bottom-width: 2px;
+  border-radius: 4px; padding: 0 4px; margin: 0 1px; background: var(--panel, #fff);
+}
+.rbd-hint-flash { font-weight: 600; color: var(--acc); }

@@ -349,6 +349,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
+  const [connectHint, setConnectHint] = useState(""); // transient note from the C shortcut
   const [modal, setModal] = useState(null); // 'lifemodel'|'knode'|'count'|...|null
   const [modalNodeId, setModalNodeId] = useState(null);
   const [knodeCtx, setKnodeCtx] = useState(null); // { mode, flowPos?, nodeId?, n, k }
@@ -430,6 +431,75 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     (params) => setEdges((eds) => addEdge({ ...params, ...EDGE_OPTIONS }, eds)),
     [setEdges]
   );
+
+  // Wire up the selected blocks without dragging between handles (press C).
+  //
+  // An RBD is stages in series, each holding components in parallel — so the
+  // selection is grouped into columns by x and consecutive columns are joined
+  // every-to-every. Two blocks side by side become one link; one block plus two
+  // stacked ones becomes a fan-out into a redundant stage; box-select a region
+  // and it wires the whole thing up in one press. addEdge skips connections that
+  // already exist, so pressing it twice is harmless.
+  const connectSelected = useCallback(() => {
+    const chosen = nodes.filter((n) => n.selected);
+    if (chosen.length < 2) {
+      setConnectHint("Select two or more blocks first, then press C.");
+      return;
+    }
+    const columns = [];
+    for (const n of [...chosen].sort((a, b) => (a.position?.x ?? 0) - (b.position?.x ?? 0))) {
+      const last = columns[columns.length - 1];
+      // Same column if within half a column gap of the one being built.
+      if (last && Math.abs((n.position?.x ?? 0) - last.x) < COL_GAP / 2) last.items.push(n);
+      else columns.push({ x: n.position?.x ?? 0, items: [n] });
+    }
+    if (columns.length < 2) {
+      setConnectHint("Those blocks are stacked in one column — nothing to connect in series.");
+      return;
+    }
+    const pairs = [];
+    for (let i = 0; i < columns.length - 1; i += 1)
+      for (const s of columns[i].items)
+        for (const t of columns[i + 1].items) pairs.push([s.id, t.id]);
+
+    let added = 0;
+    setEdges((eds) => {
+      const next = pairs.reduce(
+        (acc, [source, target]) => addEdge({ source, target, ...EDGE_OPTIONS }, acc),
+        eds
+      );
+      added = next.length - eds.length;
+      return next;
+    });
+    setConnectHint(
+      added
+        ? `Connected ${added} link${added === 1 ? "" : "s"}.`
+        : "Those blocks are already connected."
+    );
+  }, [nodes, setEdges]);
+
+  // C connects the selection. Ignored while typing, while a menu or modal is
+  // open, and whenever a modifier is down so Cmd/Ctrl+C still copies.
+  useEffect(() => {
+    if (tab !== "builder" || modal || menu) return undefined;
+    const onKey = (e) => {
+      if (e.key !== "c" && e.key !== "C") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target;
+      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName)) return;
+      e.preventDefault();
+      connectSelected();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, modal, menu, connectSelected]);
+
+  // Clear the transient "connected N links" note after a moment.
+  useEffect(() => {
+    if (!connectHint) return undefined;
+    const t = setTimeout(() => setConnectHint(""), 2600);
+    return () => clearTimeout(t);
+  }, [connectHint]);
 
   const autoLayout = useCallback(() => {
     setNodes((nds) => autoLayoutNodes(nds, edges));
@@ -1236,11 +1306,17 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       )}
 
       <div className="rbd-hint">
-        Right-click the canvas to add a component · drag between handles to connect ·
-        double-click a block to edit
-        {repairable
-          ? " · double-click each component to set its repair time"
-          : " · shift-click 2+ redundant components to add a common-cause group"}
+        {connectHint ? (
+          <span className="rbd-hint-flash">{connectHint}</span>
+        ) : (
+          <>
+            Right-click the canvas to add a component · drag between handles, or
+            select blocks and press <kbd>C</kbd>, to connect · double-click a block to edit
+            {repairable
+              ? " · double-click each component to set its repair time"
+              : " · shift-click 2+ redundant components to add a common-cause group"}
+          </>
+        )}
       </div>
 
       {modal === "lifemodel" && (

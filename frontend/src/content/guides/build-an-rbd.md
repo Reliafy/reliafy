@@ -31,6 +31,13 @@ Right-click the canvas to add a component, then drag from one block's handle to
 another to connect them. Series is a straight chain; parallel is two blocks that
 both branch from the same predecessor and both feed the same successor.
 
+Dragging every link gets tedious once a diagram grows, so there's a shortcut:
+**select two or more blocks and press `C`**. Blocks are grouped into columns by
+position and consecutive columns are wired together — so a block and the two
+stacked to its right become a fan-out into a redundant stage, and box-selecting
+a whole region wires its stages in one press. Links that already exist are left
+alone, so pressing `C` twice does nothing the second time.
+
 ![A pump station diagram: input, controller, redundant pumps, output](/guides/img/rbd-01-builder.png)
 
 Set the **unit** in the top-left. Everything in the diagram should share one time
