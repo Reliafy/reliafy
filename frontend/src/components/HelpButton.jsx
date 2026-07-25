@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { guides, getGuide } from "../guides.js";
+import { guidesByCategory, getGuide } from "../guides.js";
 import { getEntry } from "../reference.js";
 import { publicUrl } from "../firebase.js";
 import GuideBody from "./GuideBody.jsx";
@@ -93,16 +93,23 @@ export default function HelpButton({ openSlug = null }) {
                   </p>
                 </>
               ) : (
-                <ul className="help-list">
-                  {guides.map((g) => (
-                    <li key={g.slug}>
-                      <button onClick={() => setSlug(g.slug)}>
-                        {g.title}
-                        <span className="help-item-task">{g.task}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                // Same grouping as the public /guides index, so the two read
+                // the same way round.
+                guidesByCategory().map((group) => (
+                  <div className="help-group" key={group.category}>
+                    <h3 className="help-group-h">{group.category}</h3>
+                    <ul className="help-list">
+                      {group.items.map((g) => (
+                        <li key={g.slug}>
+                          <button onClick={() => setSlug(g.slug)}>
+                            {g.title}
+                            <span className="help-item-task">{g.task}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
               )}
             </div>
           </aside>
