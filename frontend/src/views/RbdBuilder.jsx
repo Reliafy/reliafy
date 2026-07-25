@@ -350,6 +350,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
   const [connectHint, setConnectHint] = useState(""); // transient note from the C shortcut
+  const [ccfListOpen, setCcfListOpen] = useState(false);
   const [modal, setModal] = useState(null); // 'lifemodel'|'knode'|'count'|...|null
   const [modalNodeId, setModalNodeId] = useState(null);
   const [knodeCtx, setKnodeCtx] = useState(null); // { mode, flowPos?, nodeId?, n, k }
@@ -994,6 +995,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         proOptions={{ hideAttribution: true }}
       >
         <Panel position="top-left">
+          <div className="rbd-toolbar-row">
           <span className="rbd-name">{savedRbdName || "Untitled RBD"}</span>
           <label className="rbd-unit-field">
             <span>Unit</span>
@@ -1015,11 +1017,45 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
             <Select
               value={repairable ? "repairable" : "non"}
               onChange={(v) => setRepairable(v === "repairable")}
+              // Short labels: the toolbar row has to share the canvas width with
+              // the action buttons opposite. What each mode means is on the
+              // field's tooltip and in the results tab.
               options={[
-                { value: "non", label: "Non-repairable · reliability" },
-                { value: "repairable", label: "Repairable · availability" },
+                { value: "non", label: "Non-repairable" },
+                { value: "repairable", label: "Repairable" },
               ]}
             />
+          </div>
+          {/* Common-cause groups sit with the other diagram-level settings, as a
+              chip that expands on demand. They used to float bottom-left, where
+              they collided with the zoom controls and the hint bubble; a chip
+              keeps the overlay one row tall so it doesn't cover the top of the
+              diagram either. */}
+          {!repairable && ccfGroups.length > 0 && (
+            <div className="rbd-ccf-menu">
+              <button
+                className={"rbd-ccf-toggle" + (ccfListOpen ? " open" : "")}
+                onClick={() => setCcfListOpen((o) => !o)}
+                title="Common-cause groups in this diagram"
+              >
+                ⚭ {ccfGroups.length} CC group{ccfGroups.length === 1 ? "" : "s"}
+              </button>
+              {ccfListOpen && (
+                <div className="rbd-ccf-list">
+                  <div className="rbd-ccf-list-h">Common-cause groups</div>
+                  {ccfGroups.map((g) => (
+                    <div className="rbd-ccf-row" key={g.id}>
+                      <span className="rbd-ccf-row-members" title={(g.members || []).map(labelFor).join(", ")}>
+                        {(g.members || []).map(labelFor).join(" · ")}
+                      </span>
+                      <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β={g.beta}</button>
+                      <button className="rbd-ccf-row-x" onClick={() => removeCcf(g.id)} title="Ungroup" aria-label="Ungroup">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           </div>
         </Panel>
         {!repairable && selectedComponentIds.length >= 2 && (
@@ -1028,22 +1064,6 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
                     title="Couple these redundant components by a shared failure cause">
               ⚭ Common-cause group ({selectedComponentIds.length})
             </button>
-          </Panel>
-        )}
-        {!repairable && ccfGroups.length > 0 && (
-          <Panel position="bottom-left">
-            <div className="rbd-ccf-list">
-              <div className="rbd-ccf-list-h">Common-cause groups</div>
-              {ccfGroups.map((g) => (
-                <div className="rbd-ccf-row" key={g.id}>
-                  <span className="rbd-ccf-row-members" title={(g.members || []).map(labelFor).join(", ")}>
-                    {(g.members || []).map(labelFor).join(" · ")}
-                  </span>
-                  <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β={g.beta}</button>
-                  <button className="rbd-ccf-row-x" onClick={() => removeCcf(g.id)} title="Ungroup" aria-label="Ungroup">×</button>
-                </div>
-              ))}
-            </div>
           </Panel>
         )}
         <Panel position="top-right">

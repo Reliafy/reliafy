@@ -25,9 +25,10 @@ up front, because it changes what each block needs and what the results mean —
 you can't mix the two in one diagram.
 
 Open **RBDs → New diagram**, and set the **System** selector in the top-left to
-*Repairable · availability*.
+*Repairable*. (Non-repairable diagrams give you reliability over time; repairable
+ones give you availability — hover the selector for the reminder.)
 
-![The System selector set to Repairable · availability](/guides/img/availability-02-system.png)
+![The System selector set to Repairable](/guides/img/availability-02-system.png)
 
 The moment you do, the diagram is in availability mode. You'll notice the
 right-click menu offers fewer block types than usual — availability supports

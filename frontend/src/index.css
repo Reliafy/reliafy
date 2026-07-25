@@ -855,6 +855,22 @@ body {
   gap: 0.4rem;
 }
 
+.rbd-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Common-cause groups: a chip in the toolbar row that drops the list beneath
+   it. Absolutely positioned so the overlay stays one row tall when collapsed. */
+.rbd-ccf-menu { position: relative; }
+.rbd-ccf-toggle {
+  background: rgba(208, 118, 47, 0.12); color: #b0631f; border: 1px solid rgba(208, 118, 47, 0.35);
+  border-radius: 8px; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; box-shadow: none; white-space: nowrap;
+}
+.rbd-ccf-toggle:hover, .rbd-ccf-toggle.open { background: #d0762f; border-color: #d0762f; color: #fff; }
+
 .rbd-unit-field {
   display: inline-flex;
   align-items: center;
@@ -952,6 +968,13 @@ body {
 
 .rbd-name {
   display: inline-block;
+  /* Bounded so a long diagram name can't push the toolbar row into the
+     buttons on the right. */
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -5976,8 +5999,10 @@ button.danger:hover { background: #fdeeee; }
 }
 .rbd-btn.accent { background: #d0762f; color: #fff; border-color: #d0762f; }
 .rbd-ccf-list {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 6;
   background: var(--panel, #fff); border: 1px solid var(--line, #dde3ea);
   border-radius: 10px; padding: 8px 10px; box-shadow: 0 6px 20px rgba(15,23,42,0.1);
+  min-width: 260px; max-width: 340px;
   min-width: 220px; max-width: 300px;
 }
 .rbd-ccf-list-h { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
