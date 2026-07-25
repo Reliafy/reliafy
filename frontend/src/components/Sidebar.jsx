@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
+import { publicUrl } from "../firebase.js";
 
 const SignOutIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -273,7 +274,7 @@ export default function Sidebar({ collapsed, onToggle }) {
       </a>
       <a
         className="side-item"
-        href="/guides"
+        href={publicUrl("/guides")}
         target="_blank"
         rel="noreferrer"
         title="How-to guides for Reliafy"

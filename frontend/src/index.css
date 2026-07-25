@@ -6067,3 +6067,7 @@ button.danger:hover { background: #fdeeee; }
 /* Saved-models type tags for the newer model kinds */
 .type-tag.alt { background: rgba(15, 154, 176, 0.12); color: #0c7d8f; }
 .type-tag.recurrent { background: rgba(208, 118, 47, 0.12); color: #b0631f; }
+
+/* "Open the full guide" link in the Help drawer */
+.guide-full-link { font-size: 13px; color: var(--acc); text-decoration: none; }
+.guide-full-link:hover { text-decoration: underline; }

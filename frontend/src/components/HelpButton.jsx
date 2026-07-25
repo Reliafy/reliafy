@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { guides, getGuide } from "../guides.js";
+import { publicUrl } from "../firebase.js";
 import GuideBody from "./GuideBody.jsx";
 
 // Open the Help drawer at a specific guide from anywhere (contextual
@@ -55,7 +56,7 @@ export default function HelpButton({ openSlug = null }) {
                 <>
                   <GuideBody guide={guide} compact />
                   <p style={{ marginTop: 16 }}>
-                    <a className="gs-secondary" href={`/guides/${guide.slug}`} target="_blank" rel="noreferrer">
+                    <a className="guide-full-link" href={publicUrl(`/guides/${guide.slug}`)} target="_blank" rel="noreferrer">
                       Open the full guide ↗
                     </a>
                   </p>
