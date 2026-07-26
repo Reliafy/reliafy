@@ -102,16 +102,18 @@ def _anthropic(system, messages, tools):
 # Responses *input items* the client maintains — user turns plus the raw
 # `output` items from each prior step (assistant messages, function_call, and
 # reasoning items) with function_call_output items spliced in after each tool
-# runs. We resend the whole list every step (store=False, stateless), and
-# request reasoning.encrypted_content so reasoning carries across the tool loop
-# within a turn.
+# runs. We resend the whole list every step, so the call is stateless regardless
+# of ``store``, and request reasoning.encrypted_content so reasoning carries
+# across the tool loop within a turn. ``store`` (config.AI_STORE, off by default)
+# only decides whether OpenAI ALSO keeps the response server-side for the
+# operator to read back in their dashboard — it does not change what we send.
 def _openai_body(system, messages, tools, *, stream: bool):
     body = {
         "model": config.AI_MODEL,
         "input": messages,
         "tools": _openai_tools(tools),
         "tool_choice": "auto",
-        "store": False,
+        "store": config.AI_STORE,
         "stream": stream,
     }
     if system:

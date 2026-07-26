@@ -142,6 +142,17 @@ AI_MODEL = os.environ.get("AI_MODEL") or _DEFAULT_AI_MODEL.get(AI_PROVIDER, "")
 # medium|high. Blank it ("") to omit reasoning entirely (non-reasoning models).
 OPENAI_REASONING_EFFORT = os.environ.get("OPENAI_REASONING_EFFORT", "medium").strip()
 
+# Whether the OpenAI Responses API retains each response server-side (``store``).
+# Off by default: the assistant is stateless and we keep no transcripts, which is
+# what a self-hosted instance should do unless its operator decides otherwise.
+# Turning it on lets the operator read conversations back in the OpenAI dashboard
+# — useful for checking the assistant's prompt and answers against what users
+# actually ask, but it means conversations (including anything a user pastes in)
+# are retained by the provider and readable by whoever holds that account. Say so
+# in your privacy policy before enabling it.
+AI_STORE = (os.environ.get("AI_STORE", "false").strip().lower()
+            in ("1", "true", "yes", "on"))
+
 # Markup applied to the provider's token cost when charging credits.
 try:
     AI_MARKUP = float(os.environ.get("AI_MARKUP", "1.30"))
