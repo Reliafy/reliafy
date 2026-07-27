@@ -11,6 +11,7 @@ import ColumnMapper from "./ColumnMapper.jsx";
 import Covariates from "./Covariates.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
+import Select from "./Select.jsx";
 import ResultView from "./ResultView.jsx";
 
 const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "" };
@@ -34,6 +35,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [distributions, setDistributions] = useState([]);
   const [distribution, setDistribution] = useState("weibull");
   const [fitOpts, setFitOpts] = useState({});
+  const [resultOptsOpen, setResultOptsOpen] = useState(false);
   const [datasets, setDatasets] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -190,19 +192,26 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     ? !mapping.xl && !mapping.xr
     : !!mapping.xl && !!mapping.xr;
 
-  const onFit = async () => {
+  const onFit = async (overrideOpts = null) => {
     if (!file && !datasetId) return;
     setLoading(true);
     setError(null);
     try {
+      // Guard: onFit is also used as a click handler elsewhere, and a stray
+      // event object here would be sent as fit options.
+      const effective =
+        overrideOpts && typeof overrideOpts === "object" && !overrideOpts.nativeEvent
+          ? overrideOpts
+          : fitOpts;
       const opts = {
         unit,
         ...(datasetId ? { datasetId } : {}),
         ...(hasCovariates ? (advanced ? { formula } : { covariates }) : {}),
-        ...(hasCovariates ? {} : { fitOptions: fitOpts }),
+        ...(hasCovariates ? {} : { fitOptions: effective }),
       };
       const res = await fitModel(distribution, file, mapping, opts);
       setResult(res);
+      if (effective !== fitOpts) setFitOpts(effective);
       const src = file?.name || sourceName || "dataset";
       setName(`${res.distribution} — ${src.replace(/\.csv$/i, "")}`);
       setStep(4);
@@ -273,7 +282,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-        <button onClick={onFit} disabled={!distribution || loading}>
+        <button onClick={() => onFit()} disabled={!distribution || loading}>
           {loading ? "Fitting…" : `Fit ${distName}`}
         </button>
       </>
@@ -435,6 +444,33 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             and re-fit, or save it.
           </p>
           <ResultView result={result} />
+          {/* Advanced options on the result: the component count is a judgement
+              you can only make once you've seen the fit, so it lives here and
+              re-fits in place rather than sending you back through the wizard. */}
+          {result.mixture > 1 && (
+            <div className="fitopts">
+              <button type="button" className="fitopts-toggle"
+                      onClick={() => setResultOptsOpen((o) => !o)}>
+                {resultOptsOpen ? "▾" : "▸"} Advanced options
+              </button>
+              {resultOptsOpen && (
+                <div className="fitopts-body">
+                  <div className="dist-field" style={{ width: 190 }}>
+                    <span className="dist-label">Mixture components</span>
+                    <Select
+                      value={String(result.mixture)}
+                      onChange={(v) => onFit({ ...fitOpts, mixture: Number(v) })}
+                      options={[2, 3, 4].map((m) => ({ value: String(m), label: String(m) }))}
+                    />
+                  </div>
+                  <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>
+                    Re-fits straight away. More components always fit better, so
+                    compare the AIC and keep the simplest one that clearly wins.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

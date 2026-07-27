@@ -23,6 +23,7 @@ from backend.db import get_session, init_db
 from backend.fitting import (
     DISCRETE,
     DISTRIBUTIONS,
+    MIXTURE_MODELS,
     NONPARAMETRIC,
     REGRESSION_MODELS,
     FitError,
@@ -188,6 +189,14 @@ def distributions_endpoint() -> dict:
             for key, entry in DISTRIBUTIONS.items()
         ),
     ]
+    # Mixtures are their own group in the picker: several copies of a
+    # distribution fitted at once, for data holding more than one failure mode.
+    mixtures = [
+        {"id": key, "name": entry["name"], "covariates": False,
+         "mixture": True, "base_id": entry["base"],
+         "params": list(getattr(DISTRIBUTIONS[entry["base"]]["dist"], "param_names", []))}
+        for key, entry in MIXTURE_MODELS.items()
+    ]
     discrete = [
         {"id": key, "name": entry["name"], "covariates": False,
          "discrete": True, "params": list(getattr(entry["dist"], "param_names", []))}
@@ -203,7 +212,7 @@ def distributions_endpoint() -> dict:
          "effect": entry.get("effect")}
         for key, entry in REGRESSION_MODELS.items()
     ]
-    return {"distributions": plain + discrete + nonparametric + regression}
+    return {"distributions": plain + mixtures + discrete + nonparametric + regression}
 
 
 @app.post("/api/fit/{distribution}")

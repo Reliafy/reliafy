@@ -481,7 +481,7 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
         "fixed": opts.get("fixed") or None,
         "mixture": _normalize_mixture(opts.get("mixture")),
     }
-    if out["mixture"]:
+    if mixture_base(distribution):
         # SurPyval's MixtureModel.fit takes the data arguments only — there is
         # nowhere to put an offset, a cure fraction or a fixed parameter, so
         # refuse the combination rather than silently dropping it.
@@ -491,16 +491,12 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
                 "A mixture can't be combined with "
                 f"{', '.join(sorted(clashes))} — fit those on a single distribution."
             )
-        if distribution == BEST_ID:
-            raise FitError(
-                "Choose a specific distribution to mix — 'Best fit' ranks single "
-                "distributions against each other."
-            )
-        if distribution not in DISTRIBUTIONS:
-            raise FitError(
-                "Mixtures apply to plain continuous distributions only."
-            )
-        return {"mixture": out["mixture"]}
+        return {"mixture": out["mixture"] or MIXTURE_DEFAULT_COMPONENTS}
+    if out["mixture"]:
+        raise FitError(
+            "A component count only applies to a mixture model — pick one from "
+            "the model list (e.g. 'Weibull mixture')."
+        )
     if not any([out["offset"], out["zi"], out["lfp"], out["fixed"]]):
         return {}
     if distribution == BEST_ID:
@@ -574,14 +570,15 @@ def fit(
         result = _fit_nonparametric(distribution, df, mapping)
     elif distribution in DISCRETE:
         result = _fit_discrete(distribution, df, mapping)
-    elif distribution in DISTRIBUTIONS and options.get("mixture"):
-        result = _fit_mixture(distribution, df, mapping, options["mixture"])
+    elif mixture_base(distribution):
+        result = _fit_mixture(distribution, df, mapping,
+                              options.get("mixture") or MIXTURE_DEFAULT_COMPONENTS)
     elif distribution in DISTRIBUTIONS:
         result = _fit_distribution(distribution, df, mapping, options)
     else:
         raise FitError(
             f"Unknown model '{distribution}'. Available: "
-            f"{', '.join([BEST_ID, *DISTRIBUTIONS, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
+            f"{', '.join([BEST_ID, *DISTRIBUTIONS, *MIXTURE_MODELS, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
         )
     result["unit"] = (unit or "").strip()
     # Confidence bounds and probability-paper transforms can produce non-finite
@@ -817,6 +814,26 @@ def _extract_extras(model, options: dict) -> dict:
 # Mixtures beyond three components are rarely identifiable from field data —
 # the extra weights soak up noise and the components stop meaning anything.
 MIXTURE_MAX_COMPONENTS = 4
+MIXTURE_DEFAULT_COMPONENTS = 2
+MIXTURE_SUFFIX = "_mixture"
+
+
+def mixture_base(distribution: str) -> Optional[str]:
+    """The underlying distribution id for a mixture id, else ``None``.
+
+    Mixtures are their own entries in the model list ("weibull_mixture") rather
+    than a checkbox, so they round-trip through a saved spec like any other
+    model. The component count travels separately, in the fit options, because
+    it's re-chosen on the result page.
+    """
+    if not distribution or not distribution.endswith(MIXTURE_SUFFIX):
+        return None
+    base = distribution[: -len(MIXTURE_SUFFIX)]
+    return base if base in DISTRIBUTIONS else None
+
+
+MIXTURE_MODELS = {f"{k}{MIXTURE_SUFFIX}": {"name": f"{v['name']} mixture", "base": k}
+                  for k, v in DISTRIBUTIONS.items()}
 
 
 def _mixture_log_likelihood(model, x, c=None, n=None) -> float:
@@ -906,8 +923,13 @@ class _MixtureFit:
 def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> dict:
     """Fit a mixture of ``m`` copies of a plain distribution — two or more
     failure modes muddled into one dataset, which on probability paper is the
-    classic S-curve that no single distribution can follow."""
-    entry = DISTRIBUTIONS[distribution]
+    classic S-curve that no single distribution can follow.
+
+    ``distribution`` is the mixture id (``weibull_mixture``); the components are
+    copies of its base distribution.
+    """
+    base = mixture_base(distribution)
+    entry = DISTRIBUTIONS[base]
     dist = entry["dist"]
     try:
         kwargs = build_fit_inputs(df, mapping)
@@ -941,6 +963,7 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> 
     return {
         "distribution": f"{entry['name']} mixture ({raw.m} components)",
         "distribution_id": distribution,
+        "base_distribution_id": base,
         "kind": "distribution",
         "mixture": int(raw.m),
         "params": params,

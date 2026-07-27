@@ -74,7 +74,8 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
   // Advanced fit options (offset/LFP/ZI/fixed) apply to continuous parametric
   // distributions only — not to discrete, non-parametric or regression models.
   const isPlain =
-    selected && !selected.covariates && !selected.nonparametric && !selected.discrete;
+    selected && !selected.covariates && !selected.nonparametric && !selected.discrete
+    && !selected.mixture;
   const opts = fitOpts || {};
 
   const setOpt = (key, val) => onFitOpts({ ...opts, [key]: val });
@@ -85,10 +86,8 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
     onFitOpts({ ...opts, fixed });
   };
 
-  const mixOn = Number(opts.mixture || 0) > 1;
-  const otherOn = !!(opts.offset || opts.zi || opts.lfp || Object.keys(opts.fixed || {}).length);
   const activeCount =
-    (opts.offset ? 1 : 0) + (opts.zi ? 1 : 0) + (opts.lfp ? 1 : 0) + (mixOn ? 1 : 0) +
+    (opts.offset ? 1 : 0) + (opts.zi ? 1 : 0) + (opts.lfp ? 1 : 0) +
     Object.keys(opts.fixed || {}).length;
 
   // Group the picker into sections when more than one group is present. The
@@ -105,7 +104,8 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
         ["Additive hazards", options.filter((d) => d.effect === "additive")],
       ].filter(([, list]) => list.length)
     : [
-        ["Continuous", options.filter((d) => !d.nonparametric && !d.discrete)],
+        ["Continuous", options.filter((d) => !d.nonparametric && !d.discrete && !d.mixture)],
+        ["Mixtures", options.filter((d) => d.mixture)],
         ["Discrete", options.filter((d) => d.discrete)],
         ["Non-parametric", options.filter((d) => d.nonparametric)],
       ].filter(([, list]) => list.length);
@@ -120,7 +120,15 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
         <span className="dist-label">Model</span>
         <Select value={value} onChange={onChange} options={selectOptions} />
       </div>
-      {DESCRIPTIONS[value] && (
+      {selected?.mixture && (
+        <p className="dist-blurb">
+          Several {options.find((d) => d.id === selected.base_id)?.name || "component"}s
+          fitted at once, for data holding more than one failure mode — the case that
+          curves on probability paper. Choose how many components after fitting.
+          <RefLink entryId={selected.base_id} />
+        </p>
+      )}
+      {!selected?.mixture && DESCRIPTIONS[value] && (
         <p className="dist-blurb">
           {DESCRIPTIONS[value]}
           <RefLink entryId={value} />
@@ -141,7 +149,6 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                     type="checkbox"
                     checked={!!opts.offset}
                     onChange={(e) => setOpt("offset", e.target.checked)}
-                    disabled={mixOn}
                   />
                   <span><b>Offset (3-parameter)</b> — failure-free period γ</span>
                 </label>
@@ -151,7 +158,6 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                   type="checkbox"
                   checked={!!opts.lfp}
                   onChange={(e) => setOpt("lfp", e.target.checked)}
-                  disabled={mixOn}
                 />
                 <span><b>Limited failure population</b> — a fraction p never fails</span>
               </label>
@@ -160,42 +166,11 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                   type="checkbox"
                   checked={!!opts.zi}
                   onChange={(e) => setOpt("zi", e.target.checked)}
-                  disabled={mixOn}
                 />
                 <span><b>Zero-inflated</b> — a fraction f₀ failed at t = 0</span>
               </label>
 
-              {/* A mixture replaces the single fit rather than adjusting it, so it
-                  is exclusive with the others — SurPyval's MixtureModel has
-                  nowhere to put an offset, cure fraction or fixed parameter. */}
-              <label className="fitopts-row" title={OPTION_HELP.mixture}>
-                <input
-                  type="checkbox"
-                  checked={mixOn}
-                  onChange={(e) => setOpt("mixture", e.target.checked ? 2 : 0)}
-                  disabled={otherOn}
-                />
-                <span><b>Mixture of failure modes</b> — fit several {selected?.name || "distribution"}s at once</span>
-              </label>
-              {mixOn && (
-                <div className="fitopts-fixed">
-                  <label className="login-field" style={{ width: 190 }}>
-                    <span>Components</span>
-                    <select value={opts.mixture} onChange={(e) => setOpt("mixture", Number(e.target.value))}>
-                      {[2, 3, 4].map((m) => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                  </label>
-                  <p className="dist-blurb" style={{ marginTop: 6 }}>
-                    Compare the AIC against a single fit before believing it — extra
-                    components always fit better, so only a clear improvement is real.
-                    A mixture reports no confidence bounds.
-                  </p>
-                </div>
-              )}
-
-              {/* Fixing a parameter is exclusive with a mixture — the backend
-                  rejects the pair, so don't offer it. */}
-              {!mixOn && (selected.params || []).length > 0 && (
+              {(selected.params || []).length > 0 && (
                 <div className="fitopts-fixed">
                   <span className="dist-label">Fix parameters (optional)</span>
                   <div className="fitopts-fixed-row">

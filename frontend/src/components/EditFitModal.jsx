@@ -4,6 +4,7 @@ import ColumnMapper from "./ColumnMapper.jsx";
 import Covariates from "./Covariates.jsx";
 import Units from "./Units.jsx";
 import DistributionStep from "./DistributionStep.jsx";
+import Select from "./Select.jsx";
 import { getDataset, getDistributions, updateModelFit } from "../api.js";
 
 const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "" };
@@ -116,11 +117,24 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
               value={distribution}
               onChange={(id) => {
                 setDistribution(id);
-                setFitOpts({});
+                setFitOpts(options.find((d) => d.id === id)?.mixture ? { mixture: 2 } : {});
               }}
               fitOpts={fitOpts}
               onFitOpts={setFitOpts}
             />
+            {/* Mixtures carry their component count in the options rather than
+                the id, so it needs its own control here too — otherwise a saved
+                3-component mixture could never be changed. */}
+            {options.find((d) => d.id === distribution)?.mixture && (
+              <div className="dist-field" style={{ width: 190, marginTop: "0.6rem" }}>
+                <span className="dist-label">Mixture components</span>
+                <Select
+                  value={String(fitOpts.mixture || 2)}
+                  onChange={(v) => setFitOpts({ ...fitOpts, mixture: Number(v) })}
+                  options={[2, 3, 4].map((m) => ({ value: String(m), label: String(m) }))}
+                />
+              </div>
+            )}
           </div>
         </>
       )}

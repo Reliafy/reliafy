@@ -31,7 +31,7 @@ def _one_mode(n=400):
 
 
 def test_mixture_recovers_two_modes():
-    r = fitting.fit("weibull", _two_mode(), {"x": "hours"}, options={"mixture": 2})
+    r = fitting.fit("weibull_mixture", _two_mode(), {"x": "hours"})
     assert r["mixture"] == 2
     assert "mixture (2 components)" in r["distribution"]
     by = {p["name"]: p["value"] for p in r["params"]}
@@ -46,17 +46,17 @@ def test_aic_prefers_a_mixture_only_when_the_data_has_two_modes():
     """Both directions. If this passes with the EM objective substituted in, the
     test is not doing its job — the single-mode case is the one that catches it."""
     two = _two_mode()
-    assert _aic(fitting.fit("weibull", two, {"x": "hours"}, options={"mixture": 2})) \
+    assert _aic(fitting.fit("weibull_mixture", two, {"x": "hours"})) \
         < _aic(fitting.fit("weibull", two, {"x": "hours"}))
 
     one = _one_mode()
-    assert _aic(fitting.fit("weibull", one, {"x": "hours"}, options={"mixture": 2})) \
+    assert _aic(fitting.fit("weibull_mixture", one, {"x": "hours"})) \
         > _aic(fitting.fit("weibull", one, {"x": "hours"}))
 
 
 def test_log_likelihood_is_the_observed_data_one_not_the_em_objective():
     df = _two_mode()
-    r = fitting.fit("weibull", df, {"x": "hours"}, options={"mixture": 2})
+    r = fitting.fit("weibull_mixture", df, {"x": "hours"})
     ll = next(g["value"] for g in r["gof"] if "likelihood" in str(g.get("label")).lower())
     # Computed independently here: sum log sum_j w_j f_j(x).
     by = {p["name"]: p["value"] for p in r["params"]}
@@ -70,8 +70,7 @@ def test_curves_and_plot_survive_the_missing_pieces():
     """A mixture has no qf, no hf and no covariance. B-life must still work
     (numeric inversion), the hazard must still plot (f/R), and the probability
     plot must render without a confidence band rather than failing."""
-    r = fitting.fit("weibull", _two_mode(), {"x": "hours"}, unit="hours",
-                    options={"mixture": 2})
+    r = fitting.fit("weibull_mixture", _two_mode(), {"x": "hours"}, unit="hours")
     curves = r["functions"]["curves"]
     sf = [v for v in curves["sf"] if v is not None]
     assert sf and all(a >= b - 1e-9 for a, b in zip(sf, sf[1:]))   # monotone
@@ -85,11 +84,11 @@ def test_censoring_is_carried_into_the_likelihood():
     df = _two_mode()
     df["cens"] = 0
     df.loc[df.index[-60:], "cens"] = 1
-    r = fitting.fit("weibull", df, {"x": "hours", "c": "cens"}, options={"mixture": 2})
+    r = fitting.fit("weibull_mixture", df, {"x": "hours", "c": "cens"})
     assert r["mixture"] == 2 and r["n"] == len(df)
     # Censored observations contribute survival, not density, so the likelihood
     # differs from treating them all as failures.
-    plain = fitting.fit("weibull", df, {"x": "hours"}, options={"mixture": 2})
+    plain = fitting.fit("weibull_mixture", df, {"x": "hours"})
     lab = "Log-likelihood"
     assert next(g["value"] for g in r["gof"] if g["label"] == lab) != \
         pytest.approx(next(g["value"] for g in plain["gof"] if g["label"] == lab))
@@ -99,41 +98,51 @@ def test_saved_spec_round_trips():
     """save_model persists result["options"]; without the echo a reopened
     mixture would silently refit as a single distribution."""
     df = _two_mode()
-    r = fitting.fit("weibull", df, {"x": "hours"}, options={"mixture": 3})
+    r = fitting.fit("weibull_mixture", df, {"x": "hours"}, options={"mixture": 3})
     assert r["options"] == {"mixture": 3}
-    again = fitting.fit("weibull", df, {"x": "hours"}, options=r["options"])
+    again = fitting.fit(r["distribution_id"], df, {"x": "hours"}, options=r["options"])
     assert again["mixture"] == 3
 
 
 def test_rejected_combinations():
     df = _two_mode()
     for opts, expect in (
-        ({"mixture": 2, "offset": True}, "can't be combined"),
-        ({"mixture": 2, "lfp": True}, "can't be combined"),
-        ({"mixture": 2, "fixed": {"beta": 2}}, "can't be combined"),
+        ({"offset": True}, "can't be combined"),
+        ({"lfp": True}, "can't be combined"),
+        ({"fixed": {"beta": 2}}, "can't be combined"),
         ({"mixture": 99}, "At most"),
         ({"mixture": "two"}, "whole number"),
     ):
         with pytest.raises(FitError) as e:
-            fitting.fit("weibull", df, {"x": "hours"}, options=opts)
+            fitting.fit("weibull_mixture", df, {"x": "hours"}, options=opts)
         assert expect in str(e.value)
 
-    with pytest.raises(FitError, match="Best fit"):
+    # A component count is meaningless without a mixture model selected.
+    with pytest.raises(FitError, match="only applies to a mixture"):
+        fitting.fit("weibull", df, {"x": "hours"}, options={"mixture": 2})
+    with pytest.raises(FitError, match="only applies to a mixture"):
         fitting.fit("best", df, {"x": "hours"}, options={"mixture": 2})
-    with pytest.raises(FitError, match="plain continuous"):
-        fitting.fit("kaplan_meier", df, {"x": "hours"}, options={"mixture": 2})
 
 
-def test_one_component_is_just_an_ordinary_fit():
+def test_a_mixture_id_defaults_to_two_components():
     df = _two_mode()
-    assert fitting.normalize_options("weibull", {"mixture": 1}) == {}
-    assert "mixture" not in fitting.fit("weibull", df, {"x": "hours"}, options={"mixture": 1})
+    assert fitting.normalize_options("weibull_mixture", None)["mixture"] == 2
+    assert fitting.fit("weibull_mixture", df, {"x": "hours"})["mixture"] == 2
+
+
+def test_every_plain_distribution_has_a_mixture_id():
+    """The picker lists them as a group, so the two registries must agree."""
+    assert set(fitting.MIXTURE_MODELS) == {f"{d}_mixture" for d in fitting.DISTRIBUTIONS}
+    for mid, entry in fitting.MIXTURE_MODELS.items():
+        assert fitting.mixture_base(mid) == entry["base"]
+    assert fitting.mixture_base("weibull") is None
+    assert fitting.mixture_base("kaplan_meier_mixture") is None
 
 
 @pytest.mark.parametrize("dist", ["weibull", "lognormal", "normal", "gamma"])
 def test_mixtures_work_across_the_paper_transforms(dist):
     """Each distribution draws on its own probability paper; the transform must
     tolerate a mixture's longer parameter vector."""
-    r = fitting.fit(dist, _two_mode(n=120), {"x": "hours"}, options={"mixture": 2})
+    r = fitting.fit(f"{dist}_mixture", _two_mode(n=120), {"x": "hours"})
     assert r["mixture"] == 2
     assert len(r["plot"]["scatter"]["x"]) > 0
