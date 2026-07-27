@@ -23,7 +23,7 @@ from backend.db import get_session, init_db
 from backend.fitting import (
     DISCRETE,
     DISTRIBUTIONS,
-    MIXTURE_MODELS,
+    MIXTURE_ID,
     NONPARAMETRIC,
     REGRESSION_MODELS,
     FitError,
@@ -178,6 +178,17 @@ def distributions_endpoint() -> dict:
             "params": [],
             "offsetable": True,
         },
+        {
+            "id": MIXTURE_ID,
+            "name": "Mixture model",
+            "covariates": False,
+            "mixture": True,
+            "params": [],
+            # Which distribution to mix, offered in the advanced options.
+            "mixture_distributions": [
+                {"id": k, "name": v["name"]} for k, v in DISTRIBUTIONS.items()
+            ],
+        },
         *(
             {
                 "id": key,
@@ -188,14 +199,6 @@ def distributions_endpoint() -> dict:
             }
             for key, entry in DISTRIBUTIONS.items()
         ),
-    ]
-    # Mixtures are their own group in the picker: several copies of a
-    # distribution fitted at once, for data holding more than one failure mode.
-    mixtures = [
-        {"id": key, "name": entry["name"], "covariates": False,
-         "mixture": True, "base_id": entry["base"],
-         "params": list(getattr(DISTRIBUTIONS[entry["base"]]["dist"], "param_names", []))}
-        for key, entry in MIXTURE_MODELS.items()
     ]
     discrete = [
         {"id": key, "name": entry["name"], "covariates": False,
@@ -212,7 +215,7 @@ def distributions_endpoint() -> dict:
          "effect": entry.get("effect")}
         for key, entry in REGRESSION_MODELS.items()
     ]
-    return {"distributions": plain + mixtures + discrete + nonparametric + regression}
+    return {"distributions": plain + discrete + nonparametric + regression}
 
 
 @app.post("/api/fit/{distribution}")
@@ -235,6 +238,7 @@ async def fit_endpoint(
     lfp: str | None = Form(default=None),
     fixed: str | None = Form(default=None),
     mixture: str | None = Form(default=None),
+    mixture_distribution: str | None = Form(default=None),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
@@ -261,7 +265,7 @@ async def fit_endpoint(
                 status_code=422,
                 content={"detail": "Provide a CSV file or a dataset_id."},
             )
-        options = options_from_form(offset, zi, lfp, fixed, mixture)
+        options = options_from_form(offset, zi, lfp, fixed, mixture, mixture_distribution)
         result = fit(
             distribution, df, mapping, covariates=z, formula=formula, unit=unit,
             options=options,

@@ -425,6 +425,7 @@ def options_from_form(
     lfp: Optional[str] = None,
     fixed: Optional[str] = None,
     mixture: Optional[str] = None,
+    mixture_distribution: Optional[str] = None,
 ) -> Optional[dict]:
     """Build an options dict from HTML-form string fields (both fit routers)."""
 
@@ -442,6 +443,8 @@ def options_from_form(
             opts["mixture"] = int(str(mixture).strip())
         except ValueError:
             raise FitError("mixture must be a whole number of components.")
+    if mixture_distribution and str(mixture_distribution).strip():
+        opts["mixture_distribution"] = str(mixture_distribution).strip()
     return opts if any(opts.values()) else None
 
 
@@ -481,7 +484,7 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
         "fixed": opts.get("fixed") or None,
         "mixture": _normalize_mixture(opts.get("mixture")),
     }
-    if mixture_base(distribution):
+    if distribution == MIXTURE_ID:
         # SurPyval's MixtureModel.fit takes the data arguments only — there is
         # nowhere to put an offset, a cure fraction or a fixed parameter, so
         # refuse the combination rather than silently dropping it.
@@ -491,11 +494,17 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
                 "A mixture can't be combined with "
                 f"{', '.join(sorted(clashes))} — fit those on a single distribution."
             )
-        return {"mixture": out["mixture"] or MIXTURE_DEFAULT_COMPONENTS}
-    if out["mixture"]:
+        base = mixture_base(opts)
+        if base not in DISTRIBUTIONS:
+            raise FitError(
+                f"'{base}' can't be mixed. Choose one of: {', '.join(DISTRIBUTIONS)}."
+            )
+        return {"mixture": out["mixture"] or MIXTURE_DEFAULT_COMPONENTS,
+                "mixture_distribution": base}
+    if out["mixture"] or opts.get("mixture_distribution"):
         raise FitError(
-            "A component count only applies to a mixture model — pick one from "
-            "the model list (e.g. 'Weibull mixture')."
+            "Mixture settings only apply to the Mixture model — select it in the "
+            "model list first."
         )
     if not any([out["offset"], out["zi"], out["lfp"], out["fixed"]]):
         return {}
@@ -570,15 +579,15 @@ def fit(
         result = _fit_nonparametric(distribution, df, mapping)
     elif distribution in DISCRETE:
         result = _fit_discrete(distribution, df, mapping)
-    elif mixture_base(distribution):
-        result = _fit_mixture(distribution, df, mapping,
+    elif distribution == MIXTURE_ID:
+        result = _fit_mixture(mixture_base(options), df, mapping,
                               options.get("mixture") or MIXTURE_DEFAULT_COMPONENTS)
     elif distribution in DISTRIBUTIONS:
         result = _fit_distribution(distribution, df, mapping, options)
     else:
         raise FitError(
             f"Unknown model '{distribution}'. Available: "
-            f"{', '.join([BEST_ID, *DISTRIBUTIONS, *MIXTURE_MODELS, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
+            f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
         )
     result["unit"] = (unit or "").strip()
     # Confidence bounds and probability-paper transforms can produce non-finite
@@ -815,25 +824,18 @@ def _extract_extras(model, options: dict) -> dict:
 # the extra weights soak up noise and the components stop meaning anything.
 MIXTURE_MAX_COMPONENTS = 4
 MIXTURE_DEFAULT_COMPONENTS = 2
-MIXTURE_SUFFIX = "_mixture"
+MIXTURE_DEFAULT_DISTRIBUTION = "weibull"
+
+# Pseudo-distribution id, like BEST_ID: one entry in the model list. Which
+# distribution to mix and how many components are fit *options*, so the picker
+# stays one line per concept instead of gaining a near-duplicate of every
+# continuous distribution.
+MIXTURE_ID = "mixture"
 
 
-def mixture_base(distribution: str) -> Optional[str]:
-    """The underlying distribution id for a mixture id, else ``None``.
-
-    Mixtures are their own entries in the model list ("weibull_mixture") rather
-    than a checkbox, so they round-trip through a saved spec like any other
-    model. The component count travels separately, in the fit options, because
-    it's re-chosen on the result page.
-    """
-    if not distribution or not distribution.endswith(MIXTURE_SUFFIX):
-        return None
-    base = distribution[: -len(MIXTURE_SUFFIX)]
-    return base if base in DISTRIBUTIONS else None
-
-
-MIXTURE_MODELS = {f"{k}{MIXTURE_SUFFIX}": {"name": f"{v['name']} mixture", "base": k}
-                  for k, v in DISTRIBUTIONS.items()}
+def mixture_base(options: Optional[dict]) -> str:
+    """The distribution being mixed, defaulting to Weibull."""
+    return (options or {}).get("mixture_distribution") or MIXTURE_DEFAULT_DISTRIBUTION
 
 
 def _mixture_log_likelihood(model, x, c=None, n=None) -> float:
@@ -925,10 +927,9 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> 
     failure modes muddled into one dataset, which on probability paper is the
     classic S-curve that no single distribution can follow.
 
-    ``distribution`` is the mixture id (``weibull_mixture``); the components are
-    copies of its base distribution.
+    ``distribution`` is the base distribution id whose copies form the mixture.
     """
-    base = mixture_base(distribution)
+    base = distribution
     entry = DISTRIBUTIONS[base]
     dist = entry["dist"]
     try:
@@ -962,7 +963,7 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> 
     cache_id = _store_model(model, np.asarray(curves["x"], dtype=float), [])
     return {
         "distribution": f"{entry['name']} mixture ({raw.m} components)",
-        "distribution_id": distribution,
+        "distribution_id": MIXTURE_ID,
         "base_distribution_id": base,
         "kind": "distribution",
         "mixture": int(raw.m),
@@ -974,7 +975,7 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> 
         # Echoed so the saved spec carries it — models.save_model persists
         # result["options"], and without this a saved mixture would silently
         # refit as a single distribution when reopened.
-        "options": {"mixture": int(raw.m)},
+        "options": {"mixture": int(raw.m), "mixture_distribution": base},
     }
 
 

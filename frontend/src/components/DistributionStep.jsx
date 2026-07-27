@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Select from "./Select.jsx";
 import RefLink from "./RefLink.jsx";
 // Short blurbs shown under the dropdown for context (keyed by distribution id).
@@ -73,9 +73,16 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
   const selected = options.find((d) => d.id === value);
   // Advanced fit options (offset/LFP/ZI/fixed) apply to continuous parametric
   // distributions only — not to discrete, non-parametric or regression models.
+  const isMixture = !!selected?.mixture;
+  // For a mixture these aren't optional adjustments — they're the model's own
+  // settings, so don't hide them behind a collapsed section.
+  useEffect(() => {
+    if (isMixture) setOpen(true);
+  }, [isMixture]);
+  // Advanced options carry the mixture's own settings, so the section is shown
+  // for a mixture too — with the adjustments that can't apply disabled.
   const isPlain =
-    selected && !selected.covariates && !selected.nonparametric && !selected.discrete
-    && !selected.mixture;
+    selected && !selected.covariates && !selected.nonparametric && !selected.discrete;
   const opts = fitOpts || {};
 
   const setOpt = (key, val) => onFitOpts({ ...opts, [key]: val });
@@ -104,8 +111,7 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
         ["Additive hazards", options.filter((d) => d.effect === "additive")],
       ].filter(([, list]) => list.length)
     : [
-        ["Continuous", options.filter((d) => !d.nonparametric && !d.discrete && !d.mixture)],
-        ["Mixtures", options.filter((d) => d.mixture)],
+        ["Continuous", options.filter((d) => !d.nonparametric && !d.discrete)],
         ["Discrete", options.filter((d) => d.discrete)],
         ["Non-parametric", options.filter((d) => d.nonparametric)],
       ].filter(([, list]) => list.length);
@@ -120,15 +126,14 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
         <span className="dist-label">Model</span>
         <Select value={value} onChange={onChange} options={selectOptions} />
       </div>
-      {selected?.mixture && (
+      {isMixture && (
         <p className="dist-blurb">
-          Several {options.find((d) => d.id === selected.base_id)?.name || "component"}s
-          fitted at once, for data holding more than one failure mode — the case that
-          curves on probability paper. Choose how many components after fitting.
-          <RefLink entryId={selected.base_id} />
+          Several copies of one distribution fitted at once, for data holding more
+          than one failure mode — the case that curves on probability paper. Pick
+          the distribution and how many components under Advanced fit options.
         </p>
       )}
-      {!selected?.mixture && DESCRIPTIONS[value] && (
+      {!isMixture && DESCRIPTIONS[value] && (
         <p className="dist-blurb">
           {DESCRIPTIONS[value]}
           <RefLink entryId={value} />
@@ -142,12 +147,40 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
           </button>
           {open && (
             <div className="fitopts-body">
+              {isMixture && (
+                <div className="fitopts-mixture">
+                  <div className="dist-field" style={{ width: 220 }}>
+                    <span className="dist-label">Distribution to mix</span>
+                    <Select
+                      value={opts.mixture_distribution || "weibull"}
+                      onChange={(v) => setOpt("mixture_distribution", v)}
+                      options={(selected.mixture_distributions || []).map((d) => ({
+                        value: d.id, label: d.name,
+                      }))}
+                    />
+                  </div>
+                  <div className="dist-field" style={{ width: 150 }}>
+                    <span className="dist-label">Components</span>
+                    <Select
+                      value={String(opts.mixture || 2)}
+                      onChange={(v) => setOpt("mixture", Number(v))}
+                      options={[2, 3, 4].map((m) => ({ value: String(m), label: String(m) }))}
+                    />
+                  </div>
+                  <p className="muted-line" style={{ margin: "0.4rem 0 0", width: "100%" }}>
+                    More components always fit better, so compare the AIC against a
+                    single fit and keep the simplest that clearly wins. A mixture
+                    reports no confidence bounds.
+                  </p>
+                </div>
+              )}
               <span className="dist-label">Model adjustments (optional)</span>
-              {selected.offsetable && (
+              {(selected.offsetable || isMixture) && (
                 <label className="fitopts-row" title={OPTION_HELP.offset}>
                   <input
                     type="checkbox"
                     checked={!!opts.offset}
+                    disabled={isMixture}
                     onChange={(e) => setOpt("offset", e.target.checked)}
                   />
                   <span><b>Offset (3-parameter)</b> — failure-free period γ</span>
@@ -157,6 +190,7 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                 <input
                   type="checkbox"
                   checked={!!opts.lfp}
+                  disabled={isMixture}
                   onChange={(e) => setOpt("lfp", e.target.checked)}
                 />
                 <span><b>Limited failure population</b> — a fraction p never fails</span>
@@ -165,12 +199,13 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                 <input
                   type="checkbox"
                   checked={!!opts.zi}
+                  disabled={isMixture}
                   onChange={(e) => setOpt("zi", e.target.checked)}
                 />
                 <span><b>Zero-inflated</b> — a fraction f₀ failed at t = 0</span>
               </label>
 
-              {(selected.params || []).length > 0 && (
+              {!isMixture && (selected.params || []).length > 0 && (
                 <div className="fitopts-fixed">
                   <span className="dist-label">Fix parameters (optional)</span>
                   <div className="fitopts-fixed-row">
