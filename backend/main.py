@@ -24,6 +24,8 @@ from backend.fitting import (
     DISCRETE,
     DISTRIBUTIONS,
     MIXTURE_ID,
+    FIT_METHODS,
+    distribution_capabilities,
     NONPARAMETRIC,
     REGRESSION_MODELS,
     FitError,
@@ -177,6 +179,14 @@ def distributions_endpoint() -> dict:
             "covariates": False,
             "params": [],
             "offsetable": True,
+            "zi": True,
+            "lfp": True,
+            # It fits every candidate, so only methods they all support.
+            "methods": sorted(
+                set.intersection(*(set(distribution_capabilities(k)["methods"])
+                                   for k in DISTRIBUTIONS)),
+                key=[m["id"] for m in FIT_METHODS].index,
+            ),
         },
         {
             "id": MIXTURE_ID,
@@ -195,7 +205,9 @@ def distributions_endpoint() -> dict:
                 "name": entry["name"],
                 "covariates": False,
                 "params": list(getattr(entry["dist"], "param_names", [])),
-                "offsetable": bool(entry.get("offsetable")),
+                # Derived from SurPyval, not hand-listed: which fit methods and
+                # which model adjustments this distribution actually supports.
+                **distribution_capabilities(key),
             }
             for key, entry in DISTRIBUTIONS.items()
         ),
@@ -215,7 +227,8 @@ def distributions_endpoint() -> dict:
          "effect": entry.get("effect")}
         for key, entry in REGRESSION_MODELS.items()
     ]
-    return {"distributions": plain + discrete + nonparametric + regression}
+    return {"distributions": plain + discrete + nonparametric + regression,
+            "fit_methods": FIT_METHODS}
 
 
 @app.post("/api/fit/{distribution}")
@@ -239,6 +252,7 @@ async def fit_endpoint(
     fixed: str | None = Form(default=None),
     mixture: str | None = Form(default=None),
     mixture_distribution: str | None = Form(default=None),
+    how: str | None = Form(default=None),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
@@ -265,7 +279,7 @@ async def fit_endpoint(
                 status_code=422,
                 content={"detail": "Provide a CSV file or a dataset_id."},
             )
-        options = options_from_form(offset, zi, lfp, fixed, mixture, mixture_distribution)
+        options = options_from_form(offset, zi, lfp, fixed, mixture, mixture_distribution, how)
         result = fit(
             distribution, df, mapping, covariates=z, formula=formula, unit=unit,
             options=options,

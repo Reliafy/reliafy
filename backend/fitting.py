@@ -26,6 +26,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import warnings
 import uuid
 from collections import OrderedDict
 from typing import Optional
@@ -426,6 +427,7 @@ def options_from_form(
     fixed: Optional[str] = None,
     mixture: Optional[str] = None,
     mixture_distribution: Optional[str] = None,
+    how: Optional[str] = None,
 ) -> Optional[dict]:
     """Build an options dict from HTML-form string fields (both fit routers)."""
 
@@ -445,7 +447,75 @@ def options_from_form(
             raise FitError("mixture must be a whole number of components.")
     if mixture_distribution and str(mixture_distribution).strip():
         opts["mixture_distribution"] = str(mixture_distribution).strip()
+    if how and str(how).strip():
+        opts["how"] = str(how).strip()
     return opts if any(opts.values()) else None
+
+
+# ---------------------------------------------------------------------------
+# Fit methods (SurPyval's ``how=``) and what each distribution / option allows.
+#
+# Every rule below is SurPyval's, read off ``_validate_fit_inputs`` and then
+# confirmed by actually fitting each combination. They are DERIVED, not listed
+# by hand: a hand-written capability table is exactly the kind of thing that
+# drifts silently when the library moves.
+# ---------------------------------------------------------------------------
+FIT_METHODS = [
+    {"id": "MLE", "name": "Maximum likelihood (MLE)",
+     "hint": "The default. Uses all the information in the data, including censoring."},
+    {"id": "MPP", "name": "Probability plot (MPP)",
+     "hint": "Median-rank regression on probability paper — what a hand-drawn fit does."},
+    {"id": "MPS", "name": "Maximum product spacing (MPS)",
+     "hint": "Robust where MLE struggles, e.g. small samples or a threshold near the data."},
+    {"id": "MSE", "name": "Mean square error (MSE)",
+     "hint": "Least squares against the empirical estimate."},
+    {"id": "MOM", "name": "Method of moments (MOM)",
+     "hint": "Matches the distribution's moments to the sample's. No censoring or truncation."},
+]
+FIT_METHOD_IDS = [m["id"] for m in FIT_METHODS]
+DEFAULT_FIT_METHOD = "MLE"
+
+
+def _supports_offset(dist) -> bool:
+    """SurPyval allows an offset only on a half-line ``[0, inf)`` support."""
+    lo, hi = dist.support
+    return lo == 0 and math.isinf(hi)
+
+
+def _supports_zi(dist) -> bool:
+    """Zero-inflation needs mass at exactly zero, so the support must start there."""
+    return dist.support[0] == 0
+
+
+def distribution_capabilities(dist_id: str) -> dict:
+    """What a plain distribution supports, for the picker and for validation."""
+    dist = DISTRIBUTIONS[dist_id]["dist"]
+    return {
+        "methods": [m for m in FIT_METHOD_IDS
+                    if m != "MPP" or bool(getattr(dist, "supports_mpp", True))],
+        "offsetable": _supports_offset(dist),
+        "zi": _supports_zi(dist),
+        "lfp": True,
+    }
+
+
+def methods_for_data(mapping: Optional[dict]) -> dict:
+    """Methods the *data* rules out, keyed by method id -> why.
+
+    MOM can't take censoring or truncation; MSE can't take truncation. Known
+    from the column mapping alone, so the picker can grey them out rather than
+    letting the fit fail.
+    """
+    mapping = mapping or {}
+    censored = bool(mapping.get("c"))
+    truncated = bool(mapping.get("tl") or mapping.get("tr"))
+    out = {}
+    if censored:
+        out["MOM"] = "Method of moments doesn't support censored data."
+    if truncated:
+        out["MOM"] = "Method of moments doesn't support truncation."
+        out["MSE"] = "Mean square error doesn't support truncation."
+    return out
 
 
 # Pseudo-distribution id: fit every plain distribution and keep the lowest-AIC.
@@ -483,7 +553,15 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
         "lfp": bool(opts.get("lfp")),
         "fixed": opts.get("fixed") or None,
         "mixture": _normalize_mixture(opts.get("mixture")),
+        "how": (opts.get("how") or "").strip().upper() or None,
     }
+    if out["how"] == DEFAULT_FIT_METHOD:
+        out["how"] = None  # the default carries no information; keep specs clean
+    if out["how"] and out["how"] not in FIT_METHOD_IDS:
+        raise FitError(
+            f"Unknown fit method '{out['how']}'. Choose one of: "
+            f"{', '.join(FIT_METHOD_IDS)}."
+        )
     if distribution == MIXTURE_ID:
         # SurPyval's MixtureModel.fit takes the data arguments only — there is
         # nowhere to put an offset, a cure fraction or a fixed parameter, so
@@ -493,6 +571,11 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
             raise FitError(
                 "A mixture can't be combined with "
                 f"{', '.join(sorted(clashes))} — fit those on a single distribution."
+            )
+        if out["how"]:
+            raise FitError(
+                "A mixture is always fitted by expectation-maximisation — the "
+                "fit method can't be chosen for it."
             )
         base = mixture_base(opts)
         if base not in DISTRIBUTIONS:
@@ -506,8 +589,19 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
             "Mixture settings only apply to the Mixture model — select it in the "
             "model list first."
         )
-    if not any([out["offset"], out["zi"], out["lfp"], out["fixed"]]):
+    if not any([out["offset"], out["zi"], out["lfp"], out["fixed"], out["how"]]):
         return {}
+
+    # SurPyval's cross-option rules, enforced here so the message is ours.
+    if out["how"] and out["how"] != "MLE" and (out["lfp"] or out["zi"]):
+        which = " and ".join(
+            n for n, on in (("limited failure population", out["lfp"]),
+                            ("zero-inflation", out["zi"])) if on)
+        raise FitError(
+            f"A model with {which} can only be fitted by maximum likelihood."
+        )
+    if out["how"] == "MPP" and out["fixed"]:
+        raise FitError("Probability plotting (MPP) can't hold parameters fixed.")
     if distribution == BEST_ID:
         if out["fixed"]:
             raise FitError(
@@ -521,6 +615,17 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
         raise FitError(
             "Fit options (offset/zi/lfp/fixed) apply to plain distributions only, "
             "not regression models."
+        )
+    caps = distribution_capabilities(distribution)
+    if out["how"] and out["how"] not in caps["methods"]:
+        raise FitError(
+            f"{entry['name']} can't be fitted by {out['how']}. Available: "
+            f"{', '.join(caps['methods'])}."
+        )
+    if out["zi"] and not caps["zi"]:
+        raise FitError(
+            f"{entry['name']} can't be zero-inflated — zero-inflation needs a "
+            "distribution whose support starts at 0."
         )
     if out["offset"] and not entry.get("offsetable"):
         raise FitError(
@@ -988,10 +1093,19 @@ def _fit_distribution(
 
     try:
         kwargs = build_fit_inputs(df, mapping)
-        for key in ("offset", "zi", "lfp", "fixed"):
+        for key in ("offset", "zi", "lfp", "fixed", "how"):
             if options.get(key):
                 kwargs[key] = options[key]
-        model = dist.fit(**kwargs)
+        # Some fitters (MPS in particular) warn that the optimisation failed and
+        # then return numbers anyway. Silently handing those to a user is worse
+        # than the fit being unavailable, so capture and report it.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            model = dist.fit(**kwargs)
+        fit_warning = next(
+            (str(w.message) for w in caught
+             if "FAILED" in str(w.message).upper()), None
+        )
         # Backfill the covariance when SurPyval's Hessian came out non-finite
         # (otherwise the confidence band would be all-NaN).
         _ensure_covariance(model)
@@ -1037,8 +1151,15 @@ def _fit_distribution(
                 {"name": _EXTRA_LABELS[k], "value": v} for k, v in extras.items()
             ]
         result["options"] = {
-            k: options[k] for k in ("offset", "zi", "lfp", "fixed") if options.get(k)
+            k: options[k] for k in ("offset", "zi", "lfp", "fixed", "how")
+            if options.get(k)
         }
+    if fit_warning:
+        result["fit_warning"] = (
+            f"{fit_warning.strip()} The parameters below came back from a fit the "
+            "optimiser reported as failed — check them against another method "
+            "before relying on them."
+        )
     randomness = _randomness_verdict(distribution, params)
     if randomness is not None:
         result["randomness"] = randomness

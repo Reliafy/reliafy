@@ -293,8 +293,15 @@ export default function ResultView({ result, hideHead = false }) {
                   ))}
                 </div>
               )}
+              {result.fit_warning && (
+                <div className="detail-note warn" style={{ marginBottom: 10 }}>
+                  ⚠ {result.fit_warning}
+                </div>
+              )}
               <div className="detail-note">
-                Maximum-likelihood fit over <b>{result.n} observations</b>. The
+                {result.options?.how && result.options.how !== "MLE"
+                  ? <>Fitted by <b>{result.options.how}</b> over <b>{result.n} observations</b>.</>
+                  : <>Maximum-likelihood fit over <b>{result.n} observations</b>.</>} The
                 line is the fitted model; points are the data on{" "}
                 {result.distribution} probability paper
                 {result.plot?.bounds ? ", with a 95% confidence band." : "."}

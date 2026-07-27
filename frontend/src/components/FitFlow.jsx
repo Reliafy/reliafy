@@ -44,10 +44,11 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [result, setResult] = useState(null);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [fitMethods, setFitMethods] = useState([]);
 
   useEffect(() => {
     getDistributions()
-      .then((d) => setDistributions(d.distributions))
+      .then((d) => { setDistributions(d.distributions); setFitMethods(d.fit_methods || []); })
       .catch(() =>
         setDistributions([{ id: "weibull", name: "Weibull", covariates: false }])
       );
@@ -414,6 +415,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             }}
             fitOpts={fitOpts}
             onFitOpts={setFitOpts}
+            fitMethods={fitMethods}
+            mapping={mapping}
           />
         </div>
       )}
