@@ -59,6 +59,9 @@ const OPTION_HELP = {
   offset: "Adds a failure-free period γ: no failures can occur before it (3-parameter fit).",
   lfp: "Limited failure population: only a fraction p of units can ever fail (defective subpopulation).",
   zi: "Zero-inflated: a fraction f₀ is failed at t = 0 (dead on arrival).",
+  mixture: "Fit two or more copies of this distribution at once — for data holding "
+    + "several failure modes, which curves on the probability plot because no single "
+    + "distribution can follow it.",
 };
 
 // Distribution picker plus advanced fit options (offset / LFP / zero
@@ -82,8 +85,10 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
     onFitOpts({ ...opts, fixed });
   };
 
+  const mixOn = Number(opts.mixture || 0) > 1;
+  const otherOn = !!(opts.offset || opts.zi || opts.lfp || Object.keys(opts.fixed || {}).length);
   const activeCount =
-    (opts.offset ? 1 : 0) + (opts.zi ? 1 : 0) + (opts.lfp ? 1 : 0) +
+    (opts.offset ? 1 : 0) + (opts.zi ? 1 : 0) + (opts.lfp ? 1 : 0) + (mixOn ? 1 : 0) +
     Object.keys(opts.fixed || {}).length;
 
   // Group the picker into sections when more than one group is present. The
@@ -136,6 +141,7 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                     type="checkbox"
                     checked={!!opts.offset}
                     onChange={(e) => setOpt("offset", e.target.checked)}
+                    disabled={mixOn}
                   />
                   <span><b>Offset (3-parameter)</b> — failure-free period γ</span>
                 </label>
@@ -145,6 +151,7 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                   type="checkbox"
                   checked={!!opts.lfp}
                   onChange={(e) => setOpt("lfp", e.target.checked)}
+                  disabled={mixOn}
                 />
                 <span><b>Limited failure population</b> — a fraction p never fails</span>
               </label>
@@ -153,11 +160,42 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                   type="checkbox"
                   checked={!!opts.zi}
                   onChange={(e) => setOpt("zi", e.target.checked)}
+                  disabled={mixOn}
                 />
                 <span><b>Zero-inflated</b> — a fraction f₀ failed at t = 0</span>
               </label>
 
-              {(selected.params || []).length > 0 && (
+              {/* A mixture replaces the single fit rather than adjusting it, so it
+                  is exclusive with the others — SurPyval's MixtureModel has
+                  nowhere to put an offset, cure fraction or fixed parameter. */}
+              <label className="fitopts-row" title={OPTION_HELP.mixture}>
+                <input
+                  type="checkbox"
+                  checked={mixOn}
+                  onChange={(e) => setOpt("mixture", e.target.checked ? 2 : 0)}
+                  disabled={otherOn}
+                />
+                <span><b>Mixture of failure modes</b> — fit several {selected?.name || "distribution"}s at once</span>
+              </label>
+              {mixOn && (
+                <div className="fitopts-fixed">
+                  <label className="login-field" style={{ width: 190 }}>
+                    <span>Components</span>
+                    <select value={opts.mixture} onChange={(e) => setOpt("mixture", Number(e.target.value))}>
+                      {[2, 3, 4].map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </label>
+                  <p className="dist-blurb" style={{ marginTop: 6 }}>
+                    Compare the AIC against a single fit before believing it — extra
+                    components always fit better, so only a clear improvement is real.
+                    A mixture reports no confidence bounds.
+                  </p>
+                </div>
+              )}
+
+              {/* Fixing a parameter is exclusive with a mixture — the backend
+                  rejects the pair, so don't offer it. */}
+              {!mixOn && (selected.params || []).length > 0 && (
                 <div className="fitopts-fixed">
                   <span className="dist-label">Fix parameters (optional)</span>
                   <div className="fitopts-fixed-row">

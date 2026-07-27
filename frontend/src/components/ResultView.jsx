@@ -296,8 +296,12 @@ export default function ResultView({ result, hideHead = false }) {
               <div className="detail-note">
                 Maximum-likelihood fit over <b>{result.n} observations</b>. The
                 line is the fitted model; points are the data on{" "}
-                {result.distribution} probability paper, with a 95% confidence
-                band.
+                {result.distribution} probability paper
+                {result.plot?.bounds ? ", with a 95% confidence band." : "."}
+                {result.mixture > 1 && (
+                  <> A mixture has no covariance matrix, so it reports no
+                  confidence bounds — judge it on the AIC against a single fit.</>
+                )}
               </div>
             </div>
           </div>

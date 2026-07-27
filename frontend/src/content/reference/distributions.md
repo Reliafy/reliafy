@@ -12,6 +12,13 @@ differ (notably Gamma, whose second parameter here is a *rate*).
 Throughout, `R(t)` is reliability (the survival function), `F(t) = 1 − R(t)` is
 unreliability, and `h(t)` is the hazard rate.
 
+Any of these can be fitted as a **mixture** of 2–4 components — several copies of
+the same distribution with weights summing to 1 — for data holding more than one
+failure mode. That is what curves the probability plot: no single distribution
+can follow two modes at once. A mixture always fits better than a single
+distribution because it has more parameters, so judge it on the AIC, not on the
+plot. Mixture fits report no confidence bounds.
+
 ## weibull
 
 **The workhorse of life-data analysis.** Its shape parameter spans
