@@ -154,6 +154,8 @@ env reference for operators:
 | `AI_PROVIDER`, `AI_MODEL`, `AI_MARKUP` | The metered assistant's provider/model/markup. |
 | `PRO_MONTHLY_CREDIT_CENTS` | AI credit included with each month of Pro (granted per paid invoice; default 1000). |
 | `ADMIN_EMAILS` | Comma-separated operator emails with full access regardless of payment (no plan caps, AI not credit-checked). |
+| `PUSHOVER_TOKEN`, `PUSHOVER_USER` | Operator push notifications (new signups) via [Pushover](https://pushover.net). Unset → falls back to email, then to a log line. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` | Outbound email for team invites and share notifications. Unset → every send is a logged no-op. |
 
 ## API (selected)
 

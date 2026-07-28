@@ -24,6 +24,12 @@ MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 # Outbound transactional email (team invites, share notifications). Optional:
 # unset -> sends are logged no-ops. Works with any SMTP provider (Gmail app
 # password, Resend, Postmark, SES).
+# Operator push notifications (Pushover). Unset -> logged no-op. Preferred over
+# email for operator alerts: it reaches a phone in seconds. User-facing mail
+# (invites, share notifications) still goes over SMTP below.
+PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN")
+PUSHOVER_USER = os.environ.get("PUSHOVER_USER")
+
 SMTP_HOST = os.environ.get("SMTP_HOST")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER")
