@@ -2,6 +2,7 @@
 title: "With reliability software, the training is the product. So we put it in the box."
 date: 2026-08-07
 author: The Reliafy Team
+image: /blog/training-comes-with-the-software.png
 summary: Every serious reliability package assumes you'll take the course — the licence is the small half of what it costs to make an engineer productive. Reliafy ships the expertise inside the tool instead, as an assistant that helps you drive and an agent that does the analysis with you, then asks permission before it saves anything.
 ---
 

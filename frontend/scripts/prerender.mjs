@@ -35,13 +35,15 @@ for (const route of routes()) {
     `<meta property="og:url" content="${canonical}" />`,
     `<meta property="og:type" content="website" />`,
     `<meta property="og:site_name" content="Reliafy" />`,
-    `<meta property="og:image" content="${SITE}/og-card.png" />`,
+    // Per-route social card (blog posts set route.image) with the site-wide
+    // card as the fallback — otherwise every LinkedIn preview looks identical.
+    `<meta property="og:image" content="${SITE}${route.image || "/og-card.png"}" />`,
     `<meta property="og:image:width" content="1200" />`,
     `<meta property="og:image:height" content="630" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
     `<meta name="twitter:title" content="${escape(route.title)}" />`,
     `<meta name="twitter:description" content="${escape(route.description)}" />`,
-    `<meta name="twitter:image" content="${SITE}/og-card.png" />`,
+    `<meta name="twitter:image" content="${SITE}${route.image || "/og-card.png"}" />`,
     // Structured data (SoftwareApplication on product pages, Article/FAQPage
     // on learn pages) — what featured snippets and AI overviews lift.
     ...(route.jsonld || []).map(
