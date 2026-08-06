@@ -204,10 +204,11 @@ where reliability programmes go to stall.
 
 ## Try it
 
-Reliafy is [open source](https://github.com/Reliafy/reliafy). The cloud
-version includes starter AI credits — enough to hand the agent a real
-dataset and watch it work — and the assistant is there from your first
-session. Bring a CSV of failure times, or just describe a system you care
-about, and see what it proposes.
+Reliafy is [open source](https://github.com/Reliafy/reliafy). On the cloud
+version the assistant is there from your first session, with starter AI
+credits included — bring a CSV of failure times and ask it anything. The
+Reliability Agent is part of the Pro plan (and if you self-host, it runs on
+your own API key). Hand it a real dataset, or just describe a system you
+care about, and see what it proposes.
 
-The menus are free. So, finally, is the course.
+The menus are free. The course now comes with the seat.
