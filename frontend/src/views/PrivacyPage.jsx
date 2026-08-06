@@ -34,8 +34,8 @@ export default function PrivacyPage() {
               are sent to our AI provider to generate a response. Those conversations
               are <strong>retained by the provider</strong>, and we can read them back
               to check the assistant is answering correctly and to fix problems. We
-              don't keep transcripts in our own database, and neither we nor the
-              provider use them to train models. Treat it like any hosted tool: don't
+              don't keep transcripts in our own database, and we don't use them to
+              train models — and our AI providers' terms commit them to the same. Treat it like any hosted tool: don't
               paste anything you wouldn't want retained.</li>
             <li><strong>Operational logs:</strong> standard request logs (timestamps,
               endpoints, status codes) for reliability and debugging.</li>
@@ -61,7 +61,12 @@ export default function PrivacyPage() {
               management.</li>
             <li><strong>OpenAI</strong> — processes assistant conversations to generate
               responses, and retains them so we can review how the assistant is
-              performing.</li>
+              performing. Its API terms commit that this data is not used to train
+              models.</li>
+            <li><strong>Anthropic</strong> — runs the Reliability Agent (a Pro
+              feature) and stores those agent sessions so you can revisit them.
+              Its commercial terms likewise commit that this data is not used to
+              train models.</li>
           </ul>
 
           <h2>Where it lives and how long</h2>
