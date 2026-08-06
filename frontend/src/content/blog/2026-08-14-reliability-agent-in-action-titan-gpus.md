@@ -1,6 +1,6 @@
 ---
 title: "The Reliability Agent, in action: 30,000 GPUs and a temperature it wasn't told about"
-date: 2026-08-08
+date: 2026-08-14
 author: The Reliafy Team
 image: /blog/reliability-agent-titan-card.png
 summary: We pointed Reliafy's Reliability Agent at a hard, real, public dataset — the failure records of every GPU in the Titan supercomputer — and told it to find the best model. No hints. It worked out that only 41% of the old GPUs were ever going to fail, that the survivors were the cool ones, and that a reworked batch had cut the failure rate 27-fold. Here's the whole run, and the models reproduced in Reliafy.
