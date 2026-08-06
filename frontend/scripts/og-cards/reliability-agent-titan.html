@@ -1,0 +1,46 @@
+<!doctype html><meta charset="utf-8">
+<style>
+  *{margin:0;box-sizing:border-box;font-family:-apple-system,"Segoe UI",Inter,Roboto,Arial,sans-serif}
+  body{width:1200px;height:630px;background:#fbfbf9;display:flex;flex-direction:column}
+  .main{flex:1;display:flex;padding:54px 70px 20px;gap:50px}
+  .left{flex:1.15;display:flex;flex-direction:column}
+  .brand{display:flex;align-items:center;gap:13px;margin-bottom:34px}
+  .mark{width:50px;height:50px;border-radius:14px;background:#2f6df6;display:grid;place-items:center}
+  .mark svg{width:31px;height:31px}
+  .bn{font-size:29px;font-weight:800;color:#16181d}
+  .eyebrow{color:#2f6df6;font-weight:700;letter-spacing:.11em;font-size:18px;margin-bottom:16px}
+  h1{font-size:47px;line-height:1.1;font-weight:800;color:#16181d;letter-spacing:-.015em}
+  .sub{margin-top:20px;font-size:22px;line-height:1.4;color:#5b616b;max-width:470px}
+  .panel{flex:.92;align-self:center;background:#fff;border:1px solid #e7e5de;border-radius:16px;
+         box-shadow:0 10px 30px rgba(15,23,42,.07);padding:24px 26px}
+  .pt{font-size:12px;letter-spacing:.13em;color:#9aa0aa;font-weight:700;margin-bottom:14px}
+  .row{display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid #f0eee8}
+  .row:last-child{border-bottom:none}
+  .k{font-size:18px;color:#3b4046} .v{font-size:22px;font-weight:700;color:#16181d;font-variant-numeric:tabular-nums}
+  .hl .v{color:#2f6df6}
+  .cap{margin-top:14px;font-size:16px;color:#8a93a0;line-height:1.35}
+  .foot{display:flex;justify-content:space-between;align-items:center;padding:18px 70px 24px;border-top:1px solid #ecebe6}
+  .url{color:#2f6df6;font-weight:700;font-size:21px}.tag{color:#9aa0aa;font-size:20px}
+</style>
+<body>
+  <div class="main">
+    <div class="left">
+      <div class="brand">
+        <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M3 14c2.5 0 2.5-8 5-8s2.5 12 5 12 2.5-6 5-6h3"/></svg></div>
+        <div class="bn">Reliafy</div>
+      </div>
+      <div class="eyebrow">RELIABILITY AGENT · IN ACTION</div>
+      <h1>30,000 GPUs, and a temperature it wasn't told about.</h1>
+      <div class="sub">We handed the agent a hard public failure dataset and no hints. It found a defective subpopulation, two failure modes, and a thermal gradient — on its own.</div>
+    </div>
+    <div class="panel">
+      <div class="pt">OLD-BATCH GPU MODEL · IT CHOSE</div>
+      <div class="row"><span class="k">Model</span><span class="v">Weibull LFP</span></div>
+      <div class="row hl"><span class="k">Susceptible fraction</span><span class="v">41%</span></div>
+      <div class="row"><span class="k">Failure mode</span><span class="v">wear-out</span></div>
+      <div class="row"><span class="k">Hidden driver</span><span class="v">temperature</span></div>
+      <div class="cap">Only 41% of these GPUs were ever going to fail — and the survivors were the cool ones.</div>
+    </div>
+  </div>
+  <div class="foot"><div class="url">reliafy.com</div><div class="tag">Every number reproducible · open source</div></div>
+</body>
