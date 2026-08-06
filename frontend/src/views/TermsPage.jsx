@@ -9,7 +9,7 @@ export default function TermsPage() {
       <PublicNav />
       <article className="blog-article">
         <header className="blog-article-head">
-          <div className="blog-card-meta"><time>Effective 27 July 2026</time></div>
+          <div className="blog-card-meta"><time>Effective 7 August 2026</time></div>
           <h1>Terms of Service</h1>
         </header>
         <div className="blog-prose">
