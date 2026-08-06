@@ -91,13 +91,7 @@ signature of a **limited-failure-population** (or "cure") model: a susceptible
 subpopulation that carries the defect and will eventually fail, and a robust
 remainder that simply won't.
 
-It fit one. The result, reproduced in Reliafy — the agent ran standalone in a
-sandbox, but its winning model drops straight into the app, and every parameter
-matches to the last decimal:
-
-![The agent's winning model reproduced in Reliafy: a limited-failure-population Weibull on the old-batch GPUs. α = 4.199, β = 3.711, and a susceptible fraction p = 0.407 — only 41% of these GPUs were ever going to fail. The fitted line flattens into the cure plateau instead of bending to certainty.](/blog/titan-old-lfp.png)
-
-The number that matters is **p = 0.407**. Only about **41% of the old GPUs were
+It fit one. The number that matters is **p = 0.407**. Only about **41% of the old GPUs were
 ever destined to fail** — the rest were robust and would have run indefinitely.
 That single parameter reframes the whole reliability picture: this isn't a
 population wearing out uniformly, it's a defective subpopulation working its way
@@ -122,9 +116,12 @@ position and the shape of the survival curves.
 
 Then it did something subtle and correct. It noted that temperature doesn't just
 speed failures up — it changes *how many GPUs are susceptible in the first
-place*. Fitting the cure model per cage:
+place*. Fitting the cure model per cage gives three clean, well-separated
+curves — and the parametric model (thick lines) sits almost exactly on the
+non-parametric Kaplan–Meier estimate from the raw data (thin lines) at every
+tier. That agreement is the proof the modelling worked:
 
-![The same model on just the hot top cage: the susceptible fraction jumps to p = 0.734 and the characteristic life shortens to 3.56 years. Temperature drives both how many GPUs will fail and how fast.](/blog/titan-cage2.png)
+![Survival by thermal tier, model versus data. Three cages, cool to hot, each with the Weibull limited-failure-population model (thick line) overlaid on the Kaplan–Meier estimate straight from the data (thin line). They track tightly everywhere, and the hot cage's curve visibly flattens into its cure plateau near 27% — the robust GPUs that never fail.](/blog/titan-cage-survival.png)
 
 | cage (thermal tier) | susceptible fraction *p* | characteristic life |
 | :-- | :-- | :-- |
@@ -138,6 +135,30 @@ the population rather than uniformly scaling the hazard, the agent flagged that
 a standard proportional-hazards regression would be *wrong* here — the
 proportional-hazards assumption is violated, so cage should be stratified, not
 multiplied in. That is a genuinely expert call, and it made it unprompted.
+
+## From a model to a decision
+
+A fitted curve isn't the deliverable — a decision is. Once the agent's model is
+in Reliafy, it stops being a chart and becomes a calculator. Ask it the
+reliability of an old-batch GPU at four years and it reads straight off the
+curve: **R(4 years) = 0.770**, with a 95% confidence interval, and the whole
+survival function plotted so you can see the cure plateau it settles onto.
+
+![Reliafy's calculator on the fitted model: reliability R(t) at four years is 0.770 (95% CI 0.763–0.776), read off the survival curve, which flattens onto the cure plateau around 0.59.](/blog/titan-calc.png)
+
+The question a maintenance planner actually asks, though, isn't about one part —
+it's about the fleet. Point the model at a set of in-service GPUs, each with its
+own accumulated running time, and Reliafy turns the curve into a forecast:
+**how many of these should we expect to fail next month?** For a fleet of 150
+old-batch GPUs already around three years old, the answer is **≈ 1.5 failures in
+the next month** (and about 21 over the coming year), with a spread — the sort of
+number that sizes a spares order or a maintenance window.
+
+![Reliafy fleet forecast: 150 in-service GPUs, one-month horizon, first-failures method. Expected failures 1.5, with a P10–P90 spread of 0 to 3.1, and a per-item table showing each GPU's current age and its individual probability of failing in the window.](/blog/titan-fleet.png)
+
+That's the whole arc in one tool: a hard dataset in, a defensible model the
+agent chose, and out the other end the two numbers an operator can act on — the
+reliability of a part at any age, and the failures to plan for across a fleet.
 
 ## Why this is the point
 
