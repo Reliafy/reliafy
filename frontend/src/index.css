@@ -6242,3 +6242,16 @@ button.danger:hover { background: #fdeeee; }
   border: 1px solid rgba(245, 158, 11, 0.45);
   color: #92620c;
 }
+
+/* Censoring convention, stated where the column is picked. Inverting this flag
+   is the most common upload mistake, and a hover tooltip never gets read. */
+.map-convention {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--acc);
+  background: rgba(47, 109, 246, 0.06);
+  border-radius: 0 8px 8px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}

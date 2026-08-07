@@ -5,7 +5,7 @@ import Select from "./Select.jsx";
 //   - c/n/tl/tr are optional modifiers
 const FIELD_INFO = {
   x: { label: "x", help: "Observed values (exact / censored)" },
-  c: { label: "c", help: "Censor flag: 0 obs, 1 right, -1 left, 2 interval" },
+  c: { label: "c", help: "Censoring: 0 = failed, 1 = still running. (-1 left, 2 interval)" },
   n: { label: "n", help: "Count of observations per row" },
   xl: { label: "xl", help: "Interval lower bound (with xr)" },
   xr: { label: "xr", help: "Interval upper bound (with xl)" },
@@ -107,6 +107,13 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
               </label>
             )}
           </div>
+          {group.fields.includes("c") && !!mapping.c && (
+            <p className="map-convention">
+              <b>{mapping.c}</b> read as censoring — <b>0 = the unit failed</b>,{" "}
+              <b>1 = it was still running</b> when observation stopped. If your
+              column marks failures with a 1, it's the other way round.
+            </p>
+          )}
         </div>
         );
       })}

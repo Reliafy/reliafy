@@ -250,6 +250,69 @@ def preview(file_bytes: bytes, rows: int = 5) -> dict:
     return {"columns": columns, "preview": sample, "n_rows": int(df.shape[0])}
 
 
+# The censoring convention, stated once and reused in every message that needs
+# to explain it. Getting this backwards is the single most common upload error:
+# a spreadsheet where 1 means "this one failed" is the exact inverse of what
+# SurPyval (and every other survival tool) expects.
+CENSOR_CONVENTION = (
+    "Reliafy uses the survival-analysis convention: 0 = the unit failed "
+    "(an observed event), 1 = it was still running when observation stopped "
+    "(right-censored). If your column marks failures with a 1, invert it."
+)
+
+
+def failure_count(kwargs: dict) -> tuple[int, int]:
+    """(observed failures, total observations) from built fit inputs.
+
+    An observation counts as a failure when its censor flag is 0. Interval and
+    left censoring (2 / -1) are events too, but they enter through xl/xr and are
+    counted here as observed rather than suspended.
+    """
+    x = kwargs.get("x")
+    xl = kwargs.get("xl")
+    total = int(np.size(x if x is not None else xl) or 0)
+    c = kwargs.get("c")
+    if c is None:
+        return total, total
+    c = np.asarray(c)
+    n = kwargs.get("n")
+    weights = np.asarray(n, dtype=float) if n is not None else np.ones_like(c, dtype=float)
+    return int(np.sum(weights[c != 1])), int(np.sum(weights))
+
+
+def check_fittable(kwargs: dict, distribution_name: str) -> None:
+    """Refuse a fit that cannot work, with a message that names the likely cause.
+
+    SurPyval guards the all-censored case but raises a bare ``IndexError`` when
+    exactly one observation is a failure, which reaches the user as "list index
+    out of range". Both cases nearly always mean an inverted censor column.
+    """
+    failures, total = failure_count(kwargs)
+    if total and failures == 0:
+        raise FitError(
+            f"Every one of the {total} rows is marked as censored, so there is "
+            f"nothing for {distribution_name} to fit. " + CENSOR_CONVENTION
+        )
+
+
+def _fit_failure_hint(exc: Exception, kwargs: dict, distribution_name: str) -> str:
+    """Turn a fitter blow-up into something a user can act on."""
+    failures, total = failure_count(kwargs)
+    raw = str(exc) or type(exc).__name__
+    if total and failures <= 1:
+        return (
+            f"Only {failures} of the {total} rows is marked as a failure — too "
+            f"few for {distribution_name}, which needs at least two observed "
+            f"failures to estimate its parameters. " + CENSOR_CONVENTION
+        )
+    if isinstance(exc, IndexError):
+        return (
+            f"{distribution_name} couldn't be fitted to this data ({raw}). Check "
+            "the column mapping — especially the censoring column."
+        )
+    return raw
+
+
 def build_fit_inputs(df: pd.DataFrame, mapping: dict) -> dict:
     """Turn a column mapping into keyword arguments for ``<dist>.fit``.
 
@@ -1039,6 +1102,7 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> 
     dist = entry["dist"]
     try:
         kwargs = build_fit_inputs(df, mapping)
+        check_fittable(kwargs, f"a {entry['name']} mixture")
         raw = MixtureModel(dist=dist, m=int(m))
         raw.fit(**kwargs)
         # MixtureModel exposes a SurpyvalData object (attribute access), unlike a
@@ -1053,8 +1117,10 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> 
         plot = _shape_plot(model, dist, heuristic="Nelson-Aalen", paper_params=paper)
         curves = _function_curves(model)
         gof = _goodness_of_fit(model)
+    except FitError:
+        raise
     except Exception as exc:
-        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+        raise FitError(_fit_failure_hint(exc, kwargs, f"a {entry['name']} mixture")) from exc
 
     base_names = list(getattr(dist, "param_names", []) or [])
     values = np.asarray(raw.params, dtype=float).reshape(raw.m, -1)
@@ -1093,6 +1159,7 @@ def _fit_distribution(
 
     try:
         kwargs = build_fit_inputs(df, mapping)
+        check_fittable(kwargs, entry["name"])
         for key in ("offset", "zi", "lfp", "fixed", "how"):
             if options.get(key):
                 kwargs[key] = options[key]
@@ -1117,8 +1184,10 @@ def _fit_distribution(
         plot = _shape_plot(model, dist, heuristic=heuristic)
         curves = _function_curves(model)
         gof = _goodness_of_fit(model)
+    except FitError:
+        raise
     except Exception as exc:
-        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+        raise FitError(_fit_failure_hint(exc, kwargs, entry["name"])) from exc
 
     param_names = (
         getattr(model, "param_names", None)
