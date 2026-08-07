@@ -29,6 +29,10 @@ MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 # (invites, share notifications) still goes over SMTP below.
 PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN")
 PUSHOVER_USER = os.environ.get("PUSHOVER_USER")
+# Push an operator alert when the server hits an unexpected error. On by
+# default wherever push is configured; set false to keep a dev machine quiet.
+PUSH_ERROR_ALERTS = (os.environ.get("PUSH_ERROR_ALERTS", "true").strip().lower()
+                     not in ("0", "false", "no", "off"))
 
 SMTP_HOST = os.environ.get("SMTP_HOST")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))

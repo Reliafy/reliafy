@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import Body, Depends, FastAPI, File, Form, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, UploadFile, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -90,8 +90,27 @@ def _startup() -> None:
     init_db()
     from backend.db import get_db
     from backend.services.samples import seed_samples
+    from backend.services import push as push_service
 
     seed_samples(get_db())
+    # Operator crash alerts. A no-op unless Pushover is configured, so
+    # self-hosted and dev instances are unaffected.
+    push_service.install_error_alerts()
+
+
+@app.exception_handler(Exception)
+async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+    """Last resort: an exception that escaped every route handler.
+
+    Logged with exc_info so it reaches the operator alert handler like any
+    other crash, and answered with a generic 500 — the detail goes to the
+    logs, not to the user.
+    """
+    logger.exception("unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong. The error has been logged."},
+    )
 
 
 app.include_router(auth_router.router)
