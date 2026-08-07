@@ -9,8 +9,9 @@ export default function ProbabilityPlot({ plot, unit }) {
   const xTitle = unit ? `Time (${unit})` : "Time";
 
   const traces = [
-    {
-      // Confidence bounds drawn as a shaded band.
+    // Confidence bounds, when the fit produced a covariance matrix. A mixture
+    // fit doesn't, so it draws without a band rather than not at all.
+    ...(bounds ? [{
       x: [...bounds.x, ...[...bounds.x].reverse()],
       y: [...bounds.upper, ...[...bounds.lower].reverse()],
       fill: "toself",
@@ -19,7 +20,7 @@ export default function ProbabilityPlot({ plot, unit }) {
       hoverinfo: "skip",
       name: "95% CI",
       type: "scatter",
-    },
+    }] : []),
     {
       x: line.x,
       y: line.y,

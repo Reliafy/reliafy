@@ -9,7 +9,7 @@ export default function TermsPage() {
       <PublicNav />
       <article className="blog-article">
         <header className="blog-article-head">
-          <div className="blog-card-meta"><time>Effective 3 July 2026</time></div>
+          <div className="blog-card-meta"><time>Effective 7 August 2026</time></div>
           <h1>Terms of Service</h1>
         </header>
         <div className="blog-prose">
@@ -57,6 +57,31 @@ export default function TermsPage() {
             recommendation before using it in decisions that affect safety,
             operations, or money. For critical applications, have qualified engineers
             verify the results.
+          </p>
+
+          <h2>Engineering decisions and outcomes</h2>
+          <p>
+            Reliafy is a modelling and calculation tool. Everything it produces —
+            fitted distributions, reliability and availability figures, replacement
+            intervals, forecasts, RCM assessments — depends entirely on the data and
+            assumptions you supply, and every model is a simplification of a real
+            system. Judging whether a result is fit for your purpose is your
+            responsibility, not ours.
+          </p>
+          <p>
+            You are solely responsible for any decision you take on the basis of the
+            Service and for the outcomes of that decision — including maintenance,
+            inspection, replacement, spares, design, procurement, compliance, and
+            safety decisions. To the maximum extent permitted by law, we are not
+            liable for those decisions or their consequences, whether the output came
+            from the statistical engine or the AI assistant. Where a decision could
+            affect safety, the environment, regulatory compliance, or significant
+            cost, have it reviewed by a qualified engineer who has checked the inputs
+            and the assumptions behind it.
+          </p>
+          <p>
+            Nothing in this section excludes rights that cannot be excluded under
+            applicable law — see <em>Liability</em> below.
           </p>
 
           <h2>Acceptable use</h2>

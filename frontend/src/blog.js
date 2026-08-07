@@ -54,6 +54,9 @@ export const posts = Object.entries(files)
       date: meta.date || "",
       author: meta.author || "",
       summary: meta.summary || "",
+      // Optional per-post social card (og:image), e.g. /blog/my-post-card.png
+      // under public/. Absent -> the site-wide /og-card.png.
+      image: meta.image || "",
       readingMinutes: readingTime(body),
       body,
     };

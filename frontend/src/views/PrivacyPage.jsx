@@ -2,14 +2,15 @@ import PublicNav from "../components/PublicNav.jsx";
 
 // Privacy Policy for Reliafy Cloud. Honest and specific: what we collect, the
 // exact subprocessors, and how to get data deleted. Self-hosted instances send
-// us nothing.
+// us nothing — and ship with AI_STORE off, so the provider-side conversation
+// retention described here applies to Cloud only.
 export default function PrivacyPage() {
   return (
     <div className="landing">
       <PublicNav />
       <article className="blog-article">
         <header className="blog-article-head">
-          <div className="blog-card-meta"><time>Effective 3 July 2026</time></div>
+          <div className="blog-card-meta"><time>Effective 7 August 2026</time></div>
           <h1>Privacy Policy</h1>
         </header>
         <div className="blog-prose">
@@ -29,9 +30,13 @@ export default function PrivacyPage() {
               ledger of credit grants and usage. Card details go directly to Stripe —
               we never see or store them.</li>
             <li><strong>AI conversations:</strong> when you use the assistant, your
-              messages (and the data the assistant reads to act for you) are sent to
-              our AI provider to generate the response. We don't store chat
-              transcripts on our servers.</li>
+              messages — and the data the assistant reads in order to act for you —
+              are sent to our AI provider to generate a response. Those conversations
+              are <strong>retained by the provider</strong>, and we can read them back
+              to check the assistant is answering correctly and to fix problems. We
+              don't keep transcripts in our own database, and we don't use them to
+              train models — and our AI providers' terms commit them to the same. Treat it like any hosted tool: don't
+              paste anything you wouldn't want retained.</li>
             <li><strong>Operational logs:</strong> standard request logs (timestamps,
               endpoints, status codes) for reliability and debugging.</li>
           </ul>
@@ -40,7 +45,8 @@ export default function PrivacyPage() {
           <h2>How we use it</h2>
           <p>
             Only to operate the Service: authenticating you, storing your work,
-            processing payments, metering AI usage, and fixing problems. We never
+            processing payments, metering AI usage, checking the assistant is working
+            properly, and fixing problems. We never
             sell your data, and we don't use your datasets or AI conversations to
             train machine-learning models.
           </p>
@@ -54,7 +60,13 @@ export default function PrivacyPage() {
             <li><strong>Stripe</strong> — payment processing and subscription
               management.</li>
             <li><strong>OpenAI</strong> — processes assistant conversations to generate
-              responses.</li>
+              responses, and retains them so we can review how the assistant is
+              performing. Its API terms commit that this data is not used to train
+              models.</li>
+            <li><strong>Anthropic</strong> — runs the Reliability Agent (a Pro
+              feature) and stores those agent sessions so you can revisit them.
+              Its commercial terms likewise commit that this data is not used to
+              train models.</li>
           </ul>
 
           <h2>Where it lives and how long</h2>
@@ -63,6 +75,13 @@ export default function PrivacyPage() {
             region is Australia). We keep your content for as long as your account
             exists. Deleting an item in the app removes it from the live database;
             deleting your account removes your content and profile.
+          </p>
+          <p>
+            Assistant conversations are the exception: they sit with our AI provider
+            under their API retention terms rather than in our database, so deleting
+            your account removes your content and profile from our systems but does
+            not erase the provider's copy of earlier conversations. Email us if you
+            need those dealt with and we'll do what the provider allows.
           </p>
 
           <h2>Your rights</h2>

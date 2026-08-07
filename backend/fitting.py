@@ -26,6 +26,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import warnings
 import uuid
 from collections import OrderedDict
 from typing import Optional
@@ -46,6 +47,7 @@ from surpyval import (
 )
 from surpyval import ExpoWeibull, Gumbel, Logistic, LogLogistic
 from surpyval import GumbelLEV, Rayleigh
+from surpyval import MixtureModel
 from surpyval import Binomial, FlemingHarrington, KaplanMeier, NelsonAalen, Turnbull
 from surpyval import success_run as _success_run
 from surpyval import BetaGeometric, DiscreteWeibull, Geometric, NegativeBinomial, Poisson
@@ -248,6 +250,69 @@ def preview(file_bytes: bytes, rows: int = 5) -> dict:
     return {"columns": columns, "preview": sample, "n_rows": int(df.shape[0])}
 
 
+# The censoring convention, stated once and reused in every message that needs
+# to explain it. Getting this backwards is the single most common upload error:
+# a spreadsheet where 1 means "this one failed" is the exact inverse of what
+# SurPyval (and every other survival tool) expects.
+CENSOR_CONVENTION = (
+    "Reliafy uses the survival-analysis convention: 0 = the unit failed "
+    "(an observed event), 1 = it was still running when observation stopped "
+    "(right-censored). If your column marks failures with a 1, invert it."
+)
+
+
+def failure_count(kwargs: dict) -> tuple[int, int]:
+    """(observed failures, total observations) from built fit inputs.
+
+    An observation counts as a failure when its censor flag is 0. Interval and
+    left censoring (2 / -1) are events too, but they enter through xl/xr and are
+    counted here as observed rather than suspended.
+    """
+    x = kwargs.get("x")
+    xl = kwargs.get("xl")
+    total = int(np.size(x if x is not None else xl) or 0)
+    c = kwargs.get("c")
+    if c is None:
+        return total, total
+    c = np.asarray(c)
+    n = kwargs.get("n")
+    weights = np.asarray(n, dtype=float) if n is not None else np.ones_like(c, dtype=float)
+    return int(np.sum(weights[c != 1])), int(np.sum(weights))
+
+
+def check_fittable(kwargs: dict, distribution_name: str) -> None:
+    """Refuse a fit that cannot work, with a message that names the likely cause.
+
+    SurPyval guards the all-censored case but raises a bare ``IndexError`` when
+    exactly one observation is a failure, which reaches the user as "list index
+    out of range". Both cases nearly always mean an inverted censor column.
+    """
+    failures, total = failure_count(kwargs)
+    if total and failures == 0:
+        raise FitError(
+            f"Every one of the {total} rows is marked as censored, so there is "
+            f"nothing for {distribution_name} to fit. " + CENSOR_CONVENTION
+        )
+
+
+def _fit_failure_hint(exc: Exception, kwargs: dict, distribution_name: str) -> str:
+    """Turn a fitter blow-up into something a user can act on."""
+    failures, total = failure_count(kwargs)
+    raw = str(exc) or type(exc).__name__
+    if total and failures <= 1:
+        return (
+            f"Only {failures} of the {total} rows is marked as a failure — too "
+            f"few for {distribution_name}, which needs at least two observed "
+            f"failures to estimate its parameters. " + CENSOR_CONVENTION
+        )
+    if isinstance(exc, IndexError):
+        return (
+            f"{distribution_name} couldn't be fitted to this data ({raw}). Check "
+            "the column mapping — especially the censoring column."
+        )
+    return raw
+
+
 def build_fit_inputs(df: pd.DataFrame, mapping: dict) -> dict:
     """Turn a column mapping into keyword arguments for ``<dist>.fit``.
 
@@ -351,14 +416,20 @@ def failure_positions_mask(model, n_points: int):
     return c == 0
 
 
-def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen") -> dict:
+def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None) -> dict:
     """Shape SurPyval's plot data into Plotly-ready (already-linearised) arrays.
 
     Both axes are transformed with the distribution's own probability-paper
     functions, so the frontend draws on plain linear axes.
+
+    ``paper_params`` overrides the parameters handed to those transforms. It
+    exists for mixtures, whose ``params`` is a 2-D (components x parameters)
+    array — unpacking that gives a transform a whole row where it expects a
+    scalar (Gamma reads ``params[0]`` as its shape). The paper is only a choice
+    of axes, so one component's parameters define it perfectly well.
     """
     data = model.get_plot_data(heuristic=heuristic)
-    params = model.params
+    params = model.params if paper_params is None else paper_params
 
     def ty(p):
         p = np.clip(np.asarray(p, dtype=float), _EPS, 1 - _EPS)
@@ -375,9 +446,12 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen") -> dict:
     line_x = tx(data["x_model"])
     line_y = ty(data["cdf"])
 
-    bounds = np.asarray(data["cbs"], dtype=float)
-    lower = ty(bounds[:, 0])
-    upper = ty(bounds[:, 1])
+    # A mixture fit has no covariance matrix, so SurPyval returns no bounds
+    # column pair — draw the fit without a confidence band rather than failing.
+    bounds = np.asarray(data.get("cbs"), dtype=float) if data.get("cbs") is not None else None
+    has_bounds = bounds is not None and bounds.ndim == 2 and bounds.shape[1] >= 2
+    lower = ty(bounds[:, 0]) if has_bounds else None
+    upper = ty(bounds[:, 1]) if has_bounds else None
 
     x_ticks = tx(data["x_ticks"])
     y_ticks = ty(np.asarray(data["y_ticks"], dtype=float))
@@ -394,7 +468,7 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen") -> dict:
     return {
         "scatter": {"x": scatter_x.tolist(), "y": scatter_y.tolist()},
         "line": {"x": line_x.tolist(), "y": line_y.tolist()},
-        "bounds": {
+        "bounds": None if not has_bounds else {
             "x": line_x.tolist(),
             "lower": lower.tolist(),
             "upper": upper.tolist(),
@@ -414,6 +488,9 @@ def options_from_form(
     zi: Optional[str] = None,
     lfp: Optional[str] = None,
     fixed: Optional[str] = None,
+    mixture: Optional[str] = None,
+    mixture_distribution: Optional[str] = None,
+    how: Optional[str] = None,
 ) -> Optional[dict]:
     """Build an options dict from HTML-form string fields (both fit routers)."""
 
@@ -426,11 +503,104 @@ def options_from_form(
             opts["fixed"] = json.loads(fixed)
         except json.JSONDecodeError:
             raise FitError('fixed must be valid JSON, e.g. {"beta": 2}.')
+    if mixture and str(mixture).strip():
+        try:
+            opts["mixture"] = int(str(mixture).strip())
+        except ValueError:
+            raise FitError("mixture must be a whole number of components.")
+    if mixture_distribution and str(mixture_distribution).strip():
+        opts["mixture_distribution"] = str(mixture_distribution).strip()
+    if how and str(how).strip():
+        opts["how"] = str(how).strip()
     return opts if any(opts.values()) else None
+
+
+# ---------------------------------------------------------------------------
+# Fit methods (SurPyval's ``how=``) and what each distribution / option allows.
+#
+# Every rule below is SurPyval's, read off ``_validate_fit_inputs`` and then
+# confirmed by actually fitting each combination. They are DERIVED, not listed
+# by hand: a hand-written capability table is exactly the kind of thing that
+# drifts silently when the library moves.
+# ---------------------------------------------------------------------------
+FIT_METHODS = [
+    {"id": "MLE", "name": "Maximum likelihood (MLE)",
+     "hint": "The default. Uses all the information in the data, including censoring."},
+    {"id": "MPP", "name": "Probability plot (MPP)",
+     "hint": "Median-rank regression on probability paper — what a hand-drawn fit does."},
+    {"id": "MPS", "name": "Maximum product spacing (MPS)",
+     "hint": "Robust where MLE struggles, e.g. small samples or a threshold near the data."},
+    {"id": "MSE", "name": "Mean square error (MSE)",
+     "hint": "Least squares against the empirical estimate."},
+    {"id": "MOM", "name": "Method of moments (MOM)",
+     "hint": "Matches the distribution's moments to the sample's. No censoring or truncation."},
+]
+FIT_METHOD_IDS = [m["id"] for m in FIT_METHODS]
+DEFAULT_FIT_METHOD = "MLE"
+
+
+def _supports_offset(dist) -> bool:
+    """SurPyval allows an offset only on a half-line ``[0, inf)`` support."""
+    lo, hi = dist.support
+    return lo == 0 and math.isinf(hi)
+
+
+def _supports_zi(dist) -> bool:
+    """Zero-inflation needs mass at exactly zero, so the support must start there."""
+    return dist.support[0] == 0
+
+
+def distribution_capabilities(dist_id: str) -> dict:
+    """What a plain distribution supports, for the picker and for validation."""
+    dist = DISTRIBUTIONS[dist_id]["dist"]
+    return {
+        "methods": [m for m in FIT_METHOD_IDS
+                    if m != "MPP" or bool(getattr(dist, "supports_mpp", True))],
+        "offsetable": _supports_offset(dist),
+        "zi": _supports_zi(dist),
+        "lfp": True,
+    }
+
+
+def methods_for_data(mapping: Optional[dict]) -> dict:
+    """Methods the *data* rules out, keyed by method id -> why.
+
+    MOM can't take censoring or truncation; MSE can't take truncation. Known
+    from the column mapping alone, so the picker can grey them out rather than
+    letting the fit fail.
+    """
+    mapping = mapping or {}
+    censored = bool(mapping.get("c"))
+    truncated = bool(mapping.get("tl") or mapping.get("tr"))
+    out = {}
+    if censored:
+        out["MOM"] = "Method of moments doesn't support censored data."
+    if truncated:
+        out["MOM"] = "Method of moments doesn't support truncation."
+        out["MSE"] = "Mean square error doesn't support truncation."
+    return out
 
 
 # Pseudo-distribution id: fit every plain distribution and keep the lowest-AIC.
 BEST_ID = "best"
+
+
+def _normalize_mixture(value) -> int:
+    """``mixture`` is the component count: absent/1 means an ordinary single fit."""
+    if value in (None, "", False):
+        return 0
+    try:
+        m = int(value)
+    except (TypeError, ValueError):
+        raise FitError("mixture must be a whole number of components.")
+    if m <= 1:
+        return 0
+    if m > MIXTURE_MAX_COMPONENTS:
+        raise FitError(
+            f"At most {MIXTURE_MAX_COMPONENTS} mixture components — beyond that "
+            "the components stop being identifiable from field data."
+        )
+    return m
 
 
 def normalize_options(distribution: str, options: Optional[dict]) -> dict:
@@ -445,9 +615,56 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
         "zi": bool(opts.get("zi")),
         "lfp": bool(opts.get("lfp")),
         "fixed": opts.get("fixed") or None,
+        "mixture": _normalize_mixture(opts.get("mixture")),
+        "how": (opts.get("how") or "").strip().upper() or None,
     }
-    if not any([out["offset"], out["zi"], out["lfp"], out["fixed"]]):
+    if out["how"] == DEFAULT_FIT_METHOD:
+        out["how"] = None  # the default carries no information; keep specs clean
+    if out["how"] and out["how"] not in FIT_METHOD_IDS:
+        raise FitError(
+            f"Unknown fit method '{out['how']}'. Choose one of: "
+            f"{', '.join(FIT_METHOD_IDS)}."
+        )
+    if distribution == MIXTURE_ID:
+        # SurPyval's MixtureModel.fit takes the data arguments only — there is
+        # nowhere to put an offset, a cure fraction or a fixed parameter, so
+        # refuse the combination rather than silently dropping it.
+        clashes = [k for k in ("offset", "zi", "lfp", "fixed") if out[k]]
+        if clashes:
+            raise FitError(
+                "A mixture can't be combined with "
+                f"{', '.join(sorted(clashes))} — fit those on a single distribution."
+            )
+        if out["how"]:
+            raise FitError(
+                "A mixture is always fitted by expectation-maximisation — the "
+                "fit method can't be chosen for it."
+            )
+        base = mixture_base(opts)
+        if base not in DISTRIBUTIONS:
+            raise FitError(
+                f"'{base}' can't be mixed. Choose one of: {', '.join(DISTRIBUTIONS)}."
+            )
+        return {"mixture": out["mixture"] or MIXTURE_DEFAULT_COMPONENTS,
+                "mixture_distribution": base}
+    if out["mixture"] or opts.get("mixture_distribution"):
+        raise FitError(
+            "Mixture settings only apply to the Mixture model — select it in the "
+            "model list first."
+        )
+    if not any([out["offset"], out["zi"], out["lfp"], out["fixed"], out["how"]]):
         return {}
+
+    # SurPyval's cross-option rules, enforced here so the message is ours.
+    if out["how"] and out["how"] != "MLE" and (out["lfp"] or out["zi"]):
+        which = " and ".join(
+            n for n, on in (("limited failure population", out["lfp"]),
+                            ("zero-inflation", out["zi"])) if on)
+        raise FitError(
+            f"A model with {which} can only be fitted by maximum likelihood."
+        )
+    if out["how"] == "MPP" and out["fixed"]:
+        raise FitError("Probability plotting (MPP) can't hold parameters fixed.")
     if distribution == BEST_ID:
         if out["fixed"]:
             raise FitError(
@@ -461,6 +678,17 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
         raise FitError(
             "Fit options (offset/zi/lfp/fixed) apply to plain distributions only, "
             "not regression models."
+        )
+    caps = distribution_capabilities(distribution)
+    if out["how"] and out["how"] not in caps["methods"]:
+        raise FitError(
+            f"{entry['name']} can't be fitted by {out['how']}. Available: "
+            f"{', '.join(caps['methods'])}."
+        )
+    if out["zi"] and not caps["zi"]:
+        raise FitError(
+            f"{entry['name']} can't be zero-inflated — zero-inflation needs a "
+            "distribution whose support starts at 0."
         )
     if out["offset"] and not entry.get("offsetable"):
         raise FitError(
@@ -519,12 +747,15 @@ def fit(
         result = _fit_nonparametric(distribution, df, mapping)
     elif distribution in DISCRETE:
         result = _fit_discrete(distribution, df, mapping)
+    elif distribution == MIXTURE_ID:
+        result = _fit_mixture(mixture_base(options), df, mapping,
+                              options.get("mixture") or MIXTURE_DEFAULT_COMPONENTS)
     elif distribution in DISTRIBUTIONS:
         result = _fit_distribution(distribution, df, mapping, options)
     else:
         raise FitError(
             f"Unknown model '{distribution}'. Available: "
-            f"{', '.join([BEST_ID, *DISTRIBUTIONS, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
+            f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
         )
     result["unit"] = (unit or "").strip()
     # Confidence bounds and probability-paper transforms can produce non-finite
@@ -757,6 +988,168 @@ def _extract_extras(model, options: dict) -> dict:
     return extras
 
 
+# Mixtures beyond three components are rarely identifiable from field data —
+# the extra weights soak up noise and the components stop meaning anything.
+MIXTURE_MAX_COMPONENTS = 4
+MIXTURE_DEFAULT_COMPONENTS = 2
+MIXTURE_DEFAULT_DISTRIBUTION = "weibull"
+
+# Pseudo-distribution id, like BEST_ID: one entry in the model list. Which
+# distribution to mix and how many components are fit *options*, so the picker
+# stays one line per concept instead of gaining a near-duplicate of every
+# continuous distribution.
+MIXTURE_ID = "mixture"
+
+
+def mixture_base(options: Optional[dict]) -> str:
+    """The distribution being mixed, defaulting to Weibull."""
+    return (options or {}).get("mixture_distribution") or MIXTURE_DEFAULT_DISTRIBUTION
+
+
+def _mixture_log_likelihood(model, x, c=None, n=None) -> float:
+    """Observed-data log-likelihood of a fitted mixture.
+
+    SurPyval's ``MixtureModel.loglike`` is the **EM objective**, not this — it is
+    not comparable with a single distribution's log-likelihood, and using it for
+    AIC makes a mixture look better than a single fit even on single-mode data.
+    So we compute the real thing: each observation contributes the mixed density
+    (exact), the mixed survival (right-censored) or the mixed CDF (left-censored).
+    """
+    x = np.asarray(x, dtype=float)
+    c = np.zeros_like(x) if c is None else np.asarray(c, dtype=float)
+    n = np.ones_like(x) if n is None else np.asarray(n, dtype=float)
+    params = np.asarray(model.params, dtype=float).reshape(model.m, -1)
+    weights = np.ravel(np.asarray(model.w, dtype=float))
+
+    dens = np.zeros_like(x)
+    surv = np.zeros_like(x)
+    cdf = np.zeros_like(x)
+    with np.errstate(all="ignore"):
+        for wj, pj in zip(weights, params):
+            dens += wj * np.ravel(model.dist.df(x, *pj))
+            surv += wj * np.ravel(model.dist.sf(x, *pj))
+            cdf += wj * np.ravel(model.dist.ff(x, *pj))
+        floor = 1e-300
+        ll = np.where(
+            c == 0, np.log(np.clip(dens, floor, None)),
+            np.where(c == 1, np.log(np.clip(surv, floor, None)),
+                     np.log(np.clip(cdf, floor, None))),
+        )
+    total = float(np.sum(n * ll))
+    return total if math.isfinite(total) else float("nan")
+
+
+class _MixtureFit:
+    """Gives SurPyval's ``MixtureModel`` the surface the payload builders expect.
+
+    A ``MixtureModel`` has sf/ff/df/mean/get_plot_data but no ``hf`` (derived
+    here as f/R), no ``qf`` (inverted numerically, so B-life still works), no
+    ``aic``/``bic`` (computed from the real log-likelihood above) and no
+    covariance — so parameters come back without confidence intervals, which is
+    honest: the fit doesn't produce them.
+    """
+
+    def __init__(self, model, n_obs: int, log_likelihood: float):
+        self._model = model
+        self.log_likelihood = log_likelihood
+        self._n_obs = int(n_obs)
+        # m components x per-component params, plus m-1 free weights.
+        self._k = int(model.m) * int(np.asarray(model.params).reshape(model.m, -1).shape[1]) \
+            + int(model.m) - 1
+
+    def __getattr__(self, name):  # delegate everything not overridden
+        return getattr(self._model, name)
+
+    def hf(self, x):
+        with np.errstate(all="ignore"):
+            sf = np.asarray(self._model.sf(x), dtype=float)
+            return np.asarray(self._model.df(x), dtype=float) / np.where(sf > 0, sf, np.nan)
+
+    def qf(self, p):
+        """Quantiles by bisection on the (monotone) mixed CDF."""
+        p = np.atleast_1d(np.asarray(p, dtype=float))
+        hi = np.full(p.shape, 1.0)
+        with np.errstate(all="ignore"):
+            for _ in range(200):  # grow until the CDF exceeds every target
+                if np.all(np.ravel(self._model.ff(hi)) >= p) or np.all(hi > 1e12):
+                    break
+                hi = hi * 2.0
+            lo = np.zeros_like(hi)
+            for _ in range(100):
+                mid = 0.5 * (lo + hi)
+                too_low = np.ravel(self._model.ff(mid)) < p
+                lo = np.where(too_low, mid, lo)
+                hi = np.where(too_low, hi, mid)
+        out = 0.5 * (lo + hi)
+        return out if out.size > 1 else float(out[0])
+
+    def aic(self) -> float:
+        return 2 * self._k - 2 * self.log_likelihood
+
+    def bic(self) -> float:
+        return self._k * math.log(max(self._n_obs, 1)) - 2 * self.log_likelihood
+
+
+def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> dict:
+    """Fit a mixture of ``m`` copies of a plain distribution — two or more
+    failure modes muddled into one dataset, which on probability paper is the
+    classic S-curve that no single distribution can follow.
+
+    ``distribution`` is the base distribution id whose copies form the mixture.
+    """
+    base = distribution
+    entry = DISTRIBUTIONS[base]
+    dist = entry["dist"]
+    try:
+        kwargs = build_fit_inputs(df, mapping)
+        check_fittable(kwargs, f"a {entry['name']} mixture")
+        raw = MixtureModel(dist=dist, m=int(m))
+        raw.fit(**kwargs)
+        # MixtureModel exposes a SurpyvalData object (attribute access), unlike a
+        # plain Parametric whose .data is a dict.
+        x = np.asarray(raw.data.x, dtype=float)
+        c = np.asarray(raw.data.c, dtype=float) if getattr(raw.data, "c", None) is not None else None
+        nn = np.asarray(raw.data.n, dtype=float) if getattr(raw.data, "n", None) is not None else None
+        model = _MixtureFit(raw, n_obs=int(np.sum(nn)) if nn is not None else x.size,
+                            log_likelihood=_mixture_log_likelihood(raw, x, c, nn))
+        # Draw on the paper of the first component — see _shape_plot.
+        paper = np.asarray(raw.params, dtype=float).reshape(raw.m, -1)[0]
+        plot = _shape_plot(model, dist, heuristic="Nelson-Aalen", paper_params=paper)
+        curves = _function_curves(model)
+        gof = _goodness_of_fit(model)
+    except FitError:
+        raise
+    except Exception as exc:
+        raise FitError(_fit_failure_hint(exc, kwargs, f"a {entry['name']} mixture")) from exc
+
+    base_names = list(getattr(dist, "param_names", []) or [])
+    values = np.asarray(raw.params, dtype=float).reshape(raw.m, -1)
+    weights = np.ravel(np.asarray(raw.w, dtype=float))
+    params = []
+    for j in range(raw.m):
+        for k, name in enumerate(base_names or [f"p{k}" for k in range(values.shape[1])]):
+            params.append({"name": f"{name}{j + 1}", "value": float(values[j][k])})
+        params.append({"name": f"weight{j + 1}", "value": float(weights[j])})
+
+    cache_id = _store_model(model, np.asarray(curves["x"], dtype=float), [])
+    return {
+        "distribution": f"{entry['name']} mixture ({raw.m} components)",
+        "distribution_id": MIXTURE_ID,
+        "base_distribution_id": base,
+        "kind": "distribution",
+        "mixture": int(raw.m),
+        "params": params,
+        "n": int(np.sum(nn)) if nn is not None else int(x.size),
+        "plot": plot,
+        "functions": {"meta": FUNCTIONS, "curves": curves, "model_id": cache_id},
+        "gof": gof,
+        # Echoed so the saved spec carries it — models.save_model persists
+        # result["options"], and without this a saved mixture would silently
+        # refit as a single distribution when reopened.
+        "options": {"mixture": int(raw.m), "mixture_distribution": base},
+    }
+
+
 def _fit_distribution(
     distribution: str, df: pd.DataFrame, mapping: dict, options: Optional[dict] = None
 ) -> dict:
@@ -766,10 +1159,20 @@ def _fit_distribution(
 
     try:
         kwargs = build_fit_inputs(df, mapping)
-        for key in ("offset", "zi", "lfp", "fixed"):
+        check_fittable(kwargs, entry["name"])
+        for key in ("offset", "zi", "lfp", "fixed", "how"):
             if options.get(key):
                 kwargs[key] = options[key]
-        model = dist.fit(**kwargs)
+        # Some fitters (MPS in particular) warn that the optimisation failed and
+        # then return numbers anyway. Silently handing those to a user is worse
+        # than the fit being unavailable, so capture and report it.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            model = dist.fit(**kwargs)
+        fit_warning = next(
+            (str(w.message) for w in caught
+             if "FAILED" in str(w.message).upper()), None
+        )
         # Backfill the covariance when SurPyval's Hessian came out non-finite
         # (otherwise the confidence band would be all-NaN).
         _ensure_covariance(model)
@@ -781,8 +1184,10 @@ def _fit_distribution(
         plot = _shape_plot(model, dist, heuristic=heuristic)
         curves = _function_curves(model)
         gof = _goodness_of_fit(model)
+    except FitError:
+        raise
     except Exception as exc:
-        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+        raise FitError(_fit_failure_hint(exc, kwargs, entry["name"])) from exc
 
     param_names = (
         getattr(model, "param_names", None)
@@ -815,8 +1220,15 @@ def _fit_distribution(
                 {"name": _EXTRA_LABELS[k], "value": v} for k, v in extras.items()
             ]
         result["options"] = {
-            k: options[k] for k in ("offset", "zi", "lfp", "fixed") if options.get(k)
+            k: options[k] for k in ("offset", "zi", "lfp", "fixed", "how")
+            if options.get(k)
         }
+    if fit_warning:
+        result["fit_warning"] = (
+            f"{fit_warning.strip()} The parameters below came back from a fit the "
+            "optimiser reported as failed — check them against another method "
+            "before relying on them."
+        )
     randomness = _randomness_verdict(distribution, params)
     if randomness is not None:
         result["randomness"] = randomness

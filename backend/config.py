@@ -24,6 +24,16 @@ MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 # Outbound transactional email (team invites, share notifications). Optional:
 # unset -> sends are logged no-ops. Works with any SMTP provider (Gmail app
 # password, Resend, Postmark, SES).
+# Operator push notifications (Pushover). Unset -> logged no-op. Preferred over
+# email for operator alerts: it reaches a phone in seconds. User-facing mail
+# (invites, share notifications) still goes over SMTP below.
+PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN")
+PUSHOVER_USER = os.environ.get("PUSHOVER_USER")
+# Push an operator alert when the server hits an unexpected error. On by
+# default wherever push is configured; set false to keep a dev machine quiet.
+PUSH_ERROR_ALERTS = (os.environ.get("PUSH_ERROR_ALERTS", "true").strip().lower()
+                     not in ("0", "false", "no", "off"))
+
 SMTP_HOST = os.environ.get("SMTP_HOST")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER")
@@ -141,6 +151,17 @@ AI_MODEL = os.environ.get("AI_MODEL") or _DEFAULT_AI_MODEL.get(AI_PROVIDER, "")
 # round-trips within a turn (unlike chat/completions). Values: minimal|low|
 # medium|high. Blank it ("") to omit reasoning entirely (non-reasoning models).
 OPENAI_REASONING_EFFORT = os.environ.get("OPENAI_REASONING_EFFORT", "medium").strip()
+
+# Whether the OpenAI Responses API retains each response server-side (``store``).
+# Off by default: the assistant is stateless and we keep no transcripts, which is
+# what a self-hosted instance should do unless its operator decides otherwise.
+# Turning it on lets the operator read conversations back in the OpenAI dashboard
+# — useful for checking the assistant's prompt and answers against what users
+# actually ask, but it means conversations (including anything a user pastes in)
+# are retained by the provider and readable by whoever holds that account. Say so
+# in your privacy policy before enabling it.
+AI_STORE = (os.environ.get("AI_STORE", "false").strip().lower()
+            in ("1", "true", "yes", "on"))
 
 # Markup applied to the provider's token cost when charging credits.
 try:

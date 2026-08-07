@@ -112,12 +112,15 @@ export function getColumns(file) {
 
 
 // Advanced fit options shared by fit + save: offset (3-parameter), zero
-// inflation, limited failure population, and fixed parameter values.
-function appendFitOptions(form, { offset, zi, lfp, fixed } = {}) {
+// inflation, limited failure population, fixed parameter values, and a mixture
+// component count (mutually exclusive with the rest — see normalize_options).
+function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distribution } = {}) {
   if (offset) form.append("offset", "true");
   if (zi) form.append("zi", "true");
   if (lfp) form.append("lfp", "true");
   if (fixed && Object.keys(fixed).length) form.append("fixed", JSON.stringify(fixed));
+  if (Number(mixture) > 1) form.append("mixture", String(Number(mixture)));
+  if (mixture_distribution) form.append("mixture_distribution", mixture_distribution);
 }
 
 // Fit a model: distribution id, a data source (an uploaded `file` or a saved
@@ -280,6 +283,8 @@ export function updateModelFit(id, { distribution, mapping, covariates, formula,
       formula: formula || null,
       unit: unit || null,
       offset: !!fitOptions?.offset,
+      mixture: Number(fitOptions?.mixture) > 1 ? Number(fitOptions.mixture) : 0,
+      mixture_distribution: fitOptions?.mixture_distribution || null,
       zi: !!fitOptions?.zi,
       lfp: !!fitOptions?.lfp,
       fixed: fitOptions?.fixed && Object.keys(fitOptions.fixed).length ? fitOptions.fixed : null,

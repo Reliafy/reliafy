@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Select from "./Select.jsx";
 import RefLink from "./RefLink.jsx";
 // Short blurbs shown under the dropdown for context (keyed by distribution id).
@@ -59,20 +59,69 @@ const OPTION_HELP = {
   offset: "Adds a failure-free period γ: no failures can occur before it (3-parameter fit).",
   lfp: "Limited failure population: only a fraction p of units can ever fail (defective subpopulation).",
   zi: "Zero-inflated: a fraction f₀ is failed at t = 0 (dead on arrival).",
+  mixture: "Fit two or more copies of this distribution at once — for data holding "
+    + "several failure modes, which curves on the probability plot because no single "
+    + "distribution can follow it.",
 };
 
 // Distribution picker plus advanced fit options (offset / LFP / zero
 // inflation / fixed parameters). ``options`` come from the backend
 // ([{ id, name, params, offsetable }]); ``fitOpts``/``onFitOpts`` hold
 // { offset, zi, lfp, fixed } for plain distributions.
-export default function DistributionStep({ options, value, onChange, fitOpts, onFitOpts }) {
+export default function DistributionStep({ options, value, onChange, fitOpts, onFitOpts,
+                                          fitMethods = [], mapping = {} }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((d) => d.id === value);
   // Advanced fit options (offset/LFP/ZI/fixed) apply to continuous parametric
   // distributions only — not to discrete, non-parametric or regression models.
+  const isMixture = !!selected?.mixture;
+  // For a mixture these aren't optional adjustments — they're the model's own
+  // settings, so don't hide them behind a collapsed section.
+  useEffect(() => {
+    if (isMixture) setOpen(true);
+  }, [isMixture]);
+  // Advanced options carry the mixture's own settings, so the section is shown
+  // for a mixture too — with the adjustments that can't apply disabled.
   const isPlain =
     selected && !selected.covariates && !selected.nonparametric && !selected.discrete;
   const opts = fitOpts || {};
+
+  const how = opts.how || "MLE";
+
+  // Why a fit method is unavailable — distribution first, then the data, then
+  // the other options. Every rule is SurPyval's; the server enforces them too,
+  // this just stops you picking a combination that can only fail.
+  const methodBlockers = {};
+  const allowed = selected?.methods;
+  for (const m of fitMethods) {
+    if (allowed && !allowed.includes(m.id))
+      methodBlockers[m.id] = `${selected.name} can't be fitted by ${m.id}.`;
+  }
+  if (mapping?.c) methodBlockers.MOM = "Method of moments doesn't support censored data.";
+  if (mapping?.tl || mapping?.tr) {
+    methodBlockers.MOM = "Method of moments doesn't support truncation.";
+    methodBlockers.MSE = "Mean square error doesn't support truncation.";
+  }
+  if (opts.lfp || opts.zi) {
+    const which = [opts.lfp && "limited failure population", opts.zi && "zero-inflation"]
+      .filter(Boolean).join(" and ");
+    for (const m of fitMethods)
+      if (m.id !== "MLE") methodBlockers[m.id] = `A model with ${which} needs maximum likelihood.`;
+  }
+  if (Object.keys(opts.fixed || {}).length)
+    methodBlockers.MPP = "Probability plotting can't hold parameters fixed.";
+
+  // …and the mirror image: which adjustments the current method/distribution rule out.
+  const zilfpBlocked = how !== "MLE"
+    ? `Only maximum likelihood supports this — the fit method is set to ${how}.`
+    : null;
+  const ziBlocked = zilfpBlocked
+    || (selected && selected.zi === false
+        ? `${selected.name} has no mass at zero, so it can't be zero-inflated.`
+        : null);
+  const fixedBlocked = how === "MPP"
+    ? "Probability plotting can't hold parameters fixed."
+    : null;
 
   const setOpt = (key, val) => onFitOpts({ ...opts, [key]: val });
   const setFixed = (name, raw) => {
@@ -83,6 +132,7 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
   };
 
   const activeCount =
+    (opts.how && opts.how !== "MLE" ? 1 : 0) +
     (opts.offset ? 1 : 0) + (opts.zi ? 1 : 0) + (opts.lfp ? 1 : 0) +
     Object.keys(opts.fixed || {}).length;
 
@@ -115,7 +165,14 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
         <span className="dist-label">Model</span>
         <Select value={value} onChange={onChange} options={selectOptions} />
       </div>
-      {DESCRIPTIONS[value] && (
+      {isMixture && (
+        <p className="dist-blurb">
+          Several copies of one distribution fitted at once, for data holding more
+          than one failure mode — the case that curves on probability paper. Pick
+          the distribution and how many components under Advanced fit options.
+        </p>
+      )}
+      {!isMixture && DESCRIPTIONS[value] && (
         <p className="dist-blurb">
           {DESCRIPTIONS[value]}
           <RefLink entryId={value} />
@@ -129,37 +186,90 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
           </button>
           {open && (
             <div className="fitopts-body">
+              {isMixture && (
+                <div className="fitopts-mixture">
+                  <div className="dist-field" style={{ width: 220 }}>
+                    <span className="dist-label">Distribution to mix</span>
+                    <Select
+                      value={opts.mixture_distribution || "weibull"}
+                      onChange={(v) => setOpt("mixture_distribution", v)}
+                      options={(selected.mixture_distributions || []).map((d) => ({
+                        value: d.id, label: d.name,
+                      }))}
+                    />
+                  </div>
+                  <div className="dist-field" style={{ width: 150 }}>
+                    <span className="dist-label">Components</span>
+                    <Select
+                      value={String(opts.mixture || 2)}
+                      onChange={(v) => setOpt("mixture", Number(v))}
+                      options={[2, 3, 4].map((m) => ({ value: String(m), label: String(m) }))}
+                    />
+                  </div>
+                  <p className="muted-line" style={{ margin: "0.4rem 0 0", width: "100%" }}>
+                    More components always fit better, so compare the AIC against a
+                    single fit and keep the simplest that clearly wins. A mixture
+                    reports no confidence bounds.
+                  </p>
+                </div>
+              )}
+              {!isMixture && fitMethods.length > 0 && (
+                <div className="fitopts-method">
+                  <div className="dist-field" style={{ width: 280 }}>
+                    <span className="dist-label">Fit method</span>
+                    <Select
+                      value={how}
+                      onChange={(v) => setOpt("how", v === "MLE" ? "" : v)}
+                      options={fitMethods.map((m) => ({
+                        value: m.id,
+                        label: m.name,
+                        disabled: !!methodBlockers[m.id],
+                        hint: methodBlockers[m.id] || m.hint,
+                      }))}
+                    />
+                  </div>
+                  <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>
+                    {methodBlockers[how]
+                      || fitMethods.find((m) => m.id === how)?.hint}
+                  </p>
+                </div>
+              )}
               <span className="dist-label">Model adjustments (optional)</span>
-              {selected.offsetable && (
+              {(selected.offsetable || isMixture) && (
                 <label className="fitopts-row" title={OPTION_HELP.offset}>
                   <input
                     type="checkbox"
                     checked={!!opts.offset}
+                    disabled={isMixture}
                     onChange={(e) => setOpt("offset", e.target.checked)}
                   />
                   <span><b>Offset (3-parameter)</b> — failure-free period γ</span>
                 </label>
               )}
-              <label className="fitopts-row" title={OPTION_HELP.lfp}>
+              <label className="fitopts-row" title={zilfpBlocked || OPTION_HELP.lfp}>
                 <input
                   type="checkbox"
                   checked={!!opts.lfp}
+                  disabled={isMixture || !!zilfpBlocked}
                   onChange={(e) => setOpt("lfp", e.target.checked)}
                 />
                 <span><b>Limited failure population</b> — a fraction p never fails</span>
               </label>
-              <label className="fitopts-row" title={OPTION_HELP.zi}>
+              <label className="fitopts-row" title={ziBlocked || OPTION_HELP.zi}>
                 <input
                   type="checkbox"
                   checked={!!opts.zi}
+                  disabled={isMixture || !!ziBlocked}
                   onChange={(e) => setOpt("zi", e.target.checked)}
                 />
                 <span><b>Zero-inflated</b> — a fraction f₀ failed at t = 0</span>
               </label>
 
-              {(selected.params || []).length > 0 && (
+              {!isMixture && (selected.params || []).length > 0 && (
                 <div className="fitopts-fixed">
-                  <span className="dist-label">Fix parameters (optional)</span>
+                  <span className="dist-label" title={fixedBlocked || undefined}>
+                    Fix parameters (optional)
+                  </span>
                   <div className="fitopts-fixed-row">
                     {selected.params.map((p) => (
                       <label key={p} className="login-field" style={{ width: 120 }}>
@@ -169,6 +279,8 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                           step="any"
                           placeholder="free"
                           value={opts.fixed?.[p] ?? ""}
+                          disabled={!!fixedBlocked}
+                          title={fixedBlocked || undefined}
                           onChange={(e) => setFixed(p, e.target.value)}
                         />
                       </label>

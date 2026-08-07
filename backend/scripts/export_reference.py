@@ -162,6 +162,8 @@ def build() -> dict:
          "applies_to": "Plain distributions"},
         {"id": "fixed", "name": "Fixed parameters",
          "applies_to": "Any parametric fit"},
+        {"id": "mixture", "name": "Mixture of failure modes",
+         "applies_to": "Plain continuous distributions, 2-4 components"},
     ]
 
     total = sum(len(f["entries"]) for f in families)

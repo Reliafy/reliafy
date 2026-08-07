@@ -1,0 +1,56 @@
+<!doctype html><meta charset="utf-8">
+<style>
+  * { margin:0; box-sizing:border-box; font-family:-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif; }
+  body { width:1200px; height:630px; background:#fbfbf9; display:flex; flex-direction:column; }
+  .main { flex:1; display:flex; padding:56px 72px 24px; gap:56px; }
+  .left { flex:1.05; display:flex; flex-direction:column; }
+  .brand { display:flex; align-items:center; gap:14px; margin-bottom:44px; }
+  .mark { width:52px; height:52px; border-radius:14px; background:#2f6df6; display:grid; place-items:center; }
+  .mark svg { width:32px; height:32px; }
+  .brand-name { font-size:30px; font-weight:800; color:#16181d; }
+  .eyebrow { color:#2f6df6; font-weight:700; letter-spacing:.12em; font-size:19px; margin-bottom:18px; }
+  h1 { font-size:56px; line-height:1.08; font-weight:800; color:#16181d; letter-spacing:-0.015em; }
+  .sub { margin-top:22px; font-size:24px; line-height:1.45; color:#5b616b; max-width:430px; }
+  .panel { flex:1; align-self:center; background:#fff; border:1px solid #e7e5de; border-radius:16px;
+           box-shadow:0 10px 30px rgba(15,23,42,.07); padding:26px 28px; }
+  .ptitle { font-size:13px; letter-spacing:.14em; color:#9aa0aa; font-weight:700; margin-bottom:16px; }
+  .msg { border-radius:12px; padding:14px 16px; font-size:19px; line-height:1.4; }
+  .agent { background:#f2f5fd; color:#23262c; border:1px solid #e3eafc; }
+  .plan { list-style:none; margin-top:10px; }
+  .plan li { display:flex; gap:10px; align-items:baseline; padding:4px 0; color:#23262c; font-size:18.5px; }
+  .plan b { color:#2f6df6; font-variant-numeric:tabular-nums; }
+  .approve { margin-top:16px; display:flex; align-items:center; gap:14px; }
+  .btn { background:#2f6df6; color:#fff; font-weight:700; font-size:19px; border-radius:10px; padding:12px 22px; }
+  .wait { color:#9aa0aa; font-size:17px; font-style:italic; }
+  .foot { display:flex; justify-content:space-between; align-items:center;
+          padding:20px 72px 26px; border-top:1px solid #ecebe6; }
+  .url { color:#2f6df6; font-weight:700; font-size:22px; }
+  .tag { color:#9aa0aa; font-size:21px; }
+</style>
+<body>
+  <div class="main">
+    <div class="left">
+      <div class="brand">
+        <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M3 14c2.5 0 2.5-8 5-8s2.5 12 5 12 2.5-6 5-6h3"/></svg></div>
+        <div class="brand-name">Reliafy</div>
+      </div>
+      <div class="eyebrow">THE RELIABILITY AGENT</div>
+      <h1>The training comes with the software.</h1>
+      <div class="sub">An agent that knows the curriculum — and asks permission before it saves anything.</div>
+    </div>
+    <div class="panel">
+      <div class="ptitle">RELIABILITY AGENT · PROPOSED PLAN</div>
+      <div class="msg agent">
+        Your data is an event history on repairable units — that needs a
+        repair-process model, not a Weibull. I propose:
+        <ul class="plan">
+          <li><b>1</b> dataset (censoring flags normalised)</li>
+          <li><b>2</b> candidate life models, AIC-compared</li>
+          <li><b>1</b> repairable block diagram</li>
+        </ul>
+      </div>
+      <div class="approve"><div class="btn">Approve &amp; run</div><div class="wait">nothing saved until you do…</div></div>
+    </div>
+  </div>
+  <div class="foot"><div class="url">reliafy.com</div><div class="tag">Assistant free to start · Agent on Pro</div></div>
+</body>

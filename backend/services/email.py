@@ -85,15 +85,29 @@ def team_invite_pending(to: str, inviter_name: str, team_name: str) -> None:
 
 
 def new_signup(new_email: str | None, new_name: str | None) -> None:
-    """Notify the operators (``ADMIN_EMAILS``) that a new account signed up.
+    """Tell the operators a new account signed up.
 
-    Sends one email per configured admin; a no-op when SMTP or ADMIN_EMAILS is
-    unset. Fired from the server-side first-sight hook so it can't be missed."""
+    Push first (Pushover reaches a phone in seconds), falling back to email so
+    an instance configured only with ADMIN_EMAILS keeps working. Fired from the
+    server-side first-sight hook so it can't be missed.
+    """
+    from backend.services import push as push_service
+
+    who = new_email or "unknown"
+    if push_service.send(
+        "New Reliafy signup",
+        f"{new_name or '—'}\n{who}",
+        url=_app_url("/admin"),
+        url_title="Operator dashboard",
+    ):
+        return
+
     admins = sorted(config.ADMIN_EMAILS)
     if not admins:
-        logger.info("new-signup notify skipped (no ADMIN_EMAILS) email=%s", new_email)
+        logger.info("new-signup notify skipped (no push, no ADMIN_EMAILS) email=%s",
+                    new_email)
         return
-    subject = f"New Reliafy signup: {new_email or 'unknown'}"
+    subject = f"New Reliafy signup: {who}"
     body = (
         "A new user just signed up for Reliafy.\n\n"
         f"Name:  {new_name or '—'}\n"
