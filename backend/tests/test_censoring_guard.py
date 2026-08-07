@@ -48,17 +48,26 @@ def test_inverting_the_flag_fits_and_gives_the_expected_answer():
     assert alpha == pytest.approx(1372.92, rel=1e-3)
 
 
-@pytest.mark.parametrize("dist", ["weibull", "gumbel", "expo_weibull"])
-def test_every_distribution_that_needed_two_failures_now_explains(dist):
-    """These are the ones SurPyval crashed on with a single failure."""
+@pytest.mark.parametrize(
+    "dist", ["weibull", "gumbel", "expo_weibull", "normal", "lognormal"])
+def test_every_distribution_that_needs_two_failures_explains_itself(dist):
+    """Two unknowns cannot be pinned down by one event.
+
+    Every distribution here estimates at least a shape and a scale, and one
+    observed failure among seven survivors leaves that likelihood degenerate.
+    SurPyval signals it differently case by case — some raise, some decline to
+    converge — but the user must get the same sentence, never a traceback.
+    """
     with pytest.raises(FitError) as e:
         fitting.fit(dist, _df(), {"x": "Time", "c": "Censored"})
     assert "at least two observed failures" in str(e.value)
 
 
-@pytest.mark.parametrize("dist", ["exponential", "normal", "lognormal", "rayleigh"])
-def test_distributions_that_can_fit_one_failure_still_do(dist):
-    """The guard must not block fits SurPyval genuinely supports."""
+@pytest.mark.parametrize("dist", ["exponential", "rayleigh"])
+def test_the_one_parameter_distributions_still_fit_one_failure(dist):
+    """The guard must not block fits SurPyval genuinely supports. A lone
+    parameter is identified by one failure plus the accumulated time at risk,
+    so these are legitimate and must not be swept up by the check above."""
     r = fitting.fit(dist, _df(), {"x": "Time", "c": "Censored"})
     assert r["params"]
 

@@ -72,7 +72,7 @@
           "params": [
             {
               "name": "mu",
-              "min": 0.0,
+              "min": null,
               "max": null
             },
             {
