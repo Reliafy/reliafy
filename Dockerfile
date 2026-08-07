@@ -28,9 +28,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
-# RePyability is installed --no-deps so our git-pinned surpyval stays authoritative
-# (RePyability 0.8 pins surpyval>=0.16,<0.17, satisfied by our 0.16.0 pin). Its real
-# deps are in requirements.txt.
+# RePyability is installed --no-deps, and second, so our git-pinned surpyval stays
+# authoritative. It declares surpyval>=0.16,<0.17 — a ceiling it has never raised
+# rather than a real incompatibility, and one our 0.19 pin deliberately ignores;
+# see requirements.txt. Its real deps are in requirements.txt.
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.8.0" \
