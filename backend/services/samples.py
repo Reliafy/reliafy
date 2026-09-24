@@ -311,11 +311,156 @@ def _pump_station_graph() -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Instrument-air system: two views of one real industrial utility.
+#
+# Plant instrument air feeds every pneumatic valve and actuator on site, so
+# the system is built with redundancy at each stage: three compressors of
+# which two must run to meet demand (2-out-of-3), an air receiver, a
+# desiccant dryer with a spare, and an after-filter. Both diagrams use hours.
+#
+#   * "design" is non-repairable (reliability over a mission): it demonstrates
+#     a 2oo3 voting gate, a cold-standby dryer (the spare sits idle until the
+#     duty dryer fails) and a beta-factor common-cause group on the three
+#     compressors — they share suction, power and maintenance, so 10 % of
+#     compressor failures are assumed to take all three out together.
+#   * "availability" is repairable: every component carries a Lognormal
+#     repair-time model on top of its life model, and the dryers become a
+#     1-out-of-2 gate (standby isn't supported in availability mode), so the
+#     result is steady-state uptime rather than a survival curve.
+# ---------------------------------------------------------------------------
+def _lognormal_repair(mu: float, sigma: float) -> dict:
+    """A repair-time (MTTR) model in the same shape as a life model. ``mu`` and
+    ``sigma`` are the log-scale parameters: median repair = exp(mu) hours."""
+    return {
+        "source": "params",
+        "distribution": "Lognormal",
+        "distribution_id": "lognormal",
+        "params": [{"name": "mu", "value": mu}, {"name": "sigma", "value": sigma}],
+    }
+
+
+_IA_COMPRESSOR = (9000.0, 1.7)    # Weibull (alpha hours, beta): wear-out
+_IA_RECEIVER = (80000.0, 1.1)     # pressure vessel: near-constant hazard
+_IA_DRYER = (14000.0, 2.1)        # desiccant dryer: valve/desiccant wear
+_IA_AFTER_FILTER = (7000.0, 1.3)  # coalescing filter element
+
+
+def _instrument_air_design_graph() -> dict:
+    """Non-repairable instrument-air diagram (reliability over time)."""
+    comp_alpha, comp_beta = _IA_COMPRESSOR
+    return {
+        "unit": "hours",
+        "repairable": False,
+        "nodes": [
+            {"id": "input", "type": "input", "position": {"x": 0, "y": 180},
+             "data": {"label": "Input"}},
+            {"id": "compA", "type": "component", "position": {"x": 220, "y": 30},
+             "data": {"label": "Compressor A", "model": _weibull(comp_alpha, comp_beta)}},
+            {"id": "compB", "type": "component", "position": {"x": 220, "y": 180},
+             "data": {"label": "Compressor B", "model": _weibull(comp_alpha, comp_beta)}},
+            {"id": "compC", "type": "component", "position": {"x": 220, "y": 330},
+             "data": {"label": "Compressor C", "model": _weibull(comp_alpha, comp_beta)}},
+            # Voting gate: 2 of the 3 compressor branches must be up.
+            {"id": "vote-2oo3", "type": "knode", "position": {"x": 470, "y": 180},
+             "data": {"label": "2 of 3", "n": 2, "k": 3}},
+            {"id": "receiver", "type": "component", "position": {"x": 650, "y": 180},
+             "data": {"label": "Air receiver", "model": _weibull(*_IA_RECEIVER)}},
+            # Duty dryer with one cold spare, switched in on demand.
+            {"id": "dryer", "type": "standby", "position": {"x": 880, "y": 180},
+             "data": {"kind": "standby", "label": "Desiccant dryer (duty + cold spare)",
+                      "model": _weibull(*_IA_DRYER), "spares": 1, "cold": True,
+                      "startProb": 0.98, "standbyModel": None}},
+            {"id": "afterfilter", "type": "component", "position": {"x": 1150, "y": 180},
+             "data": {"label": "After-filter", "model": _weibull(*_IA_AFTER_FILTER)}},
+            {"id": "output", "type": "output", "position": {"x": 1380, "y": 180},
+             "data": {"label": "Output"}},
+        ],
+        "edges": [
+            {"id": "e-in-a", "source": "input", "target": "compA"},
+            {"id": "e-in-b", "source": "input", "target": "compB"},
+            {"id": "e-in-c", "source": "input", "target": "compC"},
+            {"id": "e-a-vote", "source": "compA", "target": "vote-2oo3"},
+            {"id": "e-b-vote", "source": "compB", "target": "vote-2oo3"},
+            {"id": "e-c-vote", "source": "compC", "target": "vote-2oo3"},
+            {"id": "e-vote-rec", "source": "vote-2oo3", "target": "receiver"},
+            {"id": "e-rec-dry", "source": "receiver", "target": "dryer"},
+            {"id": "e-dry-flt", "source": "dryer", "target": "afterfilter"},
+            {"id": "e-flt-out", "source": "afterfilter", "target": "output"},
+        ],
+        # The compressors share suction, power supply and a maintenance crew:
+        # a beta-factor of 0.1 says one in ten failures is a shared cause.
+        "ccf_groups": [
+            {"id": "ccf-compressors", "members": ["compA", "compB", "compC"], "beta": 0.1},
+        ],
+    }
+
+
+def _instrument_air_availability_graph() -> dict:
+    """Repairable instrument-air diagram (steady-state availability)."""
+    comp_alpha, comp_beta = _IA_COMPRESSOR
+
+    def component(nid, label, life, repair, x, y):
+        return {"id": nid, "type": "component", "position": {"x": x, "y": y},
+                "data": {"label": label, "model": _weibull(*life), "repair": repair}}
+
+    # Repair times (log-scale): compressors ~ 1 day median, receiver ~ 2 days,
+    # dryers ~ 8 h, filter ~ 2 h — sigma widens the tail on the bigger jobs.
+    compressor_repair = _lognormal_repair(3.2, 0.5)
+    return {
+        "unit": "hours",
+        "repairable": True,
+        "nodes": [
+            {"id": "input", "type": "input", "position": {"x": 0, "y": 180},
+             "data": {"label": "Input"}},
+            component("compA", "Compressor A", (comp_alpha, comp_beta), compressor_repair, 220, 30),
+            component("compB", "Compressor B", (comp_alpha, comp_beta), compressor_repair, 220, 180),
+            component("compC", "Compressor C", (comp_alpha, comp_beta), compressor_repair, 220, 330),
+            {"id": "vote-2oo3", "type": "knode", "position": {"x": 470, "y": 180},
+             "data": {"label": "2 of 3", "n": 2, "k": 3}},
+            component("receiver", "Air receiver", _IA_RECEIVER, _lognormal_repair(3.9, 0.6), 650, 180),
+            component("dryerA", "Dryer A", _IA_DRYER, _lognormal_repair(2.1, 0.4), 880, 100),
+            component("dryerB", "Dryer B", _IA_DRYER, _lognormal_repair(2.1, 0.4), 880, 260),
+            {"id": "vote-1oo2", "type": "knode", "position": {"x": 1120, "y": 180},
+             "data": {"label": "1 of 2", "n": 1, "k": 2}},
+            component("afterfilter", "After-filter", _IA_AFTER_FILTER, _lognormal_repair(0.7, 0.3), 1300, 180),
+            {"id": "output", "type": "output", "position": {"x": 1530, "y": 180},
+             "data": {"label": "Output"}},
+        ],
+        "edges": [
+            {"id": "e-in-a", "source": "input", "target": "compA"},
+            {"id": "e-in-b", "source": "input", "target": "compB"},
+            {"id": "e-in-c", "source": "input", "target": "compC"},
+            {"id": "e-a-vote", "source": "compA", "target": "vote-2oo3"},
+            {"id": "e-b-vote", "source": "compB", "target": "vote-2oo3"},
+            {"id": "e-c-vote", "source": "compC", "target": "vote-2oo3"},
+            {"id": "e-vote-rec", "source": "vote-2oo3", "target": "receiver"},
+            {"id": "e-rec-dryA", "source": "receiver", "target": "dryerA"},
+            {"id": "e-rec-dryB", "source": "receiver", "target": "dryerB"},
+            {"id": "e-dryA-vote", "source": "dryerA", "target": "vote-1oo2"},
+            {"id": "e-dryB-vote", "source": "dryerB", "target": "vote-1oo2"},
+            {"id": "e-vote-flt", "source": "vote-1oo2", "target": "afterfilter"},
+            {"id": "e-flt-out", "source": "afterfilter", "target": "output"},
+        ],
+        "ccf_groups": [],
+    }
+
+
 SAMPLE_RBDS = [
     {
         "id": "sample-rbd-pump-station",
         "name": "Pump station — 1 controller, 2 pumps (sample)",
         "graph": _pump_station_graph(),
+    },
+    {
+        "id": "sample-rbd-instrument-air-design",
+        "name": "Instrument air — 2oo3 compressors, cold-standby dryer, CCF (sample)",
+        "graph": _instrument_air_design_graph(),
+    },
+    {
+        "id": "sample-rbd-instrument-air-availability",
+        "name": "Instrument air — availability with repair times (sample)",
+        "graph": _instrument_air_availability_graph(),
     },
 ]
 

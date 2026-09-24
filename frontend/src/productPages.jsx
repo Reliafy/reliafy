@@ -220,13 +220,13 @@ export const PRODUCT_PAGES = [
           shared view-only with anyone — the models its blocks reference come along automatically.
           Teams edit in a shared workspace. Self-host the open-source core if your system designs
           can't leave the building. New to the method? Start with the{" "}
-          <Link to="/learn/mtbf-vs-mttf">MTBF vs MTTF primer</Link> or the built-in sample diagram.
+          <Link to="/learn/mtbf-vs-mttf">MTBF vs MTTF primer</Link> or the built-in sample diagrams.
         </p>
       </>
     ),
     band: {
       h2: "Model your system before it surprises you.",
-      p: "Start with the sample diagram and swap in your own blocks — free.",
+      p: "Start with a sample diagram and swap in your own blocks — free.",
     },
   },
   {
