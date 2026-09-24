@@ -129,6 +129,9 @@ export function compactGraph(graph = {}) {
         distribution_id: d.model.distribution_id,
         params: d.model.params,
         ...(d.model.modelId ? { saved_model_id: d.model.modelId } : {}),
+        // Guessed starting-point values — the assistant needs to see which
+        // blocks it still owes real numbers for on later turns.
+        ...(d.model.placeholder ? { placeholder: true } : {}),
       };
     }
     for (const k of ["n", "k", "spares", "cold"]) if (d[k] != null) node[k] = d[k];

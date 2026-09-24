@@ -348,6 +348,13 @@ export default function RbdCalculator({ graph, validation, stale }) {
   const unitLabel = graph.unit ? ` (${graph.unit})` : "";
   const canCalculate = !!validation?.can_calculate && !stale;
 
+  // Blocks whose life model is a guessed starting point (the assistant marks
+  // them placeholder:true). The numbers run fine; the results just aren't real.
+  const placeholderCount = useMemo(
+    () => (graph.nodes || []).filter((n) => n.data?.model?.placeholder).length,
+    [graph.nodes]
+  );
+
   // Nodes backed by a proportional-hazards model need covariate values before
   // they can be evaluated.
   const covNodes = useMemo(
@@ -438,6 +445,15 @@ export default function RbdCalculator({ graph, validation, stale }) {
           <span className="hint">Recalculate to apply your changes.</span>
         )}
       </div>
+
+      {placeholderCount > 0 && (
+        <div className="rbd-placeholder-note" role="status">
+          {placeholderCount === 1
+            ? "1 block uses placeholder parameters"
+            : `${placeholderCount} blocks use placeholder parameters`}
+          {" — results are illustrative until you set real values."}
+        </div>
+      )}
 
       {canCalculate && covNodes.length > 0 && (
         <div className="rbd-cov-bar">

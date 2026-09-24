@@ -69,6 +69,17 @@ function UnitWarn({ title }) {
   );
 }
 
+// Marks a life model the assistant filled in as a guessed starting point
+// (data.model.placeholder) — the numbers are illustrative until replaced.
+function PlaceholderBadge() {
+  const title = "Placeholder parameters — set real values before trusting the results";
+  return (
+    <span className="rbd-placeholder-chip" title={title} aria-label={title}>
+      placeholder
+    </span>
+  );
+}
+
 // Manual working/failed status badge (top-left corner).
 function StatusBadge({ state }) {
   if (state !== "working" && state !== "failed") return null;
@@ -110,11 +121,13 @@ function ComponentNode({ id, data }) {
   const ccf = useContext(RbdCcfContext);
   const beta = ccf[id];
   const warn = unitWarning(data.model, rbdUnit);
+  const placeholder = !!data.model?.placeholder;
   return (
-    <div className={"rbd-comp" + (warn ? " unit-warn" : "") + (beta != null ? " ccf-member" : "") + stateClass(data.state)}>
+    <div className={"rbd-comp" + (warn ? " unit-warn" : "") + (placeholder ? " placeholder" : "") + (beta != null ? " ccf-member" : "") + stateClass(data.state)}>
       <Handle type="target" position={Position.Left} />
       <StatusBadge state={data.state} />
       {warn && <UnitWarn title={warn} />}
+      {placeholder && <PlaceholderBadge />}
       {beta != null && (
         <span className="rbd-ccf-chip" title={`Common-cause group — β = ${beta}`}>CC β={beta}</span>
       )}
@@ -231,16 +244,18 @@ function StructureNode({ data }) {
   }
 
   const count = BLOCK_HAS_MODEL(data.kind) && data.n ? data.n : null;
+  const placeholder = !!data.model?.placeholder;
 
   return (
     <div
       className={
-        "rbd-block " + (meta.cls || "") + (warn ? " unit-warn" : "") + stateClass(data.state)
+        "rbd-block " + (meta.cls || "") + (warn ? " unit-warn" : "") + (placeholder ? " placeholder" : "") + stateClass(data.state)
       }
     >
       <Handle type="target" position={Position.Left} />
       <StatusBadge state={data.state} />
       {warn && <UnitWarn title={warn} />}
+      {placeholder && <PlaceholderBadge />}
       <div className="rbd-block-title">
         {data.label}
         {count ? <span className="rbd-block-count">×{count}</span> : null}

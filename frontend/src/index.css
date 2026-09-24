@@ -966,6 +966,38 @@ body {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
 }
 
+/* Placeholder life model (assistant starting-point values, data.model.placeholder) */
+.react-flow__node .rbd-comp.placeholder,
+.react-flow__node .rbd-block.placeholder {
+  border-style: dashed;
+}
+
+.rbd-placeholder-chip {
+  position: absolute;
+  bottom: -8px;
+  right: -4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: #f59e0b;
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 6px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+  z-index: 2;
+}
+
+.rbd-placeholder-note {
+  margin: 4px 0 10px;
+  padding: 6px 10px;
+  border: 1px solid #f5d08a;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #9a5b00;
+  font-size: 12.5px;
+}
+
 .rbd-name {
   display: inline-block;
   /* Bounded so a long diagram name can't push the toolbar row into the
