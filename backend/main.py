@@ -304,6 +304,14 @@ async def fit_endpoint(
             options=options,
         )
     except FitError as exc:
+        # The message goes to the user; log it too, or the most informative
+        # moment of a session (a fit that refused) leaves only a 422 in the
+        # request log. Column names and the covariate list are the only
+        # user-supplied content here — no data values.
+        logger.warning(
+            "Fit refused: distribution=%s covariates=%s mapping=%s — %s",
+            distribution, list(z or []), {k: v for k, v in mapping.items() if v}, exc,
+        )
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Unexpected error fitting %s model", distribution)
