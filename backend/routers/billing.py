@@ -69,7 +69,6 @@ def billing_status(session=Depends(get_session), user: dict = Depends(get_curren
     summary["admin"] = billing_service.is_admin_user(user)
     summary["stripe_enabled"] = bool(config.STRIPE_API_KEY)
     summary["pro_available"] = bool(config.STRIPE_API_KEY and config.STRIPE_PRO_PRICE_ID)
-    summary["pro_monthly_credit_cents"] = config.PRO_MONTHLY_CREDIT_CENTS
     summary["ai"] = assistant_service.info()
     return summary
 

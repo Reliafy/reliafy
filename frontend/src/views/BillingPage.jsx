@@ -1,10 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getBilling, buyCredits, subscribePro, billingPortal } from "../api.js";
+import { PRO_PRICE } from "../pricing.js";
 
 // AI usage is denominated in "credits" — users never see a dollar balance.
 // (Internally 1 credit == 1 cent; only pack purchase prices show as dollars.)
 const credits = (cents) => (cents || 0).toLocaleString();
+
+// Capped artifact kinds, in display order. Keys match `caps` / `usage` in the
+// GET /api/billing response (backend/services/billing.py usage_summary).
+const ARTIFACTS = [
+  ["Datasets", "datasets"],
+  ["Models", "models"],
+  ["RBDs", "rbds"],
+  ["Degradation models", "degradation_models"],
+  ["Tracked items", "tracked_items"],
+  ["RCM studies", "rcm_studies"],
+  ["Fleet forecasts", "fleets"],
+];
 
 export default function BillingPage() {
   const location = useLocation();
@@ -50,6 +63,27 @@ export default function BillingPage() {
   const caps = data.caps || {};
   const usage = data.usage || {};
 
+  // Free vs Pro comparison. Only Free-plan cloud users have something to
+  // compare against: operators are exempt from caps, and self-hosted installs
+  // (billing off) have no Pro plan at all.
+  const showCompare = !isPro && !isAdmin && !!data.billing_enabled;
+  const proCredits = data.pro_monthly_credit_cents > 0 ? credits(data.pro_monthly_credit_cents) : null;
+  const starterCredits = data.free_grant_cents > 0 ? credits(data.free_grant_cents) : null;
+  // Every value here reflects how the backend actually gates the feature:
+  // caps from usage_summary, api_access_allowed (Pro only), teams.py (create
+  // is Pro only), reliability_agent.py (Pro or any purchased credits).
+  const compareRows = [
+    ...ARTIFACTS.map(([label, key]) => ({ label, free: caps[key] ?? "—", pro: "Unlimited", mono: true })),
+    {
+      label: "AI assistant (metered)",
+      free: starterCredits ? `${starterCredits} starter credits, then buy packs` : "Buy credit packs",
+      pro: proCredits ? `${proCredits} credits included every month, plus packs` : "Buy credit packs",
+    },
+    { label: "Reliability Agent", free: "With purchased credits", pro: "Included" },
+    { label: "Programmatic API & data ingestion", free: "—", pro: "Included" },
+    { label: "Team workspaces", free: "Join teams (view-only)", pro: "Create teams and edit together" },
+  ];
+
   return (
     <div className="app">
       <header>
@@ -67,6 +101,47 @@ export default function BillingPage() {
         <div className="card">Payments aren't configured on this environment yet.</div>
       )}
 
+      {showCompare && (
+        <div className="card bill-card bill-compare">
+          <div className="bill-head">
+            <h2>Free vs Pro</h2>
+            <span className="bill-compare-price">
+              {PRO_PRICE.amount}<span className="bill-compare-per">{PRO_PRICE.per}</span>
+            </span>
+          </div>
+          <div className="bill-compare-wrap">
+            <table className="bill-compare-table">
+              <thead>
+                <tr>
+                  <th scope="col" aria-label="Feature"></th>
+                  <th scope="col">Free <span className="plan-badge free">current</span></th>
+                  <th scope="col">Pro</th>
+                </tr>
+              </thead>
+              <tbody>
+                {compareRows.map((r) => (
+                  <tr key={r.label}>
+                    <th scope="row">{r.label}</th>
+                    <td className={r.mono ? "bill-compare-n" : ""}>{r.free}</td>
+                    <td className="bill-compare-pro">{r.pro}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {data.pro_available ? (
+            <div className="bill-compare-cta">
+              <button disabled={working === "pro"} onClick={() => go("pro", subscribePro)}>
+                {working === "pro" ? "Redirecting…" : `Subscribe to Pro — ${PRO_PRICE.amount}/month`}
+              </button>
+              <span className="muted-line">You'll be taken to Stripe Checkout to enter a card. Cancel anytime from this page.</span>
+            </div>
+          ) : (
+            <p className="muted-line">Pro plan coming soon.</p>
+          )}
+        </div>
+      )}
+
       <div className="bill-grid">
         {/* Plan */}
         <div className="card bill-card">
@@ -81,7 +156,7 @@ export default function BillingPage() {
             <p className="muted-line">Operator account — plan limits and AI charges don't apply to you.</p>
           )}
           <ul className="bill-usage">
-            {[["Datasets", "datasets"], ["Models", "models"], ["RBDs", "rbds"], ["Degradation models", "degradation_models"], ["Tracked items", "tracked_items"], ["RCM studies", "rcm_studies"], ["Fleet forecasts", "fleets"]].map(([label, key]) => (
+            {ARTIFACTS.map(([label, key]) => (
               <li key={key}>
                 <span>{label}</span>
                 <span className="bill-usage-n">{usage[key] ?? 0}{noCaps ? "" : ` / ${caps[key]}`}</span>
@@ -92,28 +167,29 @@ export default function BillingPage() {
             Usage shown is your personal workspace — team workspaces have
             unlimited saves.
           </p>
-          {isPro ? (
+          {isPro && (
             <button className="secondary" disabled={working === "portal"} onClick={() => go("portal", billingPortal)}>
               {working === "portal" ? "Opening…" : "Manage subscription"}
             </button>
-          ) : data.pro_available ? (
-            <button disabled={working === "pro"} onClick={() => go("pro", subscribePro)}>
-              {working === "pro" ? "Redirecting…" : "Upgrade to Pro"}
-            </button>
-          ) : (
-            <p className="muted-line">Pro plan coming soon.</p>
           )}
-          {!isPro && (
+          {isPro && proCredits && (
+            <p className="muted-line">Your plan includes {proCredits} AI credits each month.</p>
+          )}
+          {/* Free users on the cloud get the subscribe button under the
+              comparison above; operators / self-host keep the plain one. */}
+          {!isPro && !showCompare && (
+            data.pro_available ? (
+              <button disabled={working === "pro"} onClick={() => go("pro", subscribePro)}>
+                {working === "pro" ? "Redirecting…" : "Upgrade to Pro"}
+              </button>
+            ) : (
+              <p className="muted-line">Pro plan coming soon.</p>
+            )
+          )}
+          {!isPro && !showCompare && (
             <p className="muted-line">
               Pro lifts the free-tier limits on saved datasets, models, and RBDs
-              {data.pro_monthly_credit_cents > 0 &&
-                ` — and includes ${credits(data.pro_monthly_credit_cents)} AI credits every month`}
-              .
-            </p>
-          )}
-          {isPro && data.pro_monthly_credit_cents > 0 && (
-            <p className="muted-line">
-              Your plan includes {credits(data.pro_monthly_credit_cents)} AI credits each month.
+              {proCredits && ` — and includes ${proCredits} AI credits every month`}.
             </p>
           )}
         </div>
