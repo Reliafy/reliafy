@@ -10,7 +10,7 @@ export default function PrivacyPage() {
       <PublicNav />
       <article className="blog-article">
         <header className="blog-article-head">
-          <div className="blog-card-meta"><time>Effective 7 August 2026</time></div>
+          <div className="blog-card-meta"><time>Effective 24 September 2026</time></div>
           <h1>Privacy Policy</h1>
         </header>
         <div className="blog-prose">
@@ -39,14 +39,21 @@ export default function PrivacyPage() {
               paste anything you wouldn't want retained.</li>
             <li><strong>Operational logs:</strong> standard request logs (timestamps,
               endpoints, status codes) for reliability and debugging.</li>
+            <li><strong>Usage analytics:</strong> records of the pages you visit, the
+              site that referred you, and actions you take within the Service (such as
+              creating an account or fitting a model). We collect these in our own
+              systems solely to understand how the Service is used and to improve it,
+              and retain them for no longer than 90 days.</li>
           </ul>
-          <p>We don't run advertising or third-party analytics trackers.</p>
+          <p>We don't use advertising or third-party analytics trackers, and usage
+            analytics are never shared with or sold to third parties.</p>
 
           <h2>How we use it</h2>
           <p>
-            Only to operate the Service: authenticating you, storing your work,
-            processing payments, metering AI usage, checking the assistant is working
-            properly, and fixing problems. We never
+            Only to operate and improve the Service: authenticating you, storing your
+            work, processing payments, metering AI usage, checking the assistant is
+            working properly, fixing problems, and understanding how the Service is
+            used so we can improve it. We never
             sell your data, and we don't use your datasets or AI conversations to
             train machine-learning models.
           </p>
