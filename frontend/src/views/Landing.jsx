@@ -4,6 +4,7 @@ import PublicNav from "../components/PublicNav.jsx";
 import PublicFooter from "../components/PublicFooter.jsx";
 import HeroPlot from "../components/HeroPlot.jsx";
 import { useAuth } from "../AuthProvider.jsx";
+import { PRO_PRICE } from "../pricing.js";
 
 const CheckIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -143,8 +144,8 @@ const TIERS = (primaryHref) => [
   },
   {
     name: "Pro",
-    price: "US$19",
-    per: "per month",
+    price: PRO_PRICE.amount,
+    per: PRO_PRICE.per,
     blurb: "For working reliability engineers who live in their data.",
     featured: true,
     features: [

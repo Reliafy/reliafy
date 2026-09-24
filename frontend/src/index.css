@@ -4771,6 +4771,28 @@ select:disabled {
 .bill-pack-price { font-size: 17px; font-weight: 700; }
 .bill-pack-credits { font-size: 12px; color: var(--muted); }
 
+/* Free vs Pro comparison (Free-plan cloud users only). The table scrolls
+   inside its own wrapper on narrow screens; the page never scrolls sideways. */
+.bill-compare { margin-top: 8px; }
+.bill-compare-price { font-family: var(--mono); font-size: 18px; font-weight: 700; white-space: nowrap; }
+.bill-compare-per { font-size: 11px; font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0.05em; text-transform: uppercase; }
+.bill-compare-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.bill-compare-table { width: 100%; min-width: 520px; border-collapse: collapse; font-size: 14px; }
+.bill-compare-table th, .bill-compare-table td {
+  padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top;
+}
+.bill-compare-table th:first-child, .bill-compare-table td:first-child { padding-left: 0; }
+.bill-compare-table thead th {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+}
+.bill-compare-table thead th .plan-badge { margin-left: 6px; vertical-align: middle; }
+.bill-compare-table tbody th { font-weight: 500; width: 36%; }
+.bill-compare-table td { color: var(--muted); width: 32%; }
+.bill-compare-table td.bill-compare-n { font-family: var(--mono); }
+.bill-compare-table td.bill-compare-pro { color: inherit; font-weight: 500; }
+.bill-compare-cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.bill-compare-cta .muted-line { margin: 0; }
+
 .notice-ok { border-color: #bfe3cd; background: #eef8f1; color: #2f7a52; }
 
 /* Calculator warning banner (e.g. additive-hazards fit with negative cumulative

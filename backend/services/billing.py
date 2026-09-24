@@ -273,8 +273,11 @@ def usage_summary(db, uid: str) -> dict:
             "tracked_items": config.FREE_MAX_TRACKED_ITEMS,
             "rcm_studies": config.FREE_MAX_RCM_STUDIES,
             "fleets": config.FREE_MAX_FLEETS,
-        "fleets": config.FREE_MAX_FLEETS,
         },
+        # Quoted on /billing (Free vs Pro comparison) so the page never
+        # hardcodes a number the operator can change with an env var.
+        "free_grant_cents": config.FREE_GRANT_CENTS,
+        "pro_monthly_credit_cents": config.PRO_MONTHLY_CREDIT_CENTS,
         "usage": {
             "datasets": owned_count(db, uid, "datasets"),
             "models": owned_count(db, uid, "models"),

@@ -341,3 +341,38 @@ def test_legacy_cents_balance_migrates_losslessly(session):
     assert bal == 499
     acct = billing.account(session, "legacy-1")
     assert acct["credit_millicents"] == 499_600
+
+
+def test_billing_status_exposes_plan_comparison_numbers(monkeypatch):
+    """/billing renders a Free vs Pro table from these fields — never hardcoded."""
+    import mongomock
+    from fastapi.testclient import TestClient
+
+    from backend import config, db
+    from backend.auth import get_current_user
+    from backend.main import app
+
+    monkeypatch.setattr(config, "AUTH_DISABLED", False)
+    monkeypatch.setattr(config, "BILLING_ENABLED", True)
+    monkeypatch.setattr(config, "FREE_GRANT_CENTS", 25)
+    monkeypatch.setattr(config, "PRO_MONTHLY_CREDIT_CENTS", 1000)
+    monkeypatch.setattr(config, "FREE_MAX_DATASETS", 3)
+    test_db = mongomock.MongoClient()["reliafy_test"]
+    monkeypatch.setattr(db, "_db", test_db)
+    monkeypatch.setattr(db, "_simulated", True)
+    client = TestClient(app)
+    try:
+        app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
+        r = client.get("/api/billing")
+    finally:
+        app.dependency_overrides.clear()
+    assert r.status_code == 200
+    body = r.json()
+    assert body["plan"] == "free"
+    assert body["billing_enabled"] is True
+    assert body["free_grant_cents"] == 25
+    assert body["pro_monthly_credit_cents"] == 1000
+    assert body["caps"]["datasets"] == 3
+    assert set(body["caps"]) == {
+        "datasets", "models", "rbds", "degradation_models", "tracked_items", "rcm_studies", "fleets",
+    }
