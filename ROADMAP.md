@@ -46,9 +46,6 @@ other half of the discipline: Crow-AMSAA / NHPP growth analysis, mean
 cumulative function (MCF) for recurrent events, trend tests (is this fleet
 degrading or improving?). This also makes MTBF honest for repairables.
 
-**Public link for RBDs** — the one artifact type without a public read-only
-view (needs a canvas renderer).
-
 **Report view.** A print-friendly, single-link "report" composition of any
 analysis (public links already carry the content; this adds layout — no
 PDFs, the link *is* the report).
@@ -154,7 +151,8 @@ transparency.
 Evidence-linked RCM with live contradiction flagging · degradation tracking
 with per-item RUL and credible intervals · fleet failure forecasting
 (analytic + Monte Carlo renewals) · team workspaces and view-only sharing ·
-public read-only share links (`/p/…`) · AI assistant with tool access to
+public read-only share links (`/p/…`) for every artifact type, RBDs
+included (read-only canvas + server-computed results) · AI assistant with tool access to
 every module · censored/truncated-data MLE fitting across Weibull,
 Lognormal, Exponential, Gamma, Normal, and proportional-hazards models ·
 reliability block diagrams with k-of-n, standby, importance measures, and

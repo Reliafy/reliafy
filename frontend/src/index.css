@@ -4084,6 +4084,33 @@ select:disabled {
   .public-artifact { padding: 18px 16px 36px; }
 }
 
+/* Public RBD: a read-only canvas that pans/zooms inside its own box (the page
+   scrolls around it) followed by the same results the builder's Calculator
+   tab shows. */
+.public-rbd-canvas {
+  height: 56vh;
+  min-height: 320px;
+  max-height: 640px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+.public-rbd-canvas .react-flow__node { cursor: default; }
+.public-rbd-canvas .react-flow__handle { pointer-events: none; }
+.public-rbd-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.public-rbd-meta b { color: var(--text); font-weight: 600; }
+@media (max-width: 700px) {
+  .public-rbd-canvas { height: 46vh; min-height: 280px; }
+}
+
 /* SEO product pages reuse the landing sections plus a prose column. */
 .prod-prose {
   max-width: 840px;

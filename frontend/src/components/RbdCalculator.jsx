@@ -35,7 +35,10 @@ const FUNCS = [
 const NODE_COLORS = ["#0284c7", "#16a34a", "#db2777", "#d97706", "#7c3aed", "#0891b2"];
 
 
-function Results({ result, t, tMax, conditionalAge = 0 }) {
+// Reliability results (non-repairable RBD): headline MTTF / B-lives, the
+// system + per-node R(t)/F(t) curves, importance measures, and the structural
+// path/cut sets. Also used by the public read-only view.
+export function Results({ result, t, tMax, conditionalAge = 0 }) {
   const x = result.time;
   const [active, setActive] = useState("sf");
   const unit = result.unit;
@@ -277,7 +280,8 @@ function Results({ result, t, tMax, conditionalAge = 0 }) {
 // RBD.
 // Availability results for a repairable RBD: the headline uptime, up/down-time
 // figures, and each component's share of downtime (what drags uptime down).
-function AvailabilityView({ result, unit }) {
+// Also used by the public read-only view.
+export function AvailabilityView({ result, unit }) {
   const u = unit ? ` ${unit}` : "";
   const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
   const a = result.steady_state_availability;
