@@ -16,12 +16,80 @@ import ResultView from "./ResultView.jsx";
 const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "" };
 const STEPS = ["Source", "Data", "Model", "Result"];
 
+// Prefill the column mapping: the first column is the observed value, and a
+// column literally named like a censoring flag (``censored``, ``c``) is mapped
+// to ``c``. Anything else (``failed``, ``status``…) is left for the user — its
+// convention can't be assumed.
+const CENSOR_NAMES = /^(c|cens|censor|censored|censoring)$/i;
+function guessMapping(columns) {
+  const x = columns[0] || "";
+  const c = columns.find((col) => col !== x && CENSOR_NAMES.test(String(col).trim())) || "";
+  return { ...EMPTY_MAPPING, x, c };
+}
+
+// Turn pasted values into CSV text. Accepts one value per line, or values
+// separated by commas / spaces / tabs / semicolons on any number of lines. When
+// every line carries exactly two numbers the second is read as the censoring
+// flag (0 = failed, 1 = still running; -1 left, 2 interval also pass). A
+// leading non-numeric line (a header) is ignored. Returns { csv, rows, cols }
+// or throws with a message fit to show inline.
+export function parsePastedValues(text) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length && !/[0-9]/.test(lines[0])) lines.shift();
+  if (!lines.length) throw new Error("Paste at least a few values first.");
+  const rows = lines.map((l) => l.split(/[\s,;]+/).filter(Boolean));
+  const num = (t) => {
+    const v = Number(t);
+    return Number.isFinite(v) ? v : null;
+  };
+  const twoCols = rows.every((r) => r.length === 2);
+  if (twoCols) {
+    const out = [];
+    for (let i = 0; i < rows.length; i++) {
+      const [t, c] = rows[i];
+      const tv = num(t);
+      const cv = num(c);
+      if (tv === null) throw new Error(`Line ${i + 1}: "${t}" isn't a number.`);
+      if (cv === null || ![-1, 0, 1, 2].includes(cv)) {
+        throw new Error(`Line ${i + 1}: censoring flag "${c}" should be 0 (failed) or 1 (still running).`);
+      }
+      out.push(`${tv},${cv}`);
+    }
+    return { csv: `time,censored\n${out.join("\n")}\n`, rows: out.length, cols: 2 };
+  }
+  // Mixed line shapes (some "t c", some "t") are ambiguous — point at the
+  // first line that breaks the pattern of the first one.
+  const bad = rows.findIndex((r) => r.length !== rows[0].length);
+  if (bad !== -1 && rows.length > 1 && rows[0].length <= 2) {
+    const n = rows[bad].length;
+    throw new Error(
+      `Line ${bad + 1} has ${n} value${n === 1 ? "" : "s"} — use one value per line, or two per line as "time censored".`
+    );
+  }
+  const values = rows.flat();
+  const out = [];
+  for (const t of values) {
+    const tv = num(t);
+    if (tv === null) throw new Error(`"${t}" isn't a number.`);
+    out.push(String(tv));
+  }
+  if (out.length < 2) throw new Error("Paste at least two values.");
+  return { csv: `time\n${out.join("\n")}\n`, rows: out.length, cols: 1 };
+}
+
 // Fit flow rendered as a page panel: (1) pick a data source, (2) map columns
 // (+ unit, covariates), (3) pick a model and fit, (4) review the fit, name it,
 // and save — with Back to change anything and re-fit before saving. Calls
 // ``onSaved`` with the saved model; ``onCancel`` backs out to the list.
-export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDatasetId, autoFit }) {
+// ``initialSource`` opens the source step on "upload" (default) or "paste".
+export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDatasetId, autoFit, initialSource }) {
   const [step, setStep] = useState(1);
+  // Source step: "upload" (dropzone) or "paste" (values typed / pasted in).
+  const [source, setSource] = useState(initialSource === "paste" ? "paste" : "upload");
+  const [pasted, setPasted] = useState("");
   const [file, setFile] = useState(null);
   const [datasetId, setDatasetId] = useState(null);
   const [sourceName, setSourceName] = useState("");
@@ -93,7 +161,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     try {
       const cols = await getColumns(f);
       setCsv(cols);
-      setMapping({ ...EMPTY_MAPPING, x: cols.columns[0] || "" });
+      setMapping(guessMapping(cols.columns));
       setCovariates([]);
       setStep(2);
     } catch (err) {
@@ -114,7 +182,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       const full = await getDataset(d.id);
       const columns = full.preview_columns || [];
       setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows });
-      setMapping({ ...EMPTY_MAPPING, x: columns[0] || "" });
+      setMapping(guessMapping(columns));
       setCovariates([]);
       setStep(2);
     } catch (err) {
@@ -138,7 +206,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       try {
         const full = await getDataset(initialDatasetId);
         const columns = full.preview_columns || [];
-        const map = { ...EMPTY_MAPPING, x: columns[0] || "" };
+        const map = guessMapping(columns);
         setFile(null);
         setDatasetId(initialDatasetId);
         setSourceName(full.name || "dataset");
@@ -167,6 +235,20 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     e.preventDefault();
     setDragging(false);
     pickFile(e.dataTransfer.files?.[0]);
+  };
+
+  // Pasted values become a small CSV file in the browser and go through the
+  // same upload path as a real file (/api/columns, then the fit), so nothing
+  // downstream changes.
+  const usePasted = () => {
+    let parsed;
+    try {
+      parsed = parsePastedValues(pasted);
+    } catch (err) {
+      setError(err.message);
+      return;
+    }
+    pickFile(new File([parsed.csv], "pasted-values.csv", { type: "text/csv" }));
   };
 
   const toggleCovariate = (col) =>
@@ -260,7 +342,11 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
-        <span className="hint" style={{ margin: 0 }}>Upload a CSV or pick a dataset to continue</span>
+        <span className="hint" style={{ margin: 0 }}>
+          {source === "paste"
+            ? "Paste your values, or pick a dataset, to continue"
+            : "Upload a CSV or pick a dataset to continue"}
+        </span>
       </>
     );
   } else if (step === 2) {
@@ -294,6 +380,52 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     <div className="card fit-flow">
       {step === 1 && (
         <>
+          <div className="source-toggle" role="tablist" aria-label="Data source">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === "upload"}
+              className={`source-tab${source === "upload" ? " active" : ""}`}
+              onClick={() => { setSource("upload"); setError(null); }}
+            >
+              Upload a CSV
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === "paste"}
+              className={`source-tab${source === "paste" ? " active" : ""}`}
+              onClick={() => { setSource("paste"); setError(null); }}
+            >
+              Paste values
+            </button>
+          </div>
+
+          {source === "paste" && (
+            <div className="paste-source">
+              <textarea
+                className="paste-area"
+                value={pasted}
+                spellCheck={false}
+                autoFocus
+                disabled={loading}
+                placeholder={"One value per line, e.g.\n312\n420\n506\n\nor with a censoring flag:\n120 0\n340 0\n500 1"}
+                onChange={(e) => setPasted(e.target.value)}
+              />
+              <p className="hint" style={{ margin: 0 }}>
+                Times to failure, one per line (or separated by commas / spaces).
+                Add a second column for censoring: <b>0 = the unit failed</b>,{" "}
+                <b>1 = it was still running</b> when observation stopped.
+              </p>
+              <div className="row" style={{ margin: 0 }}>
+                <button type="button" onClick={usePasted} disabled={loading || !pasted.trim()}>
+                  {loading ? "Reading values…" : "Use these values"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {source === "upload" && (
           <div
             className={`dropzone${dragging ? " dragging" : ""}`}
             onClick={() => inputRef.current?.click()}
@@ -328,6 +460,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               onChange={(e) => pickFile(e.target.files?.[0])}
             />
           </div>
+          )}
 
           {datasets.length > 0 && (
             <div className="recent">
