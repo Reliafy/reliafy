@@ -11,6 +11,7 @@ import FfiResult from "../components/FfiResult.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import RcmTree from "../components/RcmTree.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
+import PublicRbd from "../components/PublicRbd.jsx";
 import { getPublicArtifact } from "../api.js";
 
 // Public, read-only view of a shared artifact (/p/:token) — no account
@@ -25,6 +26,7 @@ const KIND_LABEL = {
   strategy_analyses: "Strategy analysis",
   rcm_studies: "RCM study",
   fleets: "Fleet failure forecast",
+  rbds: "Reliability block diagram",
 };
 
 const fmt = (v, dp = 1) =>
@@ -139,6 +141,8 @@ function Body({ collection, a }) {
       );
     case "fleets":
       return <FleetView a={a} />;
+    case "rbds":
+      return <PublicRbd a={a} />;
     default:
       return <div className="card empty">This artifact type doesn't have a public view.</div>;
   }
@@ -156,6 +160,16 @@ export default function PublicArtifact() {
       .then(setData)
       .catch((e) => setError(e.message));
   }, [token]);
+
+  // Name the tab after the shared artifact (the SPA shell's title is generic).
+  useEffect(() => {
+    if (!data?.artifact?.name) return undefined;
+    const previous = document.title;
+    document.title = `${data.artifact.name} — ${KIND_LABEL[data.collection] || "Analysis"} · Reliafy`;
+    return () => {
+      document.title = previous;
+    };
+  }, [data]);
 
   return (
     <div className="landing">

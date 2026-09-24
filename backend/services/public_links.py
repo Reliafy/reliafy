@@ -20,8 +20,7 @@ from backend.config import SAMPLE_OWNER
 from backend.services import access
 from backend.services import samples as samples_service
 
-# Artifact types with a public renderer. RBDs are excluded until the canvas
-# has a public read-only view.
+# Artifact types with a public renderer at /p/:token.
 PUBLIC_COLLECTIONS = {
     "models",
     "datasets",
@@ -29,6 +28,7 @@ PUBLIC_COLLECTIONS = {
     "strategy_analyses",
     "rcm_studies",
     "fleets",
+    "rbds",
 }
 
 # Fields stripped (recursively) from public payloads: identities and
