@@ -257,8 +257,41 @@ def preview(file_bytes: bytes, rows: int = 5) -> dict:
 CENSOR_CONVENTION = (
     "Reliafy uses the survival-analysis convention: 0 = the unit failed "
     "(an observed event), 1 = it was still running when observation stopped "
-    "(right-censored). If your column marks failures with a 1, invert it."
+    "(right-censored). If your column marks failures with a 1, invert it: tick "
+    "\"My censor column uses 1 = failed\" under the column mapping."
 )
+
+# Fit option that flips a 1 = failed censor column into the convention above.
+# Lives in the options dict (and so in a saved model's ``spec.options``) rather
+# than the mapping, because the mapping is column *names* only.
+CENSOR_INVERT_KEY = "c_invert"
+
+# Censor codes SurPyval understands (see the module docstring).
+_CENSOR_CODES = (0, 1, -1, 2)
+
+
+def invert_censor_column(df: pd.DataFrame, column: str) -> pd.DataFrame:
+    """Return a copy of ``df`` with ``column``'s 0/1 flags swapped.
+
+    Only the right-censoring pair is flipped (0 -> 1, 1 -> 0); left (-1) and
+    interval (2) codes have no "other way round" and pass through untouched.
+    Anything else in the column is refused up front — silently inverting a
+    column of 3s and blanks would only move the confusion downstream.
+    """
+    if column not in df.columns:
+        raise FitError(f"Censor column '{column}' isn't in the data.")
+    raw = pd.to_numeric(df[column], errors="coerce")
+    bad = df[column][raw.isna() | ~raw.isin(_CENSOR_CODES)]
+    if len(bad):
+        shown = ", ".join(str(v) for v in pd.unique(bad.astype(str))[:5])
+        raise FitError(
+            f"Censor column '{column}' can only be inverted when it holds "
+            f"0/1 (with -1 or 2 for left/interval censoring); found: {shown}. "
+            "Fix those values or clear the 1 = failed option."
+        )
+    out = df.copy()
+    out[column] = raw.where(~raw.isin((0, 1)), 1 - raw)
+    return out
 
 
 def failure_count(kwargs: dict) -> tuple[int, int]:
@@ -491,6 +524,7 @@ def options_from_form(
     mixture: Optional[str] = None,
     mixture_distribution: Optional[str] = None,
     how: Optional[str] = None,
+    c_invert: Optional[str] = None,
 ) -> Optional[dict]:
     """Build an options dict from HTML-form string fields (both fit routers)."""
 
@@ -498,6 +532,8 @@ def options_from_form(
         return str(v or "").strip().lower() in {"1", "true", "yes", "on"}
 
     opts = {"offset": truthy(offset), "zi": truthy(zi), "lfp": truthy(lfp)}
+    if truthy(c_invert):
+        opts[CENSOR_INVERT_KEY] = True
     if fixed and str(fixed).strip():
         try:
             opts["fixed"] = json.loads(fixed)
@@ -735,9 +771,15 @@ def fit(
     (``covariates``) or a ``formula``; otherwise the plain distribution path is
     used. ``unit`` is the (optional) unit of ``x`` carried through for display.
     ``options`` (plain distributions only) may hold ``offset``/``zi``/``lfp``
-    booleans and a ``fixed`` mapping. Any SurPyval error is wrapped in
-    :class:`FitError`.
+    booleans and a ``fixed`` mapping. ``options["c_invert"]`` applies to every
+    model kind: it flips a 1 = failed censor column into the convention before
+    anything (including the all-censored guard) looks at it. Any SurPyval
+    error is wrapped in :class:`FitError`.
     """
+    options = dict(options or {})
+    c_invert = bool(options.pop(CENSOR_INVERT_KEY, False)) and bool(mapping.get("c"))
+    if c_invert:
+        df = invert_censor_column(df, mapping["c"])
     options = normalize_options(distribution, options)
     if distribution in REGRESSION_MODELS:
         result = _fit_regression(distribution, df, mapping, covariates, formula)
@@ -758,6 +800,10 @@ def fit(
             f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
         )
     result["unit"] = (unit or "").strip()
+    if c_invert:
+        # Persist alongside the other fit options so a saved model's spec
+        # re-fits the data the same way round (see models_service._refit).
+        result["options"] = {**(result.get("options") or {}), CENSOR_INVERT_KEY: True}
     # Confidence bounds and probability-paper transforms can produce non-finite
     # values at the extremes (e.g. a Weibull bound that maps to ±inf/NaN). These
     # are not valid JSON, so coerce them to null — Plotly renders them as gaps.

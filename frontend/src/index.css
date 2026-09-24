@@ -6255,3 +6255,19 @@ button.danger:hover { background: #fdeeee; }
   line-height: 1.5;
   color: var(--text);
 }
+.map-convention p {
+  margin: 0;
+}
+.map-invert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.map-invert input {
+  margin: 0;
+  width: auto;
+  accent-color: var(--acc);
+}

@@ -13,7 +13,7 @@ import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import ResultView from "./ResultView.jsx";
 
-const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "" };
+const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", c_invert: false };
 const STEPS = ["Source", "Data", "Model", "Result"];
 
 // Fit flow rendered as a page panel: (1) pick a data source, (2) map columns
@@ -177,7 +177,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // Columns already claimed by a survival field (x/xl/xr/c/n/tl/tr) can't also
   // be covariates. Disable them in the picker and drop any that got mapped.
   const mappedColumns = useMemo(
-    () => new Set(Object.values(mapping).filter(Boolean)),
+    () => new Set(Object.values(mapping).filter((v) => typeof v === "string" && v)),
     [mapping]
   );
   useEffect(() => {
