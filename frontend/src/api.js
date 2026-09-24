@@ -123,17 +123,25 @@ function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distr
   if (mixture_distribution) form.append("mixture_distribution", mixture_distribution);
 }
 
+// Column mapping -> form fields. ``mapping`` is { x, c, n, xl, xr, tl, tr }
+// -> column name or "", plus the boolean ``c_invert`` (the c column uses
+// 1 = failed and must be flipped), sent as "1"/"0" whenever c is mapped.
+function appendMapping(form, mapping) {
+  const { c_invert, ...columns } = mapping || {};
+  for (const [field, column] of Object.entries(columns)) {
+    if (column) form.append(field, column);
+  }
+  if (columns.c) form.append("c_invert", c_invert ? "1" : "0");
+}
+
 // Fit a model: distribution id, a data source (an uploaded `file` or a saved
-// `datasetId`), a column mapping ({ x, c, n, xl, xr, tl, tr } -> column name or
-// ""), and optional covariates (array of column names) or a formula string for
-// proportional-hazards models.
+// `datasetId`), a column mapping (see appendMapping), and optional covariates
+// (array of column names) or a formula string for proportional-hazards models.
 export function fitModel(distribution, file, mapping, { covariates, formula, unit, datasetId, fitOptions } = {}) {
   const form = new FormData();
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
-  for (const [field, column] of Object.entries(mapping)) {
-    if (column) form.append(field, column);
-  }
+  appendMapping(form, mapping);
   if (unit) form.append("unit", unit);
   if (formula) {
     form.append("formula", formula);
@@ -227,9 +235,7 @@ export function saveModel(
   else if (file) form.append("file", file);
   form.append("name", name);
   form.append("distribution", distribution);
-  for (const [field, column] of Object.entries(mapping)) {
-    if (column) form.append(field, column);
-  }
+  appendMapping(form, mapping);
   if (unit) form.append("unit", unit);
   if (formula) {
     form.append("formula", formula);
@@ -273,12 +279,14 @@ export function createModelFromParams(name, distribution, params, { unit, extras
 // Refit a saved model in place with an edited spec (same dataset, same id --
 // everything referencing the model sees the updated fit).
 export function updateModelFit(id, { distribution, mapping, covariates, formula, unit, fitOptions } = {}) {
+  const { c_invert, ...columns } = mapping || {};
   return request(`/api/models/${id}/fit`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       distribution,
-      mapping: mapping || {},
+      mapping: columns,
+      c_invert: !!(columns.c && c_invert),
       covariates: covariates || [],
       formula: formula || null,
       unit: unit || null,

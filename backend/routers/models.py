@@ -260,6 +260,7 @@ async def save_model(
     mixture: str | None = Form(default=None),
     mixture_distribution: str | None = Form(default=None),
     how: str | None = Form(default=None),
+    c_invert: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -290,7 +291,9 @@ async def save_model(
         model = models_service.save_model(
             session, name, dataset, distribution, mapping, z, formula, unit,
             owner_id=ctx.write_owner,
-            options=options_from_form(offset, zi, lfp, fixed, mixture, mixture_distribution, how),
+            options=options_from_form(
+                offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
+            ),
         )
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
@@ -382,6 +385,7 @@ def update_model_fit(
     mixture: int = Body(default=0),
     mixture_distribution: str | None = Body(default=None),
     how: str | None = Body(default=None),
+    c_invert: bool = Body(default=False),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -395,7 +399,7 @@ def update_model_fit(
         return JSONResponse(status_code=status, content=payload)
     options = {"offset": offset, "zi": zi, "lfp": lfp, "fixed": fixed or None,
                "mixture": mixture, "mixture_distribution": mixture_distribution,
-               "how": how}
+               "how": how, "c_invert": bool(c_invert)}
     try:
         model = models_service.update_fit(
             session, model_id, existing.owner_id, distribution,

@@ -3,6 +3,8 @@ import Select from "./Select.jsx";
 //   - 'x' is mutually exclusive with the 'xl'/'xr' interval pair
 //   - 'xl' and 'xr' must be used together
 //   - c/n/tl/tr are optional modifiers
+//   - 'c_invert' (boolean, not a column) flips a 1 = failed censor column
+//     into the survival convention (0 = failed) on the server
 const FIELD_INFO = {
   x: { label: "x", help: "Observed values (exact / censored)" },
   c: { label: "c", help: "Censoring: 0 = failed, 1 = still running. (-1 left, 2 interval)" },
@@ -42,6 +44,8 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
     } else if ((field === "xl" || field === "xr") && value) {
       next.x = "";
     }
+    // The inversion only means something with a censor column to invert.
+    if (field === "c" && !value) next.c_invert = false;
     onChange(next);
   };
 
@@ -108,11 +112,24 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
             )}
           </div>
           {group.fields.includes("c") && !!mapping.c && (
-            <p className="map-convention">
-              <b>{mapping.c}</b> read as censoring — <b>0 = the unit failed</b>,{" "}
-              <b>1 = it was still running</b> when observation stopped. If your
-              column marks failures with a 1, it's the other way round.
-            </p>
+            <div className="map-convention">
+              <p>
+                <b>{mapping.c}</b> read as censoring — <b>0 = the unit failed</b>,{" "}
+                <b>1 = it was still running</b> when observation stopped.
+                Weibull++ and most spreadsheets use the reverse; if yours does,
+                tick the box and the column is flipped for you (-1 left and 2
+                interval codes are left as they are).
+              </p>
+              <label className="map-invert" htmlFor="map-c-invert">
+                <input
+                  id="map-c-invert"
+                  type="checkbox"
+                  checked={!!mapping.c_invert}
+                  onChange={(e) => onChange({ ...mapping, c_invert: e.target.checked })}
+                />
+                <span>My censor column uses 1 = failed (invert it)</span>
+              </label>
+            </div>
           )}
         </div>
         );

@@ -272,6 +272,7 @@ async def fit_endpoint(
     mixture: str | None = Form(default=None),
     mixture_distribution: str | None = Form(default=None),
     how: str | None = Form(default=None),
+    c_invert: str | None = Form(default=None),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
@@ -280,7 +281,8 @@ async def fit_endpoint(
 
     Each of ``x/c/n/xl/xr/tl/tr`` is an optional CSV column name. For
     proportional-hazards models, ``z`` lists covariate columns (or ``formula``
-    gives a formulaic formula). ``unit`` labels the ``x`` axis.
+    gives a formulaic formula). ``unit`` labels the ``x`` axis. ``c_invert``
+    ("1"/"0") says the ``c`` column uses 1 = failed and must be flipped.
     """
     mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}
     try:
@@ -298,7 +300,9 @@ async def fit_endpoint(
                 status_code=422,
                 content={"detail": "Provide a CSV file or a dataset_id."},
             )
-        options = options_from_form(offset, zi, lfp, fixed, mixture, mixture_distribution, how)
+        options = options_from_form(
+            offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
+        )
         result = fit(
             distribution, df, mapping, covariates=z, formula=formula, unit=unit,
             options=options,
