@@ -276,8 +276,8 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
 
 // RBD calculator tab. Validation is performed on the Builder tab; this tab
 // consumes the shared result (``validation`` + ``stale``) and only offers the
-// reliability calculation once the diagram is a valid, analytically solvable
-// RBD.
+// reliability calculation once the diagram is valid (non-analytic nodes such
+// as standby are solved by simulation).
 // Availability results for a repairable RBD: the headline uptime, up/down-time
 // figures, and each component's share of downtime (what drags uptime down).
 // Also used by the public read-only view.
@@ -520,8 +520,7 @@ export default function RbdCalculator({ graph, validation, stale }) {
 
       {!validation && (
         <p className="muted-line">
-          Validate the RBD on the Builder tab to confirm it is a valid,
-          analytically solvable diagram before calculating.
+          Validate the RBD on the Builder tab before calculating.
         </p>
       )}
 
@@ -529,8 +528,8 @@ export default function RbdCalculator({ graph, validation, stale }) {
 
       {validation && !canCalculate && (
         <p className="hint">
-          Calculation is disabled until the diagram is a valid, analytically
-          solvable RBD — validate it on the Builder tab.
+          Calculation is disabled until the diagram validates — check it on
+          the Builder tab.
         </p>
       )}
 

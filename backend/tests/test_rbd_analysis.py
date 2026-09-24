@@ -466,10 +466,14 @@ def test_validate_blocks_non_analytic_standby():
         "edges": [_edge("input", "sb"), _edge("sb", "output")],
     }
     v = validate_graph(graph)
-    # Structurally valid, but standby needs simulation -> not analytic.
+    # Structurally valid; standby has no closed form so it isn't analytic, but
+    # ``analyze`` simulates it, so the diagram is still calculable.
     assert v["valid"] and not v["analytic"]
-    assert not v["can_calculate"]
+    assert v["can_calculate"]
     assert v["non_analytic_nodes"] == {"Standby": "StandbyModel"}
+    # And the analysis really does run on it.
+    result = analyze(graph)
+    assert result["mttf"] > 0 and len(result["system"]["sf"]) > 0
 
 
 def test_validate_no_connections():

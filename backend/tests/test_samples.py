@@ -205,13 +205,17 @@ def test_instrument_air_samples_seed_once_and_validate(session):
     # a beta-factor common-cause group on the three compressors.
     design = session.rbds.find_one({"_id": design_id})["graph"]
     assert not design.get("repairable")
-    vote = next(n for n in design["nodes"] if n["id"] == "vote-2oo3")
+    vote = next(n for n in design["nodes"] if n["id"] == "vote")
     assert vote["type"] == "knode"
     assert (vote["data"]["n"], vote["data"]["k"]) == (2, 3)
     dryer = next(n for n in design["nodes"] if n["type"] == "standby")
     assert dryer["data"]["cold"] is True and dryer["data"]["spares"] == 1
     (ccf,) = design["ccf_groups"]
     assert ccf["beta"] == 0.1 and set(ccf["members"]) == {"compA", "compB", "compC"}
+    # A cold-standby node has no closed form, but the diagram must still be
+    # calculable (it's solved by simulation) — this is what the UI gates on.
+    vd = rbd_analysis.validate_graph(design)
+    assert vd["analytic"] is False and vd["can_calculate"] is True
     result = rbd_analysis.analyze(design)
     assert result["mttf"] > 0
     assert result["ccf"]["groups"]  # the CCF impact is reported
@@ -224,7 +228,7 @@ def test_instrument_air_samples_seed_once_and_validate(session):
     assert components and all(
         n["data"]["repair"]["distribution_id"] == "lognormal" for n in components
     )
-    gate = next(n for n in ops["nodes"] if n["id"] == "vote-1oo2")
+    gate = next(n for n in ops["nodes"] if n["id"] == "dvote")
     assert gate["type"] == "knode"
     assert (gate["data"]["n"], gate["data"]["k"]) == (1, 2)
     assert rbd_analysis.validate_graph(ops)["can_calculate"] is True

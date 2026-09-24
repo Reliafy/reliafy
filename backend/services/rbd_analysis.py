@@ -553,7 +553,7 @@ def validate_graph(
         {
           "valid": bool,            # structurally a valid RBD
           "analytic": bool,         # solvable in closed form (no simulation)
-          "can_calculate": bool,    # valid and analytic
+          "can_calculate": bool,    # valid (non-analytic nodes are simulated)
           "errors": [str, ...],     # blocking problems
           "warnings": [str, ...],   # non-blocking notes
           "non_analytic_nodes": {label: model_type, ...},
@@ -680,10 +680,13 @@ def validate_graph(
 
     valid = len(errors) == 0
     analytic = valid and len(non_analytic) == 0
+    # Standby and load-sharing nodes have no closed form, but ``analyze`` solves
+    # them by simulation (StandbyModel / LoadSharingModel), so a valid diagram
+    # is always calculable — ``analytic`` only tells the UI how to label it.
     return {
         "valid": valid,
         "analytic": analytic,
-        "can_calculate": valid and analytic,
+        "can_calculate": valid,
         "errors": errors,
         "warnings": warnings,
         "non_analytic_nodes": non_analytic,

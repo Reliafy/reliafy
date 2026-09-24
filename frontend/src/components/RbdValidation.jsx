@@ -18,7 +18,7 @@ export function graphSignature(graph) {
 }
 
 // Renders the outcome of a validate call: a green pass, or a red panel that
-// explains what makes the RBD invalid and/or not analytically solvable.
+// explains what makes the RBD invalid, and notes which nodes are simulated.
 // ``stale`` means the diagram has changed since this result was produced.
 export default function ValidationPanel({ validation, stale }) {
   if (!validation) return null;
@@ -44,9 +44,10 @@ export default function ValidationPanel({ validation, stale }) {
   } = validation;
   const nonAnalyticList = Object.entries(nonAnalytic || {});
 
-  // Valid + closed-form, OR valid + whole-diagram simulation (availability /
-  // load-sharing) where there are no specific "problem" nodes to call out.
-  if (valid && (analytic || nonAnalyticList.length === 0)) {
+  // A valid diagram is always calculable. Closed-form when every node is
+  // analytic; otherwise the standby / load-sharing nodes are simulated, which
+  // is worth saying but is not a problem.
+  if (valid) {
     return (
       <div className="rbd-check rbd-check-ok">
         <span className="rbd-check-icon">✓</span>
@@ -54,6 +55,13 @@ export default function ValidationPanel({ validation, stale }) {
           <strong>
             {analytic ? "Valid and analytically solvable." : "Valid — estimated by simulation."}
           </strong>
+          {nonAnalyticList.length > 0 && (
+            <p className="rbd-check-note">
+              These nodes have no closed-form solution, so the system curve is
+              estimated by simulation:{" "}
+              {nonAnalyticList.map(([label, type]) => `${label} (${type})`).join(", ")}.
+            </p>
+          )}
           {warnings && warnings.length > 0 && (
             <ul className="rbd-check-list rbd-check-warn">
               {warnings.map((w, i) => (
@@ -70,7 +78,7 @@ export default function ValidationPanel({ validation, stale }) {
     <div className="rbd-check rbd-check-bad">
       <span className="rbd-check-icon">✕</span>
       <div>
-        {!valid ? (
+        {!valid && (
           <>
             <strong>This isn’t a valid reliability block diagram yet.</strong>
             {errors && errors.length > 0 && (
@@ -80,21 +88,6 @@ export default function ValidationPanel({ validation, stale }) {
                 ))}
               </ul>
             )}
-          </>
-        ) : (
-          <>
-            <strong>Valid, but not analytically solvable.</strong>
-            <p className="rbd-check-note">
-              These nodes require simulation rather than a closed-form
-              solution, so the system reliability can’t be computed exactly:
-            </p>
-            <ul className="rbd-check-list">
-              {nonAnalyticList.map(([label, type]) => (
-                <li key={label}>
-                  {label} <span className="rbd-check-type">({type})</span>
-                </li>
-              ))}
-            </ul>
           </>
         )}
         {warnings && warnings.length > 0 && (
