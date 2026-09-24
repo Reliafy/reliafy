@@ -6,7 +6,7 @@ import Units from "./Units.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import { getDataset, getDistributions, updateModelFit } from "../api.js";
 
-const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "" };
+const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", c_invert: false };
 
 // Edit a saved model's fit spec and refit in place: same dataset, same id.
 // Prefilled from the stored spec; anything referencing the model (RCM
@@ -14,14 +14,19 @@ const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "" };
 export default function EditFitModal({ model, onClose, onUpdated }) {
   const spec = model.spec || {};
   const [columns, setColumns] = useState(null);
-  const [mapping, setMapping] = useState({ ...EMPTY_MAPPING, ...(spec.mapping || {}) });
+  // The censor inversion is stored with the fit options (spec.options) but
+  // edited alongside the column it applies to, so it rides on the mapping here.
+  const { c_invert: savedInvert, ...savedOptions } = spec.options || {};
+  const [mapping, setMapping] = useState({
+    ...EMPTY_MAPPING, ...(spec.mapping || {}), c_invert: !!savedInvert,
+  });
   const [unit, setUnit] = useState(spec.unit || "");
   const [covariates, setCovariates] = useState(spec.covariates || []);
   const [advanced, setAdvanced] = useState(!!spec.formula);
   const [formula, setFormula] = useState(spec.formula || "");
   const [distributions, setDistributions] = useState([]);
   const [distribution, setDistribution] = useState(spec.distribution_id || model.distribution_id || "weibull");
-  const [fitOpts, setFitOpts] = useState(spec.options || {});
+  const [fitOpts, setFitOpts] = useState(savedOptions);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -48,7 +53,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
 
   // Columns mapped to a survival field can't also be covariates.
   const mappedColumns = useMemo(
-    () => new Set(Object.values(mapping).filter(Boolean)),
+    () => new Set(Object.values(mapping).filter((v) => typeof v === "string" && v)),
     [mapping]
   );
   useEffect(() => {

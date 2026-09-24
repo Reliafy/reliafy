@@ -466,10 +466,14 @@ def test_validate_blocks_non_analytic_standby():
         "edges": [_edge("input", "sb"), _edge("sb", "output")],
     }
     v = validate_graph(graph)
-    # Structurally valid, but standby needs simulation -> not analytic.
+    # Structurally valid; standby has no closed form so it isn't analytic, but
+    # ``analyze`` simulates it, so the diagram is still calculable.
     assert v["valid"] and not v["analytic"]
-    assert not v["can_calculate"]
+    assert v["can_calculate"]
     assert v["non_analytic_nodes"] == {"Standby": "StandbyModel"}
+    # And the analysis really does run on it.
+    result = analyze(graph)
+    assert result["mttf"] > 0 and len(result["system"]["sf"]) > 0
 
 
 def test_validate_no_connections():
@@ -697,3 +701,30 @@ def test_bridge_network_is_supported_so_junctions_must_stay_optional():
     # engine could not represent.
     paths = [sorted(p) for p in result["structure"]["min_path_sets"]]
     assert sorted(paths) == [["A", "C"], ["A", "D"], ["B", "D"]]
+
+
+def test_placeholder_flag_on_model_is_ignored_by_analysis():
+    """The assistant marks guessed starting-point models with ``placeholder:
+    true`` inside ``data.model`` so the UI can badge them. The flag is purely
+    presentational: analysis and validation must read straight past it and
+    produce exactly what the same graph without the flag produces."""
+
+    def graph(flag):
+        c1 = _component("c1", "Pump", "weibull", [("alpha", 100), ("beta", 2)])
+        c2 = _component("c2", "Valve", "exponential", [("failure_rate", 0.01)])
+        if flag:
+            c1["data"]["model"]["placeholder"] = True
+            c2["data"]["model"]["placeholder"] = True
+        return {
+            "unit": "Hours",
+            "nodes": _io_nodes() + [c1, c2],
+            "edges": [_edge("input", "c1"), _edge("c1", "c2"), _edge("c2", "output")],
+        }
+
+    plain, flagged = analyze(graph(False)), analyze(graph(True))
+    assert np.allclose(plain["system"]["sf"], flagged["system"]["sf"])
+    assert plain["mttf"] == pytest.approx(flagged["mttf"])
+
+    v = validate_graph(graph(True))
+    assert v["valid"] and v["analytic"] and v["can_calculate"]
+    assert v["errors"] == []

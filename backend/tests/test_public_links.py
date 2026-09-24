@@ -127,7 +127,7 @@ def test_unknown_token_and_unsupported_collection(client):
     assert client.get("/api/public/not-a-real-token").status_code == 404
     client.act_as(A)
     model_id = _save_model(client)
-    r = client.post("/api/public-links", json={"collection": "rbds", "artifact_id": model_id})
+    r = client.post("/api/public-links", json={"collection": "alt_models", "artifact_id": model_id})
     assert r.status_code == 400
 
 

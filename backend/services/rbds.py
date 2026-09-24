@@ -91,6 +91,39 @@ def delete_rbd(db, rbd_id: str, owner_id: str) -> None:
         raise RbdNotFound(rbd_id)
 
 
+# Node-data keys that reference the owner's other saved artifacts by id. A
+# public viewer can't open them, so the ids are dropped from the shared graph;
+# the analysis (which needs them) runs server-side before the graph goes out.
+_REFERENCE_KEYS = ("modelId", "model_id")
+
+
+def public_graph(graph: dict) -> dict:
+    """The graph as shown to an anonymous viewer.
+
+    Life/repair models keep the distribution and parameters stored on the node
+    (that is what the canvas renders) but lose their saved-model id; nested
+    sub-system blocks keep the name but lose the RBD id. Proportional-hazards
+    and non-parametric nodes carry no parameters on the node — the viewer sees
+    their name and covariates while the analysis resolves the fit server-side.
+    """
+
+    def _model(m):
+        if not isinstance(m, dict):
+            return m
+        return {k: v for k, v in m.items() if k not in _REFERENCE_KEYS}
+
+    nodes = []
+    for n in graph.get("nodes") or []:
+        data = dict(n.get("data") or {})
+        for key in ("model", "repair"):
+            if key in data:
+                data[key] = _model(data[key])
+        if isinstance(data.get("rbd"), dict):
+            data["rbd"] = {"name": data["rbd"].get("name")}
+        nodes.append({**n, "data": data})
+    return {**graph, "nodes": nodes}
+
+
 def analyze_graph(
     db,
     graph: dict,

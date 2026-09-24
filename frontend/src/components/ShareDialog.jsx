@@ -6,10 +6,9 @@ import {
   createPublicLink, getPublicLink, revokePublicLink,
 } from "../api.js";
 
-// Collections with a public read-only renderer at /p/:token. RBDs need the
-// canvas and aren't public-linkable yet.
+// Collections with a public read-only renderer at /p/:token.
 const PUBLIC_LINKABLE = new Set([
-  "models", "datasets", "degradation_models", "strategy_analyses", "rcm_studies", "fleets",
+  "models", "datasets", "degradation_models", "strategy_analyses", "rcm_studies", "fleets", "rbds",
 ]);
 
 const TrashIcon = () => (

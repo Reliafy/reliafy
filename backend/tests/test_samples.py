@@ -98,7 +98,7 @@ def test_sample_rbd_is_shared_analysable_and_hideable(session):
     sample_rbd = samples.SAMPLE_RBDS[0]["id"]
 
     # Stored once, shared with every user, and a valid/analysable diagram.
-    assert session.rbds.count_documents({}) == 1
+    assert session.rbds.count_documents({}) == len(samples.SAMPLE_RBDS)
     assert sample_rbd in {r.id for r in rs.list_rbds(session, A)}
     assert sample_rbd in {r.id for r in rs.list_rbds(session, B)}
     assert rs.validate_rbd(session, sample_rbd, A)["valid"] is True
@@ -178,3 +178,57 @@ def test_api_serves_and_hides_samples(monkeypatch):
         assert rbd_id in b_rbds
     finally:
         app.dependency_overrides.clear()
+
+
+def test_instrument_air_samples_seed_once_and_validate(session):
+    """The two instrument-air diagrams (one reliability, one availability)
+    seed idempotently and pass the engine's validation with no errors."""
+    from backend.services import rbd_analysis, rbds as rs, samples
+
+    samples.seed_samples(session)
+    samples.seed_samples(session)
+
+    design_id = "sample-rbd-instrument-air-design"
+    avail_id = "sample-rbd-instrument-air-availability"
+    for sid in (design_id, avail_id):
+        assert session.rbds.count_documents({"_id": sid}) == 1
+        doc = session.rbds.find_one({"_id": sid})
+        assert samples.is_sample(doc["owner_id"])
+        assert doc["name"].endswith("(sample)")
+        v = rbd_analysis.validate_graph(doc["graph"])
+        assert v["valid"] is True, v["errors"]
+        assert v["errors"] == []
+        # Served to every user, like the pump-station sample.
+        assert sid in {r.id for r in rs.list_rbds(session, A)}
+
+    # Design view: non-repairable with a 2oo3 gate, a cold-standby dryer and
+    # a beta-factor common-cause group on the three compressors.
+    design = session.rbds.find_one({"_id": design_id})["graph"]
+    assert not design.get("repairable")
+    vote = next(n for n in design["nodes"] if n["id"] == "vote")
+    assert vote["type"] == "knode"
+    assert (vote["data"]["n"], vote["data"]["k"]) == (2, 3)
+    dryer = next(n for n in design["nodes"] if n["type"] == "standby")
+    assert dryer["data"]["cold"] is True and dryer["data"]["spares"] == 1
+    (ccf,) = design["ccf_groups"]
+    assert ccf["beta"] == 0.1 and set(ccf["members"]) == {"compA", "compB", "compC"}
+    # A cold-standby node has no closed form, but the diagram must still be
+    # calculable (it's solved by simulation) — this is what the UI gates on.
+    vd = rbd_analysis.validate_graph(design)
+    assert vd["analytic"] is False and vd["can_calculate"] is True
+    result = rbd_analysis.analyze(design)
+    assert result["mttf"] > 0
+    assert result["ccf"]["groups"]  # the CCF impact is reported
+
+    # Operations view: repairable, every component has a repair-time model,
+    # and the dryers are a 1-out-of-2 gate.
+    ops = session.rbds.find_one({"_id": avail_id})["graph"]
+    assert ops["repairable"] is True
+    components = [n for n in ops["nodes"] if n["type"] == "component"]
+    assert components and all(
+        n["data"]["repair"]["distribution_id"] == "lognormal" for n in components
+    )
+    gate = next(n for n in ops["nodes"] if n["id"] == "dvote")
+    assert gate["type"] == "knode"
+    assert (gate["data"]["n"], gate["data"]["k"]) == (1, 2)
+    assert rbd_analysis.validate_graph(ops)["can_calculate"] is True

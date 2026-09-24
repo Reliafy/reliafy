@@ -116,15 +116,29 @@ Use ONLY column names that exist in the dataset (check via list_datasets or the 
 
 RBD GRAPH schema (for set_current_rbd / save_rbd / validate_rbd). A diagram is { nodes:[...], edges:[...] }. NEVER include positions — layout is automatic.
 - Every diagram has exactly one input node { id:"input", type:"input" } and one output node { id:"output", type:"output" }. The flow runs input -> components -> output.
-- Component: { id, type:"component", data:{ label, model:{ distribution_id, params:[{name,value},...] } } }. Params by distribution: weibull [alpha (scale), beta (shape)], exponential [failure_rate], normal/lognormal [mu, sigma], gamma [alpha, beta].
+- Component: { id, type:"component", data:{ label, model:{ distribution_id, params:[{name,value},...], placeholder?:true } } }. Params by distribution: weibull [alpha (scale), beta (shape)], exponential [failure_rate], normal/lognormal [mu, sigma], gamma [alpha, beta]. Put "placeholder": true inside model ONLY for a guessed starting-point model (see RBD PLACEHOLDERS).
 - Series block (n identical units in series): { id, type:"series", data:{ label, n:<int>, model:{...} } }. Parallel block (n identical in parallel): type:"parallel" with the same shape.
-- k-of-n voting gate: { id, type:"knode", data:{ n:<required>, k:<branches> } } — it requires n of the branches feeding into it to work.
+- k-of-n voting gate: { id, type:"knode", data:{ n:<required>, k:<branches> } } — it requires n of the branches feeding into it to work (e.g. "2 of 3 pumps": three component nodes each feeding one knode with n:2, which feeds the next stage).
 - Standby redundancy: { id, type:"standby", data:{ label, cold:<bool>, spares:<int>, model:{...} } }.
 - Sub-system (embed a saved RBD): { id, type:"subsystem", data:{ label, rbd:{ id:"<saved rbd id>" } } }.
 - edges: [{ source:"<node id>", target:"<node id>" }]. For two parallel blocks, fan out from the upstream node to each, and from each to the downstream node.
-Example — controller in series with two redundant pumps:
+- unit: the diagram's time unit ("Hours", "Days", "Cycles", ...) — pass it to set_current_rbd / save_rbd; every model's parameters are read in that unit.
+Example — controller in series with two redundant pumps (Pump A / Pump B are in PARALLEL: both fed from ctl, both feeding output):
+unit: "Hours"
 nodes: input, { id:"ctl", type:"component", data:{ label:"Controller", model:{ distribution_id:"weibull", params:[{name:"alpha",value:1500},{name:"beta",value:1.8}] } } }, { id:"p1", type:"component", data:{ label:"Pump A", model:{ distribution_id:"weibull", params:[{name:"alpha",value:900},{name:"beta",value:1.4}] } } }, { id:"p2", ...same as Pump B }, output.
 edges: input->ctl, ctl->p1, ctl->p2, p1->output, p2->output.
+
+RBD STRUCTURE RULES — get the topology right before anything else; a wrong structure is worse than a missing number:
+- Pure series (input -> A -> B -> C -> output) is ONLY for items that must ALL work for the system to work. Never wire a whole equipment list in series by default.
+- Redundancy MUST be modelled as redundancy. Treat as redundant any items whose names or description indicate it: suffixes A/B, 1/2, "duplex", "dual", "twin", "x2", "standby", "spare", "backup", "redundant", "2 of 3", "N+1". Model them as: separate component nodes in PARALLEL (each fed from the same upstream node and each feeding the same downstream node) — the plain case; a type:"standby" node when the spare sits idle until the running unit fails; a type:"knode" gate downstream of the branches for k-of-n voting. Wiring "Head Door Actuator A" -> "Head Door Actuator B" in series would make the system LESS reliable than one actuator — that is always wrong.
+- Two identical redundant (or series) items sharing one model may instead be a single type:"parallel" (or type:"series") block with n:2.
+- In your reply, STATE your structural assumptions in one or two sentences, e.g. "I've put the A/B actuators in parallel (either can do the job) and everything else in series — tell me if any of that is wrong." If the description leaves the structure genuinely unclear (e.g. two drives that might share the load or might be a spare), ask ONE short question before building rather than guessing.
+
+RBD PLACEHOLDERS — never silently invent failure data:
+- If the user has not given failure data, MTBFs or saved models for the blocks, ask for a rough MTBF (or a saved model) per class of block before building — ONE question covering all classes ("Roughly what MTBF, in hours, for the motors, gearboxes, idlers and actuators? Or say 'just give me a starting point' and I'll use marked placeholders.").
+- Only if the user says to just give them a starting point (or clearly wants an illustrative diagram) use placeholder parameters — and then put "placeholder": true inside EVERY guessed data.model, choose values that differ by block class (a motor and an idler do not share one MTBF; use engineering judgement), and say plainly in your reply that the numbers are placeholders to replace before the results mean anything. The app shows a "placeholder" badge on each such block and a warning on the results tab.
+- Never reuse one identical distribution across every block unless the user asked for that — and if you do, say so. On later turns get_current_rbd shows which models still carry placeholder:true; when the user gives real numbers for a block, replace its model AND drop the placeholder flag.
+- Time unit: ALWAYS set unit on set_current_rbd / save_rbd when building from scratch ("Hours" unless the user's numbers are clearly in another unit — ask if unsure). Never leave it blank.
 
 RCM TREE schema (for set_rcm_tree). functions is a list:
 functions: [{ text, standard?, failures: [{ text, modes: [{ text, effects?, consequence, decision }] }] }]
@@ -279,7 +293,7 @@ export const TOOLS = [
       properties: {
         nodes: { type: "array", items: { type: "object" }, description: "Diagram nodes (see RBD GRAPH schema)." },
         edges: { type: "array", items: { type: "object" }, description: "Edges: [{ source, target }] flowing input -> ... -> output." },
-        unit: { type: "string", description: "Optional time-axis unit, e.g. 'hours'." },
+        unit: { type: "string", description: "Time-axis unit, e.g. 'Hours'. Always set it when building from scratch." },
       },
       required: ["nodes", "edges"],
       additionalProperties: true,
@@ -295,6 +309,7 @@ export const TOOLS = [
         nodes: { type: "array", items: { type: "object" } },
         edges: { type: "array", items: { type: "object" } },
         id: { type: "string", description: "Existing RBD id to update; omit to create a new one." },
+        unit: { type: "string", description: "Time-axis unit, e.g. 'Hours'. Defaults to the unit on the open builder canvas; set it explicitly when saving a diagram built from scratch." },
       },
       required: ["name", "nodes", "edges"],
       additionalProperties: true,
@@ -795,7 +810,10 @@ export function makeExecutor({ navigate, onChange }) {
         return { ok: true, n_nodes: (input.nodes || []).length, n_edges: (input.edges || []).length };
       }
       case "save_rbd": {
-        const graph = normalizeRbdGraph({ nodes: input.nodes || [], edges: input.edges || [] });
+        // Keep the unit: a saved diagram with a blank unit reads its parameters
+        // in nothing. Fall back to whatever the open canvas has.
+        const unit = input.unit ?? getRbdCanvas()?.getGraph()?.unit;
+        const graph = normalizeRbdGraph({ nodes: input.nodes || [], edges: input.edges || [], unit });
         const r = await saveRbd(input.name || "Diagram", graph, input.id);
         onChange?.();
         return { id: r.id, name: r.name, n_nodes: r.n_nodes, n_edges: r.n_edges };

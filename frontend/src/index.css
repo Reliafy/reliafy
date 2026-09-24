@@ -966,6 +966,38 @@ body {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
 }
 
+/* Placeholder life model (assistant starting-point values, data.model.placeholder) */
+.react-flow__node .rbd-comp.placeholder,
+.react-flow__node .rbd-block.placeholder {
+  border-style: dashed;
+}
+
+.rbd-placeholder-chip {
+  position: absolute;
+  bottom: -8px;
+  right: -4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: #f59e0b;
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 6px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+  z-index: 2;
+}
+
+.rbd-placeholder-note {
+  margin: 4px 0 10px;
+  padding: 6px 10px;
+  border: 1px solid #f5d08a;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #9a5b00;
+  font-size: 12.5px;
+}
+
 .rbd-name {
   display: inline-block;
   /* Bounded so a long diagram name can't push the toolbar row into the
@@ -2954,6 +2986,55 @@ button.secondary:hover:not(:disabled) {
 .ds-choice-h { font-size: 15px; font-weight: 600; }
 .ds-choice-b { font-size: 13px; color: var(--muted); }
 
+/* New-model chooser: four equal entry points (CSV / paste / parameters /
+   sample), two-up on wide screens, stacked on narrow ones. */
+.new-model-choose { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 720px) {
+  .new-model-choose { grid-template-columns: 1fr; }
+}
+/* The sample card is a container for its own buttons, not a button itself. */
+.ds-choice-static { cursor: default; }
+.ds-choice-static:hover { border-color: var(--border); background: var(--panel); }
+.sample-picks {
+  width: 100%;
+  margin-top: 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.sample-picks .recent-row { margin-bottom: 6px; padding: 8px 10px; }
+.sample-picks .recent-row:last-child { margin-bottom: 0; }
+.sample-pick-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sample-pick-blurb { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+.sample-picks .recent-meta { flex-shrink: 0; }
+
+/* Fit-flow source step: switch between the CSV dropzone and pasted values. */
+.source-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+.source-tab {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  box-shadow: none;
+  cursor: pointer;
+}
+.source-tab:hover:not(:disabled) { color: var(--ink); background: transparent; }
+.source-tab.active,
+.source-tab.active:hover:not(:disabled) { color: var(--acc-d); background: var(--surf); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+.paste-source { display: flex; flex-direction: column; gap: 0.75rem; }
+.paste-source .paste-area { box-sizing: border-box; min-height: 180px; }
+
 /* "No header row" toggle on the upload / paste steps. */
 .ds-check {
   display: flex;
@@ -4003,6 +4084,33 @@ select:disabled {
   .public-artifact { padding: 18px 16px 36px; }
 }
 
+/* Public RBD: a read-only canvas that pans/zooms inside its own box (the page
+   scrolls around it) followed by the same results the builder's Calculator
+   tab shows. */
+.public-rbd-canvas {
+  height: 56vh;
+  min-height: 320px;
+  max-height: 640px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+.public-rbd-canvas .react-flow__node { cursor: default; }
+.public-rbd-canvas .react-flow__handle { pointer-events: none; }
+.public-rbd-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.public-rbd-meta b { color: var(--text); font-weight: 600; }
+@media (max-width: 700px) {
+  .public-rbd-canvas { height: 46vh; min-height: 280px; }
+}
+
 /* SEO product pages reuse the landing sections plus a prose column. */
 .prod-prose {
   max-width: 840px;
@@ -4738,6 +4846,28 @@ select:disabled {
 .bill-pack:disabled { opacity: 0.55; cursor: default; }
 .bill-pack-price { font-size: 17px; font-weight: 700; }
 .bill-pack-credits { font-size: 12px; color: var(--muted); }
+
+/* Free vs Pro comparison (Free-plan cloud users only). The table scrolls
+   inside its own wrapper on narrow screens; the page never scrolls sideways. */
+.bill-compare { margin-top: 8px; }
+.bill-compare-price { font-family: var(--mono); font-size: 18px; font-weight: 700; white-space: nowrap; }
+.bill-compare-per { font-size: 11px; font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0.05em; text-transform: uppercase; }
+.bill-compare-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.bill-compare-table { width: 100%; min-width: 520px; border-collapse: collapse; font-size: 14px; }
+.bill-compare-table th, .bill-compare-table td {
+  padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top;
+}
+.bill-compare-table th:first-child, .bill-compare-table td:first-child { padding-left: 0; }
+.bill-compare-table thead th {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+}
+.bill-compare-table thead th .plan-badge { margin-left: 6px; vertical-align: middle; }
+.bill-compare-table tbody th { font-weight: 500; width: 36%; }
+.bill-compare-table td { color: var(--muted); width: 32%; }
+.bill-compare-table td.bill-compare-n { font-family: var(--mono); }
+.bill-compare-table td.bill-compare-pro { color: inherit; font-weight: 500; }
+.bill-compare-cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.bill-compare-cta .muted-line { margin: 0; }
 
 .notice-ok { border-color: #bfe3cd; background: #eef8f1; color: #2f7a52; }
 
@@ -6254,4 +6384,20 @@ button.danger:hover { background: #fdeeee; }
   font-size: 13px;
   line-height: 1.5;
   color: var(--text);
+}
+.map-convention p {
+  margin: 0;
+}
+.map-invert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.map-invert input {
+  margin: 0;
+  width: auto;
+  accent-color: var(--acc);
 }
