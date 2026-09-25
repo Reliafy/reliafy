@@ -850,3 +850,20 @@ def test_availability_honours_pinned_blocks_without_repair_models(monkeypatch):
     base = ra.analyze_availability(_series_repairable_graph())
     assert res["steady_state_availability"] == pytest.approx(
         base["steady_state_availability"], rel=1e-9)
+
+
+def test_auto_axis_is_sized_to_the_system_not_the_longest_lived_block():
+    """A very reliable block (receiver at 1e-6/h) used to stretch the auto axis
+    to millions of hours while the system was dead within ~50k h — the curve
+    was a cliff at the left edge and importances were read at ~0 reliability."""
+    from backend.services import samples
+
+    g = next(s["graph"] for s in samples.SAMPLE_RBDS if s["id"] == "sample-rbd-instrument-air-design")
+    r = analyze(g, resolve_subsystem=lambda _: None)
+    t, sf = r["time"], r["system"]["sf"]
+    assert t[-1] < 100_000                      # was ~4.6 million hours
+    first_below_1pct = next(i for i, v in enumerate(sf) if v < 0.01)
+    assert first_below_1pct > len(sf) * 0.6     # the curve uses the chart
+    assert 0.8 < sf[min(range(len(t)), key=lambda k: abs(t[k] - r["importance"]["time"]))] < 0.99
+    # An explicit t_max is still honoured exactly.
+    assert analyze(g, resolve_subsystem=lambda _: None, t_max=5_000_000)["time"][-1] == 5_000_000
