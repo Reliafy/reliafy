@@ -285,14 +285,20 @@ const fmtPct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).t
 const fmt3 = (v) =>
   v == null || !Number.isFinite(v) ? "—" : Math.abs(v) >= 1e-3 || v === 0 ? Number(v.toPrecision(3)).toString() : v.toExponential(2);
 
-// Per-block importance columns for a repairable diagram. Birnbaum / criticality
-// / RAW are exact, at the blocks' long-run availabilities; the two "drives"
-// columns are observed in the availability simulation.
+// Per-block importance columns for a repairable diagram. Birnbaum / share of
+// downtime / RAW are exact, at the blocks' long-run availabilities; the two
+// "drives" columns are observed in the availability simulation.
+//
+// "Share of downtime" is the failure-oriented criticality (Birnbaum × block
+// unavailability ÷ system unavailability). RePyability's own
+// criticality_importance is success-oriented (Birnbaum × availability ÷ system
+// availability), which is exactly 1 for every series block, so it can't rank
+// them — deliberately not shown here.
 const IMP_COLS = [
   { key: "birnbaum", label: "Birnbaum", fmt: fmt3,
     help: "How much system availability changes per unit change in this block's availability." },
-  { key: "crit", label: "Criticality", fmt: fmtPct,
-    help: "Share of system unavailability attributable to this block (Birnbaum × block unavailability ÷ system unavailability)." },
+  { key: "crit", label: "Share of downtime", fmt: fmtPct,
+    help: "Long-run share of system downtime caused by this block (failure-oriented criticality: Birnbaum × block unavailability ÷ system unavailability). Exact, unlike the simulated bars above." },
   { key: "risk_achievement_worth", label: "RAW", fmt: fmt3,
     help: "Risk achievement worth: how many times worse system unavailability gets while this block is down." },
   { key: "failure_criticality", label: "Drives trips", fmt: fmtPct,
@@ -313,7 +319,9 @@ function importanceRows(result) {
       label: i.label || c.label || id,
       pinned: i.pinned || null,
       birnbaum: i.birnbaum,
-      crit: i.unavailability_criticality ?? i.criticality,
+      // Never fall back to the library's success-oriented criticality: under
+      // this column's name it would show 100% for every series block.
+      crit: i.unavailability_criticality,
       risk_achievement_worth: i.risk_achievement_worth,
       // No simulation entry means the block never tripped/restored the system.
       failure_criticality: crit[id] ? c.failure_criticality : null,
