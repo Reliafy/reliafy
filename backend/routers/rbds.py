@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Body, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from backend.db import get_session
 from backend.services import billing as billing_service
@@ -262,6 +262,43 @@ def analyze_rbd(
         return JSONResponse(
             status_code=500, content={"detail": f"Failed to analyse RBD: {exc}"}
         )
+
+
+def python_download(filename: str, source: str) -> Response:
+    """A generated script as a file download."""
+    return Response(
+        content=source,
+        media_type="text/x-python; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/rbds/{rbd_id}/export.py")
+def export_rbd_python(
+    rbd_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> Response:
+    """Download a saved RBD as a standalone SurPyval + RePyability script.
+
+    Free for anyone who can view the diagram (owner, team, share recipient,
+    samples) — not metered and not plan-gated. Sub-systems and saved models
+    resolve in the same scope as the diagram's analysis.
+    """
+    rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
+    if rbd is None or rbd.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "RBD not found."})
+    try:
+        filename, source = rbds_service.export_python(
+            session, rbd.name, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id]
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Failed to export RBD %s as Python", rbd_id)
+        return JSONResponse(
+            status_code=500, content={"detail": f"Failed to export RBD: {exc}"}
+        )
+    return python_download(filename, source)
 
 
 @router.post("/rbds/validate")

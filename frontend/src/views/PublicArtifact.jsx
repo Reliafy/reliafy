@@ -103,7 +103,7 @@ function FleetView({ a }) {
   );
 }
 
-function Body({ collection, a }) {
+function Body({ collection, a, token }) {
   switch (collection) {
     case "models":
       return <div className="card"><ResultView result={a.results} /></div>;
@@ -142,7 +142,7 @@ function Body({ collection, a }) {
     case "fleets":
       return <FleetView a={a} />;
     case "rbds":
-      return <PublicRbd a={a} />;
+      return <PublicRbd a={a} token={token} />;
     default:
       return <div className="card empty">This artifact type doesn't have a public view.</div>;
   }
@@ -195,7 +195,7 @@ export default function PublicArtifact() {
                 </p>
               </div>
             </header>
-            <Body collection={data.collection} a={data.artifact} />
+            <Body collection={data.collection} a={data.artifact} token={token} />
           </div>
         )}
       </div>

@@ -24,7 +24,7 @@ import SubsystemModal from "../components/SubsystemModal.jsx";
 import RbdSaveModal from "../components/RbdSaveModal.jsx";
 import RbdCalculator from "../components/RbdCalculator.jsx";
 import ValidationPanel, { graphSignature } from "../components/RbdValidation.jsx";
-import { saveRbd, getRbd, validateRbd } from "../api.js";
+import { saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP } from "../api.js";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import CopyId from "../components/CopyId.jsx";
 import { registerRbdCanvas } from "../rbdBridge.js";
@@ -317,6 +317,37 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     const t = setTimeout(() => setConnectHint(""), 2600);
     return () => clearTimeout(t);
   }, [connectHint]);
+
+  // "Download as Python": the saved diagram as a standalone SurPyval +
+  // RePyability script. Free for every viewer (samples and shared diagrams
+  // too). Also triggered by a `reliafy:rbd-export` window event, e.g. from the
+  // availability upgrade card.
+  const [exporting, setExporting] = useState(false);
+  const exportingRef = useRef(false);
+  const exportPython = useCallback(async () => {
+    if (!savedRbdId) {
+      setConnectHint("Save the diagram first to download it as Python.");
+      return;
+    }
+    if (exportingRef.current) return;
+    exportingRef.current = true;
+    setExporting(true);
+    try {
+      const file = await downloadRbdPython(savedRbdId);
+      setConnectHint(`Downloaded ${file} (the last saved version).`);
+    } catch (e) {
+      setConnectHint(e.message || "Couldn't download the script.");
+    } finally {
+      exportingRef.current = false;
+      setExporting(false);
+    }
+  }, [savedRbdId]);
+
+  useEffect(() => {
+    const onExport = () => exportPython();
+    window.addEventListener("reliafy:rbd-export", onExport);
+    return () => window.removeEventListener("reliafy:rbd-export", onExport);
+  }, [exportPython]);
 
   const autoLayout = useCallback(() => {
     setNodes((nds) => autoLayoutNodes(nds, edges));
@@ -894,6 +925,18 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
               readOnly={savedRbdReadOnly}
             />
           )}
+          <span
+            className="rbd-export-wrap"
+            title={savedRbdId ? PYTHON_EXPORT_TIP : "Save the diagram first"}
+          >
+            <button
+              className="rbd-btn"
+              onClick={exportPython}
+              disabled={!savedRbdId || exporting}
+            >
+              {exporting ? "Preparing…" : "Download as Python"}
+            </button>
+          </span>
           <button className="rbd-btn" onClick={autoLayout}>
             Auto-arrange
           </button>

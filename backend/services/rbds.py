@@ -192,6 +192,46 @@ def analyze_rbd(
     )
 
 
+def export_python(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
+    """Render a diagram as a standalone SurPyval + RePyability script.
+
+    Returns ``(filename, source)``. Sub-systems and saved-model references
+    resolve exactly as :func:`analyze_graph` resolves them — scoped to
+    ``owner_id`` — so the script rebuilds what the viewer's analysis uses.
+    Saved models are read from their stored fit summary (no re-fit): the
+    block's own stored parameters are what the analysis uses, and the summary
+    only fills in what a block lacks.
+    """
+    from backend.services import rbd_export
+
+    def resolve_subsystem(sub_id: str) -> dict | None:
+        sub = get_rbd(db, sub_id, owner_id)
+        return sub.graph if sub is not None else None
+
+    def resolve_model(model_id: str) -> dict | None:
+        model = models_service.get_model(db, model_id, owner_id)
+        if model is None:
+            return None
+        results = model.results or {}
+        return {
+            "name": model.name,
+            "kind": results.get("kind") or model.kind,
+            "distribution_id": results.get("distribution_id") or model.distribution_id,
+            "distribution": results.get("distribution"),
+            "params": results.get("params") or [],
+            "extras": results.get("extras"),
+            "unit": results.get("unit"),
+        }
+
+    source = rbd_export.to_python(
+        graph or {},
+        name,
+        resolve_model=resolve_model,
+        resolve_subsystem=resolve_subsystem,
+    )
+    return rbd_export.filename(name), source
+
+
 def validate_graph(db, graph: dict, owner_id: str) -> dict:
     """Check whether a graph is a valid, analytically solvable RBD."""
 

@@ -120,6 +120,34 @@ whole exercise.
 
 ![System reliability results with importance measures and cut sets](/guides/img/rbd-02-results.png)
 
+## Take it with you: download as Python
+
+Once a diagram is saved, **Download as Python** in the builder toolbar gives you a
+standalone script that rebuilds the same diagram with the open-source
+[SurPyval](https://github.com/derrynknife/SurPyval) and
+[RePyability](https://github.com/derrynknife/RePyability) libraries and runs the
+same calculation on your own machine — reliability, MTTF and importance for a
+non-repairable diagram, steady-state availability and the availability
+simulation for a repairable one. It's free on every plan, works for samples and
+diagrams shared with you, and appears on public links too. Each block is one
+commented variable, so the script doubles as a readable record of the model for
+a report, a thesis appendix or a colleague without an account.
+
+Install the two libraries (RePyability goes in with `--no-deps`, because its
+metadata still pins an older SurPyval) and run the file:
+
+```
+pip install "git+https://github.com/derrynknife/SurPyval.git@v0.20.0"
+pip install networkx tqdm
+pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.8.0"
+python my_diagram.py
+```
+
+The script downloads the last saved version of the diagram. A block the script
+can't rebuild on its own — one using a fitted proportional-hazards,
+non-parametric or load-sharing model — is left as a clearly marked placeholder
+that stops with an explanation until you set its parameters.
+
 ## Where to go next
 
 If your system is repaired and returned to service rather than replaced, build it

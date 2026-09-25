@@ -4127,6 +4127,10 @@ select:disabled {
   color: var(--muted);
 }
 .public-rbd-meta b { color: var(--text); font-weight: 600; }
+.public-rbd-download { margin-left: auto; display: inline-flex; align-items: center; gap: 0.6rem; }
+.public-rbd-download-err { color: #b3261e; }
+.rbd-export-wrap { display: inline-flex; }
+.rbd-export-wrap .rbd-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 @media (max-width: 700px) {
   .public-rbd-canvas { height: 46vh; min-height: 280px; }
 }
