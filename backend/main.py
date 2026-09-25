@@ -58,6 +58,7 @@ from backend.routers import public as public_router
 from backend.routers import ingest as ingest_router
 from backend.routers import public_api as public_api_router
 from backend.routers import email_prefs as email_prefs_router
+from backend.routers import feeds as feeds_router
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
@@ -134,6 +135,8 @@ app.include_router(public_router.router)
 app.include_router(ingest_router.router)
 app.include_router(public_api_router.router)
 app.include_router(email_prefs_router.router)
+# RSS: served (date-filtered) before the SPA catch-all below.
+app.include_router(feeds_router.router)
 
 # ---------------------------------------------------------------------------
 # API routes

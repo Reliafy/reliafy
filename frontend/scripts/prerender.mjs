@@ -83,44 +83,10 @@ writeFileSync(
   `User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`
 );
 
-// RSS 2.0 feeds (What's new + blog). pubDate is RFC 822 at 00:00 UTC of the
-// item's date; guid is the permalink so readers/Zapier dedupe on the URL.
-const xml = (s) =>
-  String(s ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-const rfc822 = (iso) => (iso ? new Date(`${iso}T00:00:00Z`).toUTCString() : "");
-let feedCount = 0;
-for (const f of feeds()) {
-  const items = f.items
-    .map((it) => [
-      "    <item>",
-      `      <title>${xml(it.title)}</title>`,
-      `      <link>${xml(it.link)}</link>`,
-      `      <guid isPermaLink="true">${xml(it.guid)}</guid>`,
-      it.date ? `      <pubDate>${rfc822(it.date)}</pubDate>` : null,
-      `      <description>${xml(it.summary)}</description>`,
-      "    </item>",
-    ].filter(Boolean).join("\n"))
-    .join("\n");
-  const newest = f.items[0]?.date;
-  const body = [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
-    "  <channel>",
-    `    <title>${xml(f.title)}</title>`,
-    `    <link>${xml(f.link)}</link>`,
-    `    <description>${xml(f.description)}</description>`,
-    "    <language>en</language>",
-    `    <atom:link href="${SITE}${f.path}" rel="self" type="application/rss+xml" />`,
-    newest ? `    <lastBuildDate>${rfc822(newest)}</lastBuildDate>` : null,
-    items || null,
-    "  </channel>",
-    "</rss>",
-    "",
-  ].filter((l) => l !== null).join("\n");
-  const out = join(dist, f.path.slice(1));
-  mkdirSync(dirname(out), { recursive: true });
-  writeFileSync(out, body);
-  feedCount += 1;
-}
+// RSS feed data (all items, future-dated included). Served as XML by the
+// backend's feeds route, which applies the date gate per request.
+const feedData = feeds();
+writeFileSync(join(dist, "feeds.json"), JSON.stringify({ site: SITE, feeds: feedData }, null, 1));
+const feedCount = feedData.length;
 
-console.log(`prerendered ${count} pages + sitemap.xml + robots.txt + ${feedCount} RSS feeds`);
+console.log(`prerendered ${count} pages + sitemap.xml + robots.txt + feeds.json (${feedCount} feeds)`);

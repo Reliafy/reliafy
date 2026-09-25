@@ -45,7 +45,9 @@ function readingTime(body) {
 // so SEO for a post starts at the first deploy after its date.)
 export const TODAY = new Date().toISOString().slice(0, 10);
 
-export const posts = Object.entries(files)
+// Every item, including future-dated ones — the server's RSS route filters
+// by date at request time (scripts/prerender.mjs writes these to feeds.json).
+export const allPosts = Object.entries(files)
   .map(([path, raw]) => {
     const { meta, body } = parseFrontmatter(raw);
     return {
@@ -61,9 +63,10 @@ export const posts = Object.entries(files)
       body,
     };
   })
-  .filter((p) => !p.date || p.date <= TODAY)
   // Newest first (ISO dates sort lexically).
   .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+export const posts = allPosts.filter((p) => !p.date || p.date <= TODAY);
 
 export function getPost(slug) {
   return posts.find((p) => p.slug === slug) || null;

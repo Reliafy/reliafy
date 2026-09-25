@@ -21,8 +21,8 @@ import ReferenceFamily from "./views/ReferenceFamily.jsx";
 import ApiDocsPublicPage from "./views/ApiDocsPublicPage.jsx";
 import ProductPage from "./views/ProductPage.jsx";
 import { PRODUCT_PAGES } from "./productPages.jsx";
-import { posts } from "./blog.js";
-import { updates } from "./updates.js";
+import { posts, allPosts } from "./blog.js";
+import { updates, allUpdates } from "./updates.js";
 import { articles } from "./learn.js";
 import { guides } from "./guides.js";
 import { families as refFamilies, totalEntries } from "./reference.js";
@@ -183,10 +183,11 @@ export function render(path) {
   );
 }
 
-// RSS feeds, written next to the sitemap by scripts/prerender.mjs. Built from
-// the same date-gated lists as the pages, so a queued (future-dated) item
-// appears in its feed on the first build on or after its date — which is what
-// lets Zapier/Buffer auto-post it the day it goes live.
+// RSS feed definitions. scripts/prerender.mjs writes them — INCLUDING
+// future-dated items — to dist/feeds.json; the backend (backend/routers/feeds.py)
+// serves /whats-new/feed.xml and /blog/feed.xml from it, filtering by the
+// current UTC date on every request. So a queued item enters its feed on its
+// date with no rebuild, and Zapier/Buffer auto-post it that day.
 export function feeds() {
   const item = (base) => (x) => ({
     title: x.title,
@@ -201,14 +202,14 @@ export function feeds() {
       title: "Reliafy — What's new",
       link: `${SITE}/whats-new`,
       description: "Product updates from Reliafy: new features, improvements and fixes.",
-      items: updates.map(item("/whats-new")),
+      items: allUpdates.map(item("/whats-new")),
     },
     {
       path: "/blog/feed.xml",
       title: "Reliafy blog",
       link: `${SITE}/blog`,
       description: "Reliability engineering, maintenance strategy and Reliafy in practice.",
-      items: posts.map(item("/blog")),
+      items: allPosts.map(item("/blog")),
     },
   ];
 }
