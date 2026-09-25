@@ -281,12 +281,76 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
 // Availability results for a repairable RBD: the headline uptime, up/down-time
 // figures, and each component's share of downtime (what drags uptime down).
 // Also used by the public read-only view.
+const fmtPct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(1)}%`);
+const fmt3 = (v) =>
+  v == null || !Number.isFinite(v) ? "—" : Math.abs(v) >= 1e-3 || v === 0 ? Number(v.toPrecision(3)).toString() : v.toExponential(2);
+
+// Per-block importance columns for a repairable diagram. Birnbaum / criticality
+// / RAW are exact, at the blocks' long-run availabilities; the two "drives"
+// columns are observed in the availability simulation.
+const IMP_COLS = [
+  { key: "birnbaum", label: "Birnbaum", fmt: fmt3,
+    help: "How much system availability changes per unit change in this block's availability." },
+  { key: "crit", label: "Criticality", fmt: fmtPct,
+    help: "Share of system unavailability attributable to this block (Birnbaum × block unavailability ÷ system unavailability)." },
+  { key: "risk_achievement_worth", label: "RAW", fmt: fmt3,
+    help: "Risk achievement worth: how many times worse system unavailability gets while this block is down." },
+  { key: "failure_criticality", label: "Drives trips", fmt: fmtPct,
+    help: "Share of simulated system failures this block's failure triggered." },
+  { key: "restoration_criticality", label: "Drives restoration", fmt: fmtPct,
+    help: "Share of simulated system restorations this block's repair completed." },
+];
+
+function importanceRows(result) {
+  const imp = result.importance || {};
+  const crit = result.criticality || {};
+  const ids = Object.keys(imp);
+  const rows = ids.map((id) => {
+    const i = imp[id] || {};
+    const c = crit[id] || {};
+    return {
+      id,
+      label: i.label || c.label || id,
+      pinned: i.pinned || null,
+      birnbaum: i.birnbaum,
+      crit: i.unavailability_criticality ?? i.criticality,
+      risk_achievement_worth: i.risk_achievement_worth,
+      // No simulation entry means the block never tripped/restored the system.
+      failure_criticality: crit[id] ? c.failure_criticality : null,
+      restoration_criticality: crit[id] ? c.restoration_criticality : null,
+    };
+  });
+  rows.sort((a, b) => (b.crit ?? -1) - (a.crit ?? -1) || String(a.label).localeCompare(String(b.label)));
+  return rows;
+}
+
 export function AvailabilityView({ result, unit }) {
   const u = unit ? ` ${unit}` : "";
   const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
   const a = result.steady_state_availability;
   const per = result.per_node || [];
   const curve = result.curve;
+  const basis = result.figures_basis || {};
+  const basisNote = (k) =>
+    basis[k] === "exact"
+      ? "Exact steady-state value"
+      : `Simulation estimate over ${fmt(result.t_simulation)}${u}`;
+  const hasBand = curve && curve.lower?.length === curve.t?.length && curve.upper?.length === curve.t?.length;
+  const curveTraces = !curve
+    ? []
+    : [
+        ...(hasBand
+          ? [
+              { x: curve.t, y: curve.lower, mode: "lines", type: "scatter", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+              {
+                x: curve.t, y: curve.upper, mode: "lines", type: "scatter", line: { width: 0 },
+                fill: "tonexty", fillcolor: "rgba(47, 109, 246, 0.15)", hoverinfo: "skip", showlegend: false,
+              },
+            ]
+          : []),
+        { x: curve.t, y: curve.availability, mode: "lines", type: "scatter", line: { color: "#2f6df6", width: 2 }, name: "Availability" },
+      ];
+  const blocks = importanceRows(result);
 
   return (
     <div className="rbd-avail">
@@ -296,9 +360,9 @@ export function AvailabilityView({ result, unit }) {
       </div>
       <div className="rbd-avail-metrics">
         <div className="alt-metric"><span className="k">Unavailability</span><span className="v">{pct(result.unavailability)}</span></div>
-        <div className="alt-metric"><span className="k">Mean up time</span><span className="v">{fmt(result.mean_up_time)}{u}</span></div>
-        <div className="alt-metric"><span className="k">Mean down time</span><span className="v">{fmt(result.mean_down_time)}{u}</span></div>
-        <div className="alt-metric"><span className="k">Failure frequency</span><span className="v">{fmt(result.failure_frequency)}{u ? ` /${unit}` : ""}</span></div>
+        <div className="alt-metric" title={basisNote("mean_up_time")}><span className="k">Mean up time</span><span className="v">{fmt(result.mean_up_time)}{u}</span></div>
+        <div className="alt-metric" title={basisNote("mean_down_time")}><span className="k">Mean down time</span><span className="v">{fmt(result.mean_down_time)}{u}</span></div>
+        <div className="alt-metric" title={basisNote("failure_frequency")}><span className="k">Failure frequency</span><span className="v">{fmt(result.failure_frequency)}{u ? ` /${unit}` : ""}</span></div>
       </div>
 
       {per.length > 0 && (
@@ -316,9 +380,45 @@ export function AvailabilityView({ result, unit }) {
         </div>
       )}
 
+      {blocks.length > 0 && (
+        <div className="rbd-avail-imp">
+          <div className="ds-section-h">Block importance</div>
+          <div className="rbd-avail-imp-scroll">
+            <table className="calc-table">
+              <thead>
+                <tr>
+                  <th>Block</th>
+                  {IMP_COLS.map((c) => (
+                    <th key={c.key} title={c.help}>{c.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {blocks.map((b) => (
+                  <tr key={b.id}>
+                    <td className="calc-row-label">
+                      {b.label}
+                      {b.pinned && <span className="rbd-avail-pin">pinned {b.pinned}</span>}
+                    </td>
+                    {IMP_COLS.map((c) => (
+                      <td key={c.key}>{c.fmt(b[c.key])}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <ul className="rbd-avail-legend">
+            {IMP_COLS.map((c) => (
+              <li key={c.key}><b>{c.label}</b> — {c.help}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {curve && curve.t?.length > 1 && (
         <Plot
-          data={[{ x: curve.t, y: curve.availability, mode: "lines", type: "scatter", line: { color: "#2f6df6", width: 2 } }]}
+          data={curveTraces}
           layout={{
             autosize: true, height: 300, margin: { l: 56, r: 16, t: 16, b: 44 },
             paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
@@ -330,8 +430,10 @@ export function AvailabilityView({ result, unit }) {
         />
       )}
       <p className="muted-line" style={{ margin: 0 }}>
-        Availability estimated by {result.n_simulations?.toLocaleString()} Monte-Carlo
-        replications over {fmt(result.t_simulation)}{u}.
+        Availability curve estimated by {result.n_simulations?.toLocaleString()} Monte-Carlo
+        replications over {fmt(result.t_simulation)}{u}
+        {hasBand ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}.
+        {basis.mean_up_time === "exact" && " Mean up/down time and failure frequency are exact steady-state values."}
       </p>
     </div>
   );

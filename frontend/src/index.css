@@ -6119,6 +6119,14 @@ button.danger:hover { background: #fdeeee; }
 @media (prefers-color-scheme: dark) {
   .rbd-avail-bar-track { background: #232a33; }
 }
+.rbd-avail-imp { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rbd-avail-imp-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.rbd-avail-imp-scroll .calc-table { margin-bottom: 0; min-width: 560px; }
+.rbd-avail-imp-scroll .calc-table th { white-space: nowrap; cursor: help; }
+.rbd-avail-imp-scroll .calc-table .calc-row-label { display: table-cell; white-space: nowrap; }
+.rbd-avail-pin { margin-left: 6px; font-size: 10.5px; font-weight: 500; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 0 5px; }
+.rbd-avail-legend { margin: 0; padding-left: 18px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+.rbd-avail-legend b { color: var(--text, inherit); font-weight: 600; }
 
 /* Common-cause failure groups (RBD builder) */
 .rbd-comp.ccf-member { box-shadow: 0 0 0 2px rgba(208, 118, 47, 0.55), 0 0 0 5px rgba(208, 118, 47, 0.18); }
