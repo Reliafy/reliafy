@@ -334,3 +334,149 @@ def predict(model, horizon: float) -> dict:
     with np.errstate(all="ignore"):
         expected = float(np.asarray(model.mcf(np.array([float(horizon)])), dtype=float).ravel()[0])
     return _json_safe({"horizon": float(horizon), "expected_events": expected})
+
+
+# ---------------------------------------------------------------------------
+# Optimal overhaul interval (Barlow–Hunter minimal repair + overhaul)
+# ---------------------------------------------------------------------------
+
+_OVERHAUL_GRID_POINTS = 200
+
+
+def _as_cif_model(model_or_params):
+    """A model exposing ``cif(t)`` from either a live surpyval recurrence model
+    or a ``{"model_id", "params"}`` spec (params as floats or ``{name, value}``)."""
+    if hasattr(model_or_params, "cif"):
+        return model_or_params
+    if isinstance(model_or_params, dict):
+        model_id = model_or_params.get("model_id") or "crow_amsaa"
+        if model_id not in MODELS:
+            raise FitError(f"Unknown model '{model_id}'.")
+        values = [float(p["value"]) if isinstance(p, dict) else float(p) for p in model_or_params.get("params") or []]
+        fitter = MODELS[model_id]["fitter"]
+        if not hasattr(fitter, "from_params"):
+            raise FitError(f"“{MODELS[model_id]['name']}” can't be built from parameters.")
+        try:
+            return fitter.from_params(values)
+        except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
+            raise FitError(str(exc)) from exc
+    raise FitError("Model must be a fitted recurrence model or a parameter spec.")
+
+
+def _positive(value, label: str) -> float:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise FitError(f"{label} must be a number.")
+    if not np.isfinite(v) or v <= 0:
+        raise FitError(f"{label} must be a positive number.")
+    return v
+
+
+def _cif_at(model, t: float) -> float:
+    return float(np.asarray(model.cif(np.array([float(t)])), dtype=float).ravel()[0])
+
+
+def _growth_exponent(model) -> float:
+    """Local log–log slope of the cumulative intensity, d ln Λ / d ln t, taken
+    where Λ ≈ 1. For the power-law models Reliafy fits (Crow-AMSAA, Duane, HPP)
+    this is the constant shape β (1 for HPP) whatever the parameterisation."""
+    t_ref = 1.0
+    inv = getattr(model, "inv_cif", None)
+    if callable(inv):
+        try:
+            with np.errstate(all="ignore"):
+                tr = float(np.asarray(inv(np.array([1.0])), dtype=float).ravel()[0])
+            if np.isfinite(tr) and tr > 0:
+                t_ref = tr
+        except Exception:  # noqa: BLE001 - fall back to t = 1
+            pass
+    with np.errstate(all="ignore"):
+        a, b = _cif_at(model, t_ref), _cif_at(model, 2.0 * t_ref)
+    if not (np.isfinite(a) and np.isfinite(b) and a > 0 and b > 0):
+        return float("nan"), t_ref
+    return float(np.log(b / a) / np.log(2.0)), t_ref
+
+
+def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, horizon=None) -> dict:
+    """Optimal overhaul interval for a repairable system under minimal repair.
+
+    Between overhauls each failure is minimally repaired (cost ``cost_repair``,
+    "as bad as old"); an overhaul (cost ``cost_overhaul``) restores the system
+    to as-good-as-new. Overhauling every ``T`` makes each cycle a renewal cycle,
+    so the long-run cost rate is ``g(T) = (cr·Λ(T) + co) / T`` with ``Λ`` the
+    model's cumulative intensity. RePyability's ``Repairable`` minimises it.
+
+    A finite optimum exists only when the system deteriorates (Λ grows
+    super-linearly, β > 1); otherwise ``g`` keeps falling as ``T`` grows and
+    ``optimal`` is ``None`` with a ``reason``.
+
+    "Never overhaul" has no finite long-run rate when β > 1 — the repair rate
+    grows without bound, so ``g(T) → ∞``. It is reported instead as the
+    repairs-only cost rate ``cr·Λ(H)/H`` averaged over a horizon ``H``
+    (``horizon`` if given, else the curve's end ``t_max``, default 3·T*).
+    For β < 1 its limit is 0; for an HPP it is ``cr·λ``.
+    """
+    from repyability.repairable import Repairable
+
+    cr = _positive(cost_repair, "Repair cost")
+    co = _positive(cost_overhaul, "Overhaul cost")
+    if co <= cr:
+        # The maths only needs co > 0, but RePyability's minimal-repair policy
+        # requires co > cr: if an overhaul costs no more than a repair you'd
+        # simply overhaul at every failure rather than repair.
+        raise FitError("Overhaul cost must be greater than the repair cost (otherwise just overhaul at every failure).")
+    t_max = _positive(t_max, "Chart horizon") if t_max is not None else None
+    horizon = _positive(horizon, "Horizon") if horizon is not None else None
+
+    model = _as_cif_model(model_or_params)
+    shape, t_ref = _growth_exponent(model)
+    base = {"cost_repair": cr, "cost_overhaul": co, "shape": shape}
+
+    def _none(reason: str, limit):
+        return _json_safe({**base, "optimal": None, "reason": reason,
+                           "never_overhaul": {"limit_cost_rate": limit}})
+
+    if not np.isfinite(shape):
+        return _none("The model's cumulative intensity can't be evaluated, so no overhaul interval can be computed.", None)
+    if shape < 1.0 - 1e-6:
+        return _none(
+            f"The failure intensity is decreasing (β = {shape:.3g} < 1): failures get rarer with age, so an "
+            "overhaul never pays — the cost rate keeps falling the longer you run between overhauls.", 0.0)
+    if shape <= 1.0 + 1e-6:
+        return _none(
+            "The failure intensity is constant (β = 1, e.g. HPP): an overhaul doesn't lower the failure rate, "
+            "so it only adds cost. Repair on failure; don't overhaul.", cr * _cif_at(model, t_ref) / t_ref)
+
+    rep = Repairable(model)
+    rep.set_repair_and_overhaul_costs(cr, co)
+    policy = rep.optimal_overhaul_policy()
+    t_star = float(policy.interval)
+    if not np.isfinite(t_star) or t_star <= 0:
+        return _none("Overhauling never pays for this model: the cost rate keeps falling the longer you run.",
+                     float(policy.cost_rate))
+    g_star = float(rep.cost_rate(t_star))
+
+    # Chart grid: always show the minimum and the rise after it, and start at
+    # 0.1·T* so the co/T blow-up near zero doesn't flatten the curve.
+    t_hi = max(t_max if t_max is not None else 3.0 * t_star, 1.5 * t_star)
+    grid = np.linspace(0.1 * t_star, t_hi, _OVERHAUL_GRID_POINTS)
+    with np.errstate(all="ignore"):
+        curve = np.asarray(rep.cost_rate(grid), dtype=float)
+
+    h = horizon if horizon is not None else t_hi
+    with np.errstate(all="ignore"):
+        none_rate = cr * _cif_at(model, h) / h
+    saving = (none_rate - g_star) / none_rate * 100.0 if none_rate > 0 else None
+
+    return _json_safe({
+        **base,
+        "optimal": {
+            "interval": t_star,
+            "cost_rate": g_star,
+            "expected_failures_per_cycle": _cif_at(model, t_star),
+        },
+        "never_overhaul": {"horizon": h, "cost_rate": none_rate, "limit_cost_rate": None},  # unbounded as T → ∞
+        "saving_pct": saving,
+        "curve": {"t": grid.tolist(), "cost_rate": curve.tolist()},
+    })

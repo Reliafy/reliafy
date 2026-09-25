@@ -626,6 +626,15 @@ export function predictRecurrent(id, horizon) {
   });
 }
 
+// Optimal overhaul interval (minimal repair between overhauls) — read-only.
+export function recurrentOverhaul(id, costRepair, costOverhaul) {
+  return request(`/api/recurrent/models/${id}/overhaul`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cost_repair: costRepair, cost_overhaul: costOverhaul }),
+  });
+}
+
 // ---- Accelerated Life Testing (ALT) ----------------------------------------
 export function getAltOptions() {
   return request("/api/alt/options");

@@ -233,3 +233,26 @@ def predict(
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@router.post("/recurrent/models/{model_id}/overhaul")
+def overhaul(
+    model_id: str, body: dict = Body(...),
+    session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Optimal overhaul interval (minimal repair between overhauls) from the
+    saved model. JSON ``{cost_repair, cost_overhaul, t_max?}``. Read-only: a
+    shared viewer may compute it, and nothing is written. Not metered."""
+    doc, _ = access_service.fetch_readable(session, "recurrent_models", RecurrentModelDoc, model_id, ctx)
+    if doc is None or doc.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    if body.get("cost_repair") is None or body.get("cost_overhaul") is None:
+        return JSONResponse(status_code=422, content={"detail": "Provide both the repair and overhaul costs."})
+    try:
+        live = recurrent_service.get_live_model(session, model_id, [*ctx.read_owners, doc.owner_id])
+        return JSONResponse(content=recurrent_fit.optimal_overhaul(
+            live, body["cost_repair"], body["cost_overhaul"], t_max=body.get("t_max")))
+    except recurrent_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
