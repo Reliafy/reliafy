@@ -757,6 +757,32 @@ def _time_grid(reliabilities: dict, t_max: Optional[float] = None) -> np.ndarray
     return np.linspace(0.0, hi, _GRID_POINTS)
 
 
+def _system_horizon(rbd, ceiling: float, s: float = 0.0, **sf_kwargs) -> float:
+    """An axis end sized to the *system*, not its longest-lived component.
+
+    ``_time_grid`` bounds the axis by the nodes' own time scales, so one very
+    reliable block (e.g. a pressure vessel at 1e-6/h) stretches it to millions
+    of hours while the system is long dead — the curve becomes a cliff at the
+    left edge and importances are read where everything has failed. Search a
+    log-spaced grid up to that ceiling for where system reliability first falls
+    to 1%, and end the axis a little beyond it. Falls back to the ceiling when
+    the system never gets that low within it, or starts already failed.
+    """
+    if not (ceiling and np.isfinite(ceiling) and ceiling > 0):
+        return ceiling
+    probe = np.geomspace(ceiling * 1e-6, ceiling, 400)
+    try:
+        sf = _conditional_sf(rbd, probe, s, **sf_kwargs)
+    except Exception:  # pragma: no cover - fall back to the component bound
+        return ceiling
+    if not np.all(np.isfinite(sf)) or sf[0] < 0.01:
+        return ceiling
+    below = np.nonzero(sf <= 0.01)[0]
+    if below.size == 0:
+        return ceiling
+    return float(min(ceiling, probe[below[0]] * 1.15))
+
+
 def _conditional_sf(model, times, s: float = 0.0, **sf_kwargs) -> np.ndarray:
     """Survival of a model over ``times``, conditioned on having survived to
     ``s`` when ``s > 0``.
@@ -837,6 +863,9 @@ def analyze(
 
     s = float(conditional_age) if conditional_age and conditional_age > 0 else 0.0
     grid = _time_grid(reliabilities, t_max)
+    if not (t_max is not None and np.isfinite(t_max) and t_max > 0):
+        # Auto axis: size it to the system, not the longest-lived block.
+        grid = np.linspace(0.0, _system_horizon(rbd, float(grid[-1]), s, **overrides), _GRID_POINTS)
     system_sf = _conditional_sf(rbd, grid, s, **overrides)
 
     # Per-node reliability over the same grid (skip pure voting gates, which
