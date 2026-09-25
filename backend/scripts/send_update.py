@@ -400,4 +400,14 @@ def main(argv: list[str] | None = None, *, input_fn=input, sleep=time.sleep,
 
 
 if __name__ == "__main__":
+    # Operators run this from a checkout: pick up the repo's .env so the script
+    # talks to the configured database and SMTP server, not the in-memory
+    # simulator with no sender. Must happen before backend.config is imported,
+    # which main() does lazily. python-dotenv is optional (dev dependency).
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(pathlib.Path(__file__).resolve().parents[2] / ".env")
+    except ImportError:  # pragma: no cover
+        pass
     sys.exit(main())
