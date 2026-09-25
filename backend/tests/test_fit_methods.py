@@ -47,11 +47,13 @@ def test_advertised_methods_match_what_actually_fits(dist_id):
     )
 
 
-def test_only_exponentiated_weibull_lacks_probability_plotting():
-    """Pins the one distribution-level exclusion, so losing it is visible."""
+def test_only_expected_distributions_lack_probability_plotting():
+    """Pins the distribution-level exclusions, so a change is visible. Gamma
+    joined in SurPyval 0.20.0 ("Stop Gamma offering a probability plot it
+    cannot draw" — it sets supports_mpp = False)."""
     without = {d for d in fitting.DISTRIBUTIONS
                if "MPP" not in distribution_capabilities(d)["methods"]}
-    assert without == {"expo_weibull"}
+    assert without == {"expo_weibull", "gamma"}
 
 
 def test_zero_inflation_needs_support_starting_at_zero():
