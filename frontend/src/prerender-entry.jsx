@@ -9,6 +9,8 @@ import { ConfigProvider } from "./ConfigProvider.jsx";
 import Landing from "./views/Landing.jsx";
 import Blog from "./views/Blog.jsx";
 import BlogPost from "./views/BlogPost.jsx";
+import WhatsNew from "./views/WhatsNew.jsx";
+import WhatsNewPost from "./views/WhatsNewPost.jsx";
 import TermsPage from "./views/TermsPage.jsx";
 import PrivacyPage from "./views/PrivacyPage.jsx";
 import LearnArticle from "./views/LearnArticle.jsx";
@@ -20,6 +22,7 @@ import ApiDocsPublicPage from "./views/ApiDocsPublicPage.jsx";
 import ProductPage from "./views/ProductPage.jsx";
 import { PRODUCT_PAGES } from "./productPages.jsx";
 import { posts } from "./blog.js";
+import { updates } from "./updates.js";
 import { articles } from "./learn.js";
 import { guides } from "./guides.js";
 import { families as refFamilies, totalEntries } from "./reference.js";
@@ -27,8 +30,8 @@ import { families as refFamilies, totalEntries } from "./reference.js";
 const SITE = "https://reliafy.com";
 
 // Every prerendered route with its head metadata (title, description, and
-// optional JSON-LD structured data). Future-dated blog posts are already
-// filtered out by blog.js, so they're absent from static HTML and the
+// optional JSON-LD structured data). Future-dated blog posts and updates are
+// already filtered out by blog.js / updates.js, so they're absent from static HTML and the
 // sitemap until the first build after their date.
 export function routes() {
   const base = [
@@ -43,6 +46,12 @@ export function routes() {
       title: "Reliability Engineering Articles & Product Updates | Reliafy",
       description:
         "Practical explainers of reliability engineering methods — Weibull analysis, censored data, MTBF vs MTTF, B10 life, availability and more — plus product updates from the Reliafy team.",
+    },
+    {
+      path: "/whats-new",
+      title: "What's new in Reliafy — Product Updates",
+      description:
+        "What's changed in Reliafy: new analyses, improvements and fixes to the open-source reliability engineering platform, roughly monthly.",
     },
     {
       path: "/guides",
@@ -115,6 +124,13 @@ export function routes() {
     lastmod: p.date || null,
     image: p.image || null,
   }));
+  // Future-dated updates are filtered out by updates.js, same as the blog.
+  const updatePages = updates.map((u) => ({
+    path: `/whats-new/${u.slug}`,
+    title: `${u.title} — What's new in Reliafy`,
+    description: u.summary || "",
+    lastmod: u.date || null,
+  }));
   const guidePages = guides.map((g) => ({
     path: `/guides/${g.slug}`,
     title: `${g.title} — Reliafy Guide`,
@@ -135,7 +151,7 @@ export function routes() {
     title: `${f.title} — Reliafy Model Reference`,
     description: f.description,
   }));
-  return [...base, ...product, ...learn, ...blog, ...guidePages, ...referencePages];
+  return [...base, ...product, ...learn, ...blog, ...updatePages, ...guidePages, ...referencePages];
 }
 
 export function render(path) {
@@ -147,6 +163,8 @@ export function render(path) {
             <Route path="/" element={<Landing />} />
             <Route path="/blog" element={<Blog />} />
             <Route path="/blog/:slug" element={<BlogPost />} />
+            <Route path="/whats-new" element={<WhatsNew />} />
+            <Route path="/whats-new/:slug" element={<WhatsNewPost />} />
             <Route path="/learn/:slug" element={<LearnArticle />} />
             <Route path="/guides" element={<GuidesIndex />} />
             <Route path="/guides/:slug" element={<GuidePage />} />

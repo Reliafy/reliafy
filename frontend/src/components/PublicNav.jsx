@@ -17,6 +17,9 @@ export default function PublicNav() {
         <Link className="landing-nav-link" to="/guides">Guides</Link>
         <Link className="landing-nav-link" to="/reference">Reference</Link>
         <Link className="landing-nav-link" to="/blog">Blog</Link>
+        {/* Hidden at mid widths where the unwrapped nav would overflow (see
+            .nav-extra); the footer link covers it there. */}
+        <Link className="landing-nav-link nav-extra" to="/whats-new">What's new</Link>
         <Link className="landing-nav-link" to="/api-docs">API</Link>
         {user ? (
           <Link className="cta cta-solid" to="/modelling">Open the app</Link>
