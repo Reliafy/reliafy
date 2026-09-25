@@ -119,15 +119,28 @@ def test_rbd_public_payload_has_no_identities_or_saved_ids(client):
     assert model["distribution"] == "Weibull" and len(model["params"]) == 2
 
 
-def test_rbd_repairable_public_read_reports_availability(client):
+def test_rbd_repairable_public_read_reports_availability(client, monkeypatch):
+    from backend.services import rbd_analysis
+
+    monkeypatch.setattr(rbd_analysis, "_AVAIL_SIMS", 50)
     client.act_as(A)
     rbd_id = _save_rbd(client, name="Repairable loop", graph=_rbd_graph(repairable=True))
     token = _link_rbd(client, rbd_id)
+    # Public links never simulate: until the owner runs it there's a note.
+    client.act_as(None)
+    a = client.get(f"/api/public/{token}").json()["artifact"]
+    assert a["analysis"] is None
+    assert "hasn't run the availability simulation" in a["analysis_note"]
+    # The owner (entitled: billing is off) runs it once; the link serves that.
+    client.act_as(A)
+    r = client.get(f"/api/rbds/{rbd_id}/analyze")
+    assert r.status_code == 200 and r.json()["cached"] is False
     client.act_as(None)
     a = client.get(f"/api/public/{token}").json()["artifact"]
     assert a["graph"]["repairable"] is True
+    assert a["analysis_note"] is None
     an = a["analysis"]
-    assert an["kind"] == "repairable"
+    assert an["kind"] == "repairable" and an["cached"] is True
     assert 0 < an["steady_state_availability"] <= 1
     assert an["mean_up_time"] > 0 and an["mean_down_time"] > 0
 

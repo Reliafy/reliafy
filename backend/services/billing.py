@@ -259,6 +259,24 @@ def api_access_allowed(db, user: dict) -> bool:
     return account(db, user["uid"])["is_pro"]
 
 
+def premium_compute_allowed(db, user: dict) -> bool:
+    """Whether this user may run the paid, CPU-heavy features (the Reliability
+    Agent, the Monte-Carlo availability simulation).
+
+    Entitled: operator accounts, every user when billing is off (self-hosted),
+    Pro subscribers, and anyone who has *bought* AI credits. A purely
+    free-tier user (only the starter grant, never paid) is not.
+    """
+    if is_admin_user(user):
+        return True
+    if not config.BILLING_ENABLED:
+        return True
+    uid = user.get("uid")
+    if not uid:
+        return False
+    return account(db, uid)["is_pro"] or has_purchased_credits(db, uid)
+
+
 def usage_summary(db, uid: str) -> dict:
     acct = account(db, uid)
     return {

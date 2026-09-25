@@ -1245,6 +1245,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }}
         validation={validation}
         stale={validationStale}
+        rbdId={savedRbdId}
       />
     </div>
     </div>

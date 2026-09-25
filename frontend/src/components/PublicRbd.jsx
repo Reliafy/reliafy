@@ -7,7 +7,7 @@ import {
   RbdRepairableContext,
   RbdUnitContext,
 } from "./RbdNodes.jsx";
-import { AvailabilityView, Results } from "./RbdCalculator.jsx";
+import { AvailabilityView, Results, savedOn } from "./RbdCalculator.jsx";
 import { normalizeRbdGraph } from "../rbdGraph.js";
 
 // Read-only rendering of a publicly linked RBD: the diagram on a non-editable
@@ -104,9 +104,18 @@ export default function PublicRbd({ a }) {
             </div>
           )}
 
+          {!analysis && a.analysis_note && (
+            <div className="card note" style={{ marginTop: "1rem" }}>
+              {a.analysis_note}
+            </div>
+          )}
+
           {analysis && analysis.kind === "repairable" && (
             <div className="card" style={{ marginTop: "1rem" }}>
               <h2>System availability</h2>
+              {analysis.cached && (
+                <p className="rbd-saved-note">{savedOn(analysis.computed_at)}</p>
+              )}
               <AvailabilityView result={analysis} unit={unit} />
             </div>
           )}

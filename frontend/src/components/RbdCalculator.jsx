@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import Plot from "react-plotly.js";
 import { analyzeRbd } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
@@ -448,10 +449,47 @@ export function AvailabilityView({ result, unit }) {
 }
 
 
-export default function RbdCalculator({ graph, validation, stale }) {
+// "Saved result from 3 Oct 2026" for a cached availability result.
+export function savedOn(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || Number.isNaN(d.getTime())) return "Saved result";
+  return `Saved result from ${d.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  })}`;
+}
+
+// Shown instead of an error when a free user calculates a repairable diagram
+// that has no saved result: availability simulation is a paid feature.
+function AvailabilityUpgrade({ graph }) {
+  const exportDiagram = () => {
+    // TODO(rbd-export): the download-as-Python feature listens for this event
+    // and exports the diagram as a RePyability script. Until it lands the
+    // button is inert.
+    window.dispatchEvent(new CustomEvent("reliafy:rbd-export", { detail: { graph } }));
+  };
+  return (
+    <div className="card note rbd-upgrade" role="status">
+      <p>
+        <b>Availability runs thousands of simulations — it's part of Pro.</b>{" "}
+        Subscribe to Pro or buy AI credits to run it here.
+      </p>
+      <div className="rbd-upgrade-actions">
+        <Link className="cta cta-solid" to="/billing">Upgrade to Pro</Link>
+        <button type="button" className="linkish" onClick={exportDiagram}>
+          Download and run it yourself
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function RbdCalculator({ graph, validation, stale, rbdId = null }) {
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | calculating | error
   const [error, setError] = useState(null);
+  const [needsPro, setNeedsPro] = useState(false); // 402 pro_required (availability)
   const [tMax, setTMax] = useState(""); // x-axis 'to' limit (blank = auto)
   const [evalT, setEvalT] = useState(""); // time at which R(t)/F(t) is read off
   const [condAge, setCondAge] = useState(""); // conditional survival age s
@@ -504,9 +542,10 @@ export default function RbdCalculator({ graph, validation, stale }) {
   const inputSig = JSON.stringify({ t: tMax, s: condAge, cov: covPayload() });
   const dirty = result != null && calcSig != null && inputSig !== calcSig;
 
-  const runCalculation = async () => {
+  const runCalculation = async (force = false) => {
     setPhase("calculating");
     setError(null);
+    setNeedsPro(false);
     try {
       const cov = covPayload();
       const s = condAge === "" ? null : Number(condAge);
@@ -514,7 +553,9 @@ export default function RbdCalculator({ graph, validation, stale }) {
         graph,
         tMax === "" ? null : Number(tMax),
         cov,
-        s
+        s,
+        // Saved repairable diagrams can be served a saved availability result.
+        { rbdId: graph.repairable ? rbdId : null, force }
       );
       setResult(res);
       let usedTMax = tMax;
@@ -532,6 +573,12 @@ export default function RbdCalculator({ graph, validation, stale }) {
       setCalcSig(JSON.stringify({ t: usedTMax, s: condAge, cov }));
       setPhase("idle");
     } catch (err) {
+      if (err.status === 402 && err.code === "pro_required") {
+        setResult(null);
+        setNeedsPro(true);
+        setPhase("idle");
+        return;
+      }
       setError(err.message);
       setPhase("error");
     }
@@ -541,7 +588,7 @@ export default function RbdCalculator({ graph, validation, stale }) {
     <div className="rbd-calc">
       <div className="rbd-calc-actions">
         <button
-          onClick={runCalculation}
+          onClick={() => runCalculation(false)}
           disabled={!canCalculate || phase === "calculating"}
           title={
             canCalculate
@@ -644,6 +691,25 @@ export default function RbdCalculator({ graph, validation, stale }) {
       )}
 
       {error && <div className="card error">{error}</div>}
+
+      {needsPro && !stale && <AvailabilityUpgrade graph={graph} />}
+
+      {result && !stale && result.kind === "repairable" && result.cached && (
+        <div className="rbd-saved-note" role="status">
+          <span>{savedOn(result.computed_at)}</span>
+          {result.can_recompute && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={phase === "calculating"}
+              onClick={() => runCalculation(true)}
+              title="Run the availability simulation again"
+            >
+              Re-run
+            </button>
+          )}
+        </div>
+      )}
 
       {result && !stale && result.kind === "repairable" && (
         <AvailabilityView result={result} unit={graph.unit} />

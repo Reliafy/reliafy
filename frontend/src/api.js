@@ -529,7 +529,13 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 // ``covariates`` maps node id -> covariate values for proportional-hazards
 // nodes; ``conditionalAge`` conditions the curves on having survived to that
 // age (conditional survival).
-export function analyzeRbd(graph, tMax, covariates, conditionalAge) {
+//
+// Repairable graphs run the availability simulation, a paid feature: pass
+// ``rbdId`` (the saved diagram being edited) so a saved result can be served
+// and stored, and ``force`` to re-run even when one matches. A user without
+// the entitlement gets a 402 with ``code: "pro_required"`` unless a saved
+// result matches; results carry ``cached`` and ``computed_at``.
+export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = null, force = false } = {}) {
   return request("/api/rbds/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -538,6 +544,8 @@ export function analyzeRbd(graph, tMax, covariates, conditionalAge) {
       t_max: tMax ?? null,
       covariates: covariates || {},
       conditional_age: conditionalAge ?? null,
+      rbd_id: rbdId || null,
+      force: !!force,
     }),
   });
 }

@@ -1242,10 +1242,15 @@ def analyze_availability(
     graph: dict,
     resolve_model=None,
     t_simulation: Optional[float] = None,
+    n_simulations: Optional[int] = None,
 ) -> dict:
     """Availability analysis of a repairable RBD: steady-state uptime, mean up/
     down time, failure frequency, each component's share of downtime, and
-    per-block importance / criticality measures."""
+    per-block importance / criticality measures.
+
+    ``n_simulations`` overrides the Monte-Carlo replication count (default
+    :data:`_AVAIL_SIMS`, read at call time so tests can shrink it)."""
+    n_sims = int(n_simulations) if n_simulations else _AVAIL_SIMS
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(
         graph, resolve_model
     )
@@ -1266,7 +1271,7 @@ def analyze_availability(
     curve = None
     criticality: dict = {}
     try:
-        res = rbd.availability(t_simulation=float(t_simulation), N=_AVAIL_SIMS,
+        res = rbd.availability(t_simulation=float(t_simulation), N=n_sims,
                                method="c", seed=1, **overrides)
         sim = {
             "mean_up_time": _f(getattr(res, "mean_up_time", None)),
@@ -1327,7 +1332,7 @@ def analyze_availability(
         "failure_frequency": figures["failure_frequency"],
         "figures_basis": figures_basis,
         "simulated": sim,
-        "n_simulations": _AVAIL_SIMS,
+        "n_simulations": n_sims,
         "t_simulation": float(t_simulation),
         "per_node": per_node,
         "importance": importance,

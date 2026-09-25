@@ -74,19 +74,36 @@ def _detail_handler(collection: str):
     }[collection]
 
 
-def _with_rbd_analysis(session, payload: dict, owner_id: str, ctx) -> dict:
+AVAILABILITY_NOT_RUN = "The owner hasn't run the availability simulation for this diagram yet."
+
+
+def _with_rbd_analysis(session, payload: dict, rbd_id: str, owner_id: str, ctx) -> dict:
     """Attach the server-side analysis to a public RBD payload.
 
     The graph is analysed under the grantor's read scope (plus the diagram's
     owner) so nested sub-systems and saved-model references resolve exactly as
     they do in the builder. The graph itself goes out through
     :func:`rbds_service.public_graph`, which drops the saved-artifact ids a
-    viewer can't use. Nothing is cached: every hit recomputes, like the
-    builder's own Calculate button.
+    viewer can't use. Reliability (non-repairable) analysis is recomputed on
+    every hit, like the builder's own Calculate button.
+
+    Repairable diagrams are NEVER simulated for an anonymous viewer (the
+    Monte-Carlo availability run is a paid, CPU-heavy feature): the owner's
+    saved result is served when it matches the graph, otherwise the analysis
+    is null with an explanatory ``analysis_note``.
     """
     graph = payload.get("graph") or {}
+    note = None
     try:
-        analysis = rbds_service.analyze_graph(session, graph, [*ctx.read_owners, owner_id])
+        if graph.get("repairable"):
+            doc = session.rbds.find_one({"_id": rbd_id})
+            analysis = rbds_service.cached_availability(
+                doc, rbds_service.availability_cache_key(graph)
+            )
+            if analysis is None:
+                note = AVAILABILITY_NOT_RUN
+        else:
+            analysis = rbds_service.analyze_graph(session, graph, [*ctx.read_owners, owner_id])
         error = None
     except AnalysisError as exc:
         analysis, error = None, str(exc)
@@ -98,6 +115,7 @@ def _with_rbd_analysis(session, payload: dict, owner_id: str, ctx) -> dict:
         "graph": rbds_service.public_graph(graph),
         "analysis": analysis,
         "analysis_error": error,
+        "analysis_note": note,
     }
 
 
@@ -119,7 +137,7 @@ def view_public(token: str, session=Depends(get_session)) -> JSONResponse:
 
     payload = json.loads(response.body)
     if link["collection"] == "rbds":
-        payload = _with_rbd_analysis(session, payload, doc["owner_id"], ctx)
+        payload = _with_rbd_analysis(session, payload, link["artifact_id"], doc["owner_id"], ctx)
     payload = links_service.sanitize(payload)
     grantor = session.users.find_one({"_id": link["grantor_uid"]}) or {}
     return JSONResponse(content={

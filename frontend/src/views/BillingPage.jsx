@@ -80,6 +80,7 @@ export default function BillingPage() {
       pro: proCredits ? `${proCredits} credits included every month, plus packs` : "Buy credit packs",
     },
     { label: "Reliability Agent", free: "With purchased credits", pro: "Included" },
+    { label: "Availability simulation (repairable RBDs)", free: "View saved results", pro: "Included" },
     { label: "Programmatic API & data ingestion", free: "—", pro: "Included" },
     { label: "Team workspaces", free: "Join teams (view-only)", pro: "Create teams and edit together" },
   ];
