@@ -101,6 +101,40 @@ def _with_rbd_analysis(session, payload: dict, owner_id: str, ctx) -> dict:
     }
 
 
+@router.get("/public/{token}/export.py")
+def export_public_rbd(token: str, session=Depends(get_session)):
+    """Unauthenticated "Download as Python" for a publicly linked RBD.
+
+    Same checks as :func:`view_public` (the link resolves, the diagram still
+    exists, the grantor can still read it — replayed through the RBD detail
+    handler under the guest ctx), and the same resolution scope as the public
+    analysis (the grantor's read scope plus the diagram's owner). The script
+    carries no saved-artifact ids or identities.
+    """
+    from backend.routers.rbds import python_download
+
+    link = links_service.resolve(session, token)
+    if link is None or link["collection"] != "rbds":
+        return JSONResponse(status_code=404, content={"detail": "This link doesn't exist or was revoked."})
+    doc = session.rbds.find_one({"_id": link["artifact_id"]})
+    if doc is None:
+        return JSONResponse(status_code=404, content={"detail": "The shared analysis no longer exists."})
+    ctx = links_service.guest_ctx(doc["owner_id"], link["grantor_uid"])
+    response = _detail_handler("rbds")(link["artifact_id"], session, ctx)
+    if getattr(response, "status_code", 200) != 200:
+        return JSONResponse(status_code=404, content={"detail": "The shared analysis is unavailable."})
+    payload = json.loads(response.body)
+    try:
+        filename, source = rbds_service.export_python(
+            session, payload.get("name") or "", payload.get("graph") or {},
+            [*ctx.read_owners, doc["owner_id"]],
+        )
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to export public RBD as Python")
+        return JSONResponse(status_code=500, content={"detail": "This diagram couldn't be exported."})
+    return python_download(filename, source)
+
+
 @router.get("/public/{token}")
 def view_public(token: str, session=Depends(get_session)) -> JSONResponse:
     """Unauthenticated read of a publicly linked artifact."""

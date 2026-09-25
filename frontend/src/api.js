@@ -51,7 +51,9 @@ function workspaceHeaders() {
     : {};
 }
 
-async function request(url, opts = {}) {
+// fetch() with the auth + workspace headers and the same retry/self-heal as
+// every JSON call; resolves to the raw Response (for non-JSON downloads).
+async function authedFetch(url, opts = {}) {
   const send = async (forceRefresh) => {
     const headers = {
       ...(opts.headers || {}),
@@ -76,6 +78,11 @@ async function request(url, opts = {}) {
       res = await send(false);
     }
   }
+  return res;
+}
+
+async function request(url, opts = {}) {
+  const res = await authedFetch(url, opts);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(
@@ -967,6 +974,64 @@ export function revokePublicLink(token) {
 // Unauthenticated: resolve a public link to its artifact payload.
 export function getPublicArtifact(token) {
   return request(`/api/public/${encodeURIComponent(token)}`);
+}
+
+// ---- File downloads -----------------------------------------------------------
+
+// The file name from a Content-Disposition header (plain or RFC 5987 form).
+function dispositionFilename(header, fallback) {
+  if (!header) return fallback;
+  const star = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      /* fall through to the plain form */
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+  return plain ? plain[1].trim() : fallback;
+}
+
+// Fetch a file with the auth header and hand it to the browser as a download.
+async function downloadFile(url, fallbackName) {
+  const res = await authedFetch(url);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const err = new Error(data.detail || `Download failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  const blob = await res.blob();
+  const name = dispositionFilename(res.headers.get("Content-Disposition"), fallbackName);
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Give the browser a moment to start the download before revoking.
+  setTimeout(() => URL.revokeObjectURL(href), 1000);
+  return name;
+}
+
+export const PYTHON_EXPORT_TIP =
+  "A standalone script that rebuilds this diagram with SurPyval + RePyability and runs it locally.";
+
+// "Download as Python": a standalone SurPyval + RePyability script that
+// rebuilds a saved RBD and runs the same calculation locally. Free for every
+// viewer of the diagram.
+export function downloadRbdPython(id) {
+  return withEvent(
+    downloadFile(`/api/rbds/${encodeURIComponent(id)}/export.py`, "rbd.py"),
+    "rbd_export_python"
+  );
+}
+
+// The same download for a publicly linked RBD (no sign-in needed).
+export function downloadPublicRbdPython(token) {
+  return downloadFile(`/api/public/${encodeURIComponent(token)}/export.py`, "rbd.py");
 }
 
 // ---- Personal API tokens ------------------------------------------------------

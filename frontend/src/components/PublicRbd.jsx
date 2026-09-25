@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import ReactFlow, { Background, Controls, ReactFlowProvider } from "reactflow";
 import "reactflow/dist/style.css";
 import {
@@ -9,6 +9,7 @@ import {
 } from "./RbdNodes.jsx";
 import { AvailabilityView, Results } from "./RbdCalculator.jsx";
 import { normalizeRbdGraph } from "../rbdGraph.js";
+import { PYTHON_EXPORT_TIP, downloadPublicRbdPython } from "../api.js";
 
 // Read-only rendering of a publicly linked RBD: the diagram on a non-editable
 // React Flow canvas (pan/zoom only, no drag/connect/select) using the builder's
@@ -52,7 +53,32 @@ function Canvas({ graph }) {
   );
 }
 
-export default function PublicRbd({ a }) {
+// "Download as Python" for a public RBD — free, no sign-in needed.
+function DownloadPython({ token }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const onClick = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await downloadPublicRbdPython(token);
+    } catch (e) {
+      setError(e.message || "Download failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <span className="public-rbd-download">
+      <button className="rbd-btn" onClick={onClick} disabled={busy} title={PYTHON_EXPORT_TIP}>
+        {busy ? "Preparing…" : "Download as Python"}
+      </button>
+      {error && <span className="public-rbd-download-err" role="alert">{error}</span>}
+    </span>
+  );
+}
+
+export default function PublicRbd({ a, token }) {
   const graph = a.graph || {};
   const unit = graph.unit || "";
   const repairable = !!graph.repairable;
@@ -95,6 +121,7 @@ export default function PublicRbd({ a }) {
               {(graph.ccf_groups || []).length > 0 && (
                 <span><b>{graph.ccf_groups.length}</b> common-cause group{graph.ccf_groups.length === 1 ? "" : "s"}</span>
               )}
+              {token && <DownloadPython token={token} />}
             </div>
           </div>
 
