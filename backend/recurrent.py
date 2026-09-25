@@ -151,6 +151,32 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
     return payload, store_live(para)
 
 
+def _power_law(model_id: str, params) -> tuple:
+    """(shape, scale) of the model's power-law MCF in Crow-AMSAA form,
+    MCF(t) = (t/scale)^shape, whatever the fitter's own parameterisation.
+
+    Crow-AMSAA is ``[alpha, beta]`` = (scale, shape). SurPyval's Duane is
+    ``[alpha, b]`` with MCF(t) = b * t^alpha — alpha is the *shape* and b a
+    rate constant, so scale = b^(-1/alpha). Reading ``params[1]`` as the shape
+    for both (as this module used to) gave Duane a shape of ~0: every Duane fit
+    was labelled "improving" and its ROCOF/MTBF were meaningless (#88).
+    """
+    p = np.asarray(params, dtype=float)
+    if p.size < 2:
+        return None, None
+    if model_id == "duane":
+        shape, b = float(p[0]), float(p[1])
+        scale = float(b ** (-1.0 / shape)) if b > 0 and shape > 0 else None
+        return shape, scale
+    return float(p[1]), float(p[0])
+
+
+def _param_names(model_id: str, n: int) -> list:
+    fitter = MODELS.get(model_id, {}).get("fitter")
+    names = list(getattr(fitter, "param_names", []) or [])
+    return names if len(names) == n else [f"p{k}" for k in range(n)]
+
+
 def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
     n_systems = int(len(set(i.tolist())))
     n_events = int(len(x))
@@ -173,8 +199,7 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
 
     # Crow-AMSAA / power-law shape: MCF(t) = (t/alpha)^beta, so the current
     # rate of occurrence of failures (ROCOF) at the end is analytic.
-    beta = float(params_arr[1]) if params_arr.size >= 2 else None
-    alpha = float(params_arr[0]) if params_arr.size >= 1 else None
+    beta, alpha = _power_law(model_id, params_arr)
     rocof = mtbf = None
     growth = None
     if beta is not None and alpha and t_hi > 0:
@@ -200,7 +225,7 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
     except Exception:  # pragma: no cover - defensive
         trend = None
 
-    param_names = ["alpha", "beta"] if model_id in ("crow_amsaa", "duane") else [f"p{k}" for k in range(params_arr.size)]
+    param_names = _param_names(model_id, params_arr.size)
     payload = {
         "kind": "recurrent",
         "unit": (unit or "").strip(),
@@ -256,19 +281,26 @@ def fit_from_params(model_id: str, params: list, horizon: float, unit: str = "")
         raise FitError("Horizon must be a number.")
     if horizon <= 0:
         raise FitError("Horizon must be a positive time.")
+    # The form always takes Crow-AMSAA-style (alpha = scale, beta = shape).
+    # Duane's own parameters are (shape, b) with b = scale^(-shape).
+    native = values
+    if model_id == "duane":
+        scale, shape = values[0], values[1]
+        if scale <= 0 or shape <= 0:
+            raise FitError("Both parameters must be positive.")
+        native = [shape, scale ** (-shape)]
     try:
-        para = fitter.from_params(values)
+        para = fitter.from_params(native)
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
         raise FitError(str(exc)) from exc
-    return _params_payload(para, model_id, values, horizon, unit), store_live(para)
+    return _params_payload(para, model_id, native, horizon, unit), store_live(para)
 
 
 def _params_payload(para, model_id: str, values: list, horizon: float, unit: str) -> dict:
     grid = np.linspace(0.0, horizon, 200)
     with np.errstate(all="ignore"):
         fitted = np.asarray(para.mcf(grid), dtype=float)
-    alpha = float(values[0])
-    beta = float(values[1])
+    beta, alpha = _power_law(model_id, values)
     # Same power-law ROCOF/MTBF (at the horizon) and growth verdict as a data fit.
     rocof = mtbf = None
     with np.errstate(all="ignore"):
@@ -283,7 +315,7 @@ def _params_payload(para, model_id: str, values: list, horizon: float, unit: str
         "n_systems": None,
         "n_events": None,
         "model": {"id": model_id, "name": MODELS[model_id]["name"]},
-        "params": [{"name": n, "value": float(v)} for n, v in zip(("alpha", "beta"), values)],
+        "params": [{"name": n, "value": float(v)} for n, v in zip(_param_names(model_id, len(values)), values)],
         "beta": beta,
         "growth": growth,
         "rocof": rocof,
