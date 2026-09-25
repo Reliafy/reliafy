@@ -183,4 +183,34 @@ export function render(path) {
   );
 }
 
+// RSS feeds, written next to the sitemap by scripts/prerender.mjs. Built from
+// the same date-gated lists as the pages, so a queued (future-dated) item
+// appears in its feed on the first build on or after its date — which is what
+// lets Zapier/Buffer auto-post it the day it goes live.
+export function feeds() {
+  const item = (base) => (x) => ({
+    title: x.title,
+    link: `${SITE}${base}/${x.slug}`,
+    guid: `${SITE}${base}/${x.slug}`,
+    date: x.date,
+    summary: x.summary,
+  });
+  return [
+    {
+      path: "/whats-new/feed.xml",
+      title: "Reliafy — What's new",
+      link: `${SITE}/whats-new`,
+      description: "Product updates from Reliafy: new features, improvements and fixes.",
+      items: updates.map(item("/whats-new")),
+    },
+    {
+      path: "/blog/feed.xml",
+      title: "Reliafy blog",
+      link: `${SITE}/blog`,
+      description: "Reliability engineering, maintenance strategy and Reliafy in practice.",
+      items: posts.map(item("/blog")),
+    },
+  ];
+}
+
 export { SITE };
