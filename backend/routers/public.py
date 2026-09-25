@@ -143,8 +143,13 @@ def export_public_rbd(token: str, session=Depends(get_session)):
         return JSONResponse(status_code=404, content={"detail": "The shared analysis is unavailable."})
     payload = json.loads(response.body)
     try:
+        # Export exactly what the public page shows: public_graph drops nested
+        # sub-system and saved-model ids, so a public download never reveals
+        # more than the viewer can see (those blocks become explained
+        # placeholders in the script; inline-parameter blocks export in full).
         filename, source = rbds_service.export_python(
-            session, payload.get("name") or "", payload.get("graph") or {},
+            session, payload.get("name") or "",
+            rbds_service.public_graph(payload.get("graph") or {}),
             [*ctx.read_owners, doc["owner_id"]],
         )
     except Exception:  # pragma: no cover - defensive

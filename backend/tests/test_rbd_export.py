@@ -529,3 +529,31 @@ def test_subsystem_resolves_in_the_viewers_scope(client):
     code = _assert_script(client.get(f"/api/rbds/{outer}/export.py"), "outer.py")
     assert "--- Sub-system 'Inner'" in code
     assert "Block 'Theirs' is a nested sub-system ('Theirs') that" in _flat(code)
+
+
+def test_public_download_does_not_reveal_nested_subsystems(client):
+    """The public page shows a nested sub-system only by name; its download
+    must not inline the sub-system's blocks either (the owner's own export
+    does)."""
+    client.act_as(A)
+    inner_graph = {
+        "unit": "hours", "repairable": False, "ccf_groups": [],
+        "nodes": [*_io(), _node("secret", "component", "Proprietary valve", model=_w(4321, 2.2))],
+        "edges": _chain("secret"),
+    }
+    inner = _save(client, name="Inner", graph=inner_graph)
+    outer_graph = {
+        "unit": "hours", "repairable": False, "ccf_groups": [],
+        "nodes": [*_io(), _node("s1", "subsystem", "Skid", rbd={"id": inner, "name": "Inner"})],
+        "edges": _chain("s1"),
+    }
+    outer = _save(client, name="Outer public", graph=outer_graph)
+    own = _assert_script(client.get(f"/api/rbds/{outer}/export.py"), "outer_public.py")
+    assert "Proprietary valve" in own  # the owner gets the full diagram
+
+    token = client.post("/api/public-links",
+                        json={"collection": "rbds", "artifact_id": outer}).json()["token"]
+    client.act_as(None)
+    pub = _assert_script(client.get(f"/api/public/{token}/export.py"), "outer_public.py")
+    assert "Proprietary valve" not in pub and "4321" not in pub and inner not in pub
+    assert "Skid" in pub  # the block is still there, as an explained placeholder

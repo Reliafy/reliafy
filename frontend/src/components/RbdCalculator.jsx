@@ -464,9 +464,8 @@ export function savedOn(iso) {
 // that has no saved result: availability simulation is a paid feature.
 function AvailabilityUpgrade({ graph }) {
   const exportDiagram = () => {
-    // TODO(rbd-export): the download-as-Python feature listens for this event
-    // and exports the diagram as a RePyability script. Until it lands the
-    // button is inert.
+    // RbdBuilder listens for this event and downloads the saved diagram as a
+    // standalone SurPyval + RePyability script (free for every viewer).
     window.dispatchEvent(new CustomEvent("reliafy:rbd-export", { detail: { graph } }));
   };
   return (
