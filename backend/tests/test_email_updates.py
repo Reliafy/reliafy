@@ -171,7 +171,7 @@ def test_dry_run_sends_and_writes_nothing(test_db, outbox, capsys):
     assert list(test_db.users.find()) == before
     sample_dir = re.search(r"Sample written to (\S+)/ ", out).group(1)
     html = (pathlib.Path(sample_dir) / "sample.html").read_text()
-    assert "<h2>Faster fits</h2>" in html and "Hi Alice," in html
+    assert re.search(r"<h2[^>]*>Faster fits</h2>", html) and "Hi Alice," in html
 
 
 def test_send_only_to_eligible_and_rerun_sends_nothing(test_db, outbox, capsys):

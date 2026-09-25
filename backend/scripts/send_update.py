@@ -154,7 +154,11 @@ class Rendered:
     headers: dict
 
 
-def render(update: Update, name: str | None, token: str) -> Rendered:
+def render(update: Update, name: str | None, token: str,
+           logo_src: str | None = None) -> Rendered:
+    """Subject, plain text and branded HTML for one recipient. ``logo_src``
+    overrides the hosted logo (e.g. ``cid:...`` for a pre-deploy test)."""
+    from backend.services import email_templates as tpl
     from backend.services.email import _app_url
 
     web = _app_url(f"/whats-new/{update.slug}")
@@ -175,23 +179,28 @@ def render(update: Update, name: str | None, token: str) -> Rendered:
     )
 
     esc = html_lib.escape
-    html = f"""<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>{esc(update.title)}</title></head>
-<body style="margin:0;padding:0;background:#f6f6f4;">
-<div style="max-width:600px;margin:0 auto;padding:24px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1f2328;background:#ffffff;">
-<p>{esc(greeting)}</p>
-<p>Here's what's new in Reliafy.</p>
-<h1 style="font-size:22px;line-height:1.3;margin:24px 0 8px;">{esc(update.title)}</h1>
-{markdown_to_html(update.body)}
-<p style="margin-top:28px;">Read it on the web: <a href="{esc(web)}" style="color:#0b6bcb;">{esc(web)}</a></p>
-<hr style="border:none;border-top:1px solid #e3e3e0;margin:28px 0 16px;">
-<p style="font-size:12px;line-height:1.5;color:#6b6f76;">You're receiving this because you have a Reliafy account.
-<a href="{esc(unsub_page)}" style="color:#6b6f76;">Unsubscribe</a> · Reliafy, Brisbane, Australia ·
-<a href="mailto:{REPLY_TO}" style="color:#6b6f76;">{REPLY_TO}</a></p>
-</div>
-</body></html>
-"""
+    try:
+        month = datetime.strptime(update.date, "%Y-%m-%d").strftime("%B %Y")
+    except (TypeError, ValueError):
+        month = ""
+    body = tpl.style_body(f"<p>{esc(greeting)}</p>\n{markdown_to_html(update.body)}")
+    footer_html = (
+        f"You're receiving this because you have a Reliafy account.<br>"
+        f'<a href="{esc(unsub_page)}" style="color:{tpl.FAINT};text-decoration:underline;">Unsubscribe</a>'
+        f" &nbsp;·&nbsp; Reliafy, Brisbane, Australia &nbsp;·&nbsp; "
+        f'<a href="mailto:{REPLY_TO}" style="color:{tpl.FAINT};text-decoration:underline;">{REPLY_TO}</a>'
+    )
+    html = tpl.layout(
+        body_html=body,
+        base_url=_app_url("/"),
+        title=update.title,
+        eyebrow=f"What's new · {month}" if month else "What's new",
+        lead=update.summary,
+        preheader=update.summary,
+        cta=("Read it on the web", web),
+        footer_html=footer_html,
+        logo_src=logo_src,
+    )
     headers = {
         "List-Unsubscribe": f"<{unsub_api}>, <mailto:{REPLY_TO}?subject=unsubscribe>",
         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
