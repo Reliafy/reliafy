@@ -1,4 +1,4 @@
-"""Outbound transactional email (team invites, share notifications).
+"""Outbound email (team invites, share notifications, product updates).
 
 Plain SMTP so any provider works — Gmail with an app password, Resend,
 Postmark, SES. Configured entirely by env vars; when they're absent every
@@ -27,7 +27,13 @@ def enabled() -> bool:
     return bool(config.SMTP_HOST and config.EMAIL_FROM)
 
 
-def _deliver(msg: EmailMessage) -> None:
+def _deliver(msg: EmailMessage, *, raise_errors: bool = False) -> None:
+    """Hand one message to the SMTP server.
+
+    Failures are logged and swallowed (a notification must never break the
+    request that triggered it) unless ``raise_errors`` — the bulk sender
+    wants the exception so it can record the failure and retry later.
+    """
     try:
         with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=20) as smtp:
             smtp.starttls()
@@ -37,21 +43,73 @@ def _deliver(msg: EmailMessage) -> None:
         logger.info("email sent to=%s subject=%r", msg["To"], msg["Subject"])
     except Exception:
         logger.exception("email delivery failed to=%s subject=%r", msg["To"], msg["Subject"])
+        if raise_errors:
+            raise
 
 
-def send(to: str, subject: str, body: str) -> None:
-    """Queue one plain-text email (no-op with a log line when unconfigured)."""
+def build_message(
+    to: str,
+    subject: str,
+    body: str,
+    html: str | None = None,
+    reply_to: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> EmailMessage:
+    """Compose a message: plain text, or multipart/alternative with ``html``."""
+    msg = EmailMessage()
+    msg["From"] = config.EMAIL_FROM
+    msg["To"] = to
+    msg["Subject"] = subject
+    if reply_to:
+        msg["Reply-To"] = reply_to
+    for name, value in (headers or {}).items():
+        if name in msg:
+            del msg[name]
+        msg[name] = value
+    msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
+    return msg
+
+
+def send(
+    to: str,
+    subject: str,
+    body: str,
+    html: str | None = None,
+    reply_to: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> None:
+    """Queue one email (no-op with a log line when unconfigured).
+
+    Plain text by default; pass ``html`` for a multipart/alternative message
+    and ``headers`` for extra headers (e.g. List-Unsubscribe).
+    """
     if not to:
         return
     if not enabled():
         logger.info("email skipped (SMTP not configured) to=%s subject=%r", to, subject)
         return
-    msg = EmailMessage()
-    msg["From"] = config.EMAIL_FROM
-    msg["To"] = to
-    msg["Subject"] = subject
-    msg.set_content(body)
+    msg = build_message(to, subject, body, html=html, reply_to=reply_to, headers=headers)
     threading.Thread(target=_deliver, args=(msg,), daemon=True).start()
+
+
+def send_now(
+    to: str,
+    subject: str,
+    body: str,
+    html: str | None = None,
+    reply_to: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> EmailMessage:
+    """Deliver one email synchronously, raising on failure (bulk sender).
+
+    Unlike :func:`send` this does not check :func:`enabled` — the caller
+    decides what an unconfigured server means.
+    """
+    msg = build_message(to, subject, body, html=html, reply_to=reply_to, headers=headers)
+    _deliver(msg, raise_errors=True)
+    return msg
 
 
 def _app_url(path: str = "/") -> str:

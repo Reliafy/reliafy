@@ -27,6 +27,8 @@ mongomock
 firebase-admin
 stripe
 httpx
+# Renders the "What's new" update emails (backend/scripts/send_update.py).
+markdown
 # Managed Agents live in the beta namespace (beta.agents/environments/sessions);
 # event-delta streaming (for our SSE) landed in 0.115.0. Pinned for reproducible
 # builds against the still-evolving Managed Agents beta API.
