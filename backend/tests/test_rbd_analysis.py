@@ -728,3 +728,125 @@ def test_placeholder_flag_on_model_is_ignored_by_analysis():
     v = validate_graph(graph(True))
     assert v["valid"] and v["analytic"] and v["can_calculate"]
     assert v["errors"] == []
+
+
+# ---------------------------------------------------------------------------
+# Availability curve resampling (#80) and importance / criticality (#83)
+# ---------------------------------------------------------------------------
+
+
+def _series_repairable_graph():
+    return {
+        "unit": "hours",
+        "repairable": True,
+        "nodes": _io_nodes() + [
+            _repairable_component("a", "A", 1000, 1.5, 2.0),
+            _repairable_component("b", "B", 1500, 1.2, 2.0),
+        ],
+        "edges": [_edge("input", "a"), _edge("a", "b"), _edge("b", "output")],
+    }
+
+
+def test_resample_step_takes_latest_value_at_or_before_each_time():
+    timeline = np.array([0.0, 1.0, 7.5, 8.0, 50.0])
+    values = np.array([1.0, 0.9, 0.5, 0.7, 0.2])
+    grid = np.array([0.0, 0.5, 1.0, 7.0, 7.5, 7.9, 8.0, 49.0, 100.0])
+    out = ra._resample_step(timeline, values, grid)
+    assert out.tolist() == [1.0, 1.0, 0.9, 0.9, 0.5, 0.5, 0.7, 0.7, 0.2]
+
+
+def test_availability_curve_is_indexed_by_event_times_not_array_position(monkeypatch):
+    """Regression for #80: the MC availability series is indexed by irregular
+    event times, so a grid time must show the value at the latest event <= it,
+    not the value at the same *fraction of the array*."""
+    from types import SimpleNamespace
+
+    t_sim = 100.0
+    # Heavily front-loaded events: 900 in [0, 10), then 100 spread to t_sim.
+    timeline = np.concatenate([np.linspace(0.0, 10.0, 900, endpoint=False),
+                               np.linspace(10.0, t_sim, 100)])
+    values = np.where(timeline < 10.0, 0.99, 0.5) - timeline * 1e-4
+    band = (values - 0.01, values + 0.01)
+
+    def fake_availability(self, t_simulation, **kwargs):
+        return SimpleNamespace(
+            timeline=timeline, availability=values,
+            availability_interval=lambda confidence=0.95: band,
+            mean_up_time=1.0, mean_down_time=1.0, failure_frequency=1.0,
+            node_downtime={}, criticalities=None,
+        )
+
+    monkeypatch.setattr(ra.RepairableRBD, "availability", fake_availability)
+    res = ra.analyze_availability(_series_repairable_graph(), t_simulation=t_sim)
+    curve = res["curve"]
+    t = np.asarray(curve["t"])
+    assert len(t) == ra._GRID_POINTS
+    assert t[0] == 0.0 and t[-1] == pytest.approx(t_sim)
+    assert np.allclose(np.diff(t), t_sim / (ra._GRID_POINTS - 1))
+    for i in (0, 17, ra._GRID_POINTS // 2, ra._GRID_POINTS - 1):
+        j = np.searchsorted(timeline, t[i], side="right") - 1
+        assert curve["availability"][i] == pytest.approx(values[j])
+        assert curve["lower"][i] == pytest.approx(band[0][j])
+        assert curve["upper"][i] == pytest.approx(band[1][j])
+    # The midpoint (t=50) is in the 0.5 regime; the old positional indexing
+    # read it from the dense early events (~0.99).
+    assert curve["availability"][ra._GRID_POINTS // 2] < 0.6
+
+
+def test_instrument_air_availability_importance_and_exact_figures(monkeypatch):
+    from backend.services import samples
+
+    monkeypatch.setattr(ra, "_AVAIL_SIMS", 300)  # keep the suite quick
+    graph = samples._instrument_air_availability_graph()
+    res = ra.analyze_availability(graph)
+    import json
+    json.dumps(res)
+
+    components = {n["id"] for n in graph["nodes"] if n["type"] == "component"}
+    gates = {n["id"] for n in graph["nodes"] if n["type"] == "knode"}
+    assert gates  # the sample has voting gates to exclude
+
+    imp = res["importance"]
+    assert set(imp) == components
+    for nid, row in imp.items():
+        for key in ("birnbaum", "fussell_vesely", "criticality",
+                    "risk_achievement_worth", "risk_reduction_worth",
+                    "improvement_potential", "unavailability_criticality"):
+            assert row[key] is not None and np.isfinite(row[key]), (nid, key)
+        assert 0.0 <= row["birnbaum"] <= 1.0
+        assert row["risk_achievement_worth"] >= 1.0
+    # Series blocks outrank a redundant compressor.
+    assert imp["header"]["birnbaum"] > imp["compA"]["birnbaum"]
+
+    crit = res["criticality"]
+    assert set(crit) <= components and not (set(crit) & gates)
+    for row in crit.values():
+        for key in ("failure_criticality", "restoration_criticality",
+                    "operational_criticality_up", "operational_criticality_down"):
+            assert 0.0 <= row[key] <= 1.0
+
+    # Exact steady-state MUT/MDT are finite and near the simulation estimates.
+    assert res["figures_basis"] == {
+        "mean_up_time": "exact", "mean_down_time": "exact", "failure_frequency": "exact",
+    }
+    sim = res["simulated"]
+    for key in ("mean_up_time", "mean_down_time", "failure_frequency"):
+        assert res[key] is not None and np.isfinite(res[key]) and res[key] > 0
+        assert res[key] == pytest.approx(sim[key], rel=0.35), key
+
+
+def test_availability_honours_pinned_blocks_without_repair_models(monkeypatch):
+    monkeypatch.setattr(ra, "_AVAIL_SIMS", 200)
+    graph = _series_repairable_graph()
+    graph["nodes"].append(_component("c", "C", "weibull", [("alpha", 50), ("beta", 1)]))
+    graph["nodes"][-1]["data"]["state"] = "working"  # pinned: no repair needed
+    graph["edges"] = [_edge("input", "a"), _edge("a", "c"), _edge("c", "b"),
+                      _edge("b", "output")]
+    res = ra.analyze_availability(graph)
+    assert res["pinned"] == {"working": ["c"], "failed": []}
+    assert res["importance"]["c"]["pinned"] == "working"
+    assert res["importance"]["c"]["unavailability_criticality"] == 0.0
+    # Pinning C working leaves the A-B series availability unchanged.
+    base = ra.analyze_availability(_series_repairable_graph())
+    assert res["steady_state_availability"] == pytest.approx(
+        base["steady_state_availability"], rel=1e-9)
