@@ -10,6 +10,9 @@ import Login from "./views/Login.jsx";
 import Landing from "./views/Landing.jsx";
 import Blog from "./views/Blog.jsx";
 import BlogPost from "./views/BlogPost.jsx";
+import WhatsNew from "./views/WhatsNew.jsx";
+import WhatsNewPost from "./views/WhatsNewPost.jsx";
+import Unsubscribe from "./views/Unsubscribe.jsx";
 import TermsPage from "./views/TermsPage.jsx";
 import PrivacyPage from "./views/PrivacyPage.jsx";
 import LearnArticle from "./views/LearnArticle.jsx";
@@ -69,6 +72,8 @@ export default function App() {
             {!AUTH_DISABLED && <Route path="/" element={<Landing />} />}
             {!AUTH_DISABLED && <Route path="/blog" element={<Blog />} />}
             {!AUTH_DISABLED && <Route path="/blog/:slug" element={<BlogPost />} />}
+            {!AUTH_DISABLED && <Route path="/whats-new" element={<WhatsNew />} />}
+            {!AUTH_DISABLED && <Route path="/whats-new/:slug" element={<WhatsNewPost />} />}
             {/* The Learn index is consolidated into /blog; articles keep their
                 own /learn/:slug URLs (those are the indexed pages). */}
             {!AUTH_DISABLED && <Route path="/learn" element={<Navigate to="/blog" replace />} />}
@@ -94,6 +99,9 @@ export default function App() {
             )}
             {!AUTH_DISABLED && <Route path="/terms" element={<TermsPage />} />}
             {!AUTH_DISABLED && <Route path="/privacy" element={<PrivacyPage />} />}
+            {/* Signed-token unsubscribe from product-update emails: public,
+                client-rendered only (not prerendered, not in the sitemap). */}
+            {!AUTH_DISABLED && <Route path="/unsubscribe" element={<Unsubscribe />} />}
             {!AUTH_DISABLED && <Route path="/login" element={<Login />} />}
             <Route
               path="/*"

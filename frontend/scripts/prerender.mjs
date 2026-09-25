@@ -16,7 +16,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 const entry = pathToFileURL(join(root, "dist-ssr", "prerender-entry.js")).href;
 
-const { render, routes, SITE } = await import(entry);
+const { render, routes, feeds, SITE } = await import(entry);
 
 const template = readFileSync(join(dist, "index.html"), "utf8");
 const escape = (s) =>
@@ -44,6 +44,9 @@ for (const route of routes()) {
     `<meta name="twitter:title" content="${escape(route.title)}" />`,
     `<meta name="twitter:description" content="${escape(route.description)}" />`,
     `<meta name="twitter:image" content="${SITE}${route.image || "/og-card.png"}" />`,
+    // Feed autodiscovery (feed readers, Zapier/Buffer "find feed" helpers).
+    `<link rel="alternate" type="application/rss+xml" title="Reliafy — What's new" href="${SITE}/whats-new/feed.xml" />`,
+    `<link rel="alternate" type="application/rss+xml" title="Reliafy blog" href="${SITE}/blog/feed.xml" />`,
     // Structured data (SoftwareApplication on product pages, Article/FAQPage
     // on learn pages) — what featured snippets and AI overviews lift.
     ...(route.jsonld || []).map(
@@ -80,4 +83,10 @@ writeFileSync(
   `User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`
 );
 
-console.log(`prerendered ${count} pages + sitemap.xml + robots.txt`);
+// RSS feed data (all items, future-dated included). Served as XML by the
+// backend's feeds route, which applies the date gate per request.
+const feedData = feeds();
+writeFileSync(join(dist, "feeds.json"), JSON.stringify({ site: SITE, feeds: feedData }, null, 1));
+const feedCount = feedData.length;
+
+console.log(`prerendered ${count} pages + sitemap.xml + robots.txt + feeds.json (${feedCount} feeds)`);

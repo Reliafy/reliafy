@@ -211,3 +211,39 @@ def test_api_fit_and_save_from_saved_dataset(monkeypatch):
         assert r.json()["dataset_id"] == dataset_id
     finally:
         app.dependency_overrides.clear()
+
+
+# --- #88: Duane's parameterisation is (alpha = shape, b), not (scale, shape) ---
+
+def _deteriorating_events() -> pd.DataFrame:
+    # One system, failures arriving ever faster: clearly deteriorating.
+    times = [500, 850, 1100, 1300, 1450, 1560, 1650, 1720, 1780, 1830]
+    return pd.DataFrame({"system": ["S1"] * len(times), "time": times})
+
+
+def test_duane_fit_reports_the_same_growth_as_crow_amsaa():
+    from backend import recurrent as rec
+
+    df = _deteriorating_events()
+    crow, _ = rec.fit(df, {"i": "system", "x": "time"}, "crow_amsaa", "hours")
+    duane, _ = rec.fit(df, {"i": "system", "x": "time"}, "duane", "hours")
+    assert crow["growth"] == "deteriorating"
+    # Before the fix Duane read its scale constant as beta (~0) -> "improving".
+    assert duane["growth"] == "deteriorating"
+    assert duane["beta"] == pytest.approx(crow["beta"], rel=1e-3)
+    assert duane["rocof"] == pytest.approx(crow["rocof"], rel=1e-3)
+    assert [p["name"] for p in duane["params"]] == ["alpha", "b"]
+
+
+def test_duane_from_params_matches_crow_amsaa_with_the_same_inputs():
+    """The params form always takes (alpha = scale, beta = shape); a Duane built
+    from it must be the same power law as Crow-AMSAA."""
+    from backend import recurrent as rec
+
+    params = [{"name": "alpha", "value": 1000.0}, {"name": "beta", "value": 2.0}]
+    crow, _ = rec.fit_from_params("crow_amsaa", params, 3000.0, "hours")
+    duane, _ = rec.fit_from_params("duane", params, 3000.0, "hours")
+    assert duane["beta"] == pytest.approx(2.0)
+    assert duane["growth"] == "deteriorating"
+    assert duane["rocof"] == pytest.approx(crow["rocof"], rel=1e-9)
+    assert duane["mcf"]["fitted"]["mcf"] == pytest.approx(crow["mcf"]["fitted"]["mcf"], rel=1e-9)

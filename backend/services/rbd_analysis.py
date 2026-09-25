@@ -1028,8 +1028,12 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
     """Translate a builder graph into a RepairableRBD (availability).
 
     v1 supports plain component nodes (each a life model + repair) and k-of-n
-    voting gates; other node types raise a clear error. Returns
-    ``(rbd, labels)``.
+    voting gates; other node types raise a clear error. Nodes pinned
+    working/failed (``data.state``) are forced via RePyability's native
+    ``working_nodes``/``broken_nodes`` overrides; a pinned node needs no life
+    or repair model (validation doesn't ask for one), so a never-failing
+    stand-in is used when it has none. Returns
+    ``(rbd, labels, gate_ids, working_nodes, broken_nodes)``.
     """
     nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
@@ -1046,6 +1050,8 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
     k: dict[Any, int] = {}
     labels: dict[Any, str] = {}
     gate_ids: set = set()  # synthetic voting gates — excluded from downtime
+    working_nodes: set = set()
+    broken_nodes: set = set()
 
     for node in nodes:
         nid = node.get("id")
@@ -1055,6 +1061,12 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
         data = node.get("data") or {}
         label = data.get("label") or nid
         labels[nid] = label
+        state = data.get("state")
+        if state == "working":
+            working_nodes.add(nid)
+        elif state == "failed":
+            broken_nodes.add(nid)
+        pinned = state in ("working", "failed")
         if ntype == "knode":
             components[nid] = _always_up()
             k[nid] = max(int(data.get("n") or 1), 1)
@@ -1066,6 +1078,10 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
                 "diagrams yet — use component blocks (each with a life model and "
                 "a repair time), optionally with a k-of-n voting gate."
             )
+        if pinned and not (data.get("model") and data.get("repair")):
+            # The override fixes its state; the stand-in is never consulted.
+            components[nid] = _always_up()
+            continue
         reliability = _build_distribution(data.get("model"), label, resolve_model, None)
         repair = _repair_distribution(data, label, resolve_model)
         components[nid] = NonRepairable(reliability, repair)
@@ -1084,7 +1100,142 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
             "The diagram isn't a valid reliability block diagram: "
             f"{exc}. Check that every component is wired between the input and output."
         ) from exc
-    return rbd, labels, gate_ids
+    return rbd, labels, gate_ids, working_nodes, broken_nodes
+
+
+def _resample_step(timeline, values, grid) -> np.ndarray:
+    """Resample a right-continuous step series onto ``grid``.
+
+    ``values[i]`` holds from ``timeline[i]`` until the next event, so the value
+    at grid time ``t`` is the one at the latest timeline point <= ``t`` (grid
+    times before the first event take the first value). ``timeline`` must be
+    sorted ascending; it is typically irregular (Monte-Carlo event times), which
+    is why it can't simply be plotted against an evenly spaced axis.
+    """
+    timeline = np.asarray(timeline, dtype=float)
+    values = np.asarray(values, dtype=float)
+    idx = np.searchsorted(timeline, np.asarray(grid, dtype=float), side="right") - 1
+    idx = np.clip(idx, 0, values.size - 1)
+    return values[idx]
+
+
+def _availability_curve(res, t_simulation: float) -> Optional[dict]:
+    """The time-dependent availability curve (with its pointwise 95% band when
+    the result provides one), resampled onto a uniform grid."""
+    av_series = getattr(res, "availability", None)
+    timeline = getattr(res, "timeline", None)
+    if av_series is None or timeline is None:
+        return None
+    arr = np.atleast_1d(np.asarray(av_series, dtype=float))
+    tl = np.atleast_1d(np.asarray(timeline, dtype=float))
+    if arr.size < 2 or tl.size != arr.size:
+        return None
+    grid = np.linspace(0.0, float(t_simulation), _GRID_POINTS)
+    curve = {"t": grid.tolist(), "availability": _clean(_resample_step(tl, arr, grid))}
+    interval = getattr(res, "availability_interval", None)
+    if callable(interval):
+        try:
+            lower, upper = interval(0.95)
+            curve["lower"] = _clean(_resample_step(tl, lower, grid))
+            curve["upper"] = _clean(_resample_step(tl, upper, grid))
+            curve["confidence"] = 0.95
+        except Exception:  # noqa: BLE001 - the band is optional
+            pass
+    return curve
+
+
+_IMPORTANCE_METHODS = {
+    # payload key -> RepairableRBD method (each evaluated at the blocks'
+    # long-run availabilities)
+    "birnbaum": "birnbaum_importance",
+    "fussell_vesely": "fussell_vesely",
+    "criticality": "criticality_importance",
+    "risk_achievement_worth": "risk_achievement_worth",
+    "risk_reduction_worth": "risk_reduction_worth",
+    "improvement_potential": "improvement_potential",
+}
+
+
+def _steady_importance(rbd, labels, gate_ids, overrides, steady) -> dict:
+    """Per-block steady-state importance measures, keyed by node id. Voting
+    gates are not components and are left out."""
+    measures: dict[str, dict] = {}
+    for key, method in _IMPORTANCE_METHODS.items():
+        try:
+            with np.errstate(all="ignore"):
+                measures[key] = getattr(rbd, method)(**overrides)
+        except Exception:  # noqa: BLE001 - report what we can
+            measures[key] = {}
+    try:
+        node_av = rbd.node_availability()
+    except Exception:  # noqa: BLE001
+        node_av = {}
+    working = overrides.get("working_nodes") or set()
+    broken = overrides.get("broken_nodes") or set()
+    sys_unavail = (1.0 - steady) if steady is not None and np.isfinite(steady) else None
+
+    out: dict[str, dict] = {}
+    for nid in rbd.components:
+        if nid in gate_ids:
+            continue
+        if nid in working:
+            a_i = 1.0
+        elif nid in broken:
+            a_i = 0.0
+        else:
+            a_i = _f(node_av.get(nid))
+        row: dict[str, Any] = {
+            "label": labels.get(nid, str(nid)),
+            "availability": a_i,
+            "pinned": "working" if nid in working else "failed" if nid in broken else None,
+        }
+        for key, vals in measures.items():
+            row[key] = _f(vals[nid]) if nid in vals else None
+        # Failure-oriented criticality: the share of system unavailability
+        # attributable to this block, I_B·(1−A_i)/(1−A_sys). RePyability's
+        # ``criticality_importance`` is the success-oriented form
+        # (I_B·A_i/A_sys), which is ≈1 for every series block of a
+        # high-availability system and so doesn't rank them.
+        b = row.get("birnbaum")
+        if b is not None and a_i is not None and sys_unavail and sys_unavail > 0:
+            row["unavailability_criticality"] = _f(b * (1.0 - a_i) / sys_unavail)
+        else:
+            row["unavailability_criticality"] = None
+        out[str(nid)] = row
+    return out
+
+
+def _simulated_criticality(res, labels, gate_ids) -> dict:
+    """Per-block criticality indices observed in the availability simulation
+    (``AvailabilityResult.criticalities``), keyed by node id; gates excluded."""
+    crit = getattr(res, "criticalities", None)
+    if crit is None:
+        return {}
+    oci = crit.operational_criticality_index
+    fci = crit.failure_criticality_index
+    rci = crit.restoration_criticality_index
+    series = {
+        "operational_criticality_up": oci.up,
+        "operational_criticality_down": oci.down,
+        "failure_criticality": fci.per_system_failure,
+        "failure_criticality_per_component": fci.per_component_failure,
+        "restoration_criticality": rci.by_system,
+        "restoration_criticality_per_component": rci.by_component,
+    }
+    ids: set = set()
+    for d in series.values():
+        ids.update(d.keys())
+    out: dict[str, dict] = {}
+    for nid in ids:
+        if nid in gate_ids:
+            continue
+        row: dict[str, Any] = {"label": labels.get(nid, str(nid))}
+        for key, d in series.items():
+            # A block that never failed/restored in the simulation has no
+            # entry — a genuine zero share, not a missing value.
+            row[key] = _f(d.get(nid, 0.0))
+        out[str(nid)] = row
+    return out
 
 
 def analyze_availability(
@@ -1093,11 +1244,15 @@ def analyze_availability(
     t_simulation: Optional[float] = None,
 ) -> dict:
     """Availability analysis of a repairable RBD: steady-state uptime, mean up/
-    down time, failure frequency, and each component's share of downtime."""
-    rbd, labels, gate_ids = _build_repairable_rbd(graph, resolve_model)
+    down time, failure frequency, each component's share of downtime, and
+    per-block importance / criticality measures."""
+    rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(
+        graph, resolve_model
+    )
+    overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
 
     try:
-        steady = float(rbd.mean_availability())
+        steady = float(rbd.mean_availability(**overrides))
     except Exception as exc:  # noqa: BLE001
         raise AnalysisError(f"Couldn't compute availability: {exc}") from exc
 
@@ -1107,14 +1262,17 @@ def analyze_availability(
         t_simulation = _availability_horizon(graph)
 
     per_node = []
-    mean_up = mean_down = failure_freq = None
+    sim = {"mean_up_time": None, "mean_down_time": None, "failure_frequency": None}
     curve = None
+    criticality: dict = {}
     try:
         res = rbd.availability(t_simulation=float(t_simulation), N=_AVAIL_SIMS,
-                               method="c", seed=1)
-        mean_up = _f(getattr(res, "mean_up_time", None))
-        mean_down = _f(getattr(res, "mean_down_time", None))
-        failure_freq = _f(getattr(res, "failure_frequency", None))
+                               method="c", seed=1, **overrides)
+        sim = {
+            "mean_up_time": _f(getattr(res, "mean_up_time", None)),
+            "mean_down_time": _f(getattr(res, "mean_down_time", None)),
+            "failure_frequency": _f(getattr(res, "failure_frequency", None)),
+        }
         downtime = getattr(res, "node_downtime", None) or {}
         # Exclude synthetic voting gates (they never fail); share is over real
         # components only.
@@ -1127,32 +1285,57 @@ def analyze_availability(
                 "share": _f((dt or 0.0) / total_dt),
             })
         per_node.sort(key=lambda r: (r["share"] or 0.0), reverse=True)
-        # Time-dependent availability curve, if the result carries one.
-        av_series = getattr(res, "availability", None)
-        if av_series is not None:
-            arr = np.atleast_1d(np.asarray(av_series, dtype=float))
-            if arr.size > 1:
-                # The MC series is per-event (tens of thousands of points) —
-                # resample to a fixed grid so the payload stays small.
-                if arr.size > _GRID_POINTS:
-                    idx = np.linspace(0, arr.size - 1, _GRID_POINTS).round().astype(int)
-                    arr = arr[idx]
-                t = np.linspace(0.0, float(t_simulation), arr.size)
-                curve = {"t": t.tolist(), "availability": _clean(arr)}
+        # Time-dependent availability curve. The MC series is indexed by
+        # irregular event times (``res.timeline``) — resample it onto a
+        # uniform grid rather than plotting it against an even axis (#80).
+        curve = _availability_curve(res, float(t_simulation))
+        try:
+            criticality = _simulated_criticality(res, labels, gate_ids)
+        except Exception:  # noqa: BLE001
+            criticality = {}
     except Exception:  # noqa: BLE001 - the steady-state figure still stands
         pass
+
+    # Exact steady-state MUT / MDT / failure frequency (Birnbaum/Vesely
+    # formula); the finite-window simulation estimates are the fallback.
+    exact: dict[str, Optional[float]] = {}
+    for key, method in (("mean_up_time", "mean_up_time"),
+                        ("mean_down_time", "mean_down_time"),
+                        ("failure_frequency", "system_failure_frequency")):
+        try:
+            with np.errstate(all="ignore"):
+                exact[key] = _f(getattr(rbd, method)(**overrides))
+        except Exception:  # noqa: BLE001
+            exact[key] = None
+    figures = {k: (exact[k] if exact.get(k) is not None else sim[k]) for k in sim}
+    figures_basis = {
+        k: ("exact" if exact.get(k) is not None else "simulation") for k in sim
+    }
+
+    try:
+        importance = _steady_importance(rbd, labels, gate_ids, overrides, steady)
+    except Exception:  # noqa: BLE001
+        importance = {}
 
     return {
         "kind": "repairable",
         "unit": (graph.get("unit") or "").strip(),
         "steady_state_availability": steady,
         "unavailability": (1.0 - steady) if np.isfinite(steady) else None,
-        "mean_up_time": mean_up,
-        "mean_down_time": mean_down,
-        "failure_frequency": failure_freq,
+        "mean_up_time": figures["mean_up_time"],
+        "mean_down_time": figures["mean_down_time"],
+        "failure_frequency": figures["failure_frequency"],
+        "figures_basis": figures_basis,
+        "simulated": sim,
         "n_simulations": _AVAIL_SIMS,
         "t_simulation": float(t_simulation),
         "per_node": per_node,
+        "importance": importance,
+        "criticality": criticality,
+        "pinned": {
+            "working": sorted(str(n) for n in working_nodes),
+            "failed": sorted(str(n) for n in broken_nodes),
+        },
         "curve": curve,
         "repyability_version": _repyability_version(),
     }

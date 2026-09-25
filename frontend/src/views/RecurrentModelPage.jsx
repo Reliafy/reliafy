@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
+import RecurrentOverhaul from "../components/RecurrentOverhaul.jsx";
 import OverflowMenu from "../components/OverflowMenu.jsx";
 import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
@@ -78,6 +79,11 @@ export default function RecurrentModelPage() {
       {model && (
         <div className="card">
           <RecurrentResultView results={model.results} />
+        </div>
+      )}
+      {model && (
+        <div className="card">
+          <RecurrentOverhaul modelId={model.id} unit={r.unit} />
         </div>
       )}
     </div>

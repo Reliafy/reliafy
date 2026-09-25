@@ -626,6 +626,15 @@ export function predictRecurrent(id, horizon) {
   });
 }
 
+// Optimal overhaul interval (minimal repair between overhauls) — read-only.
+export function recurrentOverhaul(id, costRepair, costOverhaul) {
+  return request(`/api/recurrent/models/${id}/overhaul`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cost_repair: costRepair, cost_overhaul: costOverhaul }),
+  });
+}
+
 // ---- Accelerated Life Testing (ALT) ----------------------------------------
 export function getAltOptions() {
   return request("/api/alt/options");
@@ -1064,4 +1073,34 @@ export function renameTrackedFleet(id, name) {
 
 export function deleteTrackedFleet(id) {
   return request(`/api/fleet/tracked/${id}`, { method: "DELETE" });
+}
+
+// ---- Product-update emails ------------------------------------------------------
+
+// Unsubscribe links carry a signed token (?t=) and work signed-out, so these
+// need no user — request() simply sends no Authorization header then.
+// Each returns { email (masked), subscribed }; an unknown token is a 404.
+function emailTokenUrl(path, token) {
+  return `/api/email/${path}?t=${encodeURIComponent(token)}`;
+}
+
+export function unsubscribeEmail(token) {
+  return request(emailTokenUrl("unsubscribe", token), { method: "POST" });
+}
+
+export function resubscribeEmail(token) {
+  return request(emailTokenUrl("resubscribe", token), { method: "POST" });
+}
+
+// The signed-in user's email preferences: { updates: bool }.
+export function getEmailPreferences() {
+  return request("/api/me/email-preferences");
+}
+
+export function setEmailPreferences(prefs) {
+  return request("/api/me/email-preferences", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(prefs),
+  });
 }

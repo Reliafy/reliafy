@@ -122,6 +122,12 @@ def init_db() -> None:
     db.public_links.create_index([("grantor_uid", 1)])
     db.api_tokens.create_index([("token_hash", 1)], unique=True)
     db.api_tokens.create_index([("uid", 1)])
+    # Product-update emails: the unsubscribe token is the lookup key for the
+    # sign-in-free unsubscribe link (sparse: created lazily); the send log's
+    # unique pair is what makes a re-run of the sender skip anyone already
+    # sent that update.
+    db.users.create_index([("email_unsub_token", 1)], unique=True, sparse=True)
+    db.update_sends.create_index([("update_slug", 1), ("uid", 1)], unique=True)
 
 
 def get_session() -> Iterator:
