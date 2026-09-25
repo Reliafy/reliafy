@@ -17,6 +17,7 @@ export default function PublicFooter() {
           <Link to="/guides">Guides</Link>
           <Link to="/reference">Reference</Link>
           <Link to="/blog">Blog</Link>
+          <Link to="/whats-new">What's new</Link>
           <Link to="/api-docs">API docs</Link>
           <Link to="/terms">Terms</Link>
           <Link to="/privacy">Privacy</Link>

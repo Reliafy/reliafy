@@ -58,6 +58,14 @@ export default function PrivacyPage() {
             train machine-learning models.
           </p>
 
+          <h2>Emails we send</h2>
+          <p>
+            We occasionally send account holders short product-update emails about
+            changes to the Service. Every one has an unsubscribe link, and you can
+            also turn them off in Settings. Emails you trigger yourself, like team
+            invites and shares, are separate and aren't affected.
+          </p>
+
           <h2>Who processes it (subprocessors)</h2>
           <ul>
             <li><strong>Google Cloud / Firebase</strong> — hosting (Cloud Run) and

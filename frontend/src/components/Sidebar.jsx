@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
+import { publicUrl } from "../firebase.js";
 
 const SignOutIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -78,6 +79,12 @@ const AgentIcon = () => (
 const ApiIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12" />
+  </svg>
+);
+const NewsIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
+    <path d="M19 16v4M17 18h4" />
   </svg>
 );
 const SettingsIcon = () => (
@@ -263,6 +270,16 @@ export default function Sidebar({ collapsed, onToggle }) {
       >
         <span className="side-icon"><ApiIcon /></span>
         {!collapsed && <span className="side-label">API docs</span>}
+      </a>
+      <a
+        className="side-item"
+        href={publicUrl("/whats-new")}
+        target="_blank"
+        rel="noreferrer"
+        title="What's new — recent product updates (opens in a new tab)"
+      >
+        <span className="side-icon"><NewsIcon /></span>
+        {!collapsed && <span className="side-label">What's new</span>}
       </a>
 
       <div className="side-foot">
