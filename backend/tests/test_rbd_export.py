@@ -117,7 +117,9 @@ def test_instrument_air_design_matches_app(tmp_path):
                 assert not np.isfinite(got)
             else:
                 assert got == pytest.approx(value, abs=1e-9)
-    assert "MTTF: 9,206.88 Hours" in proc.stdout
+    # Matches the app to the printed precision (app: 9,206.0104 h since the
+    # system-sized axis, #93 — the integral now starts from a tighter horizon).
+    assert "MTTF: 9,206.01 Hours" in proc.stdout
 
 
 def test_pump_station_matches_app_including_importance(tmp_path):

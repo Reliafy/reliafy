@@ -943,10 +943,12 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
     out.append("# The calculation")
     out.append("# " + "-" * 75)
     out.append(f"UNIT = {_lit(script.unit)}")
-    out.append("# Reliafy's default time axis for this diagram: out to the "
-               "longest-lived")
-    out.append("# block's 99th-percentile life, on a 200-point grid.")
-    out.append(f"T_MAX = {_num(t_max)}")
+    out.append("# Upper bound for the time axis: the longest-lived block's "
+               "99th-percentile")
+    out.append("# life. The axis itself ends where the SYSTEM's reliability "
+               "reaches 1%,")
+    out.append("# found by system_horizon() below — exactly as Reliafy sizes it.")
+    out.append(f"T_MAX_CEILING = {_num(t_max)}")
     out.append("GRID_POINTS = 200")
     out.append("")
     out.append("")
@@ -985,6 +987,22 @@ def mean_time_to_failure(model, horizon, **overrides):
     return float(np.trapezoid(model.sf(grid, **overrides), grid))
 
 
+def system_horizon(model, ceiling, **overrides):
+    """Where the time axis ends, exactly as Reliafy sizes it: about 15% past
+    the time the SYSTEM's reliability first reaches 1%, searched on a log grid
+    up to ``ceiling`` (falling back to the ceiling if it never gets that low).
+    One very reliable block shouldn't stretch the axis while the system is
+    long dead."""
+    probe = np.geomspace(ceiling * 1e-6, ceiling, 400)
+    sf = np.asarray(model.sf(probe, **overrides), dtype=float)
+    if not np.all(np.isfinite(sf)) or sf[0] < 0.01:
+        return ceiling
+    below = np.nonzero(sf <= 0.01)[0]
+    if below.size == 0:
+        return ceiling
+    return float(min(ceiling, probe[below[0]] * 1.15))
+
+
 def b_life(times, sf, fraction):
     """Time by which ``fraction`` of systems have failed, read off the
     reliability curve (None if that is beyond the time axis)."""
@@ -1015,17 +1033,18 @@ def main():
     unit = f" {UNIT}" if UNIT else ""
 
     # System reliability R(t) over the time axis.
-    times = np.linspace(0.0, T_MAX, GRID_POINTS)
+    t_max = system_horizon(rbd, T_MAX_CEILING, **overrides)
+    times = np.linspace(0.0, t_max, GRID_POINTS)
     system_sf = np.asarray(rbd.sf(times, **overrides), dtype=float)
 
-    mttf = mean_time_to_failure(rbd, T_MAX, **overrides)
+    mttf = mean_time_to_failure(rbd, t_max, **overrides)
     b10 = b_life(times, system_sf, 0.10)
     b50 = b_life(times, system_sf, 0.50)
 
     # R(t) at a few round times around the MTTF, plus the calculator's
     # default read-out time (the middle of the time axis).
     checkpoints = [float(f"{mttf * f:.2g}") for f in (0.25, 0.5, 1.0, 2.0)]
-    checkpoints.append(float(f"{T_MAX / 2:.4g}"))
+    checkpoints.append(float(f"{t_max / 2:.4g}"))
     print("System reliability R(t)")
     reliability = {}
     for t in checkpoints:
@@ -1035,7 +1054,7 @@ def main():
 
     print(f"MTTF: {mttf:,.6g}{unit}")
     for name, value in (("B10", b10), ("B50", b50)):
-        shown = f"{value:,.6g}{unit}" if value is not None else "beyond T_MAX"
+        shown = f"{value:,.6g}{unit}" if value is not None else "beyond t_max"
         print(f"{name} life: {shown}")
 
     # Importance measures at Reliafy's representative time: where the system
@@ -1072,7 +1091,7 @@ def main():
 
     results = {
         "unit": UNIT,
-        "t_max": T_MAX,
+        "t_max": t_max,
         "reliability": reliability,
         "mttf": mttf,
         "b10": b10,
