@@ -448,6 +448,84 @@ function HttpDocs({ base }) {
   );
 }
 
+// What each MCP tool does, in plain English (mirrors backend/mcp_server.py).
+const MCP_TOOLS = [
+  ["list_models / get_model", "Your saved life and recurrent models — distribution, parameters with confidence intervals, goodness of fit, MTTF and B10."],
+  ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset; optionally save it as a model."],
+  ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age."],
+  ["list_datasets / upload_dataset", "Your datasets, and saving new CSV data."],
+  ["list_rbds / get_rbd", "Your reliability block diagrams and their structure."],
+  ["create_rbd", "Build and save a diagram — series, parallel, k-of-n, standby, sub-systems — which opens in the RBD builder."],
+  ["analyze_rbd", "System reliability, MTTF, B-lives and importance; availability for repairable diagrams (a paid feature, saved results are reused)."],
+  ["export_rbd_python", "A diagram as a standalone SurPyval + RePyability script."],
+  ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function."],
+  ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model."],
+  ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items."],
+];
+
+// "Use Reliafy from Claude (MCP)": what the MCP server is and how to connect.
+// Rendered as its own section (not a tab) so the prerendered public page
+// carries it in the static HTML. ``tokenNote`` says where tokens come from.
+export function McpDocs({ tokenNote }) {
+  const base = (typeof window !== "undefined" && window.location.origin) || "https://reliafy.com";
+  const url = `${base}/mcp`;
+  return (
+    <div className="card api-ref">
+      <div className="api-section">
+        <h2 id="mcp">Use Reliafy from Claude (MCP)</h2>
+        <p className="muted-line">
+          Reliafy runs a remote <b>Model Context Protocol</b> server, so an AI assistant such as
+          Claude Code can work in your Reliafy account for you — fit distributions, read your
+          models, build and analyse RBDs, and run the maintenance calculators. It sees exactly what
+          your API token sees: your own data plus the shared samples.
+        </p>
+
+        <h3>What you need</h3>
+        <p className="muted-line">
+          A personal API token (<code>rlf_…</code>) — {tokenNote} MCP access is part of Reliafy
+          Pro on Reliafy Cloud; self-hosted instances allow it for everyone.
+        </p>
+
+        <h3>Claude Code</h3>
+        <Code>{`claude mcp add --transport http reliafy ${url} --header "Authorization: Bearer rlf_YOUR_TOKEN"`}</Code>
+        <p className="muted-line">
+          Then ask Claude something like “fit a Weibull to these bearing lives” or “build an RBD of
+          my pump skid and tell me its MTTF”. Run <code>claude mcp list</code> to check the connection.
+        </p>
+
+        <h3>Other MCP clients</h3>
+        <p className="muted-line">
+          Any client that supports Streamable HTTP with a custom header can connect:
+        </p>
+        <Code>{`{
+  "mcpServers": {
+    "reliafy": {
+      "type": "http",
+      "url": "${url}",
+      "headers": { "Authorization": "Bearer rlf_YOUR_TOKEN" }
+    }
+  }
+}`}</Code>
+        <p className="muted-line">
+          Adding Reliafy as a custom connector in claude.ai uses OAuth sign-in instead of a token;
+          support for that is planned.
+        </p>
+
+        <h3>Tools</h3>
+        <ul className="api-list">
+          {MCP_TOOLS.map(([name, desc]) => (
+            <li key={name}><code>{name}</code> — {desc}</li>
+          ))}
+        </ul>
+        <ul className="api-list">
+          <li>Censoring follows Reliafy’s convention: <b>0 = failed</b>, <b>1 = still running</b>. Data coded the other way round can be fitted with the inverted-flags option.</li>
+          <li>Errors: <code>401</code> (missing or revoked token), <code>403</code> (token owner isn’t on Pro), <code>429</code> (over 120 requests/minute).</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 // In-app reference for the programmatic API + the reliafy-client package.
 // Examples use the live origin, so self-hosted instances show their own base URL.
 export default function ApiReference() {
