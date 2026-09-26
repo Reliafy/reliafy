@@ -378,12 +378,26 @@ def confidence_endpoint(model_id: str, body: dict = Body(default={})) -> JSONRes
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 if FRONTEND_DIST.is_dir():
-    # Serve hashed assets (JS/CSS/images) from the Vite build.
+    # Hashed assets (JS/CSS/images) from the Vite build. Their names change
+    # whenever their content does, so they can be cached forever; HTML must not
+    # be (see _NO_CACHE below).
+    class _ImmutableAssets(StaticFiles):
+        async def get_response(self, path, scope):
+            response = await super().get_response(path, scope)
+            if response.status_code == 200:
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return response
+
     app.mount(
         "/assets",
-        StaticFiles(directory=FRONTEND_DIST / "assets"),
+        _ImmutableAssets(directory=FRONTEND_DIST / "assets"),
         name="assets",
     )
+
+    # HTML is always revalidated: a stale page references hashed chunks a later
+    # deploy has deleted, and the app then crashes on load. (main.jsx also
+    # reloads once on vite:preloadError, for pages already open or cached.)
+    _NO_CACHE = {"Cache-Control": "no-cache"}
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str) -> FileResponse:
@@ -395,11 +409,12 @@ if FRONTEND_DIST.is_dir():
         """
         prerendered = FRONTEND_DIST / "static" / (full_path or ".") / "index.html"
         if prerendered.is_file():
-            return FileResponse(prerendered)
+            return FileResponse(prerendered, headers=_NO_CACHE)
         candidate = FRONTEND_DIST / full_path
         if full_path and candidate.is_file():
-            return FileResponse(candidate)
-        return FileResponse(FRONTEND_DIST / "index.html")
+            headers = _NO_CACHE if candidate.suffix == ".html" else None
+            return FileResponse(candidate, headers=headers)
+        return FileResponse(FRONTEND_DIST / "index.html", headers=_NO_CACHE)
 
 else:  # pragma: no cover - only hit before the frontend is built
 
