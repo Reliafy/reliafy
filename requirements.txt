@@ -33,3 +33,6 @@ markdown
 # event-delta streaming (for our SSE) landed in 0.115.0. Pinned for reproducible
 # builds against the still-evolving Managed Agents beta API.
 anthropic==0.117.0
+# The MCP server at /mcp (backend/mcp_server.py): MCPServer + the stateless
+# Streamable HTTP transport. Pinned — the 2.x SDK is young and moves quickly.
+mcp==2.2.0

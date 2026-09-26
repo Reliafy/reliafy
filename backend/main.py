@@ -64,7 +64,21 @@ from backend.services import datasets as datasets_service
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Reliafy", version="0.1.0")
+from contextlib import asynccontextmanager  # noqa: E402
+
+from backend.mcp_server import mcp_http_app  # noqa: E402
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Startup, plus the MCP server's Streamable HTTP session manager, whose
+    task group must run for the app's lifetime (see backend/mcp_server.py)."""
+    _startup()
+    async with mcp_http_app.lifespan():
+        yield
+
+
+app = FastAPI(title="Reliafy", version="0.1.0", lifespan=_lifespan)
 
 # CORS — normally the frontend is same-origin, but SSE streaming (the metered
 # assistant) is served straight from Cloud Run to bypass Firebase Hosting's CDN,
@@ -87,7 +101,6 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
 def _startup() -> None:
     init_db()
     from backend.db import get_db
@@ -137,6 +150,10 @@ app.include_router(public_api_router.router)
 app.include_router(email_prefs_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
 app.include_router(feeds_router.router)
+
+# MCP (Model Context Protocol) server for AI assistants — token-authed, and
+# registered before the SPA catch-all so GET/POST/DELETE /mcp reach it.
+app.router.add_route("/mcp", mcp_http_app, methods=["GET", "POST", "DELETE"], include_in_schema=False)
 
 # ---------------------------------------------------------------------------
 # API routes

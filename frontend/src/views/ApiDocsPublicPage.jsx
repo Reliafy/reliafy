@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import PublicNav from "../components/PublicNav.jsx";
 import PublicFooter from "../components/PublicFooter.jsx";
-import ApiReference from "../components/ApiReference.jsx";
+import ApiReference, { McpDocs } from "../components/ApiReference.jsx";
 
 // Public, crawlable API reference for the Reliafy read/ingestion API. Prerendered
 // to static HTML for search engines (see prerender-entry.jsx) and reachable
@@ -18,10 +18,18 @@ export default function ApiDocsPublicPage() {
             forecasts, run strategy calculators, and push operational data — through
             the <b>reliafy-client</b> Python package or the raw <b>HTTP API</b>.{" "}
             <Link to="/login">Create a free account</Link>, then generate a token under
-            Settings › API access.
+            Settings › API access. AI assistants such as Claude can use Reliafy too —
+            see <a href="#mcp">Use Reliafy from Claude (MCP)</a>.
           </p>
         </header>
         <ApiReference />
+        <McpDocs
+          tokenNote={
+            <>
+              <Link to="/login">sign in</Link> and create one under Settings › API access.
+            </>
+          }
+        />
       </article>
       <PublicFooter />
     </div>

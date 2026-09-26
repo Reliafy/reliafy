@@ -152,16 +152,18 @@ AVAILABILITY_PRO_PAYLOAD = {
 }
 
 
-def _availability(
+def availability_payload(
     session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners
-) -> JSONResponse:
-    """Serve a repairable (availability) analysis: the saved result when it
-    matches the graph, else compute it — if the user is entitled.
+) -> tuple[int, dict]:
+    """A repairable (availability) analysis as ``(status, payload)``: the saved
+    result when it matches the graph, else compute it — if the user is entitled
+    (402 + :data:`AVAILABILITY_PRO_PAYLOAD` otherwise).
 
     ``rbd`` is the saved diagram the request is about (None for an unsaved
     graph, which is never cached). A fresh result is written back only when
     the caller may edit the diagram; read-only viewers (samples, shares) get
-    the computation without touching the owner's document.
+    the computation without touching the owner's document. Shared by the REST
+    endpoints below and the MCP server, so both apply the same paid gate.
     """
     key = rbds_service.availability_cache_key(graph, t_max)
     doc = session.rbds.find_one({"_id": rbd.id}) if rbd is not None else None
@@ -169,9 +171,9 @@ def _availability(
     entitled = billing_service.premium_compute_allowed(session, ctx.user)
     if cached is not None and not (force and entitled):
         # ``can_recompute`` lets the UI offer "Re-run" only to entitled users.
-        return JSONResponse(content={**cached, "can_recompute": entitled})
+        return 200, {**cached, "can_recompute": entitled}
     if not entitled:
-        return JSONResponse(status_code=402, content=AVAILABILITY_PRO_PAYLOAD)
+        return 402, AVAILABILITY_PRO_PAYLOAD
 
     result = rbds_service.analyze_graph(session, graph, resolve_owners, t_max=t_max)
     computed_at = None
@@ -181,9 +183,14 @@ def _availability(
         and rbds_service.should_store_availability(doc, key)
     ):
         computed_at = rbds_service.store_availability(session, rbd.id, key, result, ctx.uid)
-    return JSONResponse(content={
-        **result, "cached": False, "computed_at": computed_at, "can_recompute": True,
-    })
+    return 200, {**result, "cached": False, "computed_at": computed_at, "can_recompute": True}
+
+
+def _availability(
+    session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners
+) -> JSONResponse:
+    status, payload = availability_payload(session, ctx, graph, t_max, rbd, force, resolve_owners)
+    return JSONResponse(status_code=status, content=payload)
 
 
 @router.post("/rbds/analyze")

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import ApiReference from "../components/ApiReference.jsx";
+import ApiReference, { McpDocs } from "../components/ApiReference.jsx";
 
 // Standalone in-app reference for the ingestion API. Token management lives in
 // Settings (/settings?tab=api); this page is the endpoint documentation.
@@ -24,11 +24,23 @@ export default function ApiDocsPage() {
             <button className="crumb-link" onClick={() => navigate("/settings?tab=api")}>
               Settings › API access
             </button>
-            .
+            . To let an AI assistant such as Claude use Reliafy for you, see{" "}
+            <a className="crumb-link" href="#mcp">Use Reliafy from Claude (MCP)</a>.
           </p>
         </div>
       </header>
       <ApiReference />
+      <McpDocs
+        tokenNote={
+          <>
+            create one under{" "}
+            <button className="crumb-link" onClick={() => navigate("/settings?tab=api")}>
+              Settings › API access
+            </button>
+            .
+          </>
+        }
+      />
     </div>
   );
 }
