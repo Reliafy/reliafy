@@ -14,7 +14,7 @@ shows the effect of every push.
 from __future__ import annotations
 
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -74,8 +74,97 @@ def _float(value, field: str, where: str) -> float:
 
 # ---- fleet usage -------------------------------------------------------------
 
-def update_fleet_usage(db, fleet_id: str, uid: str, entries: list[dict]) -> dict:
-    """Set ``current_use`` (and optionally ``rate``) on forecast-fleet items."""
+RATE_EWMA_ALPHA = 0.3
+_MIN_INTERVAL_DAYS = 1.0
+
+
+def _missing(value) -> bool:
+    return value is None or value == "" or (isinstance(value, float) and value != value)
+
+
+def _read_at(value, where: str, default: datetime) -> datetime:
+    """Parse an optional ISO 8601 ``read_at``; naive times are taken as UTC."""
+    if _missing(value):
+        return default
+    try:
+        dt = datetime.fromisoformat(str(value).strip())
+    except ValueError:
+        raise IngestError(f"{where}: 'read_at' must be an ISO 8601 date/time (got {value!r}).")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _stamp(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def _parse_stamp(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def apply_reading(item: dict, use: float, read_at: datetime, days_per_period: float | None) -> bool:
+    """Fold one timestamped meter reading into an item (in place).
+
+    Returns False (and changes nothing) for an out-of-order reading — one
+    older than the latest reading already applied. Otherwise sets
+    ``current_use`` and updates the usage-rate estimate:
+
+    * first reading: becomes the baseline;
+    * use went down (meter reset / unit replaced): the baseline resets, the
+      estimate is kept;
+    * ≥ 1 day since the baseline: interval rate = Δuse / elapsed periods,
+      folded into ``estimated_rate`` as an EWMA (α = 0.3; the first interval
+      sets it directly), and the reading becomes the new baseline;
+    * < 1 day since the baseline: too short to estimate — the baseline stays
+      put so frequent readings still accumulate a usable interval.
+
+    With an unrecognised period label (``days_per_period`` None) the baseline
+    is maintained but no rate is estimated.
+    """
+    latest = _parse_stamp(item.get("latest_read_at"))
+    if latest is not None and read_at < latest:
+        return False
+    item["current_use"] = use
+    item["latest_read_at"] = _stamp(read_at)
+
+    base_at = _parse_stamp(item.get("last_reading_at"))
+    base_use = item.get("last_reading_use")
+    if base_at is None or base_use is None or use < float(base_use):
+        item["last_reading_use"] = use
+        item["last_reading_at"] = _stamp(read_at)
+        return True
+    elapsed_days = (read_at - base_at).total_seconds() / 86400.0
+    if elapsed_days < _MIN_INTERVAL_DAYS:
+        return True
+    if days_per_period:
+        interval_rate = (use - float(base_use)) / (elapsed_days / days_per_period)
+        n = int(item.get("estimated_rate_n") or 0)
+        prev = item.get("estimated_rate")
+        if n == 0 or prev is None:
+            item["estimated_rate"] = interval_rate
+        else:
+            item["estimated_rate"] = RATE_EWMA_ALPHA * interval_rate + (1 - RATE_EWMA_ALPHA) * float(prev)
+        item["estimated_rate_n"] = n + 1
+    item["last_reading_use"] = use
+    item["last_reading_at"] = _stamp(read_at)
+    return True
+
+
+def apply_fleet_usage(db, fleet_id: str, uid: str, entries: list[dict],
+                      now: datetime | None = None) -> tuple[dict, dict]:
+    """Apply meter readings; returns (response body, full recomputed forecast).
+
+    Each row sets an item's ``current_use`` (and optionally its manual
+    ``rate``); an optional ``read_at`` timestamps the reading (default: now)
+    and feeds the per-item usage-rate estimate (see :func:`apply_reading`).
+    """
     doc = db.fleets.find_one({"_id": fleet_id, "owner_id": uid})
     if doc is None:
         raise IngestError("Fleet not found (or not yours — tokens are personal).", 404)
@@ -84,36 +173,61 @@ def update_fleet_usage(db, fleet_id: str, uid: str, entries: list[dict]) -> dict
     if len(entries) > MAX_ROWS:
         raise IngestError(f"Too many rows ({len(entries)}); the limit is {MAX_ROWS}.")
 
+    now = now or _now()
     items = [dict(it) for it in (doc.get("items") or [])]
-    updates: dict[str, dict] = {}
+    by_id = {it["id"]: it for it in items}
+    readings: list[tuple[datetime, int, str, dict]] = []
     for i, entry in enumerate(entries):
         where = f"row {i + 1}"
         item = _match(items, entry, where)
         update = {"current_use": _float(entry.get("current_use"), "current_use", where)}
         if entry.get("rate") not in (None, ""):
             update["rate"] = _float(entry.get("rate"), "rate", where)
-        updates[item["id"]] = update
+        read_at = _read_at(entry.get("read_at"), where, now)
+        if read_at > now + timedelta(minutes=10):
+            raise IngestError(
+                f"{where}: 'read_at' is in the future — include a UTC offset "
+                f"(e.g. 2026-09-27T08:00:00+10:00) or use UTC."
+            )
+        readings.append((read_at, i, item["id"], update))
 
-    for it in items:
-        if it["id"] in updates:
-            it.update(updates[it["id"]])
+    days = fleet_service.period_days((doc.get("settings") or {}).get("period_label", "months"))
+    updated: set[str] = set()
+    ignored = 0
+    # Chronological per item (row order breaks ties, so an untimestamped batch
+    # keeps the historical "last row wins").
+    for read_at, _i, item_id, update in sorted(readings, key=lambda r: (r[0], r[1])):
+        item = by_id[item_id]
+        if apply_reading(item, update["current_use"], read_at, days):
+            if "rate" in update:
+                item["rate"] = update["rate"]
+            updated.add(item_id)
+        else:
+            ignored += 1
 
-    now = _now()
     db.fleets.update_one(
         {"_id": fleet_id, "owner_id": uid},
-        {"$set": {"items": items, "updated_at": now}},
+        {"$set": {"items": items, "updated_at": _now()}},
     )
     fleet = from_doc(Fleet, db.fleets.find_one({"_id": fleet_id}))
     forecast = fleet_service.compute(db, fleet, [uid, SAMPLE_OWNER])
-    return {
+    result = {
         "fleet": fleet.name,
-        "updated_items": len(updates),
+        "updated_items": len(updated),
         "forecast": {
             k: forecast.get(k)
             for k in ("status", "expected", "interval", "periods", "period_label", "reason")
             if k in forecast
         },
     }
+    if ignored:
+        result["ignored_readings"] = ignored
+    return result, forecast
+
+
+def update_fleet_usage(db, fleet_id: str, uid: str, entries: list[dict]) -> dict:
+    """Set ``current_use`` (and optionally ``rate``) on forecast-fleet items."""
+    return apply_fleet_usage(db, fleet_id, uid, entries)[0]
 
 
 # ---- degradation measurements --------------------------------------------------

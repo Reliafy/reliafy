@@ -32,9 +32,9 @@ FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]  # 0 = failed, 1 = still running
 READ_TOOLS = {
     "list_models", "get_model", "reliability_at", "list_datasets", "list_rbds", "get_rbd",
     "analyze_rbd", "fit_distribution", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
-    "optimal_overhaul", "list_fleets", "fleet_forecast",
+    "optimal_overhaul", "list_fleets", "fleet_forecast", "list_fleet_alerts",
 }
-WRITE_TOOLS = {"fit_and_save_model", "upload_dataset", "create_rbd"}
+WRITE_TOOLS = {"fit_and_save_model", "upload_dataset", "create_rbd", "create_fleet_alert"}
 
 
 def _weibull(alpha, beta, placeholder=False):

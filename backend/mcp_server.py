@@ -57,6 +57,7 @@ from backend.fitting import FitError
 from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
+from backend.services import fleet_alerts as alerts_service
 from backend.services import metrics as metrics_service
 from backend.services import oauth as oauth_service
 from backend.services import models as models_service
@@ -156,7 +157,8 @@ upload_dataset manage the data.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
 B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script).
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
-and fleet_forecast (list_fleets first).
+and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
+fleet's expected failures.
 
 Conventions — follow them exactly:
 - Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension). \
@@ -1059,6 +1061,69 @@ def fleet_forecast(
     return {"fleet": {"id": fleet.id, "name": fleet.name, "model_id": fleet.model_id,
                       "url": _url(f"/fleet/forecasts/{fleet.id}")},
             "headline": fleet_service.headline(fleet, forecast), "forecast": forecast}
+
+
+def _alertable_fleet(db, uid: str, fleet_id: str):
+    """A fleet the caller can read (own or sample), same scope as fleet_forecast."""
+    fleet = fleet_service.get_fleet(db, fleet_id, _owners(uid))
+    if fleet is None:
+        raise ToolError("Fleet not found.")
+    return fleet
+
+
+@_tool("list_fleet_alerts", _READ, "List fleet alerts")
+def list_fleet_alerts(
+    ctx: Context,
+    fleet_id: Annotated[str, Field(description="A fleet id from list_fleets.")],
+) -> dict[str, Any]:
+    """The email alert rules on one of the user's fleets, each with its current value: 'above' (expected
+    failures over the horizon cross a threshold), 'change' (they move by a percentage) and 'within' (x or more
+    failures now expected within y periods). Rules are checked whenever usage for the fleet arrives through the
+    ingest API."""
+    user, db = _caller(ctx), _db()
+    fleet = _alertable_fleet(db, user["uid"], fleet_id)
+    forecast = alerts_service.current_forecast(db, fleet, [*_owners(user["uid"]), fleet.owner_id])
+    rules = alerts_service.list_alerts(db, fleet.id) if fleet.owner_id == user["uid"] else []
+    return {"fleet": {"id": fleet.id, "name": fleet.name, "settings": fleet.settings,
+                      "url": _url(f"/fleet/forecasts/{fleet.id}")},
+            "expected_failures": (forecast or {}).get("expected"),
+            "alerts": [alerts_service.public(d, user["uid"], fleet, forecast) for d in rules]}
+
+
+@_tool("create_fleet_alert", _WRITE, "Create a fleet alert")
+def create_fleet_alert(
+    ctx: Context,
+    fleet_id: Annotated[str, Field(description="A fleet id from list_fleets (one of the user's own fleets).")],
+    kind: Annotated[Literal["above", "change", "within"], Field(
+        description="'above' = email once each time expected failures over the horizon cross above `threshold`; "
+                    "'change' = email when they move by `percent` % or more from the last alert (or today); "
+                    "'within' = email once each time `x` or more failures become expected within the next "
+                    "`y_periods` periods.")],
+    threshold: Annotated[Optional[float], Field(ge=0, description="For 'above': expected failures over the "
+                                                                   "fleet's horizon.")] = None,
+    percent: Annotated[Optional[float], Field(gt=0, le=1000, description="For 'change': percent, e.g. 25.")] = None,
+    x: Annotated[Optional[float], Field(gt=0, description="For 'within': failures, may be fractional (0.5).")] = None,
+    y_periods: Annotated[Optional[float], Field(gt=0, description="For 'within': periods in the fleet's "
+                                                                  "period_label (e.g. months), at most its "
+                                                                  "horizon; fractional allowed.")] = None,
+) -> dict[str, Any]:
+    """Save an email alert rule on one of the user's fleet forecasts (see fleet_forecast for the numbers it
+    watches). Rules are evaluated when usage arrives through the ingest API and email the user once per
+    crossing; at most 10 per fleet."""
+    user, db = _caller(ctx), _db()
+    fleet = _alertable_fleet(db, user["uid"], fleet_id)
+    if fleet.owner_id != user["uid"]:
+        raise ToolError("Alerts can only be set on your own fleets, not samples.")
+    try:
+        doc = alerts_service.create_alert(
+            db, fleet, user["uid"], [*_owners(user["uid"]), fleet.owner_id],
+            kind=kind, threshold=threshold, percent=percent, x=x, y_periods=y_periods,
+        )
+    except (alerts_service.AlertValidationError, alerts_service.AlertLimitError) as exc:
+        raise ToolError(str(exc)) from None
+    _record(db, "mcp_fleet_alert", "create_fleet_alert")
+    return {"alert": alerts_service.public(doc, user["uid"], fleet),
+            "url": _url(f"/fleet/forecasts/{fleet.id}#alerts")}
 
 
 # ---------------------------------------------------------------------------

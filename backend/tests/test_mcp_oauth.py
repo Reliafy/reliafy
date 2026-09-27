@@ -618,7 +618,7 @@ def test_free_oauth_user_can_list_tools_but_calls_explain_pro(env, monkeypatch):
         return await client.list_tools(), await client.call_tool("list_models", {})
 
     tools, call = _mcp(tokens["access_token"], use)
-    assert len(tools.tools) == 17
+    assert len(tools.tools) == 19
     assert call.is_error
     assert "part of Reliafy Pro" in call.content[0].text and f"{BASE}/billing" in call.content[0].text
 

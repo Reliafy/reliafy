@@ -12,6 +12,7 @@ from backend.schema import Fleet, TrackedFleet
 from backend.services import billing as billing_service
 from backend.services import degradation as degradation_service
 from backend.services import fleet as fleet_service
+from backend.services import fleet_alerts as alerts_service
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
 from backend.services import access as access_service
@@ -129,6 +130,7 @@ def delete_fleet(
     if access_service.can_write(ctx, fleet.owner_id):
         try:
             fleet_service.delete_fleet(session, fleet_id, ctx.write_owner)
+            alerts_service.delete_for_fleet(session, fleet_id)
         except fleet_service.FleetNotFound:
             return JSONResponse(status_code=404, content={"detail": "Fleet not found."})
     elif samples_service.is_sample(fleet.owner_id) or access_service.is_shared_with(session, ctx.uid, fleet_id):
@@ -169,6 +171,110 @@ def put_items(
     fleet.updated_by = access_service.editor_of(ctx)
     forecast = fleet_service.compute(session, fleet, [*ctx.read_owners, fleet.owner_id])
     return JSONResponse(content={**_summary(fleet, ctx, forecast), "items": fleet.items, "forecast": forecast})
+
+
+# ---- Alerts on a fleet's expected failures ------------------------------------------
+#
+# Same access rule as editing the fleet: anyone who may write it may list and
+# manage its alerts (404 unknown/unreadable, 403/402 read-only). Rules are
+# evaluated when usage arrives through the ingest API (routers/ingest.py).
+
+def _editable_fleet(session, fleet_id: str, ctx: AccessCtx):
+    """(fleet, None) when the caller may edit it, else (None, JSONResponse)."""
+    fleet, _ = access_service.fetch_readable(session, "fleets", Fleet, fleet_id, ctx)
+    if fleet is None or fleet.id in ctx.hidden:
+        return None, JSONResponse(status_code=404, content={"detail": "Fleet not found."})
+    denial = access_service.write_denial(ctx, fleet.owner_id)
+    if denial:
+        status, payload = denial
+        return None, JSONResponse(status_code=status, content=payload)
+    return fleet, None
+
+
+def _alert_owners(ctx: AccessCtx, fleet) -> list[str]:
+    return [*ctx.read_owners, fleet.owner_id]
+
+
+@router.get("/fleets/{fleet_id}/alerts")
+def list_fleet_alerts(
+    fleet_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> JSONResponse:
+    fleet, error = _editable_fleet(session, fleet_id, ctx)
+    if error:
+        return error
+    forecast = alerts_service.current_forecast(session, fleet, _alert_owners(ctx, fleet))
+    return JSONResponse(content={
+        "alerts": [
+            alerts_service.public(d, ctx.uid, fleet, forecast)
+            for d in alerts_service.list_alerts(session, fleet.id)
+        ],
+        # Expected failures over the horizon — the 'above'/'change' metric.
+        "current_value": (forecast or {}).get("expected"),
+        "periods": (fleet.settings or {}).get("periods"),
+        "period_label": (fleet.settings or {}).get("period_label"),
+        "max_alerts": alerts_service.MAX_RULES,
+    })
+
+
+@router.post("/fleets/{fleet_id}/alerts")
+def create_fleet_alert(
+    fleet_id: str,
+    kind: str = Body(...),
+    threshold: float | None = Body(default=None),
+    percent: float | None = Body(default=None),
+    x: float | None = Body(default=None),
+    y_periods: float | None = Body(default=None),
+    enabled: bool = Body(default=True),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    fleet, error = _editable_fleet(session, fleet_id, ctx)
+    if error:
+        return error
+    try:
+        doc = alerts_service.create_alert(
+            session, fleet, ctx.uid, _alert_owners(ctx, fleet),
+            kind=kind, threshold=threshold, percent=percent, x=x, y_periods=y_periods,
+            enabled=enabled,
+        )
+    except (alerts_service.AlertValidationError, alerts_service.AlertLimitError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return JSONResponse(content=alerts_service.public(doc, ctx.uid, fleet))
+
+
+@router.patch("/fleets/{fleet_id}/alerts/{alert_id}")
+def update_fleet_alert(
+    fleet_id: str,
+    alert_id: str,
+    changes: dict = Body(...),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    fleet, error = _editable_fleet(session, fleet_id, ctx)
+    if error:
+        return error
+    allowed = {k: v for k, v in (changes or {}).items() if k in ("kind", "threshold", "percent", "x", "y_periods", "enabled")}
+    try:
+        doc = alerts_service.update_alert(session, fleet, alert_id, _alert_owners(ctx, fleet), allowed)
+    except alerts_service.AlertNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Alert not found."})
+    except alerts_service.AlertValidationError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return JSONResponse(content=alerts_service.public(doc, ctx.uid, fleet))
+
+
+@router.delete("/fleets/{fleet_id}/alerts/{alert_id}")
+def delete_fleet_alert(
+    fleet_id: str, alert_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> JSONResponse:
+    fleet, error = _editable_fleet(session, fleet_id, ctx)
+    if error:
+        return error
+    try:
+        alerts_service.delete_alert(session, fleet.id, alert_id)
+    except alerts_service.AlertNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Alert not found."})
+    return JSONResponse(content={"ok": True})
 
 
 # ---- Tracked fleets (degradation tracking groups) ---------------------------------

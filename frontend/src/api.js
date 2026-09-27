@@ -1144,6 +1144,31 @@ export function putFleetItems(id, settings, items, expectedUpdatedAt) {
   });
 }
 
+// Alerts on a fleet's expected failures (evaluated when usage arrives via the API).
+export function listFleetAlerts(id) {
+  return request(`/api/fleet/fleets/${id}/alerts`);
+}
+
+export function createFleetAlert(id, rule) {
+  return request(`/api/fleet/fleets/${id}/alerts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rule),
+  });
+}
+
+export function updateFleetAlert(id, alertId, changes) {
+  return request(`/api/fleet/fleets/${id}/alerts/${alertId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+}
+
+export function deleteFleetAlert(id, alertId) {
+  return request(`/api/fleet/fleets/${id}/alerts/${alertId}`, { method: "DELETE" });
+}
+
 // ---- Tracked fleets (degradation tracking groups) --------------------------------
 
 export function listTrackedFleets() {

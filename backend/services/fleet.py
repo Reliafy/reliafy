@@ -40,6 +40,48 @@ class FleetValidationError(ValueError):
 
 
 METHODS = ("renewals", "single")
+RATE_SOURCES = ("manual", "estimated")
+
+# Per-item fields maintained by the ingest API's rate estimator (never taken
+# from client input; carried over when the items are replaced from the UI).
+ESTIMATE_KEYS = ("last_reading_use", "last_reading_at", "latest_read_at",
+                 "estimated_rate", "estimated_rate_n")
+
+# Wall-clock length of one period, in days, for the recognised period labels
+# (singular or plural, any case). Other labels can't convert elapsed time to
+# periods, so no usage rate is estimated for them.
+PERIOD_DAYS = {
+    "day": 1.0,
+    "week": 7.0,
+    "month": 30.4375,
+    "quarter": 91.3125,
+    "year": 365.25,
+}
+
+
+def period_days(label) -> float | None:
+    """Days per period for a period label, or None when unrecognised."""
+    key = str(label or "").strip().lower()
+    if key in PERIOD_DAYS:
+        return PERIOD_DAYS[key]
+    if key.endswith("s") and key[:-1] in PERIOD_DAYS:
+        return PERIOD_DAYS[key[:-1]]
+    return None
+
+
+def item_rate(item: dict, default_rate: float, rate_source: str) -> tuple[float, str]:
+    """(usage per period, basis) for one item.
+
+    ``estimated`` uses the item's API-estimated rate when it has one, then
+    falls back like ``manual``: the item's explicit rate, then the fleet
+    default.
+    """
+    if (rate_source == "estimated" and (item.get("estimated_rate_n") or 0) >= 1
+            and item.get("estimated_rate") is not None):
+        return float(item["estimated_rate"]), "estimated"
+    if item.get("rate") is not None:
+        return float(item["rate"]), "manual"
+    return float(default_rate), "default"
 
 _SIMS = 2000
 _MAX_DRAWS = 2_000_000  # items × sims ceiling — clamp sims for huge fleets
@@ -73,11 +115,15 @@ def _clean_settings(settings) -> dict:
     if method not in METHODS:
         raise FleetValidationError(f"Unknown forecast method '{method}'.")
     label = str(settings.get("period_label") or "months").strip() or "months"
+    rate_source = settings.get("rate_source") or "manual"
+    if rate_source not in RATE_SOURCES:
+        raise FleetValidationError(f"Unknown usage-rate source '{rate_source}'.")
     return {
         "periods": periods,
         "period_label": label[:24],
         "default_rate": default_rate,
         "method": method,
+        "rate_source": rate_source,
     }
 
 
@@ -189,7 +235,14 @@ def replace_items(db, fleet_id: str, settings, items, owner_id: str,
         if not access.timestamps_match(fleet.updated_at, expected_updated_at):
             raise access.EditConflict()
     fleet.settings = _clean_settings(settings)
+    previous = {it.get("id"): it for it in (fleet.items or [])}
     fleet.items = _clean_items(items)
+    for it in fleet.items:
+        # Rate-estimator state belongs to the server; keep it across UI saves.
+        old = previous.get(it["id"]) or {}
+        for key in ESTIMATE_KEYS:
+            if key in old:
+                it[key] = old[key]
     fleet.updated_at = _now()
     db.fleets.update_one(
         {"_id": fleet_id, "owner_id": owner_id},
@@ -240,21 +293,25 @@ def compute(db, fleet: Fleet, owners) -> dict:
         "model_id": model.id,
         "unit": results.get("unit", ""),
         "n_items": len(items),
+        "rate_source": settings.get("rate_source", "manual"),
     }
     if not items:
         return {**base, "expected": 0.0, "interval": [0.0, 0.0],
                 "per_item": [], "per_period": [0.0] * periods}
 
+    chosen = [item_rate(it, default_rate, base["rate_source"]) for it in items]
     ages = np.array([float(it["current_use"]) for it in items])
-    rates = np.array([
-        float(it["rate"]) if it.get("rate") is not None else default_rate
-        for it in items
-    ])
+    rates = np.array([rate for rate, _basis in chosen])
     uses = rates * periods  # projected additional use over the whole horizon
 
     if method == "single":
-        return {**base, **_forecast_single(dist, ages, rates, periods, items)}
-    return {**base, **_forecast_renewals(dist, ages, uses, rates, periods, items)}
+        out = {**base, **_forecast_single(dist, ages, rates, periods, items)}
+    else:
+        out = {**base, **_forecast_renewals(dist, ages, uses, rates, periods, items)}
+    for row, (rate, basis) in zip(out["per_item"], chosen):
+        row["rate_used"] = rate
+        row["rate_basis"] = basis  # "estimated" | "manual" | "default"
+    return out
 
 
 def _cond_prob(dist, age, extra):

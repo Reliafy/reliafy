@@ -396,17 +396,38 @@ function HttpDocs({ base }) {
       <Endpoint
         method="POST"
         path="/api/ingest/fleets/{fleet_id}/usage"
-        desc="Update forecast items' current use, then recompute the forecast."
+        desc="Update forecast items' current use, then recompute the forecast and check the fleet's alerts."
         request={[
           { name: "name / id", type: "csv col", req: true, desc: "Item name (or id)." },
-          { name: "current_use", type: "csv col", req: true, desc: "Accumulated use so far." },
-          { name: "rate", type: "csv col", req: false, desc: "Optional per-period usage rate." },
+          { name: "current_use", type: "csv col", req: true, desc: "Accumulated use so far (the meter reading)." },
+          { name: "rate", type: "csv col", req: false, desc: "Optional manual per-period usage rate." },
+          { name: "read_at", type: "csv col", req: false, desc: "When the meter was read, ISO 8601 (e.g. 2026-09-27T08:00:00+10:00; no offset = UTC). Default: the request time. Readings older than the item's latest are ignored." },
         ]}
         example={`curl -X POST ${base}/api/ingest/fleets/FLEET_ID/usage \\
   -H "Authorization: Bearer rlf_..." -H "Content-Type: text/csv" \\
-  --data-binary @meter_readings.csv          # name,current_use`}
-        returns={`{ "updated": 8, "forecast": { … } }`}
+  --data-binary @meter_readings.csv          # name,current_use,read_at`}
+        returns={`{ "fleet": "…", "updated_items": 8, "forecast": { … }, "alerts_fired": 0 }`}
       />
+      <ul className="api-list">
+        <li>
+          <b>Usage-rate estimate.</b> Each reading at least a day after the previous one updates the item's
+          estimated usage per period: Δuse ÷ elapsed periods, smoothed (EWMA, α = 0.3). Elapsed time is
+          converted with the fleet's period label — days, weeks, months (30.44 d), quarters or years; any other
+          label gets no estimate. A reading lower than the last one (meter reset or replaced unit) restarts the
+          baseline without estimating.
+        </li>
+        <li>
+          <b><code>rate_source</code></b> (fleet setting, <code>"manual"</code> by default): set it to{" "}
+          <code>"estimated"</code> on the fleet page to forecast with each item's estimated rate, falling back
+          to its manual rate, then the fleet default. The forecast's <code>per_item</code> rows report{" "}
+          <code>rate_used</code> and <code>rate_basis</code>.
+        </li>
+        <li>
+          <b>Alerts.</b> Ingesting usage evaluates the fleet's alert rules (set on the fleet page) against the
+          recomputed forecast and emails their owners — one email per crossing. <code>alerts_fired</code> counts
+          the rules that fired; an alert problem never fails the ingest.
+        </li>
+      </ul>
       <Endpoint
         method="POST"
         path="/api/ingest/tracking/{fleet_id}/measurements"
@@ -462,6 +483,7 @@ const MCP_TOOLS = [
   ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function."],
   ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model."],
   ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items."],
+  ["list_fleet_alerts / create_fleet_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API."],
 ];
 
 // "Use Reliafy from Claude (MCP)": what the MCP server is and how to connect.

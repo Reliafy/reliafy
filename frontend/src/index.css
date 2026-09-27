@@ -6462,3 +6462,28 @@ button.danger:hover { background: #fdeeee; }
 .consent-link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; box-shadow: none; }
 .consent-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .consent-actions > * { flex: 1; justify-content: center; text-align: center; }
+
+/* ---- Fleet forecast: alerts card + estimated usage rates ------------------ */
+.fleet-alert-list { list-style: none; margin: 0.4rem 0 0.9rem; padding: 0; }
+.fleet-alert-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--line2);
+}
+.fleet-alert-row:last-child { border-bottom: 1px solid var(--line2); }
+.fleet-alert-row.off .fleet-alert-cond { color: var(--muted); }
+.fleet-alert-main { flex: 1; min-width: 0; }
+.fleet-alert-cond { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.fleet-alert-warn { color: var(--warn); }
+.fleet-alert-toggle { align-items: center; white-space: nowrap; }
+.fleet-alert-toggle input { margin-top: 0; }
+.fleet-alert-row .lib-acts { opacity: 1; }
+.fleet-alert-kinds { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; }
+.fleet-rate-est { margin-top: 0.25rem; font-size: 0.78rem; }
+@media (max-width: 560px) {
+  .fleet-alert-row { flex-wrap: wrap; }
+  .fleet-alert-main { flex-basis: 100%; }
+  .fleet-alert-kinds { flex-direction: column; }
+}

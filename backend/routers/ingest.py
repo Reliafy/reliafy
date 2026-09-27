@@ -17,10 +17,12 @@ from collections import defaultdict, deque
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.services import fleet_alerts as fleet_alerts_service
 from backend.services import ingest as ingest_service
 from backend.services import metrics as metrics_service
 from backend.services import tokens as tokens_service
@@ -108,10 +110,29 @@ async def _handle(request: Request, user: dict, op, *args) -> JSONResponse:
     _rate_check(user["uid"])
     body = await request.body()
     try:
-        result = op(request.headers.get("content-type", ""), body, *args)
+        # Off the event loop: ops are sync (DB, refits, alert emails over SMTP).
+        result = await run_in_threadpool(op, request.headers.get("content-type", ""), body, *args)
     except ingest_service.IngestError as exc:
         return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
     return JSONResponse(content=result)
+
+
+def _evaluate_alerts(session, fleet_id: str, forecast: dict) -> int:
+    """Run the fleet's alert rules against the just-recomputed forecast.
+
+    Best-effort: the usage is already saved, so any failure here is logged
+    and reported as 0 fired — it never turns a good ingest into an error.
+    """
+    if forecast.get("status") != "ok" or forecast.get("expected") is None:
+        return 0
+    try:
+        return fleet_alerts_service.evaluate_fleet_alerts(
+            session, fleet_id, float(forecast["expected"]),
+            reason="a usage update received via the API", forecast=forecast,
+        )
+    except Exception:
+        logger.exception("fleet alert evaluation failed fleet=%s", fleet_id)
+        return 0
 
 
 @router.post("/ingest/fleets/{fleet_id}/usage")
@@ -125,8 +146,10 @@ async def ingest_fleet_usage(
 
     def op(content_type, body):
         rows = ingest_service.rows_from_request(content_type, body, ("items", "usage", "rows"))
-        result = ingest_service.update_fleet_usage(session, fleet_id, user["uid"], rows)
+        result, forecast = ingest_service.apply_fleet_usage(session, fleet_id, user["uid"], rows)
         metrics_service.record_event(session, name="ingest_usage", path=f"/api/ingest/fleets/{fleet_id}")
+        # Alerts run on the forecast just recomputed from these readings/rates.
+        result["alerts_fired"] = _evaluate_alerts(session, fleet_id, forecast)
         return result
 
     return await _handle(request, user, op)
