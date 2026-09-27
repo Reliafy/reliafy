@@ -364,6 +364,14 @@ export function saveRbd(name, graph, id, expectedUpdatedAt) {
   );
 }
 
+// Parse another tool's diagram file (BlockSim, Open-PSA, Galileo) into builder
+// graphs. Nothing is saved: the builder opens the chosen one unsaved.
+export function importRbdFile(file) {
+  const form = new FormData();
+  form.append("file", file);
+  return withEvent(request("/api/rbds/import", { method: "POST", body: form }), "rbd_import");
+}
+
 export function renameRbd(id, name) {
   return request(`/api/rbds/${id}`, {
     method: "PATCH",

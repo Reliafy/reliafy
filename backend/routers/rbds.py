@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Body, Depends
+import os
+
+from fastapi import APIRouter, Body, Depends, File, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.services import rbd_import
 from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
@@ -16,6 +19,7 @@ from backend.services import shares as shares_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import Rbd
 from backend.services.rbd_analysis import AnalysisError
+from backend.services.rbd_graph import GraphError, normalize_graph
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -84,6 +88,52 @@ def save_rbd(
     access_service.stamp_editor(session, "rbds", rbd.id, ctx)
     rbd.updated_by = access_service.editor_of(ctx)
     return JSONResponse(content=_summary(rbd, ctx))
+
+
+@router.post("/rbds/import")
+def import_rbd_file(
+    file: UploadFile = File(...),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Parse another tool's diagram file into builder graphs — nothing is saved.
+
+    The builder opens the chosen diagram unsaved, so the usual save (and the
+    free-plan cap) applies when the user keeps it.
+    """
+    data = file.file.read(rbd_import.MAX_UPLOAD_BYTES + 1)
+    ext = os.path.splitext(file.filename or "")[1].lower()[:12]
+    try:
+        diagrams = rbd_import.import_file(data, file.filename or "")
+    except rbd_import.RbdImportError as exc:
+        logger.info("RBD import refused: ext=%s bytes=%d — %s", ext, len(data), exc)
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except Exception:  # untrusted input: never 500 on a malformed file
+        logger.exception("RBD import failed: ext=%s bytes=%d", ext, len(data))
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Couldn't read this file — it may be damaged or from an unsupported version."},
+        )
+
+    out = []
+    for d in diagrams:
+        try:
+            graph = normalize_graph(d.graph)
+        except GraphError as exc:
+            out.append({"name": d.name, "source_format": d.source_format, "error": str(exc), "warnings": d.warnings})
+            continue
+        out.append({
+            "name": d.name,
+            "source_format": d.source_format,
+            "warnings": d.warnings,
+            "graph": graph,
+            "n_nodes": len(graph["nodes"]),
+            "n_edges": len(graph["edges"]),
+        })
+    logger.info(
+        "RBD import: format=%s ext=%s diagrams=%d ok=%d",
+        diagrams[0].source_format, ext, len(out), sum(1 for d in out if "graph" in d),
+    )
+    return JSONResponse(content={"diagrams": out})
 
 
 @router.get("/rbds/{rbd_id}")

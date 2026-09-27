@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listRbds, deleteRbd, renameRbd } from "../api.js";
+import { listRbds, deleteRbd, renameRbd, importRbdFile } from "../api.js";
 import ShareDialog from "../components/ShareDialog.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
@@ -25,6 +25,11 @@ const ShareIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="6" cy="12" r="2.6" /><circle cx="17" cy="5.5" r="2.6" /><circle cx="17" cy="18.5" r="2.6" />
     <path d="m8.4 10.8 6.2-4M8.4 13.2l6.2 4" />
+  </svg>
+);
+const ImportIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
   </svg>
 );
 const TrashIcon = () => (
@@ -69,6 +74,31 @@ export default function RbdHome() {
   const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(null); // rbd being shared
   const { workspace } = useWorkspace();
+  const fileRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+  const [imported, setImported] = useState(null); // {file, diagrams} when a file holds several
+
+  // Open an imported diagram in the builder, unsaved (the builder's Save keeps it).
+  const openImported = (d) => navigate("/rbds/b", { state: { imported: d } });
+
+  const onImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    setImporting(true);
+    try {
+      const { diagrams } = await importRbdFile(file);
+      const ok = diagrams.filter((d) => d.graph);
+      if (diagrams.length === 1 && ok.length === 1) openImported(ok[0]);
+      else if (!ok.length) setError(diagrams[0]?.error || "No diagram in this file could be imported.");
+      else setImported({ file: file.name, diagrams });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const refresh = useCallback(() => {
     listRbds()
@@ -105,12 +135,53 @@ export default function RbdHome() {
             reliability, or start a new diagram from scratch.
           </p>
         </div>
-        <button onClick={() => navigate("/rbds/b")}>
-          <PlusIcon /> New RBD
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".rsgz9,.rsgz10,.rsgz11,.rsgz20,.rsgz21,.rsgz22,.rsgz23,.rsgz24,.rsgz25,.rsr9,.rsr10,.rsr11,.rsr20,.rsr21,.rsr22,.rsr23,.rsr24,.rsr25,.rsrp,.xml,.opsa,.dft,.json"
+            hidden
+            onChange={onImportFile}
+          />
+          <button
+            className="secondary"
+            disabled={importing}
+            title="Import a diagram from ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA XML or Galileo .dft"
+            onClick={() => fileRef.current?.click()}
+          >
+            <ImportIcon /> {importing ? "Importing…" : "Import"}
+          </button>
+          <button onClick={() => navigate("/rbds/b")}>
+            <PlusIcon /> New RBD
+          </button>
+        </div>
       </header>
 
       {error && <div className="card error">{error}</div>}
+
+      {imported && (
+        <div className="card">
+          <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem" }}>
+            <h2 style={{ margin: 0 }}>Diagrams in {imported.file}</h2>
+            <span className="grow" style={{ flex: 1 }} />
+            <button className="link-btn" onClick={() => setImported(null)}>Cancel</button>
+          </div>
+          <p>This file holds {imported.diagrams.length} diagrams. Pick one to open — it opens unsaved, so save it to keep it.</p>
+          <table className="lib-table">
+            <tbody>
+              {imported.diagrams.map((d, i) => (
+                <tr key={i} className={d.graph ? "lib-row" : undefined} onClick={d.graph ? () => openImported(d) : undefined}>
+                  <td><div className="lib-name">{d.name}</div></td>
+                  <td className="lib-n">{d.graph ? `${d.n_nodes} nodes` : ""}</td>
+                  <td className="lib-date">
+                    {d.error ? d.error : d.warnings?.length ? `${d.warnings.length} note${d.warnings.length > 1 ? "s" : ""}` : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {loading ? (
         <div className="card empty">Loading…</div>

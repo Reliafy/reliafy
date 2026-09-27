@@ -6487,3 +6487,5 @@ button.danger:hover { background: #fdeeee; }
   .fleet-alert-main { flex-basis: 100%; }
   .fleet-alert-kinds { flex-direction: column; }
 }
+.rbd-import-note { margin-bottom: 10px; }
+.rbd-import-note ul { margin: 6px 0 0; padding-left: 18px; }

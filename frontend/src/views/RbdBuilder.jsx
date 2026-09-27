@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import ReactFlow, {
   Background,
   Controls,
@@ -161,7 +161,7 @@ const EDGE_OPTIONS = {
   markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
 };
 
-function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
+function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
@@ -636,14 +636,20 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   }, [applyGraph]);
 
   // Load the saved RBD named in the route (once per id); a route with no id is
-  // a fresh diagram.
+  // a fresh diagram — or one just imported from another tool's file, which
+  // opens unsaved (Save keeps it, under the usual plan limits).
   const loadedRef = useRef(null);
+  const [importNotes, setImportNotes] = useState(null);
   useEffect(() => {
     if (rbdId && loadedRef.current !== rbdId) {
       loadedRef.current = rbdId;
       openRbd(rbdId).catch(() => {});
+    } else if (!rbdId && imported?.graph && loadedRef.current !== imported) {
+      loadedRef.current = imported;
+      loadGraph(imported.graph, null, imported.name || "");
+      setImportNotes({ source: imported.source_format, warnings: imported.warnings || [] });
     }
-  }, [rbdId, openRbd]);
+  }, [rbdId, imported, openRbd, loadGraph]);
 
   // Assign a life model (saved or from parameters) to the node the modal targets.
   const setNodeModel = useCallback(
@@ -799,6 +805,19 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     <RbdRepairableContext.Provider value={repairable}>
     <RbdCcfContext.Provider value={ccfMap}>
     <div className="rbd-shell">
+    {importNotes && (
+      <div className="card note rbd-import-note">
+        <p>
+          <b>Imported from {importNotes.source || "file"}</b> — not saved yet. Check the blocks, then Save to keep it.
+          {" "}<button className="link-btn" onClick={() => setImportNotes(null)}>Dismiss</button>
+        </p>
+        {importNotes.warnings.length > 0 && (
+          <ul>
+            {importNotes.warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        )}
+      </div>
+    )}
     <div className="tabs rbd-tabs">
       <button
         className={"tab" + (tab === "builder" ? " active" : "")}
@@ -1301,6 +1320,8 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
 export default function RbdBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const imported = id ? null : location.state?.imported || null;
   return (
     <div className="app rbd-app">
       <header>
@@ -1317,6 +1338,7 @@ export default function RbdBuilder() {
           <Builder
             key={id || "new"}
             rbdId={id}
+            imported={imported}
             onNew={() => navigate("/rbds/b")}
             onOpenLibrary={() => navigate("/rbds/list")}
             onSaved={(savedId) => navigate(`/rbds/b/${savedId}`, { replace: true })}
