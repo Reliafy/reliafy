@@ -136,7 +136,6 @@ transparency.
 - Stress–strength interference
 - Common-cause failure and fault-tree views for RBDs
 - Embeddable live charts (intranet dashboards)
-- MCP server so users' AI agents can drive Reliafy
 - Custom KPI dashboard across a whole workspace
 - Condition-monitoring signal ingestion (vibration/oil trends as
   degradation measures)
@@ -161,7 +160,7 @@ availability and per-block importance · accelerated life testing · mixture
 models · non-parametric suite (Kaplan-Meier, Nelson-Aalen,
 Fleming-Harrington, Turnbull) · per-demand and discrete-time models · all five
 estimation methods with offsets · personal API tokens, ingestion endpoints and
-notebook → Reliafy model push · RSS feeds and a monthly What's-new.
+notebook → Reliafy model push · RSS feeds and a monthly What's-new · use Reliafy from Claude — a remote MCP server and claude.ai connector (OAuth) with 17 tools · "Download as Python" for any RBD (a standalone SurPyval + RePyability script) · saved, shareable availability results.
 
 *(No dates on this document by design. It reorders as users teach us what
 matters — that's a feature.)*
