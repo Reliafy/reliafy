@@ -36,3 +36,8 @@ anthropic==0.117.0
 # The MCP server at /mcp (backend/mcp_server.py): MCPServer + the stateless
 # Streamable HTTP transport. Pinned — the 2.x SDK is young and moves quickly.
 mcp==2.2.0
+# BlockSim project import (backend/services/rbd_import/blocksim.py): a pure-Python
+# Microsoft Access (Jet) reader, Apache-2.0. Pinned because the importer subclasses
+# its internals to read from memory with bounded page walks. Pulls construct and
+# tabulate (both MIT).
+access-parser==0.0.6
