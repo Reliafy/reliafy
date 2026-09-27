@@ -37,6 +37,13 @@ export default function PrivacyPage() {
               don't keep transcripts in our own database, and we don't use them to
               train models — and our AI providers' terms commit them to the same. Treat it like any hosted tool: don't
               paste anything you wouldn't want retained.</li>
+            <li><strong>Connected apps:</strong> if you connect an AI assistant such as
+              Claude to your account, you approve it on a Reliafy sign-in screen (OAuth),
+              and it can then read your datasets, models and diagrams and create new ones
+              on your behalf. We keep a record of which app you connected, when, and when
+              it last used that access. What the assistant does with the data it reads is
+              governed by its provider's terms, not ours. You can disconnect it at any
+              time in Settings → Connected apps.</li>
             <li><strong>Operational logs:</strong> standard request logs (timestamps,
               endpoints, status codes) for reliability and debugging.</li>
             <li><strong>Usage analytics:</strong> records of the pages you visit, the

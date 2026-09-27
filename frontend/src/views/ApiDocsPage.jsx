@@ -24,7 +24,8 @@ export default function ApiDocsPage() {
             <button className="crumb-link" onClick={() => navigate("/settings?tab=api")}>
               Settings › API access
             </button>
-            . To let an AI assistant such as Claude use Reliafy for you, see{" "}
+            . To connect Claude (claude.ai, the desktop and mobile apps, or Claude
+            Code) to your account — no token needed, you just sign in — see{" "}
             <a className="crumb-link" href="#mcp">Use Reliafy from Claude (MCP)</a>.
           </p>
         </div>

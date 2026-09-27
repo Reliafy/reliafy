@@ -59,6 +59,7 @@ from backend.routers import ingest as ingest_router
 from backend.routers import public_api as public_api_router
 from backend.routers import email_prefs as email_prefs_router
 from backend.routers import feeds as feeds_router
+from backend.routers import oauth as oauth_router
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
@@ -99,6 +100,9 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Workspace-Id"],
     max_age=3600,
 )
+# Open CORS on the OAuth discovery/token/registration endpoints only (outermost,
+# so it answers their preflights before the app-wide policy above).
+app.add_middleware(oauth_router.OAuthCorsMiddleware)
 
 
 def _startup() -> None:
@@ -153,6 +157,9 @@ app.include_router(feeds_router.router)
 
 # MCP (Model Context Protocol) server for AI assistants — token-authed, and
 # registered before the SPA catch-all so GET/POST/DELETE /mcp reach it.
+# OAuth 2.1 for the MCP server (Claude connectors): discovery documents, the
+# authorization/consent/token endpoints and Settings > Connected apps.
+app.include_router(oauth_router.router)
 app.router.add_route("/mcp", mcp_http_app, methods=["GET", "POST", "DELETE"], include_in_schema=False)
 
 # ---------------------------------------------------------------------------

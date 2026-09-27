@@ -18,7 +18,8 @@ export default function ApiDocsPublicPage() {
             forecasts, run strategy calculators, and push operational data — through
             the <b>reliafy-client</b> Python package or the raw <b>HTTP API</b>.{" "}
             <Link to="/login">Create a free account</Link>, then generate a token under
-            Settings › API access. AI assistants such as Claude can use Reliafy too —
+            Settings › API access. Claude (claude.ai, desktop, mobile, Claude Code) can
+            connect to your account by signing in, no token needed —
             see <a href="#mcp">Use Reliafy from Claude (MCP)</a>.
           </p>
         </header>
