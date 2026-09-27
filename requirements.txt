@@ -29,7 +29,7 @@ stripe
 httpx
 # Safe XML parsing for uploaded Open-PSA fault trees (no entity expansion,
 # no external entities / DTD fetching) — backend/services/rbd_import/openpsa.py.
-defusedxml
+defusedxml==0.7.1
 # Renders the "What's new" update emails (backend/scripts/send_update.py).
 markdown
 # Managed Agents live in the beta namespace (beta.agents/environments/sessions);
