@@ -211,6 +211,15 @@ def list_alerts(db, fleet_id: str) -> list[dict]:
 
 def create_alert(db, fleet: Fleet, owner_uid: str, owners, *, kind, threshold=None,
                  percent=None, x=None, y_periods=None, enabled=True) -> dict:
+    # Alerts are evaluated when usage arrives through the API, and usage ingest
+    # only accepts personal fleets (tokens are personal) — a rule on a team
+    # fleet would be accepted and then never fire. Refuse it clearly instead.
+    from backend.services import access
+
+    if access.is_team_owner(fleet.owner_id):
+        raise AlertValidationError(
+            "Alerts fire when usage arrives through the API, which only personal "
+            "fleets accept — so they aren't available on team fleets yet.")
     cond = _clean_condition(fleet, kind, threshold, percent, x, y_periods)
     if db.fleet_alerts.count_documents({"fleet_id": fleet.id}) >= MAX_RULES:
         raise AlertLimitError(f"A fleet can have at most {MAX_RULES} alerts.")

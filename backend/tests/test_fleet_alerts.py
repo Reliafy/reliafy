@@ -439,3 +439,19 @@ def test_mcp_fleet_alert_tools(env):
     assert _call(b, "list_fleet_alerts", {"fleet_id": fid}).is_error
     assert _call(b, "create_fleet_alert", {"fleet_id": fid, "kind": "above", "threshold": 1}).is_error
     assert env.db.fleet_alerts.count_documents({}) == 1
+
+
+def test_alerts_refused_on_team_fleets():
+    """Usage ingest only accepts personal fleets, so a rule on a team fleet
+    would never fire — creation is refused with an explanation instead."""
+    import mongomock
+
+    from backend.schema import Fleet
+    from backend.services import access, fleet_alerts
+
+    db = mongomock.MongoClient()["t"]
+    team_fleet = Fleet(id="f-team", name="Team trucks", model_id="m1",
+                       owner_id=f"{access.TEAM_PREFIX}crew", items=[], settings={})
+    with pytest.raises(fleet_alerts.AlertValidationError, match="team fleets"):
+        fleet_alerts.create_alert(db, team_fleet, "u1", ["u1"], kind="above", threshold=1)
+    assert db.fleet_alerts.count_documents({}) == 0
