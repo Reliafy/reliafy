@@ -20,24 +20,41 @@ RUN if [ "$VITE_AUTH_DISABLED" != "true" ]; then npm run prerender; fi
 FROM python:3.11-slim
 WORKDIR /code
 
-# git installs SurPyval/RePyability from their repos; build-essential covers any
-# dependency that compiles from source. Both are build-time only and removed
-# afterwards to keep the runtime image small.
+# Everything that needs build tools happens in ONE layer that also removes
+# them: a later `apt-get purge` in a separate RUN only hides files, and the image
+# (downloaded on every Cloud Run cold start) would still carry them.
+#
+# - RePyability is installed --no-deps, after the rest, so our git-pinned
+#   surpyval stays authoritative (it declares surpyval>=0.16,<0.17 — a ceiling
+#   it has never raised, not a real incompatibility; see requirements.txt).
+# - firebase-admin is installed --no-deps with only what its auth module needs
+#   (google-auth, cachecontrol, pyjwt, requests, httpx): we only verify ID
+#   tokens, and its Firestore / Cloud Storage / gRPC dependencies (~60 MB) are
+#   never imported.
+# - Libraries' own test suites are stripped, and pip is removed: neither is
+#   needed at runtime, and together they're ~100 MB.
+COPY requirements.txt ./
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt ./
-# RePyability is installed --no-deps, and second, so our git-pinned surpyval stays
-# authoritative. It declares surpyval>=0.16,<0.17 — a ceiling it has never raised
-# rather than a real incompatibility, and one our 0.19 pin deliberately ignores;
-# see requirements.txt. Its real deps are in requirements.txt.
-RUN python -m pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt \
+    && python -m pip install --no-cache-dir --upgrade pip \
+    && grep -viE '^firebase-admin' requirements.txt > /tmp/requirements-runtime.txt \
+    && pip install --no-cache-dir -r /tmp/requirements-runtime.txt \
     && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.8.0" \
-    && apt-get purge -y git build-essential && apt-get autoremove -y
+    && pip install --no-cache-dir --no-deps "firebase-admin==7.7.0" \
+    && pip install --no-cache-dir google-auth cachecontrol "pyjwt[crypto]" requests httpx \
+    && python -c "import firebase_admin, firebase_admin.auth, surpyval, repyability" \
+    && find /usr/local/lib/python3.11/site-packages -depth -type d \( -name tests -o -name test \) \
+         -not -path '*/_pytest/*' -prune -exec rm -rf {} + \
+    && python -m pip uninstall -y pip \
+    && apt-get purge -y --auto-remove git build-essential \
+    && rm -rf /var/lib/apt/lists/* /root/.cache /tmp/requirements-runtime.txt
+
+# No display on the server: skip matplotlib's GUI-backend probing at import.
+ENV MPLBACKEND=Agg
 
 COPY backend/ ./backend/
+# Precompile our own code so a cold start doesn't byte-compile it.
+RUN python -m compileall -q backend
 COPY --from=frontend /frontend/dist ./frontend/dist
 
 # Cloud Run injects $PORT (default 8080); fall back to 8000 for local runs.
