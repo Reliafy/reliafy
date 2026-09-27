@@ -229,7 +229,9 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
               <tr>
                 <th>Component</th>
                 <th title="Birnbaum importance — sensitivity of system reliability to this component">Birnbaum</th>
-                <th title="Fussell-Vesely — fraction of system unreliability this component contributes to">F-V</th>
+                <th title={`Fussell-Vesely — fraction of system unreliability this component contributes to${importance.fussell_vesely_basis ? ` (from ${importance.fussell_vesely_basis}; this diagram has too many cut sets to derive them all)` : ""}`}>
+                  F-V{importance.fussell_vesely_basis ? "*" : ""}
+                </th>
                 <th title="Risk Achievement Worth — how much worse the system gets if this component fails">RAW</th>
                 <th title="Risk Reduction Worth — how much better the system gets if this component were perfect">RRW</th>
                 <th title="Criticality importance">Crit.</th>
@@ -255,7 +257,11 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
 
       <div className="rbd-sets">
         <div className="rbd-set">
-          <div className="rbd-section-head">Minimal path sets</div>
+          <div className="rbd-section-head">
+            Minimal path sets
+            {result.structure.n_min_path_sets > result.structure.min_path_sets.length &&
+              ` — shortest ${result.structure.min_path_sets.length.toLocaleString()} of ${result.structure.n_min_path_sets.toLocaleString()}`}
+          </div>
           <ul>
             {result.structure.min_path_sets.map((s, i) => (
               <li key={i}>{s.join(" · ")}</li>
@@ -263,7 +269,11 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
           </ul>
         </div>
         <div className="rbd-set">
-          <div className="rbd-section-head">Minimal cut sets</div>
+          <div className="rbd-section-head">
+            Minimal cut sets
+            {result.structure.cut_sets_complete === false &&
+              ` — up to ${result.structure.cut_sets_max_order} blocks (too many to derive them all)`}
+          </div>
           <ul>
             {result.structure.min_cut_sets.map((s, i) => (
               <li key={i}>{s.join(" · ")}</li>
@@ -442,6 +452,7 @@ export function AvailabilityView({ result, unit }) {
         Availability curve estimated by {result.n_simulations?.toLocaleString()} Monte-Carlo
         replications over {fmt(result.t_simulation)}{u}
         {hasBand ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}.
+        {result.horizon_shortened && " The window was shortened to keep the simulation quick; the long-run figures don't depend on it."}
         {basis.mean_up_time === "exact" && " Mean up/down time and failure frequency are exact steady-state values."}
       </p>
     </div>
