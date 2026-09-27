@@ -1,7 +1,7 @@
 import Select from "./Select.jsx";
 import Modal from "./Modal.jsx";
 import { useEffect, useRef, useState } from "react";
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 import { confidenceAt, evaluateAt } from "../api.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation

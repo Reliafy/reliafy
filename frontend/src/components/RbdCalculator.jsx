@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 import { analyzeRbd } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import CovariatesModal from "./CovariatesModal.jsx";

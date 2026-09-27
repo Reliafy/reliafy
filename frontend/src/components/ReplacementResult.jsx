@@ -1,4 +1,4 @@
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 
 const fmt = (v) =>
   v == null

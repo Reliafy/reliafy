@@ -1,12 +1,12 @@
-// Firebase initialisation. The web config is a public client identifier (safe
-// to ship in the bundle) and is read from Vite build-time env vars.
+// Auth configuration shared across the app — deliberately light. The Firebase
+// SDK itself (~120 KB gzipped) lives in firebaseAuth.js and is loaded on
+// demand via loadAuth(), so public pages paint without it; AuthProvider starts
+// loading it straight after mount, well before anyone can click "Sign in".
 //
 // When VITE_AUTH_DISABLED is set, we skip Firebase entirely so the app runs in
 // local development with zero external setup (mirrors the backend AUTH_DISABLED
-// flag). In that mode `auth` is null and the UI uses a fixed dev user.
-import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
-
+// flag). In that mode loadAuth() resolves to null and the UI uses a fixed dev
+// user.
 export const AUTH_DISABLED =
   String(import.meta.env.VITE_AUTH_DISABLED || "").toLowerCase() === "true";
 
@@ -23,12 +23,17 @@ export function publicUrl(path = "/") {
   return AUTH_DISABLED ? `${PUBLIC_SITE}${p}` : p;
 }
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-};
+let authModule = null;
 
-export const auth = AUTH_DISABLED ? null : getAuth(initializeApp(firebaseConfig));
-export const googleProvider = AUTH_DISABLED ? null : new GoogleAuthProvider();
+// The Firebase auth module ({ auth, googleProvider, signInWithPopup, … }),
+// loaded once. Resolves to null when auth is disabled.
+export function loadAuth() {
+  if (AUTH_DISABLED) return Promise.resolve(null);
+  if (!authModule) {
+    authModule = import("./firebaseAuth.js").catch((err) => {
+      authModule = null; // let the next call retry (e.g. after a network blip)
+      throw err;
+    });
+  }
+  return authModule;
+}

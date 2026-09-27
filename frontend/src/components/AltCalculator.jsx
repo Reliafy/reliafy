@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 import { evaluateAlt } from "../api.js";
 
 const fmt = (v) =>

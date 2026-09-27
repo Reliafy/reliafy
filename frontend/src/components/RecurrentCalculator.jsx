@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 
 // Recurrent-event calculator: read off the repairable-system functions at a
 // chosen time — expected cumulative failures N(t), the rate of occurrence of

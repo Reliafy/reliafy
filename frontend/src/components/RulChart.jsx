@@ -1,4 +1,4 @@
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 
 // One tracked item's outlook: its measurements, the projected degradation
 // path, the failure threshold, and the predicted crossing time with its 95%

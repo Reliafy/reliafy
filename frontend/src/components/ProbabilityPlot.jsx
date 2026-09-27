@@ -1,4 +1,4 @@
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 
 // Renders a probability plot from the backend payload. The backend has already
 // linearised both axes with the distribution's own probability-paper
