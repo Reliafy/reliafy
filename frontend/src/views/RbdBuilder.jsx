@@ -639,7 +639,6 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   // a fresh diagram — or one just imported from another tool's file, which
   // opens unsaved (Save keeps it, under the usual plan limits).
   const loadedRef = useRef(null);
-  const [importNotes, setImportNotes] = useState(null);
   useEffect(() => {
     if (rbdId && loadedRef.current !== rbdId) {
       loadedRef.current = rbdId;
@@ -647,7 +646,6 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     } else if (!rbdId && imported?.graph && loadedRef.current !== imported) {
       loadedRef.current = imported;
       loadGraph(imported.graph, null, imported.name || "");
-      setImportNotes({ source: imported.source_format, warnings: imported.warnings || [] });
     }
   }, [rbdId, imported, openRbd, loadGraph]);
 
@@ -805,19 +803,6 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     <RbdRepairableContext.Provider value={repairable}>
     <RbdCcfContext.Provider value={ccfMap}>
     <div className="rbd-shell">
-    {importNotes && (
-      <div className="card note rbd-import-note">
-        <p>
-          <b>Imported from {importNotes.source || "file"}</b> — not saved yet. Check the blocks, then Save to keep it.
-          {" "}<button className="link-btn" onClick={() => setImportNotes(null)}>Dismiss</button>
-        </p>
-        {importNotes.warnings.length > 0 && (
-          <ul>
-            {importNotes.warnings.map((w, i) => <li key={i}>{w}</li>)}
-          </ul>
-        )}
-      </div>
-    )}
     <div className="tabs rbd-tabs">
       <button
         className={"tab" + (tab === "builder" ? " active" : "")}
@@ -1322,6 +1307,7 @@ export default function RbdBuilder() {
   const navigate = useNavigate();
   const location = useLocation();
   const imported = id ? null : location.state?.imported || null;
+  const [notesHidden, setNotesHidden] = useState(false);
   return (
     <div className="app rbd-app">
       <header>
@@ -1333,6 +1319,19 @@ export default function RbdBuilder() {
           <CopyId id={id} />
         </div>
       </header>
+      {imported && !notesHidden && (
+        <div className="card note rbd-import-note">
+          <p>
+            <b>Imported from {imported.source_format || "file"}</b> — not saved yet. Check the blocks, then Save to keep it.
+            {" "}<button className="link-btn" onClick={() => setNotesHidden(true)}>Dismiss</button>
+          </p>
+          {imported.warnings?.length > 0 && (
+            <ul>
+              {imported.warnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="card rbd-wrap">
         <ReactFlowProvider>
           <Builder
