@@ -1,13 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signInWithPopup,
-  signOut as fbSignOut,
-  sendPasswordResetEmail,
-  onAuthStateChanged,
-} from "firebase/auth";
-import { auth, googleProvider, AUTH_DISABLED } from "./firebase.js";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AUTH_DISABLED, loadAuth } from "./firebase.js";
 
 const AuthContext = createContext(null);
 
@@ -18,28 +10,50 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(AUTH_DISABLED ? DEV_USER : null);
   const [loading, setLoading] = useState(!AUTH_DISABLED);
 
+  // The Firebase SDK is loaded on demand (see firebase.js). Start straight
+  // after mount so it's ready long before anyone clicks "Sign in" — the Google
+  // popup must open synchronously inside the click, or browsers block it.
+  const fb = useRef(null);
   useEffect(() => {
     if (AUTH_DISABLED) return;
-    return onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setLoading(false);
-      // Upsert the user profile on the backend on first sight (fire-and-forget).
-      if (u) import("./api.js").then(({ getMe }) => getMe().catch(() => {}));
-    });
+    let unsubscribe = () => {};
+    let cancelled = false;
+    loadAuth()
+      .then((mod) => {
+        if (cancelled) return;
+        fb.current = mod;
+        unsubscribe = mod.onAuthStateChanged(mod.auth, (u) => {
+          setUser(u);
+          setLoading(false);
+          // Upsert the user profile on the backend on first sight (fire-and-forget).
+          if (u) import("./api.js").then(({ getMe }) => getMe().catch(() => {}));
+        });
+      })
+      .catch(() => {
+        // Couldn't load the auth SDK (offline?): show the signed-out state
+        // rather than an endless spinner; a sign-in attempt retries the load.
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
-  const value = useMemo(
-    () => ({
+  const value = useMemo(() => {
+    // Run `fn(module)` with the auth SDK — synchronously when it's already
+    // loaded (keeps the Google popup inside the click's user activation).
+    const withAuth = (fn) => (fb.current ? fn(fb.current) : loadAuth().then((m) => fn((fb.current = m))));
+    return {
       user,
       loading,
-      signIn: (email, password) => signInWithEmailAndPassword(auth, email, password),
-      signUp: (email, password) => createUserWithEmailAndPassword(auth, email, password),
-      signInWithGoogle: () => signInWithPopup(auth, googleProvider),
-      resetPassword: (email) => sendPasswordResetEmail(auth, email),
-      signOut: () => (AUTH_DISABLED ? Promise.resolve() : fbSignOut(auth)),
-    }),
-    [user, loading]
-  );
+      signIn: (email, password) => withAuth((m) => m.signInWithEmailAndPassword(m.auth, email, password)),
+      signUp: (email, password) => withAuth((m) => m.createUserWithEmailAndPassword(m.auth, email, password)),
+      signInWithGoogle: () => withAuth((m) => m.signInWithPopup(m.auth, m.googleProvider)),
+      resetPassword: (email) => withAuth((m) => m.sendPasswordResetEmail(m.auth, email)),
+      signOut: () => (AUTH_DISABLED ? Promise.resolve() : withAuth((m) => m.signOut(m.auth))),
+    };
+  }, [user, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

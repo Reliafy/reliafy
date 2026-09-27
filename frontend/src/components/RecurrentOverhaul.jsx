@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 import { recurrentOverhaul } from "../api.js";
 
 const fmt = (v) =>

@@ -1,4 +1,4 @@
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 
 // Step survival curve for a non-parametric estimate (KM/NA/FH/Turnbull),
 // with a 95% confidence band where available.

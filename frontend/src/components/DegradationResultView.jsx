@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 import { degradationReliability } from "../api.js";
 
 // Instrument-ish categorical palette for per-item traces.

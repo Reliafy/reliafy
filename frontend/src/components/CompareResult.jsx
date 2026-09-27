@@ -1,4 +1,4 @@
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 
 const COLORS = { a: "#0284c7", b: "#db2777" };
 
