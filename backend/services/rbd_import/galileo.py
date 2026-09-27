@@ -480,6 +480,5 @@ def _spare_block(name, gtype, kids, nodes, gates, parents, dorm, warnings) -> ft
             "reliability is a lower bound.")
     node = {"type": "standby", "model": primary.node["model"], "spares": len(spares), "cold": cold}
     if ft.model_key(spares[0].node["model"]) != ft.model_key(primary.node["model"]):
-        # The compact format has no standbyModel key; pass it through ``data``.
-        node["data"] = {"standbyModel": ft.full_model(spares[0].node["model"])}
+        node["standbyModel"] = spares[0].node["model"]
     return ft.Leaf(name, node)

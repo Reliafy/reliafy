@@ -14,6 +14,7 @@ Compact node (what an assistant writes and reads)::
                "placeholder": true},          # optional: a guessed value
      "repair": {...},                         # repairable diagrams only
      "n": 2, "k": 3, "spares": 1, "cold": true,
+     "standbyModel": {...}, "startProb": 0.98,  # cold standby: spare's own model, switch reliability
      "subsystem_rbd_id": "<saved rbd id>"}
 
 A node may instead carry the persisted ``data: {...}`` object; both are
@@ -184,7 +185,7 @@ def normalize_graph(
             raise GraphError(f"node '{nid}': type must be one of {', '.join(NODE_TYPES)}.")
 
         data = dict(raw.get("data") or {})
-        for key in ("label", "model", "repair", "n", "k", "spares", "cold"):
+        for key in ("label", "model", "repair", "n", "k", "spares", "cold", "standbyModel", "startProb"):
             if raw.get(key) is not None and key not in data:
                 data[key] = raw[key]
         if raw.get("subsystem_rbd_id") and "rbd" not in data:
@@ -192,6 +193,8 @@ def normalize_graph(
         where = f"node '{data.get('label') or nid}'"
         if data.get("model") is not None:
             data["model"] = _model(data["model"], where, resolve_saved_model)
+        if data.get("standbyModel") is not None:
+            data["standbyModel"] = _model(data["standbyModel"], f"{where} spare", resolve_saved_model)
         if data.get("repair") is not None:
             if not isinstance(data["repair"], dict):
                 raise GraphError(f"{where}: repair must be an object.")
@@ -238,7 +241,7 @@ def compact_graph(graph: dict) -> dict:
         node = {"id": n.get("id"), "type": n.get("type")}
         if d.get("label"):
             node["label"] = d["label"]
-        for key in ("model", "repair"):
+        for key in ("model", "repair", "standbyModel"):
             m = d.get(key)
             if isinstance(m, dict):
                 cm = {"distribution_id": m.get("distribution_id"), "params": m.get("params")}
@@ -247,7 +250,7 @@ def compact_graph(graph: dict) -> dict:
                 if m.get("placeholder"):
                     cm["placeholder"] = True
                 node[key] = cm
-        for key in ("n", "k", "spares", "cold"):
+        for key in ("n", "k", "spares", "cold", "startProb"):
             if d.get(key) is not None:
                 node[key] = d[key]
         if isinstance(d.get("rbd"), dict) and d["rbd"].get("id"):

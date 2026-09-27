@@ -420,16 +420,6 @@ def lognormal_model(mu: float, sigma: float) -> dict:
             "params": [{"name": "mu", "value": float(mu)}, {"name": "sigma", "value": float(sigma)}]}
 
 
-def full_model(model: dict) -> dict:
-    """An inline model in the persisted (builder) shape, for node data keys
-    ``normalize_graph`` doesn't flesh out itself (e.g. ``standbyModel``)."""
-    from backend import fitting
-
-    dist_id = model["distribution_id"]
-    return {"source": "params", "distribution": fitting.DISTRIBUTIONS[dist_id]["name"],
-            "distribution_id": dist_id, "params": [dict(p) for p in model["params"]]}
-
-
 def model_key(model: Optional[dict]):
     """Hashable identity of an inline model (to compare spares)."""
     if not model:
