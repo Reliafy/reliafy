@@ -522,10 +522,24 @@ def test_refresh_rotation_and_reuse_detection(env):
     assert second["access_token"] != first["access_token"]
     assert _post_mcp(env, second["access_token"]).status_code == 200
 
-    # The rotated-away refresh token is dead — and replaying it revokes the grant.
+    # A retried / concurrent refresh with the just-rotated token (inside the
+    # grace window) gets a fresh pair and does NOT disconnect the user.
+    r = _token(env, grant_type="refresh_token", refresh_token=first["refresh_token"], client_id=CLAUDE_CODE)
+    assert r.status_code == 200, r.text
+    retry = r.json()
+    assert retry["refresh_token"] not in (first["refresh_token"], second["refresh_token"])
+    assert _post_mcp(env, second["access_token"]).status_code == 200
+    assert _post_mcp(env, retry["access_token"]).status_code == 200
+
+    # After the window, replaying a rotated-away token means it leaked:
+    # the whole grant is revoked.
+    env.db.oauth_tokens.update_many(
+        {"rotated": True},
+        {"$set": {"rotated_at": datetime.now(timezone.utc) - timedelta(minutes=5)}})
     r = _token(env, grant_type="refresh_token", refresh_token=first["refresh_token"], client_id=CLAUDE_CODE)
     assert r.status_code == 400 and r.json()["error"] == "invalid_grant"
     assert _post_mcp(env, second["access_token"]).status_code == 401
+    assert _post_mcp(env, retry["access_token"]).status_code == 401
     r = _token(env, grant_type="refresh_token", refresh_token=second["refresh_token"], client_id=CLAUDE_CODE)
     assert r.json()["error"] == "invalid_grant"
 

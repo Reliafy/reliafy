@@ -47,6 +47,9 @@ logger = logging.getLogger(__name__)
 # ---- Lifetimes ----------------------------------------------------------------
 ACCESS_TOKEN_TTL = timedelta(hours=1)
 REFRESH_TOKEN_TTL = timedelta(days=60)
+# A rotated refresh token presented again within this window is treated as a
+# retried/concurrent refresh (reissue), not theft (revoke). See refresh().
+REFRESH_REUSE_GRACE = timedelta(seconds=60)
 CODE_TTL = timedelta(minutes=5)
 REQUEST_TTL = timedelta(minutes=10)      # the consent page's authorization-request handle
 UNUSED_CLIENT_TTL = timedelta(days=1)    # a DCR client that never completes a grant is purged
@@ -653,14 +656,25 @@ def refresh(db, client: dict, form: dict) -> dict:
     requested = (form.get("scope") or "").split()
     if any(s not in doc["scopes"] for s in requested):
         raise OAuthError("invalid_scope", "A refresh can't widen the granted scopes.")
-    # Rotate: claim this refresh token exactly once. Losing the race (or a
-    # replay of an already-rotated token) means it leaked — revoke the grant.
+    # Rotate: claim this refresh token exactly once. A replay of an already-
+    # rotated token means it leaked — revoke the grant (OAuth 2.1 §4.3.1) —
+    # EXCEPT within a short grace window: Claude refreshes both proactively and
+    # on a 401, and a retried or concurrent refresh (a lost response, two
+    # requests in flight) must not disconnect the user. Inside the window we
+    # issue another pair in the same grant instead of revoking it.
     claimed = db.oauth_tokens.find_one_and_update(
-        {"_id": doc["_id"], "rotated": False, "revoked": False}, {"$set": {"rotated": True}})
+        {"_id": doc["_id"], "rotated": False, "revoked": False},
+        {"$set": {"rotated": True, "rotated_at": _now()}})
     if claimed is None:
-        _revoke_family(db, doc["family_id"])
-        logger.warning("OAuth refresh-token reuse for grant %s — grant revoked", doc["family_id"])
-        raise OAuthError("invalid_grant", "The refresh token was already used; the grant has been revoked.")
+        rotated_at = _aware(doc.get("rotated_at"))
+        if rotated_at is not None and _now() - rotated_at <= REFRESH_REUSE_GRACE:
+            logger.info("OAuth refresh-token reuse for grant %s within grace window — reissuing",
+                        doc["family_id"])
+        else:
+            _revoke_family(db, doc["family_id"])
+            logger.warning("OAuth refresh-token reuse for grant %s — grant revoked", doc["family_id"])
+            raise OAuthError("invalid_grant",
+                             "The refresh token was already used; the grant has been revoked.")
     return _issue(db, family_id=doc["family_id"], uid=doc["uid"], client_id=doc["client_id"],
                   client_name=doc["client_name"], scopes=doc["scopes"], res=doc["resource"],
                   grant_created_at=_aware(doc.get("grant_created_at")) or _aware(doc["created_at"]))
