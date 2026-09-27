@@ -1031,7 +1031,8 @@ _AVAIL_SIMS = 2000  # Monte-Carlo replications for the availability estimate
 def _always_up():
     """A repairable stand-in that never fails — used for pure logic/voting
     (k-of-n) gates, which carry no failure or repair behaviour of their own but
-    must still be a repairable component for RePyability's availability solver."""
+    must still be a repairable component for RePyability's availability solver.
+    Callers also pin it working (``working_nodes``), so it is exactly perfect."""
     import surpyval as sp
 
     return NonRepairable(
@@ -1283,7 +1284,10 @@ def analyze_availability(
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(
         graph, resolve_model
     )
-    overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
+    # Voting gates are pinned working too: their never-failing stand-in is only
+    # *nearly* perfect (unavailable ~1e-12), which would otherwise add a bias to
+    # every exact figure of a highly available system.
+    overrides = {"working_nodes": working_nodes | gate_ids, "broken_nodes": broken_nodes}
 
     try:
         steady = float(rbd.mean_availability(**overrides))

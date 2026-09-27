@@ -359,10 +359,11 @@ def test_repairable_pins_and_unsupported_blocks(tmp_path):
     code = rbd_export.to_python(graph, "Rep", exported_at=WHEN)
     assert "spare_line = voting_gate()" in code and 'WORKING_NODES = {"pin"}' in code
     res, _ = _run(code, tmp_path, n_sims="20")
-    rbd, _, _, working, broken = ra._build_repairable_rbd(graph)
-    assert working == {"pin"} and not broken
+    rbd, _, gates, working, broken = ra._build_repairable_rbd(graph)
+    assert working == {"pin"} and not broken and gates == {"g"}
+    # Voting gates are pinned working alongside the user's pins, as in the app.
     assert res["steady_state_availability"] == pytest.approx(
-        rbd.mean_availability(working_nodes=working, broken_nodes=broken), rel=1e-12)
+        rbd.mean_availability(working_nodes=working | gates, broken_nodes=broken), rel=1e-12)
 
     # A block type availability mode doesn't support is a placeholder (the
     # app refuses to calculate it).

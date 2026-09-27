@@ -269,19 +269,11 @@ def test_rbc_oracle_agrees_with_published_unavailability():
     assert unavail == pytest.approx(RBC_UNAVAILABILITY, rel=1e-6)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Reliafy discrepancy: in availability analysis each k-of-n gate is modelled as a component "
-    "that 'never fails' (Weibull scale 1e12 h with a LogNormal(0.1, 0.1) repair), which is "
-    "unavailable 1.1e-12 of the time and fails 1e-12 times per hour. RBC's 2-of-3 CPU gate "
-    "sits in series, so Reliafy reports 7.9963e-12 instead of 6.8856e-12 (+16%)."))
 def test_rbc_steady_state_unavailability(rbc_availability):
     _, res = rbc_availability
     assert res["unavailability"] == pytest.approx(RBC_UNAVAILABILITY, rel=1e-6)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Same voting-gate stand-in: its 1e-12/h failure frequency is added to the system's "
-    "(7.77e-11/h), so the exact mean up time comes out 1.271e10 h instead of 1.287e10 h."))
 def test_rbc_mean_up_time_against_markov_oracle(rbc_availability):
     _, res = rbc_availability
     _, omega, mttff = _rbc_oracle()
@@ -291,18 +283,16 @@ def test_rbc_mean_up_time_against_markov_oracle(rbc_availability):
     assert res["mean_up_time"] == pytest.approx(mttff, rel=1e-3)
 
 
-def test_rbc_discrepancy_is_exactly_the_voting_gate_standin(rbc_availability):
-    """Pins the diagnosis of the two xfails: removing the stand-in's
-    contribution recovers the published / oracle values."""
+def test_voting_gates_add_no_unavailability(rbc_availability):
+    """Regression: a k-of-n gate is pure logic. Its repairable stand-in is only
+    nearly perfect (unavailable ~1e-12), so it must be pinned working —
+    otherwise RBC's single 2-of-3 gate alone inflated the unavailability by 16%."""
     graph, res = rbc_availability
-    gates = [n for n in graph["nodes"] if n["type"] == "knode"]
-    assert len(gates) == 1  # only the 2-of-3 CPU vote (no junctions needed)
-    q_gate, w_gate = _voting_gate_standin()
-    # Series composition: A_sys = A_rest * A_gate.
-    a_rest = (1 - res["unavailability"]) / (1 - q_gate)
-    assert 1 - a_rest == pytest.approx(RBC_UNAVAILABILITY, rel=1e-4)
-    _, omega, _ = _rbc_oracle()
-    assert res["failure_frequency"] - w_gate * a_rest == pytest.approx(omega, rel=1e-4)
+    assert [n for n in graph["nodes"] if n["type"] == "knode"]
+    q_gate, _ = _voting_gate_standin()
+    assert q_gate > 0  # the stand-in on its own isn't perfect...
+    # ...but it contributes nothing to the system figure.
+    assert res["unavailability"] == pytest.approx(RBC_UNAVAILABILITY, rel=1e-6)
 
 
 def test_rbc_unreliability_at_one_hour():

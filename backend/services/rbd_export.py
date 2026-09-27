@@ -845,7 +845,8 @@ def _helpers(script: _Script) -> str:
             def voting_gate():
                 """A k-of-n voting gate in an availability model: pure logic that
                 never fails (RePyability needs every node to be a repairable
-                component), exactly as Reliafy models it."""
+                component; main() also pins it working), exactly as Reliafy
+                models it."""
                 return NonRepairable(
                     surv.Weibull.from_params([1e12, 1.0]),
                     surv.LogNormal.from_params([0.1, 0.1]),
@@ -1264,7 +1265,8 @@ def save_results(results):
 
 
 def main():
-    overrides = {"working_nodes": WORKING_NODES, "broken_nodes": BROKEN_NODES}
+    # Voting gates (the ids in K) are pinned working so they're exactly perfect.
+    overrides = {"working_nodes": WORKING_NODES | set(K), "broken_nodes": BROKEN_NODES}
     unit = f" {UNIT}" if UNIT else ""
     blocks = [n for n in LABELS if n not in K]  # voting gates aren't blocks
 
