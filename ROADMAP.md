@@ -21,30 +21,23 @@ signal that reorders the list.
 
 ## Now
 
-**Automated data ingestion + alerts.** The flagship gap. A token-authed API
-to push the data you already collect — fleet usage/meter readings,
-degradation measurements, new lives/failures — followed by the loop it
-unlocks: recompute on new data and email when something changes state
+**Alerts on your data.** The ingestion loop is in place — personal API
+tokens, ingestion endpoints for fleet usage, degradation measurements and new
+lives, and notebook → Reliafy model push — so the missing piece is the
+payoff: recompute when new data lands and email when something changes state
 ("Truck 12 → plan replacement", "expected failures next quarter rose
 3.2 → 4.8"). Closing the loop from data source → prediction → inbox is
 something desktop reliability tools structurally can't do.
+([#26](https://github.com/Reliafy/reliafy/issues/26))
 
-- Personal API tokens
-- Ingestion endpoints (fleet usage, measurements, lives) — JSON and CSV
-- Health-transition and forecast-drift email alerts
-- **Notebook → Reliafy model push**: fit with
-  [SurPyval](https://github.com/derrynknife/SurPyval) anywhere (your AI
-  assistant writes the notebook), then `reliafy.push(model)` to make it a
-  shareable, trackable, citable artifact. The notebook is the lab; Reliafy
-  is the plant.
-- `curl`/Python examples in docs; a packaged CLI once the API settles
+**Repairable systems, deeper.** Crow-AMSAA, Duane and HPP fits, the MCF, the
+Laplace trend test and an optimal overhaul interval are live. Next: confidence
+bounds on β and a proper growth verdict, the MIL-HDBK-189C trend test and
+goodness of fit ([#81](https://github.com/Reliafy/reliafy/issues/81)), then
+imperfect repair — generalised renewal / virtual age
+([#65](https://github.com/Reliafy/reliafy/issues/65)).
 
 ## Next
-
-**Repairable systems.** Reliafy currently models non-repairable life. The
-other half of the discipline: Crow-AMSAA / NHPP growth analysis, mean
-cumulative function (MCF) for recurrent events, trend tests (is this fleet
-degrading or improving?). This also makes MTBF honest for repairables.
 
 **Report view.** A print-friendly, single-link "report" composition of any
 analysis (public links already carry the content; this adds layout — no
@@ -54,6 +47,16 @@ PDFs, the link *is* the report).
 top of fleet failure forecasts (service-level → how many spares to hold),
 block replacement policies, inspection-interval optimisation for degrading
 items.
+
+**Design-stage RBDs.** Reliability allocation — what each block needs to hit
+a system target ([#53](https://github.com/Reliafy/reliafy/issues/53)) — plus
+k-of-n cold standby and partial common-cause models
+([#84](https://github.com/Reliafy/reliafy/issues/84)).
+
+**Regression depth.** Time-varying (step-function) covariates
+([#60](https://github.com/Reliafy/reliafy/issues/60)) and confidence bands
+for regression models in the calculator
+([#54](https://github.com/Reliafy/reliafy/issues/54)).
 
 **Onboarding & guidance.** Guided first-run walkthroughs per module, worked
 sample narratives, empty states that teach.
@@ -71,38 +74,34 @@ the UI** with the same fit-plot-decide workflow the current models have.
 The engine already implements more of the landscape than Reliafy exposes;
 much of this horizon is UI, not statistics:
 
-- **Covariates beyond PH** — AFT and proportional-odds families, CoxPH
+- **Covariates** — semi-parametric Buckley-James (AFT) and Lin-Ying
+  (additive hazards) alongside the PH/AFT/PO/AH families already live
 - **Competing events** — cumulative incidence, Fine-Gray / cause-specific
   hazards regression
-- **Recurrence** — Crow-AMSAA/NHPP and MCF (see *Next*), plus
-  proportional-intensity regression and cause-specific MCF
-- **Discrete time** — per-demand Bernoulli/Binomial models (protective
-  devices, one-shot equipment), feeding failure-finding intervals
-- **Estimation breadth** — Turnbull/Nelson-Aalen/Fleming-Harrington
-  non-parametrics; probability-plotting, product-spacing, and
-  method-of-moments estimation where MLE struggles
-- **Distribution breadth** — the full catalogue (Exponentiated Weibull,
-  Gumbel, Logistic, LogLogistic, Beta, Uniform) with 3-parameter offsets
+- **Recurrence** — proportional-intensity regression and cause-specific MCF
+- **Distribution breadth** — Beta, Beta4 and Uniform to complete a catalogue
+  that already spans Weibull, Exponentiated Weibull, Gumbel, Logistic,
+  LogLogistic, discrete and non-parametric models with offsets
 
 ### Beyond the table
 
-**Accelerated life testing (ALT).** Arrhenius/Eyring/power-law stress
-models — fit at test stress, extrapolate to use stress. Opens the
-design/test-engineering audience.
+**Accelerated degradation testing (ADT).** Degradation paths that depend on
+stress — the degradation counterpart of the accelerated life testing that's
+already live.
 
 **Richer degradation models.** Nonlinear paths (power, exponential,
 logistic), random-effects/hierarchical fits across units, gamma-process
 models; measurement-noise handling.
 
-**Competing risks & mixtures.** Separate mixed failure modes statistically
-(mixture Weibull), competing-risk fits when multiple modes race.
+**Competing risks.** Competing-risk fits when multiple failure modes race
+(mixture models for mixed failure modes are already live).
 
 **FMEA/FMECA.** Structured failure-modes analysis that feeds the RCM module
 (mode libraries, severity/occurrence/detection, criticality ranking) — with
 the same live-evidence linking RCM has.
 
-**System availability.** RBDs with repair distributions: steady-state and
-time-dependent availability, spares-aware repair simulation.
+**Spares-aware availability.** Repair simulation that accounts for spares,
+logistics delay and repair crews, on top of the repairable RBDs already live.
 
 **Bayesian fitting.** Priors from handbooks or expert judgement for
 small-sample fleets; credible intervals throughout.
@@ -156,7 +155,13 @@ included (read-only canvas + server-computed results) · AI assistant with tool 
 every module · censored/truncated-data MLE fitting across Weibull,
 Lognormal, Exponential, Gamma, Normal, and proportional-hazards models ·
 reliability block diagrams with k-of-n, standby, importance measures, and
-cut sets.
+cut sets · repairable-system analysis (Crow-AMSAA, Duane, MCF, Laplace trend
+test, optimal overhaul interval) · repairable RBDs with repair times,
+availability and per-block importance · accelerated life testing · mixture
+models · non-parametric suite (Kaplan-Meier, Nelson-Aalen,
+Fleming-Harrington, Turnbull) · per-demand and discrete-time models · all five
+estimation methods with offsets · personal API tokens, ingestion endpoints and
+notebook → Reliafy model push · RSS feeds and a monthly What's-new.
 
 *(No dates on this document by design. It reorders as users teach us what
 matters — that's a feature.)*
