@@ -23,6 +23,13 @@ export default function Login() {
   // create-account form directly instead of hunting for the toggle.
   const [params] = useSearchParams();
   const [mode, setMode] = useState(params.has("signup") ? "signup" : "signin"); // 'signin' | 'signup' | 'reset'
+  // Where to go after signing in: a same-site path only (e.g. the OAuth
+  // consent page sends ?next=/oauth/consent?request=…), never another origin.
+  const nextParam = params.get("next") || "";
+  const destination =
+    nextParam.startsWith("/") && !nextParam.startsWith("//") && !nextParam.includes("\\")
+      ? nextParam
+      : "/modelling";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -45,7 +52,7 @@ export default function Login() {
       }
       if (mode === "signin") await signIn(email, password);
       else await signUp(email, password);
-      navigate("/modelling");
+      navigate(destination);
     } catch (err) {
       fail(err);
     } finally {
@@ -58,7 +65,7 @@ export default function Login() {
     setError(null);
     try {
       await signInWithGoogle();
-      navigate("/modelling");
+      navigate(destination);
     } catch (err) {
       fail(err);
     } finally {

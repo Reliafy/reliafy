@@ -31,10 +31,10 @@ FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]  # 0 = failed, 1 = still running
 
 READ_TOOLS = {
     "list_models", "get_model", "reliability_at", "list_datasets", "list_rbds", "get_rbd",
-    "analyze_rbd", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
+    "analyze_rbd", "fit_distribution", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
     "optimal_overhaul", "list_fleets", "fleet_forecast",
 }
-WRITE_TOOLS = {"fit_distribution", "upload_dataset", "create_rbd"}
+WRITE_TOOLS = {"fit_and_save_model", "upload_dataset", "create_rbd"}
 
 
 def _weibull(alpha, beta, placeholder=False):
@@ -141,7 +141,7 @@ def test_missing_or_bad_token_is_401(env):
     r = _post_mcp({"Authorization": "Bearer rlf_not-a-real-token"})
     assert r.status_code == 401
     assert "invalid_token" in r.headers["www-authenticate"]
-    assert "Invalid or revoked" in r.json()["detail"]
+    assert "Invalid, expired or revoked" in r.json()["detail"]
 
     r = _post_mcp({"Authorization": "Basic abc"})
     assert r.status_code == 401
@@ -209,7 +209,8 @@ def test_tools_list_has_every_tool_with_annotations(env):
     for name, tool in tools.items():
         a = tool.annotations
         assert a.open_world_hint is False
-        assert a.destructive_hint is False
+        assert a.destructive_hint is (name in WRITE_TOOLS), name
+        assert tool.title, name
         assert a.read_only_hint is (name in READ_TOOLS), name
         assert tool.description and tool.input_schema["type"] == "object"
         assert tool.output_schema is not None
@@ -262,8 +263,8 @@ def test_best_fit_reports_the_selection(env):
 def test_save_persists_and_lists_and_matches_rest_reliability(env):
     from backend.main import app
 
-    saved = _ok(_call(env.token[A], "fit_distribution", {
-        "data": TIMES, "censored": FLAGS, "unit": "hours", "save": True, "name": "MCP bearings"}))
+    saved = _ok(_call(env.token[A], "fit_and_save_model", {
+        "data": TIMES, "censored": FLAGS, "unit": "hours", "name": "MCP bearings"}))
     mid = saved["model_id"]
     assert saved["saved"] and saved["url"].endswith(f"/modelling/m/{mid}")
     assert env.db.models.find_one({"_id": mid})["owner_id"] == A
@@ -429,8 +430,8 @@ def test_optimal_overhaul_uses_a_recurrent_model(env):
 # ---- scoping -------------------------------------------------------------------------
 
 def test_users_cannot_read_each_others_artifacts(env):
-    model = _ok(_call(env.token[A], "fit_distribution", {
-        "data": TIMES, "censored": FLAGS, "save": True, "name": "A's model"}))
+    model = _ok(_call(env.token[A], "fit_and_save_model", {
+        "data": TIMES, "censored": FLAGS, "name": "A's model"}))
     rbd = _ok(_call(env.token[A], "create_rbd", {"name": "A's RBD", **GRAPH}))
 
     b = env.token[B]

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider.jsx";
 import ApiAccessPanel from "../components/ApiAccessPanel.jsx";
+import ConnectedAppsPanel from "../components/ConnectedAppsPanel.jsx";
 import {
   restoreSamples,
   removeSamples,
@@ -13,6 +14,7 @@ import { AUTH_DISABLED } from "../firebase.js";
 const TABS = [
   { id: "general", label: "General" },
   { id: "api", label: "API access" },
+  { id: "apps", label: "Connected apps" },
 ];
 
 function initials(user) {
@@ -118,7 +120,7 @@ export default function SettingsPage() {
         <div>
           <div className="crumb">Account / <b>Settings</b></div>
           <h1>Settings</h1>
-          <p>Your profile, sample data, emails, and programmatic access.</p>
+          <p>Your profile, sample data, emails, programmatic access and connected apps.</p>
         </div>
       </header>
 
@@ -169,6 +171,7 @@ export default function SettingsPage() {
       )}
 
       {tab === "api" && <ApiAccessPanel />}
+      {tab === "apps" && <ConnectedAppsPanel />}
     </div>
   );
 }

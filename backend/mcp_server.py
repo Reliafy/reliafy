@@ -9,14 +9,22 @@ Transport: stateless Streamable HTTP with plain JSON responses (no SSE). Every
 POST is self-contained, so the server scales across Cloud Run instances and
 survives CDN/proxy buffering that would stall an event stream.
 
-Auth (stage 1): the existing personal API tokens (``Authorization: Bearer
-rlf_…``), with exactly the programmatic API's rules — Pro-only on the cloud
-(:func:`billing.api_access_allowed`), always allowed self-hosted, the same
-per-user rate limit, and the same scope: the token owner's personal data plus
-the shared samples (as ``/api/v1``). A bearer token is mapped to a user by
-:func:`resolve_bearer`, which tries each entry of :data:`BEARER_RESOLVERS` in
-turn; stage 2 (OAuth for claude.ai connectors) adds an access-token resolver
-there and nothing else changes.
+Auth: a bearer token, mapped to a user by :func:`resolve_bearer`, which tries
+each entry of :data:`BEARER_RESOLVERS` in turn:
+
+* personal API tokens (``rlf_…``), with exactly the programmatic API's rules —
+  Pro-only on the cloud (:func:`billing.api_access_allowed`, 403 otherwise),
+  always allowed self-hosted;
+* OAuth access tokens (``rlfo_…``) issued by Reliafy's own authorization
+  server (:mod:`backend.services.oauth`) — how Claude connectors sign in. A
+  free-plan user can connect and list the tools; each tool call then returns
+  a clear "this is part of Pro" tool error rather than failing the transport,
+  so Claude can say why instead of showing a broken connection.
+
+Either way: the same per-user rate limit, and the same scope — the user's
+personal data plus the shared samples (as ``/api/v1``). A missing or invalid
+token gets a 401 whose ``WWW-Authenticate`` points at the protected-resource
+metadata, which is what starts Claude's OAuth sign-in.
 
 Tools call the service layer directly — never HTTP back into ourselves — and
 turn user-facing failures (``FitError`` and friends) into MCP tool errors with
@@ -50,6 +58,7 @@ from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import metrics as metrics_service
+from backend.services import oauth as oauth_service
 from backend.services import models as models_service
 from backend.services import rbd_graph
 from backend.services import rbds as rbds_service
@@ -67,6 +76,11 @@ MCP_PRO_REQUIRED = (
     "token under Settings > API access."
 )
 
+
+def _oauth_pro_required() -> str:
+    return (f"Using Reliafy from Claude is part of Reliafy Pro — upgrade at "
+            f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}/billing, then try again.")
+
 # ---------------------------------------------------------------------------
 # Auth: bearer token -> user
 # ---------------------------------------------------------------------------
@@ -81,10 +95,14 @@ def _api_token_user(db, raw: str) -> dict | None:
     return tokens_service.verify(db, raw)
 
 
+def _oauth_access_user(db, raw: str) -> dict | None:
+    """OAuth access tokens (``rlfo_…``) minted for this MCP resource."""
+    return oauth_service.verify_access_token(db, raw)
+
+
 # Tried in order; the first to return a user wins. Each gets the raw bearer
-# value and returns ``{uid, email, name, …}`` or None. Stage 2 appends an OAuth
-# access-token resolver here.
-BEARER_RESOLVERS: list[BearerResolver] = [_api_token_user]
+# value and returns ``{uid, email, name, …}`` or None.
+BEARER_RESOLVERS: list[BearerResolver] = [_api_token_user, _oauth_access_user]
 
 
 def resolve_bearer(db, raw: str) -> dict | None:
@@ -101,17 +119,24 @@ def resolve_bearer(db, raw: str) -> dict | None:
 
 def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
     """``(status, user, message)`` for an MCP request's Authorization header:
-    200 with the user, 401 (missing/invalid) or 403 (valid, not entitled)."""
+    200 with the user, 401 (missing/invalid) or 403 (valid API token, not
+    entitled).
+
+    An OAuth user who isn't entitled still gets 200, with ``mcp_locked`` set
+    to the upgrade message: the connection works, tools/list works, and every
+    tool call answers with that message (see :func:`_tool`)."""
     scheme, _, raw = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not raw.strip():
         return 401, None, (
-            "Reliafy MCP needs an API token: send 'Authorization: Bearer rlf_…'. "
-            "Create one under Settings > API access."
+            "Sign in to Reliafy to use it from Claude (the client starts OAuth from this response), "
+            "or send 'Authorization: Bearer rlf_…' with an API token from Settings > API access."
         )
     user = resolve_bearer(db, raw)
     if user is None:
-        return 401, None, "Invalid or revoked API token."
+        return 401, None, "Invalid, expired or revoked token."
     if not billing_service.api_access_allowed(db, user):
+        if user.get("via_oauth"):
+            return 200, {**user, "mcp_locked": _oauth_pro_required()}, ""
         return 403, None, MCP_PRO_REQUIRED
     return 200, user, ""
 
@@ -125,8 +150,8 @@ Reliafy is a reliability-engineering workspace (built on SurPyval and RePyabilit
 signed-in user's own Reliafy data plus the shared sample library.
 
 What you can do:
-- Life data: fit_distribution to failure times (inline data or a saved dataset), save it as a model, and \
-evaluate a saved model with reliability_at. list_models / get_model read what is saved; list_datasets / \
+- Life data: fit_distribution to failure times (inline data or a saved dataset), fit_and_save_model to keep \
+it as a model, and evaluate a saved model with reliability_at. list_models / get_model read what is saved; list_datasets / \
 upload_dataset manage the data.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
 B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script).
@@ -155,8 +180,13 @@ mcp = MCPServer(
     website_url="https://reliafy.com",
 )
 
+# Every tool carries a human-readable title plus either readOnlyHint=true
+# (reads and calculations: Claude may run them without a per-call prompt) or
+# destructiveHint=true (anything that writes to the user's workspace — the
+# Connectors Directory asks for that on every tool that modifies data, so
+# Claude always confirms a save).
 _READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
-_WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False)
+_WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False, open_world_hint=False)
 
 
 # Exceptions whose message is written for the user. Anything else is a bug and
@@ -173,6 +203,11 @@ def _tool(name: str, annotations: ToolAnnotations, title: str):
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
+            ctx = next((v for v in (*args, *kwargs.values()) if isinstance(v, Context)), None)
+            if ctx is not None:
+                locked = (_caller(ctx) or {}).get("mcp_locked")
+                if locked:
+                    raise ToolError(locked)
             try:
                 return fn(*args, **kwargs)
             except ToolError:
@@ -382,41 +417,32 @@ def get_model(
     raise ToolError("Model not found.")
 
 
-@_tool("fit_distribution", _WRITE, "Fit a life distribution")
-def fit_distribution(
-    ctx: Context,
-    distribution: Annotated[str, Field(
-        description="A distribution id — weibull, exponential, normal, lognormal, gamma, loglogistic, "
-                    "expo_weibull, gumbel, logistic, … — or 'best' to fit every plain distribution and keep "
-                    "the lowest-AIC one. Regression ids (e.g. weibull_ph) need covariates and a dataset.")] = "weibull",
-    data: Annotated[Optional[list[float]], Field(
-        description="Inline failure/suspension times, one per unit. Give this OR dataset_id.")] = None,
-    censored: Annotated[Optional[list[int]], Field(
-        description="Censoring flag per time in `data`: 0 = FAILED at that time, 1 = still running "
-                    "(right-censored / suspended). Omit when every time is a failure.")] = None,
-    counts: Annotated[Optional[list[int]], Field(
-        description="Optional count per row of `data` (identical units sharing that time and flag).")] = None,
-    c_invert: Annotated[bool, Field(
-        description="True when the censoring flags use the opposite convention (1 = failed, 0 = running); "
-                    "Reliafy flips them before fitting.")] = False,
-    dataset_id: Annotated[Optional[str], Field(description="A saved dataset (list_datasets) instead of inline data.")] = None,
-    time_column: Annotated[Optional[str], Field(description="Dataset column holding the times (required with dataset_id).")] = None,
-    censor_column: Annotated[Optional[str], Field(description="Dataset column holding the censoring flags (0 = failed, 1 = running).")] = None,
-    count_column: Annotated[Optional[str], Field(description="Dataset column holding counts.")] = None,
-    covariates: Annotated[Optional[list[str]], Field(
-        description="Dataset covariate columns — regression (proportional-hazards etc.) distributions only.")] = None,
-    unit: Annotated[Optional[str], Field(description="Time unit of the data, e.g. 'hours', 'cycles', 'km'.")] = None,
-    save: Annotated[bool, Field(
-        description="False (default) = just fit and report. True = also save the model to the user's workspace "
-                    "(inline data is saved as a dataset too). Needs `name`.")] = False,
-    name: Annotated[Optional[str], Field(description="Name for the saved model (required when save=true).")] = None,
-) -> dict[str, Any]:
-    """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
-    goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Nothing is stored
-    unless save=true. Reliafy's censoring convention: 0 = the unit failed, 1 = still running (suspended);
-    if the data marks failures with 1, pass c_invert=true. A fit that says every (or all but one) row is
-    censored almost always means the flags are inverted. Weibull beta < 1 = infant mortality, ≈ 1 =
-    random failures, > 1 = wear-out."""
+_FitDistribution = Annotated[str, Field(
+    description="A distribution id — weibull, exponential, normal, lognormal, gamma, loglogistic, "
+                "expo_weibull, gumbel, logistic, … — or 'best' to fit every plain distribution and keep "
+                "the lowest-AIC one. Regression ids (e.g. weibull_ph) need covariates and a dataset.")]
+_FitData = Annotated[Optional[list[float]], Field(
+    description="Inline failure/suspension times, one per unit. Give this OR dataset_id.")]
+_FitCensored = Annotated[Optional[list[int]], Field(
+    description="Censoring flag per time in `data`: 0 = FAILED at that time, 1 = still running "
+                "(right-censored / suspended). Omit when every time is a failure.")]
+_FitCounts = Annotated[Optional[list[int]], Field(
+    description="Optional count per row of `data` (identical units sharing that time and flag).")]
+_FitInvert = Annotated[bool, Field(
+    description="True when the censoring flags use the opposite convention (1 = failed, 0 = running); "
+                "Reliafy flips them before fitting.")]
+_FitDataset = Annotated[Optional[str], Field(description="A saved dataset (list_datasets) instead of inline data.")]
+_FitTimeCol = Annotated[Optional[str], Field(description="Dataset column holding the times (required with dataset_id).")]
+_FitCensorCol = Annotated[Optional[str], Field(description="Dataset column holding the censoring flags (0 = failed, 1 = running).")]
+_FitCountCol = Annotated[Optional[str], Field(description="Dataset column holding counts.")]
+_FitCovariates = Annotated[Optional[list[str]], Field(
+    description="Dataset covariate columns — regression (proportional-hazards etc.) distributions only.")]
+_FitUnit = Annotated[Optional[str], Field(description="Time unit of the data, e.g. 'hours', 'cycles', 'km'.")]
+
+
+def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, dataset_id, time_column,
+         censor_column, count_column, covariates, unit, save: bool, name: str | None) -> dict[str, Any]:
+    """Shared body of fit_distribution (report only) and fit_and_save_model."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     known = {fitting.BEST_ID, fitting.MIXTURE_ID, *fitting.DISTRIBUTIONS, *fitting.DISCRETE,
@@ -490,7 +516,7 @@ def fit_distribution(
         if created is not None:
             datasets_service.delete_dataset(db, created.id, uid)
         raise
-    _record(db, "mcp_fit", "fit_distribution")
+    _record(db, "mcp_fit", "fit_and_save_model")
     return {
         "saved": True,
         "model_id": model.id,
@@ -499,6 +525,57 @@ def fit_distribution(
         "url": _url(f"/modelling/m/{model.id}"),
         **_fit_summary(model.results or {}),
     }
+
+
+@_tool("fit_distribution", _READ, "Fit a life distribution")
+def fit_distribution(
+    ctx: Context,
+    distribution: _FitDistribution = "weibull",
+    data: _FitData = None,
+    censored: _FitCensored = None,
+    counts: _FitCounts = None,
+    c_invert: _FitInvert = False,
+    dataset_id: _FitDataset = None,
+    time_column: _FitTimeCol = None,
+    censor_column: _FitCensorCol = None,
+    count_column: _FitCountCol = None,
+    covariates: _FitCovariates = None,
+    unit: _FitUnit = None,
+) -> dict[str, Any]:
+    """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
+    goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Saves nothing — use
+    fit_and_save_model to keep the model. Reliafy's censoring convention: 0 = the unit failed, 1 = still
+    running (suspended); if the data marks failures with 1, pass c_invert=true. A fit that says every (or
+    all but one) row is censored almost always means the flags are inverted. Weibull beta < 1 = infant
+    mortality, ≈ 1 = random failures, > 1 = wear-out."""
+    return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
+                dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
+                count_column=count_column, covariates=covariates, unit=unit, save=False, name=None)
+
+
+@_tool("fit_and_save_model", _WRITE, "Fit and save a model")
+def fit_and_save_model(
+    ctx: Context,
+    name: Annotated[str, Field(min_length=1, description="Name for the saved model.")],
+    distribution: _FitDistribution = "weibull",
+    data: _FitData = None,
+    censored: _FitCensored = None,
+    counts: _FitCounts = None,
+    c_invert: _FitInvert = False,
+    dataset_id: _FitDataset = None,
+    time_column: _FitTimeCol = None,
+    censor_column: _FitCensorCol = None,
+    count_column: _FitCountCol = None,
+    covariates: _FitCovariates = None,
+    unit: _FitUnit = None,
+) -> dict[str, Any]:
+    """Fit a life distribution exactly as fit_distribution does, then save it as a model in the user's
+    Reliafy workspace (inline data is saved as a dataset too) and return its id and url. Use it when the
+    user wants to keep the model — for reliability_at, the calculators, or an RBD block. Same censoring
+    convention: 0 = failed, 1 = still running; c_invert=true when the data marks failures with 1."""
+    return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
+                dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
+                count_column=count_column, covariates=covariates, unit=unit, save=True, name=name)
 
 
 @_tool("reliability_at", _READ, "Evaluate a model's reliability")
@@ -1027,8 +1104,10 @@ class McpHttpApp:
         status, user, message = await anyio.to_thread.run_sync(
             _authenticate_request, Headers(scope=scope).get("authorization"))
         if user is None:
-            headers = {"WWW-Authenticate": 'Bearer realm="reliafy"'
-                       + (', error="invalid_token"' if "Invalid" in message else "")} if status == 401 else None
+            # 401 carries the RFC 9728 pointer Claude needs to start OAuth
+            # sign-in (and to refresh when an access token expires).
+            headers = {"WWW-Authenticate": oauth_service.www_authenticate(
+                "invalid_token" if message.startswith("Invalid") else None)} if status == 401 else None
             await JSONResponse({"detail": message}, status_code=status, headers=headers)(scope, receive, send)
             return
         try:

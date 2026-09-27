@@ -6441,3 +6441,24 @@ button.danger:hover { background: #fdeeee; }
   width: auto;
   accent-color: var(--acc);
 }
+
+/* ---- OAuth consent (/oauth/consent) ------------------------------------- */
+.consent-card { max-width: 460px; }
+.consent-redirect {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 0 0 16px;
+}
+.consent-redirect.warn { border-color: var(--warn); background: rgba(224, 136, 59, 0.08); }
+.consent-redirect-label { font-size: 12px; color: var(--muted); }
+.consent-redirect-host { font-family: var(--mono); font-size: 17px; font-weight: 600; margin-top: 2px; word-break: break-all; }
+.consent-redirect p { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; }
+.consent-scope { font-size: 13.5px; line-height: 1.5; }
+.consent-scope ul { margin: 6px 0 8px; padding-left: 18px; }
+.consent-scope .muted-line { font-size: 12.5px; margin: 0 0 14px; }
+.consent-who { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
+.consent-link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; box-shadow: none; }
+.consent-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.consent-actions > * { flex: 1; justify-content: center; text-align: center; }

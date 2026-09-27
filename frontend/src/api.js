@@ -1060,6 +1060,32 @@ export function revokeApiToken(id) {
   return request(`/api/tokens/${id}`, { method: "DELETE" });
 }
 
+// ---- OAuth: connecting Claude (and other MCP clients) --------------------------
+
+// The pending authorization request behind /oauth/consent?request=<handle>:
+// client name, where the browser will be sent back to, loopback or not.
+export function getOAuthRequest(handle) {
+  return request(`/oauth/authorize/request?request=${encodeURIComponent(handle)}`);
+}
+
+// Approve or deny it as the signed-in user; resolves to { redirect_to }.
+export function decideOAuthRequest(handle, approve) {
+  return request("/oauth/authorize/decision", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ request: handle, approve }),
+  });
+}
+
+// Settings > Connected apps.
+export function listOAuthGrants() {
+  return request("/api/me/oauth-grants");
+}
+
+export function revokeOAuthGrant(id) {
+  return request(`/api/me/oauth-grants/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 // Operator-only stats (403 for regular accounts).
 export function getAdminStats() {
   return request("/api/admin/stats");

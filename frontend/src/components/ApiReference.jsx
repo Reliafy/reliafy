@@ -451,7 +451,8 @@ function HttpDocs({ base }) {
 // What each MCP tool does, in plain English (mirrors backend/mcp_server.py).
 const MCP_TOOLS = [
   ["list_models / get_model", "Your saved life and recurrent models — distribution, parameters with confidence intervals, goodness of fit, MTTF and B10."],
-  ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset; optionally save it as a model."],
+  ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset, and report the result — nothing is saved."],
+  ["fit_and_save_model", "The same fit, saved as a model in your workspace (Claude asks before saving)."],
   ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age."],
   ["list_datasets / upload_dataset", "Your datasets, and saving new CSV data."],
   ["list_rbds / get_rbd", "Your reliability block diagrams and their structure."],
@@ -474,28 +475,41 @@ export function McpDocs({ tokenNote }) {
       <div className="api-section">
         <h2 id="mcp">Use Reliafy from Claude (MCP)</h2>
         <p className="muted-line">
-          Reliafy runs a remote <b>Model Context Protocol</b> server, so an AI assistant such as
-          Claude Code can work in your Reliafy account for you — fit distributions, read your
-          models, build and analyse RBDs, and run the maintenance calculators. It sees exactly what
-          your API token sees: your own data plus the shared samples.
+          Reliafy runs a remote <b>Model Context Protocol</b> server, so Claude — on the web, the
+          desktop and mobile apps, or Claude Code — can work in your Reliafy account for you: fit
+          distributions, read your models, build and analyse RBDs, and run the maintenance
+          calculators. It sees what you see: your own data plus the shared samples. Using Reliafy
+          from Claude is part of Reliafy Pro on Reliafy Cloud; self-hosted instances allow it for
+          everyone.
         </p>
 
-        <h3>What you need</h3>
+        <h3>Claude on the web, desktop and mobile</h3>
         <p className="muted-line">
-          A personal API token (<code>rlf_…</code>) — {tokenNote} MCP access is part of Reliafy
-          Pro on Reliafy Cloud; self-hosted instances allow it for everyone.
+          In Claude, open <b>Customize → Connectors</b> (<code>claude.ai/customize/connectors</code>), choose <b>Add custom connector</b>, enter{" "}
+          <code>{url}</code>, then choose <b>Connect</b> and sign in to Reliafy. Reliafy asks you
+          to approve the connection; you can disconnect it any time under Settings › Connected apps.
+          Connectors added on claude.ai are available in the desktop and mobile apps too.
         </p>
 
         <h3>Claude Code</h3>
-        <Code>{`claude mcp add --transport http reliafy ${url} --header "Authorization: Bearer rlf_YOUR_TOKEN"`}</Code>
+        <Code>{`claude mcp add --transport http reliafy ${url}`}</Code>
         <p className="muted-line">
-          Then ask Claude something like “fit a Weibull to these bearing lives” or “build an RBD of
-          my pump skid and tell me its MTTF”. Run <code>claude mcp list</code> to check the connection.
+          Then run <code>/mcp</code> in Claude Code, pick <b>reliafy</b> and sign in — a browser
+          window opens for you to approve access. After that, ask something like “fit a Weibull to
+          these bearing lives” or “build an RBD of my pump skid and tell me its MTTF”.{" "}
+          <code>claude mcp list</code> shows the connection.
         </p>
+        <p className="muted-line">
+          Prefer a token (scripts, CI, headless machines)? A personal API token (<code>rlf_…</code>)
+          still works — {tokenNote}
+        </p>
+        <Code>{`claude mcp add --transport http reliafy ${url} --header "Authorization: Bearer rlf_YOUR_TOKEN"`}</Code>
 
         <h3>Other MCP clients</h3>
         <p className="muted-line">
-          Any client that supports Streamable HTTP with a custom header can connect:
+          Any client that supports Streamable HTTP can connect to <code>{url}</code> — with OAuth
+          (discovered automatically from the server; dynamic client registration and client ID
+          metadata documents are both supported), or with a token header:
         </p>
         <Code>{`{
   "mcpServers": {
@@ -506,10 +520,6 @@ export function McpDocs({ tokenNote }) {
     }
   }
 }`}</Code>
-        <p className="muted-line">
-          Adding Reliafy as a custom connector in claude.ai uses OAuth sign-in instead of a token;
-          support for that is planned.
-        </p>
 
         <h3>Tools</h3>
         <ul className="api-list">
@@ -519,7 +529,8 @@ export function McpDocs({ tokenNote }) {
         </ul>
         <ul className="api-list">
           <li>Censoring follows Reliafy’s convention: <b>0 = failed</b>, <b>1 = still running</b>. Data coded the other way round can be fitted with the inverted-flags option.</li>
-          <li>Errors: <code>401</code> (missing or revoked token), <code>403</code> (token owner isn’t on Pro), <code>429</code> (over 120 requests/minute).</li>
+          <li>Reading and calculating tools are marked read-only; tools that save to your workspace are marked as writes, so Claude asks before running them. No tool deletes anything.</li>
+          <li>Errors: <code>401</code> (not signed in, or a missing, expired or revoked token), <code>403</code> (an API token whose owner isn’t on Pro — signed-in Claude connections on the free plan connect, and each tool answers with how to upgrade), <code>429</code> (over 120 requests/minute).</li>
         </ul>
       </div>
     </div>
