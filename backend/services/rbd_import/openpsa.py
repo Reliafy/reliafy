@@ -25,9 +25,13 @@ Supported:
 * ``define-CCF-group model="beta-factor"`` -> ``ccf_groups`` (other CCF
   models are skipped with a warning).
 
+A basic event used under several gates (a repeated event) becomes a repeated
+block, drawn in each place but analysed as one component (see
+:mod:`.fault_tree`).
+
 Refused: non-coherent logic (``not``, ``xor``, ``nand``, ``nor``, ``iff``,
-``imply``), basic events with a fixed probability and no failure-time model,
-and repeated events (see :mod:`.fault_tree`).
+``imply``) and basic events with a fixed probability and no failure-time
+model.
 
 Parsing uses ``defusedxml`` (no entity expansion, no external entities or DTD
 fetching) and bounds the element depth.

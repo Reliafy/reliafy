@@ -42,7 +42,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 
 from backend.fitting import DISTRIBUTIONS
-from backend.services import rbd_analysis
+from backend.services import rbd_analysis, rbd_repeats
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_VERSIONS = {"surpyval": "0.20.0", "repyability": "0.9.0"}
@@ -598,6 +598,10 @@ class _Script:
         rel: list[tuple[Any, str, str]] = []  # (id, expr, label)
         k: dict[Any, int] = {}
         working, broken = [], []
+        # Repeated blocks: RePyability takes a copy as the *name* of the node
+        # it repeats, so every appearance is one component (as in Reliafy).
+        repeats, problems = rbd_repeats.find_repeats(nodes)
+        copy_labels = rbd_repeats.copy_labels(nodes, repeats)
         for node in nodes:
             ntype = node.get("type")
             if ntype in ("input", "output"):
@@ -605,6 +609,14 @@ class _Script:
             nid = node.get("id")
             data = node.get("data") or {}
             label = _one_line(data.get("label") or nid)
+            if nid in repeats:
+                rel.append((nid, _lit(repeats[nid]), _one_line(copy_labels[nid])))
+                continue
+            if rbd_repeats.repeat_of(node) is not None:
+                var = self.names.make(label)
+                self.lines.append("")
+                rel.append((nid, self.missing(var, problems[nid], label), label))
+                continue
             expr, k_required = self.block(node, visited)
             if k_required is not None:
                 k[nid] = k_required
@@ -613,7 +625,7 @@ class _Script:
                 working.append(nid)
             elif data.get("state") == "failed":
                 broken.append(nid)
-        present = {nid for nid, _, _ in rel}
+        present = {nid for nid, _, _ in rel if nid not in repeats}
         ccf = []
         for g in graph.get("ccf_groups") or []:
             members = [m for m in (g.get("members") or []) if m in present]
@@ -636,6 +648,7 @@ class _Script:
             "working": working if top else [],
             "broken": broken if top else [],
             "ignored_pins": (working + broken) if not top else [],
+            "repeats": repeats,
         }
 
     def _rbd_call(self, var: str, s: dict, with_ccf: bool) -> None:
@@ -648,7 +661,8 @@ class _Script:
         L.append("    ],")
         L.append("    {")
         for nid, expr, label in s["rel"]:
-            L.append(f"        {_lit(nid)}: {expr},  # {label[:60]}")
+            note = " (repeated)" if nid in s["repeats"] else ""
+            L.append(f"        {_lit(nid)}: {expr},  # {label[:60]}{note}")
         L.append("    },")
         if s["k"]:
             L.append("    k={" + ", ".join(
@@ -908,10 +922,19 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
     out += _edges_lines(s["edges"])
     out.append("")
     out.append("# Each block's reliability model.")
+    if s["repeats"]:
+        out.append("# A value naming another block makes that entry a repeated "
+                   "block: one physical")
+        out.append("# component drawn in several places, which works or has "
+                   "failed in all of them")
+        out.append("# at once. Its results are reported once, under the "
+                   "original block.")
     out.append("RELIABILITIES = {")
     for nid, expr, label in s["rel"]:
         note = (f"  # voting gate: {s['k'][nid]} of its inputs must work"
                 if nid in s["k"] else "")
+        if nid in s["repeats"]:
+            note = f"  # {label[:40]}: the same component, drawn again"
         out.append(f"    {_lit(nid)}: {expr},{note}")
     out.append("}")
     out.append("")
@@ -921,6 +944,8 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
     out.append("")
     out.append("LABELS = {")
     for nid, _, label in s["rel"]:
+        if nid in s["repeats"]:
+            continue
         out.append(f"    {_lit(nid)}: {_lit(label)},")
     out.append("}")
     out.append("")
@@ -1185,6 +1210,13 @@ def _repairable_body(script: _Script, graph) -> str:
             continue
         var = script.names.make(label)
         L.append("")
+        if rbd_repeats.repeat_of(node) is not None:
+            # As in Reliafy: availability analysis can't honour a repeated
+            # block, so the script stops here rather than approximate it.
+            script.missing(var, rbd_repeats.repairable_message(
+                nodes, {nid: rbd_repeats.repeat_of(node)}), label)
+            comps.append((nid, var, label))
+            continue
         if ntype != "component":
             script.missing(var, (
                 f"Block '{label}' is a '{ntype}' block, which Reliafy doesn't "

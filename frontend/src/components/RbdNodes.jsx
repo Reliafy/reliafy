@@ -1,5 +1,5 @@
-import { createContext, useContext } from "react";
-import { Handle, Position } from "reactflow";
+import { createContext, useCallback, useContext } from "react";
+import { Handle, Position, useStore } from "reactflow";
 
 // The React Flow node components of a reliability block diagram, shared by the
 // builder (interactive) and the public read-only view (/p/:token). Pure
@@ -86,16 +86,34 @@ export function modelSummary(model) {
 }
 
 // Custom component block: shows the assigned life model (or a prompt to set
-// one) with left/right handles for the left-to-right flow.
-export function ComponentNode({ id, data }) {
+// one) with left/right handles for the left-to-right flow. A repeated block —
+// a linked copy of another component (data.repeat_of) — shows that component.
+export function ComponentNode(props) {
+  return props.data?.repeat_of ? <RepeatedNode {...props} /> : <ComponentCard {...props} />;
+}
+
+// A linked copy reads the original's data live from the canvas, so editing
+// the original (its label, model, repair time or pinned state) shows on every
+// copy at once.
+function RepeatedNode({ data }) {
+  const source = data.repeat_of;
+  const original = useStore(useCallback((s) => s.nodeInternals.get(source)?.data, [source]));
+  const shown = original || { label: data.label };
+  return <ComponentCard id={source} data={shown} repeat missing={!original} />;
+}
+
+function ComponentCard({ id, data, repeat = false, missing = false }) {
   const rbdUnit = useContext(RbdUnitContext);
   const repairable = useContext(RbdRepairableContext);
   const ccf = useContext(RbdCcfContext);
   const beta = ccf[id];
   const warn = unitWarning(data.model, rbdUnit);
   const placeholder = !!data.model?.placeholder;
+  const repeatTitle = `Repeated block — the same component as “${data.label}”, drawn again. ` +
+    "It works or fails wherever it is drawn; edit the original to change it.";
   return (
-    <div className={"rbd-comp" + (warn ? " unit-warn" : "") + (placeholder ? " placeholder" : "") + (beta != null ? " ccf-member" : "") + stateClass(data.state)}>
+    <div className={"rbd-comp" + (repeat ? " repeat" : "") + (warn ? " unit-warn" : "") + (placeholder ? " placeholder" : "") + (beta != null ? " ccf-member" : "") + stateClass(data.state)}
+         title={repeat ? repeatTitle : undefined}>
       <Handle type="target" position={Position.Left} />
       <StatusBadge state={data.state} />
       {warn && <UnitWarn title={warn} />}
@@ -103,13 +121,17 @@ export function ComponentNode({ id, data }) {
       {beta != null && (
         <span className="rbd-ccf-chip" title={`Common-cause group — β = ${beta}`}>CC β={beta}</span>
       )}
-      <div className="rbd-comp-title">{data.label}</div>
-      {data.model ? (
+      <div className="rbd-comp-title">
+        {repeat && <span className="rbd-repeat-mark" aria-label="Repeated block">↺ </span>}
+        {data.label}
+      </div>
+      {missing && <div className="rbd-comp-empty warn">The block it repeats was removed</div>}
+      {missing ? null : data.model ? (
         <div className="rbd-comp-model">{modelSummary(data.model)}</div>
       ) : (
         <div className="rbd-comp-empty">No life model — double-click to set</div>
       )}
-      {repairable && (
+      {repairable && !missing && (
         data.repair ? (
           <div className="rbd-comp-repair">🛠 {modelSummary(data.repair)}</div>
         ) : (

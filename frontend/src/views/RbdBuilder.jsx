@@ -29,6 +29,7 @@ import { ShareButton } from "../components/ShareDialog.jsx";
 import CopyId from "../components/CopyId.jsx";
 import { registerRbdCanvas } from "../rbdBridge.js";
 import { normalizeRbdGraph } from "../rbdGraph.js";
+import { isRepeat, makeRepeat, originalId, promoteRepeats } from "../rbdRepeats.js";
 // The node components (and the contexts they read) live in RbdNodes.jsx so
 // the public read-only view renders the very same blocks.
 import {
@@ -360,11 +361,12 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   // Manually mark a node working/failed, or clear it (state = null).
   const setNodeState = useCallback(
     (id, state) => {
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === id ? { ...node, data: { ...node.data, state } } : node
-        )
-      );
+      setNodes((nds) => {
+        const target = originalId(nds, id); // a repeated block pins its original
+        return nds.map((node) =>
+          node.id === target ? { ...node, data: { ...node.data, state } } : node
+        );
+      });
     },
     [setNodes]
   );
@@ -451,6 +453,30 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       });
     },
     [setNodes, newId]
+  );
+
+  // Repeated block (#102): a linked copy of a component, drawn again elsewhere
+  // (e.g. one power supply feeding two trains) and analysed as the same one.
+  const repeatNode = useCallback(
+    (id) => {
+      const copyId = newId("component");
+      setNodes((nds) => {
+        const copy = makeRepeat(nds, id, copyId);
+        return copy ? nds.concat(copy) : nds;
+      });
+    },
+    [setNodes, newId]
+  );
+
+  // Removing a component hands its model to its first copy (see
+  // promoteRepeats) — whether it's deleted from the menu or with the keyboard.
+  const handleNodesChange = useCallback(
+    (changes) => {
+      const removed = changes.filter((c) => c.type === "remove").map((c) => c.id);
+      if (removed.length) setNodes((nds) => promoteRepeats(nds, removed));
+      onNodesChange(changes);
+    },
+    [setNodes, onNodesChange]
   );
 
   // Apply the n/k from the modal: add a new node or update the edited one.
@@ -697,13 +723,16 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
 
   const onNodeContextMenu = useCallback((event, node) => {
     event.preventDefault();
+    // A repeated block shows (and sets) its original's pinned state.
+    const shown = liveRef.current.nodes.find((n) => n.id === originalId(liveRef.current.nodes, node.id));
     setMenu({
       kind: "node",
       x: event.clientX,
       y: event.clientY,
       id: node.id,
       nodeType: node.type,
-      state: node.data?.state || null,
+      repeat: isRepeat(node),
+      state: shown?.data?.state || null,
       protectedNode: node.deletable === false,
     });
   }, []);
@@ -724,7 +753,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         case "component":
         case "series":
         case "parallel":
-          setModalNodeId(node.id);
+          // A repeated block edits the component it repeats.
+          setModalNodeId(originalId(liveRef.current.nodes, node.id));
           setModal("lifemodel");
           break;
         case "knode":
@@ -757,7 +787,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
 
   const deleteNode = useCallback(
     (id) => {
-      setNodes((nds) => nds.filter((n) => n.id !== id));
+      setNodes((nds) => promoteRepeats(nds, [id]).filter((n) => n.id !== id));
       setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
     },
     [setNodes, setEdges]
@@ -776,7 +806,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     return m;
   }, [ccfGroups]);
   const selectedComponentIds = useMemo(
-    () => nodes.filter((n) => n.selected && n.type === "component").map((n) => n.id),
+    // A repeated block is its original, not another member.
+    () => nodes.filter((n) => n.selected && n.type === "component" && !isRepeat(n)).map((n) => n.id),
     [nodes]
   );
   const labelFor = (id) => nodes.find((n) => n.id === id)?.data?.label || id;
@@ -826,7 +857,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onPaneContextMenu={onPaneContextMenu}
@@ -1043,12 +1074,12 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
                   <>
                     <button
                       onClick={() => {
-                        setModalNodeId(menu.id);
+                        setModalNodeId(originalId(nodes, menu.id));
                         setModal("lifemodel");
                         closeMenu();
                       }}
                     >
-                      Edit life model
+                      {menu.repeat ? "Edit life model (original)" : "Edit life model"}
                     </button>
                     {(menu.nodeType === "series" ||
                       menu.nodeType === "parallel") && (
@@ -1166,11 +1197,23 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
                   </button>
                 )}
                 <div className="rbd-menu-sep" />
+                {menu.nodeType === "component" && !repairable && (
+                  <button
+                    onClick={() => {
+                      repeatNode(menu.id);
+                      closeMenu();
+                    }}
+                    title="Draw the same component again elsewhere (e.g. one power supply feeding two trains): it works or fails in every place at once"
+                  >
+                    Repeat block
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     cloneNode(menu.id);
                     closeMenu();
                   }}
+                  title={menu.repeat ? "Another linked copy of the same component" : "An independent copy with its own model"}
                 >
                   Clone
                 </button>

@@ -31,6 +31,7 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS
+from backend.services import rbd_repeats
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 from repyability.rbd.repairable_rbd import RepairableRBD
@@ -434,6 +435,11 @@ def _build_rbd(
     # RePyability's native ``working_nodes``/``broken_nodes`` arguments.
     working_nodes: set = set()
     broken_nodes: set = set()
+    # Repeated blocks (#102): a linked copy is passed to RePyability as the
+    # name of the node it repeats, so every appearance is one component.
+    repeats, problems = rbd_repeats.find_repeats(nodes)
+    if problems:
+        raise AnalysisError(next(iter(problems.values())))
 
     for node in nodes:
         nid = node.get("id")
@@ -443,6 +449,10 @@ def _build_rbd(
         data = node.get("data") or {}
         labels[nid] = data.get("label") or nid
         node_types[nid] = ntype
+        if nid in repeats:
+            # The original's model and pinned state apply to every appearance.
+            reliabilities[nid] = repeats[nid]
+            continue
         state = data.get("state")
         pinned = state in ("working", "failed")
         if state == "working":
@@ -465,11 +475,15 @@ def _build_rbd(
 
     if not reliabilities:
         raise AnalysisError("The diagram has no component nodes to analyse.")
+    labels.update(rbd_repeats.copy_labels(nodes, repeats))
 
     input_node = "input" if "input" in node_ids else None
     output_node = "output" if "output" in node_ids else None
 
-    ccf_groups = _ccf_groups(graph, reliabilities)
+    ccf_groups = _ccf_groups(graph, {n: m for n, m in reliabilities.items() if n not in repeats})
+    if repeats and not rbd_repeats.core_search_fits(
+            edges, reliabilities, repeats, k, input_node, output_node):
+        raise AnalysisError(rbd_repeats.CORE_MESSAGE)
 
     def _make(with_ccf: bool):
         try:
@@ -614,12 +628,20 @@ def validate_graph(
     k: dict[Any, int] = {}
     labels: dict[Any, str] = {}
     visited: set = set()
+    repeats, problems = rbd_repeats.find_repeats(nodes)
+    errors.extend(problems.values())
     for node in nodes:
         ntype = node.get("type")
         if ntype in ("input", "output"):
             continue
         nid = node.get("id")
         labels[nid] = (node.get("data") or {}).get("label") or nid
+        if nid in repeats:
+            reliabilities[nid] = repeats[nid]  # a linked copy: no model of its own
+            continue
+        if rbd_repeats.repeat_of(node) is not None:
+            reliabilities[nid] = PerfectReliability  # a broken copy (reported above)
+            continue
         # A node pinned working/failed is overridden in analysis, so it needs
         # no life model — don't flag one as missing here.
         pinned = (node.get("data") or {}).get("state") in ("working", "failed")
@@ -635,8 +657,14 @@ def validate_graph(
                 errors.append(str(exc))
             reliabilities[nid] = PerfectReliability  # structural placeholder
 
-    if edges and reliabilities:
-        node_ids = {n.get("id") for n in nodes}
+    labels.update(rbd_repeats.copy_labels(nodes, repeats))
+    node_ids = {n.get("id") for n in nodes}
+    too_tied = bool(edges and reliabilities and repeats) and not rbd_repeats.core_search_fits(
+        edges, reliabilities, repeats, k,
+        "input" if "input" in node_ids else None, "output" if "output" in node_ids else None)
+    if too_tied:
+        errors.append(rbd_repeats.CORE_MESSAGE)
+    if edges and reliabilities and not too_tied:
         try:
             rbd = NonRepairableRBD(
                 edges,
@@ -670,9 +698,11 @@ def validate_graph(
         # repair-time distribution, only component + k-of-n blocks are supported,
         # and common-cause coupling is reliability-only. Check that here so the
         # Validate step reflects what Calculate will actually accept.
+        if repeats:
+            errors.append(rbd_repeats.repairable_message(nodes, repeats))
         for node in nodes:
             ntype = node.get("type")
-            if ntype in ("input", "output"):
+            if ntype in ("input", "output") or node.get("id") in repeats:
                 continue
             lbl = labels.get(node.get("id"), node.get("id"))
             data = node.get("data") or {}
@@ -1252,6 +1282,14 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
     ]
     if not edges:
         raise AnalysisError("The diagram has no connections to analyse.")
+
+    # RePyability's RepairableRBD simulates each node as its own unit, so a
+    # repeated block (#102) can't be honoured: refuse rather than approximate.
+    repeats, problems = rbd_repeats.find_repeats(nodes)
+    if problems:
+        raise AnalysisError(next(iter(problems.values())))
+    if repeats:
+        raise AnalysisError(rbd_repeats.repairable_message(nodes, repeats))
 
     node_ids = {n.get("id") for n in nodes}
     components: dict[Any, Any] = {}

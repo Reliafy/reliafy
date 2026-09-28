@@ -27,6 +27,12 @@ def by_label(graph, label):
     return node
 
 
+def by_label_original(graph, label):
+    """The block of an event drawn in several places (not its repeats)."""
+    (node,) = [n for n in graph["nodes"] if n.get("label") == label and not n.get("repeat_of")]
+    return node
+
+
 def analyse(d, t_max=None):
     return rbd_analysis.analyze(normalize_graph(d.graph), t_max=t_max)
 
@@ -156,10 +162,34 @@ def test_structural_errors():
         load('param x; toplevel "T"; "T" or "A"; "A" lambda=x;')
 
 
-def test_repeated_event_is_refused():
-    with pytest.raises(RbdImportError, match="“A”"):
-        load('toplevel "T"; "T" or "G1" "G2"; "G1" and "A" "B"; "G2" and "A" "C"; '
-             '"A" lambda=1; "B" lambda=1; "C" lambda=1;')
+def test_repeated_event_is_a_repeated_block_and_exact():
+    # A shared support event A under both trains: T fails if A and B fail, or
+    # A and C fail — i.e. A fails and (B or C) fails.
+    d = load('toplevel "T"; "T" or "G1" "G2"; "G1" and "A" "B"; "G2" and "A" "C"; '
+             '"A" lambda=1; "B" lambda=2; "C" lambda=3;')
+    (copy,) = [n for n in d.graph["nodes"] if n.get("repeat_of")]
+    assert copy["repeat_of"] == by_label_original(d.graph, "A")["id"]
+    assert any("repeated block" in w for w in d.warnings)
+    res = analyse(d, t_max=1.0)
+    t = np.asarray(res["time"])
+    qa, qb, qc = (1 - np.exp(-r * t) for r in (1, 2, 3))
+    expected = 1 - qa * (1 - (1 - qb) * (1 - qc))
+    assert np.allclose(res["system"]["sf"], expected, rtol=1e-9, atol=1e-12)
+    # One importance row per component (A, B, C), not per drawn block.
+    assert len(res["importance"]["birnbaum"]) == 3
+
+
+def test_repeated_events_drop_repair_rates():
+    d = load('toplevel "T"; "T" or "G1" "G2"; "G1" and "A" "B"; "G2" and "A" "C"; '
+             '"A" lambda=1 repair=5; "B" lambda=1 repair=5; "C" lambda=1 repair=5;')
+    assert not d.graph.get("repairable")
+    assert any("non-repairable" in w for w in d.warnings)
+
+
+def test_spare_gate_under_two_gates_is_refused():
+    with pytest.raises(RbdImportError, match="“P”.*more than one gate"):
+        load('toplevel "T"; "T" or "G1" "G2"; "G1" and "P" "B"; "G2" and "P" "C"; '
+             '"P" csp "P1" "P2"; "P1" lambda=1; "P2" lambda=1; "B" lambda=1; "C" lambda=1;')
 
 
 # ---------------------------------------------------------------------------

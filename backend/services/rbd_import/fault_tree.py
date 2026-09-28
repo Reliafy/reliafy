@@ -25,10 +25,16 @@ exit nodes (feeding downstream):
 Entries are always real blocks (never knodes), so upstream fan-in can't be
 mistaken for voting branches.
 
+*Repeated events* — one basic event under several gates, directly or through
+a gate used in more than one place — are drawn once per appearance: the first
+is the event's block, the others are repeated blocks (``repeat_of`` the
+first), which the analysis treats as the one component. The diagram is then
+exactly the tree. Repeated blocks are reliability-only, so a repairable tree
+with repeated events is imported as non-repairable (with a warning).
+
 What can't be represented honestly raises :class:`RbdImportError`:
-non-coherent logic (NOT / XOR), and *repeated events* — one basic event under
-several gates. A path graph built this way would have to duplicate the block,
-which silently makes the copies independent and changes the answer.
+non-coherent logic (NOT / XOR), and a repeated event that isn't a plain
+component (e.g. a Galileo spare gate used under two gates).
 
 Constant events are folded away first: an event that can never fail (house
 event ``false``, probability 0) drops out of the logic, and one that has
@@ -269,8 +275,13 @@ class _Builder:
     def leaf(self, name: str) -> str:
         leaf = self.tree.nodes[name]
         nid = self._new_id(name)
-        self.leaf_ids[name] = nid
-        node = {"id": nid, **(leaf.node or {})}
+        first = self.leaf_ids.get(name)
+        if first is not None:
+            # A repeated event: the same component, drawn again.
+            node = {"id": nid, "type": "component", "repeat_of": first}
+        else:
+            self.leaf_ids[name] = nid
+            node = {"id": nid, **(leaf.node or {})}
         node["label"] = leaf.label or name
         self.nodes.append(node)
         return nid
@@ -352,17 +363,30 @@ def to_graph(
 
     repeated = _repeated(expr)
     if repeated:
-        raise RbdImportError(
-            f"The fault tree uses the same basic event under more than one gate "
-            f"({_describe(repeated)}). A reliability block diagram can't share one block "
-            "between separate branches, and copying it would treat the copies as "
-            "independent and change the result — so this tree can't be imported as an RBD.")
+        blocks = [n for n in repeated if (tree.nodes[n].node or {}).get("type", "component") != "component"]
+        if blocks:
+            raise RbdImportError(
+                f"The fault tree uses {_describe(blocks)} under more than one gate. Only a "
+                "basic event can be drawn as a repeated block; a group such as a spare gate "
+                "can't be shared between branches, and copying it would treat the copies as "
+                "independent and change the result — so this tree can't be imported as an RBD.")
+        warnings.append(
+            f"Basic events used under more than one gate ({_describe(repeated)}) are drawn in "
+            "each place as a repeated block (↺): one component, which the analysis counts once.")
+        if repairable:
+            repairable = False
+            warnings.append(
+                "Imported as a non-repairable (reliability) diagram and its repair data dropped: "
+                "repeated blocks aren't supported in availability analysis yet.")
 
     # Repairable diagrams wire parts directly: availability analysis models
     # every knode as a (very nearly) never-failing component, so a junction
     # there would add a sliver of unavailability of its own.
     b = _Builder(tree, labels, math.inf if repairable else JUNCTION_THRESHOLD)
     entries, exits = b.build(expr)
+    if repeated:  # always non-repairable (above): no repair data to carry
+        for node in b.nodes:
+            node.pop("repair", None)
     for e in entries:
         b._edge("input", e)
     for x in exits:

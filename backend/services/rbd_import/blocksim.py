@@ -700,7 +700,9 @@ class _Converter:
         if (b.get("current_age") or 0) > 0:
             self.note("age", label)
         if b.get("mirror_group"):
-            self.note("mirror", label)
+            # One physical item drawn in several places: resolved into
+            # repeated blocks once the whole diagram is built.
+            node["_repeat"] = ("mirror", b["mirror_group"])
         return self.add_node(base, node)
 
     def _placeholder(self, base: str, label: str, why: str) -> tuple[list[str], str]:
@@ -990,9 +992,10 @@ class _Converter:
             if blocks[bid].get("type") in (BT_STANDBY, BT_LOADSHARE) and bid not in containers:
                 containers[bid] = [[c] for c in kids]
         diagram = {**diagram, "containers": containers}
-        shared = [blocks[b]["name"] for b, ps in parents.items() if len(ps) > 1]
-        if shared:
-            raise _Skip(f"events {_names(shared)} feed more than one gate (repeated events), which a block diagram can't represent")
+        # An event (or a whole gate) feeding several gates is built once per
+        # appearance; the copies of a plain block become repeated blocks of
+        # the first (one component) when the diagram is assembled.
+        built: dict[int, int] = {}
         tops = [bid for bid in blocks if not parents[bid] and blocks[bid].get("type") != BT_ANNOTATION]
         if len(tops) != 1:
             raise _Skip("it doesn't have exactly one top event" if tops else "it has no events")
@@ -1004,7 +1007,15 @@ class _Converter:
             btype = b.get("type")
             nb = f"{base}b{bid}"
             if btype not in (BT_GATE_AND, BT_GATE_OR, BT_GATE_VOTE):
-                return self.fragment(diagram, bid, nb, prefix, duty, stack)
+                built[bid] = built.get(bid, 0) + 1
+                ins, out = self.fragment(diagram, bid, nb, prefix, duty, stack)
+                if ins == [out] and self.nodes[out]["type"] == "component":
+                    self.nodes[out]["_repeat"] = ("ft", base, bid)
+                elif built[bid] > 1:
+                    raise _Skip(
+                        f"“{b.get('name')}” feeds more than one gate but isn't a single block, so it "
+                        "can't be drawn as a repeated block")
+                return ins, out
             kids = [build(c, depth + 1) for c in children[bid]]
             if not kids:
                 raise _Skip(f"gate “{b.get('name')}” has no inputs")
@@ -1073,18 +1084,42 @@ class _Converter:
                 del self.nodes[nid]
                 changed = True
 
+    def _link_repeats(self, groups: dict[tuple, list[str]], repairable: bool):
+        """Turn each group of appearances of one physical item (a mirrored
+        block, a fault-tree event under several gates) into repeated blocks of
+        its first appearance. Mirrors stay independent copies (with a note)
+        where Reliafy can't share a block: in an availability diagram, or when
+        an appearance isn't a plain component (a multi-block)."""
+        for key, ids in groups.items():
+            first, *copies = ids
+            plain = all(self.nodes[i]["type"] == "component" for i in ids)
+            if key[0] == "mirror" and (repairable or not plain):
+                for i in ids:
+                    self.note("mirror", self.nodes[i]["label"])
+                continue
+            for i in copies:
+                node = self.nodes[i]
+                self.nodes[i] = {"id": i, "type": "component", "label": node["label"], "repeat_of": first}
+
     def build(self) -> ImportedDiagram:
         ins, out = self.expand(self.top, "", "", 1.0, ())
         for i in ins:
             self.connect("input", i)
         self.connect(out, "output")
         self._bypass_junctions()
-        for kind, text in NOTES.items():
-            if self.notes.get(kind):
-                self.warn(text.format(names=_names(self.notes[kind])))
-        real = [n for n in self.nodes.values() if n["type"] != "knode"]
+        real =[n for n in self.nodes.values() if n["type"] != "knode"]
         if self.empty_refs and len(real) == self.empty_refs:
             raise _Skip("its subdiagram blocks point at diagrams that are empty or missing")
+
+        groups: dict[tuple, list[str]] = {}
+        for nid, n in self.nodes.items():
+            if n.get("_repeat"):
+                groups.setdefault(n["_repeat"], []).append(nid)
+        groups = {key: ids for key, ids in groups.items() if len(ids) > 1}
+        # Repeated fault-tree events can't be copied independently (that
+        # changes the tree's logic), and availability analysis can't share a
+        # block, so they make the diagram non-repairable.
+        ft_repeats = any(key[0] == "ft" for key in groups)
 
         comps = [n for n in self.nodes.values() if n["type"] == "component"]
         failing = [n for n in comps if n.get("_state") != "failed"]
@@ -1092,12 +1127,19 @@ class _Converter:
         with_repair = [n for n in failing if n.get("_repair")]
         repairable = bool(
             self.top.get("simulation") and self.all_repairable and only_simple and failing
-            and all(n.get("model") and n.get("_repair") for n in failing)
+            and all(n.get("model") and n.get("_repair") for n in failing) and not ft_repeats
         )
+        self._link_repeats(groups, repairable)
+        for kind, text in NOTES.items():
+            if self.notes.get(kind):
+                self.warn(text.format(names=_names(self.notes[kind])))
         if not repairable and (with_repair or self.has_repair_data):
             labels = [n["label"] for n in with_repair]
             if not self.top.get("simulation"):
                 why = "BlockSim analyses this diagram analytically (without maintenance)"
+            elif ft_repeats:
+                why = ("it has events under more than one gate, drawn as repeated blocks, which "
+                       "Reliafy's availability analysis doesn't support yet")
             elif not only_simple:
                 why = "it has blocks Reliafy's availability analysis doesn't support (standby, multi-blocks)"
             else:
@@ -1139,7 +1181,7 @@ NOTES = {
     "restoration": "Reliafy repairs restore blocks to as good as new; the corrective tasks on {names} use a different restoration factor in BlockSim.",
     "logistics": "Crew and spare-part logistic delays aren't imported — repair durations only (on {names}).",
     "age": "Reliafy starts every block new; {names} start with an age already accumulated in BlockSim.",
-    "mirror": "{names} are mirrored blocks in BlockSim (one physical item drawn in several places); Reliafy treats each copy as an independent block.",
+    "mirror": "{names} are mirrored blocks in BlockSim (one physical item drawn in several places); here Reliafy can't draw them as repeated blocks of one component, so it treats each copy as an independent block.",
 }
 
 

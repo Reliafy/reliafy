@@ -213,7 +213,7 @@ def test_cardinality_up_to_n_is_atleast():
     assert (v["n"], v["k"]) == (2, 3)
 
 
-def test_fixed_probabilities_missing_data_and_repeats_are_refused():
+def test_fixed_probabilities_and_missing_data_are_refused():
     fixed = ('<opsa-mef><define-gate name="T"><or><basic-event name="A"/><basic-event name="B"/></or>'
              '</define-gate><define-basic-event name="A"><float value="0.01"/></define-basic-event>'
              + exp_event("B", 1) + "</opsa-mef>")
@@ -225,11 +225,25 @@ def test_fixed_probabilities_missing_data_and_repeats_are_refused():
     with pytest.raises(RbdImportError, match="isn't defined"):
         load('<opsa-mef><define-gate name="T"><or><gate name="G"/>'
              '<basic-event name="B"/></or></define-gate>' + exp_event("B", 1) + "</opsa-mef>")
-    with pytest.raises(RbdImportError, match="same basic event.*“A”"):
-        load('<opsa-mef><define-gate name="T"><or><gate name="G1"/><gate name="G2"/></or></define-gate>'
-             '<define-gate name="G1"><and><basic-event name="A"/><basic-event name="B"/></and></define-gate>'
-             '<define-gate name="G2"><and><basic-event name="A"/><basic-event name="C"/></and></define-gate>'
-             + exp_event("A", 1) + exp_event("B", 1) + exp_event("C", 1) + "</opsa-mef>")
+
+
+def test_repeated_events_import_as_repeated_blocks():
+    # A basic event and a whole gate (S) each used under two gates.
+    d = one('<opsa-mef><define-gate name="T"><or><gate name="G1"/><gate name="G2"/></or></define-gate>'
+            '<define-gate name="G1"><and><basic-event name="A"/><gate name="S"/></and></define-gate>'
+            '<define-gate name="G2"><and><basic-event name="A"/><basic-event name="C"/>'
+            '<gate name="S"/></and></define-gate>'
+            '<define-gate name="S"><or><basic-event name="D"/><basic-event name="E"/></or></define-gate>'
+            + "".join(exp_event(n, r) for n, r in zip("ACDE", (1e-3, 2e-3, 5e-4, 7e-4)))
+            + "</opsa-mef>")
+    copies = [n for n in d.graph["nodes"] if n.get("repeat_of")]
+    assert sorted(n["label"] for n in copies) == ["A", "D", "E"]
+    res = rbd_analysis.analyze(normalize_graph(d.graph), t_max=2000.0)
+    t = np.asarray(res["time"])
+    qa, qc, qd, qe = (1 - np.exp(-r * t) for r in (1e-3, 2e-3, 5e-4, 7e-4))
+    qs = 1 - (1 - qd) * (1 - qe)
+    # T = A·S + A·C·S = A·S
+    assert np.allclose(res["system"]["sf"], 1 - qa * qs, rtol=1e-9, atol=1e-12)
 
 
 def test_unsafe_or_malformed_xml_is_refused():

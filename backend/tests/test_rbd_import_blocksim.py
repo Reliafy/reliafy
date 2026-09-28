@@ -497,17 +497,71 @@ def test_fault_tree_becomes_its_success_space_rbd():
     assert _analyse(imp.graph, 400.0) == pytest.approx(expected, rel=1e-6)
 
 
-def test_fault_trees_with_repeated_events_or_unsupported_gates_are_skipped():
-    rep = _diagram(1, "Rep", {1: _blk("T", type_=bs.BT_GATE_OR), 2: _blk("G", type_=bs.BT_GATE_AND),
-                              3: _blk("x", 1), 4: _blk("y", 1)}, [(2, 1), (3, 1), (3, 2), (4, 2)], kind="ft")
+def test_fault_trees_with_unsupported_gates_are_skipped():
     notg = _diagram(2, "Not", {1: _blk("T", type_=24), 2: _blk("x", 1)}, [(2, 1)], kind="ft")
     ok = _diagram(3, "Ok", {1: _blk("x", 1)}, [])
-    imps = bs.convert_project(_project([rep, notg, ok]))
+    imps = bs.convert_project(_project([notg, ok]))
     assert [i.name for i in imps] == ["Ok"]
     note = imps[0].warnings[-1]
-    assert "“Rep”" in note and "repeated events" in note and "NOT gate" in note
+    assert "“Not”" in note and "NOT gate" in note
     with pytest.raises(RbdImportError, match="None of the diagrams"):
-        bs.convert_project(_project([rep, notg]))
+        bs.convert_project(_project([notg]))
+
+
+def test_fault_tree_repeated_events_become_repeated_blocks():
+    # T = OR(G1, G2), G1 = AND(S, a), G2 = AND(S, b), S = OR(c, d): the gate S
+    # (so events c and d) feeds two gates. T fails iff S fails and a or b does.
+    blocks = {1: _blk("T", type_=bs.BT_GATE_OR), 2: _blk("G1", type_=bs.BT_GATE_AND),
+              3: _blk("G2", type_=bs.BT_GATE_AND), 4: _blk("S", type_=bs.BT_GATE_OR),
+              5: _blk("a", 1), 6: _blk("b", 2), 7: _blk("c", 1), 8: _blk("d", 2)}
+    edges = [(2, 1), (3, 1), (4, 2), (5, 2), (4, 3), (6, 3), (7, 4), (8, 4)]
+    (imp,) = bs.convert_project(_project([_diagram(1, "Shared", blocks, edges, kind="ft")]))
+    copies = [n for n in imp.graph["nodes"] if n.get("repeat_of")]
+    assert sorted(n["label"] for n in copies) == ["c", "d"]
+    t = 400.0
+    r1, r2 = math.exp(-t / 1000.0), math.exp(-((t / 500.0) ** 2))
+    q_s = 1 - r1 * r2
+    q_ab = 1 - r1 * r2  # a or b failed
+    assert _analyse(imp.graph, t) == pytest.approx(1 - q_s * q_ab, rel=1e-9)
+    # An event feeding a gate and the top directly: T = OR(x, AND(x, y)) = x.
+    rep = _diagram(2, "Rep", {1: _blk("T", type_=bs.BT_GATE_OR), 2: _blk("G", type_=bs.BT_GATE_AND),
+                              3: _blk("x", 1), 4: _blk("y", 1)}, [(2, 1), (3, 1), (3, 2), (4, 2)], kind="ft")
+    (imp,) = bs.convert_project(_project([rep]))
+    assert _analyse(imp.graph, t) == pytest.approx(r1, rel=1e-9)
+
+
+def test_fault_tree_repeated_events_in_a_simulation_diagram_are_non_repairable():
+    tasks = {1: {"name": "fix", "duration_model": 7, "restoration": 1.0, "pool": False, "crews": 0}}
+    urds = {1: {"name": "u", "model": 1, "task": 1, "scheduled_tasks": 0}}
+    rep = _diagram(1, "Rep", {1: _blk("T", type_=bs.BT_GATE_OR), 2: _blk("G", type_=bs.BT_GATE_AND),
+                              3: _blk("x", 1), 4: _blk("y", 1)}, [(2, 1), (3, 1), (3, 2), (4, 2)],
+                   kind="ft", simulation=True)
+    (imp,) = bs.convert_project(_project([rep], urds=urds, tasks=tasks))
+    assert "repairable" not in imp.graph
+    assert any("repeated blocks" in w and "non-repairable" in w for w in imp.warnings)
+
+
+def test_mirrored_blocks_become_repeated_blocks():
+    # Two trains a -> M and b -> M', where M and M' mirror one physical item.
+    blocks = {1: _blk("a", 1), 2: _blk("M", 2, mirror_group=5), 3: _blk("b", 1),
+              4: _blk("M'", 2, mirror_group=5)}
+    (imp,) = bs.convert_project(_project([_diagram(1, "Mir", blocks, [(1, 2), (3, 4)])]))
+    by = {n.get("label"): n for n in imp.graph["nodes"]}
+    assert by["M'"]["repeat_of"] == by["M"]["id"] and "model" not in by["M'"]
+    assert not any("mirrored" in w for w in imp.warnings)
+    t = 300.0
+    ra_, rm = math.exp(-t / 1000.0), math.exp(-((t / 500.0) ** 2))
+    assert _analyse(imp.graph, t) == pytest.approx(rm * (1 - (1 - ra_) ** 2), rel=1e-9)
+
+    # In an availability (simulation) diagram they stay independent copies.
+    tasks = {1: {"name": "fix", "duration_model": 7, "restoration": 1.0, "pool": False, "crews": 0}}
+    urds = {1: {"name": "u", "model": 1, "task": 1, "scheduled_tasks": 0},
+            2: {"name": "v", "model": 2, "task": 1, "scheduled_tasks": 0}}
+    sim = _diagram(1, "Mir", blocks, [(1, 2), (3, 4)], simulation=True)
+    (imp,) = bs.convert_project(_project([sim], urds=urds, tasks=tasks))
+    assert imp.graph.get("repairable") is True
+    assert not any(n.get("repeat_of") for n in imp.graph["nodes"])
+    assert any("mirrored" in w and "independent" in w for w in imp.warnings)
 
 
 def test_subdiagram_cycles_are_skipped():
@@ -572,7 +626,8 @@ def test_block_flags_multiblocks_and_paths_required():
     assert by["Series3"]["type"] == "series" and by["Series3"]["n"] == 3
     assert "model" not in by["Ambiguous"]
     text = " ".join(imp.warnings)
-    assert "mirrored" in text and "age already accumulated" in text and "3 identical blocks" in text
+    # A mirror group with one block in the diagram is just that block.
+    assert "mirrored" not in text and "age already accumulated" in text and "3 identical blocks" in text
     normalize_graph(imp.graph)
 
     # A subdiagram "set as failed" is cut off by a pinned-failed gate.

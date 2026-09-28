@@ -1,8 +1,11 @@
 """Fault tree -> RBD conversion (backend/services/rbd_import/fault_tree.py).
 
-The core property: for every coherent tree without repeated events, the
-produced graph's path-connectivity equals the tree's structure function for
-every combination of component states. Checked exhaustively on random trees.
+The core property: for every coherent tree, the produced graph's
+path-connectivity equals the tree's structure function for every combination
+of component states. Checked exhaustively on random trees — including trees
+with repeated events (one basic event under several gates, directly or through
+a shared gate), whose extra appearances are repeated blocks (``repeat_of``):
+the same component, failed wherever it is drawn.
 """
 
 import itertools
@@ -59,12 +62,16 @@ def graph_works(graph: dict, failed_ids: set[str]) -> bool:
         elif node["type"] == "knode":
             passes[nid] = up >= node["n"]
         else:
-            passes[nid] = up >= 1 and nid not in failed_ids
+            # A repeated block is the component it repeats.
+            comp = node.get("repeat_of") or nid
+            passes[nid] = up >= 1 and comp not in failed_ids
     return passes["output"]
 
 
 def leaf_id_map(graph: dict) -> dict[str, str]:
-    return {n["label"]: n["id"] for n in graph["nodes"] if n["type"] == "component"}
+    """Event name -> its block (the original, never a repeated block)."""
+    return {n["label"]: n["id"] for n in graph["nodes"]
+            if n["type"] == "component" and not n.get("repeat_of")}
 
 
 def check_structure(tree: ft.FaultTree):
@@ -79,6 +86,12 @@ def check_structure(tree: ft.FaultTree):
         if n["type"] == "knode":
             assert n["k"] == incoming[n["id"]]
             assert 1 <= n["n"] <= n["k"]
+    # A repeated block repeats an original block of the same event.
+    originals = {n["id"]: n for n in graph["nodes"] if not n.get("repeat_of")}
+    for n in graph["nodes"]:
+        if n.get("repeat_of"):
+            assert originals[n["repeat_of"]]["label"] == n["label"]
+            assert "model" not in n
     for bits in itertools.product((False, True), repeat=len(events)):
         failed = {e for e, b in zip(events, bits) if b}
         failed_ids = {ids[e] for e in failed if e in ids}
@@ -95,7 +108,12 @@ def _component():
     return {"type": "component", "model": ft.exponential_model(0.01)}
 
 
-def random_tree(rng: random.Random, n_leaves: int, constants: bool = False) -> ft.FaultTree:
+def random_tree(rng: random.Random, n_leaves: int, constants: bool = False,
+                repeats: bool = False) -> ft.FaultTree:
+    """A random coherent tree. With ``repeats``, gates also take extra inputs
+    already used elsewhere — a basic event or an earlier gate (a shared
+    sub-tree) — so events repeat. Earlier gates can't reach the new one, so
+    the tree stays acyclic."""
     nodes: dict[str, ft.Leaf | ft.Gate] = {}
     pool = []
     for i in range(n_leaves):
@@ -112,6 +130,12 @@ def random_tree(rng: random.Random, n_leaves: int, constants: bool = False) -> f
     while len(pool) > 1:
         size = min(len(pool), rng.randint(2, 4))
         kids = [pool.pop() for _ in range(size)]
+        if repeats:
+            used = [n for n in nodes if n not in kids and n not in pool]
+            for _ in range(rng.randint(0, 2)):
+                if used:
+                    kids.append(used.pop(rng.randrange(len(used))))
+            size = len(kids)
         op = rng.choice(["or", "and", "atleast"])
         k = rng.randint(1, size) if op == "atleast" else None
         name = f"G{g}"
@@ -192,15 +216,86 @@ def test_voting_over_subtrees_collapses_multi_exit_children():
     assert knodes["V"]["k"] == 3 and knodes["Junction"]["n"] == 1
 
 
-def test_repeated_event_is_refused_and_named():
+@pytest.mark.parametrize("seed", range(120))
+def test_random_trees_with_repeated_events_match_structure_function(seed):
+    rng = random.Random(5000 + seed)
+    tree = random_tree(rng, rng.randint(2, 8), constants=seed % 5 == 0, repeats=True)
+    try:
+        check_structure(tree)
+    except RbdImportError as exc:
+        assert "certainly occurred" in str(exc) or "can never occur" in str(exc)
+
+
+def test_repeated_event_becomes_a_repeated_block():
     nodes = {n: ft.Leaf(n, _component()) for n in ("A", "B", "C")}
     nodes["G1"] = ft.Gate("G1", "and", ["A", "B"])
     nodes["G2"] = ft.Gate("G2", "and", ["A", "C"])
     nodes["TOP"] = ft.Gate("TOP", "or", ["G1", "G2"])
     tree = ft.FaultTree(nodes, "TOP")
     assert ft.repeated_events(tree) == ["A"]
-    with pytest.raises(RbdImportError, match="“A”"):
-        ft.to_graph(tree)
+    graph = check_structure(tree)
+    (copy,) = [n for n in graph["nodes"] if n.get("repeat_of")]
+    assert copy["repeat_of"] == leaf_id_map(graph)["A"] and copy["label"] == "A"
+    _, warnings = ft.to_graph(tree)
+    assert any("“A”" in w and "repeated block" in w for w in warnings)
+
+
+def test_repeated_events_make_a_repairable_tree_non_repairable():
+    comp = {"type": "component", "model": ft.exponential_model(0.01),
+            "repair": ft.exponential_model(1.0)}
+    nodes = {n: ft.Leaf(n, dict(comp)) for n in ("A", "B", "C")}
+    nodes["G1"] = ft.Gate("G1", "and", ["A", "B"])
+    nodes["G2"] = ft.Gate("G2", "and", ["A", "C"])
+    nodes["TOP"] = ft.Gate("TOP", "or", ["G1", "G2"])
+    graph, warnings = ft.to_graph(ft.FaultTree(nodes, "TOP"), repairable=True)
+    assert "repairable" not in graph
+    assert not any("repair" in n for n in graph["nodes"])
+    assert any("non-repairable" in w for w in warnings)
+    # The tree's own leaves are left untouched.
+    assert all("repair" in nodes[n].node for n in ("A", "B", "C"))
+
+
+def test_repeated_non_component_leaf_is_refused():
+    standby = {"type": "standby", "model": ft.exponential_model(0.01), "spares": 1, "cold": True}
+    nodes = {"S": ft.Leaf("S", standby), "B": ft.Leaf("B", _component()),
+             "C": ft.Leaf("C", _component())}
+    nodes["G1"] = ft.Gate("G1", "and", ["S", "B"])
+    nodes["G2"] = ft.Gate("G2", "and", ["S", "C"])
+    nodes["TOP"] = ft.Gate("TOP", "or", ["G1", "G2"])
+    with pytest.raises(RbdImportError, match="“S”.*more than one gate"):
+        ft.to_graph(ft.FaultTree(nodes, "TOP"))
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_repeated_event_trees_analyse_to_the_exact_probability(seed):
+    """End to end: the imported diagram's reliability (RePyability's exact
+    engine, repeated blocks as one component) equals the tree's top-event
+    probability enumerated over every combination of event states."""
+    from backend.services import rbd_analysis
+
+    rng = random.Random(9000 + seed)
+    tree = random_tree(rng, rng.randint(3, 7), repeats=True)
+    events = sorted(n for n, v in tree.nodes.items() if isinstance(v, ft.Leaf))
+    rates = {e: rng.uniform(0.2, 3.0) for e in events}
+    for e in events:
+        tree.nodes[e].node = {"type": "component", "model": ft.exponential_model(rates[e])}
+    graph, _ = ft.to_graph(tree)
+    t = 0.4
+    res = rbd_analysis.analyze(normalize_graph(graph), t_max=2 * t)
+    i = int(np.argmin(np.abs(np.asarray(res["time"]) - t)))
+    t = res["time"][i]
+    q = {e: 1 - np.exp(-rates[e] * t) for e in events}
+    expected = 0.0
+    for bits in itertools.product((False, True), repeat=len(events)):
+        failed = {e for e, b in zip(events, bits) if b}
+        if not tree_fails(tree, failed):
+            p = 1.0
+            for e in events:
+                p *= q[e] if e in failed else 1 - q[e]
+            expected += p
+    assert res["system"]["sf"][i] == pytest.approx(expected, rel=1e-9, abs=1e-12)
+    # Results are per component: one importance row per event, not per block.
+    assert set(res["importance"]["birnbaum"]) <= set(leaf_id_map(graph).values())
 
 
 def test_shared_gate_repeats_all_its_events():

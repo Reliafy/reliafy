@@ -6159,6 +6159,13 @@ button.danger:hover { background: #fdeeee; }
 .rbd-avail-legend { margin: 0; padding-left: 18px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
 .rbd-avail-legend b { color: var(--text, inherit); font-weight: 600; }
 
+/* Repeated blocks (#102): a linked copy of a component, drawn again */
+.rbd-comp.repeat:not(.state-working):not(.state-failed) {
+  background: repeating-linear-gradient(135deg, var(--panel) 0 9px, rgba(47, 109, 246, 0.05) 9px 18px);
+  border-color: rgba(47, 109, 246, 0.45);
+}
+.rbd-repeat-mark { color: var(--accent-strong); font-weight: 700; }
+
 /* Common-cause failure groups (RBD builder) */
 .rbd-comp.ccf-member { box-shadow: 0 0 0 2px rgba(208, 118, 47, 0.55), 0 0 0 5px rgba(208, 118, 47, 0.18); }
 .rbd-ccf-chip {

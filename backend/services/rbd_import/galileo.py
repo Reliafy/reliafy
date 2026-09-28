@@ -23,7 +23,9 @@ Mapped to Reliafy:
 * ``res=`` (restoration factor, exponential only) thins the failure rate to
   ``lambda * (1 - res)``;
 * ``prob=0`` / ``lambda=0`` events never fail and drop out; ``prob=1`` events
-  have failed from the start.
+  have failed from the start;
+* a basic event under several gates -> a repeated block in each place (one
+  component; see :mod:`.fault_tree`).
 
 Refused (no RBD equivalent): ``pand``/``por``/``seq``/``fdep``/``pdep``/
 ``mutex`` and inspection modules, fixed-probability events, ``prob`` combined

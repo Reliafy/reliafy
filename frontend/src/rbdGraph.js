@@ -93,6 +93,8 @@ export function normalizeRbdGraph(graph = {}) {
 
   const nodes = rawNodes.map((n) => {
     const data = { ...(n.data || {}) };
+    // A repeated block (#102) may carry repeat_of on the compact node itself.
+    if (n.repeat_of && !data.repeat_of) data.repeat_of = n.repeat_of;
     if (data.model) data.model = fleshModel(data.model);
     if (!data.label) data.label = n.type === "input" ? "Input" : n.type === "output" ? "Output" : n.id;
     const base = { id: n.id, type: n.type, data, position: n.position };
@@ -134,7 +136,7 @@ export function compactGraph(graph = {}) {
         ...(d.model.placeholder ? { placeholder: true } : {}),
       };
     }
-    for (const k of ["n", "k", "spares", "cold", "dormancy"]) if (d[k] != null) node[k] = d[k];
+    for (const k of ["n", "k", "spares", "cold", "dormancy", "repeat_of"]) if (d[k] != null) node[k] = d[k];
     if (d.rbd?.id) node.subsystem_rbd_id = d.rbd.id;
     return node;
   });

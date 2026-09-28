@@ -18,6 +18,10 @@ Compact node (what an assistant writes and reads)::
      "dormancy": 0.3,                         # standby: 0 cold, 1 hot, between = warm
      "subsystem_rbd_id": "<saved rbd id>"}
 
+A repeated block — the same physical component drawn again elsewhere — is a
+component node with ``"repeat_of": "<id of the component it repeats>"`` and
+no model of its own (see :mod:`backend.services.rbd_repeats`).
+
 A node may instead carry the persisted ``data: {...}`` object; both are
 accepted. ``model.saved_model_id`` references a saved plain life model; it is
 resolved (owner-scoped) into the same shape the builder's model picker stores.
@@ -26,6 +30,8 @@ resolved (owner-scoped) into the same shape the builder's model picker stores.
 from __future__ import annotations
 
 from typing import Callable, Optional
+
+from backend.services import rbd_repeats
 
 COL_GAP = 280
 ROW_GAP = 150
@@ -187,7 +193,7 @@ def normalize_graph(
 
         data = dict(raw.get("data") or {})
         for key in ("label", "model", "repair", "n", "k", "spares", "cold", "dormancy",
-                    "standbyModel", "startProb"):
+                    "standbyModel", "startProb", "repeat_of"):
             if raw.get(key) is not None and key not in data:
                 data[key] = raw[key]
         if raw.get("subsystem_rbd_id") and "rbd" not in data:
@@ -210,6 +216,10 @@ def normalize_graph(
         elif ntype == "output":
             node.update(targetPosition="left", deletable=False, className="rbd-node rbd-io")
         nodes.append(node)
+
+    _, problems = rbd_repeats.find_repeats(nodes)
+    if problems:
+        raise GraphError(next(iter(problems.values())))
 
     edges = []
     for i, e in enumerate(raw_edges):
@@ -252,7 +262,7 @@ def compact_graph(graph: dict) -> dict:
                 if m.get("placeholder"):
                     cm["placeholder"] = True
                 node[key] = cm
-        for key in ("n", "k", "spares", "cold", "dormancy", "startProb"):
+        for key in ("n", "k", "spares", "cold", "dormancy", "startProb", "repeat_of"):
             if d.get(key) is not None:
                 node[key] = d[key]
         if isinstance(d.get("rbd"), dict) and d["rbd"].get("id"):
