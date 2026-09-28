@@ -134,6 +134,7 @@ def analyze_graph(
     covariates: dict | None = None,
     conditional_age: float | None = None,
     n_simulations: int | None = None,
+    band: dict | None = None,
 ) -> dict:
     """Run the RePyability reliability analysis for a graph.
 
@@ -142,7 +143,9 @@ def analyze_graph(
     to ``owner_id`` so a graph can't reference another user's RBDs/models.
     ``t_max`` is the upper limit of the time axis. ``covariates`` maps node id ->
     covariate values for proportional-hazards nodes. ``conditional_age``
-    conditions the curves on having already survived to that age.
+    conditions the curves on having already survived to that age. ``band``
+    (``{"level": 0.95}``) adds a confidence band from the fitted blocks'
+    parameter uncertainty (non-repairable diagrams only).
     """
 
     def resolve_subsystem(sub_id: str) -> dict | None:
@@ -167,6 +170,7 @@ def analyze_graph(
         covariates=covariates,
         resolve_model=resolve_model,
         conditional_age=conditional_age,
+        band=band,
     )
 
 

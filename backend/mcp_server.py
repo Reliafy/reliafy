@@ -883,7 +883,7 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None) -
 
 def _availability_summary(result: dict) -> dict:
     keys = ("unit", "steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
-            "failure_frequency", "figures_basis", "n_simulations", "t_simulation", "per_node", "importance",
+            "failure_frequency", "figures_basis", "n_simulations", "t_simulation", "precision", "per_node", "importance",
             "criticality", "cached", "computed_at", "can_recompute")
     return {"kind": "repairable", **{k: result.get(k) for k in keys if k in result}}
 

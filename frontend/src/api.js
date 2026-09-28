@@ -550,7 +550,8 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 // and stored, and ``force`` to re-run even when one matches. A user without
 // the entitlement gets a 402 with ``code: "pro_required"`` unless a saved
 // result matches; results carry ``cached`` and ``computed_at``.
-export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = null, force = false } = {}) {
+// `band` ({ level }) adds a confidence band from the fitted blocks' uncertainty.
+export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = null, force = false, band = null } = {}) {
   return request("/api/rbds/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -561,6 +562,26 @@ export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = nu
       conditional_age: conditionalAge ?? null,
       rbd_id: rbdId || null,
       force: !!force,
+      ...(band ? { band } : {}),
+    }),
+  });
+}
+
+// Compare two repairable designs (#104): ``graph`` (A, the diagram in the
+// builder) against the saved diagram ``otherId`` (B). Returns the simulated
+// difference in the window's mean availability (B − A) with its interval, from
+// common random numbers, plus both exact long-run availabilities. Paid like
+// the availability simulation (402 ``pro_required``).
+export function compareRbds(graph, otherId, { name = null, otherName = null, tMax = null } = {}) {
+  return request("/api/rbds/compare", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      graph,
+      other_id: otherId,
+      name,
+      other_name: otherName,
+      t_max: tMax ?? null,
     }),
   });
 }
@@ -579,6 +600,43 @@ export function validateRbd(graph) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ graph }),
+  });
+}
+
+// The fault tree of an (unsaved) graph (#101): gates over basic events, the
+// top event probability at ``t`` and ranked cut sets. ``t`` null = the
+// calculator's importance time; repairable graphs are at steady state.
+export function rbdFaultTree(graph, t = null, tMax = null) {
+  return request("/api/rbds/fault-tree", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t: t ?? null, t_max: tMax ?? null }),
+  });
+}
+
+// Redundancy design (non-repairable graphs): how many copies of each block.
+// ``blocks`` = [{id, cost, weight?, volume?, max_copies, required, strategy,
+// switching, name, types: [{name, model, cost, ...}]}]; give ``budget``
+// ({cost?, weight?, volume?}) or ``target`` (reliability at ``t``). Returns
+// { current, design, front, ... }. Nothing is saved.
+export function designRbd({ graph, t, blocks, budget = null, target = null, mixing = true }) {
+  return withEvent(
+    request("/api/rbds/design", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ graph, t, blocks, budget, target, mixing }),
+    }),
+    "rbd_design"
+  );
+}
+
+// The graph with one design (a result's ``design.blocks``) drawn on it, and
+// its R(t). The builder puts it on the canvas unsaved.
+export function applyRbdDesign({ graph, blocks, design, t }) {
+  return request("/api/rbds/design/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, blocks, design, t }),
   });
 }
 

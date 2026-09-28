@@ -6166,6 +6166,25 @@ button.danger:hover { background: #fdeeee; }
 }
 .rbd-repeat-mark { color: var(--accent-strong); font-weight: 700; }
 
+/* "Compare with…" two repairable designs (#104) */
+.rbd-compare { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); min-width: 0; }
+.rbd-compare-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rbd-compare-bar > :first-child { flex: 1 1 240px; min-width: 0; max-width: 420px; }
+.rbd-compare-result { display: flex; flex-direction: column; gap: 8px; }
+.rbd-compare-verdict { margin: 0; padding: 8px 12px; border-radius: 8px; font-size: 14px; background: var(--panel-2, #eef1f5); border-left: 3px solid var(--muted); }
+.rbd-compare-verdict.b_higher { border-left-color: #16a34a; }
+.rbd-compare-verdict.a_higher { border-left-color: #d97706; }
+.rbd-compare-table { margin-bottom: 0; }
+.rbd-compare-table th:first-child { text-align: left; }
+.rbd-compare-table td, .rbd-compare-table th { font-variant-numeric: tabular-nums; }
+.rbd-compare-table .calc-row-label { display: table-cell; white-space: nowrap; }
+.rbd-compare-diff td { font-weight: 600; border-top: 1px solid var(--border); }
+.rbd-compare-diff .muted { font-weight: 400; color: var(--muted); }
+.rbd-compare-tag { display: inline-block; min-width: 16px; margin-right: 6px; font-size: 10.5px; font-weight: 700; text-align: center; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; }
+@media (prefers-color-scheme: dark) {
+  .rbd-compare-verdict { background: #232a33; }
+}
+
 /* Common-cause failure groups (RBD builder) */
 .rbd-comp.ccf-member { box-shadow: 0 0 0 2px rgba(208, 118, 47, 0.55), 0 0 0 5px rgba(208, 118, 47, 0.18); }
 .rbd-ccf-chip {
@@ -6495,3 +6514,31 @@ button.danger:hover { background: #fdeeee; }
 }
 .rbd-import-note { margin-bottom: 10px; }
 .rbd-import-note ul { margin: 6px 0 0; padding-left: 18px; }
+
+/* RBD confidence band (#103): toggle + level, intervals under the headline
+   figures, and the note on which blocks carry uncertainty. */
+.rbd-band-row { display: flex; align-items: center; gap: 0.5rem; min-height: 36px; }
+.rbd-band-toggle { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; color: var(--text); cursor: pointer; }
+.calc-t .rbd-band-toggle input { width: auto; margin: 0; padding: 0; box-shadow: none; }
+.rbd-band-row .sel-trigger { width: 84px; }
+.rbd-band-iv {
+  order: 3;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.rbd-band-note {
+  margin: 6px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.rbd-band-note p { margin: 0; }
+.rbd-band-note p + p { margin-top: 4px; }
+.rbd-band-note b { color: var(--text); font-weight: 600; }

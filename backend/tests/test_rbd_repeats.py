@@ -230,3 +230,74 @@ def test_export_of_repeats_in_subsystem_and_repairable_diagram():
     # As in the app, availability can't honour a repeated block: a placeholder.
     assert "power_supply_2 = missing_model(" in code
     assert "Repeated blocks (“Power supply”) are supported in non-repairable" in code.replace('"\n    "', "")
+
+
+# ---------------------------------------------------------------------------
+# Repeated blocks across the other RBD features
+# ---------------------------------------------------------------------------
+def _vote_with_shared_supply():
+    """Three trains into a 2-out-of-3 vote; one supply feeds trains A and B,
+    so it is drawn twice and can't be factored out of the vote."""
+    return {
+        "nodes": [*_io(), _node("a", "component", "A", model=_exp(1e-3)),
+                  _node("b", "component", "B", model=_exp(2e-3)),
+                  _node("c", "component", "C", model=_exp(3e-3)),
+                  _node("psu", "component", "PSU", model=_exp(5e-4)),
+                  _node("psu2", "component", "PSU", repeat_of="psu"),
+                  _node("k", "knode", "2oo3", n=2)],
+        "edges": [{"source": s, "target": t} for s, t in [
+            ("input", "a"), ("a", "psu"), ("psu", "k"), ("input", "b"), ("b", "psu2"),
+            ("psu2", "k"), ("input", "c"), ("c", "k"), ("k", "output")]],
+    }
+
+
+def test_fault_tree_view_shows_a_repeated_block_as_one_event():
+    from backend.services import rbd_fault_tree
+
+    graph = _vote_with_shared_supply()
+    out = rbd_fault_tree.fault_tree(graph, t=300.0)
+    rbd, *_ = ra._build_rbd(graph)
+    assert out["top_event_probability"] == pytest.approx(1 - float(rbd.sf(np.array([300.0]))[0]), rel=1e-12)
+    assert sorted(e["id"] for e in out["events"]) == ["a", "b", "c", "psu"]
+    # The supply fails the system alone; the trains appear under several gates.
+    assert any(c["events"] == ["psu"] for c in out["cut_sets"]["listed"])
+    assert any(e["repeated"] for e in out["events"])
+
+
+def test_design_refuses_repeated_blocks_explicitly_and_designs_the_rest():
+    from backend.services import rbd_design
+    from backend.services.rbd_design import DesignError
+
+    graph = _shared_psu()
+    for bid in ("psu", "psu2"):
+        with pytest.raises(DesignError, match="drawn in more than one place"):
+            rbd_design.design_redundancy(graph, 200.0, [{"id": bid, "cost": 1, "max_copies": 3}],
+                                         budget={"cost": 3})
+    res = rbd_design.design_redundancy(
+        graph, 200.0, [{"id": "a", "cost": 1, "max_copies": 3}, {"id": "b", "cost": 1, "max_copies": 3}],
+        budget={"cost": 4})
+    # Brute force over the pump copies, with the shared supply counted once.
+    ra_, rb, rp = (np.exp(-LAM[k] * 200.0) for k in ("a", "b", "psu"))
+    best = max(rp * (1 - (1 - ra_) ** na * (1 - rb) ** nb)
+               for na in range(1, 4) for nb in range(1, 4) if na + nb <= 4)
+    assert res["design"]["reliability"] == pytest.approx(best, rel=1e-9)
+
+
+def test_confidence_band_draws_a_repeated_block_once():
+    import surpyval as surv
+
+    fit = surv.Weibull.fit(np.array([90.0, 110, 120, 130, 140, 155, 170, 190, 200, 230, 260]))
+    alpha, beta = (float(v) for v in fit.params)
+    saved = {"source": "saved", "kind": "distribution", "modelId": "m1", "name": "PSU fit",
+             "distribution_id": "weibull", "distribution": "Weibull",
+             "params": [{"name": "alpha", "value": alpha}, {"name": "beta", "value": beta}]}
+    graph = _shared_psu()
+    graph["nodes"][4]["data"]["model"] = saved  # the supply
+    res = ra.analyze(graph, resolve_model=lambda mid: {"model": fit} if mid == "m1" else None,
+                     band={"level": 0.9})
+    band = res["band"]
+    assert [b["id"] for b in band["uncertain"]] == ["psu"]
+    lower, upper = np.asarray(band["sf_lower"], dtype=float), np.asarray(band["sf_upper"], dtype=float)
+    sf = np.asarray(res["system"]["sf"])
+    mid = len(sf) // 3
+    assert lower[mid] <= sf[mid] <= upper[mid] and upper[mid] - lower[mid] > 1e-3

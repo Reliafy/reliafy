@@ -177,9 +177,10 @@ def test_simulation_is_sized_to_the_time_budget(monkeypatch):
     chosen = ra.analyze_availability(graph, t_simulation=5000.0)
     assert chosen["t_simulation"] == 5000.0 and chosen["horizon_shortened"] is False
     assert chosen["n_simulations"] == 30
-    # An explicit replication count is honoured as given.
+    # An explicit replication count is honoured (in whole antithetic pairs).
     fixed = ra.analyze_availability(graph, n_simulations=25)
-    assert fixed["n_simulations"] == 25 and fixed["horizon_shortened"] is False
+    assert fixed["n_simulations"] == 26 and fixed["horizon_shortened"] is False
+    assert fixed["precision"]["mode"] == "fixed"
 
 
 def test_generous_budget_runs_the_full_count(monkeypatch):
