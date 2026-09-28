@@ -25,6 +25,8 @@ import RbdSaveModal from "../components/RbdSaveModal.jsx";
 import RbdCalculator from "../components/RbdCalculator.jsx";
 import RbdFaultTree from "../components/RbdFaultTree.jsx";
 import RbdDesignPanel from "../components/RbdDesignPanel.jsx";
+import RbdCostsModal from "../components/RbdCostsModal.jsx";
+import { applyBlockExtras } from "../components/RbdBlockCosts.jsx";
 import ValidationPanel, { graphSignature } from "../components/RbdValidation.jsx";
 import { saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP } from "../api.js";
 import { ShareButton } from "../components/ShareDialog.jsx";
@@ -187,6 +189,9 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   // Common-cause groups: [{id, members:[nodeId], beta}] — redundant components
   // coupled by a shared failure cause (reliability analysis only).
   const [ccfGroups, setCcfGroups] = useState([]);
+  // Diagram-level costs of a repairable diagram (#99): {downtime_rate, horizon}.
+  const [diagramCosts, setDiagramCosts] = useState(null);
+  const costsField = useMemo(() => (diagramCosts ? { costs: diagramCosts } : {}), [diagramCosts]);
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
   const [tab, setTab] = useState("builder"); // 'builder' | 'calc' | 'tree' | 'design'
   const [validation, setValidation] = useState(null);
@@ -197,7 +202,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   // Always-current snapshot of the canvas, so the AI assistant can read the
   // live diagram via the bridge without stale-closure issues.
   const liveRef = useRef({ nodes: [], edges: [], unit: "" });
-  liveRef.current = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups };
+  liveRef.current = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField };
   const { screenToFlowPosition, fitView } = useReactFlow();
   const nodeTypes = useMemo(
     () => ({
@@ -220,17 +225,17 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   // position-independent signature lets us flag the result as stale once the
   // diagram changes.
   const sig = useMemo(
-    () => graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }),
-    [nodes, edges, rbdUnit, repairable, ccfGroups]
+    () => graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }),
+    [nodes, edges, rbdUnit, repairable, ccfGroups, costsField]
   );
   const validationStale = validation != null && sig !== checkedSig;
 
   const runValidate = useCallback(async () => {
     setValidating(true);
     try {
-      const v = await validateRbd({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups });
+      const v = await validateRbd({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField });
       setValidation(v);
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }));
+      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
     } catch (err) {
       setValidation({
         valid: false,
@@ -240,11 +245,11 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         warnings: [],
         non_analytic_nodes: {},
       });
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }));
+      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
     } finally {
       setValidating(false);
     }
-  }, [nodes, edges, rbdUnit, repairable, ccfGroups]);
+  }, [nodes, edges, rbdUnit, repairable, ccfGroups, costsField]);
 
   const onConnect = useCallback(
     (params) => setEdges((eds) => addEdge({ ...params, ...EDGE_OPTIONS }, eds)),
@@ -542,7 +547,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   // Persist the current diagram as a saved RBD (updates the open one if any).
   const onSaveRbd = useCallback(
     async (name) => {
-      const graph = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups };
+      const graph = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField };
       const saved = await saveRbd(name, graph, savedRbdId, savedRbdUpdatedAt);
       setSavedRbdId(saved.id);
       setSavedRbdName(name);
@@ -551,7 +556,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       setModal(null);
       onSaved?.(saved.id);
     },
-    [nodes, edges, rbdUnit, repairable, ccfGroups, savedRbdId, savedRbdUpdatedAt, onSaved]
+    [nodes, edges, rbdUnit, repairable, ccfGroups, costsField, savedRbdId, savedRbdUpdatedAt, onSaved]
   );
 
   // Replace the canvas with a saved graph; bump the id counter past loaded ids.
@@ -580,6 +585,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       setRbdUnit(graph?.unit || "");
       setRepairable(!!graph?.repairable);
       setCcfGroups(graph?.ccf_groups || []);
+      setDiagramCosts(graph?.costs || null);
       setSavedRbdId(id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
@@ -605,6 +611,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     setRbdUnit("");
     setRepairable(false);
     setCcfGroups([]);
+    setDiagramCosts(null);
     setSavedRbdId(null);
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
@@ -626,6 +633,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     if (graph.unit != null) setRbdUnit(graph.unit);
     if (graph.repairable != null) setRepairable(!!graph.repairable);
     if (graph.ccf_groups != null) setCcfGroups(graph.ccf_groups);
+    if (graph.costs !== undefined) setDiagramCosts(graph.costs || null);
     window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
   }, [setNodes, setEdges, fitView]);
 
@@ -664,11 +672,11 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
 
   // Assign a life model (saved or from parameters) to the node the modal targets.
   const setNodeModel = useCallback(
-    ({ model, repair }) => {
+    ({ model, repair, extras }) => {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === modalNodeId
-            ? { ...node, data: { ...node.data, model, ...(repair !== undefined ? { repair } : {}) } }
+            ? { ...node, data: applyBlockExtras({ ...node.data, model, ...(repair !== undefined ? { repair } : {}) }, extras) }
             : node
         )
       );
@@ -903,6 +911,17 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
               ]}
             />
           </div>
+          {repairable && (
+            <button
+              className={"rbd-costs-toggle" + (diagramCosts ? " set" : "")}
+              onClick={() => setModal("costs")}
+              title="System downtime cost and ownership horizon (block costs are on each block)"
+            >
+              {diagramCosts?.downtime_rate != null
+                ? `Downtime ${Number(diagramCosts.downtime_rate).toLocaleString()}/${(rbdUnit || "h").replace(/s$/, "")}`
+                : "Costs…"}
+            </button>
+          )}
           {/* Common-cause groups sit with the other diagram-level settings, as a
               chip that expands on demand. They used to float bottom-left, where
               they collided with the zoom controls and the hint bubble; a chip
@@ -1231,7 +1250,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
             Right-click the canvas to add a component · drag between handles, or
             select blocks and press <kbd>C</kbd>, to connect · double-click a block to edit
             {repairable
-              ? " · double-click each component to set its repair time"
+              ? " · double-click each component to set its repair time, costs and maintenance"
               : " · shift-click 2+ redundant components to add a common-cause group"}
           </>
         )}
@@ -1302,6 +1321,14 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
           onPick={pickSubsystem}
         />
       )}
+      {modal === "costs" && (
+        <RbdCostsModal
+          initial={diagramCosts}
+          unit={rbdUnit}
+          onClose={() => setModal(null)}
+          onSubmit={(c) => { setDiagramCosts(c); setModal(null); }}
+        />
+      )}
       {modal === "saverbd" && (
         <RbdSaveModal
           initialName={savedRbdName}
@@ -1315,7 +1342,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       style={{ display: tab === "calc" ? undefined : "none" }}
     >
       <RbdCalculator
-        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }}
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         validation={validation}
         stale={validationStale}
         rbdId={savedRbdId}
@@ -1326,7 +1353,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       style={{ display: tab === "tree" ? undefined : "none" }}
     >
       <RbdFaultTree
-        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }}
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         validation={validation}
         stale={validationStale}
         active={tab === "tree"}
@@ -1338,7 +1365,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       style={{ display: tab === "design" ? undefined : "none" }}
     >
       <RbdDesignPanel
-        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }}
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         onApply={applyDesign}
         onView={() => {
           setTab("builder");

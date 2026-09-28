@@ -13,6 +13,10 @@ Compact node (what an assistant writes and reads)::
                "params": [{"name": "alpha", "value": 900}, {"name": "beta", "value": 1.4}],
                "placeholder": true},          # optional: a guessed value
      "repair": {...},                         # repairable diagrams only
+     "instant_repair": true,                  # repairable: repaired in zero time
+     "costs": {"repair": 200, "replace": 1500, "downtime": 50, "acquisition": 20000},
+     "preventive": {"policy": "age", "interval": 580, "duration": 7, "cost": 1000},
+     "inspection": {"interval": 8760, "duration": 0, "cost": 300},  # hidden failures
      "n": 2, "k": 3, "spares": 1, "cold": true,
      "standbyModel": {...}, "startProb": 0.98,  # cold standby: spare's own model, switch reliability
      "dormancy": 0.3,                         # standby: 0 cold, 1 hot, between = warm
@@ -21,6 +25,9 @@ Compact node (what an assistant writes and reads)::
 A node may instead carry the persisted ``data: {...}`` object; both are
 accepted. ``model.saved_model_id`` references a saved plain life model; it is
 resolved (owner-scoped) into the same shape the builder's model picker stores.
+A repairable diagram may carry ``"costs": {"downtime_rate": 500, "horizon":
+87600}`` (see :mod:`backend.services.rbd_maintenance` for the cost and
+maintenance fields).
 """
 
 from __future__ import annotations
@@ -33,6 +40,8 @@ ROW_GAP = 150
 NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "standby", "subsystem")
 
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
+#: Repairable block fields beyond the models (#99/#100), carried as given.
+MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection")
 
 
 class GraphError(ValueError):
@@ -187,7 +196,7 @@ def normalize_graph(
 
         data = dict(raw.get("data") or {})
         for key in ("label", "model", "repair", "n", "k", "spares", "cold", "dormancy",
-                    "standbyModel", "startProb"):
+                    "standbyModel", "startProb") + MAINTENANCE_KEYS:
             if raw.get(key) is not None and key not in data:
                 data[key] = raw[key]
         if raw.get("subsystem_rbd_id") and "rbd" not in data:
@@ -201,6 +210,13 @@ def normalize_graph(
             if not isinstance(data["repair"], dict):
                 raise GraphError(f"{where}: repair must be an object.")
             data["repair"] = _inline_model(data["repair"], f"{where} repair")
+        for key in MAINTENANCE_KEYS[1:]:
+            if data.get(key) is not None and not isinstance(data[key], dict):
+                raise GraphError(f"{where}: {key} must be an object.")
+        for key in ("preventive", "inspection"):
+            spec = data.get(key)
+            if spec and isinstance(spec.get("duration"), dict):
+                data[key] = {**spec, "duration": _inline_model(spec["duration"], f"{where} {key} duration")}
         if not data.get("label"):
             data["label"] = "Input" if ntype == "input" else "Output" if ntype == "output" else nid
 
@@ -232,6 +248,8 @@ def normalize_graph(
         out["repairable"] = True
     if graph.get("ccf_groups"):
         out["ccf_groups"] = graph["ccf_groups"]
+    if graph.get("costs"):
+        out["costs"] = graph["costs"]
     return out
 
 
@@ -252,7 +270,7 @@ def compact_graph(graph: dict) -> dict:
                 if m.get("placeholder"):
                     cm["placeholder"] = True
                 node[key] = cm
-        for key in ("n", "k", "spares", "cold", "dormancy", "startProb"):
+        for key in ("n", "k", "spares", "cold", "dormancy", "startProb") + MAINTENANCE_KEYS:
             if d.get(key) is not None:
                 node[key] = d[key]
         if isinstance(d.get("rbd"), dict) and d["rbd"].get("id"):
@@ -264,6 +282,8 @@ def compact_graph(graph: dict) -> dict:
         out["repairable"] = True
     if graph.get("ccf_groups"):
         out["ccf_groups"] = graph["ccf_groups"]
+    if graph.get("costs"):
+        out["costs"] = graph["costs"]
     return out
 
 

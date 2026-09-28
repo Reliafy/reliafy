@@ -14,6 +14,8 @@ export function graphSignature(graph) {
       target: e.target,
     })),
     unit: graph.unit || "",
+    // Diagram-level costs (#99) change a repairable diagram's results.
+    ...(graph.costs ? { costs: graph.costs } : {}),
   });
 }
 

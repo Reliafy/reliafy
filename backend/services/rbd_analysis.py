@@ -684,11 +684,15 @@ def validate_graph(
                     f"“{lbl}” isn't supported in a repairable diagram — availability "
                     "uses component blocks (each with a life model and a repair time) "
                     "and k-of-n gates. Switch to a non-repairable diagram to use it.")
-            elif data.get("state") not in ("working", "failed") and not data.get("repair"):
+            elif (data.get("state") not in ("working", "failed") and not data.get("repair")
+                  and not data.get("instant_repair")):
                 errors.append(
                     f"“{lbl}” has no repair-time distribution. Repairable diagrams "
                     "analyse availability, so every component needs one (double-click "
-                    "the block to set it).")
+                    "the block to set it), or mark it as repaired instantly.")
+        from backend.services import rbd_maintenance
+
+        errors.extend(rbd_maintenance.validation_errors(graph))
         if graph.get("ccf_groups"):
             warnings.append(
                 "Common-cause groups are a reliability-only feature and are "
@@ -1270,6 +1274,8 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
     stand-in is used when it has none. Returns
     ``(rbd, labels, gate_ids, working_nodes, broken_nodes)``.
     """
+    from backend.services import rbd_maintenance
+
     nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
     edges = [
@@ -1313,13 +1319,13 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
                 "diagrams yet — use component blocks (each with a life model and "
                 "a repair time), optionally with a k-of-n voting gate."
             )
-        if pinned and not (data.get("model") and data.get("repair")):
+        if pinned and not (data.get("model") and (data.get("repair") or data.get("instant_repair"))):
             # The override fixes its state; the stand-in is never consulted.
             components[nid] = _always_up()
             continue
         reliability = _build_distribution(data.get("model"), label, resolve_model, None)
-        repair = _repair_distribution(data, label, resolve_model)
-        components[nid] = NonRepairable(reliability, repair)
+        # Life + repair; plus costs, instant repair and maintenance (#99/#100).
+        components[nid] = rbd_maintenance.repairable_component(data, label, reliability, resolve_model)
 
     if not components:
         raise AnalysisError("The diagram has no component nodes to analyse.")
@@ -1329,6 +1335,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
     try:
         rbd = RepairableRBD(
             edges, components, k=k, input_node=input_node, output_node=output_node,
+            downtime_cost_rate=rbd_maintenance.downtime_cost_rate(graph),
         )
     except ValueError as exc:
         raise AnalysisError(
@@ -1631,6 +1638,8 @@ def analyze_availability(
     budget and by :data:`_AVAIL_SIMS` replications (read at call time so tests
     can shrink it). ``n_simulations`` runs exactly that many instead (rounded
     up to whole antithetic pairs)."""
+    from backend.services import rbd_costs, rbd_maintenance
+
     fixed_n = bool(n_simulations)
     n_sims = int(n_simulations) + int(n_simulations) % 2 if n_simulations else _AVAIL_SIMS
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(
@@ -1644,6 +1653,11 @@ def analyze_availability(
 
     try:
         steady = float(rbd.mean_availability(**overrides))
+    except NotImplementedError:
+        # Block replacement, or proof tests other than a constant failure rate
+        # with instant tests and repairs (#100): RePyability has no exact
+        # long-run value, so the simulation gives the availability.
+        steady = None
     except Exception as exc:  # noqa: BLE001
         raise AnalysisError(f"Couldn't compute availability: {exc}") from exc
 
@@ -1657,9 +1671,14 @@ def analyze_availability(
     if not fixed_n:
         batch, max_n, t_simulation, horizon_shortened = _size_simulation(
             rbd, float(t_simulation), n_sims, overrides, user_horizon)
-    tolerance = _availability_tolerance(1.0 - steady)
-    expect_downtime = bool(np.isfinite(steady) and steady < 1.0)
+    if steady is not None:
+        tolerance = _availability_tolerance(1.0 - steady)
+    else:
+        tolerance = _availability_tolerance(
+            rbd_maintenance.estimated_unavailability(rbd, float(t_simulation), overrides))
+    expect_downtime = bool(steady is None or (np.isfinite(steady) and steady < 1.0))
 
+    res = None
     per_node = []
     sim = {"mean_up_time": None, "mean_down_time": None, "failure_frequency": None}
     curve = None
@@ -1723,11 +1742,29 @@ def analyze_availability(
     except Exception:  # noqa: BLE001
         importance = {}
 
+    # Cost of ownership (#99) and the failures/maintenance downtime split
+    # (#100) — only for diagrams that price or maintain something.
+    extras: dict[str, Any] = {}
+    try:
+        costs = rbd_costs.cost_summary(rbd, graph, labels, gate_ids, overrides, res,
+                                       float(t_simulation), per_node, importance)
+        if costs is not None:
+            extras["costs"] = costs
+        split = rbd_maintenance.downtime_split(graph, resolve_model, overrides, steady, res,
+                                               float(t_simulation))
+        if split is not None:
+            extras["downtime"] = split
+    except Exception:  # noqa: BLE001 - never lose the availability result
+        import logging
+
+        logging.getLogger(__name__).exception("Cost/maintenance summary failed")
+
     return {
         "kind": "repairable",
         "unit": (graph.get("unit") or "").strip(),
         "steady_state_availability": steady,
-        "unavailability": (1.0 - steady) if np.isfinite(steady) else None,
+        "availability_basis": "exact" if steady is not None else "simulation",
+        "unavailability": (1.0 - steady) if steady is not None and np.isfinite(steady) else None,
         "mean_up_time": figures["mean_up_time"],
         "mean_down_time": figures["mean_down_time"],
         "failure_frequency": figures["failure_frequency"],
@@ -1745,6 +1782,7 @@ def analyze_availability(
             "failed": sorted(str(n) for n in broken_nodes),
         },
         "curve": curve,
+        **extras,
         "repyability_version": _repyability_version(),
     }
 
@@ -1790,6 +1828,10 @@ def _availability_horizon(graph: dict) -> float:
     off in a redundant corner, or an exponential block that rarely fails, no
     longer stretches the simulation for every other block. Fallback 1000.
     """
+    from backend.services.rbd_maintenance import horizon_floor
+
+    # Maintenance cycles (#100): cover a few of the longest interval.
+    floor = horizon_floor(graph)
     nodes = {n.get("id"): (n.get("data") or {}) for n in graph.get("nodes") or []}
     settle = {
         nid: t for nid, data in nodes.items()
@@ -1797,7 +1839,7 @@ def _availability_horizon(graph: dict) -> float:
         and (t := _settling_time(data["model"], data.get("repair"))) is not None
     }
     if not settle:
-        return 1000.0
+        return max(1000.0, floor)
     keep = set(settle)
     try:
         # Graph only (no model resolver), so the exported script computes the
@@ -1816,7 +1858,7 @@ def _availability_horizon(graph: dict) -> float:
     except Exception:  # noqa: BLE001 - fall back to every component
         pass
     hi = max((settle[nid] for nid in keep), default=0.0)
-    return (hi * 10.0) if hi > 0 else 1000.0
+    return max((hi * 10.0) if hi > 0 else 1000.0, floor)
 
 
 def _repyability_version() -> Optional[str]:
