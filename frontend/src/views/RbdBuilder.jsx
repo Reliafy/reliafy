@@ -23,6 +23,7 @@ import Select from "../components/Select.jsx";
 import SubsystemModal from "../components/SubsystemModal.jsx";
 import RbdSaveModal from "../components/RbdSaveModal.jsx";
 import RbdCalculator from "../components/RbdCalculator.jsx";
+import RbdFaultTree from "../components/RbdFaultTree.jsx";
 import ValidationPanel, { graphSignature } from "../components/RbdValidation.jsx";
 import { saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP } from "../api.js";
 import { ShareButton } from "../components/ShareDialog.jsx";
@@ -186,7 +187,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   // coupled by a shared failure cause (reliability analysis only).
   const [ccfGroups, setCcfGroups] = useState([]);
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
-  const [tab, setTab] = useState("builder"); // 'builder' | 'calc'
+  const [tab, setTab] = useState("builder"); // 'builder' | 'calc' | 'tree'
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
   const [checkedSig, setCheckedSig] = useState(null);
@@ -816,6 +817,12 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       >
         Calculator
       </button>
+      <button
+        className={"tab" + (tab === "tree" ? " active" : "")}
+        onClick={() => setTab("tree")}
+      >
+        Fault tree
+      </button>
     </div>
     <div
       className="rbd-canvas"
@@ -1293,6 +1300,18 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         validation={validation}
         stale={validationStale}
         rbdId={savedRbdId}
+      />
+    </div>
+    <div
+      className="rbd-calc-panel"
+      style={{ display: tab === "tree" ? undefined : "none" }}
+    >
+      <RbdFaultTree
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }}
+        validation={validation}
+        stale={validationStale}
+        active={tab === "tree"}
+        name={savedRbdName}
       />
     </div>
     </div>

@@ -582,6 +582,17 @@ export function validateRbd(graph) {
   });
 }
 
+// The fault tree of an (unsaved) graph (#101): gates over basic events, the
+// top event probability at ``t`` and ranked cut sets. ``t`` null = the
+// calculator's importance time; repairable graphs are at steady state.
+export function rbdFaultTree(graph, t = null, tMax = null) {
+  return request("/api/rbds/fault-tree", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t: t ?? null, t_max: tMax ?? null }),
+  });
+}
+
 
 // ---- Degradation & RUL -------------------------------------------------------
 
