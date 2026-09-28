@@ -6,6 +6,15 @@ import { Handle, Position } from "reactflow";
 // presentation: what a block shows is the node data plus the three contexts
 // below, which the host canvas provides.
 
+// "cold", "warm (0.3)" or "hot" from a standby node's dormancy factor (0 cold,
+// 1 hot, in between warm); older diagrams carry only the `cold` flag.
+export function standbyKind(data) {
+  const d = data.dormancy ?? (data.cold ? 0 : 1);
+  if (d <= 0) return "cold";
+  if (d >= 1) return "hot";
+  return `warm (${d})`;
+}
+
 // The RBD's unit is provided to node components so they can flag a model whose
 // unit doesn't match.
 export const RbdUnitContext = createContext("");
@@ -160,7 +169,10 @@ export const BLOCK_TYPES = {
 
 export const BLOCK_HAS_MODEL = (kind) => kind === "series" || kind === "parallel";
 
-export function StructureNode({ data }) {
+export function StructureNode({ data: nodeData, type }) {
+  // `kind` is set by the builder; graphs built elsewhere (import, the MCP
+  // server, the assistant) carry only the node's type, which is the same thing.
+  const data = nodeData.kind ? nodeData : { ...nodeData, kind: type };
   const meta = BLOCK_TYPES[data.kind] || {};
   const rbdUnit = useContext(RbdUnitContext);
   // Series/parallel/standby carry a life model whose unit can be checked.
@@ -177,7 +189,7 @@ export function StructureNode({ data }) {
     body = (
       <>
         <div className="rbd-block-sub">
-          {(data.cold ? "cold" : "hot") +
+          {standbyKind(data) +
             ` · ${data.spares ?? 1} spare${(data.spares ?? 1) === 1 ? "" : "s"}`}
         </div>
         {data.model && (

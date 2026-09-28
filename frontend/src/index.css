@@ -770,15 +770,14 @@ body {
   align-self: flex-start;
 }
 
-.standby-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
+.standby-kind {
   margin-top: 1.1rem;
-  font-size: 0.88rem;
-  color: var(--text);
-  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
+.standby-kind .seg { align-self: flex-start; }
+.standby-kind .hint { margin: 0; font-size: 0.82rem; }
 
 .standby-cold {
   margin-top: 0.9rem;

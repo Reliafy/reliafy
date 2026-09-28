@@ -740,6 +740,9 @@ class RbdNode(BaseModel):
     k: Optional[int] = Field(None, description="knode: number of branches feeding the gate.")
     spares: Optional[int] = Field(None, description="standby: number of spares.")
     cold: Optional[bool] = Field(None, description="standby: true = cold (spares don't age while idle).")
+    dormancy: Optional[float] = Field(None, ge=0, le=1, description=(
+        "standby: how fast an idle spare ages relative to a running one — 0 cold, 1 hot, "
+        "in between warm (e.g. 0.2 for a spare kept warm and pressurised). Overrides `cold`."))
     subsystem_rbd_id: Optional[str] = Field(None, description="subsystem: the saved RBD id to embed.")
 
 

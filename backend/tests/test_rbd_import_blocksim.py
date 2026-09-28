@@ -709,3 +709,26 @@ def test_flight_instruments_simulation_is_repairable():
     assert ra.validate_graph(ng)["valid"]
     res = ra.analyze_availability(ng, n_simulations=30, t_simulation=2000.0)
     assert 0.5 < res["steady_state_availability"] <= 1.0
+
+
+@pytest.mark.parametrize("active, dormant, want", [
+    ({"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 1e-3}]},
+     {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 2e-4}]}, 0.2),
+    ({"distribution_id": "weibull", "params": [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}]},
+     {"distribution_id": "weibull", "params": [{"name": "alpha", "value": 4000}, {"name": "beta", "value": 2}]}, 0.25),
+    ({"distribution_id": "lognormal", "params": [{"name": "mu", "value": 7.0}, {"name": "sigma", "value": 0.5}]},
+     {"distribution_id": "lognormal", "params": [{"name": "mu", "value": 7.0 + np.log(5)}, {"name": "sigma", "value": 0.5}]}, 0.2),
+    # Not a time-scaled copy: different Weibull shape, or a different family.
+    ({"distribution_id": "weibull", "params": [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}]},
+     {"distribution_id": "weibull", "params": [{"name": "alpha", "value": 4000}, {"name": "beta", "value": 1}]}, None),
+    ({"distribution_id": "weibull", "params": [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 1}]},
+     {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 1e-4}]}, None),
+    # Dormant ageing faster than running is treated as hot.
+    ({"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 1e-3}]},
+     {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 3e-3}]}, 1.0),
+])
+def test_dormant_model_maps_to_a_dormancy_factor(active, dormant, want):
+    from backend.services.rbd_import.blocksim import _dormancy_factor
+
+    got = _dormancy_factor(active, dormant)
+    assert got == (None if want is None else pytest.approx(want))

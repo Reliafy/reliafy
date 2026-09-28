@@ -187,15 +187,29 @@ def test_hot_spare_is_active_parallel():
     assert res["mttf"] == pytest.approx(1.5 / lam, rel=1e-3)
 
 
-def test_warm_spare_is_imported_as_hot_with_a_warning():
+def test_warm_spare_is_imported_as_warm_standby_and_matches_the_closed_form():
     d = load('toplevel "P"; "P" wsp "A" "S"; "A" lambda=1; "S" lambda=1 dorm=0.3;')
-    assert by_label(d.graph, "P")["cold"] is False
-    assert any("warm spare" in w and "HOT" in w and "conservative" in w for w in d.warnings)
+    node = by_label(d.graph, "P")
+    assert node["dormancy"] == 0.3 and node["cold"] is False and not d.warnings
+    # One active + one warm spare, both exponential(1), dormancy 0.3: the first
+    # failure comes at rate 1.3 (active + idle spare), then rate 1 — a
+    # hypoexponential life, R(t) = (a e^{-bt} - b e^{-at}) / (a - b).
+    res = rbd_analysis.analyze(normalize_graph(d.graph), t_max=4.0)
+    t = np.asarray(res["time"])
+    a, b = 1.3, 1.0
+    exact = (a * np.exp(-b * t) - b * np.exp(-a * t)) / (a - b)
+    assert np.asarray(res["system"]["sf"]) == pytest.approx(exact, abs=1e-9)
     # Explicit dormancy 0 on a wsp is a cold spare; 1 is hot.
-    assert by_label(load('toplevel "P"; "P" wsp "A" "S"; "A" lambda=1; "S" lambda=1 dorm=0;').graph,
-                    "P")["cold"] is True
-    assert by_label(load('toplevel "P"; "P" csp "A" "S"; "A" lambda=1; "S" lambda=1 dorm=1;').graph,
-                    "P")["cold"] is False
+    cold = by_label(load('toplevel "P"; "P" wsp "A" "S"; "A" lambda=1; "S" lambda=1 dorm=0;').graph, "P")
+    assert cold["cold"] is True and cold["dormancy"] == 0
+    hot = by_label(load('toplevel "P"; "P" csp "A" "S"; "A" lambda=1; "S" lambda=1 dorm=1;').graph, "P")
+    assert hot["cold"] is False and hot["dormancy"] == 1
+
+
+def test_spares_with_different_dormancy_use_the_highest_with_a_warning():
+    d = load('toplevel "P"; "P" wsp "A" "S" "T"; "A" lambda=1; "S" lambda=1 dorm=0.2; "T" lambda=1 dorm=0.5;')
+    assert by_label(d.graph, "P")["dormancy"] == 0.5
+    assert any("different dormancy" in w and "conservative" in w for w in d.warnings)
 
 
 def test_spare_with_a_different_distribution_uses_standby_model():

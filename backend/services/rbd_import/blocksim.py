@@ -880,28 +880,29 @@ class _Converter:
         if any(m != smodels[0] for m in smodels):
             return self._placeholder(base, label, "its standby units have different life models; Reliafy's standby block uses one model for all spares")
 
-        # Quiescent (dormant) behaviour of the spares.
-        quiescent = set()
+        # Quiescent (dormant) behaviour of the spares, as a dormancy factor:
+        # 0 cold (no dormant failures), 1 hot (dormant = active), in between
+        # warm — an idle spare ageing at that fraction of its active rate.
+        factors = set()
         for s in spares:
             q = s.get("quiescent_urd")
-            qmodel = None
-            if q:
-                qurd = self.p["urds"].get(q)
-                qmodel, _ = self.life_model(qurd.get("model") if qurd else None, label)
-                quiescent.add("hot" if qmodel is not None and qmodel == smodels[0] else "warm")
-            else:
-                quiescent.add("cold")
-        if quiescent == {"cold"}:
-            cold = True
-        elif quiescent == {"hot"}:
-            cold = False
+            if not q:
+                factors.add(0.0)
+                continue
+            qurd = self.p["urds"].get(q)
+            qmodel, _ = self.life_model(qurd.get("model") if qurd else None, label)
+            factors.add(_dormancy_factor(smodels[0], qmodel))
+        if len(factors) == 1 and None not in factors:
+            dormancy = factors.pop()
         else:
-            cold = False
+            dormancy = 1.0
             self.warn(
-                f"The standby units of “{label}” can fail while dormant at a reduced rate (warm standby). "
-                "Reliafy has cold and hot standby only, so it was imported as hot standby — conservative; "
-                "the BlockSim result lies between cold and hot."
+                f"The standby units of “{label}” fail while dormant by a model that isn't a scaled copy of "
+                "their active one (or differs between spares). Reliafy's warm standby ages an idle spare at a "
+                "fixed fraction of its active rate, so it was imported as hot standby — conservative; the "
+                "BlockSim result lies between cold and hot."
             )
+        cold = dormancy == 0.0
         data: dict[str, Any] = {}
         sw = self.p["switches"].get(b.get("switch"))
         if sw is not None:
@@ -917,7 +918,8 @@ class _Converter:
                 self.warn(f"The switch of “{label}” has a switching delay in BlockSim; Reliafy switches instantly.")
         if smodels[0] != pmodel:
             data["standbyModel"] = smodels[0]
-        node = {"type": "standby", "label": label, "model": pmodel, "spares": len(spares), "cold": cold}
+        node = {"type": "standby", "label": label, "model": pmodel, "spares": len(spares),
+                "cold": cold, "dormancy": dormancy}
         if data:
             node["data"] = data
         if b.get("off"):
@@ -1190,3 +1192,31 @@ def parse(data: bytes, filename: str) -> list[ImportedDiagram]:
             "Reliafy couldn't read this BlockSim project — the file looks damaged or was saved by "
             "a version whose layout Reliafy doesn't know. Try Pack and E-mail from BlockSim and upload the .rsgz."
         ) from None
+
+
+def _dormancy_factor(active: Optional[dict], dormant: Optional[dict]) -> Optional[float]:
+    """The dormancy factor that turns a spare's active life model into its
+    dormant (quiescent) one under cumulative exposure — dormant life = active
+    life / factor — when the dormant model is a time-scaled copy: same
+    exponential family (rate ratio), Weibull with the same shape (scale
+    ratio), or lognormal with the same sigma. 0 < factor <= 1 (a dormant spare
+    that ages *faster* than a running one is treated as hot). None otherwise."""
+    if not active or not dormant or active.get("distribution_id") != dormant.get("distribution_id"):
+        return None
+    a = {p["name"]: float(p["value"]) for p in active.get("params") or []}
+    d = {p["name"]: float(p["value"]) for p in dormant.get("params") or []}
+    kind = active.get("distribution_id")
+    try:
+        if kind == "exponential":
+            factor = d["failure_rate"] / a["failure_rate"]
+        elif kind == "weibull" and abs(a["beta"] - d["beta"]) <= 1e-9 * max(1.0, a["beta"]):
+            factor = a["alpha"] / d["alpha"]
+        elif kind == "lognormal" and abs(a["sigma"] - d["sigma"]) <= 1e-9 * max(1.0, a["sigma"]):
+            factor = math.exp(a["mu"] - d["mu"])
+        else:
+            return None
+    except (KeyError, ZeroDivisionError):
+        return None
+    if not factor > 0:
+        return None
+    return min(float(factor), 1.0)

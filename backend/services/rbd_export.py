@@ -45,7 +45,7 @@ from backend.fitting import DISTRIBUTIONS
 from backend.services import rbd_analysis
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.20.0", "repyability": "0.8.0"}
+_DEFAULT_VERSIONS = {"surpyval": "0.20.0", "repyability": "0.9.0"}
 _SURPYVAL_GIT = "https://github.com/derrynknife/SurPyval.git"
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
@@ -469,7 +469,28 @@ class _Script:
             spare = self.dist(spare_spec, f"{label} (spare)",
                               self.names.make(f"{var}_spare"))
         n_units = 1 + spares
-        if data.get("cold"):
+        dormancy = rbd_analysis._standby_dormancy(data, label)
+        if 0.0 < dormancy < 1.0:
+            self.imports.add("StandbyModel")
+            self.comment(
+                f"{label}: warm standby - the duty unit plus {spares} idle "
+                f"spare{'s' if spares != 1 else ''} that age at {dormancy:g} x "
+                "the operating rate while waiting (and can fail before "
+                "they're needed)."
+            )
+            units = ", ".join([duty] + [spare] * spares)
+            line = f"{var} = StandbyModel([{units}], k=1, " \
+                   f"dormancy_factor={_num(dormancy)})"
+            if len(line) > 79:
+                self.lines.append(f"{var} = StandbyModel(")
+                self.lines.append(f"    [{units}],")
+                self.lines.append("    k=1,")
+                self.lines.append(f"    dormancy_factor={_num(dormancy)},")
+                self.lines.append(")")
+            else:
+                self.lines.append(line)
+            return var
+        if dormancy == 0.0:
             try:
                 switch = float(data.get("startProb", 1.0))
             except (TypeError, ValueError):

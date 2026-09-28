@@ -15,6 +15,7 @@ Compact node (what an assistant writes and reads)::
      "repair": {...},                         # repairable diagrams only
      "n": 2, "k": 3, "spares": 1, "cold": true,
      "standbyModel": {...}, "startProb": 0.98,  # cold standby: spare's own model, switch reliability
+     "dormancy": 0.3,                         # standby: 0 cold, 1 hot, between = warm
      "subsystem_rbd_id": "<saved rbd id>"}
 
 A node may instead carry the persisted ``data: {...}`` object; both are
@@ -185,7 +186,8 @@ def normalize_graph(
             raise GraphError(f"node '{nid}': type must be one of {', '.join(NODE_TYPES)}.")
 
         data = dict(raw.get("data") or {})
-        for key in ("label", "model", "repair", "n", "k", "spares", "cold", "standbyModel", "startProb"):
+        for key in ("label", "model", "repair", "n", "k", "spares", "cold", "dormancy",
+                    "standbyModel", "startProb"):
             if raw.get(key) is not None and key not in data:
                 data[key] = raw[key]
         if raw.get("subsystem_rbd_id") and "rbd" not in data:
@@ -250,7 +252,7 @@ def compact_graph(graph: dict) -> dict:
                 if m.get("placeholder"):
                     cm["placeholder"] = True
                 node[key] = cm
-        for key in ("n", "k", "spares", "cold", "startProb"):
+        for key in ("n", "k", "spares", "cold", "dormancy", "startProb"):
             if d.get(key) is not None:
                 node[key] = d[key]
         if isinstance(d.get("rbd"), dict) and d["rbd"].get("id"):

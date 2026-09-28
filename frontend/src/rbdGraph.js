@@ -134,7 +134,7 @@ export function compactGraph(graph = {}) {
         ...(d.model.placeholder ? { placeholder: true } : {}),
       };
     }
-    for (const k of ["n", "k", "spares", "cold"]) if (d[k] != null) node[k] = d[k];
+    for (const k of ["n", "k", "spares", "cold", "dormancy"]) if (d[k] != null) node[k] = d[k];
     if (d.rbd?.id) node.subsystem_rbd_id = d.rbd.id;
     return node;
   });

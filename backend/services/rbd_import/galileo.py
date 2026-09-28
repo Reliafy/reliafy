@@ -14,7 +14,7 @@ Mapped to Reliafy:
 
 * ``or`` / ``and`` / ``KofM`` -> series / parallel / k-of-n voting;
 * ``csp`` / ``hsp`` / ``wsp`` whose children are basic events used nowhere
-  else -> a ``standby`` block (cold / hot; warm is approximated — see below);
+  else -> a ``standby`` block (cold, warm or hot, by the dormancy factor);
 * ``lambda=`` -> Exponential (a rate); ``phases=N`` -> Erlang = Gamma(shape N,
   rate lambda); Storm's ``shape=``/``rate=`` (Weibull, ``rate`` being Storm's
   *scale*) and ``mean=``/``stddev=`` (LogNormal of the underlying normal);
@@ -467,18 +467,17 @@ def _spare_block(name, gtype, kids, nodes, gates, parents, dorm, warnings) -> ft
             "standby block has one primary model and one (shared) spare model.")
     default = _SPARE[gtype]
     factors = [dorm[c] if dorm[c] is not None else default for c in kids[1:]]
-    if all(f == 0 for f in factors):
-        cold = True
-    elif all(f == 1 for f in factors):
-        cold = False
-    else:
-        cold = False
+    # Galileo's dormancy factor is exactly Reliafy's (RePyability's): an idle
+    # spare fails at that fraction of its active rate — 0 cold, 1 hot.
+    dormancy = max(factors)
+    if len(set(factors)) > 1:
         warnings.append(
-            f"Spare gate “{name}” is a warm spare (dormancy {', '.join(f'{f:g}' for f in sorted(set(factors)))}). "
-            "Reliafy has cold and hot standby only, so it was imported as HOT standby — the "
-            "conservative choice (dormant spares age at the full rate), so the imported "
+            f"Spare gate “{name}” has spares with different dormancy factors "
+            f"({', '.join(f'{f:g}' for f in sorted(set(factors)))}). A Reliafy standby block has one, "
+            f"so it was imported with the highest, {dormancy:g} — conservative: the imported "
             "reliability is a lower bound.")
-    node = {"type": "standby", "model": primary.node["model"], "spares": len(spares), "cold": cold}
+    node = {"type": "standby", "model": primary.node["model"], "spares": len(spares),
+            "cold": dormancy == 0, "dormancy": dormancy}
     if ft.model_key(spares[0].node["model"]) != ft.model_key(primary.node["model"]):
         node["standbyModel"] = spares[0].node["model"]
     return ft.Leaf(name, node)

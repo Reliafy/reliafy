@@ -7,13 +7,11 @@ numpy
 # hazards / AFT / PO / AH classes, the discrete distributions, and more. Pinned
 # to a commit SHA so builds are reproducible. (Requires git at build time.)
 git+https://github.com/derrynknife/SurPyval.git@v0.20.0
-# RePyability is installed --no-deps in the Dockerfile, which is what makes the
-# pin above authoritative — its metadata still says surpyval>=0.16,<0.17, a
-# ceiling it has simply never moved rather than a real incompatibility. It only
-# touches the distribution classes' fit/sf surface, which is unchanged across
-# 0.16 -> 0.19; backend/tests/test_rbd_analysis.py exercises that pairing, so a
-# real break would fail the suite rather than reach production. --no-deps also
-# stops pip re-resolving surpyval from PyPI, where the releases are stale.
+# RePyability is installed --no-deps in the Dockerfile (and CI), pinned to a
+# git tag (v0.9.0), which keeps the SurPyval pin above authoritative: 0.9.0
+# declares surpyval>=0.20 (uncapped), but --no-deps also stops pip re-resolving
+# surpyval from PyPI. backend/tests/test_rbd_analysis.py exercises the pairing,
+# so a real break would fail the suite rather than reach production.
 # RePyability's runtime deps (numpy/scipy via surpyval, networkx, tqdm) are
 # provided explicitly here.
 # Transitive deps not declared by the above / for the --no-deps repyability:
