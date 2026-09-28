@@ -567,6 +567,25 @@ export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = nu
   });
 }
 
+// Compare two repairable designs (#104): ``graph`` (A, the diagram in the
+// builder) against the saved diagram ``otherId`` (B). Returns the simulated
+// difference in the window's mean availability (B − A) with its interval, from
+// common random numbers, plus both exact long-run availabilities. Paid like
+// the availability simulation (402 ``pro_required``).
+export function compareRbds(graph, otherId, { name = null, otherName = null, tMax = null } = {}) {
+  return request("/api/rbds/compare", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      graph,
+      other_id: otherId,
+      name,
+      other_name: otherName,
+      t_max: tMax ?? null,
+    }),
+  });
+}
+
 // Analyse a saved RBD by id (sub-systems are resolved server-side).
 export function analyzeSavedRbd(id, tMax) {
   const q = tMax != null ? `?t_max=${encodeURIComponent(tMax)}` : "";

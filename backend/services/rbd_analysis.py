@@ -23,6 +23,7 @@ identical units is ``1 - (1 - R)^n``); cold standby uses RePyability's
 from __future__ import annotations
 
 import time
+import warnings
 from itertools import combinations
 from math import comb
 from typing import Any, Callable, Optional
@@ -1209,14 +1210,27 @@ def _valid_beta(v) -> bool:
 # characterised by its *availability* (long-run uptime), not a one-shot
 # reliability curve. Built on RePyability's RepairableRBD.
 
-_AVAIL_SIMS = 2000  # Monte-Carlo replications for the availability estimate
-# Wall-clock budget for one availability simulation. A pilot batch measures the
-# cost per replication and the count is sized to fit (never below the minimum);
-# if even the minimum wouldn't fit, the default horizon is shortened. The exact
-# long-run figures don't depend on the simulation at all.
+# The availability simulation runs to a precision target (#104): replications
+# are added in batches of _AVAIL_BATCH, in antithetic pairs, until the
+# confidence interval of the window's mean availability is within the
+# tolerance (see _availability_tolerance) — or the wall-clock budget runs out.
+# A pilot batch measures the cost per replication to turn the budget into a
+# replication limit (never below the minimum); if even the minimum wouldn't
+# fit, the default horizon is shortened. The exact long-run figures don't
+# depend on the simulation at all.
+_AVAIL_SIMS = 20_000  # the most replications a run makes (the budget usually binds first)
+_AVAIL_BATCH = 500  # first batch and step of a run to the target; also shapes the curve's band
 _AVAIL_TIME_BUDGET = 20.0
 _AVAIL_MIN_SIMS = 100
 _AVAIL_PILOT_SIMS = 20
+_AVAIL_SEED = 1
+_AVAIL_CONFIDENCE = 0.95
+# Tolerance on the window's mean availability, relative to the unavailability
+# (a fixed absolute tolerance is meaningless at 99.99%: ±0.001 would swamp a
+# 0.0001 unavailability), and never looser than 0.1 percentage point.
+_AVAIL_REL_TOLERANCE = 0.05
+_AVAIL_MAX_TOLERANCE = 1e-3
+_AVAIL_MIN_TOLERANCE = 1e-12  # RePyability wants > 0; a never-down system meets it at once
 
 
 def _always_up():
@@ -1468,29 +1482,138 @@ def _simulated_criticality(res, labels, gate_ids) -> dict:
     return out
 
 
-def _size_simulation(rbd, t_sim: float, n_max: int, overrides: dict,
-                     user_horizon: bool) -> tuple[int, float, bool]:
-    """``(replications, horizon, shortened)`` fitting :data:`_AVAIL_TIME_BUDGET`.
+def _z(confidence: float) -> float:
+    """The two-sided normal quantile for ``confidence``."""
+    from scipy.stats import norm
 
-    A pilot batch times one replication; the count is the most that fits the
-    budget, capped at ``n_max`` and floored at :data:`_AVAIL_MIN_SIMS`. When
-    even the floor won't fit, a *default* horizon is shortened in proportion
-    (simulation cost is proportional to the number of failure events, i.e. to
-    the horizon); a horizon the user chose is kept.
+    return float(norm.ppf(0.5 + confidence / 2.0))
+
+
+def _even(n) -> int:
+    """``n`` rounded down to an even count (antithetic runs come in pairs),
+    at least 2."""
+    return max(2, int(n) - int(n) % 2)
+
+
+def _availability_tolerance(unavailability) -> float:
+    """The half-width target for the window's mean availability:
+    :data:`_AVAIL_REL_TOLERANCE` of the long-run unavailability (of the
+    availability, for a system that is mostly down), never looser than
+    :data:`_AVAIL_MAX_TOLERANCE`. So 99.99% is pinned to ±0.0005 percentage
+    points, 98% to ±0.1."""
+    try:
+        u = float(unavailability)
+    except (TypeError, ValueError):
+        return _AVAIL_MAX_TOLERANCE
+    if not np.isfinite(u):
+        return _AVAIL_MAX_TOLERANCE
+    scale = min(max(u, 0.0), max(1.0 - u, 0.0))
+    return float(min(max(_AVAIL_REL_TOLERANCE * scale, _AVAIL_MIN_TOLERANCE), _AVAIL_MAX_TOLERANCE))
+
+
+def _plan_simulation(per_rep: float, n_max: int, t_sim: float,
+                     user_horizon: bool) -> tuple[int, int, float, bool]:
+    """``(batch, max_n, horizon, shortened)`` fitting :data:`_AVAIL_TIME_BUDGET`
+    at ``per_rep`` seconds per replication.
+
+    ``max_n`` is the most replications that fit the budget, capped at
+    ``n_max`` and floored at :data:`_AVAIL_MIN_SIMS`, and rounded down to
+    whole batches so it moves in coarse steps (a run that reaches its target
+    doesn't depend on it at all). When even the floor won't fit, a *default*
+    horizon is shortened in proportion (simulation cost is proportional to the
+    number of failure events, i.e. to the horizon); a horizon the user chose is
+    kept.
     """
+    n_max = _even(n_max)
+    n_floor = _even(min(_AVAIL_MIN_SIMS, n_max))
+    if per_rep * n_floor > _AVAIL_TIME_BUDGET:
+        if user_horizon:
+            return n_floor, n_floor, t_sim, False
+        return n_floor, n_floor, t_sim * _AVAIL_TIME_BUDGET / (per_rep * n_floor), True
+    max_n = _even(min(n_max, max(n_floor, _AVAIL_TIME_BUDGET / per_rep)))
+    batch = _even(min(_AVAIL_BATCH, max_n))
+    return batch, batch * (max_n // batch), t_sim, False
+
+
+def _simulate(rbd, t_sim: float, overrides: dict, n: int, **kwargs):
+    """``(result, antithetic)``: RePyability's availability simulation, seeded,
+    in antithetic pairs when every block's draws can be replayed (surpyval
+    parametric models) and plain otherwise. ``kwargs`` pass the stopping rule
+    through; its "did not converge" warning is reported in the result's
+    precision instead."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        try:
+            res = rbd.availability(t_simulation=t_sim, N=_even(n), method="c", seed=_AVAIL_SEED,
+                                   antithetic=True, **kwargs, **overrides)
+            return res, True
+        except NotImplementedError:
+            return rbd.availability(t_simulation=t_sim, N=n, method="c", seed=_AVAIL_SEED,
+                                    **kwargs, **overrides), False
+
+
+def _size_simulation(rbd, t_sim: float, n_max: int, overrides: dict,
+                     user_horizon: bool) -> tuple[int, int, float, bool]:
+    """``(batch, max_n, horizon, shortened)`` for a run to the precision
+    target: a pilot batch times one replication and :func:`_plan_simulation`
+    turns the time budget into a replication limit."""
     if n_max <= _AVAIL_PILOT_SIMS:
-        return n_max, t_sim, False
+        n = _even(n_max)
+        return n, n, t_sim, False
     start = time.perf_counter()
     try:
-        rbd.availability(t_simulation=t_sim, N=_AVAIL_PILOT_SIMS, method="c", seed=1, **overrides)
+        _simulate(rbd, t_sim, overrides, _AVAIL_PILOT_SIMS)
     except Exception:  # noqa: BLE001 - the real run reports the problem
-        return n_max, t_sim, False
+        n = _even(min(_AVAIL_BATCH, n_max))
+        return n, n, t_sim, False
     per_rep = max((time.perf_counter() - start) / _AVAIL_PILOT_SIMS, 1e-9)
-    n_floor = min(_AVAIL_MIN_SIMS, n_max)
-    n = int(min(n_max, max(n_floor, _AVAIL_TIME_BUDGET / per_rep)))
-    if user_horizon or per_rep * n_floor <= _AVAIL_TIME_BUDGET:
-        return n, t_sim, False
-    return n_floor, t_sim * _AVAIL_TIME_BUDGET / (per_rep * n_floor), True
+    return _plan_simulation(per_rep, n_max, t_sim, user_horizon)
+
+
+def _run_to_precision(rbd, t_sim: float, overrides: dict, batch: int, max_n: int,
+                      tolerance: float, expect_downtime: bool):
+    """``(result, antithetic)`` of a run to ``tolerance`` on the window's mean
+    availability. RePyability stops as soon as the interval is narrow enough,
+    and one batch that saw no system downtime at all has a zero-width
+    interval — for a system that does go down that is a lack of evidence, not
+    precision, so the run is then repeated at ``max_n``."""
+    kwargs = {"confidence": _AVAIL_CONFIDENCE}
+    if max_n > batch:
+        kwargs.update(tolerance=tolerance, max_N=max_n)
+    res, antithetic = _simulate(rbd, t_sim, overrides, batch, **kwargs)
+    if (expect_downtime and max_n > getattr(res, "n_simulations", max_n)
+            and not float(getattr(res, "system_downtime", 1.0) or 0.0) > 0.0):
+        res, antithetic = _simulate(rbd, t_sim, overrides, max_n)
+    return res, antithetic
+
+
+def _precision(res, tolerance: float, antithetic: bool, max_n: Optional[int],
+               expect_downtime: bool) -> Optional[dict]:
+    """How precisely the simulation pinned down the window's mean availability:
+    its confidence interval, the target it was run to, and whether it got
+    there (``max_n`` is None for a fixed replication count)."""
+    try:
+        ci = res.mean_availability_interval(_AVAIL_CONFIDENCE)
+    except Exception:  # noqa: BLE001 - a result without per-run up times
+        return None
+    se = _f(ci.standard_error)
+    # z·SE, unclipped: the interval is clipped to [0, 1], its precision isn't.
+    half = None if se is None else _z(_AVAIL_CONFIDENCE) * se
+    reached = half is not None and half <= tolerance and (se > 0.0 or not expect_downtime)
+    return {
+        "window_availability": _f(ci.estimate),
+        "lower": _f(ci.lower),
+        "upper": _f(ci.upper),
+        "half_width": half,
+        "standard_error": se,
+        "confidence": _AVAIL_CONFIDENCE,
+        "tolerance": tolerance,
+        "reached": bool(reached),
+        "n_simulations": int(res.n_simulations),
+        "max_simulations": max_n,
+        "antithetic": bool(antithetic),
+        "mode": "fixed" if max_n is None else "tolerance",
+    }
 
 
 def analyze_availability(
@@ -1503,10 +1626,13 @@ def analyze_availability(
     down time, failure frequency, each component's share of downtime, and
     per-block importance / criticality measures.
 
-    ``n_simulations`` overrides the Monte-Carlo replication count (default
-    :data:`_AVAIL_SIMS`, read at call time so tests can shrink it)."""
+    The simulation runs to a precision target on the window's mean
+    availability (see :func:`_availability_tolerance`), bounded by the time
+    budget and by :data:`_AVAIL_SIMS` replications (read at call time so tests
+    can shrink it). ``n_simulations`` runs exactly that many instead (rounded
+    up to whole antithetic pairs)."""
     fixed_n = bool(n_simulations)
-    n_sims = int(n_simulations) if n_simulations else _AVAIL_SIMS
+    n_sims = int(n_simulations) + int(n_simulations) % 2 if n_simulations else _AVAIL_SIMS
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(
         graph, resolve_model
     )
@@ -1527,17 +1653,27 @@ def analyze_availability(
     if not user_horizon:
         t_simulation = _availability_horizon(graph)
     horizon_shortened = False
+    batch = max_n = n_sims
     if not fixed_n:
-        n_sims, t_simulation, horizon_shortened = _size_simulation(
+        batch, max_n, t_simulation, horizon_shortened = _size_simulation(
             rbd, float(t_simulation), n_sims, overrides, user_horizon)
+    tolerance = _availability_tolerance(1.0 - steady)
+    expect_downtime = bool(np.isfinite(steady) and steady < 1.0)
 
     per_node = []
     sim = {"mean_up_time": None, "mean_down_time": None, "failure_frequency": None}
     curve = None
     criticality: dict = {}
+    precision = None
     try:
-        res = rbd.availability(t_simulation=float(t_simulation), N=n_sims,
-                               method="c", seed=1, **overrides)
+        if fixed_n:
+            res, antithetic = _simulate(rbd, float(t_simulation), overrides, n_sims)
+        else:
+            res, antithetic = _run_to_precision(
+                rbd, float(t_simulation), overrides, batch, max_n, tolerance, expect_downtime)
+        n_sims = int(getattr(res, "n_simulations", n_sims))
+        precision = _precision(res, tolerance, antithetic, None if fixed_n else max_n,
+                               expect_downtime)
         sim = {
             "mean_up_time": _f(getattr(res, "mean_up_time", None)),
             "mean_down_time": _f(getattr(res, "mean_down_time", None)),
@@ -1600,6 +1736,7 @@ def analyze_availability(
         "n_simulations": n_sims,
         "t_simulation": float(t_simulation),
         "horizon_shortened": horizon_shortened,
+        "precision": precision,
         "per_node": per_node,
         "importance": importance,
         "criticality": criticality,

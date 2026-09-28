@@ -10,7 +10,9 @@ calculation the app does:
   lives and the six importance measures at the app's representative time;
 * a **repairable** diagram prints the exact steady-state availability, mean
   up/down time and failure frequency, then runs the same seeded availability
-  simulation (``t_simulation``, ``N``) as the app.
+  simulation as the app: the same ``t_simulation``, antithetic pairs, run to
+  the same precision target on the window's mean availability (so a run that
+  reaches it reproduces the app's numbers exactly).
 
 The translation mirrors ``rbd_analysis`` block by block — one RBD node per
 builder node, series/parallel count blocks and hot standby as a single
@@ -821,8 +823,10 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
     ]
     if repairable:
         lines += textwrap.wrap(
-            "Set RELIAFY_N_SIMS to change the number of simulated histories "
-            "(default 2000, as in Reliafy; fewer runs faster). The "
+            "The simulation runs until the window's mean availability is "
+            "known precisely enough, as in Reliafy (up to RELIAFY_MAX_SIMS "
+            "histories, default 20000). Set RELIAFY_N_SIMS to run exactly "
+            "that many histories instead (fewer runs faster). The "
             "steady-state figures are exact and don't depend on it.", 79)
         lines.append("")
     lines += textwrap.wrap(
@@ -1273,7 +1277,23 @@ def _repairable_body(script: _Script, graph) -> str:
                "parameter in the")
     out.append("# diagram, long enough to reach steady state.")
     out.append(f"T_SIMULATION = {_num(horizon)}")
-    out.append('N_SIMS = int(os.environ.get("RELIAFY_N_SIMS", "2000"))')
+    out.append("# Reliafy runs the simulation to a precision target: antithetic "
+               "pairs of")
+    out.append("# histories, in batches of BATCH, until the confidence interval "
+               "of the")
+    out.append("# window's mean availability is within the tolerance (see "
+               "availability_tolerance)")
+    out.append("# or MAX_SIMS have run (Reliafy's limit comes from a time "
+               "budget).")
+    out.append(f"CONFIDENCE = {rbd_analysis._AVAIL_CONFIDENCE!r}")
+    out.append(f"BATCH = {rbd_analysis._AVAIL_BATCH}")
+    out.append(f"REL_TOLERANCE = {rbd_analysis._AVAIL_REL_TOLERANCE!r}")
+    out.append(f"MAX_TOLERANCE = {rbd_analysis._AVAIL_MAX_TOLERANCE!r}")
+    out.append(f"MIN_TOLERANCE = {rbd_analysis._AVAIL_MIN_TOLERANCE!r}")
+    out.append('MAX_SIMS = int(os.environ.get("RELIAFY_MAX_SIMS", '
+               f'"{rbd_analysis._AVAIL_SIMS}"))')
+    out.append("# Set RELIAFY_N_SIMS to run exactly that many histories instead.")
+    out.append('N_SIMS = int(os.environ.get("RELIAFY_N_SIMS") or 0)')
     out.append("")
     out.append("")
     out.append(_REPAIRABLE_MAIN.strip("\n"))
@@ -1287,6 +1307,33 @@ def save_results(results):
     if path:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(results, fh, indent=2)
+
+
+def availability_tolerance(unavailability):
+    """The precision target for the window's mean availability, as in
+    Reliafy: REL_TOLERANCE of the unavailability (of the availability, for a
+    system that is mostly down), never looser than MAX_TOLERANCE."""
+    if not np.isfinite(unavailability):
+        return MAX_TOLERANCE
+    scale = min(max(unavailability, 0.0), max(1.0 - unavailability, 0.0))
+    return float(min(max(REL_TOLERANCE * scale, MIN_TOLERANCE), MAX_TOLERANCE))
+
+
+def simulate(availability, tolerance, overrides):
+    """The seeded availability simulation, in antithetic pairs: N_SIMS
+    histories when set, else run to the tolerance."""
+    run = dict(t_simulation=T_SIMULATION, method="c", seed=1, antithetic=True)
+    if N_SIMS:
+        return rbd.availability(N=N_SIMS + N_SIMS % 2, **run, **overrides)
+    max_n = max(2, MAX_SIMS - MAX_SIMS % 2)
+    batch = min(BATCH, max_n)
+    sim = rbd.availability(N=batch, tolerance=tolerance, confidence=CONFIDENCE,
+                           max_N=max_n, **run, **overrides)
+    # One batch that saw no system downtime has a zero-width interval: for a
+    # system that does go down, that's a lack of evidence, not precision.
+    if availability < 1.0 and not sim.system_downtime > 0 and sim.n_simulations < max_n:
+        sim = rbd.availability(N=max_n, **run, **overrides)
+    return sim
 
 
 def main():
@@ -1310,10 +1357,17 @@ def main():
           + (f" ({UNIT})" if UNIT else ""))
 
     # Monte-Carlo availability over time, seeded exactly as in Reliafy.
-    print(f"\\nSimulating {N_SIMS} histories of {T_SIMULATION:,.6g}{unit}...")
-    sim = rbd.availability(
-        t_simulation=T_SIMULATION, N=N_SIMS, method="c", seed=1, **overrides
-    )
+    tolerance = availability_tolerance(1.0 - availability)
+    if N_SIMS:
+        print(f"\\nSimulating {N_SIMS} histories of {T_SIMULATION:,.6g}{unit}...")
+    else:
+        print(f"\\nSimulating histories of {T_SIMULATION:,.6g}{unit} until the "
+              f"window's mean availability is known to +/-{tolerance:.3g}...")
+    sim = simulate(availability, tolerance, overrides)
+    window = sim.mean_availability_interval(CONFIDENCE)
+    print(f"  window mean availability: {window.estimate:.6f} "
+          f"({CONFIDENCE:.0%} CI {window.lower:.6f} to {window.upper:.6f}, "
+          f"{sim.n_simulations} histories)")
     print(f"  simulated mean up time: {sim.mean_up_time:,.6g}{unit}")
     print(f"  simulated mean down time: {sim.mean_down_time:,.6g}{unit}")
     print(f"  simulated failure frequency: {sim.failure_frequency:.6g}")
@@ -1343,7 +1397,14 @@ def main():
         "mean_down_time": mean_down,
         "failure_frequency": frequency,
         "t_simulation": T_SIMULATION,
-        "n_simulations": N_SIMS,
+        "n_simulations": int(sim.n_simulations),
+        "precision": {
+            "window_availability": window.estimate,
+            "lower": window.lower,
+            "upper": window.upper,
+            "standard_error": window.standard_error,
+            "tolerance": tolerance,
+        },
         "simulated": {
             "mean_up_time": sim.mean_up_time,
             "mean_down_time": sim.mean_down_time,
