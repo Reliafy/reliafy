@@ -112,12 +112,12 @@ def optimal_replacement(
         raise StrategyError("The planned cost must be less than the unplanned cost.")
 
     model, name = _model_from_params(distribution_id, params, extras)
-    if extras and extras.get("p") is not None:
-        raise StrategyError(
-            "Replacement optimisation isn't defined for limited-failure-population "
-            "models — a fraction of the population never fails, so the cost rate "
-            "has no age-based optimum in general. Refit without LFP to use this."
-        )
+    # A limited failure population: a fraction 1 - p never fails. RePyability
+    # (0.9+) handles it: no replacement age beats running to failure, whose
+    # long-run cost rate is 0 — the units still running are, more and more,
+    # the ones that never will fail.
+    p_fail = float(extras["p"]) if extras and extras.get("p") is not None else 1.0
+    lfp = p_fail < 1.0
     nr = NonRepairable(model)
     nr.set_costs_planned_and_unplanned(cp, cu)
 
@@ -126,11 +126,19 @@ def optimal_replacement(
     except Exception:
         t_opt = None
 
-    mttf = _scalar(model.mean())
-    rtf_rate = cu / mttf if mttf and mttf > 0 else None
+    mttf = None if lfp else _scalar(model.mean())
+    if lfp:
+        rtf_rate = 0.0
+    else:
+        rtf_rate = cu / mttf if mttf and mttf > 0 else None
 
-    # Time grid for the cost-rate curve: focus around the optimum / 95th pct.
-    hi = _scalar(model.qf(0.95)) or (mttf * 2 if mttf else 1.0)
+    # Time grid for the cost-rate curve: focus around the optimum / 95th pct
+    # (of the units that fail, for a limited failure population).
+    try:
+        hi = _scalar(model.qf(0.95 * p_fail))
+    except Exception:
+        hi = None
+    hi = hi or (mttf * 2 if mttf else 1.0)
     if t_opt and 0 < t_opt < hi * 5:
         hi = max(hi, t_opt * 1.6)
     if not hi or hi <= 0:
@@ -152,7 +160,14 @@ def optimal_replacement(
     # exponential) and run-to-failure is correct.
     beneficial = bool(t_opt and np.isfinite(t_opt) and savings > 0.005)
 
-    if beneficial:
+    if lfp and not beneficial:
+        recommendation = (
+            f"No replacement age pays off: {1 - p_fail:.0%} of units never fail (a limited "
+            "failure population), so the longer a unit runs, the likelier it's one of them. "
+            "Over the long run, replacing on failure costs next to nothing per unit time — "
+            "replace on failure (run-to-failure)."
+        )
+    elif beneficial:
         unit_s = f" {unit}" if unit else ""
         recommendation = (
             f"Replace preventively at about {t_opt:,.0f}{unit_s}. "

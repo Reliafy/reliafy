@@ -103,12 +103,21 @@ def test_reconstruction_carries_extras():
     assert float(model.qf(0.5)) > r["extras"]["gamma"]
 
 
-def test_replacement_rejects_lfp():
-    from backend.services.strategy import StrategyError, optimal_replacement
+def test_replacement_for_lfp_is_run_to_failure():
+    """With a limited failure population no replacement age beats running to
+    failure (RePyability 0.9+): its long-run cost rate is 0."""
+    import numpy as np
 
-    params = [{"name": "alpha", "value": 1000.0}, {"name": "beta", "value": 2.0}]
-    with pytest.raises(StrategyError, match="limited-failure-population"):
-        optimal_replacement("weibull", params, 100, 1000, extras={"p": 0.6})
+    from backend.services.strategy import optimal_replacement
+
+    params = [{"name": "alpha", "value": 1000.0}, {"name": "beta", "value": 3.0}]
+    res = optimal_replacement("weibull", params, 100, 1000, extras={"p": 0.6})
+    assert res["beneficial"] is False and res["optimal_time"] is None
+    assert res["run_to_failure_cost_rate"] == 0.0 and res["mttf"] is None
+    assert "40% of units never fail" in res["recommendation"]
+    assert all(np.isfinite(v) for v in res["curve"]["cost_rate"] if v is not None)
+    # The same wear-out model without LFP does have an optimum.
+    assert optimal_replacement("weibull", params, 100, 1000)["beneficial"] is True
 
 
 # ---- API round trip ----------------------------------------------------------
