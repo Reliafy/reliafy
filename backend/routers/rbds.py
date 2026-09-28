@@ -32,6 +32,7 @@ def _summary(rbd, ctx: AccessCtx) -> dict:
         "name": rbd.name,
         "n_nodes": len(graph.get("nodes", [])),
         "n_edges": len(graph.get("edges", [])),
+        "repairable": bool(graph.get("repairable")),
         "created_at": rbd.created_at.isoformat(),
         "updated_at": rbd.updated_at.isoformat(),
         "is_sample": samples_service.is_sample(rbd.owner_id),

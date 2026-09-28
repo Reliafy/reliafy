@@ -4,6 +4,8 @@ import Plot from "react-plotly.js";
 import { analyzeRbd } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import CovariatesModal from "./CovariatesModal.jsx";
+import AvailabilityCompare from "./AvailabilityCompare.jsx";
+import { precisionNote } from "./availabilityPrecision.js";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -450,8 +452,9 @@ export function AvailabilityView({ result, unit }) {
       )}
       <p className="muted-line" style={{ margin: 0 }}>
         Availability curve estimated by {result.n_simulations?.toLocaleString()} Monte-Carlo
-        replications over {fmt(result.t_simulation)}{u}
+        replications{result.precision?.antithetic ? " (in antithetic pairs)" : ""} over {fmt(result.t_simulation)}{u}
         {hasBand ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}.
+        {precisionNote(result)}
         {result.horizon_shortened && " The window was shortened to keep the simulation quick; the long-run figures don't depend on it."}
         {basis.mean_up_time === "exact" && " Mean up/down time and failure frequency are exact steady-state values."}
       </p>
@@ -723,6 +726,9 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
 
       {result && !stale && result.kind === "repairable" && (
         <AvailabilityView result={result} unit={graph.unit} />
+      )}
+      {result && !stale && result.kind === "repairable" && (
+        <AvailabilityCompare graph={graph} rbdId={rbdId} result={result} />
       )}
 
       {result && !stale && result.kind !== "repairable" && (
