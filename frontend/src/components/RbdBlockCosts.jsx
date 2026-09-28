@@ -183,8 +183,11 @@ export function BlockCostSection({ initial, onChange, unit = "" }) {
 }
 
 // Small chips on a repairable block: its maintenance at a glance.
+const UNIT_ABBR = { hours: "h", hour: "h", days: "d", day: "d", years: "y", year: "y", minutes: "min", weeks: "wk" };
+
 export function MaintenanceChips({ data, unit }) {
-  const u = unit ? ` ${unit.replace(/s$/, "").slice(0, 3)}` : "";
+  const key = (unit || "").trim().toLowerCase();
+  const u = key ? ` ${UNIT_ABBR[key] || key}` : "";
   const fmt = (v) => (Number.isFinite(Number(v)) ? Number(Number(v).toPrecision(4)).toLocaleString() : "?");
   if (!data.preventive && !data.inspection) return null;
   return (

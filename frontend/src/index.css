@@ -6554,18 +6554,19 @@ button.danger:hover { background: #fdeeee; }
 .rbd-costs-body .hint { margin: 0; }
 .rbd-costs-h { font-size: 12px; font-weight: 700; color: var(--text); margin-top: 4px; }
 .rbd-costs-h .muted { font-weight: 400; color: var(--muted); }
-.rbd-cost-field input { width: 132px; }
+.rbd-cost-field input { width: 116px; }
 .rbd-cost-field span { font-family: inherit; }
 .rbd-cost-field small { color: var(--faint); font-size: 11px; }
 .rbd-costs-body > .seg { align-self: flex-start; flex-wrap: wrap; }
 .rbd-costs-errors { margin: 0; padding-left: 18px; color: #b42318; font-size: 12.5px; }
-.rbd-maint-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+/* Overhang the card's bottom edge (like the placeholder chip) so the card keeps its size. */
+.rbd-maint-chips { position: absolute; bottom: -8px; left: 8px; display: flex; gap: 4px; z-index: 2; }
 .rbd-maint-chip {
   font-size: 9.5px; font-weight: 700; letter-spacing: 0.02em; border-radius: 999px; padding: 1px 6px;
   border: 1px solid transparent; white-space: nowrap;
 }
-.rbd-maint-chip.pm { background: rgba(22, 163, 74, 0.12); color: #15803d; border-color: rgba(22, 163, 74, 0.3); }
-.rbd-maint-chip.test { background: rgba(124, 58, 237, 0.1); color: #6d28d9; border-color: rgba(124, 58, 237, 0.3); }
+.rbd-maint-chip.pm { background: #e8f6ee; color: #15803d; border-color: rgba(22, 163, 74, 0.35); }
+.rbd-maint-chip.test { background: #f1ebfd; color: #6d28d9; border-color: rgba(124, 58, 237, 0.35); }
 .rbd-basis {
   display: inline-block; margin-left: 4px; font-size: 9.5px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.03em; padding: 0 5px; border-radius: 4px; vertical-align: 1px;

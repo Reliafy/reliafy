@@ -680,7 +680,17 @@ def fault_tree(
     """
     unit = (graph.get("unit") or "").strip()
     if graph.get("repairable"):
-        tree, event_info, unavailability = _repairable_tree(graph, resolve_model)
+        try:
+            tree, event_info, unavailability = _repairable_tree(graph, resolve_model)
+        except NotImplementedError:
+            # #100: block replacement, or proof tests other than an exponential
+            # life with instant tests and repairs, have no exact long-run values.
+            raise AnalysisError(
+                "The fault tree uses the blocks' exact long-run unavailabilities, which "
+                "RePyability doesn't have for block replacement or for proof tests with a "
+                "non-exponential life, test time or repair time — the Calculator tab "
+                "simulates them."
+            ) from None
         out = _payload(tree, {tree.top: {"label": None, "role": "top"}}, event_info, 1.0, "availability")
         out["unavailability"] = ra._f(unavailability)
         out["unit"] = unit

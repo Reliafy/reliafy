@@ -915,11 +915,13 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
             <button
               className={"rbd-costs-toggle" + (diagramCosts ? " set" : "")}
               onClick={() => setModal("costs")}
-              title="System downtime cost and ownership horizon (block costs are on each block)"
+              title={
+                diagramCosts?.downtime_rate != null
+                  ? `System downtime costs ${Number(diagramCosts.downtime_rate).toLocaleString()} per ${(rbdUnit || "time unit").replace(/s$/, "")} — click to edit`
+                  : "System downtime cost and ownership horizon (block costs are on each block)"
+              }
             >
-              {diagramCosts?.downtime_rate != null
-                ? `Downtime ${Number(diagramCosts.downtime_rate).toLocaleString()}/${(rbdUnit || "h").replace(/s$/, "")}`
-                : "Costs…"}
+              Costs
             </button>
           )}
           {/* Common-cause groups sit with the other diagram-level settings, as a

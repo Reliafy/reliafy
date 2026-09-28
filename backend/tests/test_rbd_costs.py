@@ -508,3 +508,12 @@ def test_compare_notes_when_only_one_design_is_priced():
     assert "cost" not in out["differences"] and "Only design A" in out["cost_note"]
     unpriced = rbd_compare.compare_availability(bare, bare, t_simulation=2000, n_simulations=100)
     assert "cost" not in unpriced["differences"] and unpriced["cost_note"] is None
+
+
+def test_fault_tree_explains_why_block_replacement_has_no_tree():
+    from backend.services.rbd_fault_tree import fault_tree
+
+    with pytest.raises(AnalysisError, match="block replacement"):
+        fault_tree(_wearing({"policy": "block", "interval": 580}))
+    # Age replacement has exact long-run values, so its tree is drawn.
+    assert fault_tree(_wearing({"policy": "age", "interval": 580}))["unavailability"] > 0

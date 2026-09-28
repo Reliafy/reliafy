@@ -26,7 +26,7 @@ export default function RbdCostsModal({ initial, unit, onClose, onSubmit }) {
 
   const footer = (
     <>
-      <span className="hint">Block costs and maintenance are set on each block (double-click it).</span>
+      <span className="hint">Block costs: double-click a block.</span>
       <div className="row" style={{ margin: 0 }}>
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button onClick={submit} disabled={!valid}>Set costs</button>

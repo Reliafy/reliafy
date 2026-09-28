@@ -398,7 +398,7 @@ export function AvailabilityView({ result, unit }) {
         <div className="rbd-avail-big">{pct(a)}</div>
         <div className="rbd-avail-cap">
           {simulatedOnly
-            ? `Availability over the ${fmt(result.t_simulation)}${u} window (simulated — no exact long-run value with this maintenance)`
+            ? `Availability over the ${Number(result.t_simulation.toPrecision(5)).toLocaleString()}${u} window (simulated — no exact long-run value with this maintenance)`
             : "Steady-state availability (uptime)"}
         </div>
       </div>
