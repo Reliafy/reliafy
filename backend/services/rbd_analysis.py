@@ -1002,6 +1002,7 @@ def analyze(
     covariates: Optional[dict] = None,
     resolve_model=None,
     conditional_age: Optional[float] = None,
+    band: Optional[dict] = None,
 ) -> dict:
     """Analyse a builder graph and return a JSON-serialisable result payload.
 
@@ -1012,8 +1013,11 @@ def analyze(
     model by id. ``conditional_age`` (``s``) conditions every curve on having
     already survived to ``s``: the time axis becomes additional time ``t`` and
     each reliability is ``R(s + t) / R(s)``; the MTTF becomes the mean residual
-    life at ``s``. Raises :class:`AnalysisError` with a user-facing message if
-    the graph can't be turned into a valid RBD.
+    life at ``s``. ``band`` (``{"level": 0.95}``) adds a confidence band on
+    the reliability, MTTF and B-lives from the fitted blocks' parameter
+    uncertainty (see :mod:`backend.services.rbd_uncertainty`); it isn't
+    computed unless asked for. Raises :class:`AnalysisError` with a
+    user-facing message if the graph can't be turned into a valid RBD.
     """
     rbd, labels, node_types, reliabilities, working_nodes, broken_nodes, baseline = _build_rbd(
         graph, resolve_subsystem, None, resolve_model, covariates
@@ -1166,7 +1170,7 @@ def analyze(
         except Exception:  # noqa: BLE001 - the main result still stands
             ccf = None
 
-    return {
+    result = {
         "unit": (graph.get("unit") or "").strip(),
         "time": grid.tolist(),
         "system": {"sf": _clean(system_sf), "ff": _clean(1.0 - system_sf)},
@@ -1179,6 +1183,15 @@ def analyze(
         "ccf": ccf,
         "repyability_version": _repyability_version(),
     }
+    if band is not None:
+        from backend.services import rbd_uncertainty
+
+        result["band"] = rbd_uncertainty.system_band(
+            graph, rbd, grid, s, working_nodes, broken_nodes,
+            resolve_subsystem=resolve_subsystem, resolve_model=resolve_model,
+            covariates=covariates, level=(band or {}).get("level"),
+        )
+    return result
 
 
 def _valid_beta(v) -> bool:

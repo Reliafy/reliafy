@@ -368,6 +368,10 @@ class _Script:
             name = _one_line(spec.get("name") or "")
             self.comment(f'Fitted in Reliafy - saved model "{name}".' if name
                          else "Fitted in Reliafy (a saved model).")
+            # The app's optional confidence band (drawn from the fit's
+            # covariance) isn't reproduced: the script uses point estimates.
+            self.comment("Point estimate - Reliafy's confidence band draws "
+                         "these parameters from the fit's covariance.")
         if spec and spec.get("placeholder"):
             self.lines.append(
                 "# NOTE: placeholder parameters - illustrative values, "

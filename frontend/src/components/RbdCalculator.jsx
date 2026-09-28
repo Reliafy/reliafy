@@ -4,6 +4,7 @@ import Plot from "react-plotly.js";
 import { analyzeRbd } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import CovariatesModal from "./CovariatesModal.jsx";
+import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./RbdBand.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -63,9 +64,18 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
 
   const sysY = active === "sf" ? result.system.sf : result.system.ff;
   const sysAtT = t == null ? null : interp(x, sysY, Number(t));
+  // Confidence band (#103), when asked for: shaded under the system curve.
+  const band = result.band || null;
+  const bandAtT =
+    hasBand(band) && t != null
+      ? (active === "sf"
+          ? { lower: interp(x, band.sf_lower, Number(t)), upper: interp(x, band.sf_upper, Number(t)) }
+          : { lower: 1 - interp(x, band.sf_upper, Number(t)), upper: 1 - interp(x, band.sf_lower, Number(t)) })
+      : null;
 
   // System curve (bold) plus a faint curve per node.
   const traces = [
+    ...bandTraces(band, x, active),
     {
       x,
       y: sysY,
@@ -165,6 +175,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
             {cond ? "Mean residual life" : "MTTF"}
             {unit ? ` (${unit})` : ""}
           </div>
+          <BandInterval band={band} interval={band?.mttf} />
         </div>
         {result.blife && (
           <>
@@ -173,12 +184,14 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
               <div className="name" title="Time by which 10% of systems have failed">
                 B10 life{unit ? ` (${unit})` : ""}
               </div>
+              <BandInterval band={band} interval={band?.blife?.b10} />
             </div>
             <div className="stat">
               <div className="value">{fmt(result.blife.b50)}</div>
               <div className="name" title="Median system life (50% failed)">
                 B50 life{unit ? ` (${unit})` : ""}
               </div>
+              <BandInterval band={band} interval={band?.blife?.b50} />
             </div>
           </>
         )}
@@ -188,6 +201,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
             {active === "sf" ? "R" : "F"}(t={t ?? "—"}
             {cond ? ` | ${sLabel}` : ""})
           </div>
+          <BandInterval band={band} interval={bandAtT} />
         </div>
         <div className="stat">
           <div className="value">{(result.nodes || []).length}</div>
@@ -217,6 +231,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
         style={{ width: "100%" }}
         useResizeHandler
       />
+      <BandNote band={band} />
 
       {impNodes.length > 0 && (
         <div className="rbd-importance">
@@ -506,6 +521,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
   const [covValues, setCovValues] = useState({}); // {nodeId: {covName: value}}
   const [calcSig, setCalcSig] = useState(null); // inputs used for the last calc
   const [showCov, setShowCov] = useState(false);
+  const [band, setBand] = useState({ on: false, level: 0.95 }); // confidence band (#103)
 
   const unitLabel = graph.unit ? ` (${graph.unit})` : "";
   const canCalculate = !!validation?.can_calculate && !stale;
@@ -549,7 +565,8 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
 
   // Signature of the calculation inputs, so we can tell when the shown result
   // is out of date with the current "To" / covariate / conditional selections.
-  const inputSig = JSON.stringify({ t: tMax, s: condAge, cov: covPayload() });
+  const bandSig = band.on ? band.level : null;
+  const inputSig = JSON.stringify({ t: tMax, s: condAge, cov: covPayload(), band: bandSig });
   const dirty = result != null && calcSig != null && inputSig !== calcSig;
 
   const runCalculation = async (force = false) => {
@@ -565,7 +582,11 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         cov,
         s,
         // Saved repairable diagrams can be served a saved availability result.
-        { rbdId: graph.repairable ? rbdId : null, force }
+        {
+          rbdId: graph.repairable ? rbdId : null,
+          force,
+          band: band.on && !graph.repairable ? { level: band.level } : null,
+        }
       );
       setResult(res);
       let usedTMax = tMax;
@@ -580,7 +601,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         }
         if (evalT === "") setEvalT(Number((limit / 2).toPrecision(4)));
       }
-      setCalcSig(JSON.stringify({ t: usedTMax, s: condAge, cov }));
+      setCalcSig(JSON.stringify({ t: usedTMax, s: condAge, cov, band: bandSig }));
       setPhase("idle");
     } catch (err) {
       if (err.status === 402 && err.code === "pro_required") {
@@ -682,6 +703,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
               onChange={(e) => setCondAge(e.target.value)}
             />
           </label>
+          <BandControls value={band} onChange={setBand} />
         </div>
       )}
 

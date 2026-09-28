@@ -550,7 +550,8 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 // and stored, and ``force`` to re-run even when one matches. A user without
 // the entitlement gets a 402 with ``code: "pro_required"`` unless a saved
 // result matches; results carry ``cached`` and ``computed_at``.
-export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = null, force = false } = {}) {
+// `band` ({ level }) adds a confidence band from the fitted blocks' uncertainty.
+export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = null, force = false, band = null } = {}) {
   return request("/api/rbds/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -561,6 +562,7 @@ export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = nu
       conditional_age: conditionalAge ?? null,
       rbd_id: rbdId || null,
       force: !!force,
+      ...(band ? { band } : {}),
     }),
   });
 }

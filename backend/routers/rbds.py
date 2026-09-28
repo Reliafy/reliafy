@@ -249,6 +249,7 @@ def analyze_graph(
     t_max: float | None = Body(default=None),
     covariates: dict = Body(default={}),
     conditional_age: float | None = Body(default=None),
+    band: dict | None = Body(default=None),
     rbd_id: str | None = Body(default=None),
     force: bool = Body(default=False),
     session=Depends(get_session),
@@ -259,7 +260,9 @@ def analyze_graph(
     ``t_max`` is the upper limit of the time axis to compute over.
     ``covariates`` maps node id -> covariate values for proportional-hazards
     nodes. ``conditional_age`` conditions the curves on having already survived
-    to that age (so the result is the conditional survival).
+    to that age (so the result is the conditional survival). ``band``
+    (``{"level": 0.95}``) adds a confidence band from the fitted blocks'
+    parameter uncertainty.
 
     Repairable graphs run the (paid) availability simulation. ``rbd_id`` names
     the saved diagram being edited so a saved result can be served / stored;
@@ -279,6 +282,7 @@ def analyze_graph(
                 t_max=t_max,
                 covariates=covariates,
                 conditional_age=conditional_age,
+                band=band,
             )
         )
     except AnalysisError as exc:
