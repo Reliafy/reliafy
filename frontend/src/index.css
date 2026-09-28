@@ -6542,3 +6542,52 @@ button.danger:hover { background: #fdeeee; }
 .rbd-band-note p { margin: 0; }
 .rbd-band-note p + p { margin-top: 4px; }
 .rbd-band-note b { color: var(--text); font-weight: 600; }
+
+/* Repairable RBDs: costs and maintenance (#99, #100) */
+.rbd-costs-toggle {
+  background: var(--panel); color: var(--muted); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; box-shadow: none; white-space: nowrap;
+}
+.rbd-costs-toggle:hover { color: var(--text); border-color: var(--accent); }
+.rbd-costs-toggle.set { color: var(--accent-strong); background: var(--acc-t); border-color: rgba(47, 109, 246, 0.35); }
+.rbd-instant-repair { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 0 0 0.8rem; cursor: pointer; }
+.rbd-instant-repair input { width: auto; margin: 0; }
+.rbd-costs-section { margin-top: 1.1rem; border: 1px solid var(--border); border-radius: 10px; padding: 0 12px; background: var(--panel-2); }
+.rbd-costs-section > summary { cursor: pointer; padding: 10px 0; font-size: 13.5px; font-weight: 600; list-style-position: inside; }
+.rbd-costs-section > summary .muted { font-weight: 400; color: var(--muted); }
+.rbd-costs-body { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; }
+.rbd-costs-body .param-fields { margin-top: 0; }
+.rbd-costs-body .hint { margin: 0; }
+.rbd-costs-h { font-size: 12px; font-weight: 700; color: var(--text); margin-top: 4px; }
+.rbd-costs-h .muted { font-weight: 400; color: var(--muted); }
+.rbd-cost-field input { width: 116px; }
+.rbd-cost-field span { font-family: inherit; }
+.rbd-cost-field small { color: var(--faint); font-size: 11px; }
+.rbd-costs-body > .seg { align-self: flex-start; flex-wrap: wrap; }
+.rbd-costs-errors { margin: 0; padding-left: 18px; color: #b42318; font-size: 12.5px; }
+/* Overhang the card's bottom edge (like the placeholder chip) so the card keeps its size. */
+.rbd-maint-chips { position: absolute; bottom: -8px; left: 8px; display: flex; gap: 4px; z-index: 2; }
+.rbd-maint-chip {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.02em; border-radius: 999px; padding: 1px 6px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.rbd-maint-chip.pm { background: #e8f6ee; color: #15803d; border-color: rgba(22, 163, 74, 0.35); }
+.rbd-maint-chip.test { background: #f1ebfd; color: #6d28d9; border-color: rgba(124, 58, 237, 0.35); }
+.rbd-basis {
+  display: inline-block; margin-left: 4px; font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.03em; padding: 0 5px; border-radius: 4px; vertical-align: 1px;
+  background: rgba(22, 163, 74, 0.12); color: #15803d;
+}
+.rbd-basis.simulation { background: rgba(224, 136, 59, 0.14); color: #b45309; }
+.rbd-costs { display: flex; flex-direction: column; gap: 10px; }
+.rbd-costs .rbd-avail-metrics { justify-content: flex-start; }
+.rbd-costs .alt-metric small { font-size: 11px; font-weight: 400; }
+.rbd-avail-bar-fill.cost { background: #0f9d8a; }
+.rbd-avail-bar-fill.planned { background: #16a34a; }
+.rbd-costs-table td, .rbd-costs-table th { font-variant-numeric: tabular-nums; }
+.rbd-costs-table th:first-child { text-align: left; }
+.rbd-costs-table tr.changed td { font-weight: 600; }
+.rbd-cheapest-inputs { margin-top: 0; }
+.rbd-cheapest-result { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.rbd-cheapest-result.stale { opacity: 0.6; }

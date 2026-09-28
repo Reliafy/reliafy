@@ -305,13 +305,19 @@ def canonical_analysis_graph(graph: dict) -> dict:
             if isinstance(e, dict) and e.get("source") and e.get("target")
         }
     )
-    return {
+    out = {
         "nodes": nodes,
         "edges": [list(e) for e in edges],
         "unit": (graph.get("unit") or "").strip(),
         "repairable": bool(graph.get("repairable")),
         "ccf_groups": graph.get("ccf_groups") or [],
     }
+    # Diagram-level costs (#99: system downtime cost, ownership horizon).
+    # Block costs and maintenance live in node data, already covered above.
+    # Only present when set, so diagrams without costs keep their saved key.
+    if graph.get("costs"):
+        out["costs"] = graph["costs"]
+    return out
 
 
 def _t_sim(t_simulation) -> float | None:

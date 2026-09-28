@@ -1181,6 +1181,8 @@ if __name__ == "__main__":
 # Repairable (availability)
 # ---------------------------------------------------------------------------
 def _repairable_body(script: _Script, graph) -> str:
+    from backend.services import rbd_export_costs, rbd_maintenance
+
     L = script.lines
     L.append("# " + "-" * 75)
     L.append("# Blocks: each component fails by its life model and is "
@@ -1234,7 +1236,7 @@ def _repairable_body(script: _Script, graph) -> str:
             ), label)
             comps.append((nid, var, label))
             continue
-        if pinned and not (data.get("model") and data.get("repair")):
+        if pinned and not (data.get("model") and (data.get("repair") or data.get("instant_repair"))):
             script.uses_voting_gate = True
             script.comment(
                 f"{label}: pinned {state} in Reliafy with no life/repair "
@@ -1247,7 +1249,9 @@ def _repairable_body(script: _Script, graph) -> str:
         life = script.dist(data.get("model"), f"{label} (life)",
                            script.names.make(f"{var}_life"))
         repair_var = script.names.make(f"{var}_repair")
-        if not data.get("repair"):
+        if data.get("instant_repair"):
+            repair = '"instant"'  # repaired in zero time: fails, never down
+        elif not data.get("repair"):
             repair = script.missing(repair_var, (
                 f"Block '{label}' has no repair-time distribution. Repairable "
                 "diagrams need one on every component, e.g. "
@@ -1256,6 +1260,11 @@ def _repairable_body(script: _Script, graph) -> str:
         else:
             repair = script.dist(data.get("repair"), f"{label} (repair time)",
                                  repair_var)
+        if rbd_maintenance.has_extras(data):
+            # Costs, instant repair, maintenance (#99/#100): a component spec.
+            rbd_export_costs.component(script, data, label, var, life, repair)
+            comps.append((nid, var, label))
+            continue
         line = f"{var} = NonRepairable({life}, {repair})"
         if len(line) > 79:
             line = f"{var} = NonRepairable(\n    {life},\n    {repair},\n)"
@@ -1297,6 +1306,7 @@ def _repairable_body(script: _Script, graph) -> str:
         io.append("input_node='input'")
     if "output" in node_ids:
         io.append("output_node='output'")
+    io += rbd_export_costs.rbd_kwargs(graph)
     out.append("rbd = RepairableRBD(\n    EDGES,\n    COMPONENTS,\n    k=K,\n"
                + "".join(f"    {a},\n" for a in io) + ")")
     out.append("")
@@ -1326,9 +1336,11 @@ def _repairable_body(script: _Script, graph) -> str:
                f'"{rbd_analysis._AVAIL_SIMS}"))')
     out.append("# Set RELIAFY_N_SIMS to run exactly that many histories instead.")
     out.append('N_SIMS = int(os.environ.get("RELIAFY_N_SIMS") or 0)')
+    if rbd_export_costs.uses_extras(graph):
+        out += rbd_export_costs.pilot_constant() + rbd_export_costs.constants(graph)
     out.append("")
     out.append("")
-    out.append(_REPAIRABLE_MAIN.strip("\n"))
+    out.append(rbd_export_costs.main_source(_REPAIRABLE_MAIN, graph).strip("\n"))
     return "\n".join(out)
 
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import Plot from "react-plotly.js";
 import { applyRbdDesign, designRbd } from "../api.js";
+import RbdCheapestDesign from "./RbdCheapestDesign.jsx";
 import LifeModelModal from "./LifeModelModal.jsx";
 import Select from "./Select.jsx";
 import { modelSummary } from "./RbdNodes.jsx";
@@ -129,14 +130,8 @@ export default function RbdDesignPanel({ graph, onApply, onView }) {
   const budgetCost = budget.cost === "" ? String(Number((2 * currentCost).toPrecision(4))) : budget.cost;
 
   if (graph.repairable) {
-    return (
-      <div className="rbd-design">
-        <p className="muted-line">
-          Redundancy design works on non-repairable diagrams — it chooses copies for reliability at
-          a mission time. Switch the diagram to Non-repairable on the Builder tab to design it.
-        </p>
-      </div>
-    );
+    // Repairable diagrams: the copies with the lowest total cost of ownership (#99).
+    return <RbdCheapestDesign graph={graph} onApply={onApply} onView={onView} />;
   }
 
   const payloadBlocks = () =>

@@ -6,6 +6,7 @@ import ValidationPanel from "./RbdValidation.jsx";
 import CovariatesModal from "./CovariatesModal.jsx";
 import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
+import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
 import { precisionNote } from "./availabilityPrecision.js";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
@@ -363,7 +364,10 @@ function importanceRows(result) {
 export function AvailabilityView({ result, unit }) {
   const u = unit ? ` ${unit}` : "";
   const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
-  const a = result.steady_state_availability;
+  // No exact long-run value (block replacement, timed proof tests — #100):
+  // the headline is the simulated availability over the window.
+  const simulatedOnly = result.availability_basis === "simulation";
+  const a = simulatedOnly ? result.precision?.window_availability : result.steady_state_availability;
   const per = result.per_node || [];
   const curve = result.curve;
   const basis = result.figures_basis || {};
@@ -392,10 +396,14 @@ export function AvailabilityView({ result, unit }) {
     <div className="rbd-avail">
       <div className="rbd-avail-hero">
         <div className="rbd-avail-big">{pct(a)}</div>
-        <div className="rbd-avail-cap">Steady-state availability (uptime)</div>
+        <div className="rbd-avail-cap">
+          {simulatedOnly
+            ? `Availability over the ${Number(result.t_simulation.toPrecision(5)).toLocaleString()}${u} window (simulated — no exact long-run value with this maintenance)`
+            : "Steady-state availability (uptime)"}
+        </div>
       </div>
       <div className="rbd-avail-metrics">
-        <div className="alt-metric"><span className="k">Unavailability</span><span className="v">{pct(result.unavailability)}</span></div>
+        <div className="alt-metric"><span className="k">Unavailability</span><span className="v">{pct(simulatedOnly ? (a == null ? null : 1 - a) : result.unavailability)}</span></div>
         <div className="alt-metric" title={basisNote("mean_up_time")}><span className="k">Mean up time</span><span className="v">{fmt(result.mean_up_time)}{u}</span></div>
         <div className="alt-metric" title={basisNote("mean_down_time")}><span className="k">Mean down time</span><span className="v">{fmt(result.mean_down_time)}{u}</span></div>
         <div className="alt-metric" title={basisNote("failure_frequency")}><span className="k">Failure frequency</span><span className="v">{fmt(result.failure_frequency)}{u ? ` /${unit}` : ""}</span></div>
@@ -415,6 +423,9 @@ export function AvailabilityView({ result, unit }) {
           ))}
         </div>
       )}
+
+      <DowntimeSplit result={result} unit={unit} />
+      <AvailabilityCosts result={result} unit={unit} />
 
       {blocks.length > 0 && (
         <div className="rbd-avail-imp">

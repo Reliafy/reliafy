@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext } from "react";
 import { Handle, Position, useStore } from "reactflow";
+import { MaintenanceChips } from "./RbdBlockCosts.jsx";
 
 // The React Flow node components of a reliability block diagram, shared by the
 // builder (interactive) and the public read-only view (/p/:token). Pure
@@ -132,12 +133,15 @@ function ComponentCard({ id, data, repeat = false, missing = false }) {
         <div className="rbd-comp-empty">No life model — double-click to set</div>
       )}
       {repairable && !missing && (
-        data.repair ? (
+        data.instant_repair ? (
+          <div className="rbd-comp-repair">🛠 Instant repair</div>
+        ) : data.repair ? (
           <div className="rbd-comp-repair">🛠 {modelSummary(data.repair)}</div>
         ) : (
           <div className="rbd-comp-empty warn">No repair time — double-click to set</div>
         )
       )}
+      {repairable && <MaintenanceChips data={data} unit={rbdUnit} />}
       <Handle type="source" position={Position.Right} />
     </div>
   );

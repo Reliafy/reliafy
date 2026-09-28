@@ -586,6 +586,21 @@ export function compareRbds(graph, otherId, { name = null, otherName = null, tMa
   });
 }
 
+// The cheapest design of a repairable diagram (#99): how many copies of each
+// priced block own it for ``horizon`` at the lowest total cost, optionally at
+// least ``minAvailability`` available. Returns { current, design, graph, ... };
+// ``graph`` has the copies drawn on it (nothing is saved). Paid (402).
+export function cheapestRbdDesign({ graph, horizon = null, minAvailability = null }) {
+  return withEvent(
+    request("/api/rbds/design/cheapest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ graph, horizon, min_availability: minAvailability }),
+    }),
+    "rbd_design_cheapest"
+  );
+}
+
 // Analyse a saved RBD by id (sub-systems are resolved server-side).
 export function analyzeSavedRbd(id, tMax) {
   const q = tMax != null ? `?t_max=${encodeURIComponent(tMax)}` : "";

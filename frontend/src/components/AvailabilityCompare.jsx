@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import Select from "./Select.jsx";
 import { compareRbds, listRbds } from "../api.js";
 import { pctAt, pctDigits, pointsAt } from "./availabilityPrecision.js";
+import { fmtMoney } from "./AvailabilityCosts.jsx";
 
 // "Compare with…" on a repairable diagram's availability results (#104): pick
 // another saved repairable diagram — typically a copy of this one with one
@@ -12,16 +13,49 @@ import { pctAt, pctDigits, pointsAt } from "./availabilityPrecision.js";
 // failures and repairs and the interval reflects the design change, not chance.
 //
 // Each compared quantity is one entry of QUANTITIES, read from
-// ``result.differences[key]``; cost of ownership (#99) slots in as another.
+// ``result.differences[key]``: availability, and cost (#99) when both designs
+// are priced. ``digits`` sizes the rounding to the interval, ``value`` formats
+// a design's figure, ``diff`` a signed difference, ``amount`` the verdict's.
+const signed = (v, f) => (v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${f(Math.abs(v))}`);
 const QUANTITIES = [
   {
     key: "availability",
     label: "Availability",
     more: "more available",
     less: "less available",
-    unit: "percentage points",
+    unit: " percentage points",
+    longRun: "Long-run availability",
+    window: "Over the window",
+    diffLabel: "Difference (B − A), points",
     designValue: (d) => d.steady_state_availability,
     windowValue: (d) => d.window_availability,
+    digits: (spread) => pctDigits(spread),
+    value: (v, d) => pctAt(v, d),
+    exactValue: (v, d) => pctAt(v, Math.max(d, 3)),
+    diff: (v, d) => pointsAt(v, d),
+    exactDiff: (v, d) => pointsAt(v, Math.max(d, 3)),
+    amount: (v, d) => Math.abs(v * 100).toFixed(d),
+    tone: (verdict) => verdict,
+  },
+  {
+    key: "cost",
+    label: "Cost",
+    more: "costs more to run",
+    less: "costs less to run",
+    unit: " over the window",
+    longRun: "Running cost per unit time",
+    window: "Cost of the window",
+    diffLabel: "Difference (B − A)",
+    designValue: (d) => d.cost_rate,
+    windowValue: (d) => d.window_cost,
+    digits: () => 0,
+    value: (v) => fmtMoney(v),
+    exactValue: (v) => fmtMoney(v),
+    diff: (v) => signed(v, fmtMoney),
+    exactDiff: (v) => signed(v, fmtMoney),
+    amount: (v) => fmtMoney(Math.abs(v)),
+    // Costing more is the worse outcome: colour it as the other way round.
+    tone: (verdict) => (verdict === "b_higher" ? "a_higher" : verdict === "a_higher" ? "b_higher" : verdict),
   },
 ];
 
@@ -34,13 +68,14 @@ function verdict(q, diff, nameA, nameB) {
     return <>No difference: {nameA} and <b>{nameB}</b> behaved identically in every simulated history.</>;
   }
   const conf = Math.round((diff.confidence || 0.95) * 100);
-  const d = pctDigits(diff.half_width || diff.tolerance || diff.estimate);
-  const ci = (lo, hi) => `${conf}% CI ${pointsAt(lo, d)} to ${pointsAt(hi, d)}`;
+  const d = q.digits(diff.half_width || diff.tolerance || diff.estimate);
+  const ci = (lo, hi) => `${conf}% CI ${q.diff(lo, d)} to ${q.diff(hi, d)}`;
+  const is = q.key === "availability" ? "is " : "";
   if (diff.verdict === "b_higher") {
-    return <><b>{nameB}</b> is {q.more} than {nameA} by <b>{Math.abs(diff.estimate * 100).toFixed(d)}</b> {q.unit} ({ci(diff.lower, diff.upper)}).</>;
+    return <><b>{nameB}</b> {is}{q.more} than {nameA} by <b>{q.amount(diff.estimate, d)}</b>{q.unit} ({ci(diff.lower, diff.upper)}).</>;
   }
   if (diff.verdict === "a_higher") {
-    return <><b>{nameB}</b> is {q.less} than {nameA} by <b>{Math.abs(diff.estimate * 100).toFixed(d)}</b> {q.unit} ({ci(diff.lower, diff.upper)}).</>;
+    return <><b>{nameB}</b> {is}{q.less} than {nameA} by <b>{q.amount(diff.estimate, d)}</b>{q.unit} ({ci(diff.lower, diff.upper)}).</>;
   }
   return <>No detectable difference in {q.label.toLowerCase()} between {nameA} and <b>{nameB}</b> ({ci(diff.lower, diff.upper)}).</>;
 }
@@ -125,16 +160,16 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
         </div>
       )}
       {error && <div className="card error">{error}</div>}
+      {c?.cost_note && <p className="hint" style={{ margin: 0 }}>{c.cost_note}</p>}
 
       {c && QUANTITIES.filter((q) => c.differences?.[q.key]).map((q) => {
         const diff = c.differences[q.key];
-        const d = pctDigits(diff.half_width || diff.tolerance);
-        const dExact = Math.max(d, 3);
+        const d = q.digits(diff.half_width || diff.tolerance);
         const a = c.designs.a;
         const b = c.designs.b;
         return (
           <div className="rbd-compare-result" key={q.key}>
-            <p className={`rbd-compare-verdict ${diff.verdict}`}>
+            <p className={`rbd-compare-verdict ${q.tone(diff.verdict)}`}>
               {verdict(q, diff, nameA === THIS ? "this diagram" : nameA, nameB)}
             </p>
             <div className="rbd-avail-imp-scroll">
@@ -142,32 +177,39 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
                 <thead>
                   <tr>
                     <th>Design</th>
-                    <th title="Exact long-run (steady-state) value">Long-run {q.label.toLowerCase()}</th>
-                    <th title={`Simulated mean over the ${fmtT(c.t_simulation)}${u} window`}>Over the window</th>
+                    <th title="Exact long-run (steady-state) value">{q.longRun}</th>
+                    <th title={`Simulated mean over the ${fmtT(c.t_simulation)}${u} window`}>{q.window}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td className="calc-row-label"><span className="rbd-compare-tag">A</span>{nameA}</td>
-                    <td>{pctAt(q.designValue(a), dExact)}</td>
-                    <td>{pctAt(q.windowValue(a), d)}</td>
+                    <td>{q.exactValue(q.designValue(a), d)}</td>
+                    <td>{q.value(q.windowValue(a), d)}</td>
                   </tr>
                   <tr>
                     <td className="calc-row-label"><span className="rbd-compare-tag">B</span>{nameB}</td>
-                    <td>{pctAt(q.designValue(b), dExact)}</td>
-                    <td>{pctAt(q.windowValue(b), d)}</td>
+                    <td>{q.exactValue(q.designValue(b), d)}</td>
+                    <td>{q.value(q.windowValue(b), d)}</td>
                   </tr>
                   <tr className="rbd-compare-diff">
-                    <td className="calc-row-label">Difference (B − A), points</td>
-                    <td>{pointsAt(diff.exact, dExact)}</td>
+                    <td className="calc-row-label">{q.diffLabel}</td>
+                    <td>{q.exactDiff(diff.exact, d)}</td>
                     <td>
-                      {pointsAt(diff.estimate, d)}{" "}
-                      <span className="muted">({pointsAt(diff.lower, d)} to {pointsAt(diff.upper, d)})</span>
+                      {q.diff(diff.estimate, d)}{" "}
+                      <span className="muted">({q.diff(diff.lower, d)} to {q.diff(diff.upper, d)})</span>
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
+            {q.key === "cost" ? (
+              <p className="muted-line" style={{ margin: 0 }}>
+                The cost of the window comes from the same paired simulations as the availability
+                {c.common_random_numbers ? " (common random numbers)" : ""}; the running cost per unit time is
+                exact where RePyability has it. Costs aren't discounted.
+              </p>
+            ) : (
             <p className="muted-line" style={{ margin: 0 }}>
               {c.n_simulations?.toLocaleString()} simulations of each design over {fmtT(c.t_simulation)}{u}
               {c.common_random_numbers
@@ -180,6 +222,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
               {c.horizon_shortened && " The window was shortened to keep the simulation quick."}
               {" "}The long-run values are exact and don't depend on the simulation.
             </p>
+            )}
           </div>
         );
       })}
