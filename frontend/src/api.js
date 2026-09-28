@@ -582,6 +582,32 @@ export function validateRbd(graph) {
   });
 }
 
+// Redundancy design (non-repairable graphs): how many copies of each block.
+// ``blocks`` = [{id, cost, weight?, volume?, max_copies, required, strategy,
+// switching, name, types: [{name, model, cost, ...}]}]; give ``budget``
+// ({cost?, weight?, volume?}) or ``target`` (reliability at ``t``). Returns
+// { current, design, front, ... }. Nothing is saved.
+export function designRbd({ graph, t, blocks, budget = null, target = null, mixing = true }) {
+  return withEvent(
+    request("/api/rbds/design", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ graph, t, blocks, budget, target, mixing }),
+    }),
+    "rbd_design"
+  );
+}
+
+// The graph with one design (a result's ``design.blocks``) drawn on it, and
+// its R(t). The builder puts it on the canvas unsaved.
+export function applyRbdDesign({ graph, blocks, design, t }) {
+  return request("/api/rbds/design/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, blocks, design, t }),
+  });
+}
+
 
 // ---- Degradation & RUL -------------------------------------------------------
 

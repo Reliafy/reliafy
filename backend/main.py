@@ -41,6 +41,7 @@ from backend.auth import get_current_user
 from backend.routers import auth as auth_router
 from backend.routers import models as models_router
 from backend.routers import rbds as rbds_router
+from backend.routers import rbd_design as rbd_design_router
 from backend.routers import strategy as strategy_router
 from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
@@ -135,6 +136,7 @@ async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
 app.include_router(auth_router.router)
 app.include_router(models_router.router)
 app.include_router(rbds_router.router)
+app.include_router(rbd_design_router.router)
 app.include_router(strategy_router.router)
 app.include_router(billing_router.router)
 app.include_router(assistant_router.router)
