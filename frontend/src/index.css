@@ -6630,3 +6630,21 @@ button.danger:hover { background: #fdeeee; }
 .rbd-cheapest-inputs { margin-top: 0; }
 .rbd-cheapest-result { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .rbd-cheapest-result.stale { opacity: 0.6; }
+
+/* One toolbar across the top of the canvas: the diagram's settings on the
+   left, its actions on the right — which wrap onto a second row rather than
+   overlapping when the canvas is narrow — and, beneath, the common-cause
+   button and the validation card. Empty space passes clicks to the canvas. */
+.react-flow__panel.top.left.rbd-toolbar {
+  right: 15px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  row-gap: 0.5rem;
+  pointer-events: none;
+}
+.rbd-toolbar > * { pointer-events: auto; }
+.rbd-toolbar-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-left: auto; }
+.rbd-toolbar-float { flex-basis: 100%; display: flex; justify-content: center; pointer-events: none; }
+.rbd-toolbar-float > * { pointer-events: auto; }
+.rbd-toolbar .rbd-toolbar-row { flex-wrap: wrap; row-gap: 0.4rem; min-width: 0; }

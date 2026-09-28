@@ -910,7 +910,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
       >
-        <Panel position="top-left">
+        <Panel position="top-left" className="rbd-toolbar">
           <div className="rbd-toolbar-row">
           <span className="rbd-name">{savedRbdName || "Untitled RBD"}</span>
           <label className="rbd-unit-field">
@@ -986,16 +986,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
             </div>
           )}
           </div>
-        </Panel>
-        {!repairable && selectedComponentIds.length >= 2 && (
-          <Panel position="top-center">
-            <button className="rbd-btn accent" onClick={openCcfForSelection}
-                    title="Couple these redundant components by a shared failure cause">
-              ⚭ Common-cause group ({selectedComponentIds.length})
-            </button>
-          </Panel>
-        )}
-        <Panel position="top-right">
+          <div className="rbd-toolbar-actions">
           <button className="rbd-btn" onClick={() => setModal("saverbd")}>
             Save RBD
           </button>
@@ -1029,9 +1020,17 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
           >
             {validating ? "Validating…" : "Validate"}
           </button>
-        </Panel>
+          </div>
+        {!repairable && selectedComponentIds.length >= 2 && (
+          <div className="rbd-toolbar-float">
+            <button className="rbd-btn accent" onClick={openCcfForSelection}
+                    title="Couple these redundant components by a shared failure cause">
+              ⚭ Common-cause group ({selectedComponentIds.length})
+            </button>
+          </div>
+        )}
         {validation && (
-          <Panel position="top-center">
+          <div className="rbd-toolbar-float">
             <div className="rbd-validate-card">
               <button
                 className="rbd-validate-close"
@@ -1043,8 +1042,9 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
               </button>
               <ValidationPanel validation={validation} stale={validationStale} />
             </div>
-          </Panel>
+          </div>
         )}
+        </Panel>
         <Background gap={22} color="#e8e7e2" />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable />
