@@ -42,7 +42,7 @@ RUN apt-get update \
     && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.9.0" \
     && pip install --no-cache-dir --no-deps "firebase-admin==7.7.0" \
     && pip install --no-cache-dir google-auth cachecontrol "pyjwt[crypto]" requests httpx \
-    && python -c "import firebase_admin, firebase_admin.auth, surpyval, repyability, access_parser, defusedxml" \
+    && python -c "import firebase_admin, firebase_admin.auth, surpyval, repyability, access_parser, defusedxml, openpyxl" \
     && find /usr/local/lib/python3.11/site-packages -depth -type d \( -name tests -o -name test \) \
          -not -path '*/_pytest/*' -prune -exec rm -rf {} + \
     && python -m pip uninstall -y pip \

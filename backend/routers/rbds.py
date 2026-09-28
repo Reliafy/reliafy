@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 import os
 
-from fastapi import APIRouter, Body, Depends, File, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 
+from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import billing as billing_service
 from backend.services import rbd_import
@@ -91,23 +93,54 @@ def save_rbd(
     return JSONResponse(content=_summary(rbd, ctx))
 
 
+@router.get("/rbds/import/template.xlsx")
+def rbd_import_template(user: dict = Depends(get_current_user)) -> Response:
+    """The Excel template for importing a diagram: a README sheet, and Blocks
+    + Connections sheets holding a small worked example."""
+    from backend.services.rbd_import import excel as rbd_excel
+
+    return Response(
+        content=rbd_excel.build_template(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="reliafy-rbd-template.xlsx"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @router.post("/rbds/import")
 def import_rbd_file(
     file: UploadFile = File(...),
+    mapping: str | None = Form(default=None),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Parse another tool's diagram file into builder graphs — nothing is saved.
 
     The builder opens the chosen diagram unsaved, so the usual save (and the
     free-plan cap) applies when the user keeps it.
+
+    ``mapping`` (JSON, Excel workbooks only) names the sheets and columns
+    holding the blocks and connections. Without it a workbook must follow the
+    template; one that doesn't is refused with ``code: "excel_mapping"`` so
+    the frontend can ask the user to map its columns.
     """
     data = file.file.read(rbd_import.MAX_UPLOAD_BYTES + 1)
     ext = os.path.splitext(file.filename or "")[1].lower()[:12]
+    kwargs = {}
+    if mapping:
+        try:
+            kwargs["excel_mapping"] = json.loads(mapping)
+        except ValueError:
+            return JSONResponse(status_code=422, content={"detail": "The column mapping isn't valid JSON."})
     try:
-        diagrams = rbd_import.import_file(data, file.filename or "")
+        diagrams = rbd_import.import_file(data, file.filename or "", **kwargs)
     except rbd_import.RbdImportError as exc:
         logger.info("RBD import refused: ext=%s bytes=%d — %s", ext, len(data), exc)
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        content = {"detail": str(exc)}
+        if getattr(exc, "code", None):
+            content["code"] = exc.code
+        return JSONResponse(status_code=422, content=content)
     except Exception:  # untrusted input: never 500 on a malformed file
         logger.exception("RBD import failed: ext=%s bytes=%d", ext, len(data))
         return JSONResponse(

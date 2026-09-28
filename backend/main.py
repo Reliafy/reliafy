@@ -53,6 +53,7 @@ from backend.routers import degradation as degradation_router
 from backend.routers import recurrent as recurrent_router
 from backend.routers import alt as alt_router
 from backend.routers import rcm as rcm_router
+from backend.routers import excel as excel_router
 from backend.routers import teams as teams_router
 from backend.routers import shares as shares_router
 from backend.routers import telemetry as telemetry_router
@@ -151,6 +152,7 @@ app.include_router(degradation_router.router)
 app.include_router(recurrent_router.router)
 app.include_router(alt_router.router)
 app.include_router(rcm_router.router)
+app.include_router(excel_router.router)
 app.include_router(teams_router.router)
 app.include_router(shares_router.router)
 app.include_router(telemetry_router.router)

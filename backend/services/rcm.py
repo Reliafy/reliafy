@@ -245,6 +245,11 @@ def clean_tree(functions) -> list[dict]:
                 effects = str(mode.get("effects") or "").strip()
                 if effects:
                     cleaned_mode["effects"] = effects
+                # Free-text notes on the mode itself (e.g. FMEA scores kept
+                # from a spreadsheet import); a decision's notes live on it.
+                notes = str(mode.get("notes") or "").strip()
+                if notes:
+                    cleaned_mode["notes"] = notes
                 cleaned_failure["modes"].append(cleaned_mode)
             cleaned_fn["failures"].append(cleaned_failure)
         out.append(cleaned_fn)

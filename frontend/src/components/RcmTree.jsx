@@ -227,6 +227,12 @@ export default function RcmTree({ functions, readOnly, onChange, onEditDecision 
                                 </div>
                               )}
                             </div>
+                            {(mode.effects || mode.notes) && (
+                              <div className="mode-detail">
+                                {mode.effects && <span><b>Effects</b> {mode.effects}</span>}
+                                {mode.notes && <span className="mode-notes">{mode.notes}</span>}
+                              </div>
+                            )}
                             {(d?.summary || d?.reason || d?.artifact_name) && (
                               <div className="mode-evidence">
                                 {d.artifact_name && d.artifact_link_path && (

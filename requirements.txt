@@ -42,3 +42,7 @@ mcp==2.2.0
 # its internals to read from memory with bounded page walks. Pulls construct and
 # tabulate (both MIT).
 access-parser==0.0.6
+# Excel (.xlsx) import for datasets, RCM worksheets and RBD templates
+# (backend/services/excel.py). MIT. Read-only, values-only; parses the XML
+# with defusedxml (above) when it's installed.
+openpyxl==3.1.5

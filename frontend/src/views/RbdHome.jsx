@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listRbds, deleteRbd, renameRbd, importRbdFile } from "../api.js";
+import { listRbds, deleteRbd, renameRbd, importRbdFile, downloadRbdTemplate } from "../api.js";
 import ShareDialog from "../components/ShareDialog.jsx";
+import RbdExcelImportModal from "../components/RbdExcelImportModal.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
@@ -77,6 +78,7 @@ export default function RbdHome() {
   const fileRef = useRef(null);
   const [importing, setImporting] = useState(false);
   const [imported, setImported] = useState(null); // {file, diagrams} when a file holds several
+  const [excelMapping, setExcelMapping] = useState(null); // {file, message}: a workbook to map by hand
 
   // Open an imported diagram in the builder, unsaved (the builder's Save keeps it).
   const openImported = (d) => navigate("/rbds/b", { state: { imported: d } });
@@ -88,16 +90,21 @@ export default function RbdHome() {
     setError(null);
     setImporting(true);
     try {
-      const { diagrams } = await importRbdFile(file);
-      const ok = diagrams.filter((d) => d.graph);
-      if (diagrams.length === 1 && ok.length === 1) openImported(ok[0]);
-      else if (!ok.length) setError(diagrams[0]?.error || "No diagram in this file could be imported.");
-      else setImported({ file: file.name, diagrams });
+      showImported(file, await importRbdFile(file));
     } catch (err) {
-      setError(err.message);
+      // An Excel workbook not laid out like the template: map its columns.
+      if (err.code === "excel_mapping") setExcelMapping({ file, message: err.message });
+      else setError(err.message);
     } finally {
       setImporting(false);
     }
+  };
+
+  const showImported = (file, { diagrams }) => {
+    const ok = diagrams.filter((d) => d.graph);
+    if (diagrams.length === 1 && ok.length === 1) openImported(ok[0]);
+    else if (!ok.length) setError(diagrams[0]?.error || "No diagram in this file could be imported.");
+    else setImported({ file: file.name, diagrams });
   };
 
   const refresh = useCallback(() => {
@@ -139,17 +146,24 @@ export default function RbdHome() {
           <input
             ref={fileRef}
             type="file"
-            accept=".rsgz9,.rsgz10,.rsgz11,.rsgz20,.rsgz21,.rsgz22,.rsgz23,.rsgz24,.rsgz25,.rsr9,.rsr10,.rsr11,.rsr20,.rsr21,.rsr22,.rsr23,.rsr24,.rsr25,.rsrp,.xml,.opsa,.dft,.json"
+            accept=".rsgz9,.rsgz10,.rsgz11,.rsgz20,.rsgz21,.rsgz22,.rsgz23,.rsgz24,.rsgz25,.rsr9,.rsr10,.rsr11,.rsr20,.rsr21,.rsr22,.rsr23,.rsr24,.rsr25,.rsrp,.xml,.opsa,.dft,.json,.xlsx,.xlsm"
             hidden
             onChange={onImportFile}
           />
           <button
             className="secondary"
             disabled={importing}
-            title="Import a diagram from ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA XML or Galileo .dft"
+            title="Import a diagram from ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA XML, Galileo .dft or an Excel workbook (.xlsx)"
             onClick={() => fileRef.current?.click()}
           >
             <ImportIcon /> {importing ? "Importing…" : "Import"}
+          </button>
+          <button
+            className="secondary"
+            title="An Excel template for building a diagram from a list of blocks and connections"
+            onClick={() => downloadRbdTemplate().catch((err) => setError(err.message))}
+          >
+            Excel template
           </button>
           <button onClick={() => navigate("/rbds/b")}>
             <PlusIcon /> New RBD
@@ -158,6 +172,19 @@ export default function RbdHome() {
       </header>
 
       {error && <div className="card error">{error}</div>}
+
+      {excelMapping && (
+        <RbdExcelImportModal
+          file={excelMapping.file}
+          message={excelMapping.message}
+          onClose={() => setExcelMapping(null)}
+          onImported={(result) => {
+            const file = excelMapping.file;
+            setExcelMapping(null);
+            showImported(file, result);
+          }}
+        />
+      )}
 
       {imported && (
         <div className="card">

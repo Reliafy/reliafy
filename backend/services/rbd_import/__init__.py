@@ -1,13 +1,15 @@
 """Import reliability block diagrams from other tools' files.
 
 Supported: ReliaSoft BlockSim project databases (``.rsgzNN`` / ``.rsrNN`` /
-``.rsrp``), Open-PSA Model Exchange Format XML, and Galileo dynamic-fault-tree
-text (``.dft``). :func:`import_file` picks the format by content, then filename.
+``.rsrp``), Open-PSA Model Exchange Format XML, Galileo dynamic-fault-tree
+text (``.dft``) and Excel workbooks of blocks + connections (``.xlsx``, see
+:mod:`.excel`). :func:`import_file` picks the format by content, then filename.
 """
 
 from __future__ import annotations
 
 import importlib
+from typing import Optional
 
 from .types import MAX_UPLOAD_BYTES, ImportedDiagram, RbdImportError
 
@@ -15,6 +17,7 @@ __all__ = ["FORMATS", "ImportedDiagram", "RbdImportError", "import_file"]
 
 # module name -> human label, in sniffing order (binary formats first).
 FORMATS = {
+    "excel": "Excel workbook",
     "blocksim": "ReliaSoft BlockSim",
     "openpsa": "Open-PSA MEF",
     "galileo": "Galileo DFT",
@@ -25,8 +28,12 @@ def _module(name: str):
     return importlib.import_module(f"{__name__}.{name}")
 
 
-def import_file(data: bytes, filename: str) -> list[ImportedDiagram]:
-    """Parse an uploaded file into one or more diagrams."""
+def import_file(data: bytes, filename: str, excel_mapping: Optional[dict] = None) -> list[ImportedDiagram]:
+    """Parse an uploaded file into one or more diagrams.
+
+    ``excel_mapping`` (Excel workbooks only) says which sheets and columns
+    hold the blocks and connections when the workbook doesn't follow the
+    template (see :func:`.excel.parse`)."""
     if not data:
         raise RbdImportError("The file is empty.")
     if len(data) > MAX_UPLOAD_BYTES:
@@ -37,7 +44,10 @@ def import_file(data: bytes, filename: str) -> list[ImportedDiagram]:
     for name, label in FORMATS.items():
         mod = _module(name)
         if mod.sniff(data, filename or ""):
-            diagrams = mod.parse(data, filename or "")
+            if name == "excel":
+                diagrams = mod.parse(data, filename or "", excel_mapping)
+            else:
+                diagrams = mod.parse(data, filename or "")
             for d in diagrams:
                 d.source_format = d.source_format or label
             if not diagrams:
@@ -45,5 +55,6 @@ def import_file(data: bytes, filename: str) -> list[ImportedDiagram]:
             return diagrams
     raise RbdImportError(
         "Unrecognised file. Reliafy imports ReliaSoft BlockSim projects (.rsgz / .rsr — "
-        "use File › Pack and E-mail in BlockSim), Open-PSA XML and Galileo .dft files."
+        "use File › Pack and E-mail in BlockSim), Open-PSA XML, Galileo .dft files and "
+        "Excel workbooks (.xlsx — download the template)."
     )

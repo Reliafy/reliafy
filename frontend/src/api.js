@@ -318,12 +318,64 @@ export function getDataset(id) {
 }
 
 // Upload a CSV as a standalone dataset (deduped by content on the server).
-export function uploadDataset(file, name, noHeader = false) {
+// An Excel workbook works too: ``excel`` = { sheet, headerRow } picks the
+// sheet and header row (headerRow 0 = none), converted to CSV server-side.
+export function uploadDataset(file, name, noHeader = false, excel = null) {
   const form = new FormData();
   form.append("file", file);
   if (name) form.append("name", name);
   if (noHeader) form.append("no_header", "true");
+  if (excel?.sheet) form.append("sheet", excel.sheet);
+  if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
   return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
+}
+
+// ---- Excel workbooks (.xlsx) -------------------------------------------------
+// Parsed server-side; the frontend picks a sheet + header row, then either
+// maps columns (RCM, RBD) or converts the sheet to CSV (life data).
+
+export const SPREADSHEET_ACCEPT = ".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+// Also catches formats the server refuses with a "save it as .xlsx" message.
+export const isSpreadsheetFile = (file) => /\.(xlsx|xlsm|xltx|xltm|xls|xlsb|ods)$/i.test(file?.name || "");
+
+function excelForm(file, sheet, headerRow, extra = {}) {
+  const form = new FormData();
+  form.append("file", file);
+  if (sheet) form.append("sheet", sheet);
+  if (headerRow != null && headerRow !== "") form.append("header_row", String(headerRow));
+  for (const [k, v] of Object.entries(extra)) {
+    if (v != null && v !== "") form.append(k, typeof v === "string" ? v : JSON.stringify(v));
+  }
+  return form;
+}
+
+// Sheets, a preview of each, and the guessed header row.
+export function inspectExcel(file) {
+  return request("/api/excel/inspect", { method: "POST", body: excelForm(file) });
+}
+
+// One sheet's columns + first rows; with ``target`` ("rcm", "rbd_blocks",
+// "rbd_connections") also that importer's fields and a guessed mapping.
+export function excelTable(file, sheet, headerRow, target) {
+  return request("/api/excel/table", {
+    method: "POST",
+    body: excelForm(file, sheet, headerRow, { target }),
+  });
+}
+
+// One sheet as a CSV File, ready for any CSV upload path.
+export async function excelToCsvFile(file, sheet, headerRow) {
+  const res = await authedFetch("/api/excel/csv", {
+    method: "POST",
+    body: excelForm(file, sheet, headerRow),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Couldn't read the workbook (${res.status})`);
+  }
+  const text = await res.text();
+  const stem = (file.name || "workbook").replace(/\.[^.]+$/, "");
+  return new File([text], `${stem}${sheet ? ` - ${sheet}` : ""}.csv`, { type: "text/csv" });
 }
 
 // Create a dataset from pasted tabular text (CSV or TSV; delimiter sniffed
@@ -364,12 +416,20 @@ export function saveRbd(name, graph, id, expectedUpdatedAt) {
   );
 }
 
-// Parse another tool's diagram file (BlockSim, Open-PSA, Galileo) into builder
-// graphs. Nothing is saved: the builder opens the chosen one unsaved.
-export function importRbdFile(file) {
+// Parse another tool's diagram file (BlockSim, Open-PSA, Galileo, Excel) into
+// builder graphs. Nothing is saved: the builder opens the chosen one unsaved.
+// ``mapping`` (Excel only) names the sheets/columns when the workbook doesn't
+// follow the template — the server answers code "excel_mapping" when needed.
+export function importRbdFile(file, mapping) {
   const form = new FormData();
   form.append("file", file);
+  if (mapping) form.append("mapping", JSON.stringify(mapping));
   return withEvent(request("/api/rbds/import", { method: "POST", body: form }), "rbd_import");
+}
+
+// The Excel template for RBD import (README + Blocks + Connections example).
+export function downloadRbdTemplate() {
+  return downloadFile("/api/rbds/import/template.xlsx", "reliafy-rbd-template.xlsx");
 }
 
 export function renameRbd(id, name) {
@@ -962,6 +1022,36 @@ export function renameRcmStudy(id, name) {
 
 export function deleteRcmStudy(id) {
   return request(`/api/rcm/studies/${id}`, { method: "DELETE" });
+}
+
+// What an FMEA / RCM spreadsheet would import as (nothing saved): the tree,
+// counts, warnings and the consequence / decision values found.
+// ``options`` = { mapping, consequence_map, outcome_map, extra_columns }.
+export function previewRcmImport(file, sheet, headerRow, options) {
+  return request("/api/rcm/import/preview", {
+    method: "POST",
+    body: excelForm(file, sheet, headerRow, { options }),
+  });
+}
+
+// Import the worksheet: a new study (``target.name``) or an existing one
+// (``target.studyId`` with mode "append" | "replace").
+export function importRcmWorksheet(file, sheet, headerRow, options, target) {
+  return withEvent(
+    request("/api/rcm/import", {
+      method: "POST",
+      body: excelForm(file, sheet, headerRow, {
+        options,
+        study_id: target.studyId,
+        mode: target.mode,
+        expected_updated_at: target.expectedUpdatedAt,
+        name: target.name,
+        system: target.system,
+        description: target.description,
+      }),
+    }),
+    "rcm_import"
+  );
 }
 
 // A study's tasks as a repairable RBD block's maintenance (#100): what each
