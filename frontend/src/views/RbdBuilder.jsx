@@ -24,6 +24,7 @@ import SubsystemModal from "../components/SubsystemModal.jsx";
 import RbdSaveModal from "../components/RbdSaveModal.jsx";
 import RbdCalculator from "../components/RbdCalculator.jsx";
 import RbdFaultTree from "../components/RbdFaultTree.jsx";
+import RbdDesignPanel from "../components/RbdDesignPanel.jsx";
 import ValidationPanel, { graphSignature } from "../components/RbdValidation.jsx";
 import { saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP } from "../api.js";
 import { ShareButton } from "../components/ShareDialog.jsx";
@@ -187,7 +188,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   // coupled by a shared failure cause (reliability analysis only).
   const [ccfGroups, setCcfGroups] = useState([]);
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
-  const [tab, setTab] = useState("builder"); // 'builder' | 'calc' | 'tree'
+  const [tab, setTab] = useState("builder"); // 'builder' | 'calc' | 'tree' | 'design'
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
   const [checkedSig, setCheckedSig] = useState(null);
@@ -628,6 +629,17 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
   }, [setNodes, setEdges, fitView]);
 
+  // Put a redundancy design (Design tab) on the canvas as it is — unsaved, and
+  // keeping the user's layout — clearing the id counter past any new ids.
+  const applyDesign = useCallback((graph) => {
+    const nums = graph.nodes
+      .map((n) => parseInt(String(n.id).replace(/^\D+/, ""), 10))
+      .filter((x) => !Number.isNaN(x));
+    idRef.current = Math.max(idRef.current, (nums.length ? Math.max(...nums) : 0) + 1);
+    setNodes(graph.nodes);
+    setEdges(graph.edges);
+  }, [setNodes, setEdges]);
+
   // Expose the live canvas to the AI assistant while the builder is mounted.
   useEffect(() => {
     return registerRbdCanvas({
@@ -822,6 +834,13 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         onClick={() => setTab("tree")}
       >
         Fault tree
+      </button>
+      <button
+        className={"tab" + (tab === "design" ? " active" : "")}
+        onClick={() => setTab("design")}
+        title="How many copies of each block: most reliable within a budget, or cheapest to reach a target"
+      >
+        Design
       </button>
     </div>
     <div
@@ -1312,6 +1331,20 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         stale={validationStale}
         active={tab === "tree"}
         name={savedRbdName}
+      />
+    </div>
+    <div
+      className="rbd-calc-panel"
+      style={{ display: tab === "design" ? undefined : "none" }}
+    >
+      <RbdDesignPanel
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }}
+        onApply={applyDesign}
+        onView={() => {
+          setTab("builder");
+          // Once the canvas is shown again (it can't be fitted while hidden).
+          window.setTimeout(() => fitView({ padding: 0.35, duration: 300 }), 60);
+        }}
       />
     </div>
     </div>
