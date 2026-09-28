@@ -17,12 +17,21 @@ before, as a plain ``NonRepairable``)::
                        "interval": 580, "duration": 7, "cost": 1000},
         "inspection": {"interval": 8760,            # hidden failures, found only
                        "duration": 4, "cost": 300}, #   at these proof tests
+        "rcm_source": {"study_id", "mode_id", ...}, # where the schedule was filled
+                                                    #   from (display only: never
+                                                    #   analysed, not in the cache key)
     }
     graph["costs"] = {"downtime_rate": 500,    # per unit time the *system* is down
                       "horizon": 87600}        # ownership horizon for the total cost
 
 A ``duration`` is a number (a fixed time), ``0``/missing for instant, or a
-life-model-like spec (``distribution_id`` + ``params``). A block has either a
+life-model-like spec (``distribution_id`` + ``params``). A cost charged per
+action — ``repair``, ``replace`` and the preventive and test ``cost`` — may be
+a range ``{"min": 100, "max": 300}`` instead of a number: RePyability draws it
+afresh at every action from a uniform distribution (surpyval's ``Uniform``), so
+the simulated cost spreads while the exact cost rate takes its mean. The
+downtime cost and the purchase price are single numbers (as in RePyability).
+A block has either a
 preventive schedule or proof tests, not both (as in RePyability). Times are in
 the diagram's unit, costs in whatever currency the user works in.
 
@@ -53,6 +62,8 @@ COST_NAMES = {
     "downtime": "downtime cost per unit time",
     "acquisition": "purchase price",
 }
+#: The block costs that may be a range (RePyability draws them per failure).
+RANGED_COSTS = ("repair", "replace")
 POLICIES = ("age", "block")
 #: The default simulation window covers at least this many of the longest
 #: maintenance or test interval in the diagram.
@@ -82,6 +93,34 @@ def _number(value, what: str, label: str, *, positive: bool = False) -> Optional
     return x
 
 
+def _cost(value, what: str, label: str, *, ranged: bool = True):
+    """A cost: a non-negative number (None when blank) or, where RePyability
+    draws it afresh per action (``ranged``), a ``{"min", "max"}`` range as
+    surpyval's ``Uniform`` — a range of zero width is just the number."""
+    if not isinstance(value, dict):
+        return _number(value, what, label)
+    if not ranged:
+        raise AnalysisError(f"“{label}”: the {what} must be a single number, not a range.")
+    if set(value) - {"min", "max"}:
+        raise AnalysisError(f"“{label}”: a {what} range takes only a min and a max.")
+    low = _number(value.get("min"), f"{what} minimum", label)
+    high = _number(value.get("max"), f"{what} maximum", label)
+    if low is None or high is None:
+        raise AnalysisError(f"“{label}”: the {what} range needs both a min and a max.")
+    if low > high:
+        raise AnalysisError(f"“{label}”: the {what} range's min is above its max.")
+    if low == high:
+        return low
+    import surpyval as sp
+
+    return sp.Uniform.from_params([low, high])
+
+
+def _priced(cost) -> bool:
+    """Whether a validated cost charges anything (a range always does)."""
+    return cost is not None and not (isinstance(cost, float) and cost == 0.0)
+
+
 def _dict(value, what: str, label: str) -> Optional[dict]:
     if value is None or value is False:
         return None
@@ -101,7 +140,7 @@ def block_costs(data: dict, label: str) -> dict:
         )
     out = {}
     for key, spec_key in COST_KEYS.items():
-        value = _number(costs.get(key), COST_NAMES[key], label)
+        value = _cost(costs.get(key), COST_NAMES[key], label, ranged=key in RANGED_COSTS)
         if value is not None:
             out[spec_key] = value
     return out
@@ -141,8 +180,8 @@ def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict
         "policy": policy,
         "duration": _duration(pm.get("duration"), "preventive-maintenance duration", label, resolve_model),
     }
-    cost = _number(pm.get("cost"), "preventive-maintenance cost", label)
-    if cost:
+    cost = _cost(pm.get("cost"), "preventive-maintenance cost", label)
+    if _priced(cost):
         spec["cost"] = cost
     return spec
 
@@ -161,8 +200,8 @@ def inspection_spec(data: dict, label: str, resolve_model=None) -> Optional[dict
         "interval": interval,
         "duration": _duration(test.get("duration"), "proof-test duration", label, resolve_model),
     }
-    cost = _number(test.get("cost"), "proof-test cost", label)
-    if cost:
+    cost = _cost(test.get("cost"), "proof-test cost", label)
+    if _priced(cost):
         spec["cost"] = cost
     return spec
 

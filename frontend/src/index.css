@@ -6565,6 +6565,45 @@ button.danger:hover { background: #fdeeee; }
 .rbd-cost-field span { font-family: inherit; }
 .rbd-cost-field small { color: var(--faint); font-size: 11px; }
 .rbd-costs-body > .seg { align-self: flex-start; flex-wrap: wrap; }
+/* Costs as ranges and "Fill from RCM study" (#100) */
+.rbd-cost-label { display: flex; align-items: baseline; gap: 6px; }
+.rbd-range-toggle {
+  background: none; border: none; box-shadow: none; padding: 0; margin: 0; cursor: pointer;
+  font-size: 10.5px; font-weight: 600; color: var(--accent-strong); text-transform: none;
+}
+.rbd-range-toggle:hover:not(:disabled), .rbd-range-toggle:focus { text-decoration: underline; background: none; outline: none; box-shadow: none; }
+.rbd-range-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rbd-range-inputs { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.rbd-cost-field .rbd-range-inputs input { width: 66px; padding-left: 8px; padding-right: 6px; -moz-appearance: textfield; appearance: textfield; }
+.rbd-range-inputs input::-webkit-outer-spin-button,
+.rbd-range-inputs input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.rbd-cost-field.rbd-filled input { border-color: rgba(47, 109, 246, 0.55); background: var(--acc-t); }
+.rbd-costs-h-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.rbd-costs-h-row .link-btn { font-size: 12px; font-weight: 600; }
+.rbd-rcm-picker {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
+}
+.rbd-rcm-picker-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+.rbd-rcm-picker select { max-width: 100%; }
+.rbd-rcm-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; }
+.rbd-rcm-tasks li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border); font-size: 12.5px; }
+.rbd-rcm-tasks li:first-child { border-top: none; }
+.rbd-rcm-task-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rbd-rcm-mode { font-weight: 600; }
+.rbd-rcm-tasks .muted { color: var(--muted); font-size: 11.5px; }
+.rbd-rcm-fills { color: var(--text); }
+.rbd-rcm-fills b { color: #15803d; font-weight: 600; }
+.rbd-rcm-reason { color: var(--muted); font-style: italic; font-size: 11.5px; }
+.rbd-rcm-tasks li.no .rbd-rcm-mode { color: var(--muted); }
+.rbd-rcm-use { padding: 4px 12px; font-size: 12px; flex-shrink: 0; }
+.rbd-rcm-source {
+  font-size: 12.5px; padding: 8px 10px; border-radius: 8px; line-height: 1.45;
+  background: var(--acc-t); border: 1px solid rgba(47, 109, 246, 0.25);
+}
+.rbd-rcm-source .muted { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.rbd-rcm-source .link-btn { font-size: 11.5px; }
+.rbd-rcm-edited { color: #b45309; font-weight: 600; }
 .rbd-costs-errors { margin: 0; padding-left: 18px; color: #b42318; font-size: 12.5px; }
 /* Overhang the card's bottom edge (like the placeholder chip) so the card keeps its size. */
 .rbd-maint-chips { position: absolute; bottom: -8px; left: 8px; display: flex; gap: 4px; z-index: 2; }

@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.services import rbd_rcm
 from backend.services import rcm as rcm_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
@@ -157,6 +158,21 @@ def get_study(
     if via_share:
         payload["shared_by"] = shares_service.shared_by_for(session, ctx.uid, study.id)
     return JSONResponse(content=payload)
+
+
+@router.get("/studies/{study_id}/maintenance-tasks")
+def maintenance_tasks(
+    study_id: str, unit: str = "", session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> JSONResponse:
+    """The study's tasks as a repairable RBD block's maintenance (#100): what
+    each would fill (scheduled replacement or proof test) in a diagram whose
+    time unit is ``unit``, or why it can't."""
+    study, _ = access_service.fetch_readable(session, "rcm_studies", RcmStudy, study_id, ctx)
+    if study is None or study.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Study not found."})
+    return JSONResponse(content=rbd_rcm.maintenance_tasks(
+        session, study, [*ctx.read_owners, study.owner_id], ctx.hidden, unit[:40],
+    ))
 
 
 @router.patch("/studies/{study_id}")

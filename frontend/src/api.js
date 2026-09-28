@@ -964,6 +964,13 @@ export function deleteRcmStudy(id) {
   return request(`/api/rcm/studies/${id}`, { method: "DELETE" });
 }
 
+// A study's tasks as a repairable RBD block's maintenance (#100): what each
+// would fill in a diagram in `unit` (scheduled replacement or proof test), or
+// why it can't.
+export function getRcmMaintenanceTasks(id, unit) {
+  return request(`/api/rcm/studies/${id}/maintenance-tasks?unit=${encodeURIComponent(unit || "")}`);
+}
+
 // Replace the whole worksheet tree; returns the study with fresh evidence
 // statuses resolved.
 export function putRcmTree(id, functions, expectedUpdatedAt) {

@@ -41,6 +41,18 @@ def _duration(script, raw, label: str, var: str) -> str:
     return f"surv.ExactEventTime.from_params({_num(value)})"
 
 
+def _cost(script, value) -> str:
+    """The expression for a validated cost: a number, or a range drawn
+    uniformly at each action (surpyval's ``Uniform``)."""
+    from backend.services.rbd_export import _num
+
+    if isinstance(value, float):
+        return _num(value)
+    low, high = (float(p) for p in value.params)
+    script.uses_surv = True
+    return f"surv.Uniform.from_params([{_num(low)}, {_num(high)}])"
+
+
 def component(script, data: dict, label: str, var: str, life: str, repair: str) -> None:
     """Emit ``var = {...}``: a RePyability component spec with the block's
     costs and maintenance (``repair`` is its repair model's variable, or
@@ -56,7 +68,7 @@ def component(script, data: dict, label: str, var: str, life: str, repair: str) 
         script.missing(var, str(exc), label)
         return
     entries: list[str] = [f'"reliability": {life}', f'"repairability": {repair}']
-    entries += [f"{_lit(k)}: {_num(v)}" for k, v in costs.items()]
+    entries += [f"{_lit(k)}: {_cost(script, v)}" for k, v in costs.items()]
     for key, spec, raw in (("preventive", pm, data.get("preventive")),
                            ("inspection", test, data.get("inspection"))):
         if not spec:
@@ -67,11 +79,13 @@ def component(script, data: dict, label: str, var: str, life: str, repair: str) 
         if key == "preventive":
             parts.append(f'"policy": {_lit(spec["policy"])}')
         parts.append(f'"duration": {duration}')
-        if spec.get("cost"):
-            parts.append(f'"cost": {_num(spec["cost"])}')
+        if spec.get("cost") is not None:
+            parts.append(f'"cost": {_cost(script, spec["cost"])}')
         entries.append(f'"{key}": {{' + ", ".join(parts) + "}")
     if data.get("inspection"):
         L.append("# Hidden failures: found only at the proof tests below.")
+    if any("surv.Uniform.from_params(" in e for e in entries):
+        L.append("# A cost given as a range is drawn uniformly afresh at each action.")
     L.append(f"{var} = {{")
     L.extend(f"    {e}," for e in entries)
     L.append("}")

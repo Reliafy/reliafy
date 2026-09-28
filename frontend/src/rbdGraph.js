@@ -138,7 +138,7 @@ export function compactGraph(graph = {}) {
     }
     for (const k of ["n", "k", "spares", "cold", "dormancy", "repeat_of"]) if (d[k] != null) node[k] = d[k];
     // Repairable blocks: instant repair, costs and maintenance (#99/#100).
-    for (const k of ["instant_repair", "costs", "preventive", "inspection"]) if (d[k] != null) node[k] = d[k];
+    for (const k of ["instant_repair", "costs", "preventive", "inspection", "rcm_source"]) if (d[k] != null) node[k] = d[k];
     if (d.rbd?.id) node.subsystem_rbd_id = d.rbd.id;
     return node;
   });
