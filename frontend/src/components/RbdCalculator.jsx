@@ -231,7 +231,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
                 <th title="Fussell-Vesely — fraction of system unreliability this component contributes to">F-V</th>
                 <th title="Risk Achievement Worth — how much worse the system gets if this component fails">RAW</th>
                 <th title="Risk Reduction Worth — how much better the system gets if this component were perfect">RRW</th>
-                <th title="Criticality importance">Crit.</th>
+                <th title="Criticality importance (failure-oriented) — the share of system failures this component accounts for">Crit.</th>
                 <th title="Improvement potential — gain available from perfecting this component">Improv.</th>
               </tr>
             </thead>
