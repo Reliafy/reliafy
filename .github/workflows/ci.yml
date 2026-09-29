@@ -17,7 +17,7 @@ jobs:
       - run: pip install -r requirements.txt pytest
       # RePyability isn't in requirements.txt: like the Dockerfile, install the
       # pinned tag --no-deps so it can't re-resolve surpyval from PyPI.
-      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.8.0"
+      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.10.1"
       - run: pytest backend/tests
 
   frontend:
