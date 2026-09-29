@@ -16,7 +16,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from backend.fitting import DISTRIBUTIONS
+from backend.fitting import DISTRIBUTIONS, FitError, param_values
 from repyability.non_repairable import NonRepairable
 from surpyval import KaplanMeier, logrank
 
@@ -34,6 +34,21 @@ def _clean(arr) -> list:
     for v in np.atleast_1d(np.asarray(arr, dtype=float)):
         out.append(float(v) if np.isfinite(v) else None)
     return out
+
+
+def fmt_num(value) -> str:
+    """A number for a sentence: 3 significant figures, with thousands
+    separators for everyday magnitudes (whole units from 1,000) and scientific
+    notation for very small or large ones — never rounded to "0" as a fixed
+    ``,.0f`` would ("check about every 0 hours")."""
+    v = float(value)
+    if not np.isfinite(v) or v == 0:
+        return f"{v:g}"
+    if abs(v) < 1e-3 or abs(v) >= 1e9:
+        return f"{v:.3g}"
+    if abs(float(f"{v:.3g}")) >= 1000:
+        return f"{v:,.0f}"
+    return f"{v:.3g}"
 
 
 def _scalar(value) -> Optional[float]:
@@ -69,14 +84,13 @@ def _model_from_params(distribution_id: str, params: list, extras: dict | None =
             f"'{distribution_id}' isn't a supported parametric distribution."
         )
     dist = entry["dist"]
-    by_name = {p["name"]: float(p["value"]) for p in (params or []) if "name" in p}
-    names = list(getattr(dist, "param_names", []) or [])
-    if names and all(n in by_name for n in names):
-        values = [by_name[n] for n in names]
-    else:
-        values = [float(p["value"]) for p in (params or [])]
-    if not values:
+    if not params:
         raise StrategyError("The model is missing its parameters.")
+    try:
+        # By SurPyval name; an unrecognised name is refused, never read by position.
+        values = param_values(distribution_id, params)
+    except FitError as exc:
+        raise StrategyError(str(exc)) from None
     # Extra fitted quantities from fit options (offset gamma, LFP p, ZI f0)
     # rebuild the model exactly as it was fitted.
     kwargs = {
@@ -155,7 +169,7 @@ def optimal_replacement(
     if beneficial:
         unit_s = f" {unit}" if unit else ""
         recommendation = (
-            f"Replace preventively at about {t_opt:,.0f}{unit_s}. "
+            f"Replace preventively at about {fmt_num(t_opt)}{unit_s}. "
             f"This lowers the long-run cost rate by {savings:.0%} versus "
             f"run-to-failure."
         )
@@ -415,7 +429,7 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
             )
         early, late = (la, lb) if sig[nz][0] > 0 else (lb, la)
         text = (
-            f"The reliability curves cross at about {cross:,.0f}{us}: "
+            f"The reliability curves cross at about {fmt_num(cross)}{us}: "
             f"{early} is more reliable before it, {late} after."
             if cross is not None
             else f"{la} and {lb} cross over the range."
@@ -426,7 +440,7 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
     if da and db:
         higher = la if da >= db else lb
         text += (
-            f" Median life: {la} {da:,.0f}{us} vs {lb} {db:,.0f}{us} "
+            f" Median life: {la} {fmt_num(da)}{us} vs {lb} {fmt_num(db)}{us} "
             f"(longer: {higher})."
         )
     return {"more_reliable": more, "crossover_time": cross, "text": text}
@@ -468,7 +482,7 @@ def failure_finding(
         "interval": float(interval),
         "method": "approx_2(1-A)MTTF",
         "note": (
-            f"Check the hidden function about every {interval:,.0f}{unit_s} to keep its "
+            f"Check the hidden function about every {fmt_num(interval)}{unit_s} to keep its "
             f"availability near {availability:.1%}. Uses the standard approximation "
             "FFI = 2 x (1 - A) x MTTF, accurate for availability targets above ~90%."
         ),

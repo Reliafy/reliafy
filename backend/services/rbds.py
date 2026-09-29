@@ -134,6 +134,7 @@ def analyze_graph(
     covariates: dict | None = None,
     conditional_age: float | None = None,
     n_simulations: int | None = None,
+    at_times=None,
 ) -> dict:
     """Run the RePyability reliability analysis for a graph.
 
@@ -143,6 +144,8 @@ def analyze_graph(
     ``t_max`` is the upper limit of the time axis. ``covariates`` maps node id ->
     covariate values for proportional-hazards nodes. ``conditional_age``
     conditions the curves on having already survived to that age.
+    ``at_times`` (non-repairable) adds the system reliability evaluated
+    exactly at those times.
     """
 
     def resolve_subsystem(sub_id: str) -> dict | None:
@@ -167,6 +170,7 @@ def analyze_graph(
         covariates=covariates,
         resolve_model=resolve_model,
         conditional_age=conditional_age,
+        at_times=at_times,
     )
 
 

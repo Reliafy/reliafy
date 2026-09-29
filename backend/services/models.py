@@ -357,6 +357,111 @@ def evaluate(db, model_id: str, values: dict, owner_id: str, x_min=None, x_max=N
     )
 
 
+EVAL_FUNCTIONS = ("sf", "ff", "hf", "Hf", "df")
+
+
+def _covariate_row(fields: list, values: dict | None) -> tuple[dict, list[dict]]:
+    """The covariate row a regression model is evaluated at, and a
+    description of it: each field's value and whether it was ``given`` or is
+    the fit's ``default`` (the training-data mean for a numeric covariate, the
+    most common level for a categorical one — as the calculator uses)."""
+    values = dict(values or {})
+    known = [f["name"] for f in fields]
+    unknown = sorted(set(values) - set(known))
+    if unknown:
+        raise fitting.FitError(
+            f"Unknown covariate(s): {', '.join(unknown)}. This model's covariates are: "
+            f"{', '.join(known) or 'none'}."
+        )
+    row, used = {}, []
+    for f in fields:
+        given = f["name"] in values and values[f["name"]] not in (None, "")
+        value = values[f["name"]] if given else f.get("default")
+        if f.get("type") == "number":
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                raise fitting.FitError(f"Covariate '{f['name']}' must be a number.") from None
+        else:
+            value = str(value)
+            if given and f.get("options") and value not in f["options"]:
+                raise fitting.FitError(
+                    f"Covariate '{f['name']}' must be one of: {', '.join(map(str, f['options']))}.")
+        row[f["name"]] = [value]
+        used.append({"name": f["name"], "value": value, "source": "given" if given else "default"})
+    return row, used
+
+
+def evaluate_at(db, model: Model, times, owner_id, covariates: dict | None = None) -> dict:
+    """Evaluate a saved life model's reliability functions at ``times``.
+
+    Parametric models are evaluated from the distribution itself — plain and
+    discrete ones rebuilt from their stored parameters, regression
+    (proportional-hazards etc.) models from the live fit at a covariate row —
+    so values are exact at any time, however far past the stored plot grid.
+    Models with no closed form to rebuild (non-parametric estimators,
+    mixtures) fall back to linear interpolation on the stored function grid,
+    which holds the end value past the grid.
+
+    Returns ``{"method": "exact" | "interpolated", "values": {fn: [...]},
+    "x_max"}`` (``x_max`` is the grid end, interpolated only) plus, for
+    regression models, ``"covariates": [{name, value, source}]``. Non-finite
+    values are None. Raises ``fitting.FitError`` for bad covariates.
+    """
+    import numpy as np
+    import pandas as pd
+
+    t = np.asarray([float(v) for v in times], dtype=float)
+    results = model.results or {}
+    dist_id = results.get("distribution_id") or model.distribution_id
+    live, Z, used = None, None, None
+    if model.kind == "regression":
+        entry = get_live_model(db, model.id, owner_id)
+        if entry is None:
+            raise ModelNotFound(model.id)
+        live = entry["model"]
+        row, used = _covariate_row(entry.get("fields") or [], covariates)
+        Z = pd.DataFrame(row) if row else None
+    elif model.kind in ("distribution", "discrete") and results.get("params") and (
+        dist_id in fitting.DISTRIBUTIONS or dist_id in fitting.DISCRETE
+    ):
+        entry = fitting.DISTRIBUTIONS.get(dist_id) or fitting.DISCRETE[dist_id]
+        extras = {k: float(v) for k, v in (results.get("extras") or {}).items()
+                  if k in ("gamma", "p", "f0") and v is not None}
+        live = entry["dist"].from_params(fitting.param_values(dist_id, results["params"]), **extras)
+
+    out: dict = {"values": {}}
+    if live is not None:
+        out["method"] = "exact"
+        for fn in EVAL_FUNCTIONS:
+            try:
+                with np.errstate(all="ignore"):
+                    f = getattr(live, fn)
+                    y = np.asarray(f(t) if Z is None else f(t, Z), dtype=float).ravel()
+            except Exception:  # noqa: BLE001 - a function the model lacks is just absent
+                y = np.full(t.shape, np.nan)
+            out["values"][fn] = [float(v) if np.isfinite(v) else None for v in y]
+        if used is not None:
+            out["covariates"] = used
+        return out
+
+    curves = (public_results(model).get("functions") or {}).get("curves") or {}
+    if not curves.get("x"):
+        raise fitting.FitError("This model has no reliability functions to evaluate.")
+    x = np.asarray(curves["x"], dtype=float)
+    out["method"] = "interpolated"
+    out["x_max"] = float(np.nanmax(x))
+    for fn in EVAL_FUNCTIONS:
+        ys = curves.get(fn)
+        if ys is None:
+            out["values"][fn] = [None] * t.size
+            continue
+        yv = np.array([np.nan if v is None else v for v in ys], dtype=float)
+        y = np.interp(t, x, yv)
+        out["values"][fn] = [float(v) if np.isfinite(v) else None for v in y]
+    return out
+
+
 def confidence(db, model_id: str, params: dict, owner_id: str, x_min=None, x_max=None) -> dict:
     """Confidence bounds of a saved model's function (configurable level /
     bound), re-fitting on demand if the live model isn't cached."""

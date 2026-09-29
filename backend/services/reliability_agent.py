@@ -542,6 +542,10 @@ def _rbd_component_model(db, uid: str, comp: dict) -> dict:
     from backend.services import models as models_service
 
     mid = (comp.get("model_id") or "").strip()
+    if mid and (comp.get("distribution") or comp.get("params")):
+        raise ValueError(
+            f"component “{comp.get('label') or '?'}”: give exactly one of model_id or "
+            "distribution + params, not both")
     if mid:
         m = models_service.get_model(db, mid, owner_id=uid)
         if m is None:
@@ -551,9 +555,12 @@ def _rbd_component_model(db, uid: str, comp: dict) -> dict:
                 f"model “{m.name}” is a {m.kind} model; RBD components need a plain "
                 "distribution — give distribution + params inline instead")
         r = m.results or {}
+        # ``unit`` travels with the copied parameters so validation can warn
+        # when the diagram is in a different time unit.
         return {"source": "params", "distribution": r.get("distribution") or m.distribution_id,
                 "distribution_id": m.distribution_id,
-                "params": [{"name": p["name"], "value": p["value"]} for p in (r.get("params") or [])]}
+                "params": [{"name": p["name"], "value": p["value"]} for p in (r.get("params") or [])],
+                "unit": r.get("unit") or (m.spec or {}).get("unit") or ""}
 
     dist = (comp.get("distribution") or "").strip()
     if not dist:
@@ -568,6 +575,7 @@ def _rbd_component_model(db, uid: str, comp: dict) -> dict:
               for p in (comp.get("params") or []) if p.get("name") is not None and p.get("value") is not None]
     if not params:
         raise ValueError(f"component “{comp.get('label') or dist_id}” needs params [{{name, value}}]")
+    fitting.param_values(dist_id, params, f"component “{comp.get('label') or dist_id}”")  # FitError is a ValueError
     return {"source": "params", "distribution": fitting.DISTRIBUTIONS[dist_id]["name"],
             "distribution_id": dist_id, "params": params}
 
@@ -593,6 +601,7 @@ def _rbd_repair_model(comp: dict) -> dict:
               if p.get("name") is not None and p.get("value") is not None]
     if not params:
         raise ValueError(f"component “{comp.get('label') or dist_id}” needs repair_params [{{name, value}}]")
+    fitting.param_values(dist_id, params, f"component “{comp.get('label') or dist_id}” repair")
     return {"source": "params", "distribution": fitting.DISTRIBUTIONS[dist_id]["name"],
             "distribution_id": dist_id, "params": params}
 
@@ -625,16 +634,43 @@ def _build_rbd_graph(db, uid: str, stages: list, repairable: bool = False) -> di
             nodes.append({"id": cid, "type": "component", "position": {"x": x, "y": y}, "data": data})
             edges.append({"id": f"e-{prev_exit}-{cid}", "source": prev_exit, "target": cid})
             comp_ids.append(cid)
+        # Settings are refused, never silently clamped or dropped: a stage
+        # that quietly means something else is worse than an error.
+        where = f"stage {si + 1} ({stage.get('label') or 'unnamed'})"
+        k = stage.get("k_of_n")
+        if k is not None:
+            try:
+                k = int(k)
+                if k != float(stage["k_of_n"]):
+                    raise ValueError
+            except (TypeError, ValueError):
+                raise ValueError(f"{where}: k_of_n must be a whole number.") from None
+            if not 1 <= k <= m:
+                raise ValueError(
+                    f"{where}: k_of_n = {k} but the stage has {m} component{'s' if m != 1 else ''} — it must "
+                    f"be between 1 and {m} (k of the n components in the stage must work).")
+        k = k or 1
         # Optional common-cause coupling for this stage's redundant components.
-        if not repairable and m > 1 and stage.get("common_cause_beta") is not None:
+        if stage.get("common_cause_beta") is not None:
             try:
                 beta = float(stage["common_cause_beta"])
             except (TypeError, ValueError):
-                beta = None
-            if beta is not None and 0.0 < beta < 1.0:
+                raise ValueError(f"{where}: common_cause_beta must be a number.") from None
+            if not 0.0 <= beta < 1.0:
+                raise ValueError(
+                    f"{where}: common_cause_beta = {beta:g} is out of range — it's the fraction of each "
+                    "component's failures that are shared-cause, so 0 ≤ beta < 1 (typically 0.01–0.2; 0 = none).")
+            if beta > 0:
+                if repairable:
+                    raise ValueError(
+                        f"{where}: common_cause_beta is reliability-only — repairable (availability) "
+                        "diagrams don't model common cause. Drop it, or use a non-repairable diagram.")
+                if m < 2:
+                    raise ValueError(
+                        f"{where}: common_cause_beta couples redundant components, so the stage needs 2 or "
+                        "more components in parallel.")
                 ccf_groups.append({"id": f"ccf-s{si}", "members": list(comp_ids), "beta": beta})
         if m > 1:
-            k = max(1, min(int(stage.get("k_of_n") or 1), m))
             kid = f"s{si}k"
             nodes.append({"id": kid, "type": "knode", "position": {"x": x + _RBD_COL_W // 2, "y": 160},
                           "data": {"label": stage.get("label") or f"Stage {si + 1}", "n": k, "k": m}})
