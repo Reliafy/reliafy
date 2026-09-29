@@ -222,7 +222,8 @@ B-lives, importance; availability for repairable diagrams), export_rbd_python (a
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
 - Housekeeping: delete_model, delete_dataset and delete_rbd permanently delete the user's own artifacts \
-(never shared samples; a dataset still used by a model can't be deleted). Only on the user's explicit \
+(never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
+Only on the user's explicit \
 request: confirm by name first, and relay anything the response lists as affected.
 - Plans: upgrade_link gives the user a Stripe payment link for Reliafy Agent or Pro, to open themselves.
 
