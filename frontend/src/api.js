@@ -1,5 +1,5 @@
 // Thin wrappers around the backend endpoints.
-import { auth } from "./firebase.js";
+import { loadAuth } from "./firebase.js";
 import { trackEvent } from "./telemetry.js";
 
 // SSE streaming (the metered assistant) is served straight from Cloud Run to
@@ -22,10 +22,18 @@ function withEvent(promise, name) {
   });
 }
 
+// The signed-in Firebase user, or null (signed out, or auth disabled for local
+// dev). The SDK is loaded on demand; by the time a request runs it's normally
+// already in memory (AuthProvider loads it on mount).
+async function currentUser() {
+  const mod = await loadAuth().catch(() => null);
+  return mod?.auth?.currentUser || null;
+}
+
 // Attach the current user's Firebase ID token (auto-refreshed by the SDK) to
-// every request. `auth` is null when auth is disabled for local dev.
+// every request.
 async function authHeaders(forceRefresh = false) {
-  const token = await auth?.currentUser?.getIdToken(forceRefresh);
+  const token = await (await currentUser())?.getIdToken(forceRefresh);
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -65,7 +73,7 @@ async function authedFetch(url, opts = {}) {
   let res = await send(false);
   // On a 401, the token may have just expired/been revoked — refresh once and
   // retry before giving up.
-  if (res.status === 401 && auth?.currentUser) {
+  if (res.status === 401 && (await currentUser())) {
     res = await send(true);
   }
   // A 403 on the workspace header means the stored team no longer exists (or

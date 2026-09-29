@@ -39,7 +39,7 @@ RUN apt-get update \
     && python -m pip install --no-cache-dir --upgrade pip \
     && grep -viE '^firebase-admin' requirements.txt > /tmp/requirements-runtime.txt \
     && pip install --no-cache-dir -r /tmp/requirements-runtime.txt \
-    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.8.0" \
+    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.10.1" \
     && pip install --no-cache-dir --no-deps "firebase-admin==7.7.0" \
     && pip install --no-cache-dir google-auth cachecontrol "pyjwt[crypto]" requests httpx \
     && python -c "import firebase_admin, firebase_admin.auth, surpyval, repyability" \

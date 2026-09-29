@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import CopyId from "../components/CopyId.jsx";
-import Plot from "react-plotly.js";
+import Plot from "../components/Plot.jsx";
 import Select from "../components/Select.jsx";
 import FleetAlertsCard from "../components/FleetAlertsCard.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";

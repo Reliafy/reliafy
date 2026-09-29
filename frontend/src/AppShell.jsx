@@ -1,55 +1,57 @@
-import { useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import NavBar from "./components/NavBar.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
-import BillingPage from "./views/BillingPage.jsx";
-import ModellingDashboard from "./views/ModellingDashboard.jsx";
-import ModellingHome from "./views/ModellingHome.jsx";
-import AllModelsPage from "./views/AllModelsPage.jsx";
-import NewModelPage from "./views/NewModelPage.jsx";
-import ModelPage from "./views/ModelPage.jsx";
-import DegradationHome from "./views/DegradationHome.jsx";
-import DegradationModelPage from "./views/DegradationModelPage.jsx";
-import RecurrentHome from "./views/RecurrentHome.jsx";
-import RecurrentNewPage from "./views/RecurrentNewPage.jsx";
-import RecurrentModelPage from "./views/RecurrentModelPage.jsx";
-import AltHome from "./views/AltHome.jsx";
-import AltNewPage from "./views/AltNewPage.jsx";
-import AltModelPage from "./views/AltModelPage.jsx";
-import RbdDashboard from "./views/RbdDashboard.jsx";
-import RbdHome from "./views/RbdHome.jsx";
-import RbdBuilder from "./views/RbdBuilder.jsx";
-import DatasetsDashboard from "./views/DatasetsDashboard.jsx";
-import DatasetsHome from "./views/DatasetsHome.jsx";
-import DatasetPage from "./views/DatasetPage.jsx";
-import StrategyDashboard from "./views/StrategyDashboard.jsx";
-import StrategyReplacement from "./views/StrategyReplacement.jsx";
-import StrategyCompare from "./views/StrategyCompare.jsx";
-import StrategyFailureFinding from "./views/StrategyFailureFinding.jsx";
-import StrategyAnalyses from "./views/StrategyAnalyses.jsx";
-import StrategyTracking from "./views/StrategyTracking.jsx";
-import FleetDashboard from "./views/FleetDashboard.jsx";
-import FleetForecasts from "./views/FleetForecasts.jsx";
-import FleetTrackingHome from "./views/FleetTrackingHome.jsx";
-import FleetForecastPage from "./views/FleetForecastPage.jsx";
-import StrategyAnalysisPage from "./views/StrategyAnalysisPage.jsx";
-import RcmDashboard from "./views/RcmDashboard.jsx";
-import RcmHome from "./views/RcmHome.jsx";
-import RcmStudyPage from "./views/RcmStudyPage.jsx";
-import TeamSettingsPage from "./views/TeamSettingsPage.jsx";
-import SettingsPage from "./views/SettingsPage.jsx";
-import ApiDocsPage from "./views/ApiDocsPage.jsx";
-import ReliabilityAgent from "./views/ReliabilityAgent.jsx";
-import AdminPage from "./views/AdminPage.jsx";
+const BillingPage = lazy(() => import("./views/BillingPage.jsx"));
+const ModellingDashboard = lazy(() => import("./views/ModellingDashboard.jsx"));
+const ModellingHome = lazy(() => import("./views/ModellingHome.jsx"));
+const AllModelsPage = lazy(() => import("./views/AllModelsPage.jsx"));
+const NewModelPage = lazy(() => import("./views/NewModelPage.jsx"));
+const ModelPage = lazy(() => import("./views/ModelPage.jsx"));
+const DegradationHome = lazy(() => import("./views/DegradationHome.jsx"));
+const DegradationModelPage = lazy(() => import("./views/DegradationModelPage.jsx"));
+const RecurrentHome = lazy(() => import("./views/RecurrentHome.jsx"));
+const RecurrentNewPage = lazy(() => import("./views/RecurrentNewPage.jsx"));
+const RecurrentModelPage = lazy(() => import("./views/RecurrentModelPage.jsx"));
+const AltHome = lazy(() => import("./views/AltHome.jsx"));
+const AltNewPage = lazy(() => import("./views/AltNewPage.jsx"));
+const AltModelPage = lazy(() => import("./views/AltModelPage.jsx"));
+const RbdDashboard = lazy(() => import("./views/RbdDashboard.jsx"));
+const RbdHome = lazy(() => import("./views/RbdHome.jsx"));
+const RbdBuilder = lazy(() => import("./views/RbdBuilder.jsx"));
+const DatasetsDashboard = lazy(() => import("./views/DatasetsDashboard.jsx"));
+const DatasetsHome = lazy(() => import("./views/DatasetsHome.jsx"));
+const DatasetPage = lazy(() => import("./views/DatasetPage.jsx"));
+const StrategyDashboard = lazy(() => import("./views/StrategyDashboard.jsx"));
+const StrategyReplacement = lazy(() => import("./views/StrategyReplacement.jsx"));
+const StrategyCompare = lazy(() => import("./views/StrategyCompare.jsx"));
+const StrategyFailureFinding = lazy(() => import("./views/StrategyFailureFinding.jsx"));
+const StrategyAnalyses = lazy(() => import("./views/StrategyAnalyses.jsx"));
+const StrategyTracking = lazy(() => import("./views/StrategyTracking.jsx"));
+const FleetDashboard = lazy(() => import("./views/FleetDashboard.jsx"));
+const FleetForecasts = lazy(() => import("./views/FleetForecasts.jsx"));
+const FleetTrackingHome = lazy(() => import("./views/FleetTrackingHome.jsx"));
+const FleetForecastPage = lazy(() => import("./views/FleetForecastPage.jsx"));
+const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx"));
+const RcmDashboard = lazy(() => import("./views/RcmDashboard.jsx"));
+const RcmHome = lazy(() => import("./views/RcmHome.jsx"));
+const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
+const TeamSettingsPage = lazy(() => import("./views/TeamSettingsPage.jsx"));
+const SettingsPage = lazy(() => import("./views/SettingsPage.jsx"));
+const ApiDocsPage = lazy(() => import("./views/ApiDocsPage.jsx"));
+const ReliabilityAgent = lazy(() => import("./views/ReliabilityAgent.jsx"));
+const AdminPage = lazy(() => import("./views/AdminPage.jsx"));
 import { useAppConfig } from "./ConfigProvider.jsx";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
 
-// The authenticated app shell and every view inside it. This module is
-// code-split: App.jsx lazy-imports it, so the public/marketing pages ship
-// without the app bundle (Plotly, the RBD canvas, etc.) — that JavaScript
-// only downloads once someone is actually entering the app.
+// The authenticated app shell. This module is code-split: App.jsx
+// lazy-imports it, so the public/marketing pages ship without the app bundle.
+// Each view is lazy too, so opening the app downloads only the shell and the
+// page being viewed — the chart library (Plotly) and the diagram canvas (React
+// Flow) arrive with the pages that use them. The chart module is prefetched
+// once the browser is idle so the first chart page doesn't wait for it.
 
 // Old bookmarks carried MODEL ids; fleets are their own ids now, so the
 // safest landing is the tracking index.
@@ -66,6 +68,15 @@ export default function AppShell() {
   // Keying the routed content on the workspace remounts every view on switch,
   // so all lists refetch under the new X-Workspace-Id without any per-view code.
   const { workspace } = useWorkspace();
+  useEffect(() => {
+    const prefetch = () => import("./components/Plot.jsx").catch(() => {});
+    if ("requestIdleCallback" in window) {
+      const id = window.requestIdleCallback(prefetch, { timeout: 4000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(prefetch, 2000);
+    return () => window.clearTimeout(id);
+  }, []);
   return (
     <>
       <NavBar />
@@ -73,6 +84,7 @@ export default function AppShell() {
         <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
         <main className="content" key={workspace}>
           <ErrorBoundary>
+          <Suspense fallback={<div className="card empty view-loading">Loading…</div>}>
           <Routes>
             <Route path="/" element={<Navigate to="/modelling" replace />} />
             <Route path="/modelling" element={<ModellingDashboard />} />
@@ -121,6 +133,7 @@ export default function AppShell() {
             {billing && <Route path="/billing" element={<BillingPage />} />}
             <Route path="*" element={<Navigate to="/modelling" replace />} />
           </Routes>
+          </Suspense>
           </ErrorBoundary>
         </main>
         {ai && <ChatPanel />}

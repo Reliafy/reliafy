@@ -45,7 +45,7 @@ from backend.fitting import DISTRIBUTIONS
 from backend.services import rbd_analysis
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.20.0", "repyability": "0.8.0"}
+_DEFAULT_VERSIONS = {"surpyval": "0.21.0", "repyability": "0.10.1"}
 _SURPYVAL_GIT = "https://github.com/derrynknife/SurPyval.git"
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 

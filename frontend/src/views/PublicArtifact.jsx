@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import Plot from "react-plotly.js";
+import Plot from "../components/Plot.jsx";
 import PublicNav from "../components/PublicNav.jsx";
 import PublicFooter from "../components/PublicFooter.jsx";
 import ResultView from "../components/ResultView.jsx";

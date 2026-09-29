@@ -449,6 +449,20 @@ def failure_positions_mask(model, n_points: int):
     return c == 0
 
 
+def _expo_weibull_paper_y(p: np.ndarray, mu: float) -> np.ndarray:
+    """The Exponentiated Weibull's probability-paper y, ``log(-log(1 - p**(1/mu)))``,
+    computed in log space. SurPyval's ``mpp_y_transform`` raises ``p`` to
+    ``1/mu`` directly, which underflows to 0 — and the point to −inf — for the
+    very small ``mu`` a fit to near-uniform data can reach (SurPyval 0.21's MLE
+    finds such corners where 0.20 stopped short). Identical where that is
+    finite: with ``a = log(p)/mu``, ``p**(1/mu) = exp(a)`` and, once ``exp(a)``
+    underflows, ``log(-log1p(-exp(a))) → a``."""
+    a = np.log(p) / float(mu)
+    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+        y = np.log(-np.log1p(-np.exp(a)))
+    return np.where(np.isfinite(y), y, a)
+
+
 def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None) -> dict:
     """Shape SurPyval's plot data into Plotly-ready (already-linearised) arrays.
 
@@ -466,6 +480,8 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None)
 
     def ty(p):
         p = np.clip(np.asarray(p, dtype=float), _EPS, 1 - _EPS)
+        if dist is ExpoWeibull:
+            return _expo_weibull_paper_y(p, params[-1])
         return dist.mpp_y_transform(p, *params)
 
     def tx(x):

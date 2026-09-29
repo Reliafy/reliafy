@@ -151,3 +151,8 @@ frontend/dist-ssr/
 
 # Generated marketing assets (social cards live in frontend/public)
 marketing/
+
+
+# Vendor example files for importer integration tests (copyrighted; fetched by
+# backend/scripts/fetch_rbd_import_fixtures.py, never committed)
+backend/tests/fixtures/external/
