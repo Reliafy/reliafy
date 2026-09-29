@@ -77,6 +77,7 @@ from backend.services import samples as samples_service
 from backend.services import strategy_store
 from backend.services import tokens as tokens_service
 from backend.services import rbd_analysis
+from backend.services import rbd_export
 from backend.services.rbd_analysis import AnalysisError
 from backend.services.strategy import StrategyError
 
@@ -138,8 +139,8 @@ def _simulation_message(plan: str) -> str:
             f"({PRO_PRICE}; purchased AI credits unlock it too) — upgrade at {_billing_url()} (or call "
             "upgrade_link with plan=pro for a payment link). It's free to run "
             "locally: export_rbd_python (Download as Python in the app) gives a standalone script that runs "
-            "this diagram's simulation with RePyability (pip install surpyval repyability). A saved result "
-            "is served here whenever one exists.")
+            "this diagram's simulation with RePyability, plus the exact install-and-run command. A saved "
+            "result is served here whenever one exists.")
 
 
 # ---------------------------------------------------------------------------
@@ -220,12 +221,16 @@ B-lives, importance; availability for repairable diagrams), export_rbd_python (a
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
+- Housekeeping: delete_model, delete_dataset and delete_rbd permanently delete the user's own artifacts \
+(never shared samples; a dataset still used by a model can't be deleted). Only on the user's explicit \
+request: confirm by name first, and relay anything the response lists as affected.
 - Plans: upgrade_link gives the user a Stripe payment link for Reliafy Agent or Pro, to open themselves.
 
 Conventions — follow them exactly:
-- Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension). \
-Spreadsheets are often the other way round (1 = failed); if so pass c_invert=true rather than rewriting the \
-data. A fit that reports nearly every row censored almost always means the column is inverted.
+- Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension); \
+-1 = left-censored (found failed at that time, failed at some unknown earlier time). Spreadsheets are often \
+the other way round (1 = failed); if so pass c_invert=true rather than rewriting the data. A fit that reports \
+nearly every row censored almost always means the column is inverted.
 - Units: parameters and times are in the model's (or diagram's) time unit. Always state the unit; ask if unsure.
 - Params are lists of {name, value} using SurPyval names: weibull [alpha (scale), beta (shape)], exponential \
 [failure_rate], normal/lognormal [mu, sigma], gamma [alpha, beta].
@@ -431,10 +436,25 @@ def _live_metrics(cache_id: str | None) -> dict | None:
         return None
 
 
+def _fit_lead(summary: dict) -> dict:
+    """The keys of a fit summary that must come first in the response."""
+    return {k: summary[k] for k in ("fit_ok", "warning", "warnings") if k in summary}
+
+
 def _fit_summary(result: dict) -> dict:
-    """The parts of a fit payload worth handing to a model (no plot arrays)."""
+    """The parts of a fit payload worth handing to a model (no plot arrays).
+
+    A fit the optimiser reported as failed leads with ``fit_ok: false`` and
+    the warning, ahead of the numbers, so they aren't quoted as a result."""
     metrics = result.get("metrics") or _live_metrics((result.get("functions") or {}).get("model_id"))
+    lead: dict[str, Any] = {}
+    if result.get("fit_ok") is False or result.get("fit_warning"):
+        lead = {"fit_ok": False, "warning": "The fit did NOT converge — the parameters and metrics below are "
+                                            "not a valid result; don't quote them. " + (result.get("fit_warning") or "")}
+    if result.get("warnings"):
+        lead["warnings"] = result["warnings"]
     out = {
+        **lead,
         "distribution": result.get("distribution"),
         "distribution_id": result.get("distribution_id"),
         "kind": result.get("kind"),
@@ -496,11 +516,13 @@ def get_model(
                 metrics = None
         out = {**_life_brief(m), "params": r.get("params", []), "gof": {g["id"]: g["value"] for g in r.get("gof") or []},
                "metrics": metrics}
-        for key in ("coefficients", "extra_params", "randomness", "fit_warning", "options"):
+        for key in ("coefficients", "extra_params", "randomness", "fit_warning", "options", "warnings"):
             if r.get(key):
                 out[key] = r[key]
         if (r.get("functions") or {}).get("covariates"):
             out["covariates"] = r["functions"]["covariates"]
+        if r.get("fit_ok") is False or r.get("fit_warning"):
+            out = {"fit_ok": False, **out}  # lead with it, as the fit tools do
         return out
     doc = recurrent_service.get_model(db, model_id, owners)
     if doc is not None:
@@ -517,24 +539,52 @@ _FitData = Annotated[Optional[list[float]], Field(
     description="Inline failure/suspension times, one per unit. Give this OR dataset_id.")]
 _FitCensored = Annotated[Optional[list[int]], Field(
     description="Censoring flag per time in `data`: 0 = FAILED at that time, 1 = still running "
-                "(right-censored / suspended). Omit when every time is a failure.")]
+                "(right-censored / suspended), -1 = left-censored (found failed at that time, having failed "
+                "at some unknown earlier time). Omit when every time is a failure.")]
 _FitCounts = Annotated[Optional[list[int]], Field(
     description="Optional count per row of `data` (identical units sharing that time and flag).")]
 _FitInvert = Annotated[bool, Field(
     description="True when the censoring flags use the opposite convention (1 = failed, 0 = running); "
-                "Reliafy flips them before fitting.")]
+                "Reliafy flips the 0/1 flags before fitting (-1 is left as is).")]
 _FitDataset = Annotated[Optional[str], Field(description="A saved dataset (list_datasets) instead of inline data.")]
 _FitTimeCol = Annotated[Optional[str], Field(description="Dataset column holding the times (required with dataset_id).")]
-_FitCensorCol = Annotated[Optional[str], Field(description="Dataset column holding the censoring flags (0 = failed, 1 = running).")]
+_FitCensorCol = Annotated[Optional[str], Field(description="Dataset column holding the censoring flags (0 = failed, "
+                                                             "1 = running, -1 = left-censored).")]
 _FitCountCol = Annotated[Optional[str], Field(description="Dataset column holding counts.")]
 _FitCovariates = Annotated[Optional[list[str]], Field(
     description="Dataset covariate columns — regression (proportional-hazards etc.) distributions only.")]
 _FitUnit = Annotated[Optional[str], Field(description="Time unit of the data, e.g. 'hours', 'cycles', 'km'.")]
 
 
+def _mcp_fit_error(exc: FitError, c_invert: bool) -> FitError:
+    """A fitting error reworded for an MCP caller: the app's remedy ("tick
+    'My censor column uses 1 = failed'") becomes the c_invert parameter."""
+    hint = ("You passed c_invert=true, so the flags were flipped before fitting — if the data already uses "
+            "0 = failed, drop c_invert." if c_invert else
+            "If your flags mark failures with a 1, pass c_invert=true rather than rewriting the data.")
+    text = str(exc).replace(fitting.CENSOR_INVERT_HINT, hint)
+    text = text.replace("clear the 1 = failed option", "drop c_invert")
+    if "Censoring value must only be one of" in text:
+        # SurPyval's wording, for the single-time-column data these tools take.
+        text = ("Censoring flags must each be 0 (failed at that time), 1 (still running: right-censored) or "
+                "-1 (left-censored: failed at some unknown time before it); the data has other values.")
+    return FitError(text)
+
+
 def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, dataset_id, time_column,
          censor_column, count_column, covariates, unit, save: bool, name: str | None) -> dict[str, Any]:
     """Shared body of fit_distribution (report only) and fit_and_save_model."""
+    try:
+        return _fit_body(ctx, distribution=distribution, data=data, censored=censored, counts=counts,
+                         c_invert=c_invert, dataset_id=dataset_id, time_column=time_column,
+                         censor_column=censor_column, count_column=count_column, covariates=covariates,
+                         unit=unit, save=save, name=name)
+    except FitError as exc:
+        raise _mcp_fit_error(exc, c_invert) from exc
+
+
+def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, dataset_id, time_column,
+              censor_column, count_column, covariates, unit, save: bool, name: str | None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     known = {fitting.BEST_ID, fitting.MIXTURE_ID, *fitting.DISTRIBUTIONS, *fitting.DISCRETE,
@@ -592,7 +642,8 @@ def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, datase
 
     if not save:
         result = fitting.fit(dist, df, mapping, covariates=covariates, unit=unit, options=options)
-        return {"saved": False, **_fit_summary(result)}
+        summary = _fit_summary(result)
+        return {**_fit_lead(summary), "saved": False, **summary}
 
     name = (name or "").strip()
     if not name:
@@ -618,13 +669,15 @@ def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, datase
             datasets_service.delete_dataset(db, created.id, uid)
         raise
     _record(db, "mcp_fit", "fit_and_save_model")
+    summary = _fit_summary(model.results or {})
     return {
+        **_fit_lead(summary),
         "saved": True,
         "model_id": model.id,
         "name": model.name,
         "dataset_id": dataset.id,
         "url": _url(f"/modelling/m/{model.id}"),
-        **_fit_summary(model.results or {}),
+        **summary,
     }
 
 
@@ -1212,7 +1265,9 @@ def export_rbd_python(
     user, db = _caller(ctx), _db()
     rbd = _get_rbd(db, user["uid"], rbd_id)
     filename, source = rbds_service.export_python(db, rbd.name, rbd.graph or {}, [*_owners(user["uid"]), rbd.owner_id])
-    return {"filename": filename, "script": source, "run": f"pip install surpyval repyability && python {filename}"}
+    # The same pinned installs the script's own header lists (git tags, and
+    # RePyability with --no-deps) — PyPI's releases lag behind.
+    return {"filename": filename, "script": source, "run": rbd_export.run_command(filename)}
 
 
 # ---------------------------------------------------------------------------
@@ -1247,6 +1302,16 @@ _DIST_ID = Annotated[Optional[str], Field(description="Inline distribution id, e
 _PARAMS = Annotated[Optional[list[Param]], Field(description="Inline params, e.g. [{name: alpha, value: 1200}, "
                                                              "{name: beta, value: 2.1}].")]
 _UNIT = Annotated[Optional[str], Field(description="Time unit for the answer, e.g. hours.")]
+_INCLUDE_CURVE = Annotated[bool, Field(description="Also return the ~200-point cost-rate curve (for plotting). "
+                                                   "Off by default to keep the answer small.")]
+
+
+def _maybe_curve(result: dict, include: bool) -> dict:
+    """Drop a calculator's plotting curve unless asked for (the app keeps it)."""
+    if include or "curve" not in result:
+        return result
+    return {**{k: v for k, v in result.items() if k != "curve"},
+            "curve_omitted": "Pass include_curve=true for the cost-rate curve."}
 
 
 @_tool("optimal_replacement", _READ, "Optimal replacement interval")
@@ -1258,13 +1323,15 @@ def optimal_replacement(
     distribution_id: _DIST_ID = None,
     params: _PARAMS = None,
     unit: _UNIT = None,
+    include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Cost-optimal preventive (age) replacement interval for a component with a known life distribution.
     beneficial=false means run-to-failure is cheaper (e.g. no wear-out, or planned ≈ unplanned cost)."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
-    return strategy_store.compute("optimal_replacement", {
+    out = strategy_store.compute("optimal_replacement", {
         **inputs, "planned_cost": planned_cost, "unplanned_cost": unplanned_cost})
+    return _maybe_curve(out, include_curve)
 
 
 @_tool("failure_finding_interval", _READ, "Failure-finding interval")
@@ -1293,6 +1360,7 @@ def optimal_overhaul(
     cost_overhaul: Annotated[float, Field(gt=0, description="Cost of an overhaul that restores the system to "
                                                             "'as good as new'. Must exceed cost_repair.")],
     t_max: Annotated[Optional[float], Field(description="Optional upper limit of the interval search.")] = None,
+    include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Optimal overhaul interval for a repairable system (minimal repair between overhauls) from a saved
     recurrent-event model. Only a deteriorating system (growth shape beta > 1) has a finite optimum."""
@@ -1304,7 +1372,7 @@ def optimal_overhaul(
         raise ToolError("Recurrent model not found — optimal_overhaul needs a recurrent (repairable-system) "
                         "model id from list_models kind=recurrent.")
     live = recurrent_service.get_live_model(db, model_id, owners)
-    return recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max)
+    return _maybe_curve(recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max), include_curve)
 
 
 # ---------------------------------------------------------------------------
@@ -1324,19 +1392,31 @@ def list_fleets(ctx: Context) -> dict[str, Any]:
     ]}
 
 
+_TOP_ITEMS = 20  # fleet_forecast lists this many items unless asked for all
+
+
 @_tool("fleet_forecast", _READ, "Fleet failure forecast")
 def fleet_forecast(
     ctx: Context,
     fleet_id: Annotated[str, Field(description="A fleet id from list_fleets.")],
+    include_items: Annotated[bool, Field(description=(
+        f"Return every item's forecast (up to 500). By default only the {_TOP_ITEMS} items with the most "
+        "expected failures are listed."))] = False,
 ) -> dict[str, Any]:
     """The live failure forecast for a fleet: expected failures over the horizon with a P10–P90 range,
-    plus per-item and per-period breakdowns."""
+    plus per-period and per-item breakdowns (the top items by default)."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     fleet = fleet_service.get_fleet(db, fleet_id, owners)
     if fleet is None:
         raise ToolError("Fleet not found.")
     forecast = fleet_service.compute(db, fleet, [*owners, fleet.owner_id])
+    items = forecast.get("per_item") or []
+    if not include_items and len(items) > _TOP_ITEMS:
+        top = sorted(items, key=lambda r: -(r.get("expected") or 0.0))[:_TOP_ITEMS]
+        forecast = {**forecast, "per_item": top,
+                    "per_item_note": f"Top {_TOP_ITEMS} of {len(items)} items by expected failures; pass "
+                                     "include_items=true for all of them."}
     return {"fleet": {"id": fleet.id, "name": fleet.name, "model_id": fleet.model_id,
                       "url": _url(f"/fleet/forecasts/{fleet.id}")},
             "headline": fleet_service.headline(fleet, forecast), "forecast": forecast}
@@ -1409,6 +1489,117 @@ def create_fleet_alert(
     _record(db, "mcp_fleet_alert", "create_fleet_alert")
     return {"alert": alerts_service.public(doc, user["uid"], fleet),
             "url": _url(f"/fleet/forecasts/{fleet.id}#alerts")}
+
+
+# ---------------------------------------------------------------------------
+# Deleting
+# ---------------------------------------------------------------------------
+# Owner-only and never a shared sample (the app only hides those per user).
+# Each reuses the app's delete service and its dependency rule, so the MCP
+# can't delete anything the app wouldn't; where the app allows a deletion that
+# leaves other artifacts pointing at nothing, the response names them.
+
+def _sample_refusal(kind: str, name: str) -> ToolError:
+    return ToolError(f"“{name}” is a shared sample {kind}, not yours — it can't be deleted. (In the app you can "
+                     "hide samples from your lists.)")
+
+
+def _rbds_referencing(db, uid: str, predicate) -> list[dict]:
+    return [{"id": r.id, "name": r.name} for r in rbds_service.list_rbds(db, uid)
+            if any(predicate(n.get("data") or {}) for n in (r.graph or {}).get("nodes") or [])]
+
+
+@_tool("delete_model", _WRITE, "Delete a model")
+def delete_model(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="One of the user's own model ids (list_models) — life or recurrent.")],
+) -> dict[str, Any]:
+    """Permanently delete one of the user's own saved models (life or recurrent). Shared samples can't be
+    deleted. As in the app, it isn't blocked by what uses the model: the response lists the RBDs and fleet
+    forecasts that referenced it (fleets go stale). Always confirm with the user first, naming the model —
+    this can't be undone."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    m = models_service.get_model(db, model_id, _owners(uid))
+    if m is not None:
+        if samples_service.is_sample(m.owner_id):
+            raise _sample_refusal("model", m.name)
+        affected = {
+            "rbds": _rbds_referencing(db, uid, lambda d: isinstance(d.get("model"), dict)
+                                      and (d["model"].get("modelId") or d["model"].get("model_id")) == m.id),
+            "fleets": [{"id": f.id, "name": f.name} for f in fleet_service.list_fleets(db, uid)
+                       if f.model_id == m.id],
+        }
+        models_service.delete_model(db, m.id, uid)
+        kind = "life"
+    else:
+        doc = recurrent_service.get_model(db, model_id, _owners(uid))
+        if doc is None:
+            raise ToolError("Model not found.")
+        if samples_service.is_sample(doc.owner_id):
+            raise _sample_refusal("model", doc.name)
+        m, affected, kind = doc, {"rbds": [], "fleets": []}, "recurrent"
+        recurrent_service.delete_model(db, doc.id, uid)
+    _record(db, "mcp_delete", "delete_model")
+    out = {"deleted": True, "model_id": m.id, "name": m.name, "kind": kind}
+    affected = {k: v for k, v in affected.items() if v}
+    if affected:
+        out["affected"] = affected
+        out["note"] = ("These referenced the deleted model. Fleet forecasts on it go stale until relinked. RBD "
+                       "blocks keep the parameters copied onto them, but no longer track the model — and "
+                       "proportional-hazards or non-parametric blocks, which re-read it, stop working.")
+    return out
+
+
+@_tool("delete_dataset", _WRITE, "Delete a dataset")
+def delete_dataset(
+    ctx: Context,
+    dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list_datasets).")],
+) -> dict[str, Any]:
+    """Permanently delete one of the user's own datasets. As in the app, a dataset that saved models were
+    fitted to can't be deleted until those models are — the error names them. Shared samples can't be
+    deleted. Always confirm with the user first, naming the dataset — this can't be undone."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    ds = datasets_service.get_dataset(db, dataset_id, _owners(uid))
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    if samples_service.is_sample(ds.owner_id):
+        raise _sample_refusal("dataset", ds.name)
+    models = datasets_service.models_for_dataset(db, ds.id, _owners(uid))
+    if models:
+        names = ", ".join(f"“{m.name}”" for m in models[:3])
+        more = "" if len(models) <= 3 else f" and {len(models) - 3} more"
+        raise ToolError(f"Dataset is used by {len(models)} model(s): {names}{more}. Delete those models first "
+                        "(delete_model), or keep the dataset.")
+    if not datasets_service.delete_dataset(db, ds.id, uid):
+        raise ToolError("Dataset not found.")
+    _record(db, "mcp_delete", "delete_dataset")
+    return {"deleted": True, "dataset_id": ds.id, "name": ds.name}
+
+
+@_tool("delete_rbd", _WRITE, "Delete an RBD")
+def delete_rbd(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="One of the user's own RBD ids (list_rbds).")],
+) -> dict[str, Any]:
+    """Permanently delete one of the user's own reliability block diagrams (and any saved availability result
+    on it). Shared samples can't be deleted. Diagrams that embed it as a sub-system stop working; the
+    response lists them. Always confirm with the user first, naming the diagram — this can't be undone."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    rbd = _get_rbd(db, uid, rbd_id)
+    if samples_service.is_sample(rbd.owner_id):
+        raise _sample_refusal("RBD", rbd.name)
+    embedding = [r for r in _rbds_referencing(db, uid, lambda d: isinstance(d.get("rbd"), dict)
+                                               and d["rbd"].get("id") == rbd.id) if r["id"] != rbd.id]
+    rbds_service.delete_rbd(db, rbd.id, uid)
+    _record(db, "mcp_delete", "delete_rbd")
+    out = {"deleted": True, "rbd_id": rbd.id, "name": rbd.name}
+    if embedding:
+        out["affected"] = {"rbds": embedding}
+        out["note"] = "These diagrams embedded it as a sub-system and can no longer be analysed as they are."
+    return out
 
 
 # ---------------------------------------------------------------------------

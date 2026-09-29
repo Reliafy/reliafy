@@ -421,3 +421,166 @@ def test_impossible_vote_node_is_explained(env):
     msg = _err(_call(env.token[A], "create_rbd", {"name": "Vote", "nodes": nodes, "edges": edges}))
     assert "Vote node “v” requires 5 working inputs but only 2 branches feed it" in msg
     assert "no paths through" not in msg
+
+
+# ---- P3.10 / P3.11 censoring messages speak MCP ---------------------------------
+
+def test_censoring_errors_name_the_c_invert_parameter(env):
+    a = env.token[A]
+    msg = _err(_call(a, "fit_distribution", {"data": [100, 200, 300], "censored": [1, 1, 1]}))
+    assert "c_invert=true" in msg and "tick" not in msg and "0 = the unit failed" in msg
+    msg = _err(_call(a, "fit_distribution", {"data": [100, 200, 300], "censored": [0, 1, 1]}))
+    assert "Only 1 of the 3" in msg and "c_invert=true" in msg and "tick" not in msg
+    msg = _err(_call(a, "fit_distribution", {"data": [100, 200, 300], "censored": [0, 0, 0], "c_invert": True}))
+    assert "drop c_invert" in msg and "tick" not in msg
+    # The app keeps its own wording.
+    from backend import fitting
+
+    with pytest.raises(fitting.FitError, match="My censor column uses 1 = failed"):
+        fitting.fit("weibull", pd.DataFrame({"x": [1, 2], "c": [1, 1]}), {"x": "x", "c": "c"})
+
+
+def test_left_censoring_is_documented_and_explained(env):
+    from backend.tests.test_mcp import _run
+
+    tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
+    assert "-1 = left-censored" in str(tools["fit_distribution"].input_schema)
+    msg = _err(_call(env.token[A], "fit_distribution", {"data": TIMES, "censored": [2] + FLAGS[1:]}))
+    assert "-1 (left-censored" in msg and "0 (failed" in msg
+    out = _ok(_call(env.token[A], "fit_distribution", {"data": TIMES, "censored": [-1] + FLAGS[1:]}))
+    assert out["params"]
+
+
+# ---- P3.13 degenerate fits are flagged ----------------------------------------------
+
+def test_zero_variance_best_fit_is_flagged(env):
+    out = _ok(_call(env.token[A], "fit_distribution", {"data": [5.0] * 6, "distribution": "best"}))
+    assert any("identical" in w for w in out["warnings"])
+    failed = out["selection"]["failed"]
+    assert failed and all({"id", "name", "reason"} <= set(f) for f in failed)
+    n_ok = len(out["selection"]["candidates"])
+    assert n_ok + len(failed) == 11
+    assert any(f"Only {n_ok} of the 11" in w for w in out["warnings"])
+
+
+def test_failed_mle_leads_with_fit_ok_false(env):
+    from backend import fitting
+
+    data = [1e-300, 1e-100, 1.0, 1e100, 1e300]
+    out = _ok(_call(env.token[A], "fit_distribution", {"data": data}))
+    assert list(out)[:2] == ["fit_ok", "warning"] and out["fit_ok"] is False
+    assert "did NOT converge" in out["warning"]
+    # The app's payload gains the flag (additive) and keeps fit_warning for its view.
+    app = fitting.fit("weibull", pd.DataFrame({"x": data}), {"x": "x"})
+    assert app["fit_ok"] is False and app["fit_warning"]
+    ok = fitting.fit("weibull", pd.DataFrame({"x": TIMES}), {"x": "x"})
+    assert ok["fit_ok"] is True and "warnings" not in ok
+
+
+# ---- P3.14 notes use significant figures ------------------------------------------
+
+def test_notes_never_round_small_numbers_to_zero(env):
+    from backend.services.strategy import fmt_num
+
+    ff = _ok(_call(env.token[A], "failure_finding_interval", {
+        "distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 10}],
+        "target_availability": 0.99}))
+    assert "about every 0.002" in ff["note"]
+    assert [fmt_num(v) for v in (0, 2e-5, 0.0123, 1.5, 999.6, 12345.6, 3.2e9)] == [
+        "0", "2e-05", "0.0123", "1.5", "1,000", "12,346", "3.2e+09"]
+
+
+# ---- P3.15 large payloads are opt-in --------------------------------------------------
+
+def test_calculator_curves_are_opt_in(env):
+    args = {"distribution_id": "weibull", "planned_cost": 1, "unplanned_cost": 10,
+            "params": [{"name": "alpha", "value": 1200}, {"name": "beta", "value": 2.5}]}
+    out = _ok(_call(env.token[A], "optimal_replacement", args))
+    assert "curve" not in out and "include_curve" in out["curve_omitted"] and out["optimal_time"]
+    full = _ok(_call(env.token[A], "optimal_replacement", {**args, "include_curve": True}))
+    assert len(full["curve"]["t"]) == 200
+
+    from backend.services import recurrent as recurrent_service
+
+    doc = recurrent_service.save_from_params(
+        env.db, "Compressors", "crow_amsaa",
+        [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}], 5000, "hours", A)
+    base = {"model_id": doc.id, "cost_repair": 100, "cost_overhaul": 1000}
+    assert "curve" not in _ok(_call(env.token[A], "optimal_overhaul", base))
+    assert _ok(_call(env.token[A], "optimal_overhaul", {**base, "include_curve": True}))["curve"]["t"]
+
+
+def test_fleet_forecast_lists_the_top_items_by_default(env):
+    from backend.services import fleet as fs
+    from backend.tests.test_fleet_alerts import _mcp_fleet
+
+    fid = _mcp_fleet(env)
+    fs.replace_items(env.db, fid, {"periods": 6, "default_rate": 5, "method": "single"},
+                     [{"name": f"P{i}", "current_use": 10 + 3 * i} for i in range(30)], A)
+    out = _ok(_call(env.token[A], "fleet_forecast", {"fleet_id": fid}))
+    items = out["forecast"]["per_item"]
+    assert len(items) == 20 and "30 items" in out["forecast"]["per_item_note"]
+    assert items == sorted(items, key=lambda r: -r["expected"])
+    assert len(_ok(_call(env.token[A], "fleet_forecast", {"fleet_id": fid, "include_items": True}))
+               ["forecast"]["per_item"]) == 30
+
+
+# ---- P3.16 the export's run command is the script's own ---------------------------
+
+def test_export_run_matches_the_script_header(env):
+    from backend.services import rbd_export
+
+    rid = _ok(_call(env.token[A], "create_rbd", {"name": "One", **_chain("Motor")}))["id"]
+    out = _ok(_call(env.token[A], "export_rbd_python", {"rbd_id": rid}))
+    assert out["run"] == rbd_export.run_command(out["filename"])
+    assert out["run"].endswith(f"python {out['filename']}")
+    v = rbd_export.detect_versions()
+    assert f"--no-deps \"git+https://github.com/derrynknife/RePyability.git@v{v['repyability']}\"" in out["run"]
+    header = out["script"].split('"""')[1]
+    flat = header.replace("\\\n        ", "")
+    for cmd in rbd_export.install_commands():
+        assert cmd in flat
+
+
+# ---- P3.17 delete tools --------------------------------------------------------------
+
+def test_delete_tools_follow_the_apps_rules(samples):
+    from backend.mcp_server import PRO_ONLY_TOOLS, UNGATED_TOOLS
+    from backend.tests.test_mcp import B
+
+    a = samples.token[A]
+    # Every plan, counted against the quota like any other tool.
+    assert not {"delete_model", "delete_dataset", "delete_rbd"} & (PRO_ONLY_TOOLS | UNGATED_TOOLS)
+
+    saved = _ok(_call(a, "fit_and_save_model", {"data": TIMES, "censored": FLAGS, "name": "Mine"}))
+    mid, did = saved["model_id"], saved["dataset_id"]
+    rbd = _ok(_call(a, "create_rbd", {"name": "Uses it", **_saved_block_graph(mid)}))
+
+    # Samples and other people's artifacts are off limits.
+    assert "shared sample" in _err(_call(a, "delete_model", {"model_id": BEARINGS}))
+    assert "shared sample" in _err(_call(a, "delete_dataset", {"dataset_id": "sample-ds-bearings"}))
+    sample_rbd = samples.db.rbds.find_one({"owner_id": "__samples__"})["_id"]
+    assert "shared sample" in _err(_call(a, "delete_rbd", {"rbd_id": sample_rbd}))
+    assert "not found" in _err(_call(samples.token[B], "delete_model", {"model_id": mid})).lower()
+    assert samples.db.models.find_one({"_id": BEARINGS}) is not None
+
+    # The app's dependency rule: a dataset in use by a model can't go.
+    msg = _err(_call(a, "delete_dataset", {"dataset_id": did}))
+    assert "used by 1 model" in msg and "Mine" in msg
+
+    out = _ok(_call(a, "delete_model", {"model_id": mid}))
+    assert out["deleted"] and out["affected"]["rbds"] == [{"id": rbd["id"], "name": "Uses it"}]
+    assert samples.db.models.find_one({"_id": mid}) is None
+    assert _ok(_call(a, "delete_dataset", {"dataset_id": did}))["deleted"]
+    assert samples.db.datasets.find_one({"_id": did}) is None
+
+    # A diagram embedded as a sub-system is reported when it goes.
+    inner = _ok(_call(a, "create_rbd", {"name": "Inner", **_chain("Motor")}))["id"]
+    outer = _ok(_call(a, "create_rbd", {"name": "Outer", "nodes": [
+        {"id": "input", "type": "input"}, {"id": "s", "type": "subsystem", "subsystem_rbd_id": inner},
+        {"id": "output", "type": "output"}], "edges": [
+        {"source": "input", "target": "s"}, {"source": "s", "target": "output"}]}))["id"]
+    out = _ok(_call(a, "delete_rbd", {"rbd_id": inner}))
+    assert out["affected"]["rbds"] == [{"id": outer, "name": "Outer"}]
+    assert samples.db.rbds.find_one({"_id": inner}) is None
+    assert "not found" in _err(_call(a, "delete_rbd", {"rbd_id": inner})).lower()

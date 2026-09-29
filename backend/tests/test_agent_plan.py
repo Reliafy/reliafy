@@ -179,7 +179,7 @@ def test_free_daily_quota_counts_tool_calls_only_and_resets(env, monkeypatch):
     assert "You've used all 3 Reliafy tool calls included per day on the Free plan" in msg
     assert "resets at 00:00 UTC" in msg and UPGRADE in msg and f"{BASE}/billing" in msg
     assert _calls_today(env.db, FREE) == 3  # a refused call isn't counted
-    assert len(_run(token, lambda c: c.list_tools()).tools) == 21  # listing still works
+    assert len(_run(token, lambda c: c.list_tools()).tools) == 24  # listing still works
 
     # Next UTC day: a fresh quota.
     tomorrow = datetime.now(timezone.utc) + timedelta(days=1)

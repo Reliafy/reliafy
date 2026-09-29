@@ -36,6 +36,21 @@ def _clean(arr) -> list:
     return out
 
 
+def fmt_num(value) -> str:
+    """A number for a sentence: 3 significant figures, with thousands
+    separators for everyday magnitudes (whole units from 1,000) and scientific
+    notation for very small or large ones — never rounded to "0" as a fixed
+    ``,.0f`` would ("check about every 0 hours")."""
+    v = float(value)
+    if not np.isfinite(v) or v == 0:
+        return f"{v:g}"
+    if abs(v) < 1e-3 or abs(v) >= 1e9:
+        return f"{v:.3g}"
+    if abs(float(f"{v:.3g}")) >= 1000:
+        return f"{v:,.0f}"
+    return f"{v:.3g}"
+
+
 def _scalar(value) -> Optional[float]:
     try:
         v = float(np.atleast_1d(value)[0])
@@ -154,7 +169,7 @@ def optimal_replacement(
     if beneficial:
         unit_s = f" {unit}" if unit else ""
         recommendation = (
-            f"Replace preventively at about {t_opt:,.0f}{unit_s}. "
+            f"Replace preventively at about {fmt_num(t_opt)}{unit_s}. "
             f"This lowers the long-run cost rate by {savings:.0%} versus "
             f"run-to-failure."
         )
@@ -414,7 +429,7 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
             )
         early, late = (la, lb) if sig[nz][0] > 0 else (lb, la)
         text = (
-            f"The reliability curves cross at about {cross:,.0f}{us}: "
+            f"The reliability curves cross at about {fmt_num(cross)}{us}: "
             f"{early} is more reliable before it, {late} after."
             if cross is not None
             else f"{la} and {lb} cross over the range."
@@ -425,7 +440,7 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
     if da and db:
         higher = la if da >= db else lb
         text += (
-            f" Median life: {la} {da:,.0f}{us} vs {lb} {db:,.0f}{us} "
+            f" Median life: {la} {fmt_num(da)}{us} vs {lb} {fmt_num(db)}{us} "
             f"(longer: {higher})."
         )
     return {"more_reliable": more, "crossover_time": cross, "text": text}
@@ -467,7 +482,7 @@ def failure_finding(
         "interval": float(interval),
         "method": "approx_2(1-A)MTTF",
         "note": (
-            f"Check the hidden function about every {interval:,.0f}{unit_s} to keep its "
+            f"Check the hidden function about every {fmt_num(interval)}{unit_s} to keep its "
             f"availability near {availability:.1%}. Uses the standard approximation "
             "FFI = 2 x (1 - A) x MTTF, accurate for availability targets above ~90%."
         ),

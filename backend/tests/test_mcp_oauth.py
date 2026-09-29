@@ -619,7 +619,7 @@ def test_free_oauth_user_uses_the_tools_but_pro_only_ones_explain_pro(env, monke
                 await client.call_tool("fit_distribution", {"data": [100, 200, 300]}))
 
     tools, listed, fit = _mcp(tokens["access_token"], use)
-    assert len(tools.tools) == 21
+    assert len(tools.tools) == 24
     assert not listed.is_error  # the free plan's tools work over OAuth...
     # ...while fitting is Pro, with the local-SurPyval route spelled out.
     assert fit.is_error

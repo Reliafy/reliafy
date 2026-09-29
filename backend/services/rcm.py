@@ -19,6 +19,7 @@ from backend.schema import RcmStudy
 from backend.services import degradation as degradation_service
 from backend.services import models as models_service
 from backend.services import strategy_store
+from backend.services.strategy import fmt_num
 
 
 
@@ -385,7 +386,7 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         if interval is not None:
             unit = f" {r['unit']}" if r.get("unit") else ""
             return {**base, "status": "supported",
-                    "summary": f"Check every ~{interval:,.0f}{unit} for {r.get('target_availability', 0):.0%} availability."}
+                    "summary": f"Check every ~{fmt_num(interval)}{unit} for {r.get('target_availability', 0):.0%} availability."}
         return {**base, "status": "inconclusive", "reason": "The analysis has no computed interval."}
     return {**base, "status": "inconclusive", "reason": "Unrecognised decision."}
 
@@ -435,7 +436,7 @@ def _check_replacement(analysis, want_beneficial: bool) -> dict:
         t = r.get("optimal_time")
         savings = r.get("savings") or 0
         return {"status": "supported",
-                "summary": f"Optimal interval ≈ {t:,.0f}{unit} ({savings:.0%} saving vs run-to-failure)."}
+                "summary": f"Optimal interval ≈ {fmt_num(t)}{unit} ({savings:.0%} saving vs run-to-failure)."}
     if not beneficial and not want_beneficial:
         return {"status": "supported",
                 "summary": "Preventive replacement shows no cost benefit — run-to-failure is optimal."}
@@ -443,7 +444,7 @@ def _check_replacement(analysis, want_beneficial: bool) -> dict:
         t = r.get("optimal_time")
         savings = r.get("savings") or 0
         return {"status": "contradicted",
-                "summary": f"The analysis finds replacement at ~{t:,.0f}{unit} saves {savings:.0%} — run-to-failure is uneconomic."}
+                "summary": f"The analysis finds replacement at ~{fmt_num(t)}{unit} saves {savings:.0%} — run-to-failure is uneconomic."}
     return {"status": "contradicted",
             "summary": "The analysis finds no beneficial interval — fixed-interval replacement isn't justified."}
 

@@ -99,6 +99,25 @@ def detect_versions() -> dict:
     }
 
 
+def install_commands(versions: Optional[dict] = None) -> list[str]:
+    """The shell commands that install what an exported script needs, pinned
+    to this deployment's versions: SurPyval from git, RePyability's two extra
+    dependencies, then RePyability from git with ``--no-deps`` (its metadata
+    still pins an older SurPyval). The script header and the MCP export's
+    ``run`` field both come from here."""
+    v = versions or detect_versions()
+    return [
+        f'pip install "git+{_SURPYVAL_GIT}@v{v["surpyval"]}"',
+        "pip install networkx tqdm",
+        f'pip install --no-deps "git+{_REPYABILITY_GIT}@v{v["repyability"]}"',
+    ]
+
+
+def run_command(file_name: str, versions: Optional[dict] = None) -> str:
+    """One shell line that installs the pinned packages and runs the script."""
+    return " && ".join([*install_commands(versions), f"python {file_name}"])
+
+
 # ---------------------------------------------------------------------------
 # Small formatting helpers
 # ---------------------------------------------------------------------------
@@ -752,6 +771,19 @@ def to_python(
     return re.sub(r"\n{4,}", "\n\n\n", text)
 
 
+def _command_lines(commands: list[str]) -> list[str]:
+    """Indented docstring lines for shell commands, breaking one that would
+    pass 79 columns before its quoted git URL (``\\`` continuation)."""
+    lines = []
+    for cmd in commands:
+        head, sep, tail = cmd.partition(' "git+')
+        if len(cmd) + 4 > 79 and sep:
+            lines += [f"    {head} \\", f'        "git+{tail}']
+        else:
+            lines.append(f"    {cmd}")
+    return lines
+
+
 def _header(name, unit, repairable, versions, exported_at, placeholders,
             file_name):
     title = _one_line(name or "Untitled RBD").replace("\\", "/")
@@ -778,10 +810,7 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
         "",
         f"Tested with surpyval=={sp} and repyability=={rp}. Install them with:",
         "",
-        f'    pip install "git+{_SURPYVAL_GIT}@v{sp}"',
-        "    pip install networkx tqdm",
-        "    pip install --no-deps \\",
-        f'        "git+{_REPYABILITY_GIT}@v{rp}"',
+        *_command_lines(install_commands(versions)),
         "",
         *textwrap.wrap(
             "RePyability's package metadata still pins an older SurPyval, so "
