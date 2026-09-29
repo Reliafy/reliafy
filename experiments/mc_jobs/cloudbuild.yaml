@@ -1,0 +1,9 @@
+# gcloud builds submit --config experiments/mc_jobs/cloudbuild.yaml .   (from the repo root)
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "experiments/mc_jobs/Dockerfile", "-t", "${_IMAGE}", "."]
+images: ["${_IMAGE}"]
+substitutions:
+  _IMAGE: australia-southeast1-docker.pkg.dev/reliafy-app/cloud-run-source-deploy/reliafy-mc-exp:latest
+options:
+  logging: CLOUD_LOGGING_ONLY
