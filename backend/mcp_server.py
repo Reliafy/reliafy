@@ -76,6 +76,8 @@ from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
 from backend.services import strategy_store
 from backend.services import tokens as tokens_service
+from backend.services import rbd_analysis
+from backend.services import rbd_export
 from backend.services.rbd_analysis import AnalysisError
 from backend.services.strategy import StrategyError
 
@@ -137,8 +139,8 @@ def _simulation_message(plan: str) -> str:
             f"({PRO_PRICE}; purchased AI credits unlock it too) — upgrade at {_billing_url()} (or call "
             "upgrade_link with plan=pro for a payment link). It's free to run "
             "locally: export_rbd_python (Download as Python in the app) gives a standalone script that runs "
-            "this diagram's simulation with RePyability (pip install surpyval repyability). A saved result "
-            "is served here whenever one exists.")
+            "this diagram's simulation with RePyability, plus the exact install-and-run command. A saved "
+            "result is served here whenever one exists.")
 
 
 # ---------------------------------------------------------------------------
@@ -219,12 +221,17 @@ B-lives, importance; availability for repairable diagrams), export_rbd_python (a
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
+- Housekeeping: delete_model, delete_dataset and delete_rbd permanently delete the user's own artifacts \
+(never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
+Only on the user's explicit \
+request: confirm by name first, and relay anything the response lists as affected.
 - Plans: upgrade_link gives the user a Stripe payment link for Reliafy Agent or Pro, to open themselves.
 
 Conventions — follow them exactly:
-- Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension). \
-Spreadsheets are often the other way round (1 = failed); if so pass c_invert=true rather than rewriting the \
-data. A fit that reports nearly every row censored almost always means the column is inverted.
+- Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension); \
+-1 = left-censored (found failed at that time, failed at some unknown earlier time). Spreadsheets are often \
+the other way round (1 = failed); if so pass c_invert=true rather than rewriting the data. A fit that reports \
+nearly every row censored almost always means the column is inverted.
 - Units: parameters and times are in the model's (or diagram's) time unit. Always state the unit; ask if unsure.
 - Params are lists of {name, value} using SurPyval names: weibull [alpha (scale), beta (shape)], exponential \
 [failure_rate], normal/lognormal [mu, sigma], gamma [alpha, beta].
@@ -430,10 +437,25 @@ def _live_metrics(cache_id: str | None) -> dict | None:
         return None
 
 
+def _fit_lead(summary: dict) -> dict:
+    """The keys of a fit summary that must come first in the response."""
+    return {k: summary[k] for k in ("fit_ok", "warning", "warnings") if k in summary}
+
+
 def _fit_summary(result: dict) -> dict:
-    """The parts of a fit payload worth handing to a model (no plot arrays)."""
+    """The parts of a fit payload worth handing to a model (no plot arrays).
+
+    A fit the optimiser reported as failed leads with ``fit_ok: false`` and
+    the warning, ahead of the numbers, so they aren't quoted as a result."""
     metrics = result.get("metrics") or _live_metrics((result.get("functions") or {}).get("model_id"))
+    lead: dict[str, Any] = {}
+    if result.get("fit_ok") is False or result.get("fit_warning"):
+        lead = {"fit_ok": False, "warning": "The fit did NOT converge — the parameters and metrics below are "
+                                            "not a valid result; don't quote them. " + (result.get("fit_warning") or "")}
+    if result.get("warnings"):
+        lead["warnings"] = result["warnings"]
     out = {
+        **lead,
         "distribution": result.get("distribution"),
         "distribution_id": result.get("distribution_id"),
         "kind": result.get("kind"),
@@ -449,16 +471,6 @@ def _fit_summary(result: dict) -> dict:
     if result.get("selection"):
         out["selection"] = result["selection"]
     return out
-
-
-def _curve_value(curves: dict, fn: str, t: float):
-    """Linear interpolation on the stored function grid (as /api/v1 does)."""
-    y = curves.get(fn)
-    if y is None:
-        return None
-    x = np.asarray(curves["x"], dtype=float)
-    yv = np.array([np.nan if v is None else v for v in y], dtype=float)
-    return _finite(np.interp(float(t), x, yv))
 
 
 # ---------------------------------------------------------------------------
@@ -505,11 +517,13 @@ def get_model(
                 metrics = None
         out = {**_life_brief(m), "params": r.get("params", []), "gof": {g["id"]: g["value"] for g in r.get("gof") or []},
                "metrics": metrics}
-        for key in ("coefficients", "extra_params", "randomness", "fit_warning", "options"):
+        for key in ("coefficients", "extra_params", "randomness", "fit_warning", "options", "warnings"):
             if r.get(key):
                 out[key] = r[key]
         if (r.get("functions") or {}).get("covariates"):
             out["covariates"] = r["functions"]["covariates"]
+        if r.get("fit_ok") is False or r.get("fit_warning"):
+            out = {"fit_ok": False, **out}  # lead with it, as the fit tools do
         return out
     doc = recurrent_service.get_model(db, model_id, owners)
     if doc is not None:
@@ -526,24 +540,52 @@ _FitData = Annotated[Optional[list[float]], Field(
     description="Inline failure/suspension times, one per unit. Give this OR dataset_id.")]
 _FitCensored = Annotated[Optional[list[int]], Field(
     description="Censoring flag per time in `data`: 0 = FAILED at that time, 1 = still running "
-                "(right-censored / suspended). Omit when every time is a failure.")]
+                "(right-censored / suspended), -1 = left-censored (found failed at that time, having failed "
+                "at some unknown earlier time). Omit when every time is a failure.")]
 _FitCounts = Annotated[Optional[list[int]], Field(
     description="Optional count per row of `data` (identical units sharing that time and flag).")]
 _FitInvert = Annotated[bool, Field(
     description="True when the censoring flags use the opposite convention (1 = failed, 0 = running); "
-                "Reliafy flips them before fitting.")]
+                "Reliafy flips the 0/1 flags before fitting (-1 is left as is).")]
 _FitDataset = Annotated[Optional[str], Field(description="A saved dataset (list_datasets) instead of inline data.")]
 _FitTimeCol = Annotated[Optional[str], Field(description="Dataset column holding the times (required with dataset_id).")]
-_FitCensorCol = Annotated[Optional[str], Field(description="Dataset column holding the censoring flags (0 = failed, 1 = running).")]
+_FitCensorCol = Annotated[Optional[str], Field(description="Dataset column holding the censoring flags (0 = failed, "
+                                                             "1 = running, -1 = left-censored).")]
 _FitCountCol = Annotated[Optional[str], Field(description="Dataset column holding counts.")]
 _FitCovariates = Annotated[Optional[list[str]], Field(
     description="Dataset covariate columns — regression (proportional-hazards etc.) distributions only.")]
 _FitUnit = Annotated[Optional[str], Field(description="Time unit of the data, e.g. 'hours', 'cycles', 'km'.")]
 
 
+def _mcp_fit_error(exc: FitError, c_invert: bool) -> FitError:
+    """A fitting error reworded for an MCP caller: the app's remedy ("tick
+    'My censor column uses 1 = failed'") becomes the c_invert parameter."""
+    hint = ("You passed c_invert=true, so the flags were flipped before fitting — if the data already uses "
+            "0 = failed, drop c_invert." if c_invert else
+            "If your flags mark failures with a 1, pass c_invert=true rather than rewriting the data.")
+    text = str(exc).replace(fitting.CENSOR_INVERT_HINT, hint)
+    text = text.replace("clear the 1 = failed option", "drop c_invert")
+    if "Censoring value must only be one of" in text:
+        # SurPyval's wording, for the single-time-column data these tools take.
+        text = ("Censoring flags must each be 0 (failed at that time), 1 (still running: right-censored) or "
+                "-1 (left-censored: failed at some unknown time before it); the data has other values.")
+    return FitError(text)
+
+
 def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, dataset_id, time_column,
          censor_column, count_column, covariates, unit, save: bool, name: str | None) -> dict[str, Any]:
     """Shared body of fit_distribution (report only) and fit_and_save_model."""
+    try:
+        return _fit_body(ctx, distribution=distribution, data=data, censored=censored, counts=counts,
+                         c_invert=c_invert, dataset_id=dataset_id, time_column=time_column,
+                         censor_column=censor_column, count_column=count_column, covariates=covariates,
+                         unit=unit, save=save, name=name)
+    except FitError as exc:
+        raise _mcp_fit_error(exc, c_invert) from exc
+
+
+def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, dataset_id, time_column,
+              censor_column, count_column, covariates, unit, save: bool, name: str | None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     known = {fitting.BEST_ID, fitting.MIXTURE_ID, *fitting.DISTRIBUTIONS, *fitting.DISCRETE,
@@ -554,6 +596,15 @@ def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, datase
 
     if (data is None) == (dataset_id is None):
         raise ToolError("Give either inline `data` (a list of times) or a `dataset_id` — exactly one.")
+    # Arguments that only apply to the other input form would be ignored:
+    # refuse them rather than fit something the caller didn't mean.
+    stray = ([k for k, v in (("time_column", time_column), ("censor_column", censor_column),
+                             ("count_column", count_column)) if v] if data is not None
+             else [k for k, v in (("censored", censored), ("counts", counts)) if v is not None])
+    if stray:
+        other = "dataset_id" if data is not None else "inline data"
+        raise ToolError(f"{', '.join(stray)} only appl{'ies' if len(stray) == 1 else 'y'} with {other} — "
+                        "drop it, or switch to that form.")
 
     dataset = None
     if data is not None:
@@ -592,7 +643,8 @@ def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, datase
 
     if not save:
         result = fitting.fit(dist, df, mapping, covariates=covariates, unit=unit, options=options)
-        return {"saved": False, **_fit_summary(result)}
+        summary = _fit_summary(result)
+        return {**_fit_lead(summary), "saved": False, **summary}
 
     name = (name or "").strip()
     if not name:
@@ -618,13 +670,15 @@ def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, datase
             datasets_service.delete_dataset(db, created.id, uid)
         raise
     _record(db, "mcp_fit", "fit_and_save_model")
+    summary = _fit_summary(model.results or {})
     return {
+        **_fit_lead(summary),
         "saved": True,
         "model_id": model.id,
         "name": model.name,
         "dataset_id": dataset.id,
         "url": _url(f"/modelling/m/{model.id}"),
-        **_fit_summary(model.results or {}),
+        **summary,
     }
 
 
@@ -779,49 +833,94 @@ def reliability_at(
         description="Optional current age of a unit that is still working. Adds conditional_reliability = "
                     "R(age + t) / R(age): the chance it survives a FURTHER t.")] = None,
     covariates: Annotated[Optional[dict[str, Any]], Field(
-        description="Proportional-hazards models only: covariate values by name (see get_model).")] = None,
+        description="Proportional-hazards models only: covariate values by name (see get_model). Any not "
+                    "given use the fit's default (the training-data mean); the response says which.")] = None,
 ) -> dict[str, Any]:
     """Evaluate a saved life model at given times: reliability R(t) (probability of surviving to t),
     failure probability F(t) = 1 − R(t), hazard rate h(t), cumulative hazard H(t) and density f(t).
-    Optionally conditional on a unit already having survived to `conditional_age`."""
+    Optionally conditional on a unit already having survived to `conditional_age`. Parametric models are
+    evaluated exactly from the distribution (method=exact); non-parametric and mixture models are
+    interpolated on their stored curve (method=interpolated). Proportional-hazards models report the
+    covariate values used (the fit's defaults for any not given)."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
     if m is None:
         raise ToolError("Model not found.")
-    r = models_service.public_results(m)
-    fns = r.get("functions") or {}
-    if not fns.get("curves"):
-        raise ToolError("This model has no reliability functions to evaluate.")
-    if covariates and fns.get("model_id"):
-        curves = models_service.evaluate(db, model_id, covariates, owners)["curves"]
-    else:
-        curves = fns["curves"]
-    x_max = float(np.nanmax(np.asarray(curves["x"], dtype=float)))
-    r_age = _curve_value(curves, "sf", conditional_age) if conditional_age is not None else None
-
-    points = []
     for t in times:
+        if not np.isfinite(t) or t < 0:
+            raise ToolError(f"times must be finite and ≥ 0 (in the model's unit); got {t:g}.")
+    if conditional_age is not None and (not np.isfinite(conditional_age) or conditional_age < 0):
+        raise ToolError(f"conditional_age must be finite and ≥ 0; got {conditional_age:g}.")
+    if covariates and m.kind != "regression":
+        raise ToolError(f"“{m.name}” is a {m.kind} model with no covariates — drop `covariates`, or pick a "
+                        "proportional-hazards model (get_model lists its covariates).")
+
+    ts = [float(t) for t in times]
+    later = [conditional_age + t for t in ts] if conditional_age is not None else []
+    grid = ts + later + ([float(conditional_age)] if conditional_age is not None else [])
+    ev = models_service.evaluate_at(db, m, grid, owners, covariates)
+    vals = ev["values"]
+    n = len(ts)
+    exact = ev["method"] == "exact"
+    x_max = ev.get("x_max")
+
+    undefined = False
+    points = []
+    for i, t in enumerate(ts):
         p = {
-            "t": float(t),
-            "reliability": _curve_value(curves, "sf", t),
-            "failure": _curve_value(curves, "ff", t),
-            "hazard": _curve_value(curves, "hf", t),
-            "cumulative_hazard": _curve_value(curves, "Hf", t),
-            "density": _curve_value(curves, "df", t),
+            "t": t,
+            "reliability": vals["sf"][i],
+            "failure": vals["ff"][i],
+            "hazard": vals["hf"][i],
+            "cumulative_hazard": vals["Hf"][i],
+            "density": vals["df"][i],
         }
         if conditional_age is not None:
-            r_later = _curve_value(curves, "sf", float(conditional_age) + float(t))
-            p["conditional_reliability"] = (r_later / r_age) if r_age and r_later is not None else None
-        if float(t) > x_max or (conditional_age is not None and float(conditional_age) + float(t) > x_max):
+            # R(a + t) / R(a), via the cumulative hazard where it's finite:
+            # exp(-(H(a + t) - H(a))) stays accurate when both reliabilities
+            # underflow to 0. Undefined only when R(a) is truly 0.
+            h_age, h_later = vals["Hf"][-1], vals["Hf"][n + i]
+            r_age, r_later = vals["sf"][-1], vals["sf"][n + i]
+            if h_age is not None and h_later is not None:
+                p["conditional_reliability"] = float(min(1.0, max(0.0, np.exp(-(h_later - h_age)))))
+            elif r_age and r_later is not None:
+                p["conditional_reliability"] = r_later / r_age
+            else:
+                p["conditional_reliability"] = None
+                undefined = True
+        if not exact and (t > x_max or (conditional_age is not None and conditional_age + t > x_max)):
             p["beyond_curve"] = True
         points.append(p)
-    out = {"model": m.name, "model_id": m.id, "unit": r.get("unit", ""), "points": points}
+
+    out = {"model": m.name, "model_id": m.id, "unit": (m.results or {}).get("unit", ""),
+           "method": ev["method"], "points": points}
+    notes = []
+    if exact:
+        notes.append("Evaluated exactly from the fitted distribution.")
+    else:
+        notes.append(f"This {m.kind} model has no closed form, so values are interpolated on its stored "
+                     f"curve (0 to {x_max:g}).")
+        if any(p.get("beyond_curve") for p in points):
+            notes.append(f"Times beyond {x_max:g} are past that curve; values there are held at its end "
+                         "(flagged beyond_curve).")
     if conditional_age is not None:
         out["conditional_age"] = float(conditional_age)
-    if any(p.get("beyond_curve") for p in points):
-        out["note"] = (f"Times beyond {x_max:g} are past the model's evaluated range; values there are "
-                       "held at the range end.")
+        if undefined:
+            notes.append(f"conditional_reliability is null where it is undefined: the model gives "
+                         f"R({conditional_age:g}) = 0, so no unit survives to that age.")
+    if ev.get("covariates") is not None:
+        used = ev["covariates"]
+        out["covariates_used"] = {c["name"]: c["value"] for c in used}
+        defaulted = [c for c in used if c["source"] == "default"]
+        if defaulted:
+            shown = ", ".join(f"{c['name']} = {c['value']:g}" if isinstance(c["value"], float)
+                              else f"{c['name']} = {c['value']}" for c in defaulted)
+            out["covariate_defaults"] = [c["name"] for c in defaulted]
+            notes.append(f"Proportional-hazards model evaluated at {shown} — the fit's default for each "
+                         "covariate not given (the training-data mean; the most common level for a "
+                         "categorical one). Pass `covariates` to evaluate other conditions.")
+    out["note"] = " ".join(notes)
     return out
 
 
@@ -950,10 +1049,13 @@ class StageComponent(BaseModel):
 class Stage(BaseModel):
     label: Optional[str] = None
     components: list[StageComponent] = Field(min_length=1, description="Components in PARALLEL within this stage.")
-    k_of_n: Optional[int] = Field(None, description="Components required (k of n). Omit or 1 = any one suffices; "
-                                                     "= component count = all required.")
-    common_cause_beta: Optional[float] = Field(None, description="Non-repairable only: beta-factor (0–1) common-cause "
-                                                                  "coupling for this stage's redundant components.")
+    k_of_n: Optional[int] = Field(None, description="Components required (k of n), 1 to the stage's component "
+                                                     "count. Omit or 1 = any one suffices; = component count = all "
+                                                     "required.")
+    common_cause_beta: Optional[float] = Field(None, description="Non-repairable only, stages with 2+ components: "
+                                                                  "beta-factor common-cause coupling for this stage's "
+                                                                  "redundant components, 0 ≤ beta < 1 (typically "
+                                                                  "0.01–0.2).")
 
 
 def _stage_graph(db, uid: str, stages: list[Stage], repairable: bool) -> dict:
@@ -1008,6 +1110,9 @@ def create_rbd(
     owners = _owners(uid)
     if (nodes is None) == (stages is None):
         raise ToolError("Give either nodes + edges (graph form) or stages (simple form) — exactly one.")
+    if stages is not None and edges:
+        raise ToolError("edges belong to the graph form (nodes + edges); the stages form is wired automatically. "
+                        "Give exactly one form.")
     if stages is not None:
         graph = _stage_graph(db, uid, stages, repairable)
         graph["unit"] = unit
@@ -1056,10 +1161,10 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None) -
         },
         "structure": result.get("structure"),
     }
-    if times and t:
-        xs = np.asarray(t, dtype=float)
-        ys = np.array([np.nan if v is None else v for v in sf], dtype=float)
-        out["reliability_at"] = [{"t": float(x), "reliability": _finite(np.interp(float(x), xs, ys))} for x in times]
+    if times and result.get("at"):
+        # Evaluated exactly at each time by the analysis (not read off the curve).
+        at = result["at"]
+        out["reliability_at"] = [{"t": x, "reliability": _finite(y)} for x, y in zip(at["t"], at["sf"])]
     if result.get("conditional_age"):
         out["conditional_age"] = result["conditional_age"]
     if result.get("ccf"):
@@ -1102,25 +1207,53 @@ def analyze_rbd(
     rbd = _get_rbd(db, uid, rbd_id)
     graph = rbd.graph or {}
     owners = [*_owners(uid), rbd.owner_id]
+    if t_max is not None and (not np.isfinite(t_max) or t_max <= 0):
+        raise ToolError(f"t_max must be a positive time in the diagram's unit; got {t_max:g}. Omit it for the "
+                        "automatic axis.")
+    for t in times or []:
+        if not np.isfinite(t) or t < 0:
+            raise ToolError(f"times must be finite and ≥ 0 (in the diagram's unit); got {t:g}.")
+    if conditional_age is not None and (not np.isfinite(conditional_age) or conditional_age < 0):
+        raise ToolError(f"conditional_age must be finite and ≥ 0; got {conditional_age:g}.")
+    if graph.get("repairable") and (times or conditional_age is not None):
+        raise ToolError("times and conditional_age apply to non-repairable diagrams; this one is repairable "
+                        "(analysed for availability). Drop them — t_max sets the simulated horizon.")
     placeholders = rbd_graph.placeholder_labels(graph)
     head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
     if placeholders:
         head["placeholders"] = placeholders
         head["warning"] = "Some blocks use placeholder (guessed) models — results are illustrative until replaced."
+    # Modelling warnings the analysis can't catch (e.g. a saved model fitted in
+    # another time unit) — the same ones create_rbd and the app's Validate show.
+    design = rbd_analysis.design_warnings(graph)
+    if design:
+        head["warnings"] = design
 
-    if graph.get("repairable"):
-        actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
-                         read_owners=_owners(uid), list_owners=uid)
-        status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners)
-        if status != 200:
-            plan = user.get("mcp_plan", "pro")
-            message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
-            return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
-                    "message": message}
-        return {**head, "available": True, **_availability_summary(payload)}
+    try:
+        if graph.get("repairable"):
+            actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
+                             read_owners=_owners(uid), list_owners=uid)
+            status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners)
+            if status != 200:
+                plan = user.get("mcp_plan", "pro")
+                message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
+                return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
+                        "message": message}
+            return {**head, "available": True, **_availability_summary(payload)}
 
-    result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age)
-    return {**head, "available": True, **_reliability_summary(result, graph, times)}
+        result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
+                                            at_times=times)
+        return {**head, "available": True, **_reliability_summary(result, graph, times)}
+    except (ToolError, *_USER_ERRORS, models_service.ModelNotFound, fitting.ModelNotFound,
+            rbds_service.RbdNotFound):
+        raise
+    except Exception as exc:
+        # Never a bare "Error executing tool" (e.g. an IndexError from a
+        # malformed saved diagram): say what failed and what to check.
+        logger.exception("analyze_rbd failed for %s", rbd.id)
+        raise ToolError(f"Reliafy couldn't analyse “{rbd.name}” ({type(exc).__name__}). Check its structure "
+                        "with get_rbd: exactly one input and one output node, every block on a path between "
+                        "them, and a life model on every block.") from exc
 
 
 @_tool("export_rbd_python", _READ, "Export an RBD as Python")
@@ -1133,7 +1266,9 @@ def export_rbd_python(
     user, db = _caller(ctx), _db()
     rbd = _get_rbd(db, user["uid"], rbd_id)
     filename, source = rbds_service.export_python(db, rbd.name, rbd.graph or {}, [*_owners(user["uid"]), rbd.owner_id])
-    return {"filename": filename, "script": source, "run": f"pip install surpyval repyability && python {filename}"}
+    # The same pinned installs the script's own header lists (git tags, and
+    # RePyability with --no-deps) — PyPI's releases lag behind.
+    return {"filename": filename, "script": source, "run": rbd_export.run_command(filename)}
 
 
 # ---------------------------------------------------------------------------
@@ -1143,6 +1278,8 @@ def export_rbd_python(
 def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None,
                  params: list[Param] | None, unit: str | None) -> dict:
     """distribution_id + params, given inline or taken from a saved plain life model."""
+    if model_id and (distribution_id or params):
+        raise ToolError("Give exactly one of model_id or distribution_id + params, not both.")
     if model_id:
         m = models_service.get_model(db, model_id, _owners(uid))
         if m is None:
@@ -1154,7 +1291,10 @@ def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None
                 "unit": unit or r.get("unit") or ""}
     if not distribution_id or not params:
         raise ToolError("Give a model_id, or distribution_id + params.")
-    return {"distribution_id": distribution_id, "params": [p.model_dump() for p in params], "unit": unit or ""}
+    # Params are checked by SurPyval name in the strategy service (an
+    # unrecognised name is refused, never read by position).
+    return {"distribution_id": fitting.resolve_distribution_id(distribution_id),
+            "params": [p.model_dump() for p in params], "unit": unit or ""}
 
 
 _MODEL_ID = Annotated[Optional[str], Field(description="A saved life model id (list_models). Give this OR "
@@ -1163,6 +1303,16 @@ _DIST_ID = Annotated[Optional[str], Field(description="Inline distribution id, e
 _PARAMS = Annotated[Optional[list[Param]], Field(description="Inline params, e.g. [{name: alpha, value: 1200}, "
                                                              "{name: beta, value: 2.1}].")]
 _UNIT = Annotated[Optional[str], Field(description="Time unit for the answer, e.g. hours.")]
+_INCLUDE_CURVE = Annotated[bool, Field(description="Also return the ~200-point cost-rate curve (for plotting). "
+                                                   "Off by default to keep the answer small.")]
+
+
+def _maybe_curve(result: dict, include: bool) -> dict:
+    """Drop a calculator's plotting curve unless asked for (the app keeps it)."""
+    if include or "curve" not in result:
+        return result
+    return {**{k: v for k, v in result.items() if k != "curve"},
+            "curve_omitted": "Pass include_curve=true for the cost-rate curve."}
 
 
 @_tool("optimal_replacement", _READ, "Optimal replacement interval")
@@ -1174,13 +1324,15 @@ def optimal_replacement(
     distribution_id: _DIST_ID = None,
     params: _PARAMS = None,
     unit: _UNIT = None,
+    include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Cost-optimal preventive (age) replacement interval for a component with a known life distribution.
     beneficial=false means run-to-failure is cheaper (e.g. no wear-out, or planned ≈ unplanned cost)."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
-    return strategy_store.compute("optimal_replacement", {
+    out = strategy_store.compute("optimal_replacement", {
         **inputs, "planned_cost": planned_cost, "unplanned_cost": unplanned_cost})
+    return _maybe_curve(out, include_curve)
 
 
 @_tool("failure_finding_interval", _READ, "Failure-finding interval")
@@ -1209,16 +1361,19 @@ def optimal_overhaul(
     cost_overhaul: Annotated[float, Field(gt=0, description="Cost of an overhaul that restores the system to "
                                                             "'as good as new'. Must exceed cost_repair.")],
     t_max: Annotated[Optional[float], Field(description="Optional upper limit of the interval search.")] = None,
+    include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Optimal overhaul interval for a repairable system (minimal repair between overhauls) from a saved
     recurrent-event model. Only a deteriorating system (growth shape beta > 1) has a finite optimum."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
+    if t_max is not None and (not np.isfinite(t_max) or t_max <= 0):
+        raise ToolError(f"t_max must be a positive time; got {t_max:g}. Omit it to search automatically.")
     if recurrent_service.get_model(db, model_id, owners) is None:
         raise ToolError("Recurrent model not found — optimal_overhaul needs a recurrent (repairable-system) "
                         "model id from list_models kind=recurrent.")
     live = recurrent_service.get_live_model(db, model_id, owners)
-    return recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max)
+    return _maybe_curve(recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max), include_curve)
 
 
 # ---------------------------------------------------------------------------
@@ -1238,19 +1393,31 @@ def list_fleets(ctx: Context) -> dict[str, Any]:
     ]}
 
 
+_TOP_ITEMS = 20  # fleet_forecast lists this many items unless asked for all
+
+
 @_tool("fleet_forecast", _READ, "Fleet failure forecast")
 def fleet_forecast(
     ctx: Context,
     fleet_id: Annotated[str, Field(description="A fleet id from list_fleets.")],
+    include_items: Annotated[bool, Field(description=(
+        f"Return every item's forecast (up to 500). By default only the {_TOP_ITEMS} items with the most "
+        "expected failures are listed."))] = False,
 ) -> dict[str, Any]:
     """The live failure forecast for a fleet: expected failures over the horizon with a P10–P90 range,
-    plus per-item and per-period breakdowns."""
+    plus per-period and per-item breakdowns (the top items by default)."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     fleet = fleet_service.get_fleet(db, fleet_id, owners)
     if fleet is None:
         raise ToolError("Fleet not found.")
     forecast = fleet_service.compute(db, fleet, [*owners, fleet.owner_id])
+    items = forecast.get("per_item") or []
+    if not include_items and len(items) > _TOP_ITEMS:
+        top = sorted(items, key=lambda r: -(r.get("expected") or 0.0))[:_TOP_ITEMS]
+        forecast = {**forecast, "per_item": top,
+                    "per_item_note": f"Top {_TOP_ITEMS} of {len(items)} items by expected failures; pass "
+                                     "include_items=true for all of them."}
     return {"fleet": {"id": fleet.id, "name": fleet.name, "model_id": fleet.model_id,
                       "url": _url(f"/fleet/forecasts/{fleet.id}")},
             "headline": fleet_service.headline(fleet, forecast), "forecast": forecast}
@@ -1307,6 +1474,12 @@ def create_fleet_alert(
     fleet = _alertable_fleet(db, user["uid"], fleet_id)
     if fleet.owner_id != user["uid"]:
         raise ToolError("Alerts can only be set on your own fleets, not samples.")
+    wanted = {"above": {"threshold"}, "change": {"percent"}, "within": {"x", "y_periods"}}[kind]
+    stray = [k for k, v in (("threshold", threshold), ("percent", percent), ("x", x), ("y_periods", y_periods))
+             if v is not None and k not in wanted]
+    if stray:
+        raise ToolError(f"A '{kind}' alert takes {' and '.join(sorted(wanted))} only — {', '.join(stray)} "
+                        "would be ignored. Drop it, or pick the kind that uses it.")
     try:
         doc = alerts_service.create_alert(
             db, fleet, user["uid"], [*_owners(user["uid"]), fleet.owner_id],
@@ -1317,6 +1490,124 @@ def create_fleet_alert(
     _record(db, "mcp_fleet_alert", "create_fleet_alert")
     return {"alert": alerts_service.public(doc, user["uid"], fleet),
             "url": _url(f"/fleet/forecasts/{fleet.id}#alerts")}
+
+
+# ---------------------------------------------------------------------------
+# Deleting
+# ---------------------------------------------------------------------------
+# Owner-only and never a shared sample (the app only hides those per user).
+# Each reuses the app's delete service and its dependency rule, so the MCP
+# can't delete anything the app wouldn't; where the app allows a deletion that
+# leaves other artifacts pointing at nothing, the response names them.
+
+def _sample_refusal(kind: str, name: str) -> ToolError:
+    return ToolError(f"“{name}” is a shared sample {kind}, not yours — it can't be deleted. (In the app you can "
+                     "hide samples from your lists.)")
+
+
+def _rbds_referencing(db, uid: str, predicate) -> list[dict]:
+    return [{"id": r.id, "name": r.name} for r in rbds_service.list_rbds(db, uid)
+            if any(predicate(n.get("data") or {}) for n in (r.graph or {}).get("nodes") or [])]
+
+
+@_tool("delete_model", _WRITE, "Delete a model")
+def delete_model(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="One of the user's own model ids (list_models) — life or recurrent.")],
+) -> dict[str, Any]:
+    """Permanently delete one of the user's own saved models (life or recurrent). Shared samples can't be
+    deleted, and neither can a model a fleet forecast runs on: the answer names those fleets, which must be
+    relinked or deleted in the app first. RBDs that used the model are listed in the response. Always confirm
+    with the user first, naming the model — this can't be undone."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    m = models_service.get_model(db, model_id, _owners(uid))
+    if m is not None:
+        if samples_service.is_sample(m.owner_id):
+            raise _sample_refusal("model", m.name)
+        # Stricter than the app: an agent mustn't leave a fleet forecast
+        # running on nothing, so a model a fleet uses is refused outright.
+        fleets = [f for f in fleet_service.list_fleets(db, uid) if f.model_id == m.id]
+        if fleets:
+            names = ", ".join(f"\u201c{f.name}\u201d ({_url(f'/fleet/forecasts/{f.id}')})" for f in fleets)
+            raise ToolError(
+                f"Model \u201c{m.name}\u201d can't be deleted: {len(fleets)} fleet forecast"
+                f"{'s' if len(fleets) != 1 else ''} run{'' if len(fleets) != 1 else 's'} on it ({names}). "
+                "Relink or delete those fleets in the app first, then delete the model.")
+        affected = {
+            "rbds": _rbds_referencing(db, uid, lambda d: isinstance(d.get("model"), dict)
+                                      and (d["model"].get("modelId") or d["model"].get("model_id")) == m.id),
+        }
+        models_service.delete_model(db, m.id, uid)
+        kind = "life"
+    else:
+        doc = recurrent_service.get_model(db, model_id, _owners(uid))
+        if doc is None:
+            raise ToolError("Model not found.")
+        if samples_service.is_sample(doc.owner_id):
+            raise _sample_refusal("model", doc.name)
+        m, affected, kind = doc, {"rbds": []}, "recurrent"
+        recurrent_service.delete_model(db, doc.id, uid)
+    _record(db, "mcp_delete", "delete_model")
+    out = {"deleted": True, "model_id": m.id, "name": m.name, "kind": kind}
+    affected = {k: v for k, v in affected.items() if v}
+    if affected:
+        out["affected"] = affected
+        out["note"] = ("These referenced the deleted model. RBD blocks keep the parameters copied onto them, "
+                       "but no longer track the model — and proportional-hazards or non-parametric blocks, "
+                       "which re-read it, stop working.")
+    return out
+
+
+@_tool("delete_dataset", _WRITE, "Delete a dataset")
+def delete_dataset(
+    ctx: Context,
+    dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list_datasets).")],
+) -> dict[str, Any]:
+    """Permanently delete one of the user's own datasets. As in the app, a dataset that saved models were
+    fitted to can't be deleted until those models are — the error names them. Shared samples can't be
+    deleted. Always confirm with the user first, naming the dataset — this can't be undone."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    ds = datasets_service.get_dataset(db, dataset_id, _owners(uid))
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    if samples_service.is_sample(ds.owner_id):
+        raise _sample_refusal("dataset", ds.name)
+    models = datasets_service.models_for_dataset(db, ds.id, _owners(uid))
+    if models:
+        names = ", ".join(f"“{m.name}”" for m in models[:3])
+        more = "" if len(models) <= 3 else f" and {len(models) - 3} more"
+        raise ToolError(f"Dataset is used by {len(models)} model(s): {names}{more}. Delete those models first "
+                        "(delete_model), or keep the dataset.")
+    if not datasets_service.delete_dataset(db, ds.id, uid):
+        raise ToolError("Dataset not found.")
+    _record(db, "mcp_delete", "delete_dataset")
+    return {"deleted": True, "dataset_id": ds.id, "name": ds.name}
+
+
+@_tool("delete_rbd", _WRITE, "Delete an RBD")
+def delete_rbd(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="One of the user's own RBD ids (list_rbds).")],
+) -> dict[str, Any]:
+    """Permanently delete one of the user's own reliability block diagrams (and any saved availability result
+    on it). Shared samples can't be deleted. Diagrams that embed it as a sub-system stop working; the
+    response lists them. Always confirm with the user first, naming the diagram — this can't be undone."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    rbd = _get_rbd(db, uid, rbd_id)
+    if samples_service.is_sample(rbd.owner_id):
+        raise _sample_refusal("RBD", rbd.name)
+    embedding = [r for r in _rbds_referencing(db, uid, lambda d: isinstance(d.get("rbd"), dict)
+                                               and d["rbd"].get("id") == rbd.id) if r["id"] != rbd.id]
+    rbds_service.delete_rbd(db, rbd.id, uid)
+    _record(db, "mcp_delete", "delete_rbd")
+    out = {"deleted": True, "rbd_id": rbd.id, "name": rbd.name}
+    if embedding:
+        out["affected"] = {"rbds": embedding}
+        out["note"] = "These diagrams embedded it as a sub-system and can no longer be analysed as they are."
+    return out
 
 
 # ---------------------------------------------------------------------------

@@ -36,7 +36,8 @@ READ_TOOLS = {
 }
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
-WRITE_TOOLS = {"fit_and_save_model", "save_model", "upload_dataset", "create_rbd", "create_fleet_alert"}
+WRITE_TOOLS = {"fit_and_save_model", "save_model", "upload_dataset", "create_rbd", "create_fleet_alert",
+               "delete_model", "delete_dataset", "delete_rbd"}
 
 
 def _weibull(alpha, beta, placeholder=False):

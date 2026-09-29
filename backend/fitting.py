@@ -254,11 +254,16 @@ def preview(file_bytes: bytes, rows: int = 5) -> dict:
 # to explain it. Getting this backwards is the single most common upload error:
 # a spreadsheet where 1 means "this one failed" is the exact inverse of what
 # SurPyval (and every other survival tool) expects.
+# The last sentence is the web app's remedy; programmatic callers (the MCP
+# server) swap it for their own parameter via ``CENSOR_INVERT_HINT``.
+CENSOR_INVERT_HINT = (
+    "If your column marks failures with a 1, invert it: tick "
+    "\"My censor column uses 1 = failed\" under the column mapping."
+)
 CENSOR_CONVENTION = (
     "Reliafy uses the survival-analysis convention: 0 = the unit failed "
     "(an observed event), 1 = it was still running when observation stopped "
-    "(right-censored). If your column marks failures with a 1, invert it: tick "
-    "\"My censor column uses 1 = failed\" under the column mapping."
+    "(right-censored). " + CENSOR_INVERT_HINT
 )
 
 # Fit option that flips a 1 = failed censor column into the convention above.
@@ -326,6 +331,28 @@ def check_fittable(kwargs: dict, distribution_name: str) -> None:
             f"Every one of the {total} rows is marked as censored, so there is "
             f"nothing for {distribution_name} to fit. " + CENSOR_CONVENTION
         )
+
+
+def data_warnings(kwargs: dict) -> list[str]:
+    """Warnings about the data itself that make any fit meaningless even
+    when the optimiser reports success — today: every observed failure at the
+    same time (zero variance), where no spread-describing distribution is
+    identifiable and a "best fit" is decided by which fitters happen to
+    converge."""
+    x = kwargs.get("x")
+    if x is None:
+        return []
+    x = np.asarray(x, dtype=float)
+    c = kwargs.get("c")
+    failed = x[np.asarray(c) == 0] if c is not None and np.size(c) == x.size else x
+    failed = failed[np.isfinite(failed)]
+    if failed.size >= 2 and float(np.ptp(failed)) == 0.0:
+        return [
+            f"All {failed.size} failure times are identical ({failed[0]:g}): the data has no spread, so no "
+            "life distribution's shape can be estimated from it. Treat the fitted parameters and metrics as "
+            "meaningless — check the data (units, rounding, a copied column)."
+        ]
+    return []
 
 
 def _fit_failure_hint(exc: Exception, kwargs: dict, distribution_name: str) -> str:
@@ -872,6 +899,69 @@ def resolve_distribution_id(name: str) -> str:
     )
 
 
+def param_values(distribution_id: str, params: list, where: str = "") -> list[float]:
+    """Parameter values of ``params`` in the distribution's own SurPyval order.
+
+    ``params`` is a list of ``{name, value}``. Named parameters must use the
+    distribution's SurPyval names (any order, case-insensitive) — an
+    unrecognised name such as ``mttf`` or ``scale`` is refused rather than
+    read by position, which would silently put the value in the wrong slot.
+    A list with no names at all is taken in order (the /api/v1 shorthand
+    ``[1200, 2.5]``) but must then have exactly one value per parameter.
+    Raises :class:`FitError` naming the valid parameters.
+    """
+    entry = DISTRIBUTIONS.get(distribution_id) or DISCRETE.get(distribution_id)
+    if entry is None:
+        raise FitError(
+            f"'{distribution_id}' isn't a supported plain distribution. "
+            f"Supported: {', '.join(DISTRIBUTIONS)}."
+        )
+    names = list(getattr(entry["dist"], "param_names", []) or [])
+    prefix = f"{where}: " if where else ""
+    takes = f"{entry['name']} takes the parameters {', '.join(names)}"
+    params = list(params or [])
+    if not params:
+        raise FitError(f"{prefix}no parameter values supplied — {takes}.")
+
+    def number(p) -> float:
+        try:
+            v = float(p["value"])
+        except (KeyError, TypeError, ValueError):
+            raise FitError(f"{prefix}parameter '{p.get('name', '?')}' must be a number.") from None
+        if not math.isfinite(v):
+            raise FitError(f"{prefix}parameter '{p.get('name', '?')}' must be a finite number.")
+        return v
+
+    named = [p for p in params if isinstance(p, dict) and p.get("name") not in (None, "")]
+    if not named:
+        values = [number(p) for p in params]
+        if names and len(values) != len(names):
+            raise FitError(f"{prefix}{takes} ({len(names)} values), got {len(values)}.")
+        return values
+    if len(named) != len(params):
+        raise FitError(f"{prefix}give every parameter a name, or none — {takes}.")
+
+    lookup = {n.lower(): n for n in names}
+    given: dict[str, float] = {}
+    unknown = []
+    for p in named:
+        key = lookup.get(str(p["name"]).strip().lower())
+        if key is None:
+            unknown.append(str(p["name"]))
+            continue
+        if key in given:
+            raise FitError(f"{prefix}parameter '{key}' is given twice.")
+        given[key] = number(p)
+    missing = [n for n in names if n not in given]
+    if unknown or missing:
+        problem = "; ".join(filter(None, (
+            f"unknown: {', '.join(unknown)}" if unknown else "",
+            f"missing: {', '.join(missing)}" if missing else "",
+        )))
+        raise FitError(f"{prefix}{takes} (SurPyval names) — {problem}.")
+    return [given[n] for n in names]
+
+
 def result_from_params(
     distribution_id: str,
     params: list,
@@ -891,9 +981,7 @@ def result_from_params(
             f"Supported: {', '.join(DISTRIBUTIONS)}."
         )
     dist = entry["dist"]
-    values = [float(p["value"]) for p in (params or []) if "value" in p]
-    if not values:
-        raise FitError("No parameter values supplied.")
+    values = param_values(distribution_id, params)
     kwargs = {
         k: float(v) for k, v in (extras or {}).items()
         if k in ("gamma", "p", "f0") and v is not None
@@ -1000,6 +1088,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
 
     ranking = []
+    failed = []
     for dist_id, entry in DISTRIBUTIONS.items():
         kwargs = dict(base_kwargs)
         for key in ("zi", "lfp"):
@@ -1011,9 +1100,13 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
             model = entry["dist"].fit(**kwargs)
             gof = _goodness_of_fit(model)
             aic = next((g["value"] for g in gof if g["id"] == "aic"), None)
-        except Exception:
-            continue  # a distribution that won't fit this data is skipped
+        except Exception as exc:
+            # A distribution that won't fit this data is skipped — and listed.
+            failed.append({"id": dist_id, "name": entry["name"],
+                           "reason": (str(exc).strip().splitlines() or [type(exc).__name__])[0][:200]})
+            continue
         if aic is None or not math.isfinite(float(aic)):
+            failed.append({"id": dist_id, "name": entry["name"], "reason": "no finite AIC"})
             continue
         ranking.append({"id": dist_id, "name": entry["name"], "aic": float(aic)})
 
@@ -1027,6 +1120,14 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         win_options.pop("offset")
     result = _fit_distribution(winner, df, mapping, win_options)
     result["selection"] = {"criterion": "aic", "candidates": ranking}
+    if failed:
+        result["selection"]["failed"] = failed
+        result["warnings"] = [
+            *(result.get("warnings") or []),
+            f"Only {len(ranking)} of the {len(DISTRIBUTIONS)} candidate distributions could be fitted "
+            f"(failed: {', '.join(f['name'] for f in failed)}), so the lowest-AIC choice is among those "
+            "only.",
+        ]
     return result
 
 
@@ -1291,6 +1392,12 @@ def _fit_distribution(
             "optimiser reported as failed — check them against another method "
             "before relying on them."
         )
+    # Explicit flag for programmatic callers: the headline numbers above come
+    # from a fit that didn't converge (fit_warning says why).
+    result["fit_ok"] = not fit_warning
+    notes = data_warnings(kwargs)
+    if notes:
+        result["warnings"] = notes
     randomness = _randomness_verdict(distribution, params)
     if randomness is not None:
         result["randomness"] = randomness

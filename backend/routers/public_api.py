@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import logging
 
-import numpy as np
 from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse
 
@@ -117,37 +116,32 @@ def api_reliability(
         return _err(422, "This model has no reliability functions to evaluate.")
 
     covariates = body.get("covariates")
-    try:
-        if covariates and fns.get("model_id"):
-            curves = models_service.evaluate(session, model_id, covariates, _read_owners(user["uid"]))["curves"]
-        else:
-            curves = fns["curves"]
-    except (FitError, models_service.ModelNotFound) as exc:
-        return _err(422, str(exc))
-
     out = {"model": m.name, "unit": r.get("unit", "")}
     t = body.get("t")
-    if t is not None:
-        x = np.asarray(curves["x"], dtype=float)
-
-        def at(fn):
-            y = curves.get(fn)
-            if y is None:
-                return None
-            yv = np.array([np.nan if v is None else v for v in y], dtype=float)
-            v = float(np.interp(float(t), x, yv))
-            return v if np.isfinite(v) else None
-
-        out["at"] = {
-            "t": float(t),
-            "reliability": at("sf"),
-            "failure": at("ff"),
-            "hazard": at("hf"),
-            "cumulative_hazard": at("Hf"),
-            "density": at("df"),
-        }
-    else:
-        out["curves"] = curves
+    try:
+        if t is not None:
+            # Evaluated from the model itself (exact at any t), not
+            # interpolated on the stored grid — see models_service.evaluate_at.
+            ev = models_service.evaluate_at(
+                session, m, [float(t)], _read_owners(user["uid"]), covariates)
+            values = {fn: v[0] for fn, v in ev["values"].items()}
+            out["at"] = {
+                "t": float(t),
+                "reliability": values["sf"],
+                "failure": values["ff"],
+                "hazard": values["hf"],
+                "cumulative_hazard": values["Hf"],
+                "density": values["df"],
+            }
+        elif covariates and fns.get("model_id"):
+            out["curves"] = models_service.evaluate(
+                session, model_id, covariates, _read_owners(user["uid"]))["curves"]
+        else:
+            out["curves"] = fns["curves"]
+    except (FitError, models_service.ModelNotFound) as exc:
+        return _err(422, str(exc))
+    except (TypeError, ValueError):
+        return _err(422, "t must be a number.")
     return JSONResponse(content=out)
 
 
