@@ -21,12 +21,6 @@ from backend.services.access import AccessCtx, get_access
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/fleet")
 
-_CAP_MSG = (
-    "You've reached the free-plan limit of 1 failure forecast. "
-    "Upgrade to Pro for unlimited forecasts."
-)
-
-
 def _summary(fleet, ctx: AccessCtx, forecast: dict | None = None) -> dict:
     out = {
         "id": fleet.id,
@@ -63,7 +57,7 @@ def create_fleet(
         and not billing_service.is_admin_user(ctx.user)
         and billing_service.would_exceed_cap(session, ctx.uid, "fleets")
     ):
-        return JSONResponse(status_code=402, content={"detail": _CAP_MSG, "code": "cap", "upgrade": True})
+        return JSONResponse(status_code=402, content={"detail": billing_service.cap_message(session, ctx.uid, "fleets"), "code": "cap", "upgrade": True})
     try:
         fleet = fleet_service.create_fleet(session, name, model_id, ctx.write_owner)
     except fleet_service.FleetValidationError as exc:

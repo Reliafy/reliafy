@@ -22,17 +22,7 @@ from backend.schema import DegradationModelDoc
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
-_CAP_MODELS = (
-    "You've reached the free-plan limit of 1 degradation model. "
-    "Upgrade to Pro for unlimited models."
-)
-_CAP_ITEMS = (
-    "You've reached the free-plan limit of 3 tracked items. "
-    "Upgrade to Pro to monitor your whole fleet."
-)
-
-
-def _creation_denied(session, ctx: AccessCtx, kind: str, cap_msg: str) -> JSONResponse | None:
+def _creation_denied(session, ctx: AccessCtx, kind: str) -> JSONResponse | None:
     denied = access_service.workspace_write_denial(ctx)
     if denied is not None:
         status, payload = denied
@@ -42,7 +32,7 @@ def _creation_denied(session, ctx: AccessCtx, kind: str, cap_msg: str) -> JSONRe
         and not billing_service.is_admin_user(ctx.user)
         and billing_service.would_exceed_cap(session, ctx.uid, kind)
     ):
-        return JSONResponse(status_code=402, content={"detail": cap_msg, "code": "cap", "upgrade": True})
+        return JSONResponse(status_code=402, content={"detail": billing_service.cap_message(session, ctx.uid, kind), "code": "cap", "upgrade": True})
     return None
 
 
@@ -185,7 +175,7 @@ async def save_model(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    denied = _creation_denied(session, ctx, "degradation_models", _CAP_MODELS)
+    denied = _creation_denied(session, ctx, "degradation_models")
     if denied is not None:
         return denied
     try:
@@ -311,7 +301,7 @@ def create_item(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    denied = _creation_denied(session, ctx, "tracked_items", _CAP_ITEMS)
+    denied = _creation_denied(session, ctx, "tracked_items")
     if denied is not None:
         return denied
     try:

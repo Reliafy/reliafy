@@ -308,6 +308,22 @@ def test_mcp_cap_message_says_the_limit_and_upgrade(env, monkeypatch):
     assert env.db.models.count_documents({"owner_id": FREE}) == 1
 
 
+
+def test_web_app_cap_message_uses_the_users_own_plan(env, monkeypatch):
+    """An Agent user who reaches a cap in the web app is told the Agent limit,
+    not the free one."""
+    from backend import config
+    from backend.services import billing
+
+    monkeypatch.setattr(config, "FREE_MAX_RBDS", 1)
+    monkeypatch.setattr(config, "AGENT_MAX_RBDS", 25)
+    assert billing.cap_message(env.db, FREE, "rbds") == (
+        "You've reached the free-plan limit of 1 saved RBD. Upgrade to Pro for unlimited RBDs."
+    )
+    assert billing.cap_message(env.db, AGENT, "rbds") == (
+        "You've reached the Agent plan limit of 25 saved RBDs. Upgrade to Pro for unlimited RBDs."
+    )
+
 # ---- save_model ---------------------------------------------------------------------------
 
 def test_save_model_from_parameters(env):

@@ -72,7 +72,7 @@ def save_rbd(
     ):
         return JSONResponse(
             status_code=402,
-            content={"detail": "You've reached the free-plan limit of 1 saved RBD. Upgrade to Pro for unlimited diagrams.", "code": "cap", "upgrade": True},
+            content={"detail": billing_service.cap_message(session, ctx.uid, "rbds"), "code": "cap", "upgrade": True},
         )
     try:
         rbd = rbds_service.save_rbd(

@@ -287,6 +287,31 @@ def cap_for(kind: str, plan: str = "free") -> int | None:
     return None if caps is None else caps[kind]
 
 
+# What each capped kind is called in a limit message: (one, many).
+_CAP_NOUNS = {
+    "datasets": ("saved dataset", "saved datasets"),
+    "models": ("saved model", "saved models"),
+    "rbds": ("saved RBD", "saved RBDs"),
+    "degradation_models": ("degradation model", "degradation models"),
+    "tracked_items": ("tracked item", "tracked items"),
+    "rcm_studies": ("RCM study", "RCM studies"),
+    "fleets": ("failure forecast", "failure forecasts"),
+}
+
+
+def cap_message(db, uid: str, kind: str) -> str:
+    """The web app's "limit reached" message, with the cap of the user's own
+    plan (an Agent user is told the Agent limit, not the free one)."""
+    plan = account(db, uid)["active_plan"]
+    cap = cap_for(kind, plan)
+    one, many = _CAP_NOUNS[kind]
+    which = "Agent plan" if plan == "agent" else "free-plan"
+    return (
+        f"You've reached the {which} limit of {cap} {one if cap == 1 else many}. "
+        f"Upgrade to Pro for unlimited {many.removeprefix('saved ')}."
+    )
+
+
 def would_exceed_cap(db, uid: str, kind: str) -> bool:
     """True if creating one more `kind` (datasets|models|rbds|…) is not allowed
     under this user's plan caps. Always False when billing is off or the user

@@ -19,14 +19,12 @@ from backend.services import access as access_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import Dataset, Model
 
-_CAP_MSG = "You've reached the free-plan limit. Upgrade to Pro for unlimited saves."
-
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
-def _creation_denied(session, ctx: AccessCtx, kind: str, cap_msg: str = _CAP_MSG) -> JSONResponse | None:
-    """Frozen-team or free-plan-cap rejection for a create, or None."""
+def _creation_denied(session, ctx: AccessCtx, kind: str) -> JSONResponse | None:
+    """Frozen-team or plan-cap rejection for a create, or None."""
     denied = access_service.workspace_write_denial(ctx)
     if denied is not None:
         status, payload = denied
@@ -36,7 +34,7 @@ def _creation_denied(session, ctx: AccessCtx, kind: str, cap_msg: str = _CAP_MSG
         and not billing_service.is_admin_user(ctx.user)
         and billing_service.would_exceed_cap(session, ctx.uid, kind)
     ):
-        return JSONResponse(status_code=402, content={"detail": cap_msg, "code": "cap", "upgrade": True})
+        return JSONResponse(status_code=402, content={"detail": billing_service.cap_message(session, ctx.uid, kind), "code": "cap", "upgrade": True})
     return None
 
 
