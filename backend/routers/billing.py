@@ -4,6 +4,7 @@ fulfils them."""
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, Body, Depends, Request
@@ -14,6 +15,7 @@ from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import assistant as assistant_service
 from backend.services import billing as billing_service
+from backend.services import stripe_prices
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -71,7 +73,9 @@ def billing_status(session=Depends(get_session), user: dict = Depends(get_curren
     summary["admin"] = admin
     summary["stripe_enabled"] = bool(config.STRIPE_API_KEY)
     summary["pro_available"] = bool(config.STRIPE_API_KEY and config.STRIPE_PRO_PRICE_ID)
-    summary["agent_available"] = bool(config.STRIPE_API_KEY and config.STRIPE_AGENT_PRICE_ID)
+    # The Agent plan's Price is provisioned on first use (stripe_prices), so
+    # a Stripe key is all it needs.
+    summary["agent_available"] = bool(config.STRIPE_API_KEY)
     summary["ai"] = assistant_service.info()
     return summary
 
@@ -117,18 +121,28 @@ def checkout(
 _PLAN_NAMES = {"pro": "Pro", "agent": "Agent"}
 
 
-def _plan_price(plan: str) -> str | None:
-    """The recurring Stripe Price for a paid plan (None = not configured)."""
-    return {"pro": config.STRIPE_PRO_PRICE_ID, "agent": config.STRIPE_AGENT_PRICE_ID}.get(plan)
+def _plan_price(plan: str, stripe) -> str | None:
+    """The recurring Stripe Price for a paid plan (None = not configured).
+    The Agent plan's is created in Stripe the first time it's asked for."""
+    if plan == "pro":
+        return config.STRIPE_PRO_PRICE_ID
+    if plan == "agent":
+        return stripe_prices.agent_price_id(stripe)
+    return None
 
 
 def _plan_for_prices(price_ids: set) -> str | None:
     """Which paid plan a set of Stripe prices is (Pro wins if both appear)."""
     if config.STRIPE_PRO_PRICE_ID and config.STRIPE_PRO_PRICE_ID in price_ids:
         return "pro"
-    if config.STRIPE_AGENT_PRICE_ID and config.STRIPE_AGENT_PRICE_ID in price_ids:
-        return "agent"
-    return None
+    if not price_ids:
+        return None
+    try:
+        agent = stripe_prices.agent_price_id(_stripe(), create=False)
+    except Exception:  # noqa: BLE001 - a Stripe hiccup mustn't fail the webhook
+        logger.exception("Couldn't look up the Agent plan's Stripe Price")
+        agent = None
+    return "agent" if agent and agent in price_ids else None
 
 
 def _price_ids(lines: dict | None) -> set:
@@ -163,19 +177,37 @@ def subscribe(
     subscription's price is swapped, prorated) rather than sold a second
     subscription alongside it.
     """
+    status, payload = start_subscription(session, user, plan, _public_base(request))
+    return JSONResponse(status_code=status, content=payload)
+
+
+def start_subscription(session, user: dict, plan: str, base: str, *, allow_switch: bool = True) -> tuple[int, dict]:
+    """(status, payload) for subscribing ``user`` to ``plan``: a Stripe
+    Checkout ``url`` for someone not yet on a paid plan, or — with
+    ``allow_switch`` — an in-place switch for someone on the other one.
+
+    Without ``allow_switch`` (the MCP ``upgrade_link`` tool: an agent must
+    never move a paying subscriber by itself) a switch answers 409 with the
+    billing page, where the person confirms it."""
     plan = (plan or "pro").strip().lower()
     if plan not in _PLAN_NAMES:
-        return JSONResponse(status_code=400, content={"detail": "Unknown plan."})
-    price = _plan_price(plan)
+        return 400, {"detail": "Unknown plan."}
     stripe = _stripe()
+    try:
+        price = _plan_price(plan, stripe)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Couldn't resolve the Stripe Price for %s", plan)
+        return 502, {"detail": f"Stripe error: {exc}"}
     if stripe is None or not price:
-        return JSONResponse(status_code=503, content={"detail": f"The {_PLAN_NAMES[plan]} plan is not configured."})
+        return 503, {"detail": f"The {_PLAN_NAMES[plan]} plan is not configured."}
     acct = billing_service.account(session, user["uid"])
     if acct["active_plan"] == plan:
-        return JSONResponse(status_code=409, content={"detail": f"You're already on {_PLAN_NAMES[plan]}."})
-    base = _public_base(request)
+        return 409, {"detail": f"You're already on {_PLAN_NAMES[plan]}."}
     if acct["active_plan"] in _PLAN_NAMES:
-        return _switch_plan(stripe, session, user, acct, plan, price, base)
+        if not allow_switch:
+            return 409, {"detail": f"Change plans on the billing page: {base}billing", "url": f"{base}billing"}
+        response = _switch_plan(stripe, session, user, acct, plan, price, base)
+        return response.status_code, json.loads(response.body)
     try:
         cs = stripe.checkout.Session.create(
             mode="subscription",
@@ -188,8 +220,8 @@ def subscribe(
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Stripe subscribe failed")
-        return JSONResponse(status_code=502, content={"detail": f"Stripe error: {exc}"})
-    return JSONResponse(content={"url": cs.url})
+        return 502, {"detail": f"Stripe error: {exc}"}
+    return 200, {"url": cs.url}
 
 
 def _switch_plan(stripe, session, user, acct, plan: str, price: str, base: str) -> JSONResponse:

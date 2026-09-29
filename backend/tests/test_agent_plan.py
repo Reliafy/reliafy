@@ -179,7 +179,7 @@ def test_free_daily_quota_counts_tool_calls_only_and_resets(env, monkeypatch):
     assert "You've used all 3 Reliafy tool calls included per day on the Free plan" in msg
     assert "resets at 00:00 UTC" in msg and UPGRADE in msg and f"{BASE}/billing" in msg
     assert _calls_today(env.db, FREE) == 3  # a refused call isn't counted
-    assert len(_run(token, lambda c: c.list_tools()).tools) == 20  # listing still works
+    assert len(_run(token, lambda c: c.list_tools()).tools) == 21  # listing still works
 
     # Next UTC day: a fresh quota.
     tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
@@ -460,9 +460,8 @@ def test_subscribe_with_plan_agent(stripe_client, monkeypatch):
     assert s.fake.calls[-1][1]["metadata"]["kind"] == "pro"
 
     assert s.client.post("/api/billing/subscribe", json={"plan": "platinum"}).status_code == 400
-    monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", None)
-    r = s.client.post("/api/billing/subscribe", json={"plan": "agent"})
-    assert r.status_code == 503 and "Agent plan is not configured" in r.json()["detail"]
+    # Without a Stripe key at all, neither plan is on offer.
+    monkeypatch.setattr(config, "STRIPE_API_KEY", None)
     assert s.client.get("/api/billing").json()["agent_available"] is False
 
 
@@ -570,3 +569,128 @@ def test_billing_status_exposes_agent_plan_and_mcp_usage(stripe_client, monkeypa
     s.who["uid"] = PRO
     body = s.client.get("/api/billing").json()
     assert body["plan"] == "pro" and body["plan_caps"] is None and body["mcp"]["daily_quota"] is None
+
+
+
+# ---- Agent price provisioning and upgrade_link ---------------------------------------------
+
+class FakePrices:
+    """Stripe's Price API, enough for stripe_prices: list by lookup key, create."""
+
+    def __init__(self, existing=None):
+        self.prices = list(existing or [])
+        self.created = []
+
+    def list(self, lookup_keys, active, limit):
+        return {"data": [p for p in self.prices if p["lookup_key"] in lookup_keys][:limit]}
+
+    def create(self, **kw):
+        if any(p["lookup_key"] == kw["lookup_key"] for p in self.prices):
+            raise RuntimeError("A price with this lookup key already exists.")
+        price = {"id": f"price_auto_{len(self.created) + 1}", **kw}
+        self.prices.append(price)
+        self.created.append(kw)
+        return price
+
+
+def test_agent_price_is_created_once_then_found(monkeypatch):
+    from backend import config
+    from backend.services import stripe_prices
+
+    monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", None)
+    stripe_prices.reset_cache()
+    prices = FakePrices()
+    stripe = SimpleNamespace(Price=prices)
+    try:
+        assert stripe_prices.agent_price_id(stripe, create=False) is None
+        pid = stripe_prices.agent_price_id(stripe)
+        (kw,) = prices.created
+        assert kw["unit_amount"] == 200 and kw["currency"] == "usd"
+        assert kw["recurring"] == {"interval": "month"} and kw["lookup_key"] == stripe_prices.AGENT_LOOKUP_KEY
+        assert kw["product_data"] == {"name": "Reliafy Agent"}
+        # Cached, then (after a restart) found by its lookup key: never created twice.
+        assert stripe_prices.agent_price_id(stripe) == pid
+        stripe_prices.reset_cache()
+        assert stripe_prices.agent_price_id(stripe) == pid and len(prices.created) == 1
+        # A configured id always wins.
+        monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", "price_configured")
+        assert stripe_prices.agent_price_id(stripe) == "price_configured"
+    finally:
+        stripe_prices.reset_cache()
+
+
+def test_losing_a_create_race_uses_the_winners_price(monkeypatch):
+    from backend import config
+    from backend.services import stripe_prices
+
+    monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", None)
+    stripe_prices.reset_cache()
+    prices = FakePrices()
+    winner = {"id": "price_winner", "lookup_key": stripe_prices.AGENT_LOOKUP_KEY}
+    real_list = prices.list
+    calls = {"n": 0}
+
+    def racing_list(**kw):
+        # Empty on the first look; the other instance creates it in between.
+        calls["n"] += 1
+        if calls["n"] == 1:
+            prices.prices.append(winner)
+            return {"data": []}
+        return real_list(**kw)
+
+    prices.list = racing_list
+    try:
+        assert stripe_prices.agent_price_id(SimpleNamespace(Price=prices)) == "price_winner"
+        assert prices.created == []
+    finally:
+        stripe_prices.reset_cache()
+
+
+def test_subscribe_agent_provisions_the_price_when_unconfigured(stripe_client, monkeypatch):
+    from backend import config
+    from backend.services import stripe_prices
+
+    s = stripe_client
+    monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", None)
+    stripe_prices.reset_cache()
+    s.fake.Price = FakePrices()
+    try:
+        assert s.client.get("/api/billing").json()["agent_available"] is True
+        r = s.client.post("/api/billing/subscribe", json={"plan": "agent"})
+        assert r.status_code == 200
+        assert s.fake.calls[-1][1]["line_items"] == [{"price": "price_auto_1", "quantity": 1}]
+        # The webhook recognises the provisioned price as the Agent plan.
+        from backend.routers import billing as billing_router
+
+        assert billing_router._plan_for_prices({"price_auto_1"}) == "agent"
+        assert billing_router._plan_for_prices({"price_other"}) is None
+    finally:
+        stripe_prices.reset_cache()
+
+
+def test_upgrade_link_gives_a_checkout_link_even_past_the_quota(stripe_client, monkeypatch):
+    from backend import config
+
+    s = stripe_client
+    monkeypatch.setattr(config, "MCP_FREE_DAILY_CALLS", 1)
+    _ok(_call(s.oauth[FREE], "list_models"))
+    _err(_call(s.oauth[FREE], "list_models"))  # quota used up
+
+    out = _ok(_call(s.oauth[FREE], "upgrade_link", {"plan": "agent"}))
+    assert out["url"].startswith("https://checkout.stripe.test/") and out["price"] == "US$2/month"
+    assert "nothing is charged until the checkout is completed" in out["note"]
+    kind, kw = s.fake.calls[-1]
+    assert kind == "checkout" and kw["line_items"] == [{"price": "price_agent", "quantity": 1}]
+    assert kw["metadata"] == {"uid": FREE, "kind": "agent"}
+    assert _calls_today(s.db, FREE) == 1  # upgrade_link isn't counted
+
+    # The limit message points at it.
+    assert "upgrade_link" in _err(_call(s.oauth[FREE], "list_models"))
+
+
+def test_upgrade_link_never_switches_a_paying_subscriber(stripe_client):
+    s = stripe_client
+    out = _ok(_call(s.oauth[AGENT], "upgrade_link", {"plan": "pro"}))
+    assert out["url"].endswith("/billing") and "billing page" in out["note"]
+    assert not any(c[0] in ("modify", "checkout") for c in s.fake.calls)
+    assert "already on Agent" in _err(_call(s.oauth[AGENT], "upgrade_link", {"plan": "agent"}))

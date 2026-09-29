@@ -99,9 +99,10 @@ def _billing_url() -> str:
 def _upgrade_path(plan: str, lead: str = "To lift it, upgrade") -> str:
     """How to lift a limit, for the caller's plan: Free users are offered both
     paid plans, Agent users the one above them."""
+    link = " (or call upgrade_link for a direct payment link)"
     if plan == "agent":
-        return f"{lead} to Reliafy Pro ({PRO_PRICE}) at {_billing_url()}."
-    return f"{lead} to Reliafy Agent ({AGENT_PRICE}, MCP) or Pro ({PRO_PRICE}) at {_billing_url()}."
+        return f"{lead} to Reliafy Pro ({PRO_PRICE}) at {_billing_url()}{link}."
+    return f"{lead} to Reliafy Agent ({AGENT_PRICE}, MCP) or Pro ({PRO_PRICE}) at {_billing_url()}{link}."
 
 
 def _until(when) -> str:
@@ -117,9 +118,10 @@ def _pro_only_message(tool: str) -> str:
                 "Fit the data locally with SurPyval instead (pip install surpyval; e.g. "
                 "surpyval.Weibull.fit(x=times, c=censored) — 0 = failed, 1 = still running), then save the "
                 "fitted parameters to Reliafy with save_model. Or upgrade to Pro at "
-                f"{_billing_url()} to fit here.")
+                f"{_billing_url()} (or call upgrade_link with plan=pro for a payment link) to fit here.")
     return (f"Fleet forecasts and fleet alerts are part of Reliafy Pro ({PRO_PRICE}) — they run on usage "
-            f"pushed through the Pro API — and aren't included on this plan. Upgrade at {_billing_url()}.")
+            f"pushed through the Pro API — and aren't included on this plan. Upgrade at {_billing_url()} "
+            "(or call upgrade_link with plan=pro for a payment link).")
 
 
 def _quota_message(plan: str, quota: int) -> str:
@@ -132,7 +134,8 @@ def _simulation_message(plan: str) -> str:
     """Why analyze_rbd can't simulate for a Free/Agent MCP user, and the two
     ways forward: Pro, or run the same diagram locally for free."""
     return (f"Availability simulation isn't included on the {_PLAN_NAMES[plan]} plan: it needs Reliafy Pro "
-            f"({PRO_PRICE}; purchased AI credits unlock it too) — upgrade at {_billing_url()}. It's free to run "
+            f"({PRO_PRICE}; purchased AI credits unlock it too) — upgrade at {_billing_url()} (or call "
+            "upgrade_link with plan=pro for a payment link). It's free to run "
             "locally: export_rbd_python (Download as Python in the app) gives a standalone script that runs "
             "this diagram's simulation with RePyability (pip install surpyval repyability). A saved result "
             "is served here whenever one exists.")
@@ -216,6 +219,7 @@ B-lives, importance; availability for repairable diagrams), export_rbd_python (a
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
+- Plans: upgrade_link gives the user a Stripe payment link for Reliafy Agent or Pro, to open themselves.
 
 Conventions — follow them exactly:
 - Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension). \
@@ -235,7 +239,8 @@ Agent plans, fit locally with SurPyval (pip install surpyval; same 0 = failed, 1
 save the parameters with save_model. Availability simulation needs Pro (or purchased credits); otherwise \
 export_rbd_python runs it locally. Free and Agent also have a daily tool-call quota and storage limits. \
 When a tool answers that a limit or plan stops it, tell the user plainly what it says — the limit, when it \
-resets and how to upgrade — and don't retry it.
+resets and how to upgrade — and don't retry it. If they want to upgrade, upgrade_link gives them a payment \
+link to open themselves; nothing is charged until they complete it.
 """
 
 mcp = MCPServer(
@@ -253,6 +258,8 @@ mcp = MCPServer(
 # Claude always confirms a save).
 _READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 _WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False, open_world_hint=False)
+# A payment link: changes nothing in Reliafy (the user pays, or not, on Stripe).
+_LINK = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=False, open_world_hint=True)
 
 
 # Exceptions whose message is written for the user. Anything else is a bug and
@@ -269,6 +276,8 @@ _USER_ERRORS = (
 _FIT_TOOLS = {"fit_distribution", "fit_and_save_model"}
 _FLEET_TOOLS = {"list_fleets", "fleet_forecast", "list_fleet_alerts", "create_fleet_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
+# Never gated or counted: the way out of a limit must work when the limit is hit.
+UNGATED_TOOLS = {"upgrade_link"}
 
 
 def _gate(ctx: Context, name: str) -> None:
@@ -276,7 +285,7 @@ def _gate(ctx: Context, name: str) -> None:
     (counted only for calls that pass the gate)."""
     user = _caller(ctx)
     plan = user.get("mcp_plan", "pro")
-    if plan == "pro":
+    if plan == "pro" or name in UNGATED_TOOLS:
         return
     if name in PRO_ONLY_TOOLS:
         raise ToolError(_pro_only_message(name))
@@ -1308,6 +1317,37 @@ def create_fleet_alert(
     _record(db, "mcp_fleet_alert", "create_fleet_alert")
     return {"alert": alerts_service.public(doc, user["uid"], fleet),
             "url": _url(f"/fleet/forecasts/{fleet.id}#alerts")}
+
+
+# ---------------------------------------------------------------------------
+# Plans
+# ---------------------------------------------------------------------------
+
+@_tool("upgrade_link", _LINK, "Get a link to upgrade")
+def upgrade_link(
+    ctx: Context,
+    plan: Annotated[Literal["agent", "pro"], Field(
+        description=f"agent = Reliafy Agent ({AGENT_PRICE}, MCP only: higher daily limits and storage); "
+                    f"pro = Reliafy Pro ({PRO_PRICE}: everything, including fitting and simulation).")] = "agent",
+) -> dict[str, Any]:
+    """A link the user opens to subscribe to a paid Reliafy plan: Stripe's own checkout page, where they see
+    the price and pay. Nothing is charged until they complete it there, so give them the link and let them
+    decide; never say the upgrade has happened. Works even when the daily tool-call limit is used up. A user
+    already on the other paid plan gets the billing page instead, to change plans there."""
+    from backend.routers.billing import start_subscription  # local: routers import after this module
+
+    user = _caller(ctx)
+    base = f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}/"
+    status, payload = start_subscription(_db(), user, plan, base, allow_switch=False)
+    name, price = f"Reliafy {_PLAN_NAMES[plan]}", AGENT_PRICE if plan == "agent" else PRO_PRICE
+    if status == 200:
+        return {"plan": plan, "price": price, "url": payload["url"],
+                "note": f"Open this link to subscribe to {name} ({price}) on Stripe's checkout page. It's valid "
+                        "for 24 hours, and nothing is charged until the checkout is completed."}
+    if status == 409 and payload.get("url"):
+        return {"plan": plan, "price": price, "url": payload["url"],
+                "note": f"You're on another paid plan: change to {name} on the billing page."}
+    raise ToolError(payload.get("detail") or "Couldn't create a payment link.")
 
 
 # ---------------------------------------------------------------------------

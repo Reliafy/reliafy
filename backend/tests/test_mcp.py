@@ -32,8 +32,10 @@ FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]  # 0 = failed, 1 = still running
 READ_TOOLS = {
     "list_models", "get_model", "reliability_at", "list_datasets", "list_rbds", "get_rbd",
     "analyze_rbd", "fit_distribution", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
-    "optimal_overhaul", "list_fleets", "fleet_forecast", "list_fleet_alerts",
+    "optimal_overhaul", "list_fleets", "fleet_forecast", "list_fleet_alerts", "upgrade_link",
 }
+# Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
+OPEN_WORLD_TOOLS = {"upgrade_link"}
 WRITE_TOOLS = {"fit_and_save_model", "save_model", "upload_dataset", "create_rbd", "create_fleet_alert"}
 
 
@@ -208,7 +210,7 @@ def test_tools_list_has_every_tool_with_annotations(env):
     assert set(tools) == READ_TOOLS | WRITE_TOOLS
     for name, tool in tools.items():
         a = tool.annotations
-        assert a.open_world_hint is False
+        assert a.open_world_hint is (name in OPEN_WORLD_TOOLS), name
         assert a.destructive_hint is (name in WRITE_TOOLS), name
         assert tool.title, name
         assert a.read_only_hint is (name in READ_TOOLS), name
