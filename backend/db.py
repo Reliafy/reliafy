@@ -128,6 +128,20 @@ def init_db() -> None:
     # sent that update.
     db.users.create_index([("email_unsub_token", 1)], unique=True, sparse=True)
     db.update_sends.create_index([("update_slug", 1), ("uid", 1)], unique=True)
+    # OAuth for the MCP server (backend/services/oauth.py). Only hashes are
+    # stored; TTL indexes drop expired consent requests and codes, unused
+    # dynamically registered clients, and grants past their refresh expiry.
+    db.oauth_clients.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    db.oauth_requests.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    db.oauth_codes.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    db.oauth_tokens.create_index([("access_hash", 1)], unique=True)
+    db.oauth_tokens.create_index([("refresh_hash", 1)], unique=True)
+    db.oauth_tokens.create_index([("uid", 1), ("revoked", 1)])
+    db.oauth_tokens.create_index([("family_id", 1)])
+    db.oauth_tokens.create_index([("refresh_expires_at", 1)], expireAfterSeconds=0)
+    # MCP tool calls per user per UTC day (the Free / Agent quota): one
+    # document per user per day, keyed by id; TTL drops it after the reset.
+    db.mcp_usage.create_index([("expires_at", 1)], expireAfterSeconds=0)
 
 
 def get_session() -> Iterator:

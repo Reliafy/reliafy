@@ -215,9 +215,11 @@ class Fleet(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model_id: str
-    # {periods, period_label, default_rate, method: "renewals"|"single"}
+    # {periods, period_label, default_rate, method: "renewals"|"single",
+    #  rate_source: "manual"|"estimated"}
     settings: dict = Field(default_factory=dict)
-    # [{id, name, current_use, rate|null, notes?}]
+    # [{id, name, current_use, rate|null, notes?, + rate-estimator state from
+    #  API readings: last_reading_use/at, latest_read_at, estimated_rate(_n)}]
     items: list = Field(default_factory=list)
 
 

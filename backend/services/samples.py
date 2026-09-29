@@ -602,6 +602,40 @@ SAMPLE_RBDS = [
 ]
 
 
+# Sample diagrams whose (repairable) availability result is precomputed at
+# seed time. Availability simulation is a paid feature, and samples are
+# read-only for everyone, so every viewer is served this saved result.
+SAMPLE_AVAILABILITY_RBDS = ("sample-rbd-instrument-air-availability",)
+
+# Monte-Carlo replications for the seeded result: a quarter of the interactive
+# default (rbd_analysis._AVAIL_SIMS = 2000) to keep the one-off startup cost to
+# ~10 s of CPU. Runs only when the sample has no matching saved result (first
+# boot, or after the sample graph changes). Entitled users can Re-run.
+SAMPLE_AVAIL_SIMS = 500
+
+
+def _seed_availability_results(db) -> None:
+    """Compute + save the availability result of the repairable samples when
+    missing or stale (idempotent: skipped when the saved key matches)."""
+    from backend.services import rbds as rbds_service  # local: avoid cycles
+
+    for rbd_id in SAMPLE_AVAILABILITY_RBDS:
+        try:
+            doc = db.rbds.find_one({"_id": rbd_id})
+            if doc is None or not (doc.get("graph") or {}).get("repairable"):
+                continue
+            key = rbds_service.availability_cache_key(doc["graph"])
+            if rbds_service.cached_availability(doc, key) is not None:
+                continue
+            result = rbds_service.analyze_graph(
+                db, doc["graph"], SAMPLE_OWNER, n_simulations=SAMPLE_AVAIL_SIMS
+            )
+            rbds_service.store_availability(db, rbd_id, key, result, SAMPLE_OWNER)
+            logger.info("Seeded availability result for sample RBD %r.", rbd_id)
+        except Exception as exc:  # pragma: no cover - defensive; never block boot
+            logger.warning("Failed to seed availability for %r: %s", rbd_id, exc)
+
+
 def is_sample(owner_id: str | None) -> bool:
     """True if a record belongs to the shared sample owner (read-only)."""
     return owner_id == SAMPLE_OWNER
@@ -708,6 +742,7 @@ def seed_samples(db) -> None:
             logger.info("Seeded sample RBD %r.", spec["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample RBD %r: %s", spec["id"], exc)
+    _seed_availability_results(db)
 
     for spec in SAMPLE_DEGRADATION_MODELS:
         try:

@@ -20,14 +20,20 @@ def _aic(result):
     return next(g["value"] for g in result["gof"] if str(g.get("label")) == "AIC")
 
 
+# Seeded, so the samples don't depend on how much of numpy's global stream
+# earlier tests consumed (an unlucky single-mode draw can favour a mixture).
 def _two_mode(n=200, seed=0):
-    rng = np.random.default_rng(seed)  # noqa: F841 - surpyval draws internally
-    x = np.concatenate([sp.Weibull.random(n, 300, 4.0), sp.Weibull.random(n, 1500, 1.2)])
+    rng = np.random.default_rng(seed)
+    x = np.concatenate([
+        sp.Weibull.random(n, 300, 4.0, random_state=rng),
+        sp.Weibull.random(n, 1500, 1.2, random_state=rng),
+    ])
     return pd.DataFrame({"hours": np.round(np.abs(x), 3)})
 
 
-def _one_mode(n=400):
-    return pd.DataFrame({"hours": np.round(np.abs(sp.Weibull.random(n, 800, 1.7)), 3)})
+def _one_mode(n=400, seed=1):
+    rng = np.random.default_rng(seed)
+    return pd.DataFrame({"hours": np.round(np.abs(sp.Weibull.random(n, 800, 1.7, random_state=rng)), 3)})
 
 
 def test_mixture_recovers_two_modes():

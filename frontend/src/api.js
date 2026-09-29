@@ -59,7 +59,9 @@ function workspaceHeaders() {
     : {};
 }
 
-async function request(url, opts = {}) {
+// fetch() with the auth + workspace headers and the same retry/self-heal as
+// every JSON call; resolves to the raw Response (for non-JSON downloads).
+async function authedFetch(url, opts = {}) {
   const send = async (forceRefresh) => {
     const headers = {
       ...(opts.headers || {}),
@@ -84,6 +86,11 @@ async function request(url, opts = {}) {
       res = await send(false);
     }
   }
+  return res;
+}
+
+async function request(url, opts = {}) {
+  const res = await authedFetch(url, opts);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(
@@ -395,7 +402,22 @@ export function buyCredits(packId) {
 
 // Start a Stripe Checkout for the Pro subscription; returns { url }.
 export function subscribePro() {
-  return request("/api/billing/subscribe", { method: "POST" });
+  return subscribe("pro");
+}
+
+// Start a Stripe Checkout for the Agent (MCP-only) subscription; returns { url }.
+export function subscribeAgent() {
+  return subscribe("agent");
+}
+
+// An Agent subscriber moving to Pro (or back) is switched on their existing
+// subscription server-side; { url } is then just the billing page.
+function subscribe(plan) {
+  return request("/api/billing/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ plan }),
+  });
 }
 
 // Open the Stripe billing portal; returns { url }.
@@ -537,7 +559,13 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 // ``covariates`` maps node id -> covariate values for proportional-hazards
 // nodes; ``conditionalAge`` conditions the curves on having survived to that
 // age (conditional survival).
-export function analyzeRbd(graph, tMax, covariates, conditionalAge) {
+//
+// Repairable graphs run the availability simulation, a paid feature: pass
+// ``rbdId`` (the saved diagram being edited) so a saved result can be served
+// and stored, and ``force`` to re-run even when one matches. A user without
+// the entitlement gets a 402 with ``code: "pro_required"`` unless a saved
+// result matches; results carry ``cached`` and ``computed_at``.
+export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = null, force = false } = {}) {
   return request("/api/rbds/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -546,6 +574,8 @@ export function analyzeRbd(graph, tMax, covariates, conditionalAge) {
       t_max: tMax ?? null,
       covariates: covariates || {},
       conditional_age: conditionalAge ?? null,
+      rbd_id: rbdId || null,
+      force: !!force,
     }),
   });
 }
@@ -977,6 +1007,64 @@ export function getPublicArtifact(token) {
   return request(`/api/public/${encodeURIComponent(token)}`);
 }
 
+// ---- File downloads -----------------------------------------------------------
+
+// The file name from a Content-Disposition header (plain or RFC 5987 form).
+function dispositionFilename(header, fallback) {
+  if (!header) return fallback;
+  const star = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      /* fall through to the plain form */
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+  return plain ? plain[1].trim() : fallback;
+}
+
+// Fetch a file with the auth header and hand it to the browser as a download.
+async function downloadFile(url, fallbackName) {
+  const res = await authedFetch(url);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const err = new Error(data.detail || `Download failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  const blob = await res.blob();
+  const name = dispositionFilename(res.headers.get("Content-Disposition"), fallbackName);
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Give the browser a moment to start the download before revoking.
+  setTimeout(() => URL.revokeObjectURL(href), 1000);
+  return name;
+}
+
+export const PYTHON_EXPORT_TIP =
+  "A standalone script that rebuilds this diagram with SurPyval + RePyability and runs it locally.";
+
+// "Download as Python": a standalone SurPyval + RePyability script that
+// rebuilds a saved RBD and runs the same calculation locally. Free for every
+// viewer of the diagram.
+export function downloadRbdPython(id) {
+  return withEvent(
+    downloadFile(`/api/rbds/${encodeURIComponent(id)}/export.py`, "rbd.py"),
+    "rbd_export_python"
+  );
+}
+
+// The same download for a publicly linked RBD (no sign-in needed).
+export function downloadPublicRbdPython(token) {
+  return downloadFile(`/api/public/${encodeURIComponent(token)}/export.py`, "rbd.py");
+}
+
 // ---- Personal API tokens ------------------------------------------------------
 
 export function listApiTokens() {
@@ -993,6 +1081,32 @@ export function createApiToken(name) {
 
 export function revokeApiToken(id) {
   return request(`/api/tokens/${id}`, { method: "DELETE" });
+}
+
+// ---- OAuth: connecting Claude (and other MCP clients) --------------------------
+
+// The pending authorization request behind /oauth/consent?request=<handle>:
+// client name, where the browser will be sent back to, loopback or not.
+export function getOAuthRequest(handle) {
+  return request(`/oauth/authorize/request?request=${encodeURIComponent(handle)}`);
+}
+
+// Approve or deny it as the signed-in user; resolves to { redirect_to }.
+export function decideOAuthRequest(handle, approve) {
+  return request("/oauth/authorize/decision", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ request: handle, approve }),
+  });
+}
+
+// Settings > Connected apps.
+export function listOAuthGrants() {
+  return request("/api/me/oauth-grants");
+}
+
+export function revokeOAuthGrant(id) {
+  return request(`/api/me/oauth-grants/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 // Operator-only stats (403 for regular accounts).
@@ -1051,6 +1165,31 @@ export function putFleetItems(id, settings, items, expectedUpdatedAt) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ settings, items, expected_updated_at: expectedUpdatedAt || null }),
   });
+}
+
+// Alerts on a fleet's expected failures (evaluated when usage arrives via the API).
+export function listFleetAlerts(id) {
+  return request(`/api/fleet/fleets/${id}/alerts`);
+}
+
+export function createFleetAlert(id, rule) {
+  return request(`/api/fleet/fleets/${id}/alerts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rule),
+  });
+}
+
+export function updateFleetAlert(id, alertId, changes) {
+  return request(`/api/fleet/fleets/${id}/alerts/${alertId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+}
+
+export function deleteFleetAlert(id, alertId) {
+  return request(`/api/fleet/fleets/${id}/alerts/${alertId}`, { method: "DELETE" });
 }
 
 // ---- Tracked fleets (degradation tracking groups) --------------------------------

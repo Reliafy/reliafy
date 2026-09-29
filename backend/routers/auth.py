@@ -43,7 +43,7 @@ def me(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> 
     acct = billing_service.account(session, user["uid"])
     return {
         **user,
-        "plan": "pro" if acct["is_pro"] else "free",
+        "plan": acct["active_plan"],
         "admin": billing_service.is_admin_user(user),
         "credit_cents": acct["credit_cents"],
         "teams": [

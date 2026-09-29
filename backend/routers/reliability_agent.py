@@ -44,12 +44,7 @@ def _agent_access(session, user):
     uid = user["uid"]
     admin = billing_service.is_admin_user(user)
     acct = billing_service.account(session, uid)
-    allowed = (
-        admin
-        or not config.BILLING_ENABLED
-        or acct["is_pro"]
-        or billing_service.has_purchased_credits(session, uid)
-    )
+    allowed = billing_service.premium_compute_allowed(session, user)
     return allowed, admin, acct
 
 

@@ -104,6 +104,8 @@ def import_model(
     params: list | None = None,
     options: dict | None = None,
     extras: dict | None = None,
+    notes: str | None = None,
+    source_dataset_id: str | None = None,
 ) -> Model:
     """Create a model from an external fit (e.g. a SurPyval notebook).
 
@@ -115,6 +117,9 @@ def import_model(
       bounds, goodness-of-fit) and stays editable/refittable.
     * **params-only** — no data, just ``params`` (+ optional ``options`` extras).
       Reliability functions and life metrics are available; there's no plot.
+      ``notes`` and ``source_dataset_id`` (the dataset the parameters were
+      fitted to elsewhere) are kept in the spec as references only — the
+      model is never refitted from that dataset.
 
     Raises ``fitting.FitError`` on a bad distribution/params/data.
     """
@@ -151,6 +156,12 @@ def import_model(
         if v is not None and float(v) != default:
             clean[key] = float(v)
     result = fitting.result_from_params(distribution_id, params, clean or None, unit)
+    spec = {"distribution_id": distribution_id, "unit": (unit or "").strip(),
+            "params_only": True, "options": result.get("options") or None}
+    if (notes or "").strip():
+        spec["notes"] = notes.strip()
+    if source_dataset_id:
+        spec["source_dataset_id"] = source_dataset_id
     model = Model(
         id=uuid.uuid4().hex,
         name=name,
@@ -158,8 +169,7 @@ def import_model(
         dataset_id="",
         kind="distribution",
         distribution_id=distribution_id,
-        spec={"distribution_id": distribution_id, "unit": (unit or "").strip(),
-              "params_only": True, "options": result.get("options") or None},
+        spec=spec,
         results=result,
         surpyval_version=getattr(surpyval, "__version__", None),
         status="ready",

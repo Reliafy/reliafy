@@ -2,11 +2,16 @@
 
 A user document carries a small ledger: ``credit_millicents`` (prepaid AI
 balance in thousandths of a cent, so per-call metering never loses precision
-to rounding), ``plan`` ('free'|'pro') with ``plan_until``, and
-``stripe_customer_id``. Older documents carry only ``credit_cents`` and are
-migrated lazily on first touch. The user-facing balance is whole credits
-(1 credit == 1 cent), floored. Every grant/charge is also appended to the
-``credit_ledger`` collection for an audit trail.
+to rounding), ``plan`` ('free'|'agent'|'pro') with ``plan_until``,
+``stripe_customer_id`` and ``stripe_subscription_id``. Older documents carry
+only ``credit_cents`` and are migrated lazily on first touch. The user-facing
+balance is whole credits (1 credit == 1 cent), floored. Every grant/charge is
+also appended to the ``credit_ledger`` collection for an audit trail.
+
+Plans: ``free`` (default), ``agent`` (US$2/month — Reliafy from an AI agent
+over MCP only: roomier storage than free and a larger daily tool-call quota)
+and ``pro``. The MCP tool-call counters live in the ``mcp_usage``
+collection, one document per user per UTC day.
 
 Everything here is dormant unless :data:`backend.config.BILLING_ENABLED` is set:
 plan caps aren't enforced and AI calls aren't charged, so the app behaves
@@ -16,7 +21,7 @@ exactly as before until billing is turned on.
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from backend import config
 from backend.config import SAMPLE_OWNER
@@ -68,8 +73,12 @@ def is_admin_user(user: dict) -> bool:
     return bool(email) and email in config.ADMIN_EMAILS
 
 
-def is_pro(account: dict) -> bool:
-    if account.get("plan") != "pro":
+PLANS = ("free", "agent", "pro")
+
+
+def _plan_current(account: dict, plan: str) -> bool:
+    """True if ``account`` is on ``plan`` and it hasn't lapsed (``plan_until``)."""
+    if account.get("plan") != plan:
         return False
     until = account.get("plan_until")
     if until is None:
@@ -82,6 +91,23 @@ def is_pro(account: dict) -> bool:
     if until.tzinfo is None:
         until = until.replace(tzinfo=timezone.utc)
     return until > _now()
+
+
+def is_pro(account: dict) -> bool:
+    return _plan_current(account, "pro")
+
+
+def is_agent(account: dict) -> bool:
+    return _plan_current(account, "agent")
+
+
+def active_plan(account: dict) -> str:
+    """The plan in force: 'pro', 'agent' or 'free' (a lapsed plan is free)."""
+    if is_pro(account):
+        return "pro"
+    if is_agent(account):
+        return "agent"
+    return "free"
 
 
 def has_purchased_credits(db, uid: str) -> bool:
@@ -110,8 +136,11 @@ def account(db, uid: str) -> dict:
         "plan": doc.get("plan", "free"),
         "plan_until": doc.get("plan_until"),
         "stripe_customer_id": doc.get("stripe_customer_id"),
+        "stripe_subscription_id": doc.get("stripe_subscription_id"),
     }
     acct["is_pro"] = is_pro(acct)
+    acct["is_agent"] = is_agent(acct)
+    acct["active_plan"] = active_plan(acct)
     return acct
 
 
@@ -159,14 +188,26 @@ def charge_credits(db, uid: str, cents: int, reason: str, ref: str = "") -> int:
     return charge_millicents(db, uid, int(cents) * 1000, reason, ref)
 
 
-def grant_monthly_pro_credits(db, customer_id: str | None, invoice_id: str | None) -> bool:
+def grant_monthly_pro_credits(
+    db, customer_id: str | None, invoice_id: str | None, price_ids: set | None = None,
+) -> bool:
     """Grant the Pro plan's included monthly AI credit for a paid subscription
     invoice. Idempotent per invoice (webhook retries / duplicate events can't
-    double-grant). Returns True if a grant was made."""
+    double-grant). Returns True if a grant was made.
+
+    Only Pro invoices qualify — an Agent subscription's invoice grants nothing.
+    ``price_ids`` are the Stripe prices on the invoice's lines: when known they
+    decide (the first invoice can arrive before checkout.session.completed has
+    set the plan); when the invoice doesn't carry them, the user's plan does."""
     if not customer_id or not invoice_id or config.PRO_MONTHLY_CREDIT_CENTS <= 0:
         return False
     doc = db.users.find_one({"stripe_customer_id": customer_id})
     if doc is None:
+        return False
+    if price_ids:
+        if not config.STRIPE_PRO_PRICE_ID or config.STRIPE_PRO_PRICE_ID not in price_ids:
+            return False
+    elif not account(db, doc["_id"])["is_pro"]:
         return False
     if db.credit_ledger.find_one({"ref": invoice_id, "kind": "grant"}) is not None:
         return False  # already granted for this invoice
@@ -174,10 +215,15 @@ def grant_monthly_pro_credits(db, customer_id: str | None, invoice_id: str | Non
     return True
 
 
-def set_plan(db, uid: str, plan: str, until=None, customer_id: str | None = None) -> None:
+def set_plan(
+    db, uid: str, plan: str, until=None, customer_id: str | None = None,
+    subscription_id: str | None = None,
+) -> None:
     fields = {"plan": plan, "plan_until": until}
     if customer_id:
         fields["stripe_customer_id"] = customer_id
+    if subscription_id:
+        fields["stripe_subscription_id"] = subscription_id
     db.users.update_one({"_id": uid}, {"$set": fields}, upsert=True)
 
 
@@ -224,26 +270,58 @@ def owned_count(db, uid: str, collection: str) -> int:
     return db[collection].count_documents({"owner_id": uid})
 
 
-def cap_for(kind: str) -> int:
-    return {
-        "datasets": config.FREE_MAX_DATASETS,
-        "models": config.FREE_MAX_MODELS,
-        "rbds": config.FREE_MAX_RBDS,
-        "degradation_models": config.FREE_MAX_DEGRADATION_MODELS,
-        "tracked_items": config.FREE_MAX_TRACKED_ITEMS,
-        "rcm_studies": config.FREE_MAX_RCM_STUDIES,
-        "fleets": config.FREE_MAX_FLEETS,
-    }[kind]
+CAPPED_KINDS = ("datasets", "models", "rbds", "degradation_models", "tracked_items", "rcm_studies", "fleets")
+
+
+def plan_caps(plan: str) -> dict | None:
+    """Storage caps per capped kind for ``plan``; None = unlimited (Pro)."""
+    if plan == "pro":
+        return None
+    prefix = "AGENT_MAX_" if plan == "agent" else "FREE_MAX_"
+    return {kind: getattr(config, prefix + kind.upper()) for kind in CAPPED_KINDS}
+
+
+def cap_for(kind: str, plan: str = "free") -> int | None:
+    """The cap on owned ``kind`` items under ``plan`` (None = unlimited)."""
+    caps = plan_caps(plan)
+    return None if caps is None else caps[kind]
+
+
+# What each capped kind is called in a limit message: (one, many).
+_CAP_NOUNS = {
+    "datasets": ("saved dataset", "saved datasets"),
+    "models": ("saved model", "saved models"),
+    "rbds": ("saved RBD", "saved RBDs"),
+    "degradation_models": ("degradation model", "degradation models"),
+    "tracked_items": ("tracked item", "tracked items"),
+    "rcm_studies": ("RCM study", "RCM studies"),
+    "fleets": ("failure forecast", "failure forecasts"),
+}
+
+
+def cap_message(db, uid: str, kind: str) -> str:
+    """The web app's "limit reached" message, with the cap of the user's own
+    plan (an Agent user is told the Agent limit, not the free one)."""
+    plan = account(db, uid)["active_plan"]
+    cap = cap_for(kind, plan)
+    one, many = _CAP_NOUNS[kind]
+    which = "Agent plan" if plan == "agent" else "free-plan"
+    return (
+        f"You've reached the {which} limit of {cap} {one if cap == 1 else many}. "
+        f"Upgrade to Pro for unlimited {many.removeprefix('saved ')}."
+    )
 
 
 def would_exceed_cap(db, uid: str, kind: str) -> bool:
-    """True if creating one more `kind` (datasets|models|rbds) is not allowed for
-    this user. Always False when billing is off or the user is Pro."""
+    """True if creating one more `kind` (datasets|models|rbds|…) is not allowed
+    under this user's plan caps. Always False when billing is off or the user
+    is Pro."""
     if not config.BILLING_ENABLED:
         return False
-    if account(db, uid)["is_pro"]:
+    cap = cap_for(kind, account(db, uid)["active_plan"])
+    if cap is None:
         return False
-    return owned_count(db, uid, kind) >= cap_for(kind)
+    return owned_count(db, uid, kind) >= cap
 
 
 def api_access_allowed(db, user: dict) -> bool:
@@ -259,33 +337,110 @@ def api_access_allowed(db, user: dict) -> bool:
     return account(db, user["uid"])["is_pro"]
 
 
-def usage_summary(db, uid: str) -> dict:
+def mcp_plan(db, user: dict) -> str:
+    """The plan that governs this user's MCP use: 'pro' (no MCP limits beyond
+    the per-user rate limit), 'agent' or 'free'. Operator accounts and
+    self-hosted installs (billing off) count as Pro."""
+    if not config.BILLING_ENABLED or is_admin_user(user):
+        return "pro"
+    return account(db, user["uid"])["active_plan"]
+
+
+def premium_compute_allowed(db, user: dict) -> bool:
+    """Whether this user may run the paid, CPU-heavy features (the Reliability
+    Agent, the Monte-Carlo availability simulation).
+
+    Entitled: operator accounts, every user when billing is off (self-hosted),
+    Pro subscribers, and anyone who has *bought* AI credits. A purely
+    free-tier user (only the starter grant, never paid) is not.
+    """
+    if is_admin_user(user):
+        return True
+    if not config.BILLING_ENABLED:
+        return True
+    uid = user.get("uid")
+    if not uid:
+        return False
+    return account(db, uid)["is_pro"] or has_purchased_credits(db, uid)
+
+
+# ---- MCP daily quota (Free / Agent plans) --------------------------------
+
+def _day(now: datetime | None = None) -> str:
+    return (now or _now()).strftime("%Y-%m-%d")
+
+
+def next_day_start(now: datetime | None = None) -> datetime:
+    """When today's (UTC) MCP tool-call quota resets."""
+    now = now or _now()
+    return datetime(now.year, now.month, now.day, tzinfo=timezone.utc) + timedelta(days=1)
+
+
+def mcp_daily_quota(plan: str) -> int | None:
+    """MCP tool calls allowed per UTC day on ``plan`` (None = no quota)."""
+    return {"free": config.MCP_FREE_DAILY_CALLS, "agent": config.MCP_AGENT_DAILY_CALLS}.get(plan)
+
+
+def _calls_id(uid: str, day: str) -> str:
+    return f"calls:{uid}:{day}"
+
+
+def mcp_calls_today(db, uid: str) -> int:
+    doc = db.mcp_usage.find_one({"_id": _calls_id(uid, _day())})
+    return int((doc or {}).get("count", 0))
+
+
+def consume_mcp_call(db, uid: str, plan: str) -> bool:
+    """Count one MCP tool call against today's quota for ``plan``; True if the
+    call may run. Nothing is counted on a plan without a quota, or once the
+    quota is reached. Atomic: the increment only matches while ``count`` is
+    under the quota, so concurrent calls can't both take the last slot."""
+    quota = mcp_daily_quota(plan)
+    if quota is None:
+        return True
+    day = _day()
+    key = _calls_id(uid, day)
+    db.mcp_usage.update_one(
+        {"_id": key},
+        # Kept a day past the reset, then the TTL index drops it.
+        {"$setOnInsert": {"uid": uid, "day": day, "count": 0,
+                          "expires_at": next_day_start() + timedelta(days=1)}},
+        upsert=True,
+    )
+    res = db.mcp_usage.update_one({"_id": key, "count": {"$lt": int(quota)}}, {"$inc": {"count": 1}})
+    return bool(getattr(res, "modified_count", 0))
+
+
+def mcp_usage_summary(db, uid: str, plan: str) -> dict:
+    """Today's MCP tool calls against the plan's quota, for the billing page."""
+    return {
+        "calls_today": mcp_calls_today(db, uid),
+        "daily_quota": mcp_daily_quota(plan),
+        "calls_reset_at": next_day_start().isoformat(),
+    }
+
+
+def usage_summary(db, uid: str, admin: bool = False) -> dict:
+    """Plan, credit, caps and usage snapshot for GET /api/billing. ``admin``
+    (operator accounts) reports MCP use without quotas, as they have none."""
     acct = account(db, uid)
+    plan = acct["active_plan"]
     return {
         "credit_cents": acct["credit_cents"],
-        "plan": "pro" if acct["is_pro"] else "free",
+        "plan": plan,
         "billing_enabled": config.BILLING_ENABLED,
-        "caps": {
-            "datasets": config.FREE_MAX_DATASETS,
-            "models": config.FREE_MAX_MODELS,
-            "rbds": config.FREE_MAX_RBDS,
-            "degradation_models": config.FREE_MAX_DEGRADATION_MODELS,
-            "tracked_items": config.FREE_MAX_TRACKED_ITEMS,
-            "rcm_studies": config.FREE_MAX_RCM_STUDIES,
-            "fleets": config.FREE_MAX_FLEETS,
-        },
+        # Free-plan caps (the Free vs paid comparison); ``plan_caps`` are the
+        # ones that apply to this user (None = unlimited).
+        "caps": plan_caps("free"),
+        "agent_caps": plan_caps("agent"),
+        "plan_caps": plan_caps(plan),
+        "mcp": mcp_usage_summary(db, uid, "pro" if admin or not config.BILLING_ENABLED else plan),
+        "mcp_free_daily_calls": config.MCP_FREE_DAILY_CALLS,
+        "mcp_agent_daily_calls": config.MCP_AGENT_DAILY_CALLS,
         # Quoted on /billing (Free vs Pro comparison) so the page never
         # hardcodes a number the operator can change with an env var.
         "free_grant_cents": config.FREE_GRANT_CENTS,
         "pro_monthly_credit_cents": config.PRO_MONTHLY_CREDIT_CENTS,
-        "usage": {
-            "datasets": owned_count(db, uid, "datasets"),
-            "models": owned_count(db, uid, "models"),
-            "rbds": owned_count(db, uid, "rbds"),
-            "degradation_models": owned_count(db, uid, "degradation_models"),
-            "tracked_items": owned_count(db, uid, "tracked_items"),
-            "rcm_studies": owned_count(db, uid, "rcm_studies"),
-            "fleets": owned_count(db, uid, "fleets"),
-        },
+        "usage": {kind: owned_count(db, uid, kind) for kind in CAPPED_KINDS},
         "packs": config.CREDIT_PACKS,
     }

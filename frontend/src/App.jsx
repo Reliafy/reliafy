@@ -39,6 +39,7 @@ const AppShell = lazy(() => import("./AppShell.jsx"));
 // Public read-only artifact viewer (/p/:token). Lazy for the same reason:
 // it pulls in the charting components, which marketing pages don't need.
 const PublicArtifact = lazy(() => import("./views/PublicArtifact.jsx"));
+const OAuthConsent = lazy(() => import("./views/OAuthConsent.jsx"));
 
 // Gate the app shell behind authentication: while auth initialises show a
 // spinner; if signed out, redirect to /login.
@@ -103,6 +104,17 @@ export default function App() {
                 client-rendered only (not prerendered, not in the sitemap). */}
             {!AUTH_DISABLED && <Route path="/unsubscribe" element={<Unsubscribe />} />}
             {!AUTH_DISABLED && <Route path="/login" element={<Login />} />}
+            {/* OAuth consent for Claude connectors / MCP clients. Public so a
+                signed-out user can sign in and come straight back; noindex,
+                not prerendered, not in the sitemap. Lazy: rarely visited. */}
+            <Route
+              path="/oauth/consent"
+              element={
+                <Suspense fallback={<div className="auth-loading">Loading…</div>}>
+                  <OAuthConsent />
+                </Suspense>
+              }
+            />
             <Route
               path="/*"
               element={
