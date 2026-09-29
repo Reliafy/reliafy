@@ -551,9 +551,12 @@ def _rbd_component_model(db, uid: str, comp: dict) -> dict:
                 f"model “{m.name}” is a {m.kind} model; RBD components need a plain "
                 "distribution — give distribution + params inline instead")
         r = m.results or {}
+        # ``unit`` travels with the copied parameters so validation can warn
+        # when the diagram is in a different time unit.
         return {"source": "params", "distribution": r.get("distribution") or m.distribution_id,
                 "distribution_id": m.distribution_id,
-                "params": [{"name": p["name"], "value": p["value"]} for p in (r.get("params") or [])]}
+                "params": [{"name": p["name"], "value": p["value"]} for p in (r.get("params") or [])],
+                "unit": r.get("unit") or (m.spec or {}).get("unit") or ""}
 
     dist = (comp.get("distribution") or "").strip()
     if not dist:
@@ -568,6 +571,7 @@ def _rbd_component_model(db, uid: str, comp: dict) -> dict:
               for p in (comp.get("params") or []) if p.get("name") is not None and p.get("value") is not None]
     if not params:
         raise ValueError(f"component “{comp.get('label') or dist_id}” needs params [{{name, value}}]")
+    fitting.param_values(dist_id, params, f"component “{comp.get('label') or dist_id}”")  # FitError is a ValueError
     return {"source": "params", "distribution": fitting.DISTRIBUTIONS[dist_id]["name"],
             "distribution_id": dist_id, "params": params}
 
@@ -593,6 +597,7 @@ def _rbd_repair_model(comp: dict) -> dict:
               if p.get("name") is not None and p.get("value") is not None]
     if not params:
         raise ValueError(f"component “{comp.get('label') or dist_id}” needs repair_params [{{name, value}}]")
+    fitting.param_values(dist_id, params, f"component “{comp.get('label') or dist_id}” repair")
     return {"source": "params", "distribution": fitting.DISTRIBUTIONS[dist_id]["name"],
             "distribution_id": dist_id, "params": params}
 

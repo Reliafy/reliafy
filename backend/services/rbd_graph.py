@@ -110,6 +110,10 @@ def _inline_model(model: dict, where: str) -> dict:
     params = _params(model.get("params"), where)
     if not params:
         raise GraphError(f"{where}: the model needs params, e.g. [{{\"name\": \"alpha\", \"value\": 900}}].")
+    try:
+        fitting.param_values(dist_id, params, where)  # SurPyval names only
+    except fitting.FitError as exc:
+        raise GraphError(str(exc)) from None
     out = {
         "source": "params",
         "distribution": fitting.DISTRIBUTIONS[dist_id]["name"],

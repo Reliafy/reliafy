@@ -27,7 +27,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 import pandas as pd
 
-from backend.fitting import DISTRIBUTIONS
+from backend.fitting import DISTRIBUTIONS, FitError, param_values
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 from repyability.rbd.repairable_rbd import RepairableRBD
@@ -214,15 +214,13 @@ def _build_distribution(
         )
     dist = entry["dist"]
     params = model.get("params") or []
-    by_name = {p["name"]: float(p["value"]) for p in params if "name" in p}
-    names = list(getattr(dist, "param_names", []) or [])
-    if names and all(n in by_name for n in names):
-        values = [by_name[n] for n in names]
-    else:
-        # Fall back to the order they were given in.
-        values = [float(p["value"]) for p in params]
-    if not values:
+    if not params:
         raise AnalysisError(f"{where} is missing distribution parameters.")
+    try:
+        # By SurPyval name; an unrecognised name is refused, never read by position.
+        values = param_values(dist_id, params, where)
+    except FitError as exc:
+        raise AnalysisError(str(exc)) from None
     # Extra fitted quantities (offset gamma, LFP p, ZI f0) rebuild the model
     # exactly as fitted; sf/ff are well-defined for all of them.
     extras = {
@@ -638,6 +636,8 @@ def validate_graph(
         except Exception as exc:  # pragma: no cover - defensive
             errors.append(f"The diagram could not be analysed: {exc}")
 
+    warnings.extend(design_warnings(graph, labels))
+
     repairable = bool(graph.get("repairable"))
     if repairable:
         # Availability mode is a distinct contract: every component needs a
@@ -691,6 +691,63 @@ def validate_graph(
         "warnings": warnings,
         "non_analytic_nodes": non_analytic,
     }
+
+
+# Spellings of the same time unit, so "Hours", "hrs" and "h" compare equal.
+_UNIT_ALIASES = {
+    "h": "hour", "hr": "hour", "hrs": "hour", "hours": "hour",
+    "s": "second", "sec": "second", "secs": "second", "seconds": "second",
+    "min": "minute", "mins": "minute", "minutes": "minute",
+    "d": "day", "days": "day",
+    "wk": "week", "wks": "week", "weeks": "week",
+    "mo": "month", "mon": "month", "mth": "month", "mths": "month", "months": "month",
+    "y": "year", "yr": "year", "yrs": "year", "years": "year",
+    "cycles": "cycle", "kms": "km", "kilometre": "km", "kilometres": "km",
+    "kilometer": "km", "kilometers": "km", "miles": "mile", "mi": "mile",
+}
+
+
+def normalize_unit(unit) -> Optional[str]:
+    """A comparable form of a time unit, or None when it is blank/unspecified
+    (unknown — never treated as a mismatch)."""
+    key = str(unit or "").strip().lower().rstrip(".")
+    if not key or key in ("-", "unit", "units", "unspecified", "none", "n/a"):
+        return None
+    return _UNIT_ALIASES.get(key, key)
+
+
+def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
+    """Warn when a block's saved life model was fitted in a different time unit
+    from the diagram's. Parameters are read in the diagram's unit, so e.g. a
+    model fitted in months dropped into an hours diagram is off by ~730x.
+    Nothing is converted; blank units on either side are unknown, not a
+    mismatch."""
+    diagram = normalize_unit(graph.get("unit"))
+    if diagram is None:
+        return []
+    out = []
+    for node in graph.get("nodes") or []:
+        data = node.get("data") or {}
+        model = data.get("model")
+        if not isinstance(model, dict):
+            continue
+        model_unit = normalize_unit(model.get("unit"))
+        if model_unit is None or model_unit == diagram:
+            continue
+        label = (labels or {}).get(node.get("id")) or data.get("label") or node.get("id")
+        name = f" “{model['name']}”" if model.get("name") else ""
+        out.append(
+            f"“{label}” uses the saved model{name}, fitted in {str(model.get('unit')).strip()}, but the "
+            f"diagram's unit is {str(graph.get('unit')).strip()} — its parameters are read as "
+            f"{str(graph.get('unit')).strip()}, not converted. Use a model in the diagram's unit, or "
+            "change the diagram's unit.")
+    return out
+
+
+def design_warnings(graph: dict, labels: Optional[dict] = None) -> list:
+    """Non-blocking modelling warnings that need no analysis: every warning
+    here also appears in :func:`validate_graph`'s list."""
+    return unit_warnings(graph, labels)
 
 
 def _ccf_symmetry_warnings(graph: dict, labels: dict) -> list:
@@ -842,6 +899,7 @@ def analyze(
     covariates: Optional[dict] = None,
     resolve_model=None,
     conditional_age: Optional[float] = None,
+    at_times=None,
 ) -> dict:
     """Analyse a builder graph and return a JSON-serialisable result payload.
 
@@ -852,8 +910,10 @@ def analyze(
     model by id. ``conditional_age`` (``s``) conditions every curve on having
     already survived to ``s``: the time axis becomes additional time ``t`` and
     each reliability is ``R(s + t) / R(s)``; the MTTF becomes the mean residual
-    life at ``s``. Raises :class:`AnalysisError` with a user-facing message if
-    the graph can't be turned into a valid RBD.
+    life at ``s``. ``at_times`` adds ``at: {t, sf}`` — the system reliability
+    evaluated exactly at those times (not read off the grid, so times past the
+    axis end are still right). Raises :class:`AnalysisError` with a
+    user-facing message if the graph can't be turned into a valid RBD.
     """
     rbd, labels, node_types, reliabilities, working_nodes, broken_nodes, baseline = _build_rbd(
         graph, resolve_subsystem, None, resolve_model, covariates
@@ -995,10 +1055,16 @@ def analyze(
         except Exception:  # noqa: BLE001 - the main result still stands
             ccf = None
 
+    at = None
+    if at_times is not None and len(at_times):
+        at_t = np.asarray([float(v) for v in at_times], dtype=float)
+        at = {"t": at_t.tolist(), "sf": _clean(_conditional_sf(rbd, at_t, s, **overrides))}
+
     return {
         "unit": (graph.get("unit") or "").strip(),
         "time": grid.tolist(),
         "system": {"sf": _clean(system_sf), "ff": _clean(1.0 - system_sf)},
+        **({"at": at} if at is not None else {}),
         "mttf": mttf,
         "blife": blife,
         "conditional_age": s,

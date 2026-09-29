@@ -76,6 +76,7 @@ from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
 from backend.services import strategy_store
 from backend.services import tokens as tokens_service
+from backend.services import rbd_analysis
 from backend.services.rbd_analysis import AnalysisError
 from backend.services.strategy import StrategyError
 
@@ -451,16 +452,6 @@ def _fit_summary(result: dict) -> dict:
     return out
 
 
-def _curve_value(curves: dict, fn: str, t: float):
-    """Linear interpolation on the stored function grid (as /api/v1 does)."""
-    y = curves.get(fn)
-    if y is None:
-        return None
-    x = np.asarray(curves["x"], dtype=float)
-    yv = np.array([np.nan if v is None else v for v in y], dtype=float)
-    return _finite(np.interp(float(t), x, yv))
-
-
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
@@ -779,49 +770,94 @@ def reliability_at(
         description="Optional current age of a unit that is still working. Adds conditional_reliability = "
                     "R(age + t) / R(age): the chance it survives a FURTHER t.")] = None,
     covariates: Annotated[Optional[dict[str, Any]], Field(
-        description="Proportional-hazards models only: covariate values by name (see get_model).")] = None,
+        description="Proportional-hazards models only: covariate values by name (see get_model). Any not "
+                    "given use the fit's default (the training-data mean); the response says which.")] = None,
 ) -> dict[str, Any]:
     """Evaluate a saved life model at given times: reliability R(t) (probability of surviving to t),
     failure probability F(t) = 1 − R(t), hazard rate h(t), cumulative hazard H(t) and density f(t).
-    Optionally conditional on a unit already having survived to `conditional_age`."""
+    Optionally conditional on a unit already having survived to `conditional_age`. Parametric models are
+    evaluated exactly from the distribution (method=exact); non-parametric and mixture models are
+    interpolated on their stored curve (method=interpolated). Proportional-hazards models report the
+    covariate values used (the fit's defaults for any not given)."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
     if m is None:
         raise ToolError("Model not found.")
-    r = models_service.public_results(m)
-    fns = r.get("functions") or {}
-    if not fns.get("curves"):
-        raise ToolError("This model has no reliability functions to evaluate.")
-    if covariates and fns.get("model_id"):
-        curves = models_service.evaluate(db, model_id, covariates, owners)["curves"]
-    else:
-        curves = fns["curves"]
-    x_max = float(np.nanmax(np.asarray(curves["x"], dtype=float)))
-    r_age = _curve_value(curves, "sf", conditional_age) if conditional_age is not None else None
-
-    points = []
     for t in times:
+        if not np.isfinite(t) or t < 0:
+            raise ToolError(f"times must be finite and ≥ 0 (in the model's unit); got {t:g}.")
+    if conditional_age is not None and (not np.isfinite(conditional_age) or conditional_age < 0):
+        raise ToolError(f"conditional_age must be finite and ≥ 0; got {conditional_age:g}.")
+    if covariates and m.kind != "regression":
+        raise ToolError(f"“{m.name}” is a {m.kind} model with no covariates — drop `covariates`, or pick a "
+                        "proportional-hazards model (get_model lists its covariates).")
+
+    ts = [float(t) for t in times]
+    later = [conditional_age + t for t in ts] if conditional_age is not None else []
+    grid = ts + later + ([float(conditional_age)] if conditional_age is not None else [])
+    ev = models_service.evaluate_at(db, m, grid, owners, covariates)
+    vals = ev["values"]
+    n = len(ts)
+    exact = ev["method"] == "exact"
+    x_max = ev.get("x_max")
+
+    undefined = False
+    points = []
+    for i, t in enumerate(ts):
         p = {
-            "t": float(t),
-            "reliability": _curve_value(curves, "sf", t),
-            "failure": _curve_value(curves, "ff", t),
-            "hazard": _curve_value(curves, "hf", t),
-            "cumulative_hazard": _curve_value(curves, "Hf", t),
-            "density": _curve_value(curves, "df", t),
+            "t": t,
+            "reliability": vals["sf"][i],
+            "failure": vals["ff"][i],
+            "hazard": vals["hf"][i],
+            "cumulative_hazard": vals["Hf"][i],
+            "density": vals["df"][i],
         }
         if conditional_age is not None:
-            r_later = _curve_value(curves, "sf", float(conditional_age) + float(t))
-            p["conditional_reliability"] = (r_later / r_age) if r_age and r_later is not None else None
-        if float(t) > x_max or (conditional_age is not None and float(conditional_age) + float(t) > x_max):
+            # R(a + t) / R(a), via the cumulative hazard where it's finite:
+            # exp(-(H(a + t) - H(a))) stays accurate when both reliabilities
+            # underflow to 0. Undefined only when R(a) is truly 0.
+            h_age, h_later = vals["Hf"][-1], vals["Hf"][n + i]
+            r_age, r_later = vals["sf"][-1], vals["sf"][n + i]
+            if h_age is not None and h_later is not None:
+                p["conditional_reliability"] = float(min(1.0, max(0.0, np.exp(-(h_later - h_age)))))
+            elif r_age and r_later is not None:
+                p["conditional_reliability"] = r_later / r_age
+            else:
+                p["conditional_reliability"] = None
+                undefined = True
+        if not exact and (t > x_max or (conditional_age is not None and conditional_age + t > x_max)):
             p["beyond_curve"] = True
         points.append(p)
-    out = {"model": m.name, "model_id": m.id, "unit": r.get("unit", ""), "points": points}
+
+    out = {"model": m.name, "model_id": m.id, "unit": (m.results or {}).get("unit", ""),
+           "method": ev["method"], "points": points}
+    notes = []
+    if exact:
+        notes.append("Evaluated exactly from the fitted distribution.")
+    else:
+        notes.append(f"This {m.kind} model has no closed form, so values are interpolated on its stored "
+                     f"curve (0 to {x_max:g}).")
+        if any(p.get("beyond_curve") for p in points):
+            notes.append(f"Times beyond {x_max:g} are past that curve; values there are held at its end "
+                         "(flagged beyond_curve).")
     if conditional_age is not None:
         out["conditional_age"] = float(conditional_age)
-    if any(p.get("beyond_curve") for p in points):
-        out["note"] = (f"Times beyond {x_max:g} are past the model's evaluated range; values there are "
-                       "held at the range end.")
+        if undefined:
+            notes.append(f"conditional_reliability is null where it is undefined: the model gives "
+                         f"R({conditional_age:g}) = 0, so no unit survives to that age.")
+    if ev.get("covariates") is not None:
+        used = ev["covariates"]
+        out["covariates_used"] = {c["name"]: c["value"] for c in used}
+        defaulted = [c for c in used if c["source"] == "default"]
+        if defaulted:
+            shown = ", ".join(f"{c['name']} = {c['value']:g}" if isinstance(c["value"], float)
+                              else f"{c['name']} = {c['value']}" for c in defaulted)
+            out["covariate_defaults"] = [c["name"] for c in defaulted]
+            notes.append(f"Proportional-hazards model evaluated at {shown} — the fit's default for each "
+                         "covariate not given (the training-data mean; the most common level for a "
+                         "categorical one). Pass `covariates` to evaluate other conditions.")
+    out["note"] = " ".join(notes)
     return out
 
 
@@ -1056,10 +1092,10 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None) -
         },
         "structure": result.get("structure"),
     }
-    if times and t:
-        xs = np.asarray(t, dtype=float)
-        ys = np.array([np.nan if v is None else v for v in sf], dtype=float)
-        out["reliability_at"] = [{"t": float(x), "reliability": _finite(np.interp(float(x), xs, ys))} for x in times]
+    if times and result.get("at"):
+        # Evaluated exactly at each time by the analysis (not read off the curve).
+        at = result["at"]
+        out["reliability_at"] = [{"t": x, "reliability": _finite(y)} for x, y in zip(at["t"], at["sf"])]
     if result.get("conditional_age"):
         out["conditional_age"] = result["conditional_age"]
     if result.get("ccf"):
@@ -1107,6 +1143,11 @@ def analyze_rbd(
     if placeholders:
         head["placeholders"] = placeholders
         head["warning"] = "Some blocks use placeholder (guessed) models — results are illustrative until replaced."
+    # Modelling warnings the analysis can't catch (e.g. a saved model fitted in
+    # another time unit) — the same ones create_rbd and the app's Validate show.
+    design = rbd_analysis.design_warnings(graph)
+    if design:
+        head["warnings"] = design
 
     if graph.get("repairable"):
         actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
@@ -1119,7 +1160,8 @@ def analyze_rbd(
                     "message": message}
         return {**head, "available": True, **_availability_summary(payload)}
 
-    result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age)
+    result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
+                                        at_times=times)
     return {**head, "available": True, **_reliability_summary(result, graph, times)}
 
 
@@ -1154,7 +1196,10 @@ def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None
                 "unit": unit or r.get("unit") or ""}
     if not distribution_id or not params:
         raise ToolError("Give a model_id, or distribution_id + params.")
-    return {"distribution_id": distribution_id, "params": [p.model_dump() for p in params], "unit": unit or ""}
+    # Params are checked by SurPyval name in the strategy service (an
+    # unrecognised name is refused, never read by position).
+    return {"distribution_id": fitting.resolve_distribution_id(distribution_id),
+            "params": [p.model_dump() for p in params], "unit": unit or ""}
 
 
 _MODEL_ID = Annotated[Optional[str], Field(description="A saved life model id (list_models). Give this OR "

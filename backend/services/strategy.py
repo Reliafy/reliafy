@@ -16,7 +16,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from backend.fitting import DISTRIBUTIONS
+from backend.fitting import DISTRIBUTIONS, FitError, param_values
 from repyability.non_repairable import NonRepairable
 from surpyval import KaplanMeier, logrank
 
@@ -69,14 +69,13 @@ def _model_from_params(distribution_id: str, params: list, extras: dict | None =
             f"'{distribution_id}' isn't a supported parametric distribution."
         )
     dist = entry["dist"]
-    by_name = {p["name"]: float(p["value"]) for p in (params or []) if "name" in p}
-    names = list(getattr(dist, "param_names", []) or [])
-    if names and all(n in by_name for n in names):
-        values = [by_name[n] for n in names]
-    else:
-        values = [float(p["value"]) for p in (params or [])]
-    if not values:
+    if not params:
         raise StrategyError("The model is missing its parameters.")
+    try:
+        # By SurPyval name; an unrecognised name is refused, never read by position.
+        values = param_values(distribution_id, params)
+    except FitError as exc:
+        raise StrategyError(str(exc)) from None
     # Extra fitted quantities from fit options (offset gamma, LFP p, ZI f0)
     # rebuild the model exactly as it was fitted.
     kwargs = {

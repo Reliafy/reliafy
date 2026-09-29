@@ -872,6 +872,69 @@ def resolve_distribution_id(name: str) -> str:
     )
 
 
+def param_values(distribution_id: str, params: list, where: str = "") -> list[float]:
+    """Parameter values of ``params`` in the distribution's own SurPyval order.
+
+    ``params`` is a list of ``{name, value}``. Named parameters must use the
+    distribution's SurPyval names (any order, case-insensitive) — an
+    unrecognised name such as ``mttf`` or ``scale`` is refused rather than
+    read by position, which would silently put the value in the wrong slot.
+    A list with no names at all is taken in order (the /api/v1 shorthand
+    ``[1200, 2.5]``) but must then have exactly one value per parameter.
+    Raises :class:`FitError` naming the valid parameters.
+    """
+    entry = DISTRIBUTIONS.get(distribution_id) or DISCRETE.get(distribution_id)
+    if entry is None:
+        raise FitError(
+            f"'{distribution_id}' isn't a supported plain distribution. "
+            f"Supported: {', '.join(DISTRIBUTIONS)}."
+        )
+    names = list(getattr(entry["dist"], "param_names", []) or [])
+    prefix = f"{where}: " if where else ""
+    takes = f"{entry['name']} takes the parameters {', '.join(names)}"
+    params = list(params or [])
+    if not params:
+        raise FitError(f"{prefix}no parameter values supplied — {takes}.")
+
+    def number(p) -> float:
+        try:
+            v = float(p["value"])
+        except (KeyError, TypeError, ValueError):
+            raise FitError(f"{prefix}parameter '{p.get('name', '?')}' must be a number.") from None
+        if not math.isfinite(v):
+            raise FitError(f"{prefix}parameter '{p.get('name', '?')}' must be a finite number.")
+        return v
+
+    named = [p for p in params if isinstance(p, dict) and p.get("name") not in (None, "")]
+    if not named:
+        values = [number(p) for p in params]
+        if names and len(values) != len(names):
+            raise FitError(f"{prefix}{takes} ({len(names)} values), got {len(values)}.")
+        return values
+    if len(named) != len(params):
+        raise FitError(f"{prefix}give every parameter a name, or none — {takes}.")
+
+    lookup = {n.lower(): n for n in names}
+    given: dict[str, float] = {}
+    unknown = []
+    for p in named:
+        key = lookup.get(str(p["name"]).strip().lower())
+        if key is None:
+            unknown.append(str(p["name"]))
+            continue
+        if key in given:
+            raise FitError(f"{prefix}parameter '{key}' is given twice.")
+        given[key] = number(p)
+    missing = [n for n in names if n not in given]
+    if unknown or missing:
+        problem = "; ".join(filter(None, (
+            f"unknown: {', '.join(unknown)}" if unknown else "",
+            f"missing: {', '.join(missing)}" if missing else "",
+        )))
+        raise FitError(f"{prefix}{takes} (SurPyval names) — {problem}.")
+    return [given[n] for n in names]
+
+
 def result_from_params(
     distribution_id: str,
     params: list,
@@ -891,9 +954,7 @@ def result_from_params(
             f"Supported: {', '.join(DISTRIBUTIONS)}."
         )
     dist = entry["dist"]
-    values = [float(p["value"]) for p in (params or []) if "value" in p]
-    if not values:
-        raise FitError("No parameter values supplied.")
+    values = param_values(distribution_id, params)
     kwargs = {
         k: float(v) for k, v in (extras or {}).items()
         if k in ("gamma", "p", "f0") and v is not None
