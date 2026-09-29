@@ -99,6 +99,24 @@ FREE_MAX_TRACKED_ITEMS = _int("FREE_MAX_TRACKED_ITEMS", 3)
 FREE_MAX_RCM_STUDIES = _int("FREE_MAX_RCM_STUDIES", 1)
 FREE_MAX_FLEETS = _int("FREE_MAX_FLEETS", 1)
 
+# Agent plan (US$2/month): Reliafy from an AI agent over MCP (OAuth) only — no
+# web-app features, no REST API, no fitting (agents fit locally with SurPyval).
+# Roomier storage than free; Pro stays unlimited.
+AGENT_MAX_DATASETS = _int("AGENT_MAX_DATASETS", 50)
+AGENT_MAX_MODELS = _int("AGENT_MAX_MODELS", 50)
+AGENT_MAX_RBDS = _int("AGENT_MAX_RBDS", 25)
+AGENT_MAX_DEGRADATION_MODELS = _int("AGENT_MAX_DEGRADATION_MODELS", 10)
+AGENT_MAX_TRACKED_ITEMS = _int("AGENT_MAX_TRACKED_ITEMS", 50)
+AGENT_MAX_RCM_STUDIES = _int("AGENT_MAX_RCM_STUDIES", 10)
+AGENT_MAX_FLEETS = _int("AGENT_MAX_FLEETS", 5)
+# Availability (Monte-Carlo) simulation is not part of the Agent plan: it stays
+# Pro / purchased credits (billing.premium_compute_allowed) on every surface.
+
+# MCP tool calls per user per UTC day (tools/list and initialize don't count).
+# Pro has no daily quota, only the per-user rate limit every request gets.
+MCP_FREE_DAILY_CALLS = _int("MCP_FREE_DAILY_CALLS", 50)
+MCP_AGENT_DAILY_CALLS = _int("MCP_AGENT_DAILY_CALLS", 2000)
+
 # One-time prepaid credit packs (Stripe Checkout, mode=payment). `grant_cents`
 # is the credit added on success (>= price_cents builds in the bonus).
 CREDIT_PACKS = [
@@ -133,6 +151,9 @@ STRIPE_WEBHOOK_SECRET = (
 STRIPE_PRO_PRICE_ID = (
     os.environ.get("STRIPE__PRICE_ID") or os.environ.get("STRIPE_PRO_PRICE_ID")
 )
+# Recurring Price id for the Agent plan (US$2/month, MCP only). Unset = the
+# plan isn't offered (subscribe with plan=agent answers 503).
+STRIPE_AGENT_PRICE_ID = os.environ.get("STRIPE_AGENT_PRICE_ID") or None
 
 # ---- Operator AI provider (server-side metered assistant) ------------------
 # The assistant runs on OUR key and is billed to users as credits. Pick the
