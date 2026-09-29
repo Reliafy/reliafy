@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import CopyId from "../components/CopyId.jsx";
 import Plot from "../components/Plot.jsx";
 import Select from "../components/Select.jsx";
+import FleetAlertsCard from "../components/FleetAlertsCard.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getFleet, putFleetItems, renameFleet } from "../api.js";
 
@@ -10,6 +11,19 @@ const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
   { value: "single", label: "First failures only", hint: "Each item fails at most once — which items are at risk." },
 ];
+
+const RATE_SOURCE_OPTIONS = [
+  { value: "manual", label: "Manual", hint: "The usage per period typed here (and per-item overrides)." },
+  { value: "estimated", label: "Estimated from API readings", hint: "Each item's rate learned from timestamped meter readings." },
+];
+
+// Period labels the server can turn into wall-clock time (mirrors
+// backend/services/fleet.py PERIOD_DAYS) — others can't have rates estimated.
+const CALENDAR_UNITS = ["day", "week", "month", "quarter", "year"];
+const isCalendarUnit = (label) => {
+  const key = String(label || "").trim().toLowerCase();
+  return CALENDAR_UNITS.includes(key) || (key.endsWith("s") && CALENDAR_UNITS.includes(key.slice(0, -1)));
+};
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -213,7 +227,23 @@ export default function FleetForecastPage() {
             <Select value={settings.method || "renewals"} onChange={(v) => setSetting("method", v)}
                     options={METHOD_OPTIONS} disabled={readOnly} />
           </label>
+          <label className="login-field" style={{ minWidth: 250 }}>
+            <span>Usage rate</span>
+            <Select value={settings.rate_source || "manual"} onChange={(v) => setSetting("rate_source", v)}
+                    options={RATE_SOURCE_OPTIONS} disabled={readOnly} />
+          </label>
         </div>
+        <p className="muted-line" style={{ marginBottom: 0 }}>
+          {settings.rate_source === "estimated"
+            ? "Each item uses the rate estimated from meter readings sent through the API with a read_at time; items without one fall back to their override, then the usage per period."
+            : "Rates come from the usage per period and per-item overrides. Switch to “Estimated” to use rates learned from timestamped API meter readings."}
+        </p>
+        {!isCalendarUnit(settings.period_label) && (
+          <p className="hint fleet-alert-warn" style={{ marginBottom: 0 }}>
+            “{settings.period_label}” isn’t a calendar unit (days, weeks, months, quarters or years), so usage
+            rates can’t be estimated from API readings — items use their manual rates.
+          </p>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: "1rem" }}>
@@ -255,6 +285,13 @@ export default function FleetForecastPage() {
                              value={it.rate ?? ""} placeholder={`default (${settings.default_rate ?? 0})`}
                              disabled={readOnly}
                              onChange={(e) => setItem(idx, "rate", e.target.value === "" ? null : e.target.value)} />
+                      {it.estimated_rate_n >= 1 && (
+                        <div className="hint fleet-rate-est"
+                             title={`Estimated from ${it.estimated_rate_n} interval(s) between API meter readings`}>
+                          est. {fmt(it.estimated_rate)} / {String(settings.period_label || "period").replace(/s$/i, "")}
+                          {!dirty && r.rate_basis === "estimated" ? " · in use" : ` · n=${it.estimated_rate_n}`}
+                        </div>
+                      )}
                     </td>
                     <td className="lib-n">{r.prob_any === undefined || dirty ? "—" : `${(r.prob_any * 100).toFixed(0)}%`}</td>
                     <td className="lib-n">{r.expected === undefined || dirty ? "—" : fmt(r.expected, 2)}</td>
@@ -279,6 +316,8 @@ export default function FleetForecastPage() {
           </p>
         )}
       </div>
+
+      {!readOnly && <FleetAlertsCard fleetId={fleet.id} version={fleet.updated_at} />}
 
       {forecast.status === "ok" && (forecast.per_period || []).some((v) => v > 0) && (
         <div className="card" style={{ marginTop: "1rem" }}>

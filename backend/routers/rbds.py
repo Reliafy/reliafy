@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Body, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from backend.db import get_session
 from backend.services import billing as billing_service
@@ -72,7 +72,7 @@ def save_rbd(
     ):
         return JSONResponse(
             status_code=402,
-            content={"detail": "You've reached the free-plan limit of 1 saved RBD. Upgrade to Pro for unlimited diagrams.", "code": "cap", "upgrade": True},
+            content={"detail": billing_service.cap_message(session, ctx.uid, "rbds"), "code": "cap", "upgrade": True},
         )
     try:
         rbd = rbds_service.save_rbd(
@@ -139,12 +139,68 @@ def delete_rbd(
     return JSONResponse(content={"ok": True})
 
 
+# Availability (repairable RBDs) runs thousands of Monte-Carlo replications on a
+# one-CPU service, so running it is a paid feature. Free users still build,
+# validate and view diagrams — and any saved (cached) result.
+AVAILABILITY_PRO_PAYLOAD = {
+    "detail": (
+        "Availability simulation is a paid feature. Subscribe to Pro or buy AI "
+        "credits — or download the diagram and run it locally with RePyability."
+    ),
+    "code": "pro_required",
+    "upgrade": True,
+}
+
+
+def availability_payload(
+    session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners
+) -> tuple[int, dict]:
+    """A repairable (availability) analysis as ``(status, payload)``: the saved
+    result when it matches the graph, else compute it — if the user is entitled
+    (402 + :data:`AVAILABILITY_PRO_PAYLOAD` otherwise).
+
+    ``rbd`` is the saved diagram the request is about (None for an unsaved
+    graph, which is never cached). A fresh result is written back only when
+    the caller may edit the diagram; read-only viewers (samples, shares) get
+    the computation without touching the owner's document. Shared by the REST
+    endpoints below and the MCP server, so both apply the same paid gate.
+    """
+    key = rbds_service.availability_cache_key(graph, t_max)
+    doc = session.rbds.find_one({"_id": rbd.id}) if rbd is not None else None
+    cached = rbds_service.cached_availability(doc, key)
+    entitled = billing_service.premium_compute_allowed(session, ctx.user)
+    if cached is not None and not (force and entitled):
+        # ``can_recompute`` lets the UI offer "Re-run" only to entitled users.
+        return 200, {**cached, "can_recompute": entitled}
+    if not entitled:
+        return 402, AVAILABILITY_PRO_PAYLOAD
+
+    result = rbds_service.analyze_graph(session, graph, resolve_owners, t_max=t_max)
+    computed_at = None
+    if (
+        rbd is not None
+        and access_service.can_write(ctx, rbd.owner_id)
+        and rbds_service.should_store_availability(doc, key)
+    ):
+        computed_at = rbds_service.store_availability(session, rbd.id, key, result, ctx.uid)
+    return 200, {**result, "cached": False, "computed_at": computed_at, "can_recompute": True}
+
+
+def _availability(
+    session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners
+) -> JSONResponse:
+    status, payload = availability_payload(session, ctx, graph, t_max, rbd, force, resolve_owners)
+    return JSONResponse(status_code=status, content=payload)
+
+
 @router.post("/rbds/analyze")
 def analyze_graph(
     graph: dict = Body(..., embed=True),
     t_max: float | None = Body(default=None),
     covariates: dict = Body(default={}),
     conditional_age: float | None = Body(default=None),
+    rbd_id: str | None = Body(default=None),
+    force: bool = Body(default=False),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -154,8 +210,17 @@ def analyze_graph(
     ``covariates`` maps node id -> covariate values for proportional-hazards
     nodes. ``conditional_age`` conditions the curves on having already survived
     to that age (so the result is the conditional survival).
+
+    Repairable graphs run the (paid) availability simulation. ``rbd_id`` names
+    the saved diagram being edited so a saved result can be served / stored;
+    ``force`` re-runs even when a saved result matches (entitled users only).
     """
     try:
+        if graph.get("repairable"):
+            rbd = None
+            if rbd_id:
+                rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
+            return _availability(session, ctx, graph, t_max, rbd, force, ctx.read_owners)
         return JSONResponse(
             content=rbds_service.analyze_graph(
                 session,
@@ -179,6 +244,7 @@ def analyze_graph(
 def analyze_rbd(
     rbd_id: str,
     t_max: float | None = None,
+    force: bool = False,
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -186,11 +252,13 @@ def analyze_rbd(
     rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
     if rbd is None:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
+    graph = rbd.graph or {}
+    owners = [*ctx.read_owners, rbd.owner_id]
     try:
+        if graph.get("repairable"):
+            return _availability(session, ctx, graph, t_max, rbd, force, owners)
         return JSONResponse(
-            content=rbds_service.analyze_graph(
-                session, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id], t_max=t_max
-            )
+            content=rbds_service.analyze_graph(session, graph, owners, t_max=t_max)
         )
     except rbds_service.RbdNotFound:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
@@ -201,6 +269,43 @@ def analyze_rbd(
         return JSONResponse(
             status_code=500, content={"detail": f"Failed to analyse RBD: {exc}"}
         )
+
+
+def python_download(filename: str, source: str) -> Response:
+    """A generated script as a file download."""
+    return Response(
+        content=source,
+        media_type="text/x-python; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/rbds/{rbd_id}/export.py")
+def export_rbd_python(
+    rbd_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> Response:
+    """Download a saved RBD as a standalone SurPyval + RePyability script.
+
+    Free for anyone who can view the diagram (owner, team, share recipient,
+    samples) — not metered and not plan-gated. Sub-systems and saved models
+    resolve in the same scope as the diagram's analysis.
+    """
+    rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
+    if rbd is None or rbd.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "RBD not found."})
+    try:
+        filename, source = rbds_service.export_python(
+            session, rbd.name, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id]
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Failed to export RBD %s as Python", rbd_id)
+        return JSONResponse(
+            status_code=500, content={"detail": f"Failed to export RBD: {exc}"}
+        )
+    return python_download(filename, source)
 
 
 @router.post("/rbds/validate")

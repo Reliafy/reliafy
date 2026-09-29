@@ -20,11 +20,6 @@ from backend.schema import RcmStudy
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/rcm")
 
-_CAP_MSG = (
-    "You've reached the free-plan limit of 1 RCM study. "
-    "Upgrade to Pro for unlimited studies."
-)
-
 # The decision-diagram guidance surfaced in the UI. Suggestions follow the
 # classic RCM logic: hidden failures need failure-finding; safety/environmental
 # consequences demand proactive tasks or redesign; economic consequences allow
@@ -121,7 +116,7 @@ def create_study(
         and not billing_service.is_admin_user(ctx.user)
         and billing_service.would_exceed_cap(session, ctx.uid, "rcm_studies")
     ):
-        return JSONResponse(status_code=402, content={"detail": _CAP_MSG, "code": "cap", "upgrade": True})
+        return JSONResponse(status_code=402, content={"detail": billing_service.cap_message(session, ctx.uid, "rcm_studies"), "code": "cap", "upgrade": True})
     try:
         study = rcm_service.create_study(session, name, system, description, ctx.write_owner)
     except rcm_service.RcmValidationError as exc:
