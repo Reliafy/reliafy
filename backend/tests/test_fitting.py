@@ -481,3 +481,20 @@ def test_randomness_verdicts():
 
     r4 = fitting.fit("lognormal", wear, {"x": "t"}, None, None, None)
     assert "randomness" not in r4
+
+
+def test_expo_weibull_paper_transform_is_stable_and_matches_surpyval():
+    """Reliafy's log-space Exponentiated Weibull paper transform equals
+    SurPyval's wherever SurPyval's is finite, and stays finite for the tiny
+    ``mu`` a near-uniform sample's MLE can reach (where ``p ** (1/mu)``
+    underflows)."""
+    from surpyval import ExpoWeibull
+
+    from backend.fitting import _expo_weibull_paper_y
+
+    p = np.linspace(0.01, 0.99, 25)
+    for mu in (0.3, 1.0, 4.0):
+        ref = ExpoWeibull.mpp_y_transform(p, 50.0, 1.5, mu)
+        assert np.allclose(_expo_weibull_paper_y(p, mu), ref, rtol=1e-12, atol=1e-12)
+    tiny = _expo_weibull_paper_y(p, 5e-4)
+    assert np.isfinite(tiny).all() and np.all(np.diff(tiny) > 0)  # still monotone

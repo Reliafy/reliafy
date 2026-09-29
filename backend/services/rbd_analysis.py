@@ -928,7 +928,7 @@ def analyze(
             "fussell_vesely": _imp(rbd._fussell_vesely(node_probs, fv_type="c")),
             "risk_achievement_worth": _imp(rbd._risk_achievement_worth(node_probs)),
             "risk_reduction_worth": _imp(rbd._risk_reduction_worth(node_probs)),
-            "criticality": _imp(rbd._criticality_importance(node_probs)),
+            "criticality": _imp(rbd._criticality_importance(node_probs, kind="failure")),
             "improvement_potential": _imp(rbd._improvement_potential(node_probs)),
         }
     except Exception:
@@ -1221,10 +1221,10 @@ def _steady_importance(rbd, labels, gate_ids, overrides, steady) -> dict:
         for key, vals in measures.items():
             row[key] = _f(vals[nid]) if nid in vals else None
         # Failure-oriented criticality: the share of system unavailability
-        # attributable to this block, I_B·(1−A_i)/(1−A_sys). RePyability's
-        # ``criticality_importance`` is the success-oriented form
-        # (I_B·A_i/A_sys), which is ≈1 for every series block of a
-        # high-availability system and so doesn't rank them.
+        # attributable to this block, I_B·(1−A_i)/(1−A_sys) — RePyability's
+        # ``criticality_importance`` default since 0.9 (the success-oriented
+        # form, I_B·A_i/A_sys, is ≈1 for every series block of a
+        # high-availability system and so doesn't rank them).
         b = row.get("birnbaum")
         if b is not None and a_i is not None and sys_unavail and sys_unavail > 0:
             row["unavailability_criticality"] = _f(b * (1.0 - a_i) / sys_unavail)
