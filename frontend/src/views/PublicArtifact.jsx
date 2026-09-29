@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Plot from "../components/Plot.jsx";
-import PublicNav from "../components/PublicNav.jsx";
-import PublicFooter from "../components/PublicFooter.jsx";
+import Logo from "../components/Logo.jsx";
 import ResultView from "../components/ResultView.jsx";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
@@ -17,7 +16,10 @@ import { getPublicArtifact } from "../api.js";
 // Public, read-only view of a shared artifact (/p/:token) — no account
 // needed. Renders the same payloads as the in-app detail pages through the
 // same presentational components. This route is its own lazy chunk so the
-// marketing pages don't inherit its Plotly dependency.
+// marketing pages don't inherit its Plotly dependency. The page is
+// deliberately bare — just the brand bar and the content, no marketing nav,
+// sign-up prompt or footer — because it's what an owner (or their agent)
+// hands to a client or colleague.
 
 const KIND_LABEL = {
   models: "Fitted life model",
@@ -161,6 +163,15 @@ export default function PublicArtifact() {
       .catch((e) => setError(e.message));
   }, [token]);
 
+  // Share links are private to whoever holds them: keep them out of search.
+  useEffect(() => {
+    const meta = document.createElement("meta");
+    meta.name = "robots";
+    meta.content = "noindex";
+    document.head.appendChild(meta);
+    return () => meta.remove();
+  }, []);
+
   // Name the tab after the shared artifact (the SPA shell's title is generic).
   useEffect(() => {
     if (!data?.artifact?.name) return undefined;
@@ -173,7 +184,12 @@ export default function PublicArtifact() {
 
   return (
     <div className="landing">
-      <PublicNav />
+      <header className="landing-nav share-bar">
+        <Link className="brand" to="/">
+          <Logo size={26} />
+          <span className="brand-name">Reliafy</span>
+        </Link>
+      </header>
       <div className="public-artifact">
         {error && (
           <div className="card empty" style={{ margin: "3rem auto", maxWidth: 520 }}>
@@ -188,18 +204,12 @@ export default function PublicArtifact() {
               <div>
                 <div className="crumb">{KIND_LABEL[data.collection] || "Analysis"} · shared by {data.shared_by}</div>
                 <h1>{data.artifact.name}</h1>
-                <p>
-                  Read-only view, shared via Reliafy.{" "}
-                  <Link to="/login?signup" className="evidence-link">Create a free account</Link>{" "}
-                  to build your own.
-                </p>
               </div>
             </header>
             <Body collection={data.collection} a={data.artifact} token={token} />
           </div>
         )}
       </div>
-      <PublicFooter />
     </div>
   );
 }
