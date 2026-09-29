@@ -1,4 +1,5 @@
-// The Pro subscription price as shown to users. The amount actually charged
-// is the Stripe Price (STRIPE_PRO_PRICE_ID) — keep this in step with it. Used
-// by the landing page tiers and the /billing comparison.
+// Subscription prices as shown to users. The amounts actually charged are the
+// Stripe Prices (STRIPE_PRO_PRICE_ID, STRIPE_AGENT_PRICE_ID) — keep these in
+// step with them. Used by the landing page tiers and the /billing comparison.
 export const PRO_PRICE = { amount: "US$19", per: "per month" };
+export const AGENT_PRICE = { amount: "US$2", per: "per month" };
