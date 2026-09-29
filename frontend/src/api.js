@@ -394,7 +394,22 @@ export function buyCredits(packId) {
 
 // Start a Stripe Checkout for the Pro subscription; returns { url }.
 export function subscribePro() {
-  return request("/api/billing/subscribe", { method: "POST" });
+  return subscribe("pro");
+}
+
+// Start a Stripe Checkout for the Agent (MCP-only) subscription; returns { url }.
+export function subscribeAgent() {
+  return subscribe("agent");
+}
+
+// An Agent subscriber moving to Pro (or back) is switched on their existing
+// subscription server-side; { url } is then just the billing page.
+function subscribe(plan) {
+  return request("/api/billing/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ plan }),
+  });
 }
 
 // Open the Stripe billing portal; returns { url }.
