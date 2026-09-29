@@ -1515,20 +1515,27 @@ def delete_model(
     model_id: Annotated[str, Field(description="One of the user's own model ids (list_models) — life or recurrent.")],
 ) -> dict[str, Any]:
     """Permanently delete one of the user's own saved models (life or recurrent). Shared samples can't be
-    deleted. As in the app, it isn't blocked by what uses the model: the response lists the RBDs and fleet
-    forecasts that referenced it (fleets go stale). Always confirm with the user first, naming the model —
-    this can't be undone."""
+    deleted, and neither can a model a fleet forecast runs on: the answer names those fleets, which must be
+    relinked or deleted in the app first. RBDs that used the model are listed in the response. Always confirm
+    with the user first, naming the model — this can't be undone."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     m = models_service.get_model(db, model_id, _owners(uid))
     if m is not None:
         if samples_service.is_sample(m.owner_id):
             raise _sample_refusal("model", m.name)
+        # Stricter than the app: an agent mustn't leave a fleet forecast
+        # running on nothing, so a model a fleet uses is refused outright.
+        fleets = [f for f in fleet_service.list_fleets(db, uid) if f.model_id == m.id]
+        if fleets:
+            names = ", ".join(f"\u201c{f.name}\u201d ({_url(f'/fleet/forecasts/{f.id}')})" for f in fleets)
+            raise ToolError(
+                f"Model \u201c{m.name}\u201d can't be deleted: {len(fleets)} fleet forecast"
+                f"{'s' if len(fleets) != 1 else ''} run{'' if len(fleets) != 1 else 's'} on it ({names}). "
+                "Relink or delete those fleets in the app first, then delete the model.")
         affected = {
             "rbds": _rbds_referencing(db, uid, lambda d: isinstance(d.get("model"), dict)
                                       and (d["model"].get("modelId") or d["model"].get("model_id")) == m.id),
-            "fleets": [{"id": f.id, "name": f.name} for f in fleet_service.list_fleets(db, uid)
-                       if f.model_id == m.id],
         }
         models_service.delete_model(db, m.id, uid)
         kind = "life"
@@ -1538,16 +1545,16 @@ def delete_model(
             raise ToolError("Model not found.")
         if samples_service.is_sample(doc.owner_id):
             raise _sample_refusal("model", doc.name)
-        m, affected, kind = doc, {"rbds": [], "fleets": []}, "recurrent"
+        m, affected, kind = doc, {"rbds": []}, "recurrent"
         recurrent_service.delete_model(db, doc.id, uid)
     _record(db, "mcp_delete", "delete_model")
     out = {"deleted": True, "model_id": m.id, "name": m.name, "kind": kind}
     affected = {k: v for k, v in affected.items() if v}
     if affected:
         out["affected"] = affected
-        out["note"] = ("These referenced the deleted model. Fleet forecasts on it go stale until relinked. RBD "
-                       "blocks keep the parameters copied onto them, but no longer track the model — and "
-                       "proportional-hazards or non-parametric blocks, which re-read it, stop working.")
+        out["note"] = ("These referenced the deleted model. RBD blocks keep the parameters copied onto them, "
+                       "but no longer track the model — and proportional-hazards or non-parametric blocks, "
+                       "which re-read it, stop working.")
     return out
 
 

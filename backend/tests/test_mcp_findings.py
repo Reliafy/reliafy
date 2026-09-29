@@ -568,6 +568,15 @@ def test_delete_tools_follow_the_apps_rules(samples):
     msg = _err(_call(a, "delete_dataset", {"dataset_id": did}))
     assert "used by 1 model" in msg and "Mine" in msg
 
+    # Stricter than the app: a model a fleet forecast runs on is refused, naming the fleet.
+    from backend.services import fleet as fleet_service
+
+    fleet = fleet_service.create_fleet(samples.db, "Pump fleet", mid, A)
+    msg = _err(_call(a, "delete_model", {"model_id": mid}))
+    assert "can't be deleted" in msg and "Pump fleet" in msg and f"/fleet/forecasts/{fleet.id}" in msg
+    assert samples.db.models.find_one({"_id": mid}) is not None
+    fleet_service.delete_fleet(samples.db, fleet.id, A)
+
     out = _ok(_call(a, "delete_model", {"model_id": mid}))
     assert out["deleted"] and out["affected"]["rbds"] == [{"id": rbd["id"], "name": "Uses it"}]
     assert samples.db.models.find_one({"_id": mid}) is None

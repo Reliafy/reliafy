@@ -485,7 +485,7 @@ const MCP_TOOLS = [
   ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model."],
   ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items (Pro)."],
   ["list_fleet_alerts / create_fleet_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API (Pro)."],
-  ["delete_model / delete_dataset / delete_rbd", "Permanently delete your own models, datasets and diagrams (never shared samples; Claude asks first). A dataset still used by a model can’t be deleted, as in the app."],
+  ["delete_model / delete_dataset / delete_rbd", "Permanently delete your own models, datasets and diagrams (never shared samples; Claude asks first). A dataset still used by a model can’t be deleted, nor a model a fleet forecast runs on."],
   ["upgrade_link", "A Stripe checkout link for Reliafy Agent or Pro, for you to open and pay yourself — nothing is charged until you complete it. Works even after the daily limit."],
 ];
 
