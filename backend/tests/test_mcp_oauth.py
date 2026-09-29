@@ -606,7 +606,7 @@ def test_connected_apps_list_and_revoke(env):
 
 # ---- entitlement -------------------------------------------------------------------------------
 
-def test_free_oauth_user_can_list_tools_but_calls_explain_pro(env, monkeypatch):
+def test_free_oauth_user_uses_the_tools_but_pro_only_ones_explain_pro(env, monkeypatch):
     from backend import config
     from backend.services import tokens as tokens_service
 
@@ -615,22 +615,26 @@ def test_free_oauth_user_can_list_tools_but_calls_explain_pro(env, monkeypatch):
     assert _post_mcp(env, tokens["access_token"]).status_code == 200
 
     async def use(client):
-        return await client.list_tools(), await client.call_tool("list_models", {})
+        return (await client.list_tools(), await client.call_tool("list_models", {}),
+                await client.call_tool("fit_distribution", {"data": [100, 200, 300]}))
 
-    tools, call = _mcp(tokens["access_token"], use)
-    assert len(tools.tools) == 19
-    assert call.is_error
-    assert "part of Reliafy Pro" in call.content[0].text and f"{BASE}/billing" in call.content[0].text
+    tools, listed, fit = _mcp(tokens["access_token"], use)
+    assert len(tools.tools) == 20
+    assert not listed.is_error  # the free plan's tools work over OAuth...
+    # ...while fitting is Pro, with the local-SurPyval route spelled out.
+    assert fit.is_error
+    assert "part of Reliafy Pro" in fit.content[0].text and "save_model" in fit.content[0].text
+    assert f"{BASE}/billing" in fit.content[0].text
 
     # API tokens keep the transport-level 403 for free users...
     api = tokens_service.create_token(env.db, U, "script")["token"]
     r = _post_mcp(env, api)
-    assert r.status_code == 403 and "MCP access is part of Reliafy Pro" in r.json()["detail"]
+    assert r.status_code == 403 and "API token is part of Reliafy Pro" in r.json()["detail"]
 
-    # ...and once Pro, both work.
+    # ...and once Pro, both work, fitting included.
     env.db.users.update_one({"_id": U}, {"$set": {"plan": "pro"}})
     assert _post_mcp(env, api).status_code == 200
-    ok = _mcp(tokens["access_token"], lambda c: c.call_tool("list_models", {}))
+    ok = _mcp(tokens["access_token"], lambda c: c.call_tool("fit_distribution", {"data": [100, 200, 300]}))
     assert not ok.is_error
 
 
