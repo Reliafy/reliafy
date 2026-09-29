@@ -1,0 +1,13 @@
+# The worker's runtime, pinned to match the launcher's environment (the RBD is
+# pickled there and unpickled here). SurPyval and RePyability are installed
+# --no-deps by the Dockerfile: SurPyval's declared matplotlib is never
+# imported by a simulation, and it's the biggest thing we'd ship.
+numpy==2.5.3
+scipy==1.18.1
+pandas==3.0.6
+networkx==3.7
+autograd==1.9.1
+formulaic==1.2.2
+joblib==1.6.0
+numdifftools==0.11.1
+tqdm==4.70.1

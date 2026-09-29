@@ -14,12 +14,12 @@ import hashlib
 import json
 
 import numpy as np
-from repyability.rbd import _montecarlo as montecarlo
-from repyability.rbd.repairable_rbd import PARALLEL_BLOCK, _simulate_block, _Tally
+from repyability.rbd.repairable_rbd import _Tally
 
+import blocks as blk
 from backend.services.rbd_analysis import _build_repairable_rbd
 
-METHOD = "c"  # cut sets, as the app's analyze_availability uses
+METHOD = blk.METHOD
 
 
 def build(spec: dict):
@@ -29,24 +29,14 @@ def build(spec: dict):
 
 
 def plan_blocks(spec: dict) -> list[tuple[int, int]]:
-    """Every block as (size, seed), in order, exactly as _run_parallel makes them."""
-    seeds = np.random.SeedSequence(spec["seed"])
-    return [(size, montecarlo.block_seed(seeds)) for size in montecarlo.blocks(spec["N"], PARALLEL_BLOCK)]
+    return blk.plan_blocks(spec["N"], spec["seed"])
 
 
-def share(n_blocks: int, index: int, count: int) -> range:
-    """Task ``index`` of ``count``'s contiguous block indices."""
-    return range(n_blocks * index // count, n_blocks * (index + 1) // count)
+share = blk.share
 
 
 def iter_blocks(spec: dict, indices):
-    """(index, tally) for each block, one at a time (a block's trace is big:
-    a caller that summarises and drops it keeps memory flat)."""
-    rbd, working, broken = build(spec)
-    blocks = plan_blocks(spec)
-    t = float(spec["t_simulation"])
-    for i in indices:
-        yield i, _simulate_block((rbd, t, working, broken, METHOD, blocks[i][0], blocks[i][1], False))
+    yield from blk.iter_blocks(build(spec), spec["t_simulation"], plan_blocks(spec), indices)
 
 
 def run_blocks(spec: dict, indices) -> list[tuple[int, _Tally]]:

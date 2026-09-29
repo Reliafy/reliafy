@@ -21,6 +21,7 @@ import argparse
 import datetime as dt
 import json
 import pathlib
+import pickle
 import subprocess
 import sys
 import tempfile
@@ -68,7 +69,11 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         spec_path = pathlib.Path(tmp) / "spec.json"
         spec_path.write_text(json.dumps(spec))
-        sh("gcloud", "storage", "cp", str(spec_path), f"{prefix}/spec.json", "--project", PROJECT)
+        # The worker gets the RBD ready-built (pickled): it then imports only
+        # RePyability, not Reliafy's backend.
+        pkl_path = pathlib.Path(tmp) / "rbd.pkl"
+        pkl_path.write_bytes(pickle.dumps(sim.build(spec), protocol=5))
+        sh("gcloud", "storage", "cp", str(spec_path), str(pkl_path), f"{prefix}/", "--project", PROJECT)
 
         launched = time.time()
         execution = json.loads(sh(
@@ -95,6 +100,8 @@ def main() -> None:
         "first_task_start_after_launch_s": round(min(t["process_start_unix"] for t in timing) - launched, 2),
         "last_task_start_after_launch_s": round(max(t["process_start_unix"] for t in timing) - launched, 2),
         "import_s_max": round(max(t["import_s"] for t in timing), 2),
+        "imports_slowest_task": max(timing, key=lambda t: t["import_s"]).get("imports"),
+        "spec_load_s_max": round(max(t["spec_load_s"] for t in timing), 2),
         "compute_s_max": round(max(t["compute_s"] for t in timing), 2),
         "compute_s_sum": round(sum(t["compute_s"] for t in timing), 2),
         "cpu_s_sum": round(sum(t["cpu_s"] for t in timing), 2),
