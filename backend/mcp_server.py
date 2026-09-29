@@ -16,10 +16,19 @@ each entry of :data:`BEARER_RESOLVERS` in turn:
   Pro-only on the cloud (:func:`billing.api_access_allowed`, 403 otherwise),
   always allowed self-hosted;
 * OAuth access tokens (``rlfo_…``) issued by Reliafy's own authorization
-  server (:mod:`backend.services.oauth`) — how Claude connectors sign in. A
-  free-plan user can connect and list the tools; each tool call then returns
-  a clear "this is part of Pro" tool error rather than failing the transport,
-  so Claude can say why instead of showing a broken connection.
+  server (:mod:`backend.services.oauth`) — how Claude connectors sign in, on
+  any plan.
+
+Plans (:func:`billing.mcp_plan`, attached to the request as ``mcp_plan``):
+Pro — and API tokens, operators and self-hosted installs — has every tool
+with no quota. Free and Agent (US$2/month, MCP only) OAuth users get the
+tools except fitting and fleets (Pro-only: agents fit locally with SurPyval
+and save with ``save_model``), within a daily tool-call quota and their
+plan's storage caps. Availability simulation keeps the app's own paid gate
+(Pro or purchased credits) on every plan. Every refusal is a tool error that
+says what the limit is, when it resets and how to upgrade — never a
+transport failure — so Claude can tell the user plainly instead of showing
+a broken connection.
 
 Either way: the same per-user rate limit, and the same scope — the user's
 personal data plus the shared samples (as ``/api/v1``). A missing or invalid
@@ -73,14 +82,61 @@ from backend.services.strategy import StrategyError
 logger = logging.getLogger(__name__)
 
 MCP_PRO_REQUIRED = (
-    "MCP access is part of Reliafy Pro. Upgrade to Pro, then create an API "
-    "token under Settings > API access."
+    "MCP access with an API token is part of Reliafy Pro. Upgrade to Pro, or drop the token "
+    "header and sign in to Reliafy from your MCP client (OAuth) to use the Free or Agent plan."
 )
 
 
-def _oauth_pro_required() -> str:
-    return (f"Using Reliafy from Claude is part of Reliafy Pro — upgrade at "
-            f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}/billing, then try again.")
+AGENT_PRICE = "US$2/month"
+PRO_PRICE = "US$19/month"
+_PLAN_NAMES = {"free": "Free", "agent": "Agent", "pro": "Pro"}
+
+
+def _billing_url() -> str:
+    return f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}/billing"
+
+
+def _upgrade_path(plan: str, lead: str = "To lift it, upgrade") -> str:
+    """How to lift a limit, for the caller's plan: Free users are offered both
+    paid plans, Agent users the one above them."""
+    if plan == "agent":
+        return f"{lead} to Reliafy Pro ({PRO_PRICE}) at {_billing_url()}."
+    return f"{lead} to Reliafy Agent ({AGENT_PRICE}, MCP) or Pro ({PRO_PRICE}) at {_billing_url()}."
+
+
+def _until(when) -> str:
+    """'in 5 h 12 min' until a reset time, for limit messages."""
+    minutes = max(1, int((when - billing_service._now()).total_seconds() // 60))
+    hours, minutes = divmod(minutes, 60)
+    return f"in {hours} h {minutes} min" if hours else f"in {minutes} min"
+
+
+def _pro_only_message(tool: str) -> str:
+    if tool in _FIT_TOOLS:
+        return (f"Fitting in Reliafy is part of Reliafy Pro ({PRO_PRICE}) and isn't included on this plan. "
+                "Fit the data locally with SurPyval instead (pip install surpyval; e.g. "
+                "surpyval.Weibull.fit(x=times, c=censored) — 0 = failed, 1 = still running), then save the "
+                "fitted parameters to Reliafy with save_model. Or upgrade to Pro at "
+                f"{_billing_url()} to fit here.")
+    return (f"Fleet forecasts and fleet alerts are part of Reliafy Pro ({PRO_PRICE}) — they run on usage "
+            f"pushed through the Pro API — and aren't included on this plan. Upgrade at {_billing_url()}.")
+
+
+def _quota_message(plan: str, quota: int) -> str:
+    reset = billing_service.next_day_start()
+    return (f"You've used all {quota:,} Reliafy tool calls included per day on the {_PLAN_NAMES[plan]} "
+            f"plan. The limit resets at 00:00 UTC ({_until(reset)}). " + _upgrade_path(plan))
+
+
+def _simulation_message(plan: str) -> str:
+    """Why analyze_rbd can't simulate for a Free/Agent MCP user, and the two
+    ways forward: Pro, or run the same diagram locally for free."""
+    return (f"Availability simulation isn't included on the {_PLAN_NAMES[plan]} plan: it needs Reliafy Pro "
+            f"({PRO_PRICE}; purchased AI credits unlock it too) — upgrade at {_billing_url()}. It's free to run "
+            "locally: export_rbd_python (Download as Python in the app) gives a standalone script that runs "
+            "this diagram's simulation with RePyability (pip install surpyval repyability). A saved result "
+            "is served here whenever one exists.")
+
 
 # ---------------------------------------------------------------------------
 # Auth: bearer token -> user
@@ -123,9 +179,10 @@ def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
     200 with the user, 401 (missing/invalid) or 403 (valid API token, not
     entitled).
 
-    An OAuth user who isn't entitled still gets 200, with ``mcp_locked`` set
-    to the upgrade message: the connection works, tools/list works, and every
-    tool call answers with that message (see :func:`_tool`)."""
+    The user carries ``mcp_plan``: 'pro' for anyone with API access (Pro,
+    operators, self-hosted — the only way an ``rlf_`` token gets in), else
+    the OAuth user's own plan, 'agent' or 'free', which :func:`_tool` gates
+    tools and quotas on."""
     scheme, _, raw = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not raw.strip():
         return 401, None, (
@@ -137,9 +194,9 @@ def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
         return 401, None, "Invalid, expired or revoked token."
     if not billing_service.api_access_allowed(db, user):
         if user.get("via_oauth"):
-            return 200, {**user, "mcp_locked": _oauth_pro_required()}, ""
+            return 200, {**user, "mcp_plan": billing_service.mcp_plan(db, user)}, ""
         return 403, None, MCP_PRO_REQUIRED
-    return 200, user, ""
+    return 200, {**user, "mcp_plan": "pro"}, ""
 
 
 # ---------------------------------------------------------------------------
@@ -152,8 +209,8 @@ signed-in user's own Reliafy data plus the shared sample library.
 
 What you can do:
 - Life data: fit_distribution to failure times (inline data or a saved dataset), fit_and_save_model to keep \
-it as a model, and evaluate a saved model with reliability_at. list_models / get_model read what is saved; list_datasets / \
-upload_dataset manage the data.
+it as a model, or save_model to save parameters fitted elsewhere; evaluate a saved model with reliability_at. \
+list_models / get_model read what is saved; list_datasets / upload_dataset manage the data.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
 B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script).
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
@@ -172,6 +229,13 @@ standby items in series. Never silently invent failure data: ask for MTBFs, or m
 placeholder=true and say so.
 - Availability simulation for repairable RBDs is a paid feature; a saved result is served when one exists.
 - Every artifact has a url; share it so the user can open the result in Reliafy.
+
+Plans: fitting (fit_distribution, fit_and_save_model) and the fleet tools are Reliafy Pro. On the Free and \
+Agent plans, fit locally with SurPyval (pip install surpyval; same 0 = failed, 1 = running convention) and \
+save the parameters with save_model. Availability simulation needs Pro (or purchased credits); otherwise \
+export_rbd_python runs it locally. Free and Agent also have a daily tool-call quota and storage limits. \
+When a tool answers that a limit or plan stops it, tell the user plainly what it says — the limit, when it \
+resets and how to upgrade — and don't retry it.
 """
 
 mcp = MCPServer(
@@ -199,6 +263,27 @@ _USER_ERRORS = (
 )
 
 
+# Pro-only tools. Fitting runs server-side CPU the cheaper plans don't pay for
+# (agents fit locally with SurPyval, then save_model); fleets depend on usage
+# arriving through the Pro API.
+_FIT_TOOLS = {"fit_distribution", "fit_and_save_model"}
+_FLEET_TOOLS = {"list_fleets", "fleet_forecast", "list_fleet_alerts", "create_fleet_alert"}
+PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
+
+
+def _gate(ctx: Context, name: str) -> None:
+    """Plan gating for one tool call: Pro-only tools, then the daily quota
+    (counted only for calls that pass the gate)."""
+    user = _caller(ctx)
+    plan = user.get("mcp_plan", "pro")
+    if plan == "pro":
+        return
+    if name in PRO_ONLY_TOOLS:
+        raise ToolError(_pro_only_message(name))
+    if not billing_service.consume_mcp_call(_db(), user["uid"], plan):
+        raise ToolError(_quota_message(plan, billing_service.mcp_daily_quota(plan)))
+
+
 def _tool(name: str, annotations: ToolAnnotations, title: str):
     """Register a tool, translating user-facing failures into tool errors."""
 
@@ -207,9 +292,7 @@ def _tool(name: str, annotations: ToolAnnotations, title: str):
         def wrapper(*args, **kwargs):
             ctx = next((v for v in (*args, *kwargs.values()) if isinstance(v, Context)), None)
             if ctx is not None:
-                locked = (_caller(ctx) or {}).get("mcp_locked")
-                if locked:
-                    raise ToolError(locked)
+                _gate(ctx, name)
             try:
                 return fn(*args, **kwargs)
             except ToolError:
@@ -254,9 +337,16 @@ def _url(path: str) -> str:
     return f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}{path}"
 
 
-def _cap(db, uid: str, kind: str, label: str) -> None:
-    if billing_service.would_exceed_cap(db, uid, kind):
-        raise ToolError(f"You've reached your plan's limit for saved {label}.")
+def _cap(db, user: dict, kind: str, label: str) -> None:
+    """Refuse a save past the caller's plan storage cap (operators have none)."""
+    if billing_service.is_admin_user(user) or not billing_service.would_exceed_cap(db, user["uid"], kind):
+        return
+    plan = billing_service.account(db, user["uid"])["active_plan"]
+    cap = billing_service.cap_for(kind, plan)
+    raise ToolError(
+        f"You've reached the {_PLAN_NAMES[plan]} plan's limit of {cap} saved {label}. The limit doesn't "
+        f"reset: delete {label} you no longer need in Reliafy to make room. "
+        + _upgrade_path(plan, lead="Or, for more storage, upgrade"))
 
 
 def _record(db, name: str, tool: str) -> None:
@@ -498,7 +588,7 @@ def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, datase
     name = (name or "").strip()
     if not name:
         raise ToolError("A `name` is required to save the model.")
-    _cap(db, uid, "models", "models")
+    _cap(db, user, "models", "models")
     created = None
     if dataset is None:
         csv_bytes = df.to_csv(index=False).encode()
@@ -506,7 +596,7 @@ def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, datase
         # one (never delete it below), otherwise this call creates it.
         reused = db.datasets.find_one({"checksum": storage.checksum(csv_bytes), "owner_id": uid})
         if reused is None:
-            _cap(db, uid, "datasets", "datasets")
+            _cap(db, user, "datasets", "datasets")
         dataset = datasets_service.create_dataset(db, f"{name} (data)", csv_bytes, uid)
         created = None if reused is not None else dataset
     try:
@@ -549,7 +639,8 @@ def fit_distribution(
     fit_and_save_model to keep the model. Reliafy's censoring convention: 0 = the unit failed, 1 = still
     running (suspended); if the data marks failures with 1, pass c_invert=true. A fit that says every (or
     all but one) row is censored almost always means the flags are inverted. Weibull beta < 1 = infant
-    mortality, ≈ 1 = random failures, > 1 = wear-out."""
+    mortality, ≈ 1 = random failures, > 1 = wear-out. Reliafy Pro only: on the Free and Agent plans, fit
+    locally with SurPyval and save the parameters with save_model."""
     return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
                 count_column=count_column, covariates=covariates, unit=unit, save=False, name=None)
@@ -574,10 +665,99 @@ def fit_and_save_model(
     """Fit a life distribution exactly as fit_distribution does, then save it as a model in the user's
     Reliafy workspace (inline data is saved as a dataset too) and return its id and url. Use it when the
     user wants to keep the model — for reliability_at, the calculators, or an RBD block. Same censoring
-    convention: 0 = failed, 1 = still running; c_invert=true when the data marks failures with 1."""
+    convention: 0 = failed, 1 = still running; c_invert=true when the data marks failures with 1. Reliafy
+    Pro only (on other plans, fit locally with SurPyval and use save_model)."""
     return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
                 count_column=count_column, covariates=covariates, unit=unit, save=True, name=name)
+
+
+_EXTRA_PARAMS = ("gamma", "p", "f0")  # offset, limited failure population, zero-inflation
+
+
+@_tool("save_model", _WRITE, "Save a model from parameters")
+def save_model(
+    ctx: Context,
+    name: Annotated[str, Field(min_length=1, description="Name for the saved model.")],
+    distribution: Annotated[str, Field(description=(
+        "Distribution id: weibull, exponential, normal, lognormal, gamma, loglogistic, expo_weibull, "
+        "gumbel, gumbel_lev, logistic, rayleigh (SurPyval class names such as 'Weibull' work too)."))],
+    params: Annotated[list[Param], Field(min_length=1, description=(
+        "Every fitted parameter by SurPyval name: weibull [alpha (scale), beta (shape)], exponential "
+        "[failure_rate], normal/lognormal [mu, sigma], gamma [alpha, beta], expo_weibull [alpha, beta, mu]. "
+        "Optional extras from a SurPyval fit: gamma (offset / failure-free life), p (limited failure "
+        "population), f0 (zero-inflation)."))],
+    unit: _FitUnit = None,
+    dataset_id: Annotated[Optional[str], Field(description=(
+        "Optional: the saved dataset (list_datasets / upload_dataset) the parameters were fitted to, "
+        "kept on the model as a reference."))] = None,
+    notes: Annotated[Optional[str], Field(max_length=2000, description=(
+        "Optional notes kept with the model, e.g. how it was fitted (method, censoring, SurPyval "
+        "version)."))] = None,
+) -> dict[str, Any]:
+    """Save a life model from a distribution and parameters fitted elsewhere — typically locally with
+    SurPyval (e.g. surpyval.Weibull.fit(x=times, c=censored), then model.params) — to the user's Reliafy
+    workspace, and return its id and url. The saved model works everywhere a fitted one does:
+    reliability_at, the maintenance calculators and RBD blocks. It stores the parameters only (no
+    probability plot). Parameter names must be the distribution's SurPyval names; the time unit is the
+    unit the parameters were fitted in."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    dist_id = fitting.resolve_distribution_id(distribution)  # FitError -> tool error listing the options
+    entry = fitting.DISTRIBUTIONS[dist_id]
+    names = list(getattr(entry["dist"], "param_names", []) or [])
+
+    given: dict[str, float] = {}
+    for p in params:
+        key = p.name.strip()
+        if key in given:
+            raise ToolError(f"Parameter '{key}' is given twice.")
+        if not np.isfinite(p.value):
+            raise ToolError(f"Parameter '{key}' must be a finite number.")
+        given[key] = float(p.value)
+    extras = {k: given.pop(k) for k in _EXTRA_PARAMS if k in given and k not in names}
+    unknown, missing = sorted(set(given) - set(names)), [n for n in names if n not in given]
+    if unknown or missing:
+        problem = "; ".join(filter(None, (
+            f"unknown: {', '.join(unknown)}" if unknown else "",
+            f"missing: {', '.join(missing)}" if missing else "",
+        )))
+        raise ToolError(f"{entry['name']} takes the parameters {', '.join(names)} (plus optional extras "
+                        f"{', '.join(_EXTRA_PARAMS)}) — {problem}.")
+    if "gamma" in extras and not entry.get("offsetable"):
+        raise ToolError(f"{entry['name']} doesn't take an offset (gamma) — its support is the whole real line.")
+
+    if dataset_id and datasets_service.get_dataset(db, dataset_id, uid) is None:
+        raise ToolError("Dataset not found.")
+    _cap(db, user, "models", "models")
+    model = models_service.import_model(
+        db, uid, name.strip(), distribution=dist_id, unit=unit,
+        params=[{"name": n, "value": given[n]} for n in names], extras=extras,
+        notes=notes, source_dataset_id=dataset_id or None,
+    )
+    try:
+        live = entry["dist"].from_params([given[n] for n in names], **extras)
+        metrics = fitting._life_metrics(live)
+    except Exception:  # noqa: BLE001 - metrics are a convenience
+        metrics = None
+    _record(db, "mcp_model", "save_model")
+    r = model.results or {}
+    out = {
+        "saved": True,
+        "model_id": model.id,
+        "name": model.name,
+        "distribution": r.get("distribution"),
+        "distribution_id": dist_id,
+        "params": _plain_params(r),
+        "unit": r.get("unit", ""),
+        "metrics": metrics,
+        "url": _url(f"/modelling/m/{model.id}"),
+    }
+    if r.get("extra_params"):
+        out["extra_params"] = r["extra_params"]
+    if dataset_id:
+        out["dataset_id"] = dataset_id
+    return out
 
 
 @_tool("reliability_at", _READ, "Evaluate a model's reliability")
@@ -662,7 +842,7 @@ def upload_dataset(
     """Save a dataset (CSV text) to the user's workspace and return its id and columns. A censoring
     column should use 0 = failed, 1 = still running (or flag c_invert when fitting)."""
     user, db = _caller(ctx), _db()
-    _cap(db, user["uid"], "datasets", "datasets")
+    _cap(db, user, "datasets", "datasets")
     ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(csv), user["uid"])
     _record(db, "mcp_dataset", "upload_dataset")
     return {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
@@ -832,7 +1012,7 @@ def create_rbd(
     check = rbds_service.validate_graph(db, graph, owners)
     if not check.get("valid", False):
         raise ToolError("Invalid RBD structure: " + "; ".join(check.get("errors") or ["unknown problem"]))
-    _cap(db, uid, "rbds", "RBDs")
+    _cap(db, user, "rbds", "RBDs")
     rbd = rbds_service.save_rbd(db, name.strip(), graph, uid)
     _record(db, "mcp_rbd", "create_rbd")
     return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), "warnings": check.get("warnings") or [],
@@ -902,8 +1082,9 @@ def analyze_rbd(
     """Analyse a saved RBD. Non-repairable diagrams: system reliability curve, MTTF, B-lives (B10/B50),
     component importance (Birnbaum, Fussell–Vesely, RAW/RRW) and minimal cut/path sets. Repairable
     diagrams: steady-state availability, mean up/down time, failure frequency and per-block downtime share.
-    Availability simulation is a paid feature (Pro or purchased credits): a saved result is always served;
-    otherwise, without entitlement, this returns available=false with a message instead of results."""
+    Availability simulation is a paid feature (Pro or purchased credits; not part of the Free or Agent plans):
+    a saved result is always served; otherwise, without entitlement, this returns available=false with a
+    message instead of results — relay it, and offer export_rbd_python to run the simulation locally."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -923,8 +1104,10 @@ def analyze_rbd(
                          read_owners=_owners(uid), list_owners=uid)
         status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners)
         if status != 200:
+            plan = user.get("mcp_plan", "pro")
+            message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
             return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
-                    "message": payload.get("detail")}
+                    "message": message}
         return {**head, "available": True, **_availability_summary(payload)}
 
     result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age)
@@ -1035,7 +1218,8 @@ def optimal_overhaul(
 
 @_tool("list_fleets", _READ, "List fleet forecasts")
 def list_fleets(ctx: Context) -> dict[str, Any]:
-    """List the user's fleet failure forecasts (in-service items run against one saved life model)."""
+    """List the user's fleet failure forecasts (in-service items run against one saved life model).
+    Reliafy Pro only."""
     user, db = _caller(ctx), _db()
     return {"fleets": [
         {"id": f.id, "name": f.name, "model_id": f.model_id, "n_items": len(f.items or []),

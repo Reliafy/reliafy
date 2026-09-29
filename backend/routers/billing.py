@@ -1,5 +1,6 @@
-"""Billing API: plan/credit status, Stripe Checkout for credit packs and the Pro
-subscription, the billing portal, and the Stripe webhook that fulfils them."""
+"""Billing API: plan/credit status, Stripe Checkout for credit packs and the
+Pro and Agent subscriptions, the billing portal, and the Stripe webhook that
+fulfils them."""
 
 from __future__ import annotations
 
@@ -63,12 +64,14 @@ def _customer(stripe, session, user) -> str:
 
 @router.get("/billing")
 def billing_status(session=Depends(get_session), user: dict = Depends(get_current_user)) -> dict:
-    summary = billing_service.usage_summary(session, user["uid"])
+    admin = billing_service.is_admin_user(user)
+    summary = billing_service.usage_summary(session, user["uid"], admin=admin)
     # Operator accounts keep their REAL plan (so they can still exercise the
     # purchase flows) and carry an explicit admin flag for the UI instead.
-    summary["admin"] = billing_service.is_admin_user(user)
+    summary["admin"] = admin
     summary["stripe_enabled"] = bool(config.STRIPE_API_KEY)
     summary["pro_available"] = bool(config.STRIPE_API_KEY and config.STRIPE_PRO_PRICE_ID)
+    summary["agent_available"] = bool(config.STRIPE_API_KEY and config.STRIPE_AGENT_PRICE_ID)
     summary["ai"] = assistant_service.info()
     return summary
 
@@ -111,23 +114,75 @@ def checkout(
     return JSONResponse(content={"url": cs.url})
 
 
+_PLAN_NAMES = {"pro": "Pro", "agent": "Agent"}
+
+
+def _plan_price(plan: str) -> str | None:
+    """The recurring Stripe Price for a paid plan (None = not configured)."""
+    return {"pro": config.STRIPE_PRO_PRICE_ID, "agent": config.STRIPE_AGENT_PRICE_ID}.get(plan)
+
+
+def _plan_for_prices(price_ids: set) -> str | None:
+    """Which paid plan a set of Stripe prices is (Pro wins if both appear)."""
+    if config.STRIPE_PRO_PRICE_ID and config.STRIPE_PRO_PRICE_ID in price_ids:
+        return "pro"
+    if config.STRIPE_AGENT_PRICE_ID and config.STRIPE_AGENT_PRICE_ID in price_ids:
+        return "agent"
+    return None
+
+
+def _price_ids(lines: dict | None) -> set:
+    """Price ids on a Stripe list of invoice lines or subscription items.
+
+    Tolerates the shapes Stripe API versions use: ``price`` (an object or an
+    id), the newer ``pricing.price_details.price``, and the legacy ``plan``.
+    """
+    out = set()
+    for line in (lines or {}).get("data") or []:
+        for ref in (
+            line.get("price"),
+            ((line.get("pricing") or {}).get("price_details") or {}).get("price"),
+            line.get("plan"),
+        ):
+            pid = ref.get("id") if isinstance(ref, dict) else ref
+            if isinstance(pid, str) and pid:
+                out.add(pid)
+    return out
+
+
 @router.post("/billing/subscribe")
 def subscribe(
     request: Request,
+    plan: str = Body("pro", embed=True),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
+    """Start a subscription: ``plan`` is 'pro' (default) or 'agent'.
+
+    A user already on the other paid plan is switched in place (the existing
+    subscription's price is swapped, prorated) rather than sold a second
+    subscription alongside it.
+    """
+    plan = (plan or "pro").strip().lower()
+    if plan not in _PLAN_NAMES:
+        return JSONResponse(status_code=400, content={"detail": "Unknown plan."})
+    price = _plan_price(plan)
     stripe = _stripe()
-    if stripe is None or not config.STRIPE_PRO_PRICE_ID:
-        return JSONResponse(status_code=503, content={"detail": "The Pro plan is not configured."})
+    if stripe is None or not price:
+        return JSONResponse(status_code=503, content={"detail": f"The {_PLAN_NAMES[plan]} plan is not configured."})
+    acct = billing_service.account(session, user["uid"])
+    if acct["active_plan"] == plan:
+        return JSONResponse(status_code=409, content={"detail": f"You're already on {_PLAN_NAMES[plan]}."})
     base = _public_base(request)
+    if acct["active_plan"] in _PLAN_NAMES:
+        return _switch_plan(stripe, session, user, acct, plan, price, base)
     try:
         cs = stripe.checkout.Session.create(
             mode="subscription",
             customer=_customer(stripe, session, user),
             client_reference_id=user["uid"],
-            line_items=[{"price": config.STRIPE_PRO_PRICE_ID, "quantity": 1}],
-            metadata={"uid": user["uid"], "kind": "pro"},
+            line_items=[{"price": price, "quantity": 1}],
+            metadata={"uid": user["uid"], "kind": plan},
             success_url=f"{base}billing?status=success",
             cancel_url=f"{base}billing?status=cancel",
         )
@@ -135,6 +190,32 @@ def subscribe(
         logger.exception("Stripe subscribe failed")
         return JSONResponse(status_code=502, content={"detail": f"Stripe error: {exc}"})
     return JSONResponse(content={"url": cs.url})
+
+
+def _switch_plan(stripe, session, user, acct, plan: str, price: str, base: str) -> JSONResponse:
+    """Move an Agent subscriber to Pro (or back) on their existing subscription."""
+    sub_id = acct.get("stripe_subscription_id")
+    if not sub_id:
+        # Subscribed before subscription ids were recorded: let Stripe's portal
+        # do the switch rather than guess which subscription to change.
+        return JSONResponse(status_code=409, content={
+            "detail": "Change plans from Manage subscription on the billing page."})
+    try:
+        sub = stripe.Subscription.retrieve(sub_id)
+        item_id = sub["items"]["data"][0]["id"]
+        stripe.Subscription.modify(
+            sub_id,
+            items=[{"id": item_id, "price": price}],
+            proration_behavior="create_prorations",
+            metadata={"uid": user["uid"], "kind": plan},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Stripe plan switch failed")
+        return JSONResponse(status_code=502, content={"detail": f"Stripe error: {exc}"})
+    # The customer.subscription.updated webhook confirms this; set it now so
+    # the page the user returns to already shows the new plan.
+    billing_service.set_plan(session, user["uid"], plan, until=None, subscription_id=sub_id)
+    return JSONResponse(content={"url": f"{base}billing?status=success", "switched": True})
 
 
 @router.post("/billing/portal")
@@ -205,25 +286,49 @@ def _handle_event(session, event) -> None:
             grant = int(meta.get("grant_cents") or 0)
             if grant:
                 billing_service.grant_credits(session, uid, grant, "purchase", obj.get("id", ""))
-        elif meta.get("kind") == "pro":
-            billing_service.set_plan(session, uid, "pro", until=None, customer_id=obj.get("customer"))
+        elif meta.get("kind") in _PLAN_NAMES:
+            billing_service.set_plan(session, uid, meta["kind"], until=None, customer_id=obj.get("customer"),
+                                     subscription_id=obj.get("subscription"))
 
     elif etype == "invoice.paid":
-        # Every paid subscription invoice (first and each renewal) grants the
-        # Pro plan's included monthly AI credit — idempotent per invoice.
-        billing_service.grant_monthly_pro_credits(session, obj.get("customer"), obj.get("id"))
+        # A paid Pro invoice (first and each renewal) grants the Pro plan's
+        # included monthly AI credit — idempotent per invoice. Agent invoices
+        # grant nothing.
+        billing_service.grant_monthly_pro_credits(
+            session, obj.get("customer"), obj.get("id"), _price_ids(obj.get("lines")))
 
     elif etype in ("customer.subscription.deleted",):
-        _downgrade_by_customer(session, obj.get("customer"))
+        _downgrade_by_customer(session, obj.get("customer"), obj.get("id"))
     elif etype == "customer.subscription.updated":
         status = obj.get("status")
         if status in ("canceled", "unpaid", "incomplete_expired"):
-            _downgrade_by_customer(session, obj.get("customer"))
+            _downgrade_by_customer(session, obj.get("customer"), obj.get("id"))
+        elif status in ("active", "trialing"):
+            # A plan switch (ours, or made in the Stripe portal) changes the
+            # subscription's price: follow it.
+            plan = _plan_for_prices(_price_ids(obj.get("items")))
+            doc = _subscriber(session, obj.get("customer"), obj.get("id"))
+            if plan and doc:
+                billing_service.set_plan(session, doc["_id"], plan, until=None, subscription_id=obj.get("id"))
 
 
-def _downgrade_by_customer(session, customer_id) -> None:
+def _subscriber(session, customer_id, subscription_id):
+    """The user a subscription event is about, or None — including when the
+    user's recorded subscription is a different one (e.g. an old subscription
+    ending after they moved to a new one must not touch the new plan)."""
     if not customer_id:
-        return
+        return None
     doc = session.users.find_one({"stripe_customer_id": customer_id})
+    if doc is None:
+        return None
+    current = doc.get("stripe_subscription_id")
+    if current and subscription_id and current != subscription_id:
+        return None
+    return doc
+
+
+def _downgrade_by_customer(session, customer_id, subscription_id=None) -> None:
+    doc = _subscriber(session, customer_id, subscription_id)
     if doc:
         billing_service.set_plan(session, doc["_id"], "free", until=None)
+        session.users.update_one({"_id": doc["_id"]}, {"$unset": {"stripe_subscription_id": ""}})

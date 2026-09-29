@@ -472,8 +472,9 @@ function HttpDocs({ base }) {
 // What each MCP tool does, in plain English (mirrors backend/mcp_server.py).
 const MCP_TOOLS = [
   ["list_models / get_model", "Your saved life and recurrent models — distribution, parameters with confidence intervals, goodness of fit, MTTF and B10."],
-  ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset, and report the result — nothing is saved."],
-  ["fit_and_save_model", "The same fit, saved as a model in your workspace (Claude asks before saving)."],
+  ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset, and report the result — nothing is saved (Pro)."],
+  ["fit_and_save_model", "The same fit, saved as a model in your workspace (Claude asks before saving; Pro)."],
+  ["save_model", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval — with an optional dataset reference and notes."],
   ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age."],
   ["list_datasets / upload_dataset", "Your datasets, and saving new CSV data."],
   ["list_rbds / get_rbd", "Your reliability block diagrams and their structure."],
@@ -482,8 +483,8 @@ const MCP_TOOLS = [
   ["export_rbd_python", "A diagram as a standalone SurPyval + RePyability script."],
   ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function."],
   ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model."],
-  ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items."],
-  ["list_fleet_alerts / create_fleet_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API."],
+  ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items (Pro)."],
+  ["list_fleet_alerts / create_fleet_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API (Pro)."],
 ];
 
 // "Use Reliafy from Claude (MCP)": what the MCP server is and how to connect.
@@ -500,9 +501,24 @@ export function McpDocs({ tokenNote }) {
           Reliafy runs a remote <b>Model Context Protocol</b> server, so Claude — on the web, the
           desktop and mobile apps, or Claude Code — can work in your Reliafy account for you: fit
           distributions, read your models, build and analyse RBDs, and run the maintenance
-          calculators. It sees what you see: your own data plus the shared samples. Using Reliafy
-          from Claude is part of Reliafy Pro on Reliafy Cloud; self-hosted instances allow it for
-          everyone.
+          calculators. It sees what you see: your own data plus the shared samples. Self-hosted
+          instances allow every tool for everyone.
+        </p>
+
+        <h3>Plans on Reliafy Cloud</h3>
+        <ul className="api-list">
+          <li><b>Free</b> — sign in from Claude and use the tools: 50 tool calls a day, within the
+            free storage limits.</li>
+          <li><b>Agent</b> (US$2/month) — Reliafy from your AI agent, with no web app features:
+            2,000 tool calls a day and room for 50 models, 50 datasets and 25 RBDs.</li>
+          <li><b>Pro</b> (US$19/month) — no daily limit, unlimited storage, plus the Pro-only tools:
+            fitting (<code>fit_distribution</code>, <code>fit_and_save_model</code>) and fleets.</li>
+        </ul>
+        <p className="muted-line">
+          On Free and Agent, Claude fits your data locally with SurPyval and saves the result with{" "}
+          <code>save_model</code>. Availability simulation needs Pro (or purchased credits); on any plan,{" "}
+          <code>export_rbd_python</code> (Download as Python in the app) runs it locally with RePyability.
+          When a plan limit stops a tool, the tool says which limit, when it resets and how to upgrade.
         </p>
 
         <h3>Claude on the web, desktop and mobile</h3>
@@ -552,7 +568,7 @@ export function McpDocs({ tokenNote }) {
         <ul className="api-list">
           <li>Censoring follows Reliafy’s convention: <b>0 = failed</b>, <b>1 = still running</b>. Data coded the other way round can be fitted with the inverted-flags option.</li>
           <li>Reading and calculating tools are marked read-only; tools that save to your workspace are marked as writes, so Claude asks before running them. No tool deletes anything.</li>
-          <li>Errors: <code>401</code> (not signed in, or a missing, expired or revoked token), <code>403</code> (an API token whose owner isn’t on Pro — signed-in Claude connections on the free plan connect, and each tool answers with how to upgrade), <code>429</code> (over 120 requests/minute).</li>
+          <li>Errors: <code>401</code> (not signed in, or a missing, expired or revoked token), <code>403</code> (an API token whose owner isn’t on Pro — tokens are Pro-only; signed-in Claude connections work on every plan), <code>429</code> (over 120 requests/minute).</li>
         </ul>
       </div>
     </div>

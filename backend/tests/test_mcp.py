@@ -34,7 +34,7 @@ READ_TOOLS = {
     "analyze_rbd", "fit_distribution", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
     "optimal_overhaul", "list_fleets", "fleet_forecast", "list_fleet_alerts",
 }
-WRITE_TOOLS = {"fit_and_save_model", "upload_dataset", "create_rbd", "create_fleet_alert"}
+WRITE_TOOLS = {"fit_and_save_model", "save_model", "upload_dataset", "create_rbd", "create_fleet_alert"}
 
 
 def _weibull(alpha, beta, placeholder=False):
@@ -173,7 +173,7 @@ def test_free_user_gets_403_when_billing_is_on(env, monkeypatch):
     monkeypatch.setattr(config, "BILLING_ENABLED", True)
     r = _post_mcp({"Authorization": f"Bearer {env.token[A]}"})
     assert r.status_code == 403
-    assert "MCP access is part of Reliafy Pro" in r.json()["detail"]
+    assert "API token is part of Reliafy Pro" in r.json()["detail"]
 
     # Pro gets in.
     env.db.users.update_one({"_id": A}, {"$set": {"plan": "pro"}})
