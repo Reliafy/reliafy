@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Plot from "../components/Plot.jsx";
 import Logo from "../components/Logo.jsx";
+import { useAuth } from "../AuthProvider.jsx";
 import ResultView from "../components/ResultView.jsx";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
@@ -17,9 +18,10 @@ import { getPublicArtifact } from "../api.js";
 // needed. Renders the same payloads as the in-app detail pages through the
 // same presentational components. This route is its own lazy chunk so the
 // marketing pages don't inherit its Plotly dependency. The page is
-// deliberately bare — just the brand bar and the content, no marketing nav,
-// sign-up prompt or footer — because it's what an owner (or their agent)
-// hands to a client or colleague.
+// deliberately bare — just the brand bar and the content, no marketing nav
+// or footer — because it's what an owner (or their agent) hands to a client
+// or colleague. The one prompt is "Create free account" at the bar's right,
+// for visitors who aren't signed in.
 
 const KIND_LABEL = {
   models: "Fitted life model",
@@ -152,6 +154,7 @@ function Body({ collection, a, token }) {
 
 export default function PublicArtifact() {
   const { token } = useParams();
+  const { user, loading } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
@@ -189,6 +192,10 @@ export default function PublicArtifact() {
           <Logo size={26} />
           <span className="brand-name">Reliafy</span>
         </Link>
+        {/* Only once auth has settled, so a signed-in viewer never sees it flash. */}
+        {!loading && !user && (
+          <Link className="cta cta-solid" to="/login?signup">Create free account</Link>
+        )}
       </header>
       <div className="public-artifact">
         {error && (
