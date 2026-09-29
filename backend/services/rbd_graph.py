@@ -156,10 +156,44 @@ def _model(model, where: str, resolve_saved_model) -> dict:
     saved_id = model.get("saved_model_id") or model.get("modelId") or model.get("model_id")
     if saved_id:
         out = _saved_model(str(saved_id), where, resolve_saved_model)
+        if model.get("source") != "saved" and _inline_disagrees(model, out):
+            # The compact form get_rbd returns repeats a saved model's own
+            # distribution + params, so those round-trip; different ones are
+            # a conflict, never silently dropped.
+            raise GraphError(
+                f"{where}: give exactly one of saved_model_id or distribution_id + params — the inline "
+                f"values disagree with the saved model “{out.get('name')}”. Drop them to use the saved "
+                "model, or drop saved_model_id to use them.")
         if model.get("placeholder"):
             out["placeholder"] = True
         return out
     return _inline_model(model, where)
+
+
+def _inline_disagrees(model: dict, saved: dict) -> bool:
+    """Whether a compact model's inline distribution/params differ from the
+    saved model it also references."""
+    from backend import fitting
+
+    dist = model.get("distribution_id") or model.get("distribution")
+    if dist:
+        try:
+            if fitting.resolve_distribution_id(str(dist)) != saved.get("distribution_id"):
+                return True
+        except fitting.FitError:
+            return True
+    if model.get("params"):
+        mine = {str(p.get("name")): p.get("value") for p in model["params"] if isinstance(p, dict)}
+        theirs = {str(p.get("name")): p.get("value") for p in saved.get("params") or []}
+        if set(mine) != set(theirs):
+            return True
+        for name, value in mine.items():
+            try:
+                if abs(float(value) - float(theirs[name])) > 1e-9 * max(1.0, abs(float(theirs[name]))):
+                    return True
+            except (TypeError, ValueError):
+                return True
+    return False
 
 
 def normalize_graph(

@@ -545,6 +545,15 @@ def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, datase
 
     if (data is None) == (dataset_id is None):
         raise ToolError("Give either inline `data` (a list of times) or a `dataset_id` — exactly one.")
+    # Arguments that only apply to the other input form would be ignored:
+    # refuse them rather than fit something the caller didn't mean.
+    stray = ([k for k, v in (("time_column", time_column), ("censor_column", censor_column),
+                             ("count_column", count_column)) if v] if data is not None
+             else [k for k, v in (("censored", censored), ("counts", counts)) if v is not None])
+    if stray:
+        other = "dataset_id" if data is not None else "inline data"
+        raise ToolError(f"{', '.join(stray)} only appl{'ies' if len(stray) == 1 else 'y'} with {other} — "
+                        "drop it, or switch to that form.")
 
     dataset = None
     if data is not None:
@@ -986,10 +995,13 @@ class StageComponent(BaseModel):
 class Stage(BaseModel):
     label: Optional[str] = None
     components: list[StageComponent] = Field(min_length=1, description="Components in PARALLEL within this stage.")
-    k_of_n: Optional[int] = Field(None, description="Components required (k of n). Omit or 1 = any one suffices; "
-                                                     "= component count = all required.")
-    common_cause_beta: Optional[float] = Field(None, description="Non-repairable only: beta-factor (0–1) common-cause "
-                                                                  "coupling for this stage's redundant components.")
+    k_of_n: Optional[int] = Field(None, description="Components required (k of n), 1 to the stage's component "
+                                                     "count. Omit or 1 = any one suffices; = component count = all "
+                                                     "required.")
+    common_cause_beta: Optional[float] = Field(None, description="Non-repairable only, stages with 2+ components: "
+                                                                  "beta-factor common-cause coupling for this stage's "
+                                                                  "redundant components, 0 ≤ beta < 1 (typically "
+                                                                  "0.01–0.2).")
 
 
 def _stage_graph(db, uid: str, stages: list[Stage], repairable: bool) -> dict:
@@ -1044,6 +1056,9 @@ def create_rbd(
     owners = _owners(uid)
     if (nodes is None) == (stages is None):
         raise ToolError("Give either nodes + edges (graph form) or stages (simple form) — exactly one.")
+    if stages is not None and edges:
+        raise ToolError("edges belong to the graph form (nodes + edges); the stages form is wired automatically. "
+                        "Give exactly one form.")
     if stages is not None:
         graph = _stage_graph(db, uid, stages, repairable)
         graph["unit"] = unit
@@ -1138,6 +1153,17 @@ def analyze_rbd(
     rbd = _get_rbd(db, uid, rbd_id)
     graph = rbd.graph or {}
     owners = [*_owners(uid), rbd.owner_id]
+    if t_max is not None and (not np.isfinite(t_max) or t_max <= 0):
+        raise ToolError(f"t_max must be a positive time in the diagram's unit; got {t_max:g}. Omit it for the "
+                        "automatic axis.")
+    for t in times or []:
+        if not np.isfinite(t) or t < 0:
+            raise ToolError(f"times must be finite and ≥ 0 (in the diagram's unit); got {t:g}.")
+    if conditional_age is not None and (not np.isfinite(conditional_age) or conditional_age < 0):
+        raise ToolError(f"conditional_age must be finite and ≥ 0; got {conditional_age:g}.")
+    if graph.get("repairable") and (times or conditional_age is not None):
+        raise ToolError("times and conditional_age apply to non-repairable diagrams; this one is repairable "
+                        "(analysed for availability). Drop them — t_max sets the simulated horizon.")
     placeholders = rbd_graph.placeholder_labels(graph)
     head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
     if placeholders:
@@ -1149,20 +1175,31 @@ def analyze_rbd(
     if design:
         head["warnings"] = design
 
-    if graph.get("repairable"):
-        actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
-                         read_owners=_owners(uid), list_owners=uid)
-        status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners)
-        if status != 200:
-            plan = user.get("mcp_plan", "pro")
-            message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
-            return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
-                    "message": message}
-        return {**head, "available": True, **_availability_summary(payload)}
+    try:
+        if graph.get("repairable"):
+            actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
+                             read_owners=_owners(uid), list_owners=uid)
+            status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners)
+            if status != 200:
+                plan = user.get("mcp_plan", "pro")
+                message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
+                return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
+                        "message": message}
+            return {**head, "available": True, **_availability_summary(payload)}
 
-    result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
-                                        at_times=times)
-    return {**head, "available": True, **_reliability_summary(result, graph, times)}
+        result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
+                                            at_times=times)
+        return {**head, "available": True, **_reliability_summary(result, graph, times)}
+    except (ToolError, *_USER_ERRORS, models_service.ModelNotFound, fitting.ModelNotFound,
+            rbds_service.RbdNotFound):
+        raise
+    except Exception as exc:
+        # Never a bare "Error executing tool" (e.g. an IndexError from a
+        # malformed saved diagram): say what failed and what to check.
+        logger.exception("analyze_rbd failed for %s", rbd.id)
+        raise ToolError(f"Reliafy couldn't analyse “{rbd.name}” ({type(exc).__name__}). Check its structure "
+                        "with get_rbd: exactly one input and one output node, every block on a path between "
+                        "them, and a life model on every block.") from exc
 
 
 @_tool("export_rbd_python", _READ, "Export an RBD as Python")
@@ -1185,6 +1222,8 @@ def export_rbd_python(
 def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None,
                  params: list[Param] | None, unit: str | None) -> dict:
     """distribution_id + params, given inline or taken from a saved plain life model."""
+    if model_id and (distribution_id or params):
+        raise ToolError("Give exactly one of model_id or distribution_id + params, not both.")
     if model_id:
         m = models_service.get_model(db, model_id, _owners(uid))
         if m is None:
@@ -1259,6 +1298,8 @@ def optimal_overhaul(
     recurrent-event model. Only a deteriorating system (growth shape beta > 1) has a finite optimum."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
+    if t_max is not None and (not np.isfinite(t_max) or t_max <= 0):
+        raise ToolError(f"t_max must be a positive time; got {t_max:g}. Omit it to search automatically.")
     if recurrent_service.get_model(db, model_id, owners) is None:
         raise ToolError("Recurrent model not found — optimal_overhaul needs a recurrent (repairable-system) "
                         "model id from list_models kind=recurrent.")
@@ -1352,6 +1393,12 @@ def create_fleet_alert(
     fleet = _alertable_fleet(db, user["uid"], fleet_id)
     if fleet.owner_id != user["uid"]:
         raise ToolError("Alerts can only be set on your own fleets, not samples.")
+    wanted = {"above": {"threshold"}, "change": {"percent"}, "within": {"x", "y_periods"}}[kind]
+    stray = [k for k, v in (("threshold", threshold), ("percent", percent), ("x", x), ("y_periods", y_periods))
+             if v is not None and k not in wanted]
+    if stray:
+        raise ToolError(f"A '{kind}' alert takes {' and '.join(sorted(wanted))} only — {', '.join(stray)} "
+                        "would be ignored. Drop it, or pick the kind that uses it.")
     try:
         doc = alerts_service.create_alert(
             db, fleet, user["uid"], [*_owners(user["uid"]), fleet.owner_id],

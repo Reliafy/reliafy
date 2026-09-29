@@ -22,6 +22,7 @@ identical units is ``1 - (1 - R)^n``); cold standby uses RePyability's
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Optional
 
 import numpy as np
@@ -371,6 +372,70 @@ def _node_reliability(
     raise AnalysisError(f"{label}: unsupported node type '{ntype}'.")
 
 
+def _repyability_message(exc: Exception) -> str:
+    """RePyability's structural errors, reworded where they'd mean nothing to
+    a user."""
+    text = str(exc)
+    if "no paths through" in text.lower():
+        return ("there's no path from the input to the output that satisfies every k-of-n (vote) node. "
+                "Check each vote node's n against the branches wired into it.")
+    if "not correctly structured" in text.lower():
+        return "it isn't wired as a single flow from the input node to the output node"
+    return text
+
+
+def _io_errors(graph: dict) -> list[str]:
+    """A diagram runs from exactly one input node to exactly one output node.
+    Without them RePyability guesses the ends from the wiring, and a graph
+    with no output node then fails deep in the analysis with a bare
+    IndexError instead of a message."""
+    nodes = graph.get("nodes") or []
+    errors = []
+    for kind in ("input", "output"):
+        count = sum(1 for n in nodes if n.get("type") == kind)
+        if count != 1:
+            errors.append(
+                f"The diagram needs exactly one {kind} node (it has {count}). Flow runs input -> "
+                f"blocks -> output, and every block must sit on a path between them.")
+    return errors
+
+
+def _koon_checks(nodes: list, edges: list, labels: dict) -> tuple[list[str], list[str]]:
+    """``(errors, warnings)`` for the k-of-n voting nodes, checked up front
+    against the wiring (RePyability's own messages are replaced: one isn't
+    formatted, and an impossible gate otherwise surfaces as "RBD has no paths
+    through!")."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    indeg: dict = {}
+    for src, tgt in edges:
+        indeg[tgt] = indeg.get(tgt, 0) + 1
+    for node in nodes:
+        if node.get("type") != "knode":
+            continue
+        nid = node.get("id")
+        data = node.get("data") or {}
+        label = labels.get(nid) or data.get("label") or nid
+        try:
+            required = int(data.get("n") if data.get("n") is not None else 1)
+        except (TypeError, ValueError):
+            errors.append(f"Vote node “{label}”: the number required (n) must be a whole number.")
+            continue
+        feeding = indeg.get(nid, 0)
+        branches = f"{feeding} branch feeds" if feeding == 1 else f"{feeding} branches feed"
+        if required < 1:
+            errors.append(f"Vote node “{label}” must require at least 1 working input (n = {required}).")
+        elif required > feeding:
+            errors.append(
+                f"Vote node “{label}” requires {required} working inputs but only {branches} it. "
+                f"Wire {required} or more branches into it, or lower n.")
+        elif required == feeding and required > 1:
+            warnings.append(
+                f"Vote node “{label}” requires all {required} of its inputs to work, which is a series "
+                "structure. Is n correct, or should those blocks simply be in series?")
+    return errors, warnings
+
+
 def _build_rbd(
     graph: dict,
     resolve_subsystem: Optional[Callable[[str], dict]] = None,
@@ -395,6 +460,10 @@ def _build_rbd(
     ]
     if not edges:
         raise AnalysisError("The diagram has no connections to analyse.")
+    io_errors = _io_errors(graph)
+    koon_errors, _ = _koon_checks(nodes, edges, {})
+    if io_errors or koon_errors:
+        raise AnalysisError(" ".join(io_errors + koon_errors))
 
     node_ids = {n.get("id") for n in nodes}
     reliabilities: dict[Any, Any] = {}
@@ -457,7 +526,7 @@ def _build_rbd(
         except ValueError as exc:
             raise AnalysisError(
                 "The diagram isn't a valid reliability block diagram: "
-                f"{exc}. Check that every component is wired between the input "
+                f"{_repyability_message(exc)}. Check that every component is wired between the input "
                 "and output."
             ) from exc
 
@@ -526,10 +595,8 @@ def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
             "These nodes have no life model: "
             f"{names('nodes_with_no_reliability_distribution')}."
         )
-    for message in sc.get("koon_errors") or []:
-        errors.append(str(message))
-    for message in sc.get("koon_warnings") or []:
-        warnings.append(str(message))
+    # k-of-n problems are reported by :func:`_koon_checks` (with labels, and
+    # without RePyability's unformatted / misspelt messages).
     if sc.get("has_irrelevant_nodes"):
         warnings.append(
             "These nodes are not on any path and don't affect the result: "
@@ -607,7 +674,14 @@ def validate_graph(
                 errors.append(str(exc))
             reliabilities[nid] = PerfectReliability  # structural placeholder
 
-    if edges and reliabilities:
+    errors.extend(_io_errors(graph))
+    koon_errors, koon_warnings = _koon_checks(nodes, edges, labels)
+    errors.extend(koon_errors)
+    warnings.extend(koon_warnings)
+
+    # An impossible voting gate leaves no path through, which RePyability
+    # reports only as "RBD has no paths through!" — already explained above.
+    if edges and reliabilities and not koon_errors:
         node_ids = {n.get("id") for n in nodes}
         try:
             rbd = NonRepairableRBD(
@@ -632,7 +706,7 @@ def validate_graph(
                 non_analytic = {}
         except ValueError as exc:
             # e.g. a k-out-of-n setting that leaves no path through the system.
-            errors.append(f"The diagram can't be solved as drawn: {exc}")
+            errors.append(f"The diagram can't be solved as drawn: {_repyability_message(exc)}")
         except Exception as exc:  # pragma: no cover - defensive
             errors.append(f"The diagram could not be analysed: {exc}")
 
@@ -744,10 +818,70 @@ def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
     return out
 
 
+_REDUNDANCY_WORDS = re.compile(r"\b(duty|stand-?by|spare|back-?up|redundant)\b", re.I)
+# A trailing unit identifier: "Pump A", "Pump-2", "P2", "Train ii", "Fan left".
+_UNIT_SUFFIX = re.compile(
+    r"^(?P<stem>.*?[a-z0-9])(?:[\s\-_#/.]+(?P<tok>[a-h]|\d+|i{1,3}|iv|left|right|port|starboard|north|"
+    r"south|east|west|primary|secondary|upper|lower)|(?P<num>\d+))$")
+_BLOCK_TYPES = ("component", "series", "parallel", "standby", "subsystem", "loadshare")
+
+
+def _label_stem(label: str) -> tuple[str, Optional[str]]:
+    """``(stem, unit suffix)`` of a block label, ignoring parentheticals and
+    redundancy words: "Pump B (standby)" -> ("pump", "b")."""
+    s = re.sub(r"\([^)]*\)", " ", str(label or "").lower())
+    s = re.sub(r"\s+", " ", _REDUNDANCY_WORDS.sub(" ", s)).strip(" -_#/.")
+    m = _UNIT_SUFFIX.match(s)
+    if not m:
+        return s, None
+    return m.group("stem").strip(" -_#/."), m.group("tok") or m.group("num")
+
+
+def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> list:
+    """Warn (never block) when two blocks wired directly in series look like
+    a redundant pair — labels that differ only by a trailing A/B, 1/2, i/ii,
+    left/right…, or that call one of them duty/standby/spare/backup/redundant.
+    Redundancy wired in series makes the system look far less reliable than
+    it is. Only directly adjacent series blocks (the one's sole output feeding
+    the other's sole input) are compared, to keep false positives low."""
+    nodes = {n.get("id"): n for n in graph.get("nodes") or []}
+    edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
+             if e.get("source") in nodes and e.get("target") in nodes]
+    outdeg: dict = {}
+    indeg: dict = {}
+    for s, t in edges:
+        outdeg[s] = outdeg.get(s, 0) + 1
+        indeg[t] = indeg.get(t, 0) + 1
+
+    def label(nid):
+        return (labels or {}).get(nid) or (nodes[nid].get("data") or {}).get("label") or str(nid)
+
+    out, seen = [], set()
+    for s, t in edges:
+        if (s, t) in seen or outdeg.get(s) != 1 or indeg.get(t) != 1:
+            continue
+        if nodes[s].get("type") not in _BLOCK_TYPES or nodes[t].get("type") not in _BLOCK_TYPES:
+            continue
+        seen.add((s, t))
+        la, lb = label(s), label(t)
+        (stem_a, tok_a), (stem_b, tok_b) = _label_stem(la), _label_stem(lb)
+        if stem_a and stem_a == stem_b and tok_a != tok_b:
+            why = "the same item with a different unit suffix"
+        elif _REDUNDANCY_WORDS.search(la) or _REDUNDANCY_WORDS.search(lb):
+            why = "one is labelled duty/standby/spare/backup/redundant"
+        else:
+            continue
+        out.append(
+            f"“{la}” and “{lb}” are wired in series but look like a redundant pair ({why}). If either one "
+            "can do the job, put them in parallel (or use a standby or k-of-n node); keep them in series "
+            "only if both must work.")
+    return out
+
+
 def design_warnings(graph: dict, labels: Optional[dict] = None) -> list:
     """Non-blocking modelling warnings that need no analysis: every warning
     here also appears in :func:`validate_graph`'s list."""
-    return unit_warnings(graph, labels)
+    return unit_warnings(graph, labels) + series_redundancy_warnings(graph, labels)
 
 
 def _ccf_symmetry_warnings(graph: dict, labels: dict) -> list:
@@ -1139,6 +1273,10 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
     ]
     if not edges:
         raise AnalysisError("The diagram has no connections to analyse.")
+    io_errors = _io_errors(graph)
+    koon_errors, _ = _koon_checks(nodes, edges, {})
+    if io_errors or koon_errors:
+        raise AnalysisError(" ".join(io_errors + koon_errors))
 
     node_ids = {n.get("id") for n in nodes}
     components: dict[Any, Any] = {}
@@ -1193,7 +1331,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
     except ValueError as exc:
         raise AnalysisError(
             "The diagram isn't a valid reliability block diagram: "
-            f"{exc}. Check that every component is wired between the input and output."
+            f"{_repyability_message(exc)}. Check that every component is wired between the input and output."
         ) from exc
     return rbd, labels, gate_ids, working_nodes, broken_nodes
 
