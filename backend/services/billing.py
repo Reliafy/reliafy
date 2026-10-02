@@ -8,10 +8,12 @@ only ``credit_cents`` and are migrated lazily on first touch. The user-facing
 balance is whole credits (1 credit == 1 cent), floored. Every grant/charge is
 also appended to the ``credit_ledger`` collection for an audit trail.
 
-Plans: ``free`` (default), ``agent`` (US$2/month — Reliafy from an AI agent
-over MCP only: roomier storage than free and a larger daily tool-call quota)
-and ``pro``. The MCP tool-call counters live in the ``mcp_usage``
-collection, one document per user per UTC day.
+Plans: ``free`` (default) and ``pro``. Using Reliafy from an AI agent over MCP
+is part of Pro (:func:`mcp_plan`). ``agent`` is a retired plan
+(US$2/month, MCP only, sold briefly in October 2026): it is no longer sold,
+but existing subscribers keep it — MCP access, its storage caps and its daily
+MCP tool-call quota — until their subscription ends. Those tool-call counters
+live in the ``mcp_usage`` collection, one document per user per UTC day.
 
 Everything here is dormant unless :data:`backend.config.BILLING_ENABLED` is set:
 plan caps aren't enforced and AI calls aren't charged, so the app behaves
@@ -338,12 +340,13 @@ def api_access_allowed(db, user: dict) -> bool:
 
 
 def mcp_plan(db, user: dict) -> str:
-    """The plan that governs this user's MCP use: 'pro' (no MCP limits beyond
-    the per-user rate limit), 'agent' or 'free'. Operator accounts and
-    self-hosted installs (billing off) count as Pro."""
-    if not config.BILLING_ENABLED or is_admin_user(user):
+    """The plan that governs this user's MCP use: 'pro' (everyone with API
+    access — Pro, operators, self-hosted installs with billing off: no MCP
+    limits beyond the per-user rate limit), 'agent' (a grandfathered Agent
+    subscriber: MCP within that plan's quota and caps) or 'free' (no MCP)."""
+    if api_access_allowed(db, user):
         return "pro"
-    return account(db, user["uid"])["active_plan"]
+    return "agent" if account(db, user["uid"])["is_agent"] else "free"
 
 
 def premium_compute_allowed(db, user: dict) -> bool:
@@ -364,7 +367,7 @@ def premium_compute_allowed(db, user: dict) -> bool:
     return account(db, uid)["is_pro"] or has_purchased_credits(db, uid)
 
 
-# ---- MCP daily quota (Free / Agent plans) --------------------------------
+# ---- MCP daily quota (grandfathered Agent plan) --------------------------
 
 def _day(now: datetime | None = None) -> str:
     return (now or _now()).strftime("%Y-%m-%d")
@@ -377,8 +380,9 @@ def next_day_start(now: datetime | None = None) -> datetime:
 
 
 def mcp_daily_quota(plan: str) -> int | None:
-    """MCP tool calls allowed per UTC day on ``plan`` (None = no quota)."""
-    return {"free": config.MCP_FREE_DAILY_CALLS, "agent": config.MCP_AGENT_DAILY_CALLS}.get(plan)
+    """MCP tool calls allowed per UTC day on ``plan`` (None = no quota). Only
+    the retired Agent plan has one; Free has no MCP at all, Pro no quota."""
+    return config.MCP_AGENT_DAILY_CALLS if plan == "agent" else None
 
 
 def _calls_id(uid: str, day: str) -> str:
@@ -422,21 +426,21 @@ def mcp_usage_summary(db, uid: str, plan: str) -> dict:
 
 def usage_summary(db, uid: str, admin: bool = False) -> dict:
     """Plan, credit, caps and usage snapshot for GET /api/billing. ``admin``
-    (operator accounts) reports MCP use without quotas, as they have none."""
+    (operator accounts) reports MCP use without quotas, as they have none.
+    ``mcp`` is the MCP tool-call quota, which only a grandfathered Agent
+    subscriber has (``daily_quota`` is None for everyone else)."""
     acct = account(db, uid)
     plan = acct["active_plan"]
     return {
         "credit_cents": acct["credit_cents"],
         "plan": plan,
         "billing_enabled": config.BILLING_ENABLED,
-        # Free-plan caps (the Free vs paid comparison); ``plan_caps`` are the
-        # ones that apply to this user (None = unlimited).
+        # Free-plan caps (the Free vs Pro comparison); ``plan_caps`` are the
+        # ones that apply to this user (None = unlimited; a grandfathered
+        # Agent subscriber's are the Agent caps).
         "caps": plan_caps("free"),
-        "agent_caps": plan_caps("agent"),
         "plan_caps": plan_caps(plan),
         "mcp": mcp_usage_summary(db, uid, "pro" if admin or not config.BILLING_ENABLED else plan),
-        "mcp_free_daily_calls": config.MCP_FREE_DAILY_CALLS,
-        "mcp_agent_daily_calls": config.MCP_AGENT_DAILY_CALLS,
         # Quoted on /billing (Free vs Pro comparison) so the page never
         # hardcodes a number the operator can change with an env var.
         "free_grant_cents": config.FREE_GRANT_CENTS,

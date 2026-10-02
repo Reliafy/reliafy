@@ -1,9 +1,13 @@
-"""The Agent plan (US$2/month, MCP only) and the free MCP tier.
+"""MCP is part of Reliafy Pro; the retired Agent plan is grandfathered.
 
-Plan gating per MCP tool (OAuth vs ``rlf_`` API tokens), the daily tool-call
-quota, availability simulation staying Pro / purchased credits, plan-aware
-storage caps, the ``save_model`` tool, and the Stripe side: subscribing with
-plan=agent, the webhook, and the Pro monthly credit staying Pro-only.
+A Free OAuth user connects and lists the tools, but every call except
+``upgrade_link`` answers with the Pro message, and ``upgrade_link`` offers only
+Pro. Pro (and operators, and self-hosted installs) has every tool with no
+quota. ``rlf_`` API tokens stay Pro-only. A subscriber to the retired Agent
+plan (US$2/month, MCP only) keeps what they had until the subscription ends:
+the tools except fitting and fleets, a daily tool-call quota and the Agent
+storage caps. On the Stripe side the Agent plan can't be bought any more,
+while an existing Agent subscription's webhook events still work.
 
 MCP calls go through the real ``/mcp`` mount (as in test_mcp.py); Stripe is a
 fake module swapped in for ``routers.billing._stripe`` — nothing leaves the
@@ -18,7 +22,6 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import mongomock
-import numpy as np
 import pytest
 import surpyval
 from fastapi.testclient import TestClient
@@ -32,8 +35,10 @@ USERS = {
     AGENT: {"_id": AGENT, "email": "agent@example.org", "name": "Agent", "plan": "agent"},
     PRO: {"_id": PRO, "email": "pro@example.org", "name": "Pro", "plan": "pro"},
 }
-UPGRADE = "Reliafy Agent (US$2/month, MCP) or Pro (US$19/month)"
+PRO_REQUIRED = "Using Reliafy from AI agents (MCP) is part of Reliafy Pro (US$19/month)"
+UPGRADE = "upgrade to Reliafy Pro (US$19/month)"
 WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
+N_TOOLS = 26
 
 
 @pytest.fixture()
@@ -48,7 +53,7 @@ def env(monkeypatch):
     monkeypatch.setattr(config, "ADMIN_EMAILS", set())
     monkeypatch.setattr(config, "PUBLIC_BASE_URL", BASE)
     monkeypatch.setattr(rbd_analysis, "_AVAIL_SIMS", 20)  # keep the suite quick
-    test_db = mongomock.MongoClient()["reliafy_agent_plan_test"]
+    test_db = mongomock.MongoClient()["reliafy_mcp_plans_test"]
     monkeypatch.setattr(db, "_db", test_db)
     monkeypatch.setattr(db, "_simulated", True)
     ingest_router._hits.clear()
@@ -95,59 +100,50 @@ def _calls_today(db, uid):
 
 
 def _post_mcp(token):
-    from backend.main import app
+    """A raw tools/list POST to /mcp, with the session manager running."""
+    from backend.tests.test_mcp_oauth import _post_mcp as post
 
-    body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
-    return TestClient(app).post("/mcp", json=body, headers={
-        "Accept": "application/json, text/event-stream", "Authorization": f"Bearer {token}"})
+    return post(None, token)
 
 
-# ---- plan gating per tool ---------------------------------------------------------------
+# ---- Free: connect and list, every call explains Pro ----------------------------------------
 
-@pytest.mark.parametrize("uid", [FREE, AGENT, PRO])
-def test_oauth_tool_gating_by_plan(env, uid):
-    token = env.oauth[uid]
+def test_free_oauth_user_connects_and_lists_but_every_call_is_pro(env):
+    token = env.oauth[FREE]
+    assert _post_mcp(token).status_code == 200  # connecting works
     tools = {t.name for t in _run(token, lambda c: c.list_tools()).tools}
-    assert {"save_model", "fit_distribution", "list_fleets"} <= tools  # every plan sees every tool
+    assert len(tools) == N_TOOLS and {"upgrade_link", "list_models", "save_model"} <= tools
 
-    assert "life_models" in _ok(_call(token, "list_models"))
-    assert _ok(_call(token, "optimal_replacement", {
-        "distribution_id": "weibull", "params": WEIBULL, "planned_cost": 100, "unplanned_cost": 1000}))
-    saved = _ok(_call(token, "save_model", {"name": "Bearing", "distribution": "weibull", "params": WEIBULL}))
-    assert saved["saved"] is True
+    for name, args in [
+        ("list_models", {}),
+        ("save_model", {"name": "Bearing", "distribution": "weibull", "params": WEIBULL}),
+        ("optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL,
+                                 "planned_cost": 100, "unplanned_cost": 1000}),
+        ("fit_distribution", {"data": [120, 340, 510, 700, 980]}),
+        ("list_fleets", {}),
+        ("upload_dataset", {"name": "d", "csv": "t,c\n1,0\n"}),
+    ]:
+        msg = _err(_call(token, name, args))
+        assert msg.endswith(f"{PRO_REQUIRED} — upgrade at {BASE}/billing, or call upgrade_link for a payment "
+                            "link."), name
 
-    fit = _call(token, "fit_distribution", {"data": [120, 340, 510, 700, 980]})
-    fit_saved = _call(token, "fit_and_save_model", {"name": "x", "data": [120, 340, 510, 700, 980]})
-    fleets = _call(token, "list_fleets")
-    alerts = _call(token, "create_fleet_alert", {"fleet_id": "nope", "kind": "above", "threshold": 1})
-    if uid == PRO:
-        assert _ok(fit)["params"] and _ok(fit_saved)["saved"] and "fleets" in _ok(fleets)
-        assert "not found" in _err(alerts).lower()  # past the gate, into the tool
-    else:
-        for result in (fit, fit_saved):
-            msg = _err(result)
-            assert "part of Reliafy Pro (US$19/month)" in msg
-            assert "SurPyval" in msg and "save_model" in msg and f"{BASE}/billing" in msg
-        for result in (fleets, alerts):
-            msg = _err(result)
-            assert "Fleet forecasts and fleet alerts are part of Reliafy Pro" in msg and f"{BASE}/billing" in msg
-        assert env.db.models.count_documents({"owner_id": uid, "dataset_id": {"$ne": ""}}) == 0
+    # Nothing ran: nothing saved, no quota kept for a plan without MCP.
+    assert env.db.models.count_documents({"owner_id": FREE}) == 0
+    assert env.db.datasets.count_documents({"owner_id": FREE}) == 0
+    assert env.db.mcp_usage.count_documents({}) == 0
+
+
+def test_a_lapsed_agent_plan_is_free_again(env):
+    past = datetime.now(timezone.utc) - timedelta(days=1)
+    env.db.users.update_one({"_id": AGENT}, {"$set": {"plan_until": past}})
+    assert PRO_REQUIRED in _err(_call(env.oauth[AGENT], "list_models"))
 
 
 @pytest.mark.parametrize("uid", [FREE, AGENT])
 def test_api_tokens_stay_pro_only(env, uid):
     r = _post_mcp(env.api[uid])
     assert r.status_code == 403 and "API token is part of Reliafy Pro" in r.json()["detail"]
-
-
-def test_pro_api_token_has_every_tool_without_quota(env, monkeypatch):
-    from backend import config
-
-    monkeypatch.setattr(config, "MCP_FREE_DAILY_CALLS", 0)
-    monkeypatch.setattr(config, "MCP_AGENT_DAILY_CALLS", 0)
-    assert _ok(_call(env.api[PRO], "fit_distribution", {"data": [120, 340, 510, 700, 980]}))["params"]
-    assert "fleets" in _ok(_call(env.api[PRO], "list_fleets"))
-    assert env.db.mcp_usage.count_documents({}) == 0
+    assert "Agent" not in r.json()["detail"] and "Free" not in r.json()["detail"]
 
 
 def test_rest_api_stays_pro_only_for_agent(env):
@@ -157,79 +153,114 @@ def test_rest_api_stays_pro_only_for_agent(env):
     assert billing.api_access_allowed(env.db, {"uid": PRO, "email": "pro@example.org"}) is True
 
 
-# ---- daily tool-call quota ----------------------------------------------------------------
-
-def test_free_daily_quota_counts_tool_calls_only_and_resets(env, monkeypatch):
+def test_mcp_plan_follows_the_api_entitlement(env, monkeypatch):
     from backend import config
     from backend.services import billing
 
-    monkeypatch.setattr(config, "MCP_FREE_DAILY_CALLS", 3)
-    token = env.oauth[FREE]
+    def plan(uid):
+        return billing.mcp_plan(env.db, {"uid": uid, "email": USERS[uid]["email"]})
 
-    # A refused Pro-only call doesn't use the quota; tools/list and initialize never do.
-    _err(_call(token, "fit_distribution", {"data": [1, 2, 3]}))
-    _run(token, lambda c: c.list_tools())
-    assert _calls_today(env.db, FREE) == 0
+    assert (plan(FREE), plan(AGENT), plan(PRO)) == ("free", "agent", "pro")
+    monkeypatch.setattr(config, "ADMIN_EMAILS", {"free@example.org"})
+    assert plan(FREE) == "pro"
+    monkeypatch.setattr(config, "ADMIN_EMAILS", set())
+    monkeypatch.setattr(config, "BILLING_ENABLED", False)
+    assert plan(FREE) == "pro" and plan(AGENT) == "pro"
 
+
+# ---- Pro: everything, no quota ------------------------------------------------------------
+
+@pytest.mark.parametrize("via", ["oauth", "api"])
+def test_pro_has_every_tool_without_quota(env, monkeypatch, via):
+    from backend import config
+
+    monkeypatch.setattr(config, "MCP_AGENT_DAILY_CALLS", 0)
+    token = getattr(env, via)[PRO]
+    assert len(_run(token, lambda c: c.list_tools()).tools) == N_TOOLS
+    assert _ok(_call(token, "fit_distribution", {"data": [120, 340, 510, 700, 980]}))["params"]
+    assert _ok(_call(token, "fit_and_save_model", {"name": "x", "data": [120, 340, 510, 700, 980]}))["saved"]
+    assert "fleets" in _ok(_call(token, "list_fleets"))
+    alerts = _call(token, "create_fleet_alert", {"fleet_id": "nope", "kind": "above", "threshold": 1})
+    assert "not found" in _err(alerts).lower()  # past the gate, into the tool
+    assert _ok(_call(token, "save_model", {"name": "Bearing", "distribution": "weibull", "params": WEIBULL}))
     for _ in range(3):
         _ok(_call(token, "list_models"))
-    assert _calls_today(env.db, FREE) == 3
-
-    msg = _err(_call(token, "list_models"))
-    assert "You've used all 3 Reliafy tool calls included per day on the Free plan" in msg
-    assert "resets at 00:00 UTC" in msg and UPGRADE in msg and f"{BASE}/billing" in msg
-    assert _calls_today(env.db, FREE) == 3  # a refused call isn't counted
-    assert len(_run(token, lambda c: c.list_tools()).tools) == 26  # listing still works
-
-    # Next UTC day: a fresh quota.
-    tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
-    monkeypatch.setattr(billing, "_now", lambda: tomorrow)
-    _ok(_call(token, "list_models"))
-    assert _calls_today(env.db, FREE) == 1
+    assert env.db.mcp_usage.count_documents({}) == 0
 
 
-def test_agent_quota_is_separate_and_pro_has_none(env, monkeypatch):
+def test_self_hosted_and_operators_have_full_access(env, monkeypatch):
     from backend import config
 
-    monkeypatch.setattr(config, "MCP_FREE_DAILY_CALLS", 1)
-    monkeypatch.setattr(config, "MCP_AGENT_DAILY_CALLS", 2)
-    for _ in range(2):
-        _ok(_call(env.oauth[AGENT], "list_rbds"))
-    msg = _err(_call(env.oauth[AGENT], "list_rbds"))
-    assert "2 Reliafy tool calls included per day on the Agent plan" in msg
-    # An Agent user is pointed at the plan above theirs, not at Agent again.
-    assert "upgrade to Reliafy Pro (US$19/month)" in msg and "Reliafy Agent (US$2" not in msg
-
-    for _ in range(3):
-        _ok(_call(env.oauth[PRO], "list_rbds"))
-    assert env.db.mcp_usage.count_documents({"uid": PRO}) == 0
-
-
-def test_self_hosted_and_operators_have_no_quota(env, monkeypatch):
-    from backend import config
-
-    monkeypatch.setattr(config, "MCP_FREE_DAILY_CALLS", 1)
     monkeypatch.setattr(config, "ADMIN_EMAILS", {"free@example.org"})
-    for _ in range(2):
-        _ok(_call(env.oauth[FREE], "list_models"))
+    _ok(_call(env.oauth[FREE], "list_models"))
     _ok(_call(env.oauth[FREE], "fit_distribution", {"data": [120, 340, 510, 700, 980]}))
     monkeypatch.setattr(config, "ADMIN_EMAILS", set())
     monkeypatch.setattr(config, "BILLING_ENABLED", False)
     for _ in range(2):
         _ok(_call(env.oauth[FREE], "list_models"))
+    assert _post_mcp(env.api[FREE]).status_code == 200
     assert env.db.mcp_usage.count_documents({}) == 0
 
 
-# ---- availability simulation: Pro or purchased credits, on every plan ------------------------
+# ---- Grandfathered Agent: what they had, until it ends --------------------------------------
+
+def test_grandfathered_agent_keeps_tools_except_fitting_and_fleets(env):
+    token = env.oauth[AGENT]
+    assert "life_models" in _ok(_call(token, "list_models"))
+    assert _ok(_call(token, "optimal_replacement", {
+        "distribution_id": "weibull", "params": WEIBULL, "planned_cost": 100, "unplanned_cost": 1000}))
+    assert _ok(_call(token, "save_model", {"name": "Bearing", "distribution": "weibull", "params": WEIBULL}))["saved"]
+
+    for name, args in [("fit_distribution", {"data": [120, 340, 510, 700, 980]}),
+                       ("fit_and_save_model", {"name": "x", "data": [120, 340, 510, 700, 980]})]:
+        msg = _err(_call(token, name, args))
+        assert "part of Reliafy Pro (US$19/month)" in msg
+        assert "SurPyval" in msg and "save_model" in msg and f"{BASE}/billing" in msg
+    for name, args in [("list_fleets", {}),
+                       ("create_fleet_alert", {"fleet_id": "nope", "kind": "above", "threshold": 1})]:
+        msg = _err(_call(token, name, args))
+        assert "Fleet forecasts and fleet alerts are part of Reliafy Pro" in msg and f"{BASE}/billing" in msg
+    assert env.db.models.count_documents({"owner_id": AGENT, "dataset_id": {"$ne": ""}}) == 0
+
+
+def test_grandfathered_agent_keeps_the_daily_quota(env, monkeypatch):
+    from backend import config
+    from backend.services import billing
+
+    assert billing.mcp_daily_quota("agent") == config.MCP_AGENT_DAILY_CALLS == 2000
+    assert billing.mcp_daily_quota("free") is None and billing.mcp_daily_quota("pro") is None
+
+    monkeypatch.setattr(config, "MCP_AGENT_DAILY_CALLS", 2)
+    token = env.oauth[AGENT]
+    # A refused Pro-only call doesn't use the quota; tools/list never does.
+    _err(_call(token, "fit_distribution", {"data": [1, 2, 3]}))
+    _run(token, lambda c: c.list_tools())
+    assert _calls_today(env.db, AGENT) == 0
+
+    for _ in range(2):
+        _ok(_call(token, "list_rbds"))
+    msg = _err(_call(token, "list_rbds"))
+    assert "2 Reliafy tool calls included per day on the Agent plan" in msg and "resets at 00:00 UTC" in msg
+    assert UPGRADE in msg and "upgrade_link" in msg and "US$2" not in msg
+    assert _calls_today(env.db, AGENT) == 2  # a refused call isn't counted
+    assert len(_run(token, lambda c: c.list_tools()).tools) == N_TOOLS  # listing still works
+
+    # Next UTC day: a fresh quota.
+    tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
+    monkeypatch.setattr(billing, "_now", lambda: tomorrow)
+    _ok(_call(token, "list_rbds"))
+    assert _calls_today(env.db, AGENT) == 1
+
+
+# ---- availability simulation: Pro or purchased credits ---------------------------------------
 
 def _repairable(env, uid, name):
     return _ok(_call(env.oauth[uid], "create_rbd", {"name": name, "repairable": True, "stages": REPAIRABLE_STAGES}))["id"]
 
 
-@pytest.mark.parametrize("uid", [FREE, AGENT])
-def test_free_and_agent_mcp_users_get_no_simulations(env, uid):
-    rid = _repairable(env, uid, "Pumps")
-    out = _ok(_call(env.oauth[uid], "analyze_rbd", {"rbd_id": rid}))
+def test_grandfathered_agent_gets_no_simulations(env):
+    rid = _repairable(env, AGENT, "Pumps")
+    out = _ok(_call(env.oauth[AGENT], "analyze_rbd", {"rbd_id": rid}))
     assert out["available"] is False and out["code"] == "pro_required"
     msg = out["message"]
     assert "needs Reliafy Pro (US$19/month" in msg and f"{BASE}/billing" in msg
@@ -237,7 +268,7 @@ def test_free_and_agent_mcp_users_get_no_simulations(env, uid):
     assert env.simulations["n"] == 0
 
     # The way forward it names works on the plan.
-    script = _ok(_call(env.oauth[uid], "export_rbd_python", {"rbd_id": rid}))
+    script = _ok(_call(env.oauth[AGENT], "export_rbd_python", {"rbd_id": rid}))
     assert "repyability" in script["script"].lower()
     compile(script["script"], script["filename"], "exec")
 
@@ -291,27 +322,20 @@ def test_caps_are_plan_aware(env, monkeypatch):
     assert billing.would_exceed_cap(env.db, AGENT, "datasets") is True
 
 
-def test_mcp_cap_message_says_the_limit_and_upgrade(env, monkeypatch):
+def test_agent_mcp_cap_message_says_the_limit_and_upgrade(env, monkeypatch):
     from backend import config
 
     monkeypatch.setattr(config, "AGENT_MAX_DATASETS", 1)
-    monkeypatch.setattr(config, "FREE_MAX_MODELS", 1)
     csv = "hours,failed\n1,0\n2,0\n3,1\n"
     _ok(_call(env.oauth[AGENT], "upload_dataset", {"name": "a", "csv": csv}))
     msg = _err(_call(env.oauth[AGENT], "upload_dataset", {"name": "b", "csv": csv}))
     assert "Agent plan's limit of 1 saved datasets" in msg and "doesn't reset" in msg
-    assert "upgrade to Reliafy Pro (US$19/month)" in msg
-
-    _ok(_call(env.oauth[FREE], "save_model", {"name": "m1", "distribution": "weibull", "params": WEIBULL}))
-    msg = _err(_call(env.oauth[FREE], "save_model", {"name": "m2", "distribution": "weibull", "params": WEIBULL}))
-    assert "Free plan's limit of 1 saved models" in msg and UPGRADE in msg
-    assert env.db.models.count_documents({"owner_id": FREE}) == 1
-
+    assert UPGRADE in msg and "US$2" not in msg
 
 
 def test_web_app_cap_message_uses_the_users_own_plan(env, monkeypatch):
-    """An Agent user who reaches a cap in the web app is told the Agent limit,
-    not the free one."""
+    """A grandfathered Agent user who reaches a cap in the web app is told the
+    Agent limit, not the free one."""
     from backend import config
     from backend.services import billing
 
@@ -324,10 +348,11 @@ def test_web_app_cap_message_uses_the_users_own_plan(env, monkeypatch):
         "You've reached the Agent plan limit of 25 saved RBDs. Upgrade to Pro for unlimited RBDs."
     )
 
+
 # ---- save_model ---------------------------------------------------------------------------
 
 def test_save_model_from_parameters(env):
-    token = env.oauth[AGENT]
+    token = env.oauth[PRO]
     ds = _ok(_call(token, "upload_dataset", {"name": "Bearings", "csv": "hours,failed\n900,0\n1200,0\n1500,1\n"}))
     # Parameter order doesn't matter; names do.
     saved = _ok(_call(token, "save_model", {
@@ -342,7 +367,7 @@ def test_save_model_from_parameters(env):
     assert saved["metrics"]["mttf"] == pytest.approx(float(ref.mean()))
 
     doc = env.db.models.find_one({"_id": mid})
-    assert doc["owner_id"] == AGENT and doc["spec"]["params_only"] is True
+    assert doc["owner_id"] == PRO and doc["spec"]["params_only"] is True
     assert doc["spec"]["notes"] == "surpyval.Weibull.fit, MLE" and doc["spec"]["source_dataset_id"] == ds["id"]
     assert doc["dataset_id"] == ""  # a reference only: never refitted from that dataset
 
@@ -354,7 +379,7 @@ def test_save_model_from_parameters(env):
 
 
 def test_save_model_with_an_offset(env):
-    saved = _ok(_call(env.oauth[FREE], "save_model", {
+    saved = _ok(_call(env.oauth[AGENT], "save_model", {
         "name": "Offset", "distribution": "weibull",
         "params": [*WEIBULL, {"name": "gamma", "value": 100}]}))
     assert {"name": "gamma (offset)", "value": 100.0} in saved["extra_params"]
@@ -372,9 +397,9 @@ def test_save_model_with_an_offset(env):
     ({"distribution": "weibull", "params": WEIBULL, "dataset_id": "missing"}, "Dataset not found"),
 ])
 def test_save_model_validates(env, args, expect):
-    msg = _err(_call(env.oauth[FREE], "save_model", {"name": "Bad", **args}))
+    msg = _err(_call(env.oauth[PRO], "save_model", {"name": "Bad", **args}))
     assert expect in msg
-    assert env.db.models.count_documents({"owner_id": FREE}) == 0
+    assert env.db.models.count_documents({"owner_id": PRO}) == 0
 
 
 def test_save_model_dataset_must_be_the_callers(env):
@@ -386,11 +411,28 @@ def test_save_model_dataset_must_be_the_callers(env):
 
 # ---- Stripe: subscribe, webhook, monthly credit ---------------------------------------------
 
+class FakePrices:
+    """Stripe's Price API, enough for stripe_prices: list by lookup key. Any
+    create is a bug now that the Agent plan isn't sold."""
+
+    def __init__(self, existing=None):
+        self.prices = list(existing or [])
+        self.listed = []
+
+    def list(self, lookup_keys, limit, **kw):
+        self.listed.append(kw)
+        return {"data": [p for p in self.prices if p["lookup_key"] in lookup_keys][:limit]}
+
+    def create(self, **kw):
+        raise AssertionError("The retired Agent plan's Price must never be created.")
+
+
 class FakeStripe:
     """Just the stripe-python surface routers/billing.py touches."""
 
     def __init__(self):
         self.calls = []
+        self.Price = FakePrices()
         fake = self
 
         class Customer:
@@ -442,38 +484,47 @@ def stripe_client(env, monkeypatch):
         app.dependency_overrides.clear()
 
 
-def test_subscribe_with_plan_agent(stripe_client, monkeypatch):
+@pytest.mark.parametrize("configured", [True, False])
+def test_subscribe_plan_agent_is_refused(stripe_client, monkeypatch, configured):
     from backend import config
+    from backend.services import stripe_prices
 
     s = stripe_client
-    r = s.client.post("/api/billing/subscribe", json={"plan": "agent"})
-    assert r.status_code == 200 and r.json()["url"].startswith("https://checkout.stripe.test/")
-    kind, kw = s.fake.calls[-1]
-    assert kind == "checkout" and kw["mode"] == "subscription"
-    assert kw["line_items"] == [{"price": "price_agent", "quantity": 1}]
-    assert kw["metadata"] == {"uid": FREE, "kind": "agent"} and kw["customer"] == "cus_new"
+    if not configured:  # the provisioned-by-lookup-key setup: still nothing is created
+        monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", None)
+        stripe_prices.reset_cache()
+    try:
+        r = s.client.post("/api/billing/subscribe", json={"plan": "agent"})
+        assert r.status_code == 410
+        assert r.json()["detail"] == "The Agent plan has been retired; MCP is now part of Pro."
+        assert s.fake.calls == []  # no customer, no checkout
+    finally:
+        stripe_prices.reset_cache()
 
     # No body still means Pro, as the existing button sends.
     r = s.client.post("/api/billing/subscribe")
-    assert r.status_code == 200
-    assert s.fake.calls[-1][1]["line_items"] == [{"price": "price_pro", "quantity": 1}]
-    assert s.fake.calls[-1][1]["metadata"]["kind"] == "pro"
+    assert r.status_code == 200 and r.json()["url"].startswith("https://checkout.stripe.test/")
+    kind, kw = s.fake.calls[-1]
+    assert kind == "checkout" and kw["mode"] == "subscription"
+    assert kw["line_items"] == [{"price": "price_pro", "quantity": 1}]
+    assert kw["metadata"] == {"uid": FREE, "kind": "pro"}
 
     assert s.client.post("/api/billing/subscribe", json={"plan": "platinum"}).status_code == 400
-    # Without a Stripe key at all, neither plan is on offer.
-    monkeypatch.setattr(config, "STRIPE_API_KEY", None)
-    assert s.client.get("/api/billing").json()["agent_available"] is False
+    body = s.client.get("/api/billing").json()
+    assert "agent_available" not in body and body["pro_available"] is True
 
 
-def test_agent_upgrades_to_pro_on_the_same_subscription(stripe_client):
+def test_grandfathered_agent_upgrades_to_pro_on_the_same_subscription(stripe_client):
     from backend.routers.billing import _handle_event
     from backend.services import billing
 
     s = stripe_client
     s.who["uid"] = FREE
+    # An Agent checkout opened before the plan was retired completes afterwards.
     _handle_event(s.db, {"type": "checkout.session.completed", "data": {"object": {
         "id": "cs_1", "customer": "cus_f", "subscription": "sub_1", "metadata": {"uid": FREE, "kind": "agent"}}}})
-    assert s.client.post("/api/billing/subscribe", json={"plan": "agent"}).status_code == 409
+    assert billing.account(s.db, FREE)["active_plan"] == "agent"
+    assert s.client.post("/api/billing/subscribe", json={"plan": "agent"}).status_code == 410
 
     r = s.client.post("/api/billing/subscribe", json={"plan": "pro"})
     assert r.status_code == 200 and r.json()["switched"] is True
@@ -488,33 +539,84 @@ def test_agent_upgrades_to_pro_on_the_same_subscription(stripe_client):
     assert r.status_code == 409 and "Manage subscription" in r.json()["detail"]
 
 
-def test_webhook_kind_agent_and_plan_changes(stripe_client):
+def test_webhook_handles_an_existing_agent_subscription_to_its_end(stripe_client):
     from backend.routers.billing import _handle_event
     from backend.services import billing
 
     s = stripe_client
-    _handle_event(s.db, {"type": "checkout.session.completed", "data": {"object": {
-        "id": "cs_1", "customer": "cus_f", "subscription": "sub_1", "metadata": {"uid": FREE, "kind": "agent"}}}})
+    billing.set_plan(s.db, FREE, "agent", customer_id="cus_f", subscription_id="sub_1")
+    assert _ok(_call(s.oauth[FREE], "list_models"))  # MCP while it lasts
+
+    # A renewal (still the Agent price) keeps the plan.
+    _handle_event(s.db, {"type": "customer.subscription.updated", "data": {"object": {
+        "id": "sub_1", "customer": "cus_f", "status": "active",
+        "items": {"data": [{"id": "si_1", "price": {"id": "price_agent"}}]}}}})
     acct = billing.account(s.db, FREE)
-    assert acct["active_plan"] == "agent" and acct["is_pro"] is False and acct["is_agent"] is True
-    assert acct["stripe_subscription_id"] == "sub_1" and acct["stripe_customer_id"] == "cus_f"
+    assert acct["active_plan"] == "agent" and acct["is_agent"] is True and acct["is_pro"] is False
     assert s.client.get("/api/me").json()["plan"] == "agent"
 
+    # Some other (old) subscription ending leaves the current plan alone...
+    _handle_event(s.db, {"type": "customer.subscription.deleted", "data": {"object": {
+        "id": "sub_old", "customer": "cus_f"}}})
+    assert billing.account(s.db, FREE)["active_plan"] == "agent"
+    # ...while cancelling the current one downgrades — and with it goes MCP.
+    _handle_event(s.db, {"type": "customer.subscription.updated", "data": {"object": {
+        "id": "sub_1", "customer": "cus_f", "status": "canceled",
+        "items": {"data": [{"id": "si_1", "price": {"id": "price_agent"}}]}}}})
+    acct = billing.account(s.db, FREE)
+    assert acct["active_plan"] == "free" and acct["stripe_subscription_id"] is None
+    assert PRO_REQUIRED in _err(_call(s.oauth[FREE], "list_models"))
+
+    # customer.subscription.deleted ends one too.
+    billing.set_plan(s.db, AGENT, "agent", customer_id="cus_a", subscription_id="sub_a")
+    _handle_event(s.db, {"type": "customer.subscription.deleted", "data": {"object": {
+        "id": "sub_a", "customer": "cus_a"}}})
+    assert billing.account(s.db, AGENT)["active_plan"] == "free"
+
+
+def test_webhook_follows_an_agent_subscriber_to_pro(stripe_client):
+    from backend.routers.billing import _handle_event
+    from backend.services import billing
+
+    s = stripe_client
+    billing.set_plan(s.db, FREE, "agent", customer_id="cus_f", subscription_id="sub_1")
     # Switched to Pro (here or in Stripe's portal): the subscription's price says so.
     _handle_event(s.db, {"type": "customer.subscription.updated", "data": {"object": {
         "id": "sub_1", "customer": "cus_f", "status": "active",
         "items": {"data": [{"id": "si_1", "price": {"id": "price_pro"}}]}}}})
     assert billing.account(s.db, FREE)["active_plan"] == "pro"
 
-    # Some other (old) subscription ending leaves the current plan alone...
-    _handle_event(s.db, {"type": "customer.subscription.deleted", "data": {"object": {
-        "id": "sub_old", "customer": "cus_f"}}})
-    assert billing.account(s.db, FREE)["active_plan"] == "pro"
-    # ...while the current one ending downgrades.
-    _handle_event(s.db, {"type": "customer.subscription.deleted", "data": {"object": {
-        "id": "sub_1", "customer": "cus_f"}}})
-    acct = billing.account(s.db, FREE)
-    assert acct["active_plan"] == "free" and acct["stripe_subscription_id"] is None
+
+def test_agent_price_is_found_by_lookup_key_never_created(monkeypatch):
+    from backend import config
+    from backend.routers import billing as billing_router
+    from backend.services import stripe_prices
+
+    monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", None)
+    monkeypatch.setattr(config, "STRIPE_PRO_PRICE_ID", "price_pro")
+    stripe_prices.reset_cache()
+    try:
+        # Never provisioned: nothing to find, and nothing is created.
+        stripe = SimpleNamespace(Price=FakePrices())
+        assert stripe_prices.agent_price_id(stripe) is None
+        assert stripe_prices.agent_price_id(None) is None
+
+        # Provisioned back when it was sold (and maybe archived since): found
+        # by its lookup key, archived or not.
+        prices = FakePrices([{"id": "price_auto_1", "lookup_key": stripe_prices.AGENT_LOOKUP_KEY,
+                              "active": False}])
+        stripe = SimpleNamespace(Price=prices)
+        monkeypatch.setattr(billing_router, "_stripe", lambda: stripe)
+        assert billing_router._plan_for_prices({"price_auto_1"}) == "agent"
+        assert billing_router._plan_for_prices({"price_other"}) is None
+        assert billing_router._plan_for_prices({"price_pro", "price_auto_1"}) == "pro"
+        assert prices.listed and all("active" not in kw for kw in prices.listed)
+
+        # A configured id always wins.
+        monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", "price_configured")
+        assert stripe_prices.agent_price_id(stripe) == "price_configured"
+    finally:
+        stripe_prices.reset_cache()
 
 
 def test_invoice_paid_grants_monthly_credit_to_pro_only(env, monkeypatch):
@@ -528,7 +630,7 @@ def test_invoice_paid_grants_monthly_credit_to_pro_only(env, monkeypatch):
     billing.set_plan(env.db, AGENT, "agent", customer_id="cus_agent")
     before = billing.account(env.db, AGENT)["credit_cents"]
 
-    # An Agent invoice — with or without line prices — grants nothing.
+    # A grandfathered Agent invoice — with or without line prices — grants nothing.
     _handle_event(env.db, {"type": "invoice.paid", "data": {"object": {"id": "in_a1", "customer": "cus_agent"}}})
     _handle_event(env.db, {"type": "invoice.paid", "data": {"object": {
         "id": "in_a2", "customer": "cus_agent", "lines": {"data": [{"price": {"id": "price_agent"}}]}}}})
@@ -544,7 +646,7 @@ def test_invoice_paid_grants_monthly_credit_to_pro_only(env, monkeypatch):
     assert env.db.credit_ledger.count_documents({"uid": FREE, "reason": "pro-monthly"}) == 1
 
 
-def test_billing_status_exposes_agent_plan_and_mcp_usage(stripe_client, monkeypatch):
+def test_billing_status_shows_the_agent_quota_only_to_agent_subscribers(stripe_client, monkeypatch):
     from backend import config
 
     monkeypatch.setattr(config, "MCP_AGENT_DAILY_CALLS", 2000)
@@ -554,143 +656,56 @@ def test_billing_status_exposes_agent_plan_and_mcp_usage(stripe_client, monkeypa
 
     s.who["uid"] = AGENT
     body = s.client.get("/api/billing").json()
-    assert body["plan"] == "agent" and body["agent_available"] is True and body["pro_available"] is True
-    assert body["plan_caps"] == body["agent_caps"] and body["agent_caps"]["datasets"] == config.AGENT_MAX_DATASETS
+    assert body["plan"] == "agent" and body["pro_available"] is True
+    assert body["plan_caps"]["datasets"] == config.AGENT_MAX_DATASETS
     assert body["caps"]["datasets"] == config.FREE_MAX_DATASETS
     assert body["mcp"]["calls_today"] == 2 and body["mcp"]["daily_quota"] == 2000
-    assert body["mcp_agent_daily_calls"] == 2000 and body["mcp_free_daily_calls"] == config.MCP_FREE_DAILY_CALLS
-    assert not any("simulation" in key for key in [*body, *body["mcp"]])  # not part of any MCP plan
+    for retired in ("agent_available", "agent_caps", "mcp_free_daily_calls", "mcp_agent_daily_calls"):
+        assert retired not in body
+    assert not any("simulation" in key for key in [*body, *body["mcp"]])
 
     s.who["uid"] = FREE
     body = s.client.get("/api/billing").json()
-    assert body["plan"] == "free" and body["mcp"]["daily_quota"] == config.MCP_FREE_DAILY_CALLS
-    assert body["mcp"]["calls_today"] == 0
+    assert body["plan"] == "free" and body["mcp"]["daily_quota"] is None and body["mcp"]["calls_today"] == 0
 
     s.who["uid"] = PRO
     body = s.client.get("/api/billing").json()
     assert body["plan"] == "pro" and body["plan_caps"] is None and body["mcp"]["daily_quota"] is None
 
 
+# ---- upgrade_link: Pro only ---------------------------------------------------------------
 
-# ---- Agent price provisioning and upgrade_link ---------------------------------------------
-
-class FakePrices:
-    """Stripe's Price API, enough for stripe_prices: list by lookup key, create."""
-
-    def __init__(self, existing=None):
-        self.prices = list(existing or [])
-        self.created = []
-
-    def list(self, lookup_keys, active, limit):
-        return {"data": [p for p in self.prices if p["lookup_key"] in lookup_keys][:limit]}
-
-    def create(self, **kw):
-        if any(p["lookup_key"] == kw["lookup_key"] for p in self.prices):
-            raise RuntimeError("A price with this lookup key already exists.")
-        price = {"id": f"price_auto_{len(self.created) + 1}", **kw}
-        self.prices.append(price)
-        self.created.append(kw)
-        return price
-
-
-def test_agent_price_is_created_once_then_found(monkeypatch):
-    from backend import config
-    from backend.services import stripe_prices
-
-    monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", None)
-    stripe_prices.reset_cache()
-    prices = FakePrices()
-    stripe = SimpleNamespace(Price=prices)
-    try:
-        assert stripe_prices.agent_price_id(stripe, create=False) is None
-        pid = stripe_prices.agent_price_id(stripe)
-        (kw,) = prices.created
-        assert kw["unit_amount"] == 200 and kw["currency"] == "usd"
-        assert kw["recurring"] == {"interval": "month"} and kw["lookup_key"] == stripe_prices.AGENT_LOOKUP_KEY
-        assert kw["product_data"] == {"name": "Reliafy Agent"}
-        # Cached, then (after a restart) found by its lookup key: never created twice.
-        assert stripe_prices.agent_price_id(stripe) == pid
-        stripe_prices.reset_cache()
-        assert stripe_prices.agent_price_id(stripe) == pid and len(prices.created) == 1
-        # A configured id always wins.
-        monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", "price_configured")
-        assert stripe_prices.agent_price_id(stripe) == "price_configured"
-    finally:
-        stripe_prices.reset_cache()
-
-
-def test_losing_a_create_race_uses_the_winners_price(monkeypatch):
-    from backend import config
-    from backend.services import stripe_prices
-
-    monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", None)
-    stripe_prices.reset_cache()
-    prices = FakePrices()
-    winner = {"id": "price_winner", "lookup_key": stripe_prices.AGENT_LOOKUP_KEY}
-    real_list = prices.list
-    calls = {"n": 0}
-
-    def racing_list(**kw):
-        # Empty on the first look; the other instance creates it in between.
-        calls["n"] += 1
-        if calls["n"] == 1:
-            prices.prices.append(winner)
-            return {"data": []}
-        return real_list(**kw)
-
-    prices.list = racing_list
-    try:
-        assert stripe_prices.agent_price_id(SimpleNamespace(Price=prices)) == "price_winner"
-        assert prices.created == []
-    finally:
-        stripe_prices.reset_cache()
-
-
-def test_subscribe_agent_provisions_the_price_when_unconfigured(stripe_client, monkeypatch):
-    from backend import config
-    from backend.services import stripe_prices
-
+def test_upgrade_link_offers_only_pro_and_works_for_a_free_user(stripe_client):
     s = stripe_client
-    monkeypatch.setattr(config, "STRIPE_AGENT_PRICE_ID", None)
-    stripe_prices.reset_cache()
-    s.fake.Price = FakePrices()
-    try:
-        assert s.client.get("/api/billing").json()["agent_available"] is True
-        r = s.client.post("/api/billing/subscribe", json={"plan": "agent"})
-        assert r.status_code == 200
-        assert s.fake.calls[-1][1]["line_items"] == [{"price": "price_auto_1", "quantity": 1}]
-        # The webhook recognises the provisioned price as the Agent plan.
-        from backend.routers import billing as billing_router
+    tools = _run(s.oauth[FREE], lambda c: c.list_tools()).tools
+    schema = next(t for t in tools if t.name == "upgrade_link").input_schema["properties"]["plan"]
+    assert schema.get("enum", [schema.get("const")]) == ["pro"] and schema["default"] == "pro"
 
-        assert billing_router._plan_for_prices({"price_auto_1"}) == "agent"
-        assert billing_router._plan_for_prices({"price_other"}) is None
-    finally:
-        stripe_prices.reset_cache()
-
-
-def test_upgrade_link_gives_a_checkout_link_even_past_the_quota(stripe_client, monkeypatch):
-    from backend import config
-
-    s = stripe_client
-    monkeypatch.setattr(config, "MCP_FREE_DAILY_CALLS", 1)
-    _ok(_call(s.oauth[FREE], "list_models"))
-    _err(_call(s.oauth[FREE], "list_models"))  # quota used up
-
-    out = _ok(_call(s.oauth[FREE], "upgrade_link", {"plan": "agent"}))
-    assert out["url"].startswith("https://checkout.stripe.test/") and out["price"] == "US$2/month"
+    _err(_call(s.oauth[FREE], "list_models"))  # locked...
+    out = _ok(_call(s.oauth[FREE], "upgrade_link"))  # ...but the way to Pro works
+    assert out["plan"] == "pro" and out["price"] == "US$19/month"
+    assert out["url"].startswith("https://checkout.stripe.test/")
     assert "nothing is charged until the checkout is completed" in out["note"]
     kind, kw = s.fake.calls[-1]
-    assert kind == "checkout" and kw["line_items"] == [{"price": "price_agent", "quantity": 1}]
-    assert kw["metadata"] == {"uid": FREE, "kind": "agent"}
-    assert _calls_today(s.db, FREE) == 1  # upgrade_link isn't counted
+    assert kind == "checkout" and kw["line_items"] == [{"price": "price_pro", "quantity": 1}]
+    assert kw["metadata"] == {"uid": FREE, "kind": "pro"}
 
-    # The limit message points at it.
-    assert "upgrade_link" in _err(_call(s.oauth[FREE], "list_models"))
+    # Asking for the retired plan isn't possible.
+    assert _call(s.oauth[FREE], "upgrade_link", {"plan": "agent"}).is_error
+    assert not any(kw.get("metadata", {}).get("kind") == "agent" for _, kw in
+                   [c for c in s.fake.calls if c[0] == "checkout"])
+    assert s.db.mcp_usage.count_documents({}) == 0
 
 
-def test_upgrade_link_never_switches_a_paying_subscriber(stripe_client):
+def test_upgrade_link_past_the_agent_quota_and_never_switching_a_subscriber(stripe_client, monkeypatch):
+    from backend import config
+
     s = stripe_client
-    out = _ok(_call(s.oauth[AGENT], "upgrade_link", {"plan": "pro"}))
-    assert out["url"].endswith("/billing") and "billing page" in out["note"]
+    monkeypatch.setattr(config, "MCP_AGENT_DAILY_CALLS", 1)
+    _ok(_call(s.oauth[AGENT], "list_models"))
+    assert "upgrade_link" in _err(_call(s.oauth[AGENT], "list_models"))  # quota used up
+
+    out = _ok(_call(s.oauth[AGENT], "upgrade_link"))
+    assert out["url"].endswith("/billing") and "billing page" in out["note"] and out["plan"] == "pro"
     assert not any(c[0] in ("modify", "checkout") for c in s.fake.calls)
-    assert "already on Agent" in _err(_call(s.oauth[AGENT], "upgrade_link", {"plan": "agent"}))
+    assert _calls_today(s.db, AGENT) == 1  # upgrade_link isn't counted

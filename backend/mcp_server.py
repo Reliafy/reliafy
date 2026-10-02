@@ -16,19 +16,23 @@ each entry of :data:`BEARER_RESOLVERS` in turn:
   Pro-only on the cloud (:func:`billing.api_access_allowed`, 403 otherwise),
   always allowed self-hosted;
 * OAuth access tokens (``rlfo_…``) issued by Reliafy's own authorization
-  server (:mod:`backend.services.oauth`) — how Claude connectors sign in, on
-  any plan.
+  server (:mod:`backend.services.oauth`) — how Claude connectors sign in.
 
 Plans (:func:`billing.mcp_plan`, attached to the request as ``mcp_plan``):
-Pro — and API tokens, operators and self-hosted installs — has every tool
-with no quota. Free and Agent (US$2/month, MCP only) OAuth users get the
-tools except fitting and fleets (Pro-only: agents fit locally with SurPyval
-and save with ``save_model``), within a daily tool-call quota and their
-plan's storage caps. Availability simulation keeps the app's own paid gate
-(Pro or purchased credits) on every plan. Every refusal is a tool error that
-says what the limit is, when it resets and how to upgrade — never a
-transport failure — so Claude can tell the user plainly instead of showing
-a broken connection.
+using Reliafy over MCP is part of Pro — the same entitlement as the REST API
+(:func:`billing.api_access_allowed`: Pro, operators, self-hosted installs) —
+with every tool and no quota. A Free OAuth user can still connect and list
+the tools, but every tool call except ``upgrade_link`` answers with the
+"part of Reliafy Pro" message (``mcp_locked``), so Claude can say why
+instead of showing a broken connection.
+
+Grandfathered: subscribers to the retired Agent plan (US$2/month, MCP only)
+keep what they had until their subscription ends — every tool except fitting
+and fleets (agents fit locally with SurPyval and save with ``save_model``),
+within a daily tool-call quota and the Agent storage caps. Availability
+simulation keeps the app's own paid gate (Pro or purchased credits). Every
+refusal is a tool error that says what the limit is, when it resets and how
+to upgrade — never a transport failure.
 
 Either way: the same per-user rate limit, and the same scope — the user's
 personal data plus the shared samples (as ``/api/v1``). A missing or invalid
@@ -88,12 +92,11 @@ from backend.services.strategy import StrategyError
 logger = logging.getLogger(__name__)
 
 MCP_PRO_REQUIRED = (
-    "MCP access with an API token is part of Reliafy Pro. Upgrade to Pro, or drop the token "
-    "header and sign in to Reliafy from your MCP client (OAuth) to use the Free or Agent plan."
+    "MCP access with an API token is part of Reliafy Pro. Upgrade to Pro, then create an API "
+    "token under Settings > API access (or sign in to Reliafy from your MCP client)."
 )
 
 
-AGENT_PRICE = "US$2/month"
 PRO_PRICE = "US$19/month"
 _PLAN_NAMES = {"free": "Free", "agent": "Agent", "pro": "Pro"}
 
@@ -102,13 +105,16 @@ def _billing_url() -> str:
     return f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}/billing"
 
 
-def _upgrade_path(plan: str, lead: str = "To lift it, upgrade") -> str:
-    """How to lift a limit, for the caller's plan: Free users are offered both
-    paid plans, Agent users the one above them."""
-    link = " (or call upgrade_link for a direct payment link)"
-    if plan == "agent":
-        return f"{lead} to Reliafy Pro ({PRO_PRICE}) at {_billing_url()}{link}."
-    return f"{lead} to Reliafy Agent ({AGENT_PRICE}, MCP) or Pro ({PRO_PRICE}) at {_billing_url()}{link}."
+def _mcp_pro_required() -> str:
+    """Every tool call's answer for a signed-in user without MCP (Free)."""
+    return (f"Using Reliafy from AI agents (MCP) is part of Reliafy Pro ({PRO_PRICE}) — upgrade at "
+            f"{_billing_url()}, or call upgrade_link for a payment link.")
+
+
+def _upgrade_path(lead: str = "To lift it, upgrade") -> str:
+    """How to lift a limit (only grandfathered Agent users meet one): Pro."""
+    return (f"{lead} to Reliafy Pro ({PRO_PRICE}) at {_billing_url()} "
+            "(or call upgrade_link for a direct payment link).")
 
 
 def _until(when) -> str:
@@ -124,24 +130,24 @@ def _pro_only_message(tool: str) -> str:
                 "Fit the data locally with SurPyval instead (pip install surpyval; e.g. "
                 "surpyval.Weibull.fit(x=times, c=censored) — 0 = failed, 1 = still running), then save the "
                 "fitted parameters to Reliafy with save_model. Or upgrade to Pro at "
-                f"{_billing_url()} (or call upgrade_link with plan=pro for a payment link) to fit here.")
+                f"{_billing_url()} (or call upgrade_link for a payment link) to fit here.")
     return (f"Fleet forecasts and fleet alerts are part of Reliafy Pro ({PRO_PRICE}) — they run on usage "
             f"pushed through the Pro API — and aren't included on this plan. Upgrade at {_billing_url()} "
-            "(or call upgrade_link with plan=pro for a payment link).")
+            "(or call upgrade_link for a payment link).")
 
 
 def _quota_message(plan: str, quota: int) -> str:
     reset = billing_service.next_day_start()
     return (f"You've used all {quota:,} Reliafy tool calls included per day on the {_PLAN_NAMES[plan]} "
-            f"plan. The limit resets at 00:00 UTC ({_until(reset)}). " + _upgrade_path(plan))
+            f"plan. The limit resets at 00:00 UTC ({_until(reset)}). " + _upgrade_path())
 
 
 def _simulation_message(plan: str) -> str:
-    """Why analyze_rbd can't simulate for a Free/Agent MCP user, and the two
-    ways forward: Pro, or run the same diagram locally for free."""
+    """Why analyze_rbd can't simulate for a grandfathered Agent user, and the
+    two ways forward: Pro, or run the same diagram locally for free."""
     return (f"Availability simulation isn't included on the {_PLAN_NAMES[plan]} plan: it needs Reliafy Pro "
             f"({PRO_PRICE}; purchased AI credits unlock it too) — upgrade at {_billing_url()} (or call "
-            "upgrade_link with plan=pro for a payment link). It's free to run "
+            "upgrade_link for a payment link). It's free to run "
             "locally: export_rbd_python (Download as Python in the app) gives a standalone script that runs "
             "this diagram's simulation with RePyability, plus the exact install-and-run command. A saved "
             "result is served here whenever one exists.")
@@ -190,8 +196,10 @@ def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
 
     The user carries ``mcp_plan``: 'pro' for anyone with API access (Pro,
     operators, self-hosted — the only way an ``rlf_`` token gets in), else
-    the OAuth user's own plan, 'agent' or 'free', which :func:`_tool` gates
-    tools and quotas on."""
+    the OAuth user's own plan, 'agent' (grandfathered) or 'free', which
+    :func:`_gate` gates tools and quotas on. A Free OAuth user also carries
+    ``mcp_locked``, the upgrade message: the connection works, tools/list
+    works, and every tool call but ``upgrade_link`` answers with it."""
     scheme, _, raw = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not raw.strip():
         return 401, None, (
@@ -201,11 +209,14 @@ def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
     user = resolve_bearer(db, raw)
     if user is None:
         return 401, None, "Invalid, expired or revoked token."
-    if not billing_service.api_access_allowed(db, user):
-        if user.get("via_oauth"):
-            return 200, {**user, "mcp_plan": billing_service.mcp_plan(db, user)}, ""
+    plan = billing_service.mcp_plan(db, user)
+    if plan == "pro":
+        return 200, {**user, "mcp_plan": "pro"}, ""
+    if not user.get("via_oauth"):
         return 403, None, MCP_PRO_REQUIRED
-    return 200, {**user, "mcp_plan": "pro"}, ""
+    if plan == "free":
+        return 200, {**user, "mcp_plan": "free", "mcp_locked": _mcp_pro_required()}, ""
+    return 200, {**user, "mcp_plan": plan}, ""
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +242,7 @@ fleet's expected failures.
 (never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
 Only on the user's explicit \
 request: confirm by name first, and relay anything the response lists as affected.
-- Plans: upgrade_link gives the user a Stripe payment link for Reliafy Agent or Pro, to open themselves.
+- Plans: upgrade_link gives the user a Stripe payment link for Reliafy Pro, to open themselves.
 
 Conventions — follow them exactly:
 - Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension); \
@@ -247,13 +258,11 @@ placeholder=true and say so.
 - Availability simulation for repairable RBDs is a paid feature; a saved result is served when one exists.
 - Every artifact has a url; share it so the user can open the result in Reliafy.
 
-Plans: fitting (fit_distribution, fit_and_save_model) and the fleet tools are Reliafy Pro. On the Free and \
-Agent plans, fit locally with SurPyval (pip install surpyval; same 0 = failed, 1 = running convention) and \
-save the parameters with save_model. Availability simulation needs Pro (or purchased credits); otherwise \
-export_rbd_python runs it locally. Free and Agent also have a daily tool-call quota and storage limits. \
-When a tool answers that a limit or plan stops it, tell the user plainly what it says — the limit, when it \
-resets and how to upgrade — and don't retry it. If they want to upgrade, upgrade_link gives them a payment \
-link to open themselves; nothing is charged until they complete it.
+Plans: using Reliafy from AI agents (these tools) is part of Reliafy Pro, which includes everything. On \
+the Free plan the tools are listed but each call answers that MCP needs Pro. When a tool answers that a \
+limit or plan stops it, tell the user plainly what it says — the limit, when it resets and how to upgrade — \
+and don't retry it. If they want to upgrade, upgrade_link gives them a payment link to open themselves; \
+nothing is charged until they complete it.
 """
 
 mcp = MCPServer(
@@ -283,22 +292,29 @@ _USER_ERRORS = (
 )
 
 
-# Pro-only tools. Fitting runs server-side CPU the cheaper plans don't pay for
-# (agents fit locally with SurPyval, then save_model); fleets depend on usage
-# arriving through the Pro API.
+# Tools a grandfathered Agent subscriber doesn't have (Free has no tools at
+# all). Fitting runs server-side CPU that plan doesn't pay for (agents fit
+# locally with SurPyval, then save_model); fleets depend on usage arriving
+# through the Pro API.
 _FIT_TOOLS = {"fit_distribution", "fit_and_save_model"}
 _FLEET_TOOLS = {"list_fleets", "fleet_forecast", "list_fleet_alerts", "create_fleet_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
-# Never gated or counted: the way out of a limit must work when the limit is hit.
+# Never gated or counted: the way to Pro must work for a locked Free user and
+# when a limit is hit.
 UNGATED_TOOLS = {"upgrade_link"}
 
 
 def _gate(ctx: Context, name: str) -> None:
-    """Plan gating for one tool call: Pro-only tools, then the daily quota
+    """Plan gating for one tool call: Free is locked out (``mcp_locked``);
+    a grandfathered Agent user meets the Pro-only tools, then the daily quota
     (counted only for calls that pass the gate)."""
     user = _caller(ctx)
+    if name in UNGATED_TOOLS:
+        return
+    if user.get("mcp_locked"):
+        raise ToolError(user["mcp_locked"])
     plan = user.get("mcp_plan", "pro")
-    if plan == "pro" or name in UNGATED_TOOLS:
+    if plan == "pro":
         return
     if name in PRO_ONLY_TOOLS:
         raise ToolError(_pro_only_message(name))
@@ -368,7 +384,7 @@ def _cap(db, user: dict, kind: str, label: str) -> None:
     raise ToolError(
         f"You've reached the {_PLAN_NAMES[plan]} plan's limit of {cap} saved {label}. The limit doesn't "
         f"reset: delete {label} you no longer need in Reliafy to make room. "
-        + _upgrade_path(plan, lead="Or, for more storage, upgrade"))
+        + _upgrade_path(lead="Or, for more storage, upgrade"))
 
 
 def _record(db, name: str, tool: str) -> None:
@@ -722,8 +738,7 @@ def fit_distribution(
     running (suspended), -1 = left-censored (found failed, at some unknown earlier time); if the data marks
     failures with 1, pass c_invert=true. A fit that says every (or
     all but one) row is censored almost always means the flags are inverted. Weibull beta < 1 = infant
-    mortality, ≈ 1 = random failures, > 1 = wear-out. Reliafy Pro only: on the Free and Agent plans, fit
-    locally with SurPyval and save the parameters with save_model."""
+    mortality, ≈ 1 = random failures, > 1 = wear-out."""
     return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
                 count_column=count_column, covariates=covariates, unit=unit, save=False, name=None)
@@ -749,8 +764,7 @@ def fit_and_save_model(
     Reliafy workspace (inline data is saved as a dataset too) and return its id and url. Use it when the
     user wants to keep the model — for reliability_at, the calculators, or an RBD block. Same censoring
     convention: 0 = failed, 1 = still running, -1 = left-censored; c_invert=true when the data marks failures
-    with 1. Reliafy
-    Pro only (on other plans, fit locally with SurPyval and use save_model)."""
+    with 1."""
     return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
                 count_column=count_column, covariates=covariates, unit=unit, save=True, name=name)
@@ -1449,9 +1463,9 @@ def analyze_rbd(
     """Analyse a saved RBD. Non-repairable diagrams: system reliability curve, MTTF, B-lives (B10/B50),
     component importance (Birnbaum, Fussell–Vesely, RAW/RRW) and minimal cut/path sets. Repairable
     diagrams: steady-state availability, mean up/down time, failure frequency and per-block downtime share.
-    Availability simulation is a paid feature (Pro or purchased credits; not part of the Free or Agent plans):
-    a saved result is always served; otherwise, without entitlement, this returns available=false with a
-    message instead of results — relay it, and offer export_rbd_python to run the simulation locally."""
+    Availability simulation is a paid feature (Pro or purchased credits): a saved result is always served;
+    otherwise, without entitlement, this returns available=false with a message instead of results — relay
+    it, and offer export_rbd_python to run the simulation locally."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -1870,20 +1884,20 @@ def delete_rbd(
 @_tool("upgrade_link", _LINK, "Get a link to upgrade")
 def upgrade_link(
     ctx: Context,
-    plan: Annotated[Literal["agent", "pro"], Field(
-        description=f"agent = Reliafy Agent ({AGENT_PRICE}, MCP only: higher daily limits and storage); "
-                    f"pro = Reliafy Pro ({PRO_PRICE}: everything, including fitting and simulation).")] = "agent",
+    plan: Annotated[Literal["pro"], Field(
+        description=f"pro = Reliafy Pro ({PRO_PRICE}: everything, including use from AI agents over MCP, "
+                    "fitting and simulation). The only plan on offer.")] = "pro",
 ) -> dict[str, Any]:
-    """A link the user opens to subscribe to a paid Reliafy plan: Stripe's own checkout page, where they see
-    the price and pay. Nothing is charged until they complete it there, so give them the link and let them
-    decide; never say the upgrade has happened. Works even when the daily tool-call limit is used up. A user
-    already on the other paid plan gets the billing page instead, to change plans there."""
+    """A link the user opens to subscribe to Reliafy Pro: Stripe's own checkout page, where they see the
+    price and pay. Nothing is charged until they complete it there, so give them the link and let them
+    decide; never say the upgrade has happened. Works without Pro and when a limit is used up. A user
+    already on another paid plan gets the billing page instead, to change plans there."""
     from backend.routers.billing import start_subscription  # local: routers import after this module
 
     user = _caller(ctx)
     base = f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}/"
     status, payload = start_subscription(_db(), user, plan, base, allow_switch=False)
-    name, price = f"Reliafy {_PLAN_NAMES[plan]}", AGENT_PRICE if plan == "agent" else PRO_PRICE
+    name, price = f"Reliafy {_PLAN_NAMES[plan]}", PRO_PRICE
     if status == 200:
         return {"plan": plan, "price": price, "url": payload["url"],
                 "note": f"Open this link to subscribe to {name} ({price}) on Stripe's checkout page. It's valid "
