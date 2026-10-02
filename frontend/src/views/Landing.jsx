@@ -4,7 +4,7 @@ import PublicNav from "../components/PublicNav.jsx";
 import PublicFooter from "../components/PublicFooter.jsx";
 import HeroPlot from "../components/HeroPlot.jsx";
 import { useAuth } from "../AuthProvider.jsx";
-import { AGENT_PRICE, PRO_PRICE } from "../pricing.js";
+import { PRO_PRICE } from "../pricing.js";
 
 const CheckIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -109,8 +109,8 @@ const FEATURES = [
 ];
 
 // Pricing copy. Keep the numbers in sync with backend/config.py
-// (FREE_MAX_*, AGENT_MAX_*, MCP_*_DAILY_CALLS, FREE_GRANT_CENTS, CREDIT_PACKS,
-// PRO_MONTHLY_CREDIT_CENTS) and the live Stripe prices.
+// (FREE_MAX_*, FREE_GRANT_CENTS, CREDIT_PACKS, PRO_MONTHLY_CREDIT_CENTS) and
+// the live Stripe prices.
 const TIERS = (primaryHref) => [
   {
     name: "Open source",
@@ -138,26 +138,9 @@ const TIERS = (primaryHref) => [
       "Join team workspaces free (view-only)",
       "Sample data and worked examples included",
       "25 AI credits to try the assistant",
-      "Use it from your AI agent (MCP): 50 tool calls/day, free storage limits",
       "Secure sign-in, private to your account",
     ],
     cta: { label: "Get started", href: primaryHref, ghost: true },
-  },
-  {
-    name: "Agent",
-    price: AGENT_PRICE.amount,
-    per: AGENT_PRICE.per,
-    blurb: "Use Reliafy from your AI agent (MCP). No web app features.",
-    features: [
-      "Connect Claude or any MCP client — sign in, no API token",
-      "Exact RBD analysis: reliability, MTTF, B-lives, importance",
-      "Maintenance calculators: replacement, failure-finding, overhaul",
-      "Save models, datasets, and RBDs (50 models, 50 datasets, 25 RBDs)",
-      "Fitting runs locally with SurPyval; your agent saves the result",
-      "Simulations: run locally via Download as Python (or Pro)",
-      "2,000 tool calls/day",
-    ],
-    cta: { label: "Connect your agent", href: "/api-docs#mcp", ghost: true },
   },
   {
     name: "Pro",
@@ -171,6 +154,7 @@ const TIERS = (primaryHref) => [
       "Unlimited fleet monitoring (degradation & RUL)",
       "Unlimited evidence-linked RCM studies",
       "Fleet failure forecasting — spares demand from your models",
+      "Use Reliafy from AI agents (MCP) — Claude or any MCP client",
       "API access — push meter data & measurements from your scripts",
       "Team workspaces: create teams and edit together",
       "AI assistant: fits models and builds RBDs for you",

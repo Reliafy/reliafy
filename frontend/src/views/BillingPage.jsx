@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { getBilling, buyCredits, subscribePro, subscribeAgent, billingPortal } from "../api.js";
-import { AGENT_PRICE, PRO_PRICE } from "../pricing.js";
+import { getBilling, buyCredits, subscribePro, billingPortal } from "../api.js";
+import { PRO_PRICE } from "../pricing.js";
 
 // AI usage is denominated in "credits" — users never see a dollar balance.
 // (Internally 1 credit == 1 cent; only pack purchase prices show as dollars.)
@@ -57,73 +57,49 @@ export default function BillingPage() {
     return <div className="app"><div className="card empty">Loading…</div></div>;
   }
 
-  const plan = data.plan || "free"; // free | agent | pro
+  // free | pro — or agent: the retired Agent plan (MCP only), which existing
+  // subscribers keep until they cancel. It isn't sold or compared any more.
+  const plan = data.plan || "free";
   const isPro = plan === "pro";
   const isAgent = plan === "agent";
   const isAdmin = !!data.admin;
   const noCaps = isPro || isAdmin; // operators are exempt from caps too
   const caps = data.caps || {}; // the Free plan's caps
-  const agentCaps = data.agent_caps || {};
   const myCaps = data.plan_caps || caps; // the caps that apply to this user
   const usage = data.usage || {};
   const mcp = data.mcp || {};
   const num = (v) => (v ?? 0).toLocaleString();
 
-  // Free vs (Agent vs) Pro comparison. Only Free/Agent cloud users have
-  // something to compare against: operators are exempt from caps, and
-  // self-hosted installs (billing off) have no paid plans at all.
+  // Free vs Pro comparison. Only non-Pro cloud users have something to
+  // compare against: operators are exempt from caps, and self-hosted
+  // installs (billing off) have no paid plans at all.
   const showCompare = !isPro && !isAdmin && !!data.billing_enabled;
-  const showAgent = !!data.agent_available || isAgent;
   const proCredits = data.pro_monthly_credit_cents > 0 ? credits(data.pro_monthly_credit_cents) : null;
   const starterCredits = data.free_grant_cents > 0 ? credits(data.free_grant_cents) : null;
   const packsOnly = starterCredits ? `${starterCredits} starter credits, then buy packs` : "Buy credit packs";
   // Every value here reflects how the backend actually gates the feature:
-  // caps from usage_summary, api_access_allowed (Pro only), teams.py (create
-  // is Pro only), reliability_agent.py (Pro or any purchased credits), and
-  // mcp_server.py (fitting Pro-only; a daily tool-call quota on Free/Agent).
+  // caps from usage_summary, api_access_allowed (Pro only — the REST API and
+  // MCP alike), teams.py (create is Pro only), and reliability_agent.py (Pro
+  // or any purchased credits).
   const compareRows = [
-    ...ARTIFACTS.map(([label, key]) => ({
-      label, free: caps[key] ?? "—", agent: agentCaps[key] ?? "—", pro: "Unlimited", mono: true,
-    })),
-    {
-      label: "Use from your AI agent (MCP)",
-      free: `${num(data.mcp_free_daily_calls)} tool calls/day`,
-      agent: `${num(data.mcp_agent_daily_calls)} tool calls/day`,
-      pro: "No daily limit",
-    },
-    { label: "Fitting from your agent", free: "Locally with SurPyval", agent: "Locally with SurPyval", pro: "Included" },
+    ...ARTIFACTS.map(([label, key]) => ({ label, free: caps[key] ?? "—", pro: "Unlimited", mono: true })),
     {
       label: "AI assistant (metered)",
       free: packsOnly,
-      agent: packsOnly,
       pro: proCredits ? `${proCredits} credits included every month, plus packs` : "Buy credit packs",
     },
-    { label: "Reliability Agent", free: "With purchased credits", agent: "With purchased credits", pro: "Included" },
+    { label: "Reliability Agent", free: "With purchased credits", pro: "Included" },
     {
       label: "Availability simulation (repairable RBDs)",
       free: "View saved results; run locally via Download as Python",
-      agent: "View saved results; run locally via Download as Python",
       pro: "Included",
     },
-    { label: "Programmatic API & data ingestion", free: "—", agent: "—", pro: "Included" },
-    { label: "Team workspaces", free: "Join teams (view-only)", agent: "Join teams (view-only)", pro: "Create teams and edit together" },
+    { label: "Use Reliafy from AI agents (MCP)", free: "—", pro: "Included" },
+    { label: "Programmatic API & data ingestion", free: "—", pro: "Included" },
+    { label: "Team workspaces", free: "Join teams (view-only)", pro: "Create teams and edit together" },
   ];
   const planName = { free: "Free", agent: "Agent", pro: "Pro" }[plan] || "Free";
   const current = (p) => (plan === p ? <span className={"plan-badge " + p}>current</span> : null);
-  const subscribeButtons = (
-    <>
-      {data.agent_available && !isAgent && (
-        <button className="secondary" disabled={working === "agent"} onClick={() => go("agent", subscribeAgent)}>
-          {working === "agent" ? "Redirecting…" : `Subscribe to Agent — ${AGENT_PRICE.amount}/month`}
-        </button>
-      )}
-      {data.pro_available && (
-        <button disabled={working === "pro"} onClick={() => go("pro", subscribePro)}>
-          {working === "pro" ? "Redirecting…" : `${isAgent ? "Upgrade" : "Subscribe"} to Pro — ${PRO_PRICE.amount}/month`}
-        </button>
-      )}
-    </>
-  );
 
   return (
     <div className="app">
@@ -145,25 +121,17 @@ export default function BillingPage() {
       {showCompare && (
         <div className="card bill-card bill-compare">
           <div className="bill-head">
-            <h2>{showAgent ? "Free, Agent and Pro" : "Free vs Pro"}</h2>
+            <h2>Free vs Pro</h2>
             <span className="bill-compare-price">
               {PRO_PRICE.amount}<span className="bill-compare-per">{PRO_PRICE.per}</span>
             </span>
           </div>
-          {showAgent && (
-            <p className="muted-line">
-              Agent ({AGENT_PRICE.amount}/month) is for using Reliafy from your AI agent over MCP — Claude or
-              any MCP client — with no web app features. Your agent fits data locally with SurPyval and saves
-              the result here.
-            </p>
-          )}
           <div className="bill-compare-wrap">
-            <table className={"bill-compare-table" + (showAgent ? " three" : "")}>
+            <table className="bill-compare-table">
               <thead>
                 <tr>
                   <th scope="col" aria-label="Feature"></th>
                   <th scope="col">Free {current("free")}</th>
-                  {showAgent && <th scope="col">Agent {current("agent")}</th>}
                   <th scope="col">Pro</th>
                 </tr>
               </thead>
@@ -172,16 +140,17 @@ export default function BillingPage() {
                   <tr key={r.label}>
                     <th scope="row">{r.label}</th>
                     <td className={r.mono ? "bill-compare-n" : ""}>{r.free}</td>
-                    {showAgent && <td className={r.mono ? "bill-compare-n" : ""}>{r.agent}</td>}
                     <td className="bill-compare-pro">{r.pro}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          {data.pro_available || data.agent_available ? (
+          {data.pro_available ? (
             <div className="bill-compare-cta">
-              {subscribeButtons}
+              <button disabled={working === "pro"} onClick={() => go("pro", subscribePro)}>
+                {working === "pro" ? "Redirecting…" : `${isAgent ? "Upgrade" : "Subscribe"} to Pro — ${PRO_PRICE.amount}/month`}
+              </button>
               <span className="muted-line">
                 {isAgent
                   ? "Upgrading moves your Agent subscription to Pro, prorated — no second subscription."
@@ -206,6 +175,12 @@ export default function BillingPage() {
           </div>
           {isAdmin && (
             <p className="muted-line">Operator account — plan limits and AI charges don't apply to you.</p>
+          )}
+          {isAgent && (
+            <p className="muted-line">
+              You're on the Agent plan (Reliafy from your AI agent over MCP). It's no longer offered, but yours
+              continues until you cancel it.
+            </p>
           )}
           <ul className="bill-usage">
             {ARTIFACTS.map(([label, key]) => (
@@ -246,8 +221,9 @@ export default function BillingPage() {
           )}
         </div>
 
-        {/* MCP use today (Free / Agent: Pro and operators have no daily quota) */}
-        {data.billing_enabled && !isPro && !isAdmin && mcp.daily_quota != null && (
+        {/* MCP use today: only the grandfathered Agent plan has a daily quota
+            (Pro and operators have none; Free has no MCP). */}
+        {data.billing_enabled && isAgent && !isAdmin && mcp.daily_quota != null && (
           <div className="card bill-card">
             <div className="bill-head">
               <h2>Your AI agent (MCP)</h2>
@@ -269,10 +245,7 @@ export default function BillingPage() {
             </ul>
             <p className="muted-line">
               The daily limit resets at 00:00 UTC. Connect Claude or another MCP client from
-              the <a href="/api-docs#mcp">API docs</a>.
-              {isAgent && " Pro removes the daily limit and fits in Reliafy."}
-              {!isAgent && data.agent_available &&
-                ` Agent (${AGENT_PRICE.amount}/month) raises it to ${num(data.mcp_agent_daily_calls)} calls a day.`}
+              the <a href="/api-docs#mcp">API docs</a>. Pro removes the daily limit and fits in Reliafy.
             </p>
           </div>
         )}
