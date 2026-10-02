@@ -89,6 +89,13 @@ ADMIN_EMAILS = {
 # guessed (day, ip, ua) tuples.
 METRICS_SALT = os.environ.get("METRICS_SALT", "reliafy-metrics")
 
+# Product-usage logging (backend/services/usage.py): which features and MCP
+# tools signed-in accounts use, with outcomes. Account-linked events expire
+# after 90 days; only identifier-free daily totals are kept longer. On by
+# default (a self-hosted install logs into its own database); set
+# USAGE_LOGGING=false to record nothing.
+USAGE_LOGGING = _truthy(os.environ.get("USAGE_LOGGING", "true"))
+
 # Free-tier caps (owned items, excluding shared samples). Pro lifts them.
 FREE_MAX_DATASETS = _int("FREE_MAX_DATASETS", 3)
 FREE_MAX_MODELS = _int("FREE_MAX_MODELS", 3)

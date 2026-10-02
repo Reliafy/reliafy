@@ -44,6 +44,12 @@ Tools call the service layer directly — never HTTP back into ourselves — and
 turn user-facing failures (``FitError`` and friends) into MCP tool errors with
 the message intact. Anything unexpected reaches the model only as "Error
 executing tool …"; the traceback goes to the log.
+
+Usage logging (:mod:`backend.services.usage`): every tool call — refused ones
+included — is one usage event with the tool, its outcome (ok / error / limit
+/ pro_only), the plan, the OAuth client's name and the duration;
+``initialize`` and ``tools/list`` are logged as connections, and a non-Pro
+API token refused at the transport as ``connect`` / ``locked``.
 """
 
 import contextvars
@@ -52,6 +58,7 @@ import functools
 import logging
 import math
 import re
+import time
 from datetime import timedelta
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Callable, Literal, Optional, Union
@@ -78,7 +85,6 @@ from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
-from backend.services import metrics as metrics_service
 from backend.services import oauth as oauth_service
 from backend.services import models as models_service
 from backend.services import rbd_edit
@@ -88,6 +94,7 @@ from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
 from backend.services import strategy_store
 from backend.services import tokens as tokens_service
+from backend.services import usage as usage_service
 from backend.services import rbd_analysis
 from backend.services import rbd_export
 from backend.services.rbd_analysis import AnalysisError
@@ -224,6 +231,8 @@ def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
     if plan == "pro":
         return 200, {**user, "mcp_plan": "pro"}, ""
     if not user.get("via_oauth"):
+        usage_service.record(db, uid=user["uid"], channel="mcp", feature="connect", outcome="locked",
+                             plan=plan, client=usage_service.client_of(user))
         return 403, None, MCP_PRO_REQUIRED
     return 200, {**user, "mcp_plan": plan}, ""
 
@@ -355,6 +364,25 @@ def _soft_refusal(outcome: str) -> None:
         state["refused"] = outcome
 
 
+def _usage_plan(user: dict) -> str:
+    """The plan a usage event is filed under: operators as 'admin' (the
+    reports leave them out), everyone else by the plan governing their MCP."""
+    return "admin" if billing_service.is_admin_user(user) else user.get("mcp_plan", "pro")
+
+
+def _log_call(ctx: Context, name: str, outcome: str, started: float) -> None:
+    """One usage event per tool call (backend/services/usage.py): the tool,
+    how it ended, the plan, the client and the duration. Never raises."""
+    try:
+        user = _caller(ctx)
+        usage_service.record(
+            _db(), uid=user["uid"], channel="mcp", feature=name, outcome=outcome,
+            plan=_usage_plan(user), client=usage_service.client_of(user),
+            ms=(time.perf_counter() - started) * 1000)
+    except Exception:  # noqa: BLE001 - logging must never fail a tool
+        logger.warning("could not log an MCP tool call", exc_info=True)
+
+
 def _refund(ctx: Context) -> None:
     user = _caller(ctx)
     billing_service.refund_mcp_call(_db(), user["uid"], user.get("mcp_plan", "pro"))
@@ -367,15 +395,19 @@ def _tool(name: str, annotations: ToolAnnotations, title: str):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             ctx = next((v for v in (*args, *kwargs.values()) if isinstance(v, Context)), None)
-            counted = _gate(ctx, name) if ctx is not None else False
+            started = time.perf_counter()
             state: dict = {}
             token = _CALL.set(state)
+            counted, outcome = False, "error"
             try:
+                counted = _gate(ctx, name) if ctx is not None else False
                 result = fn(*args, **kwargs)
+                outcome = state.get("refused") or "ok"
                 if counted and state.get("refused"):  # answered, but as a refusal
                     _refund(ctx)
                 return result
-            except Refusal:
+            except Refusal as exc:
+                outcome = exc.outcome
                 if counted:  # refused calls don't count against the allowance
                     _refund(ctx)
                 raise
@@ -391,6 +423,8 @@ def _tool(name: str, annotations: ToolAnnotations, title: str):
                 raise ToolError(str(exc) or "Invalid input.") from exc
             finally:
                 _CALL.reset(token)
+                if ctx is not None:
+                    _log_call(ctx, name, outcome, started)
 
         mcp.add_tool(wrapper, name=name, title=title, annotations=annotations,
                      description=(fn.__doc__ or "").strip())
@@ -433,13 +467,6 @@ def _cap(db, user: dict, kind: str, label: str) -> None:
         f"You've reached the {_PLAN_NAMES[plan]} plan's limit of {cap} saved {label}. The limit doesn't "
         f"reset: delete {label} you no longer need in Reliafy to make room. "
         + _upgrade_path(lead="Or, for more storage, upgrade"))
-
-
-def _record(db, name: str, tool: str) -> None:
-    try:
-        metrics_service.record_event(db, name=name, path=f"/mcp/{tool}")
-    except Exception:  # pragma: no cover - analytics must never fail a tool
-        logger.warning("could not record MCP metrics event", exc_info=True)
 
 
 def _finite(v):
@@ -752,7 +779,6 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         if created is not None:
             datasets_service.delete_dataset(db, created.id, uid)
         raise
-    _record(db, "mcp_fit", "fit_and_save_model")
     summary = _fit_summary(model.results or {})
     return {
         **_fit_lead(summary),
@@ -886,7 +912,6 @@ def save_model(
         metrics = fitting._life_metrics(live)
     except Exception:  # noqa: BLE001 - metrics are a convenience
         metrics = None
-    _record(db, "mcp_model", "save_model")
     r = model.results or {}
     out = {
         "saved": True,
@@ -1041,7 +1066,6 @@ def upload_dataset(
     user, db = _caller(ctx), _db()
     _cap(db, user, "datasets", "datasets")
     ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(csv), user["uid"])
-    _record(db, "mcp_dataset", "upload_dataset")
     return {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
             "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
 
@@ -1220,7 +1244,6 @@ def create_rbd(
         raise ToolError("Invalid RBD structure: " + "; ".join(check.get("errors") or ["unknown problem"]))
     _cap(db, user, "rbds", "RBDs")
     rbd = rbds_service.save_rbd(db, name.strip(), graph, uid)
-    _record(db, "mcp_rbd", "create_rbd")
     return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), **_rbd_outline(graph, check, include_graph)}
 
 
@@ -1362,7 +1385,6 @@ def clone_rbd(
     check = rbds_service.validate_graph(db, graph, owners)
     _cap(db, user, "rbds", "RBDs")
     rbd = rbds_service.save_rbd(db, new_name, graph, uid)
-    _record(db, "mcp_rbd", "clone_rbd")
     out = {**_rbd_brief(rbd), "cloned_from": src.id, **_rbd_outline(graph, check, False)}
     if not check.get("valid", False):
         # A draft saved unvalidated in the app copies as it is; say what to fix.
@@ -1425,7 +1447,6 @@ def edit_rbd(
         except access_service.EditConflict:
             raise ToolError(f"“{rbd.name}” was saved by someone else while this edit ran. Nothing was saved: "
                             "re-read it with get_rbd and retry.") from None
-        _record(db, "mcp_rbd_edit", "edit_rbd")
     else:
         out_rbd = rbd.model_copy(update={"name": result.name, "graph": graph})
     out = {**_rbd_brief(out_rbd)}
@@ -1804,7 +1825,6 @@ def create_fleet_alert(
         )
     except (alerts_service.AlertValidationError, alerts_service.AlertLimitError) as exc:
         raise ToolError(str(exc)) from None
-    _record(db, "mcp_fleet_alert", "create_fleet_alert")
     return {"alert": alerts_service.public(doc, user["uid"], fleet),
             "url": _url(f"/fleet/forecasts/{fleet.id}#alerts")}
 
@@ -1865,7 +1885,6 @@ def delete_model(
             raise _sample_refusal("model", doc.name)
         m, affected, kind = doc, {"rbds": []}, "recurrent"
         recurrent_service.delete_model(db, doc.id, uid)
-    _record(db, "mcp_delete", "delete_model")
     out = {"deleted": True, "model_id": m.id, "name": m.name, "kind": kind}
     affected = {k: v for k, v in affected.items() if v}
     if affected:
@@ -1899,7 +1918,6 @@ def delete_dataset(
                         "(delete_model), or keep the dataset.")
     if not datasets_service.delete_dataset(db, ds.id, uid):
         raise ToolError("Dataset not found.")
-    _record(db, "mcp_delete", "delete_dataset")
     return {"deleted": True, "dataset_id": ds.id, "name": ds.name}
 
 
@@ -1919,7 +1937,6 @@ def delete_rbd(
     embedding = [r for r in _rbds_referencing(db, uid, lambda d: isinstance(d.get("rbd"), dict)
                                                and d["rbd"].get("id") == rbd.id) if r["id"] != rbd.id]
     rbds_service.delete_rbd(db, rbd.id, uid)
-    _record(db, "mcp_delete", "delete_rbd")
     out = {"deleted": True, "rbd_id": rbd.id, "name": rbd.name}
     if embedding:
         out["affected"] = {"rbds": embedding}
@@ -2027,7 +2044,59 @@ class McpHttpApp:
                                status_code=503)(scope, receive, send)
             return
         scope = {**scope, "state": {**(scope.get("state") or {}), "reliafy_user": user}}
-        await self._manager.handle_request(scope, receive, send)
+        if not usage_service.enabled():
+            await self._manager.handle_request(scope, receive, send)
+            return
+        # Note initialize / tools/list (connections — tool calls are logged by
+        # the tools themselves): keep the first few KB of the body as it
+        # streams past, and read the JSON-RPC method once it's answered.
+        body, done, status = bytearray(), [False], [0]
+
+        async def receive_tap():
+            message = await receive()
+            if message["type"] == "http.request" and len(body) <= _SNIFF_BYTES:
+                body.extend(message.get("body", b"")[: _SNIFF_BYTES + 1 - len(body)])
+                done[0] = not message.get("more_body", False)
+            return message
+
+        async def send_tap(message):
+            if message["type"] == "http.response.start":
+                status[0] = message["status"]
+            await send(message)
+
+        await self._manager.handle_request(scope, receive_tap, send_tap)
+        if done[0] and len(body) <= _SNIFF_BYTES:
+            methods = _protocol_methods(bytes(body))
+            if methods:
+                await anyio.to_thread.run_sync(_log_protocol, user, methods, status[0])
+
+
+_SNIFF_BYTES = 8192
+
+
+def _protocol_methods(raw: bytes) -> list[str]:
+    """The initialize / tools/list methods in a JSON-RPC body (or batch)."""
+    import json
+
+    try:
+        msg = json.loads(raw or b"null")
+    except ValueError:
+        return []
+    items = msg if isinstance(msg, list) else [msg]
+    return [m["method"] for m in items
+            if isinstance(m, dict) and m.get("method") in ("initialize", "tools/list")]
+
+
+def _log_protocol(user: dict, methods: list[str], status: int) -> None:
+    try:
+        db = _db()
+        for method in methods:
+            usage_service.record(
+                db, uid=user["uid"], channel="mcp", feature=method,
+                outcome="ok" if 200 <= status < 300 else "error",
+                plan=_usage_plan(user), client=usage_service.client_of(user))
+    except Exception:  # noqa: BLE001
+        logger.warning("could not log an MCP connection", exc_info=True)
 
 
 def _authenticate_request(authorization: str | None) -> tuple[int, dict | None, str]:

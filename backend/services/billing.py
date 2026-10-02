@@ -228,7 +228,13 @@ def set_plan(
         fields["stripe_customer_id"] = customer_id
     if subscription_id:
         fields["stripe_subscription_id"] = subscription_id
+    before = db.users.find_one({"_id": uid}, {"plan": 1, "plan_until": 1}) or {}
     db.users.update_one({"_id": uid}, {"$set": fields}, upsert=True)
+    # Usage logging: a move to Pro is a conversion (and, after an MCP plan
+    # wall, the one the agent-plan question turns on).
+    from backend.services import usage as usage_service
+
+    usage_service.on_plan_change(db, uid, active_plan(before), active_plan(fields))
 
 
 def set_customer(db, uid: str, customer_id: str) -> None:

@@ -54,7 +54,7 @@ def get_current_user(authorization: str | None = Header(default=None)) -> dict:
     invalid. Returns a fixed dev user when ``AUTH_DISABLED`` is set.
     """
     if config.AUTH_DISABLED:
-        return {"uid": config.DEV_USER_ID, "email": "dev@local", "name": "Dev User"}
+        return _noted({"uid": config.DEV_USER_ID, "email": "dev@local", "name": "Dev User"})
 
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token.")
@@ -68,11 +68,23 @@ def get_current_user(authorization: str | None = Header(default=None)) -> dict:
     except Exception:  # noqa: BLE001 - any verification failure is a 401
         raise HTTPException(status_code=401, detail="Invalid or expired token.")
 
-    return {
+    return _noted({
         "uid": decoded["uid"],
         "email": decoded.get("email"),
         "name": decoded.get("name") or decoded.get("email"),
-    }
+    })
+
+
+def _noted(user: dict) -> dict:
+    """Tell product-usage logging who this request is for (no-op outside a
+    request, and never raises)."""
+    try:
+        from backend.services import usage as usage_service
+
+        usage_service.note_user(user)
+    except Exception:  # noqa: BLE001
+        logger.debug("usage note failed", exc_info=True)
+    return user
 
 
 def upsert_user(db, user: dict) -> dict:

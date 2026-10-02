@@ -104,6 +104,13 @@ app.add_middleware(
 # so it answers their preflights before the app-wide policy above).
 app.add_middleware(oauth_router.OAuthCorsMiddleware)
 
+# Product-usage logging (backend/services/usage.py): records each signed-in
+# /api request as a feature event once it has been answered. Never fails or
+# delays a request; USAGE_LOGGING=false turns it off.
+from backend.services.usage import UsageMiddleware  # noqa: E402
+
+app.add_middleware(UsageMiddleware)
+
 
 def _startup() -> None:
     init_db()
