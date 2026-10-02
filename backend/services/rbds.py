@@ -135,6 +135,9 @@ def analyze_graph(
     conditional_age: float | None = None,
     n_simulations: int | None = None,
     at_times=None,
+    time_budget_s: float | None = None,
+    seed: int | None = None,
+    max_replications: int | None = None,
 ) -> dict:
     """Run the RePyability reliability analysis for a graph.
 
@@ -145,7 +148,8 @@ def analyze_graph(
     covariate values for proportional-hazards nodes. ``conditional_age``
     conditions the curves on having already survived to that age.
     ``at_times`` (non-repairable) adds the system reliability evaluated
-    exactly at those times.
+    exactly at those times. ``time_budget_s`` / ``seed`` / ``max_replications``
+    (repairable) make a quick, time-capped availability run (#147).
     """
 
     def resolve_subsystem(sub_id: str) -> dict | None:
@@ -160,7 +164,8 @@ def analyze_graph(
     if graph.get("repairable"):
         return rbd_analysis.analyze_availability(
             graph, resolve_model=resolve_model, t_simulation=t_max,
-            n_simulations=n_simulations,
+            n_simulations=n_simulations, time_budget_s=time_budget_s, seed=seed,
+            max_replications=max_replications,
         )
 
     return rbd_analysis.analyze(
@@ -373,3 +378,21 @@ def should_store_availability(doc: dict | None, key: str) -> bool:
         return True
     entry = doc.get("availability_cache") or {}
     return entry.get("key") != saved_key
+
+
+def save_availability_result(db, rbd_id: str, key: str, result: dict, uid: str | None) -> str | None:
+    """Store a freshly computed result on the diagram when it should be
+    (:func:`should_store_availability`), but never let a quick (time-capped)
+    run replace a full result for the same inputs. Returns ``computed_at``
+    when stored, else None."""
+    doc = db.rbds.find_one({"_id": rbd_id})
+    if not should_store_availability(doc, key):
+        return None
+    entry = (doc or {}).get("availability_cache") or {}
+    if (
+        result.get("quick")
+        and entry.get("key") == key
+        and not (entry.get("result") or {}).get("quick")
+    ):
+        return None
+    return store_availability(db, rbd_id, key, result, uid)
