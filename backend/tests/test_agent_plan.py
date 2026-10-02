@@ -179,13 +179,26 @@ def test_free_daily_quota_counts_tool_calls_only_and_resets(env, monkeypatch):
     assert "You've used all 3 Reliafy tool calls included per day on the Free plan" in msg
     assert "resets at 00:00 UTC" in msg and UPGRADE in msg and f"{BASE}/billing" in msg
     assert _calls_today(env.db, FREE) == 3  # a refused call isn't counted
-    assert len(_run(token, lambda c: c.list_tools()).tools) == 26  # listing still works
+    assert len(_run(token, lambda c: c.list_tools()).tools) == 29  # listing still works
 
     # Next UTC day: a fresh quota.
     tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
     monkeypatch.setattr(billing, "_now", lambda: tomorrow)
     _ok(_call(token, "list_models"))
     assert _calls_today(env.db, FREE) == 1
+
+
+def test_free_user_shares_a_protected_link_within_the_quota(env):
+    """Share links (#125) are on every plan and count like any other call."""
+    token = env.oauth[FREE]
+    rbd = _ok(_call(token, "create_rbd", {"name": "Skid", "stages": REPAIRABLE_STAGES}))
+    before = _calls_today(env.db, FREE)
+    out = _ok(_call(token, "share_link", {"kind": "rbd", "id": rbd["id"], "password": True,
+                                          "expires_in_days": 30}))
+    assert out["url"].startswith(f"{BASE}/p/") and out["passphrase"] and out["protected"] is True
+    assert _ok(_call(token, "list_share_links", {}))["count"] == 1
+    _ok(_call(token, "revoke_share_link", {"token": out["token"]}))
+    assert _calls_today(env.db, FREE) == before + 3
 
 
 def test_agent_quota_is_separate_and_pro_has_none(env, monkeypatch):

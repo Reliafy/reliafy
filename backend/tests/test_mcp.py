@@ -32,13 +32,13 @@ FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]  # 0 = failed, 1 = still running
 READ_TOOLS = {
     "list_models", "get_model", "reliability_at", "list_datasets", "list_rbds", "get_rbd",
     "analyze_rbd", "fit_distribution", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
-    "optimal_overhaul", "list_fleets", "fleet_forecast", "list_fleet_alerts", "upgrade_link",
+    "optimal_overhaul", "list_fleets", "fleet_forecast", "list_fleet_alerts", "upgrade_link", "list_share_links",
 }
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
 WRITE_TOOLS = {"fit_and_save_model", "save_model", "upload_dataset", "create_rbd", "clone_rbd", "edit_rbd",
                "create_fleet_alert",
-               "delete_model", "delete_dataset", "delete_rbd"}
+               "delete_model", "delete_dataset", "delete_rbd", "share_link", "revoke_share_link"}
 
 
 def _weibull(alpha, beta, placeholder=False):
