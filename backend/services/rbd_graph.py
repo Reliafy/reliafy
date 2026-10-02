@@ -196,6 +196,57 @@ def _inline_disagrees(model: dict, saved: dict) -> bool:
     return False
 
 
+def normalize_model(model, where: str, resolve_saved_model=None) -> dict:
+    """A compact life model (inline, or a ``saved_model_id``) in the persisted shape."""
+    return _model(model, where, resolve_saved_model)
+
+
+def normalize_repair(repair, where: str) -> dict:
+    """A compact time-to-repair model (inline only) in the persisted shape."""
+    if not isinstance(repair, dict):
+        raise GraphError(f"{where}: repair must be an object.")
+    return _inline_model(repair, f"{where} repair")
+
+
+def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] = None) -> dict:
+    """One compact (or persisted) node in the persisted builder shape, without
+    a position (:func:`layout_graph` places it). Raises :class:`GraphError`."""
+    if not isinstance(raw, dict):
+        raise GraphError("each node must be an object.")
+    nid = str(raw.get("id") or "").strip()
+    ntype = str(raw.get("type") or "").strip()
+    if not nid:
+        raise GraphError("every node needs an id.")
+    if ntype not in NODE_TYPES:
+        raise GraphError(f"node '{nid}': type must be one of {', '.join(NODE_TYPES)}.")
+
+    data = dict(raw.get("data") or {})
+    for key in ("label", "model", "repair", "n", "k", "spares", "cold"):
+        if raw.get(key) is not None and key not in data:
+            data[key] = raw[key]
+    if raw.get("subsystem_rbd_id") and "rbd" not in data:
+        data["rbd"] = {"id": str(raw["subsystem_rbd_id"])}
+    where = f"node '{data.get('label') or nid}'"
+    if data.get("model") is not None:
+        data["model"] = normalize_model(data["model"], where, resolve_saved_model)
+    if data.get("repair") is not None:
+        data["repair"] = normalize_repair(data["repair"], where)
+    if not data.get("label"):
+        data["label"] = "Input" if ntype == "input" else "Output" if ntype == "output" else nid
+
+    node = {"id": nid, "type": ntype, "data": data}
+    if ntype == "input":
+        node.update(sourcePosition="right", deletable=False, className="rbd-node rbd-io")
+    elif ntype == "output":
+        node.update(targetPosition="left", deletable=False, className="rbd-node rbd-io")
+    return node
+
+
+def make_edge(source: str, target: str, edge_id: str) -> dict:
+    """A persisted builder edge source -> target."""
+    return {"id": edge_id, "source": source, "target": target, "type": "smoothstep", "markerEnd": dict(_ARROW)}
+
+
 def normalize_graph(
     graph: dict,
     resolve_saved_model: Optional[Callable[[str], object]] = None,
@@ -209,39 +260,10 @@ def normalize_graph(
 
     nodes, seen = [], set()
     for raw in raw_nodes:
-        if not isinstance(raw, dict):
-            raise GraphError("each node must be an object.")
-        nid = str(raw.get("id") or "").strip()
-        ntype = str(raw.get("type") or "").strip()
-        if not nid:
-            raise GraphError("every node needs an id.")
-        if nid in seen:
-            raise GraphError(f"duplicate node id '{nid}'.")
-        seen.add(nid)
-        if ntype not in NODE_TYPES:
-            raise GraphError(f"node '{nid}': type must be one of {', '.join(NODE_TYPES)}.")
-
-        data = dict(raw.get("data") or {})
-        for key in ("label", "model", "repair", "n", "k", "spares", "cold"):
-            if raw.get(key) is not None and key not in data:
-                data[key] = raw[key]
-        if raw.get("subsystem_rbd_id") and "rbd" not in data:
-            data["rbd"] = {"id": str(raw["subsystem_rbd_id"])}
-        where = f"node '{data.get('label') or nid}'"
-        if data.get("model") is not None:
-            data["model"] = _model(data["model"], where, resolve_saved_model)
-        if data.get("repair") is not None:
-            if not isinstance(data["repair"], dict):
-                raise GraphError(f"{where}: repair must be an object.")
-            data["repair"] = _inline_model(data["repair"], f"{where} repair")
-        if not data.get("label"):
-            data["label"] = "Input" if ntype == "input" else "Output" if ntype == "output" else nid
-
-        node = {"id": nid, "type": ntype, "data": data}
-        if ntype == "input":
-            node.update(sourcePosition="right", deletable=False, className="rbd-node rbd-io")
-        elif ntype == "output":
-            node.update(targetPosition="left", deletable=False, className="rbd-node rbd-io")
+        if isinstance(raw, dict) and str(raw.get("id") or "").strip() in seen:
+            raise GraphError(f"duplicate node id '{str(raw['id']).strip()}'.")
+        node = normalize_node(raw, resolve_saved_model)
+        seen.add(node["id"])
         nodes.append(node)
 
     edges = []
@@ -252,13 +274,7 @@ def normalize_graph(
         for end in (src, tgt):
             if end not in seen:
                 raise GraphError(f"edge {src} -> {tgt} references unknown node '{end}'.")
-        edges.append({
-            "id": e.get("id") or f"e-{src}-{tgt}-{i}",
-            "source": src,
-            "target": tgt,
-            "type": "smoothstep",
-            "markerEnd": dict(_ARROW),
-        })
+        edges.append(make_edge(src, tgt, e.get("id") or f"e-{src}-{tgt}-{i}"))
 
     out = {"nodes": layout_graph(nodes, edges), "edges": edges, "unit": str(graph.get("unit") or "")}
     if graph.get("repairable"):

@@ -479,6 +479,8 @@ const MCP_TOOLS = [
   ["list_datasets / upload_dataset", "Your datasets, and saving new CSV data."],
   ["list_rbds / get_rbd", "Your reliability block diagrams and their structure."],
   ["create_rbd", "Build and save a diagram — series, parallel, k-of-n, standby, sub-systems — which opens in the RBD builder."],
+  ["edit_rbd", "Change a saved diagram with a short batch of edits — add a block in series or parallel, remove one, swap a model on several blocks at once — all or nothing, instead of rebuilding it."],
+  ["clone_rbd", "Copy a sample or one of your diagrams into your workspace, to edit or to make a variant."],
   ["analyze_rbd", "System reliability, MTTF, B-lives and importance; availability for repairable diagrams (a paid feature, saved results are reused)."],
   ["export_rbd_python", "A diagram as a standalone SurPyval + RePyability script."],
   ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function."],

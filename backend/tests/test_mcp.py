@@ -36,7 +36,8 @@ READ_TOOLS = {
 }
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
-WRITE_TOOLS = {"fit_and_save_model", "save_model", "upload_dataset", "create_rbd", "create_fleet_alert",
+WRITE_TOOLS = {"fit_and_save_model", "save_model", "upload_dataset", "create_rbd", "clone_rbd", "edit_rbd",
+               "create_fleet_alert",
                "delete_model", "delete_dataset", "delete_rbd"}
 
 
@@ -457,6 +458,6 @@ def test_users_cannot_read_each_others_artifacts(env):
         {**n, "model": {"saved_model_id": model["model_id"]}} if n["id"] == "ctl" else n for n in GRAPH["nodes"]]}
     assert "not found" in _err(_call(b, "create_rbd", {"name": "Sneaky", **graph})).lower()
     # ... while A can.
-    ok = _ok(_call(env.token[A], "create_rbd", {"name": "Linked", **graph}))
+    ok = _ok(_call(env.token[A], "create_rbd", {"name": "Linked", **graph, "include_graph": True}))
     ctl = next(n for n in ok["graph"]["nodes"] if n["id"] == "ctl")
     assert ctl["model"]["saved_model_id"] == model["model_id"]
