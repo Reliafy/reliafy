@@ -31,7 +31,7 @@ FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]  # 0 = failed, 1 = still running
 
 READ_TOOLS = {
     "list_models", "get_model", "reliability_at", "list_datasets", "list_rbds", "get_rbd",
-    "analyze_rbd", "fit_distribution", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
+    "analyze_rbd", "get_job", "fit_distribution", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
     "optimal_overhaul", "list_fleets", "fleet_forecast", "list_fleet_alerts", "upgrade_link",
 }
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).

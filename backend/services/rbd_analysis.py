@@ -23,6 +23,7 @@ identical units is ``1 - (1 - R)^n``); cold standby uses RePyability's
 from __future__ import annotations
 
 import re
+import time
 from typing import Any, Callable, Optional
 
 import numpy as np
@@ -1226,6 +1227,15 @@ def _valid_beta(v) -> bool:
 # reliability curve. Built on RePyability's RepairableRBD.
 
 _AVAIL_SIMS = 2000  # Monte-Carlo replications for the availability estimate
+_AVAIL_SEED = 1  # every availability run is seeded: same inputs, same result
+_AVAIL_CONFIDENCE = 0.95
+
+# Quick (time-capped) runs (#147): replications in blocks of _QUICK_BLOCK,
+# block i seeded with the i-th child of ``SeedSequence(seed)`` (RePyability's
+# block seeding), until the time budget is spent. A run of k blocks is
+# reproducible for its seed, and its first j blocks are exactly a run of j.
+_QUICK_BLOCK = 50
+_clock = time.perf_counter  # the quick run's clock (tests swap in a fake one)
 
 
 def _always_up():
@@ -1471,19 +1481,107 @@ def _simulated_criticality(res, labels, gate_ids) -> dict:
     return out
 
 
+def _quick_simulation(rbd, t_simulation: float, overrides: dict, seed: int,
+                      time_budget_s: float, max_replications: Optional[int]):
+    """``(result, batches)`` of a time-capped availability simulation: blocks
+    of :data:`_QUICK_BLOCK` replications, block ``i`` seeded from the ``i``-th
+    child of ``SeedSequence(seed)``, until ``time_budget_s`` of simulation has
+    run (at least one block) or ``max_replications`` are done.
+
+    Uses RePyability 0.10's block machinery (``_run`` + ``_Tally.merge``, as
+    its parallel runs do); if that is ever unavailable, it falls back to the
+    public API: a one-block pilot, then one seeded run of as many blocks as fit
+    the rest of the budget."""
+    from repyability.rbd import _montecarlo as montecarlo
+    from repyability.rbd import repairable_rbd as rr
+
+    working = set(overrides.get("working_nodes") or ())
+    broken = set(overrides.get("broken_nodes") or ())
+    cap = int(max_replications) if max_replications else None
+    try:
+        tally_cls = rr._Tally
+        run, build = rbd._run, rbd._availability_result
+    except AttributeError:  # pragma: no cover - a RePyability without block runs
+        return _quick_simulation_public(rbd, t_simulation, overrides, seed,
+                                        time_budget_s, cap)
+    rbd._validate_node_overrides(working, broken)
+    initial_up = bool(rbd.is_system_working(
+        {c: c not in broken for c in rbd.components}, "c"))
+    seeds = np.random.SeedSequence(seed)
+    tally = tally_cls(rbd.costs)
+    start = _clock()
+    batches = 0
+    while True:
+        size = _QUICK_BLOCK if cap is None else min(_QUICK_BLOCK, cap - tally.n)
+        if size <= 0:
+            break
+        tally.merge(run(float(t_simulation), working, broken, "c", size, False,
+                        montecarlo.block_seed(seeds), False))
+        batches += 1
+        if _clock() - start >= time_budget_s:
+            break
+    return build(tally, float(t_simulation), initial_up, False), batches
+
+
+def _quick_simulation_public(rbd, t_simulation, overrides, seed, time_budget_s,
+                             cap):  # pragma: no cover - fallback only
+    start = _clock()
+    first = rbd.availability(t_simulation=float(t_simulation), N=_QUICK_BLOCK,
+                             method="c", seed=seed, **overrides)
+    per_block = max(_clock() - start, 1e-6)
+    blocks = max(int(time_budget_s // per_block), 1)
+    if cap:
+        blocks = max(min(blocks, cap // _QUICK_BLOCK), 1)
+    if blocks == 1:
+        return first, 1
+    return rbd.availability(t_simulation=float(t_simulation), N=blocks * _QUICK_BLOCK,
+                            method="c", seed=seed, **overrides), blocks
+
+
+def _precision(res) -> Optional[dict]:
+    """How precisely the simulation pinned down the window's mean
+    availability: the estimate, its 95% confidence interval and half-width."""
+    from repyability.rbd import _montecarlo as montecarlo
+
+    try:
+        ci = res.mean_availability_interval(_AVAIL_CONFIDENCE)
+    except Exception:  # noqa: BLE001 - a result without per-run up times
+        return None
+    se = _f(ci.standard_error)
+    return {
+        "window_availability": _f(ci.estimate),
+        "lower": _f(ci.lower),
+        "upper": _f(ci.upper),
+        # z·SE, unclipped: the interval is clipped to [0, 1], its precision isn't.
+        "half_width": None if se is None else se * montecarlo.z_value(_AVAIL_CONFIDENCE),
+        "standard_error": se,
+        "confidence": _AVAIL_CONFIDENCE,
+        "n_simulations": int(getattr(res, "n_simulations", 0) or 0),
+    }
+
+
 def analyze_availability(
     graph: dict,
     resolve_model=None,
     t_simulation: Optional[float] = None,
     n_simulations: Optional[int] = None,
+    time_budget_s: Optional[float] = None,
+    seed: Optional[int] = None,
+    max_replications: Optional[int] = None,
 ) -> dict:
     """Availability analysis of a repairable RBD: steady-state uptime, mean up/
     down time, failure frequency, each component's share of downtime, and
     per-block importance / criticality measures.
 
     ``n_simulations`` overrides the Monte-Carlo replication count (default
-    :data:`_AVAIL_SIMS`, read at call time so tests can shrink it)."""
+    :data:`_AVAIL_SIMS`, read at call time so tests can shrink it).
+    ``time_budget_s`` makes it a quick run instead (#147): replications in
+    seeded blocks until that much simulation time is spent, capped at
+    ``max_replications``; the result is flagged ``quick``. ``seed`` defaults
+    to :data:`_AVAIL_SEED`."""
     n_sims = int(n_simulations) if n_simulations else _AVAIL_SIMS
+    seed = _AVAIL_SEED if seed is None else int(seed)
+    quick = bool(time_budget_s and time_budget_s > 0)
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(
         graph, resolve_model
     )
@@ -1503,9 +1601,17 @@ def analyze_availability(
     sim = {"mean_up_time": None, "mean_down_time": None, "failure_frequency": None}
     curve = None
     criticality: dict = {}
+    precision = None
+    batches = None
     try:
-        res = rbd.availability(t_simulation=float(t_simulation), N=n_sims,
-                               method="c", seed=1, **overrides)
+        if quick:
+            res, batches = _quick_simulation(rbd, float(t_simulation), overrides, seed,
+                                             float(time_budget_s), max_replications)
+        else:
+            res = rbd.availability(t_simulation=float(t_simulation), N=n_sims,
+                                   method="c", seed=seed, **overrides)
+        n_sims = int(getattr(res, "n_simulations", n_sims) or n_sims)
+        precision = _precision(res)
         sim = {
             "mean_up_time": _f(getattr(res, "mean_up_time", None)),
             "mean_down_time": _f(getattr(res, "mean_down_time", None)),
@@ -1566,7 +1672,12 @@ def analyze_availability(
         "figures_basis": figures_basis,
         "simulated": sim,
         "n_simulations": n_sims,
+        "replications": n_sims,
         "t_simulation": float(t_simulation),
+        "seed": seed,
+        "quick": quick,
+        **({"time_budget_s": float(time_budget_s), "batches": batches} if quick else {}),
+        "precision": precision,
         "per_node": per_node,
         "importance": importance,
         "criticality": criticality,

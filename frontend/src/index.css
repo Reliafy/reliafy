@@ -1017,6 +1017,20 @@ body {
   color: var(--muted);
 }
 .rbd-saved-note button { padding: 3px 10px; font-size: 12.5px; }
+/* Free quick simulations (#147) and queued jobs (#146). */
+.rbd-quick-note a { font-size: 12.5px; }
+.rbd-job-status { font-size: 12.5px; color: var(--muted); }
+.rbd-quick-tag {
+  margin-left: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #9a5b00;
+  background: #fff8e8;
+  border: 1px solid #f5d08a;
+  border-radius: 8px;
+  padding: 0 6px;
+  vertical-align: 1px;
+}
 
 .rbd-name {
   display: inline-block;
