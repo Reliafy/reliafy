@@ -43,6 +43,7 @@ executing tool …"; the traceback goes to the log.
 
 import functools
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Callable, Literal, Optional
 
@@ -442,6 +443,19 @@ def _fit_lead(summary: dict) -> dict:
     return {k: summary[k] for k in ("fit_ok", "warning", "warnings") if k in summary}
 
 
+def _fit_failure_warning(fit_warning: str | None) -> str:
+    """The single "didn't converge" warning for MCP callers: SurPyval's reason
+    without its Python-API advice (``init`` in ``fit()``), plus what an agent
+    can actually do about it."""
+    reason = re.sub(r"\s*The parameters below came back from a fit.*$", "", (fit_warning or "").strip(),
+                    flags=re.S)
+    sentences = [s for s in re.split(r"(?<=[.;])\s+", reason) if s and "init" not in s and "fit()" not in s]
+    reason = " ".join(sentences).rstrip(" ;")
+    return ("The fit did NOT converge — the parameters and metrics below are not a valid result; don't quote "
+            "them." + (f" Optimiser: {reason}" if reason else "") + " Try rescaling the times (e.g. a "
+            "larger unit), checking for extreme or mistyped values, or another distribution.")
+
+
 def _fit_summary(result: dict) -> dict:
     """The parts of a fit payload worth handing to a model (no plot arrays).
 
@@ -450,8 +464,7 @@ def _fit_summary(result: dict) -> dict:
     metrics = result.get("metrics") or _live_metrics((result.get("functions") or {}).get("model_id"))
     lead: dict[str, Any] = {}
     if result.get("fit_ok") is False or result.get("fit_warning"):
-        lead = {"fit_ok": False, "warning": "The fit did NOT converge — the parameters and metrics below are "
-                                            "not a valid result; don't quote them. " + (result.get("fit_warning") or "")}
+        lead = {"fit_ok": False, "warning": _fit_failure_warning(result.get("fit_warning"))}
     if result.get("warnings"):
         lead["warnings"] = result["warnings"]
     out = {
@@ -465,7 +478,7 @@ def _fit_summary(result: dict) -> dict:
         "gof": {g["id"]: g["value"] for g in result.get("gof") or []},
         "metrics": metrics,
     }
-    for key in ("extra_params", "coefficients", "randomness", "fit_warning", "options"):
+    for key in ("extra_params", "coefficients", "randomness", "options"):
         if result.get(key):
             out[key] = result[key]
     if result.get("selection"):
@@ -517,13 +530,14 @@ def get_model(
                 metrics = None
         out = {**_life_brief(m), "params": r.get("params", []), "gof": {g["id"]: g["value"] for g in r.get("gof") or []},
                "metrics": metrics}
-        for key in ("coefficients", "extra_params", "randomness", "fit_warning", "options", "warnings"):
+        for key in ("coefficients", "extra_params", "randomness", "options", "warnings"):
             if r.get(key):
                 out[key] = r[key]
         if (r.get("functions") or {}).get("covariates"):
             out["covariates"] = r["functions"]["covariates"]
         if r.get("fit_ok") is False or r.get("fit_warning"):
-            out = {"fit_ok": False, **out}  # lead with it, as the fit tools do
+            # Lead with it, as the fit tools do.
+            out = {"fit_ok": False, "warning": _fit_failure_warning(r.get("fit_warning")), **out}
         return out
     doc = recurrent_service.get_model(db, model_id, owners)
     if doc is not None:
@@ -700,7 +714,8 @@ def fit_distribution(
     """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
     goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Saves nothing — use
     fit_and_save_model to keep the model. Reliafy's censoring convention: 0 = the unit failed, 1 = still
-    running (suspended); if the data marks failures with 1, pass c_invert=true. A fit that says every (or
+    running (suspended), -1 = left-censored (found failed, at some unknown earlier time); if the data marks
+    failures with 1, pass c_invert=true. A fit that says every (or
     all but one) row is censored almost always means the flags are inverted. Weibull beta < 1 = infant
     mortality, ≈ 1 = random failures, > 1 = wear-out. Reliafy Pro only: on the Free and Agent plans, fit
     locally with SurPyval and save the parameters with save_model."""
@@ -728,7 +743,8 @@ def fit_and_save_model(
     """Fit a life distribution exactly as fit_distribution does, then save it as a model in the user's
     Reliafy workspace (inline data is saved as a dataset too) and return its id and url. Use it when the
     user wants to keep the model — for reliability_at, the calculators, or an RBD block. Same censoring
-    convention: 0 = failed, 1 = still running; c_invert=true when the data marks failures with 1. Reliafy
+    convention: 0 = failed, 1 = still running, -1 = left-censored; c_invert=true when the data marks failures
+    with 1. Reliafy
     Pro only (on other plans, fit locally with SurPyval and use save_model)."""
     return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
@@ -909,6 +925,12 @@ def reliability_at(
         if undefined:
             notes.append(f"conditional_reliability is null where it is undefined: the model gives "
                          f"R({conditional_age:g}) = 0, so no unit survives to that age.")
+        elif vals["sf"][-1] == 0 and vals["Hf"][-1] is not None:
+            # Not 0/0: R(age) is positive but below what a float can hold.
+            notes.append(f"R({conditional_age:g}) = exp(-{vals['Hf'][-1]:.4g}) is too small to show "
+                         "(it reads 0), but it isn't 0, so conditional_reliability is still defined: it's "
+                         "computed exactly as exp(-(H(age + t) - H(age))). Values of 0 there are too small "
+                         "to show, not impossible.")
     if ev.get("covariates") is not None:
         used = ev["covariates"]
         out["covariates_used"] = {c["name"]: c["value"] for c in used}
@@ -948,7 +970,7 @@ def upload_dataset(
                                                         "semicolon-separated pastes are accepted too.")],
 ) -> dict[str, Any]:
     """Save a dataset (CSV text) to the user's workspace and return its id and columns. A censoring
-    column should use 0 = failed, 1 = still running (or flag c_invert when fitting)."""
+    column should use 0 = failed, 1 = still running, -1 = left-censored (or flag c_invert when fitting)."""
     user, db = _caller(ctx), _db()
     _cap(db, user, "datasets", "datasets")
     ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(csv), user["uid"])

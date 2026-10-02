@@ -333,6 +333,19 @@ def check_fittable(kwargs: dict, distribution_name: str) -> None:
         )
 
 
+def _short_reason(lines: list[str], limit: int = 300) -> str:
+    """A candidate's failure reason for ``selection.failed``: its first line,
+    cut (if it must be) at a sentence, else a word, boundary — never mid-word."""
+    text = lines[0].strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    end = cut.rfind(". ")
+    if end >= limit // 2:
+        return cut[:end + 1]
+    return cut[:cut.rfind(" ")].rstrip(",;:") + "…"
+
+
 def data_warnings(kwargs: dict) -> list[str]:
     """Warnings about the data itself that make any fit meaningless even
     when the optimiser reports success — today: every observed failure at the
@@ -1103,7 +1116,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         except Exception as exc:
             # A distribution that won't fit this data is skipped — and listed.
             failed.append({"id": dist_id, "name": entry["name"],
-                           "reason": (str(exc).strip().splitlines() or [type(exc).__name__])[0][:200]})
+                           "reason": _short_reason(str(exc).strip().splitlines() or [type(exc).__name__])})
             continue
         if aic is None or not math.isfinite(float(aic)):
             failed.append({"id": dist_id, "name": entry["name"], "reason": "no finite AIC"})
