@@ -476,7 +476,7 @@ const MCP_TOOLS = [
   ["fit_and_save_model", "The same fit, saved as a model in your workspace (Claude asks before saving; Pro)."],
   ["save_model", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval — with an optional dataset reference and notes."],
   ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age, and with confidence bounds (the same as the app’s band) where the model has them."],
-  ["list_datasets / upload_dataset", "Your datasets, and saving new CSV data."],
+  ["list_datasets / get_dataset / upload_dataset", "Your datasets, reading one’s columns and rows a page at a time, and saving new CSV data."],
   ["list_rbds / get_rbd", "Your reliability block diagrams and their structure."],
   ["create_rbd", "Build and save a diagram — series, parallel, k-of-n, standby, sub-systems — which opens in the RBD builder."],
   ["edit_rbd", "Change a saved diagram with a short batch of edits — add a block in series or parallel, remove one, swap a model on several blocks at once — all or nothing, instead of rebuilding it."],
@@ -488,6 +488,7 @@ const MCP_TOOLS = [
   ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items (Pro)."],
   ["list_fleet_alerts / create_fleet_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API (Pro)."],
   ["delete_model / delete_dataset / delete_rbd", "Permanently delete your own models, datasets and diagrams (never shared samples; Claude asks first). A dataset still used by a model can’t be deleted, nor a model a fleet forecast runs on."],
+  ["update_model / update_dataset", "Rename your own models and datasets, or set their notes — never the data or the fit, and never shared samples."],
   ["get_account", "Your plan, tool calls left today and when they reset, storage used against your plan’s limits, and whether simulation is included. Not counted against the daily limit."],
   ["upgrade_link", "A Stripe checkout link for Reliafy Agent or Pro, for you to open and pay yourself — nothing is charged until you complete it. Works even after the daily limit."],
 ];

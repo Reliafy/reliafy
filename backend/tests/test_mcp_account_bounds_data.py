@@ -83,6 +83,8 @@ def test_get_account_is_ungated_and_on_every_plan():
     from backend.mcp_server import PRO_ONLY_TOOLS, UNGATED_TOOLS
 
     assert "get_account" in UNGATED_TOOLS and "get_account" not in PRO_ONLY_TOOLS
+    # The new data tools are ordinary: every plan, counted against the quota.
+    assert not {"get_dataset", "update_model", "update_dataset"} & (PRO_ONLY_TOOLS | UNGATED_TOOLS)
 
 
 def test_free_account_reports_calls_left_and_works_past_the_quota(plans, monkeypatch):
@@ -256,3 +258,123 @@ def test_bounds_fail_closed_when_surpyval_cant_compute_them(env, monkeypatch):
 @pytest.mark.parametrize("bad", [0, 1, 1.5, -0.2])
 def test_confidence_must_be_between_0_and_1(samples, bad):
     _err(_call(samples.token[A], "reliability_at", {"model_id": BEARINGS, "times": [250], "confidence": bad}))
+
+
+# ---- get_dataset (#135) ------------------------------------------------------------------------
+
+def _upload(token, n=120, name="Run hours"):
+    rows = "\n".join(f"{100 + i},{i % 2},{'' if i == 3 else 'site-' + str(i % 3)}" for i in range(n))
+    return _ok(_call(token, "upload_dataset", {"name": name, "csv": f"hours,failed,site\n{rows}"}))
+
+
+def test_get_dataset_pages_rows_with_typed_columns(env):
+    ds = _upload(env.token[A])
+    out = _ok(_call(env.token[A], "get_dataset", {"dataset_id": ds["id"]}))
+    assert out["name"] == "Run hours" and out["row_count"] == 120 and out["is_sample"] is False
+    assert out["columns"][:2] == [{"name": "hours", "dtype": "int64"}, {"name": "failed", "dtype": "int64"}]
+    assert out["columns"][2]["name"] == "site" and out["columns"][2]["dtype"] in ("object", "str")  # pandas 2 / 3
+    assert len(out["rows"]) == 50 and out["offset"] == 0 and out["next_offset"] == 50
+    assert out["rows"][0] == [100, 0, "site-0"]
+    assert out["rows"][3] == [103, 1, None]  # a blank cell is null
+
+    last = _ok(_call(env.token[A], "get_dataset", {"dataset_id": ds["id"], "offset": 100, "limit": 50}))
+    assert len(last["rows"]) == 20 and last["next_offset"] is None and last["rows"][-1][0] == 219
+
+    big = _ok(_call(env.token[A], "get_dataset", {"dataset_id": ds["id"], "limit": 500}))
+    assert len(big["rows"]) == 120 and big["next_offset"] is None
+
+    past = _ok(_call(env.token[A], "get_dataset", {"dataset_id": ds["id"], "offset": 500}))
+    assert past["rows"] == [] and "past the last row" in past["note"]
+
+
+@pytest.mark.parametrize("args", [{"limit": 501}, {"limit": 0}, {"offset": -1}])
+def test_get_dataset_limits(env, args):
+    ds = _upload(env.token[A], n=5)
+    _err(_call(env.token[A], "get_dataset", {"dataset_id": ds["id"], **args}))
+
+
+def test_get_dataset_reads_samples_but_not_other_users_data(samples):
+    out = _ok(_call(samples.token[A], "get_dataset", {"dataset_id": SAMPLE_DS, "limit": 5}))
+    assert out["is_sample"] is True and len(out["rows"]) == 5 and out["row_count"] >= 5
+
+    theirs = _upload(samples.token[B], n=5, name="B's data")
+    assert _err(_call(samples.token[A], "get_dataset", {"dataset_id": theirs["id"]})).endswith("Dataset not found.")
+
+
+# ---- update_model / update_dataset (#135) ------------------------------------------------------
+
+def test_update_model_renames_and_annotates_without_touching_the_fit(env):
+    token = env.token[A]
+    saved = _saved_weibull(env)
+    mid = saved["model_id"]
+    before = _ok(_call(token, "get_model", {"model_id": mid}))
+
+    out = _ok(_call(token, "update_model", {"model_id": mid, "name": "  Feed pumps  ",
+                                             "notes": "Site B only; 2019-2024."}))
+    assert out["updated"] == ["name", "notes"] and out["name"] == "Feed pumps" and out["kind"] == "life"
+    after = _ok(_call(token, "get_model", {"model_id": mid}))
+    assert after["name"] == "Feed pumps" and after["notes"] == "Site B only; 2019-2024."
+    assert after["params"] == before["params"] and after["gof"] == before["gof"]
+
+    out = _ok(_call(token, "update_model", {"model_id": mid, "notes": ""}))  # "" clears
+    assert out["updated"] == ["notes"] and out["notes"] is None and out["name"] == "Feed pumps"
+    assert "notes" not in _ok(_call(token, "get_model", {"model_id": mid}))
+
+
+def test_update_model_handles_recurrent_models(samples):
+    doc = samples.db.recurrent_models.find_one({"_id": SAMPLE_REC})
+    samples.db.recurrent_models.insert_one({**doc, "_id": "rec-a", "id": "rec-a", "owner_id": A})
+    out = _ok(_call(samples.token[A], "update_model", {"model_id": "rec-a", "name": "Compressors (mine)",
+                                                        "notes": "copied"}))
+    assert out["kind"] == "recurrent" and out["name"] == "Compressors (mine)"
+    got = _ok(_call(samples.token[A], "get_model", {"model_id": "rec-a"}))
+    assert got["name"] == "Compressors (mine)" and got["notes"] == "copied"
+
+
+def test_update_refuses_samples_other_users_and_empty_changes(samples):
+    a = samples.token[A]
+    assert "shared sample model" in _err(_call(a, "update_model", {"model_id": BEARINGS, "name": "Mine"}))
+    assert "shared sample model" in _err(_call(a, "update_model", {"model_id": SAMPLE_REC, "notes": "x"}))
+    assert "shared sample dataset" in _err(_call(a, "update_dataset", {"dataset_id": SAMPLE_DS, "name": "Mine"}))
+    assert samples.db.models.find_one({"_id": BEARINGS})["name"] != "Mine"
+
+    theirs = _ok(_call(samples.token[B], "save_model", {"name": "B's", "distribution": "weibull", "params": WEIBULL}))
+    their_ds = _upload(samples.token[B], n=5, name="B's data")
+    assert _err(_call(a, "update_model", {"model_id": theirs["model_id"], "name": "x"})).endswith("Model not found.")
+    assert _err(_call(a, "update_dataset", {"dataset_id": their_ds["id"], "name": "x"})).endswith("Dataset not found.")
+    assert samples.db.models.find_one({"_id": theirs["model_id"]})["name"] == "B's"
+    assert samples.db.datasets.find_one({"_id": their_ds["id"]})["name"] == "B's data"
+
+    mine = _upload(a, n=5)
+    assert "Nothing to change" in _err(_call(a, "update_dataset", {"dataset_id": mine["id"]}))
+    assert "blank" in _err(_call(a, "update_dataset", {"dataset_id": mine["id"], "name": "   "}))
+    _err(_call(a, "update_dataset", {"dataset_id": mine["id"], "notes": "x" * 5001}))
+
+
+def test_update_dataset_renames_and_annotates_without_touching_the_data(env):
+    token = env.token[A]
+    ds = _upload(token, n=5)
+    before = env.db.datasets.find_one({"_id": ds["id"]})
+    out = _ok(_call(token, "update_dataset", {"dataset_id": ds["id"], "name": "Hours v2", "notes": "Cleaned."}))
+    assert out["updated"] == ["name", "notes"] and out["dataset_id"] == ds["id"]
+    assert out["name"] == "Hours v2" and out["notes"] == "Cleaned." and out["url"].endswith(f"/datasets/d/{ds['id']}")
+    after = env.db.datasets.find_one({"_id": ds["id"]})
+    assert after["data"] == before["data"] and after["checksum"] == before["checksum"]
+    got = _ok(_call(token, "get_dataset", {"dataset_id": ds["id"]}))
+    assert got["name"] == "Hours v2" and got["notes"] == "Cleaned."
+    assert any(d["name"] == "Hours v2" for d in _ok(_call(token, "list_datasets"))["datasets"])
+
+    _ok(_call(token, "update_dataset", {"dataset_id": ds["id"], "notes": ""}))
+    assert "notes" not in _ok(_call(token, "get_dataset", {"dataset_id": ds["id"]}))
+
+
+def test_data_tools_count_against_the_free_quota(plans, monkeypatch):
+    from backend import config
+
+    monkeypatch.setattr(config, "MCP_FREE_DAILY_CALLS", 3)
+    token = plans.oauth[FREE]
+    ds = _upload(token, n=5)
+    _ok(_call(token, "get_dataset", {"dataset_id": ds["id"]}))
+    _ok(_call(token, "update_dataset", {"dataset_id": ds["id"], "name": "Renamed"}))
+    assert _calls_today(plans.db, FREE) == 3
+    assert "You've used all 3" in _err(_call(token, "get_dataset", {"dataset_id": ds["id"]}))

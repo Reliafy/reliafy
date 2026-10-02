@@ -169,6 +169,23 @@ def models_for_dataset(db, dataset_id: str, owner_id: str, hidden=frozenset()) -
     ]
 
 
+def update_details(db, dataset_id: str, owner_id: str, name: str | None = None,
+                   notes: str | None = None) -> Dataset | None:
+    """Rename an owned dataset and/or set its notes (``notes=""`` clears them).
+    Never touches the data. Returns None if it doesn't exist or isn't owned
+    (shared samples are read-only)."""
+    fields: dict = {}
+    if name is not None:
+        fields["name"] = name
+    if notes is not None:
+        fields["notes"] = notes or None
+    if fields:
+        res = db.datasets.update_one({"_id": dataset_id, "owner_id": owner_id}, {"$set": fields})
+        if res.matched_count == 0:
+            return None
+    return from_doc(Dataset, db.datasets.find_one({"_id": dataset_id, "owner_id": owner_id}))
+
+
 def delete_dataset(db, dataset_id: str, owner_id: str) -> bool:
     """Remove an owned dataset. Returns False if it does not exist / not owned.
 

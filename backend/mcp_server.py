@@ -220,6 +220,7 @@ What you can do:
 - Life data: fit_distribution to failure times (inline data or a saved dataset), fit_and_save_model to keep \
 it as a model, or save_model to save parameters fitted elsewhere; evaluate a saved model with reliability_at. \
 list_models / get_model read what is saved; list_datasets / upload_dataset manage the data.
+- Datasets: get_dataset reads a dataset's columns, row count and rows, a page at a time (offset / limit).
 - Confidence: reliability_at with confidence (e.g. 0.95) adds lower/upper bounds on R(t) and F(t); quote them \
 with the point values. Bounds are null, with bounds_note saying why, where a model has none — never invent them.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
@@ -233,6 +234,8 @@ fleet's expected failures.
 (never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
 Only on the user's explicit \
 request: confirm by name first, and relay anything the response lists as affected.
+- Tidying: update_model / update_dataset rename the user's own models and datasets or set their notes (never \
+the data or the fit; never shared samples).
 - Plans: upgrade_link gives the user a Stripe payment link for Reliafy Agent or Pro, to open themselves.
 - Account: get_account shows the plan, tool calls left today (and when they reset), storage used against the \
 limits and whether simulation is included; it's free to call, even past the daily limit.
@@ -544,6 +547,8 @@ def get_model(
                 out[key] = r[key]
         if (r.get("functions") or {}).get("covariates"):
             out["covariates"] = r["functions"]["covariates"]
+        if (m.spec or {}).get("notes"):
+            out["notes"] = m.spec["notes"]
         if r.get("fit_ok") is False or r.get("fit_warning"):
             # Lead with it, as the fit tools do.
             out = {"fit_ok": False, "warning": _fit_failure_warning(r.get("fit_warning")), **out}
@@ -551,7 +556,10 @@ def get_model(
     doc = recurrent_service.get_model(db, model_id, owners)
     if doc is not None:
         r = doc.results or {}
-        return {**_recurrent_brief(doc), "params": r.get("params"), "gof": r.get("gof"), "trend": r.get("trend")}
+        out = {**_recurrent_brief(doc), "params": r.get("params"), "gof": r.get("gof"), "trend": r.get("trend")}
+        if (doc.spec or {}).get("notes"):
+            out["notes"] = doc.spec["notes"]
+        return out
     raise ToolError("Model not found.")
 
 
@@ -1064,6 +1072,67 @@ def upload_dataset(
     _record(db, "mcp_dataset", "upload_dataset")
     return {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
             "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
+
+
+# ---- get_dataset (#135): a dataset's rows, a page at a time --------------------
+
+_DATASET_PAGE_MAX = 500
+
+
+def _cell(v):
+    """One dataset value as plain JSON: numbers as numbers, blanks as null."""
+    if v is None or (isinstance(v, float) and not np.isfinite(v)):
+        return None
+    if isinstance(v, (bool, np.bool_)):
+        return bool(v)
+    if isinstance(v, (int, np.integer)):
+        return int(v)
+    if isinstance(v, (float, np.floating)):
+        return _finite(v)
+    try:
+        if pd.isna(v):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return str(v)
+
+
+@_tool("get_dataset", _READ, "Read a dataset")
+def get_dataset(
+    ctx: Context,
+    dataset_id: Annotated[str, Field(description="A dataset id (list_datasets) — the user's own or a shared sample.")],
+    offset: Annotated[int, Field(ge=0, description="First row to return (0-based).")] = 0,
+    limit: Annotated[int, Field(ge=1, le=_DATASET_PAGE_MAX,
+                                description=f"Rows to return, at most {_DATASET_PAGE_MAX}.")] = 50,
+) -> dict[str, Any]:
+    """Read a saved dataset: its name and notes, columns with their types, the total row_count, and a slice
+    of rows (`offset`, `limit` ≤ 500) as lists in column order. Page through a large dataset with
+    next_offset; summarise rather than reading every row when you don't need them all."""
+    user, db = _caller(ctx), _db()
+    ds = datasets_service.get_dataset(db, dataset_id, _owners(user["uid"]))
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    df = datasets_service.load_dataframe(ds)
+    total = int(df.shape[0])
+    page = df.iloc[offset:offset + limit]
+    rows = [[_cell(v) for v in row] for row in page.itertuples(index=False, name=None)]
+    end = offset + len(rows)
+    out = {
+        "id": ds.id,
+        "name": ds.name,
+        "is_sample": samples_service.is_sample(ds.owner_id),
+        "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
+        "row_count": total,
+        "offset": offset,
+        "rows": rows,
+        "next_offset": end if end < total else None,
+        "url": _url(f"/datasets/d/{ds.id}"),
+    }
+    if ds.notes:
+        out["notes"] = ds.notes
+    if offset >= total and total:
+        out["note"] = f"offset {offset} is past the last row (the dataset has {total} rows)."
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1943,6 +2012,89 @@ def delete_rbd(
         out["affected"] = {"rbds": embedding}
         out["note"] = "These diagrams embedded it as a sub-system and can no longer be analysed as they are."
     return out
+
+
+# ---------------------------------------------------------------------------
+# Metadata: rename / annotate (#135)
+# ---------------------------------------------------------------------------
+# Name and notes only — never the data or the fit — and, like the deletes,
+# owner-only and never a shared sample.
+
+_NAME_MAX, _NOTES_MAX = 200, 5000
+_NewName = Annotated[Optional[str], Field(max_length=_NAME_MAX, description="A new name (omit to keep it).")]
+_NewNotes = Annotated[Optional[str], Field(max_length=_NOTES_MAX,
+                                           description="New notes, replacing any there are; \"\" clears them. "
+                                                       "Omit to keep them.")]
+
+
+def _details(name: str | None, notes: str | None) -> tuple[str | None, str | None]:
+    """Validated (name, notes): at least one given, and a name isn't blank."""
+    if name is None and notes is None:
+        raise ToolError("Nothing to change: give a new name, notes, or both.")
+    if name is not None:
+        name = name.strip()
+        if not name:
+            raise ToolError("name can't be blank.")
+    return name, (notes.strip() if notes is not None else None)
+
+
+def _changed(name: str | None, notes: str | None) -> list[str]:
+    return [k for k, v in (("name", name), ("notes", notes)) if v is not None]
+
+
+@_tool("update_model", _WRITE, "Rename or annotate a model")
+def update_model(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="One of the user's own model ids (list_models) — life or recurrent.")],
+    name: _NewName = None,
+    notes: _NewNotes = None,
+) -> dict[str, Any]:
+    """Rename one of the user's own saved models (life or recurrent) and/or set its notes. Only the name and
+    notes change — never the fit, parameters or data. Shared samples can't be changed."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    name, notes = _details(name, notes)
+    m = models_service.get_model(db, model_id, _owners(uid))
+    service, kind = models_service, "life"
+    if m is None:
+        m, service, kind = recurrent_service.get_model(db, model_id, _owners(uid)), recurrent_service, "recurrent"
+    if m is None:
+        raise ToolError("Model not found.")
+    if samples_service.is_sample(m.owner_id):
+        raise ToolError(f"“{m.name}” is a shared sample model, not yours — it can't be renamed or annotated.")
+    if name is not None:
+        m = service.rename_model(db, m.id, name, uid)
+    if notes is not None:
+        m = service.set_notes(db, m.id, notes, uid)
+    _record(db, "mcp_update", "update_model")
+    return {"updated": _changed(name, notes), "model_id": m.id, "kind": kind, "name": m.name,
+            "notes": (m.spec or {}).get("notes"),
+            "url": _url(f"/modelling/m/{m.id}" if kind == "life" else f"/modelling/recurrent/{m.id}")}
+
+
+@_tool("update_dataset", _WRITE, "Rename or annotate a dataset")
+def update_dataset(
+    ctx: Context,
+    dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list_datasets).")],
+    name: _NewName = None,
+    notes: _NewNotes = None,
+) -> dict[str, Any]:
+    """Rename one of the user's own datasets and/or set its notes. Only the name and notes change — never the
+    data. Shared samples can't be changed."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    name, notes = _details(name, notes)
+    ds = datasets_service.get_dataset(db, dataset_id, _owners(uid))
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    if samples_service.is_sample(ds.owner_id):
+        raise ToolError(f"“{ds.name}” is a shared sample dataset, not yours — it can't be renamed or annotated.")
+    ds = datasets_service.update_details(db, ds.id, uid, name=name, notes=notes)
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    _record(db, "mcp_update", "update_dataset")
+    return {"updated": _changed(name, notes), "dataset_id": ds.id, "name": ds.name, "notes": ds.notes,
+            "url": _url(f"/datasets/d/{ds.id}")}
 
 
 # ---------------------------------------------------------------------------

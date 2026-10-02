@@ -32,6 +32,7 @@ class Dataset(BaseModel):
     n_rows: int = 0
     columns: list = Field(default_factory=list)
     data: bytes = b""  # raw CSV bytes (excluded from API responses)
+    notes: Optional[str] = None  # free-text annotation (set over MCP: update_dataset)
 
 
 class Model(BaseModel):

@@ -118,6 +118,24 @@ def rename_model(db, model_id: str, name: str, owner_id: str) -> RecurrentModelD
     return doc
 
 
+def set_notes(db, model_id: str, notes: str, owner_id: str) -> RecurrentModelDoc:
+    """Set (or, with ``""``, clear) an owned recurrent model's notes (in its
+    spec, as for life models). Never touches the fit."""
+    doc = get_model(db, model_id, owner_id)
+    if doc is None or doc.owner_id != owner_id:
+        raise ModelNotFound(model_id)
+    doc.updated_at = _now()
+    update = {"$set": {"updated_at": doc.updated_at}}
+    if notes:
+        update["$set"]["spec.notes"] = notes
+        doc.spec = {**(doc.spec or {}), "notes": notes}
+    else:
+        update["$unset"] = {"spec.notes": ""}
+        doc.spec = {k: v for k, v in (doc.spec or {}).items() if k != "notes"}
+    db.recurrent_models.update_one({"_id": model_id, "owner_id": owner_id}, update)
+    return doc
+
+
 def delete_model(db, model_id: str, owner_id: str) -> None:
     result = db.recurrent_models.delete_one({"_id": model_id, "owner_id": owner_id})
     if result.deleted_count == 0:
