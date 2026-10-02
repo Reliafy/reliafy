@@ -361,7 +361,8 @@ def test_conflicting_inputs_are_refused(samples):
     # get_rbd's compact form (saved id + its own params) still round-trips.
     created = _ok(_call(a, "create_rbd", {"name": "Linked", **graph}))
     compact = _ok(_call(a, "get_rbd", {"rbd_id": created["id"]}))["graph"]
-    again = _ok(_call(a, "create_rbd", {"name": "Copy", "nodes": compact["nodes"], "edges": compact["edges"]}))
+    again = _ok(_call(a, "create_rbd", {"name": "Copy", "nodes": compact["nodes"], "edges": compact["edges"],
+                                        "include_graph": True}))
     assert next(n for n in again["graph"]["nodes"] if n["id"] == "p")["model"]["saved_model_id"] == BEARINGS
 
 

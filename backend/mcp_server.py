@@ -41,11 +41,12 @@ the message intact. Anything unexpected reaches the model only as "Error
 executing tool …"; the traceback goes to the log.
 """
 
+import copy
 import functools
 import logging
 import re
 from contextlib import asynccontextmanager
-from typing import Annotated, Any, Callable, Literal, Optional
+from typing import Annotated, Any, Callable, Literal, Optional, Union
 
 import anyio
 import numpy as np
@@ -54,7 +55,7 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import ToolAnnotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
@@ -64,6 +65,7 @@ from backend import fitting
 from backend import recurrent as recurrent_fit
 from backend import storage
 from backend.fitting import FitError
+from backend.services import access as access_service
 from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
@@ -71,6 +73,7 @@ from backend.services import fleet_alerts as alerts_service
 from backend.services import metrics as metrics_service
 from backend.services import oauth as oauth_service
 from backend.services import models as models_service
+from backend.services import rbd_edit
 from backend.services import rbd_graph
 from backend.services import rbds as rbds_service
 from backend.services import recurrent as recurrent_service
@@ -218,7 +221,9 @@ What you can do:
 it as a model, or save_model to save parameters fitted elsewhere; evaluate a saved model with reliability_at. \
 list_models / get_model read what is saved; list_datasets / upload_dataset manage the data.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
-B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script).
+B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script). Edit, \
+don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/remove/update blocks and \
+edges) rather than re-creating it; clone_rbd copies a sample or makes a variant to edit.
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
@@ -1106,6 +1111,8 @@ def create_rbd(
     stages: Annotated[Optional[list[Stage]], Field(
         description="Simple form instead of nodes/edges: stages in SERIES (left to right), each holding one or "
                     "more components in PARALLEL, with optional k_of_n voting.")] = None,
+    include_graph: Annotated[bool, Field(description=(
+        "Also return the full compact graph. Default: just the node ids, types and labels."))] = False,
 ) -> dict[str, Any]:
     """Build, validate and save a reliability block diagram to the user's workspace. Layout is automatic.
 
@@ -1126,7 +1133,8 @@ def create_rbd(
     block. Only if the user wants a starting point, use values that differ by block class, set
     placeholder=true on EVERY guessed model, and tell the user the numbers are placeholders.
     Repairable diagrams: every block needs `repair` (graph form) or repair_distribution + repair_params
-    (stages form), e.g. a lognormal time to repair."""
+    (stages form), e.g. a lognormal time to repair.
+    Returns the node ids (the stages form generates them); change the diagram later with edit_rbd."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     owners = _owners(uid)
@@ -1151,8 +1159,231 @@ def create_rbd(
     _cap(db, user, "rbds", "RBDs")
     rbd = rbds_service.save_rbd(db, name.strip(), graph, uid)
     _record(db, "mcp_rbd", "create_rbd")
-    return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), "warnings": check.get("warnings") or [],
-            "placeholders": rbd_graph.placeholder_labels(graph), "graph": rbd_graph.compact_graph(graph)}
+    return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), **_rbd_outline(graph, check, include_graph)}
+
+
+def _rbd_outline(graph: dict, check: dict, include_graph: bool) -> dict:
+    """What a write tool returns about a diagram: validation warnings,
+    placeholders and a concise node list ({id, type, label}) — the full
+    compact graph only on request (get_rbd reads it any time)."""
+    out = {
+        "warnings": check.get("warnings") or [],
+        "placeholders": rbd_graph.placeholder_labels(graph),
+        "nodes": [{"id": n.get("id"), "type": n.get("type"), "label": (n.get("data") or {}).get("label")}
+                  for n in graph.get("nodes") or []],
+    }
+    if include_graph:
+        out["graph"] = rbd_graph.compact_graph(graph)
+    return out
+
+
+# ---- token-efficient editing --------------------------------------------------
+#
+# edit_rbd changes a saved diagram with a batch of small ops instead of a whole
+# new graph, so an agent never re-sends (or re-reads) a diagram to change one
+# block. One tool with a discriminated union of ops, not one tool per op: every
+# tool schema sits in the agent's context on every turn.
+
+def _lean_schema(schema: dict) -> None:
+    """Drop the auto-generated titles and null defaults from an op's JSON
+    schema: they carry nothing for the agent but sit in its context."""
+    for prop in (schema.get("properties") or {}).values():
+        prop.pop("title", None)
+        if "default" in prop and prop["default"] is None:
+            del prop["default"]
+
+
+class _Op(BaseModel):
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_lean_schema)
+
+
+class AddNodeOp(_Op):
+    op: Literal["add_node"]
+    node: RbdNode = Field(description="The new block (compact node, as create_rbd). Its id must be new.")
+    between: Optional[list[str]] = Field(None, min_length=2, max_length=2, description=(
+        "[source, target]: splice into that existing edge (source -> new -> target)."))
+    after: Optional[str] = Field(None, description="In series right after this node (takes over its outgoing edges).")
+    before: Optional[str] = Field(None, description="In series right before this node (takes over its incoming edges).")
+    parallel_to: Optional[str] = Field(None, description="In parallel with this block (copies its incoming and "
+                                                         "outgoing edges).")
+
+
+class RemoveNodeOp(_Op):
+    op: Literal["remove_node"]
+    id: str
+    reconnect: Literal["auto", "none"] = Field("auto", description=(
+        "auto = rejoin neighbours the removal disconnects (a series gap closes; removing one of parallel blocks "
+        "adds nothing). none = just drop it and its edges."))
+
+
+class UpdateNodeOp(_Op):
+    op: Literal["update_node"]
+    id: Optional[str] = None
+    ids: Optional[list[str]] = Field(None, min_length=1, description="Apply the same change to several nodes.")
+    label: Optional[str] = None
+    model: Optional[BlockModel] = None
+    repair: Optional[BlockModel] = None
+    n: Optional[int] = None
+    k: Optional[int] = None
+    spares: Optional[int] = None
+    cold: Optional[bool] = None
+    subsystem_rbd_id: Optional[str] = None
+
+
+class EdgeOp(_Op):
+    op: Literal["add_edge", "remove_edge"]
+    source: str
+    target: str
+
+
+class SetOp(_Op):
+    op: Literal["set"]
+    name: Optional[str] = None
+    unit: Optional[str] = Field(None, description="Relabels the unit; parameters are not rescaled.")
+    repairable: Optional[bool] = None
+
+
+class AddCcfOp(_Op):
+    op: Literal["add_ccf"]
+    members: list[str] = Field(min_length=2, description="2+ component block ids not already in a group.")
+    beta: float = Field(description="Beta factor: shared-cause fraction of each member's failures, 0 < beta < 1.")
+    id: Optional[str] = Field(None, description="Group id (default ccf-1, ccf-2, …).")
+
+
+class RemoveCcfOp(_Op):
+    op: Literal["remove_ccf"]
+    id: str
+
+
+EditOp = Annotated[Union[AddNodeOp, RemoveNodeOp, UpdateNodeOp, EdgeOp, SetOp, AddCcfOp, RemoveCcfOp],
+                   Field(discriminator="op")]
+
+
+def _op_dict(op: BaseModel) -> dict:
+    """An op as the plain dict rbd_edit applies: only the fields the caller
+    gave (update_node merges exactly those), nested models dumped."""
+    out = {"op": op.op}
+    for key in op.model_fields_set:
+        value = getattr(op, key)
+        if value is None:
+            continue
+        out[key] = value.model_dump(exclude_none=True) if isinstance(value, BaseModel) else value
+    return out
+
+
+def _resolver(db, owners):
+    return lambda mid: models_service.get_model(db, mid, owners)
+
+
+def _check_rbd(db, graph: dict, owners: list[str], lead: str) -> dict:
+    check = rbds_service.validate_graph(db, graph, owners)
+    if not check.get("valid", False):
+        raise ToolError(lead + "; ".join(check.get("errors") or ["unknown problem"]))
+    return check
+
+
+@_tool("clone_rbd", _WRITE, "Copy an RBD")
+def clone_rbd(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="One of the user's RBDs or a shared sample (list_rbds).")],
+    name: Annotated[Optional[str], Field(description="Name for the copy (default: “<name> (copy)”).")] = None,
+) -> dict[str, Any]:
+    """Copy a diagram — a shared sample or one of the user's own — into the user's workspace under a new id,
+    to edit with edit_rbd (samples are read-only). Copies the diagram only: not saved availability results or
+    share links. Returns the new id and its node ids."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    owners = _owners(uid)
+    src = _get_rbd(db, uid, rbd_id)
+    new_name = (name or "").strip() or f"{src.name} (copy)"
+    graph = copy.deepcopy(src.graph or {})
+    check = rbds_service.validate_graph(db, graph, owners)
+    _cap(db, user, "rbds", "RBDs")
+    rbd = rbds_service.save_rbd(db, new_name, graph, uid)
+    _record(db, "mcp_rbd", "clone_rbd")
+    out = {**_rbd_brief(rbd), "cloned_from": src.id, **_rbd_outline(graph, check, False)}
+    if not check.get("valid", False):
+        # A draft saved unvalidated in the app copies as it is; say what to fix.
+        out["errors"] = check.get("errors") or []
+    return out
+
+
+@_tool("edit_rbd", _WRITE, "Edit an RBD")
+def edit_rbd(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="One of the user's own RBD ids (clone_rbd a sample first).")],
+    ops: Annotated[list[EditOp], Field(min_length=1, max_length=rbd_edit.MAX_OPS, description=(
+        "Applied in order, all or nothing."))],
+    if_updated_at: Annotated[Optional[str], Field(description=(
+        "The updated_at you last saw: refuse if the diagram changed since (e.g. edited in the app)."))] = None,
+    dry_run: Annotated[bool, Field(description="Validate and report without saving.")] = False,
+    include_graph: Annotated[bool, Field(description="Also return the full compact graph.")] = False,
+) -> dict[str, Any]:
+    """Change a saved RBD with a batch of ops instead of re-creating it. Atomic: if any op fails, or the result
+    isn't a valid diagram, nothing is saved and the error names the op (ops[i], 0-based) and why.
+
+    Ops (field `op`):
+    - add_node {node, between: [src, tgt] | after: id | before: id | parallel_to: id} — at most one placement;
+      none leaves it unconnected for add_edge. node is a compact node as in create_rbd.
+    - remove_node {id, reconnect: auto|none} — auto rejoins a series gap; removing one of two parallel
+      blocks adds no bypass. Every edge added is reported. Input/output can't be removed.
+    - update_node {id | ids, label?, model?, repair?, n?, k?, spares?, cold?, subsystem_rbd_id?} — merges
+      only the fields given (ids: same change to many nodes). A node's type can't change: remove and re-add.
+    - add_edge / remove_edge {source, target}
+    - set {name?, unit?, repairable?}
+    - add_ccf {members, beta, id?} / remove_ccf {id} — common-cause (beta-factor) groups, non-repairable only.
+    Removing a node drops it from its common-cause group (and the group if under 2 members remain).
+    Changing connections re-lays out the diagram automatically. Returns one line per op, the validation
+    warnings this edit introduced (warnings_unchanged counts the rest) and the node ids; read the full graph
+    with get_rbd."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    owners = _owners(uid)
+    rbd = _get_rbd(db, uid, rbd_id)
+    if samples_service.is_sample(rbd.owner_id) or rbd.owner_id != uid:
+        raise ToolError(f"“{rbd.name}” is a shared sample: samples are read-only — clone_rbd it first, then "
+                        "edit the copy.")
+    if if_updated_at and not access_service.timestamps_match(rbd.updated_at, if_updated_at):
+        raise ToolError(f"“{rbd.name}” has changed since {if_updated_at} (now updated_at "
+                        f"{rbd.updated_at.isoformat()}), e.g. edited in the app. Nothing was saved: re-read it with "
+                        "get_rbd and retry with the new updated_at.")
+    try:
+        result = rbd_edit.apply_ops(rbd.graph or {}, [_op_dict(op) for op in ops], rbd.name,
+                                    resolve_saved_model=_resolver(db, owners), self_id=rbd.id)
+    except rbd_edit.EditError as exc:
+        raise ToolError(f"Nothing was saved — {exc}") from None
+    graph = result.graph
+    check = _check_rbd(db, graph, owners, f"Nothing was saved — after all {len(ops)} op(s) the diagram is "
+                                          "invalid: ")
+    out_rbd = rbd
+    if not dry_run:
+        try:
+            out_rbd = rbds_service.save_rbd(db, result.name, graph, uid, rbd_id=rbd.id,
+                                            expected_updated_at=rbd.updated_at.isoformat())
+        except access_service.EditConflict:
+            raise ToolError(f"“{rbd.name}” was saved by someone else while this edit ran. Nothing was saved: "
+                            "re-read it with get_rbd and retry.") from None
+        _record(db, "mcp_rbd_edit", "edit_rbd")
+    else:
+        out_rbd = rbd.model_copy(update={"name": result.name, "graph": graph})
+    out = {**_rbd_brief(out_rbd)}
+    if dry_run:
+        out["dry_run"] = True
+        out["saved"] = False
+    out["applied"] = result.applied
+    out.update(_rbd_outline(graph, check, include_graph))
+    # Only the warnings this edit introduced: the rest were reported when the
+    # diagram was created, cloned or last edited, and repeating them on every
+    # small edit would cost more tokens than the edit itself.
+    try:
+        known = set(rbds_service.validate_graph(db, rbd.graph or {}, owners).get("warnings") or [])
+    except Exception:  # pragma: no cover - a malformed saved draft: report everything
+        known = set()
+    unchanged = [w for w in out["warnings"] if w in known]
+    if unchanged:
+        out["warnings"] = [w for w in out["warnings"] if w not in known]
+        out["warnings_unchanged"] = len(unchanged)
+    return out
 
 
 def _downsample(xs, ys, n: int = 21) -> list[dict]:
