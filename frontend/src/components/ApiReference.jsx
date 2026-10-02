@@ -475,7 +475,7 @@ const MCP_TOOLS = [
   ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset, and report the result — nothing is saved (Pro)."],
   ["fit_and_save_model", "The same fit, saved as a model in your workspace (Claude asks before saving; Pro)."],
   ["save_model", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval — with an optional dataset reference and notes."],
-  ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age."],
+  ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age, and with confidence bounds (the same as the app’s band) where the model has them."],
   ["list_datasets / upload_dataset", "Your datasets, and saving new CSV data."],
   ["list_rbds / get_rbd", "Your reliability block diagrams and their structure."],
   ["create_rbd", "Build and save a diagram — series, parallel, k-of-n, standby, sub-systems — which opens in the RBD builder."],

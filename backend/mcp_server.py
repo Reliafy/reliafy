@@ -220,6 +220,8 @@ What you can do:
 - Life data: fit_distribution to failure times (inline data or a saved dataset), fit_and_save_model to keep \
 it as a model, or save_model to save parameters fitted elsewhere; evaluate a saved model with reliability_at. \
 list_models / get_model read what is saved; list_datasets / upload_dataset manage the data.
+- Confidence: reliability_at with confidence (e.g. 0.95) adds lower/upper bounds on R(t) and F(t); quote them \
+with the point values. Bounds are null, with bounds_note saying why, where a model has none — never invent them.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
 B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script). Edit, \
 don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/remove/update blocks and \
@@ -846,6 +848,68 @@ def save_model(
     return out
 
 
+# ---- confidence bounds for reliability_at (#134) -------------------------------
+# The app's band (POST /api/models/{id}/confidence) is SurPyval's ``model.cb``
+# on the live fit — Fisher-matrix (Wald / delta-method) bounds. The same call
+# here, but at the requested times themselves rather than on the plot grid, so
+# nothing is interpolated. Where there's no covariance to propagate, no bounds:
+# never invented ones.
+
+def _cb_pairs(cb) -> list:
+    arr = np.asarray(cb, dtype=float).reshape(-1, 2)
+    return [[_finite(lo), _finite(hi)] for lo, hi in arr]
+
+
+def _reliability_bounds(db, m, ts: list[float], owners, ev: dict, confidence: float):
+    """``(reliability_bounds, failure_bounds, note)`` at ``ts`` — both lists of
+    ``[lower, upper]``, or both None with the note saying why."""
+    level = f"{confidence * 100:g}%"
+    results = m.results or {}
+    dist_id = results.get("distribution_id") or m.distribution_id
+    if dist_id == fitting.MIXTURE_ID:
+        return None, None, f"No {level} bounds: a mixture fit has no covariance matrix to base them on."
+    if m.kind == "nonparametric":
+        return None, None, (f"No {level} bounds: this is a non-parametric model, whose values here are "
+                            "interpolated on its stored curve, so bounds at exactly these times wouldn't match "
+                            "them. The app's calculator draws its pointwise band.")
+    if (m.spec or {}).get("params_only"):
+        return None, None, (f"No {level} bounds: this model was saved from parameters alone, without the data "
+                            "they were fitted to, so there's no covariance matrix to base them on. Save it "
+                            "with its data (or fit it in Reliafy) for bounds.")
+    if m.kind not in ("distribution", "discrete", "regression") or ev["method"] != "exact":
+        return None, None, f"No {level} bounds: confidence bounds aren't available for this {m.kind} model."
+    try:
+        entry = fitting._MODEL_STORE.get(models_service._live_cache_id(db, m.id, owners))
+    except (models_service.ModelNotFound, fitting.ModelNotFound, FitError):
+        entry = None
+    live = (entry or {}).get("model")
+    if live is None:
+        return None, None, (f"No {level} bounds: the data this model was fitted to is no longer available, "
+                            "so its covariance can't be recovered.")
+    if not hasattr(live, "cb"):
+        return None, None, (f"No {level} bounds: this model type ({results.get('distribution') or dist_id}) "
+                            "doesn't provide covariance-based confidence bounds.")
+    t = np.asarray(ts, dtype=float)
+    alpha = 1.0 - confidence
+    args = (t,)
+    if m.kind == "regression":
+        args = (t, pd.DataFrame({c["name"]: [c["value"]] for c in ev.get("covariates") or []}))
+    try:
+        with np.errstate(all="ignore"):
+            r = _cb_pairs(live.cb(*args, on="sf", alpha_ci=alpha, bound="two-sided"))
+            f = _cb_pairs(live.cb(*args, on="ff", alpha_ci=alpha, bound="two-sided"))
+    except Exception as exc:  # noqa: BLE001 - e.g. no covariance (singular fit), non-MLE fit
+        reason = str(exc).strip() or type(exc).__name__
+        return None, None, f"No {level} bounds: SurPyval can't compute them for this fit ({reason})."
+    note = (f"reliability_bounds / failure_bounds are two-sided {level} Fisher-matrix (Wald / delta-method) "
+            "confidence bounds from the fit's covariance — the same method as the app's confidence band — "
+            "computed at exactly these times.")
+    if m.kind == "regression":
+        note += (" For this proportional-hazards model they're at the covariate values used; the app's "
+                 "calculator doesn't draw a band for these models.")
+    return r, f, note
+
+
 @_tool("reliability_at", _READ, "Evaluate a model's reliability")
 def reliability_at(
     ctx: Context,
@@ -858,13 +922,21 @@ def reliability_at(
     covariates: Annotated[Optional[dict[str, Any]], Field(
         description="Proportional-hazards models only: covariate values by name (see get_model). Any not "
                     "given use the fit's default (the training-data mean); the response says which.")] = None,
+    confidence: Annotated[Optional[float], Field(
+        gt=0, lt=1, description="Optional two-sided confidence level, e.g. 0.9 or 0.95. Adds reliability_bounds "
+                                "and failure_bounds [lower, upper] at each time (the app's Fisher-matrix "
+                                "confidence bounds); null, with bounds_note saying why, where the model has "
+                                "none.")] = None,
 ) -> dict[str, Any]:
     """Evaluate a saved life model at given times: reliability R(t) (probability of surviving to t),
     failure probability F(t) = 1 − R(t), hazard rate h(t), cumulative hazard H(t) and density f(t).
     Optionally conditional on a unit already having survived to `conditional_age`. Parametric models are
     evaluated exactly from the distribution (method=exact); non-parametric and mixture models are
     interpolated on their stored curve (method=interpolated). Proportional-hazards models report the
-    covariate values used (the fit's defaults for any not given)."""
+    covariate values used (the fit's defaults for any not given). With `confidence` (e.g. 0.95), each
+    time also gets two-sided confidence bounds on R(t) and F(t) — quote those alongside the point values;
+    models without a covariance (non-parametric, mixtures, parameters saved without data) get null bounds
+    and a bounds_note saying why."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
@@ -950,6 +1022,14 @@ def reliability_at(
                          "covariate not given (the training-data mean; the most common level for a "
                          "categorical one). Pass `covariates` to evaluate other conditions.")
     out["note"] = " ".join(notes)
+    if confidence is not None:
+        r_bounds, f_bounds, bounds_note = _reliability_bounds(
+            db, m, ts, owners, ev, float(confidence))
+        for i, p in enumerate(points):
+            p["reliability_bounds"] = r_bounds[i] if r_bounds else None
+            p["failure_bounds"] = f_bounds[i] if f_bounds else None
+        out["confidence"] = float(confidence)
+        out["bounds_note"] = bounds_note
     return out
 
 
