@@ -232,6 +232,8 @@ fleet's expected failures.
 Only on the user's explicit \
 request: confirm by name first, and relay anything the response lists as affected.
 - Plans: upgrade_link gives the user a Stripe payment link for Reliafy Agent or Pro, to open themselves.
+- Account: get_account shows the plan, tool calls left today (and when they reset), storage used against the \
+limits and whether simulation is included; it's free to call, even past the daily limit.
 
 Conventions — follow them exactly:
 - Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension); \
@@ -290,7 +292,7 @@ _FIT_TOOLS = {"fit_distribution", "fit_and_save_model"}
 _FLEET_TOOLS = {"list_fleets", "fleet_forecast", "list_fleet_alerts", "create_fleet_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
 # Never gated or counted: the way out of a limit must work when the limit is hit.
-UNGATED_TOOLS = {"upgrade_link"}
+UNGATED_TOOLS = {"upgrade_link", "get_account"}
 
 
 def _gate(ctx: Context, name: str) -> None:
@@ -1866,6 +1868,52 @@ def delete_rbd(
 # ---------------------------------------------------------------------------
 # Plans
 # ---------------------------------------------------------------------------
+
+# ---- get_account (#133): the caller's plan and what's left on it -------------
+# Ungated like upgrade_link: an agent asks "what's left?" most when nothing is.
+
+@_tool("get_account", _READ, "Your plan and usage")
+def get_account(ctx: Context) -> dict[str, Any]:
+    """The user's Reliafy plan and what's left on it: tool calls used and left today, with when the count
+    resets (00:00 UTC); saved items per kind against the plan's storage limits (limit null = unlimited);
+    whether availability simulation is included; and how to upgrade. Doesn't count against the daily limit
+    and works when it's used up — check it before a long job, or to explain a limit to the user."""
+    user, db = _caller(ctx), _db()
+    admin = billing_service.is_admin_user(user)
+    summary = billing_service.usage_summary(db, user["uid"], admin=admin)
+    plan = summary["plan"]
+    unlimited = admin or not summary["billing_enabled"]
+    quota = summary["mcp"]["daily_quota"]
+    if quota is None:
+        calls = {"used_today": None, "daily_limit": None, "left_today": None, "resets_at": None, "resets_in": None}
+    else:
+        used = min(summary["mcp"]["calls_today"], quota)
+        reset = billing_service.next_day_start()
+        calls = {"used_today": used, "daily_limit": quota, "left_today": quota - used,
+                 "resets_at": reset.isoformat(), "resets_in": _until(reset).removeprefix("in ")}
+    caps = None if unlimited else summary["plan_caps"]
+    storage = {kind: {"used": n, "limit": None if caps is None else caps[kind]}
+               for kind, n in summary["usage"].items()}
+    if admin:
+        note = "Operator account: no daily tool-call limit and no storage limits."
+    elif not summary["billing_enabled"]:
+        note = "Self-hosted install: no plan limits."
+    elif plan == "pro":
+        note = "Reliafy Pro: no daily tool-call limit and unlimited storage."
+    else:
+        note = (f"Reliafy {_PLAN_NAMES[plan]}: {quota:,} tool calls a day (get_account and upgrade_link aren't "
+                "counted) and the storage limits shown. Fitting and fleets are Pro-only.")
+    return {
+        "plan": plan,
+        "plan_name": _PLAN_NAMES[plan],
+        "operator": admin,
+        "tool_calls": calls,
+        "storage": storage,
+        "simulation_available": billing_service.premium_compute_allowed(db, user),
+        "upgrade": None if unlimited or plan == "pro" else _upgrade_path(plan, lead="To raise these limits, upgrade"),
+        "note": note,
+    }
+
 
 @_tool("upgrade_link", _LINK, "Get a link to upgrade")
 def upgrade_link(
