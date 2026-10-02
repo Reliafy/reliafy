@@ -98,6 +98,7 @@ async function request(url, opts = {}) {
     );
     err.status = res.status;
     if (data.code) err.code = data.code;
+    err.data = data;
     throw err;
   }
   return data;
@@ -565,7 +566,10 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 // and stored, and ``force`` to re-run even when one matches. A user without
 // the entitlement gets a 402 with ``code: "pro_required"`` unless a saved
 // result matches; results carry ``cached`` and ``computed_at``.
-export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = null, force = false } = {}) {
+// A repairable (availability) analysis may come back as a queued job —
+// {job: true, job_id, status, queue_position} — to poll with getRbdJob.
+// ``quick`` asks for a free, time-capped simulation (users without Pro).
+export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = null, force = false, quick = false } = {}) {
   return request("/api/rbds/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -576,8 +580,21 @@ export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = nu
       conditional_age: conditionalAge ?? null,
       rbd_id: rbdId || null,
       force: !!force,
+      quick: !!quick,
     }),
   });
+}
+
+// An analysis job: {job_id, status: queued|running|done|failed,
+// queue_position, result (done), error (failed)}.
+export function getRbdJob(jobId) {
+  return request(`/api/rbd-jobs/${encodeURIComponent(jobId)}`);
+}
+
+// The newest in-flight job for a diagram ({job: null} when none), so a
+// reloaded page picks up a simulation still queued or running.
+export function getActiveRbdJob(rbdId) {
+  return request(`/api/rbd-jobs?rbd_id=${encodeURIComponent(rbdId)}`);
 }
 
 // Analyse a saved RBD by id (sub-systems are resolved server-side).
