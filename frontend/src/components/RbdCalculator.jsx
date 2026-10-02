@@ -224,6 +224,9 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
             Importance at t = {fmt(importance.time)}
             {unit ? ` ${unit}` : ""}
           </div>
+          {/* Scrolls sideways on a phone rather than widening the page,
+              as the availability table already does. */}
+          <div className="rbd-avail-imp-scroll">
           <table className="calc-table">
             <thead>
               <tr>
@@ -250,6 +253,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
