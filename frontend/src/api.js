@@ -405,13 +405,9 @@ export function subscribePro() {
   return subscribe("pro");
 }
 
-// Start a Stripe Checkout for the Agent (MCP-only) subscription; returns { url }.
-export function subscribeAgent() {
-  return subscribe("agent");
-}
-
-// An Agent subscriber moving to Pro (or back) is switched on their existing
-// subscription server-side; { url } is then just the billing page.
+// A grandfathered subscriber to the retired Agent plan moving to Pro is
+// switched on their existing subscription server-side; { url } is then just
+// the billing page.
 function subscribe(plan) {
   return request("/api/billing/subscribe", {
     method: "POST",
@@ -1117,6 +1113,11 @@ export function getAdminStats() {
 // Operator-only first-party traffic analytics.
 export function getAdminTraffic(days = 14) {
   return request(`/api/admin/traffic?days=${days}`);
+}
+
+// Operator-only product usage (app / MCP / API, the MCP plan wall).
+export function getAdminUsage(days = 30, includeAdmin = false) {
+  return request(`/api/admin/usage?days=${days}${includeAdmin ? "&include_admin=true" : ""}`);
 }
 
 // Un-hide all dismissed sample artifacts.

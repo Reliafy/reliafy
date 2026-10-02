@@ -1,6 +1,6 @@
 """OAuth for the MCP server: discovery, registration (DCR + CIMD), consent,
 PKCE code exchange, refresh rotation, revocation, and the resource side at
-/mcp (including the free-plan behaviour).
+/mcp (including the free-plan behaviour: connect and list, but MCP is Pro).
 
 Everything runs in-process against mongomock; the one outbound HTTP call the
 server makes (fetching a Client ID Metadata Document) is monkeypatched, so
@@ -606,7 +606,7 @@ def test_connected_apps_list_and_revoke(env):
 
 # ---- entitlement -------------------------------------------------------------------------------
 
-def test_free_oauth_user_uses_the_tools_but_pro_only_ones_explain_pro(env, monkeypatch):
+def test_free_oauth_user_tries_it_within_the_allowance(env, monkeypatch):
     from backend import config
     from backend.services import tokens as tokens_service
 
@@ -619,12 +619,12 @@ def test_free_oauth_user_uses_the_tools_but_pro_only_ones_explain_pro(env, monke
                 await client.call_tool("fit_distribution", {"data": [100, 200, 300]}))
 
     tools, listed, fit = _mcp(tokens["access_token"], use)
-    assert len(tools.tools) == 24
-    assert not listed.is_error  # the free plan's tools work over OAuth...
-    # ...while fitting is Pro, with the local-SurPyval route spelled out.
-    assert fit.is_error
-    assert "part of Reliafy Pro" in fit.content[0].text and "save_model" in fit.content[0].text
-    assert f"{BASE}/billing" in fit.content[0].text
+    assert len(tools.tools) == 26  # connecting and listing work on Free...
+    assert not listed.is_error  # ...as do the allowance's tools...
+    assert fit.is_error  # ...but not fitting, which is part of Pro
+    text = fit.content[0].text
+    assert "Fitting in Reliafy is part of Reliafy Pro (US$19/month)" in text
+    assert f"{BASE}/billing" in text and "upgrade_link" in text
 
     # API tokens keep the transport-level 403 for free users...
     api = tokens_service.create_token(env.db, U, "script")["token"]

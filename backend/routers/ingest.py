@@ -26,6 +26,7 @@ from backend.services import fleet_alerts as fleet_alerts_service
 from backend.services import ingest as ingest_service
 from backend.services import metrics as metrics_service
 from backend.services import tokens as tokens_service
+from backend.services import usage as usage_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -64,6 +65,7 @@ def ingest_user(
         user = tokens_service.verify(session, authorization.split(" ", 1)[1].strip())
         if user is None:
             raise HTTPException(status_code=401, detail="Invalid or revoked API token.")
+        usage_service.note_user(user, channel="api")
     else:
         user = get_current_user(authorization)
     if not billing_service.api_access_allowed(session, user):

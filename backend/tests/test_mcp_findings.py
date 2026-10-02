@@ -361,7 +361,8 @@ def test_conflicting_inputs_are_refused(samples):
     # get_rbd's compact form (saved id + its own params) still round-trips.
     created = _ok(_call(a, "create_rbd", {"name": "Linked", **graph}))
     compact = _ok(_call(a, "get_rbd", {"rbd_id": created["id"]}))["graph"]
-    again = _ok(_call(a, "create_rbd", {"name": "Copy", "nodes": compact["nodes"], "edges": compact["edges"]}))
+    again = _ok(_call(a, "create_rbd", {"name": "Copy", "nodes": compact["nodes"], "edges": compact["edges"],
+                                        "include_graph": True}))
     assert next(n for n in again["graph"]["nodes"] if n["id"] == "p")["model"]["saved_model_id"] == BEARINGS
 
 
@@ -470,6 +471,9 @@ def test_failed_mle_leads_with_fit_ok_false(env):
     out = _ok(_call(env.token[A], "fit_distribution", {"data": data}))
     assert list(out)[:2] == ["fit_ok", "warning"] and out["fit_ok"] is False
     assert "did NOT converge" in out["warning"]
+    # One warning, phrased for an agent: no duplicate fit_warning, no Python-API advice.
+    assert "fit_warning" not in out and "init" not in out["warning"] and "fit()" not in out["warning"]
+    assert out["warning"].count("did NOT converge") == 1 and "rescaling" in out["warning"]
     # The app's payload gains the flag (additive) and keeps fit_warning for its view.
     app = fitting.fit("weibull", pd.DataFrame({"x": data}), {"x": "x"})
     assert app["fit_ok"] is False and app["fit_warning"]
@@ -593,3 +597,35 @@ def test_delete_tools_follow_the_apps_rules(samples):
     assert out["affected"]["rbds"] == [{"id": outer, "name": "Outer"}]
     assert samples.db.rbds.find_one({"_id": inner}) is None
     assert "not found" in _err(_call(a, "delete_rbd", {"rbd_id": inner})).lower()
+
+
+
+# ---- Retest polish (2026-10-02) -----------------------------------------------------------
+
+def test_conditional_at_an_age_whose_reliability_underflows_is_explained_not_nulled(samples):
+    """R(1e6) for the bearings Weibull is exp(-1.2e7): positive, but it reads 0
+    as a float. The conditional is still defined (via cumulative hazards), so
+    it's returned, with a note, rather than null."""
+    out = _ok(_call(samples.token[A], "reliability_at",
+                    {"model_id": BEARINGS, "times": [1, 100], "conditional_age": 1e6}))
+    first, second = out["points"]
+    assert 0 < first["conditional_reliability"] < 1e-10 and second["conditional_reliability"] == 0
+    assert "too small to show" in out["note"] and "isn't 0" in out["note"]
+
+
+def test_failed_candidate_reasons_are_not_cut_mid_word():
+    from backend.fitting import _short_reason
+
+    assert _short_reason(["Short reason."]) == "Short reason."
+    long = "Provide more distinct observations. " * 20
+    assert _short_reason([long]).endswith("observations.") and len(_short_reason([long])) <= 300
+    words = "word " * 100
+    cut = _short_reason([words])
+    assert cut.endswith("…") and cut[:-1].split()[-1] == "word"
+
+
+def test_failure_finding_note_prints_the_target_as_given(env):
+    out = _ok(_call(env.token[A], "failure_finding_interval", {
+        "distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 1e-4}],
+        "target_availability": 0.9999999}))
+    assert "near 99.99999%" in out["note"]

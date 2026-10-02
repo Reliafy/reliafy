@@ -89,6 +89,13 @@ ADMIN_EMAILS = {
 # guessed (day, ip, ua) tuples.
 METRICS_SALT = os.environ.get("METRICS_SALT", "reliafy-metrics")
 
+# Product-usage logging (backend/services/usage.py): which features and MCP
+# tools signed-in accounts use, with outcomes. Account-linked events expire
+# after 90 days; only identifier-free daily totals are kept longer. On by
+# default (a self-hosted install logs into its own database); set
+# USAGE_LOGGING=false to record nothing.
+USAGE_LOGGING = _truthy(os.environ.get("USAGE_LOGGING", "true"))
+
 # Free-tier caps (owned items, excluding shared samples). Pro lifts them.
 FREE_MAX_DATASETS = _int("FREE_MAX_DATASETS", 3)
 FREE_MAX_MODELS = _int("FREE_MAX_MODELS", 3)
@@ -99,9 +106,9 @@ FREE_MAX_TRACKED_ITEMS = _int("FREE_MAX_TRACKED_ITEMS", 3)
 FREE_MAX_RCM_STUDIES = _int("FREE_MAX_RCM_STUDIES", 1)
 FREE_MAX_FLEETS = _int("FREE_MAX_FLEETS", 1)
 
-# Agent plan (US$2/month): Reliafy from an AI agent over MCP (OAuth) only — no
-# web-app features, no REST API, no fitting (agents fit locally with SurPyval).
-# Roomier storage than free; Pro stays unlimited.
+# Retired Agent plan (US$2/month, MCP only; sold briefly in October 2026, no
+# longer offered — MCP is part of Pro). Existing subscribers keep these caps,
+# and the daily MCP quota below, until their subscription ends.
 AGENT_MAX_DATASETS = _int("AGENT_MAX_DATASETS", 50)
 AGENT_MAX_MODELS = _int("AGENT_MAX_MODELS", 50)
 AGENT_MAX_RBDS = _int("AGENT_MAX_RBDS", 25)
@@ -112,9 +119,11 @@ AGENT_MAX_FLEETS = _int("AGENT_MAX_FLEETS", 5)
 # Availability (Monte-Carlo) simulation is not part of the Agent plan: it stays
 # Pro / purchased credits (billing.premium_compute_allowed) on every surface.
 
-# MCP tool calls per user per UTC day (tools/list and initialize don't count).
-# Pro has no daily quota, only the per-user rate limit every request gets.
-MCP_FREE_DAILY_CALLS = _int("MCP_FREE_DAILY_CALLS", 50)
+# MCP tool calls (tools/list and initialize don't count): a small allowance
+# per UTC calendar month so Free users can try Reliafy from their AI agent,
+# and the grandfathered Agent subscribers' quota per UTC day. Pro has no
+# quota, only the per-user rate limit every request gets.
+MCP_FREE_MONTHLY_CALLS = _int("MCP_FREE_MONTHLY_CALLS", 20)
 MCP_AGENT_DAILY_CALLS = _int("MCP_AGENT_DAILY_CALLS", 2000)
 
 # One-time prepaid credit packs (Stripe Checkout, mode=payment). `grant_cents`
@@ -151,8 +160,10 @@ STRIPE_WEBHOOK_SECRET = (
 STRIPE_PRO_PRICE_ID = (
     os.environ.get("STRIPE__PRICE_ID") or os.environ.get("STRIPE_PRO_PRICE_ID")
 )
-# Recurring Price id for the Agent plan (US$2/month, MCP only). Unset = the
-# plan isn't offered (subscribe with plan=agent answers 503).
+# Recurring Price id of the retired Agent plan (US$2/month, MCP only). It is
+# no longer sold; the id (or, unset, its Stripe lookup key — see
+# services/stripe_prices.py) only lets webhooks recognise an existing Agent
+# subscription's price.
 STRIPE_AGENT_PRICE_ID = os.environ.get("STRIPE_AGENT_PRICE_ID") or None
 
 # ---- Operator AI provider (server-side metered assistant) ------------------

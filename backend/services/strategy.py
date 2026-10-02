@@ -483,7 +483,7 @@ def failure_finding(
         "method": "approx_2(1-A)MTTF",
         "note": (
             f"Check the hidden function about every {fmt_num(interval)}{unit_s} to keep its "
-            f"availability near {availability:.1%}. Uses the standard approximation "
+            f"availability near {availability * 100:.10g}%. Uses the standard approximation "
             "FFI = 2 x (1 - A) x MTTF, accurate for availability targets above ~90%."
         ),
     }

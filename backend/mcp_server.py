@@ -16,19 +16,24 @@ each entry of :data:`BEARER_RESOLVERS` in turn:
   Pro-only on the cloud (:func:`billing.api_access_allowed`, 403 otherwise),
   always allowed self-hosted;
 * OAuth access tokens (``rlfo_…``) issued by Reliafy's own authorization
-  server (:mod:`backend.services.oauth`) — how Claude connectors sign in, on
-  any plan.
+  server (:mod:`backend.services.oauth`) — how Claude connectors sign in.
 
 Plans (:func:`billing.mcp_plan`, attached to the request as ``mcp_plan``):
-Pro — and API tokens, operators and self-hosted installs — has every tool
-with no quota. Free and Agent (US$2/month, MCP only) OAuth users get the
-tools except fitting and fleets (Pro-only: agents fit locally with SurPyval
-and save with ``save_model``), within a daily tool-call quota and their
-plan's storage caps. Availability simulation keeps the app's own paid gate
-(Pro or purchased credits) on every plan. Every refusal is a tool error that
-says what the limit is, when it resets and how to upgrade — never a
-transport failure — so Claude can tell the user plainly instead of showing
-a broken connection.
+using Reliafy over MCP is part of Pro — the same entitlement as the REST API
+(:func:`billing.api_access_allowed`: Pro, operators, self-hosted installs) —
+with every tool and no quota. A Free OAuth user gets a small allowance to try
+it (``MCP_FREE_MONTHLY_CALLS`` tool calls per UTC calendar month, every tool
+except the Pro-only ones — fitting and fleets — within the Free storage
+caps); past it, each call answers with when the allowance resets and how to
+upgrade.
+
+Grandfathered: subscribers to the retired Agent plan (US$2/month, MCP only)
+keep what they had until their subscription ends — every tool except fitting
+and fleets (agents fit locally with SurPyval and save with ``save_model``),
+within a daily tool-call quota and the Agent storage caps. Availability
+simulation keeps the app's own paid gate (Pro or purchased credits). Every
+refusal is a tool error that says what the limit is, when it resets and how
+to upgrade — never a transport failure.
 
 Either way: the same per-user rate limit, and the same scope — the user's
 personal data plus the shared samples (as ``/api/v1``). A missing or invalid
@@ -39,12 +44,24 @@ Tools call the service layer directly — never HTTP back into ourselves — and
 turn user-facing failures (``FitError`` and friends) into MCP tool errors with
 the message intact. Anything unexpected reaches the model only as "Error
 executing tool …"; the traceback goes to the log.
+
+Usage logging (:mod:`backend.services.usage`): every tool call — refused ones
+included — is one usage event with the tool, its outcome (ok / error / limit
+/ pro_only), the plan, the OAuth client's name and the duration;
+``initialize`` and ``tools/list`` are logged as connections, and a non-Pro
+API token refused at the transport as ``connect`` / ``locked``.
 """
 
+import contextvars
+import copy
 import functools
 import logging
+import math
+import re
+import time
+from datetime import timedelta
 from contextlib import asynccontextmanager
-from typing import Annotated, Any, Callable, Literal, Optional
+from typing import Annotated, Any, Callable, Literal, Optional, Union
 
 import anyio
 import numpy as np
@@ -53,7 +70,7 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import ToolAnnotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
@@ -63,19 +80,21 @@ from backend import fitting
 from backend import recurrent as recurrent_fit
 from backend import storage
 from backend.fitting import FitError
+from backend.services import access as access_service
 from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
-from backend.services import metrics as metrics_service
 from backend.services import oauth as oauth_service
 from backend.services import models as models_service
+from backend.services import rbd_edit
 from backend.services import rbd_graph
 from backend.services import rbds as rbds_service
 from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
 from backend.services import strategy_store
 from backend.services import tokens as tokens_service
+from backend.services import usage as usage_service
 from backend.services import rbd_analysis
 from backend.services import rbd_export
 from backend.services.rbd_analysis import AnalysisError
@@ -84,12 +103,11 @@ from backend.services.strategy import StrategyError
 logger = logging.getLogger(__name__)
 
 MCP_PRO_REQUIRED = (
-    "MCP access with an API token is part of Reliafy Pro. Upgrade to Pro, or drop the token "
-    "header and sign in to Reliafy from your MCP client (OAuth) to use the Free or Agent plan."
+    "MCP access with an API token is part of Reliafy Pro. Upgrade to Pro, then create an API "
+    "token under Settings > API access (or sign in to Reliafy from your MCP client)."
 )
 
 
-AGENT_PRICE = "US$2/month"
 PRO_PRICE = "US$19/month"
 _PLAN_NAMES = {"free": "Free", "agent": "Agent", "pro": "Pro"}
 
@@ -98,13 +116,10 @@ def _billing_url() -> str:
     return f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}/billing"
 
 
-def _upgrade_path(plan: str, lead: str = "To lift it, upgrade") -> str:
-    """How to lift a limit, for the caller's plan: Free users are offered both
-    paid plans, Agent users the one above them."""
-    link = " (or call upgrade_link for a direct payment link)"
-    if plan == "agent":
-        return f"{lead} to Reliafy Pro ({PRO_PRICE}) at {_billing_url()}{link}."
-    return f"{lead} to Reliafy Agent ({AGENT_PRICE}, MCP) or Pro ({PRO_PRICE}) at {_billing_url()}{link}."
+def _upgrade_path(lead: str = "To lift it, upgrade") -> str:
+    """How to lift a limit (Free's allowance, a grandfathered Agent quota): Pro."""
+    return (f"{lead} to Reliafy Pro ({PRO_PRICE}) at {_billing_url()} "
+            "(or call upgrade_link for a direct payment link).")
 
 
 def _until(when) -> str:
@@ -120,24 +135,39 @@ def _pro_only_message(tool: str) -> str:
                 "Fit the data locally with SurPyval instead (pip install surpyval; e.g. "
                 "surpyval.Weibull.fit(x=times, c=censored) — 0 = failed, 1 = still running), then save the "
                 "fitted parameters to Reliafy with save_model. Or upgrade to Pro at "
-                f"{_billing_url()} (or call upgrade_link with plan=pro for a payment link) to fit here.")
+                f"{_billing_url()} (or call upgrade_link for a payment link) to fit here.")
     return (f"Fleet forecasts and fleet alerts are part of Reliafy Pro ({PRO_PRICE}) — they run on usage "
             f"pushed through the Pro API — and aren't included on this plan. Upgrade at {_billing_url()} "
-            "(or call upgrade_link with plan=pro for a payment link).")
+            "(or call upgrade_link for a payment link).")
+
+
+def _in_days(when) -> str:
+    """'in 12 days' (or, under a day, 'in 5 h 12 min') until ``when``."""
+    left = when - billing_service._now()
+    if left < timedelta(days=1):
+        return _until(when)
+    days = math.ceil(left.total_seconds() / 86400)
+    return f"in {days} day" + ("s" if days != 1 else "")
 
 
 def _quota_message(plan: str, quota: int) -> str:
+    if plan == "free":
+        reset = billing_service.next_month_start()
+        return (f"You've used this month's {quota:,} free Reliafy tool calls. They reset on "
+                f"{reset.day} {reset:%B} (UTC) — {_in_days(reset)}. Using Reliafy from AI agents without a "
+                f"limit is part of Reliafy Pro ({PRO_PRICE}) — upgrade at {_billing_url()}, or call "
+                "upgrade_link for a payment link.")
     reset = billing_service.next_day_start()
     return (f"You've used all {quota:,} Reliafy tool calls included per day on the {_PLAN_NAMES[plan]} "
-            f"plan. The limit resets at 00:00 UTC ({_until(reset)}). " + _upgrade_path(plan))
+            f"plan. The limit resets at 00:00 UTC ({_until(reset)}). " + _upgrade_path())
 
 
 def _simulation_message(plan: str) -> str:
-    """Why analyze_rbd can't simulate for a Free/Agent MCP user, and the two
-    ways forward: Pro, or run the same diagram locally for free."""
+    """Why analyze_rbd can't simulate for a Free or grandfathered Agent user, and the
+    two ways forward: Pro, or run the same diagram locally for free."""
     return (f"Availability simulation isn't included on the {_PLAN_NAMES[plan]} plan: it needs Reliafy Pro "
             f"({PRO_PRICE}; purchased AI credits unlock it too) — upgrade at {_billing_url()} (or call "
-            "upgrade_link with plan=pro for a payment link). It's free to run "
+            "upgrade_link for a payment link). It's free to run "
             "locally: export_rbd_python (Download as Python in the app) gives a standalone script that runs "
             "this diagram's simulation with RePyability, plus the exact install-and-run command. A saved "
             "result is served here whenever one exists.")
@@ -186,8 +216,8 @@ def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
 
     The user carries ``mcp_plan``: 'pro' for anyone with API access (Pro,
     operators, self-hosted — the only way an ``rlf_`` token gets in), else
-    the OAuth user's own plan, 'agent' or 'free', which :func:`_tool` gates
-    tools and quotas on."""
+    the OAuth user's own plan, 'agent' (grandfathered) or 'free' (the daily
+    allowance), which :func:`_gate` gates tools and quotas on."""
     scheme, _, raw = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not raw.strip():
         return 401, None, (
@@ -197,11 +227,14 @@ def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
     user = resolve_bearer(db, raw)
     if user is None:
         return 401, None, "Invalid, expired or revoked token."
-    if not billing_service.api_access_allowed(db, user):
-        if user.get("via_oauth"):
-            return 200, {**user, "mcp_plan": billing_service.mcp_plan(db, user)}, ""
+    plan = billing_service.mcp_plan(db, user)
+    if plan == "pro":
+        return 200, {**user, "mcp_plan": "pro"}, ""
+    if not user.get("via_oauth"):
+        usage_service.record(db, uid=user["uid"], channel="mcp", feature="connect", outcome="locked",
+                             plan=plan, client=usage_service.client_of(user))
         return 403, None, MCP_PRO_REQUIRED
-    return 200, {**user, "mcp_plan": "pro"}, ""
+    return 200, {**user, "mcp_plan": plan}, ""
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +250,9 @@ What you can do:
 it as a model, or save_model to save parameters fitted elsewhere; evaluate a saved model with reliability_at. \
 list_models / get_model read what is saved; list_datasets / upload_dataset manage the data.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
-B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script).
+B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script). Edit, \
+don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/remove/update blocks and \
+edges) rather than re-creating it; clone_rbd copies a sample or makes a variant to edit.
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
@@ -225,7 +260,7 @@ fleet's expected failures.
 (never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
 Only on the user's explicit \
 request: confirm by name first, and relay anything the response lists as affected.
-- Plans: upgrade_link gives the user a Stripe payment link for Reliafy Agent or Pro, to open themselves.
+- Plans: upgrade_link gives the user a Stripe payment link for Reliafy Pro, to open themselves.
 
 Conventions — follow them exactly:
 - Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension); \
@@ -241,13 +276,11 @@ placeholder=true and say so.
 - Availability simulation for repairable RBDs is a paid feature; a saved result is served when one exists.
 - Every artifact has a url; share it so the user can open the result in Reliafy.
 
-Plans: fitting (fit_distribution, fit_and_save_model) and the fleet tools are Reliafy Pro. On the Free and \
-Agent plans, fit locally with SurPyval (pip install surpyval; same 0 = failed, 1 = running convention) and \
-save the parameters with save_model. Availability simulation needs Pro (or purchased credits); otherwise \
-export_rbd_python runs it locally. Free and Agent also have a daily tool-call quota and storage limits. \
-When a tool answers that a limit or plan stops it, tell the user plainly what it says — the limit, when it \
-resets and how to upgrade — and don't retry it. If they want to upgrade, upgrade_link gives them a payment \
-link to open themselves; nothing is charged until they complete it.
+Plans: using Reliafy from AI agents (these tools) is part of Reliafy Pro, which includes everything with \
+no limit. The Free plan gets a few tool calls a month to try it (every tool except fitting and fleets, \
+within the Free storage limits). When a tool answers that a limit or plan stops it, tell the user plainly \
+what it says — the limit, when it resets and how to upgrade — and don't retry it. If they want to upgrade, upgrade_link gives them a payment link to open themselves; \
+nothing is charged until they complete it.
 """
 
 mcp = MCPServer(
@@ -277,27 +310,82 @@ _USER_ERRORS = (
 )
 
 
-# Pro-only tools. Fitting runs server-side CPU the cheaper plans don't pay for
-# (agents fit locally with SurPyval, then save_model); fleets depend on usage
-# arriving through the Pro API.
+# Tools the Free allowance and a grandfathered Agent subscriber don't have.
+# Fitting runs server-side CPU those plans don't pay for (agents fit
+# locally with SurPyval, then save_model); fleets depend on usage arriving
+# through the Pro API.
 _FIT_TOOLS = {"fit_distribution", "fit_and_save_model"}
 _FLEET_TOOLS = {"list_fleets", "fleet_forecast", "list_fleet_alerts", "create_fleet_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
-# Never gated or counted: the way out of a limit must work when the limit is hit.
+# Never gated or counted: the way to Pro must work when a limit is hit.
 UNGATED_TOOLS = {"upgrade_link"}
 
 
-def _gate(ctx: Context, name: str) -> None:
-    """Plan gating for one tool call: Pro-only tools, then the daily quota
-    (counted only for calls that pass the gate)."""
+class Refusal(ToolError):
+    """A tool error that is a plan or limit refusing the call, not a mistake in
+    it. ``outcome`` says which: 'limit' (a daily allowance or storage cap) or
+    'pro_only' (a Pro-only tool or feature on a plan without it). A refused
+    call is not counted against the daily allowance."""
+
+    def __init__(self, message: str, outcome: str = "limit"):
+        super().__init__(message)
+        self.outcome = outcome
+
+
+def _gate(ctx: Context, name: str) -> bool:
+    """Plan gating for one tool call: a Free or grandfathered Agent user meets
+    the Pro-only tools, then the daily quota (counted only for calls that pass
+    the gate)."""
     user = _caller(ctx)
+    if name in UNGATED_TOOLS:
+        return False
     plan = user.get("mcp_plan", "pro")
-    if plan == "pro" or name in UNGATED_TOOLS:
-        return
+    if plan == "pro":
+        return False
     if name in PRO_ONLY_TOOLS:
-        raise ToolError(_pro_only_message(name))
+        raise Refusal(_pro_only_message(name), "pro_only")
+    quota, _ = billing_service.mcp_quota(plan)
     if not billing_service.consume_mcp_call(_db(), user["uid"], plan):
-        raise ToolError(_quota_message(plan, billing_service.mcp_daily_quota(plan)))
+        raise Refusal(_quota_message(plan, quota), "limit")
+    return quota is not None
+
+
+# Per tool call: set by tools that answer normally but refuse the work (see
+# :func:`_soft_refusal`).
+_CALL: contextvars.ContextVar[dict | None] = contextvars.ContextVar("reliafy_mcp_call", default=None)
+
+
+def _soft_refusal(outcome: str) -> None:
+    """Mark the current call as refused by plan or limit although the tool
+    answers normally (e.g. analyze_rbd's ``available: false`` when a plan has
+    no availability simulation): it isn't counted against the allowance."""
+    state = _CALL.get()
+    if state is not None:
+        state["refused"] = outcome
+
+
+def _usage_plan(user: dict) -> str:
+    """The plan a usage event is filed under: operators as 'admin' (the
+    reports leave them out), everyone else by the plan governing their MCP."""
+    return "admin" if billing_service.is_admin_user(user) else user.get("mcp_plan", "pro")
+
+
+def _log_call(ctx: Context, name: str, outcome: str, started: float) -> None:
+    """One usage event per tool call (backend/services/usage.py): the tool,
+    how it ended, the plan, the client and the duration. Never raises."""
+    try:
+        user = _caller(ctx)
+        usage_service.record(
+            _db(), uid=user["uid"], channel="mcp", feature=name, outcome=outcome,
+            plan=_usage_plan(user), client=usage_service.client_of(user),
+            ms=(time.perf_counter() - started) * 1000)
+    except Exception:  # noqa: BLE001 - logging must never fail a tool
+        logger.warning("could not log an MCP tool call", exc_info=True)
+
+
+def _refund(ctx: Context) -> None:
+    user = _caller(ctx)
+    billing_service.refund_mcp_call(_db(), user["uid"], user.get("mcp_plan", "pro"))
 
 
 def _tool(name: str, annotations: ToolAnnotations, title: str):
@@ -307,10 +395,22 @@ def _tool(name: str, annotations: ToolAnnotations, title: str):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             ctx = next((v for v in (*args, *kwargs.values()) if isinstance(v, Context)), None)
-            if ctx is not None:
-                _gate(ctx, name)
+            started = time.perf_counter()
+            state: dict = {}
+            token = _CALL.set(state)
+            counted, outcome = False, "error"
             try:
-                return fn(*args, **kwargs)
+                counted = _gate(ctx, name) if ctx is not None else False
+                result = fn(*args, **kwargs)
+                outcome = state.get("refused") or "ok"
+                if counted and state.get("refused"):  # answered, but as a refusal
+                    _refund(ctx)
+                return result
+            except Refusal as exc:
+                outcome = exc.outcome
+                if counted:  # refused calls don't count against the allowance
+                    _refund(ctx)
+                raise
             except ToolError:
                 raise
             except (models_service.ModelNotFound, recurrent_service.ModelNotFound, fitting.ModelNotFound):
@@ -321,6 +421,10 @@ def _tool(name: str, annotations: ToolAnnotations, title: str):
                 raise ToolError("Fleet not found.") from None
             except _USER_ERRORS as exc:
                 raise ToolError(str(exc) or "Invalid input.") from exc
+            finally:
+                _CALL.reset(token)
+                if ctx is not None:
+                    _log_call(ctx, name, outcome, started)
 
         mcp.add_tool(wrapper, name=name, title=title, annotations=annotations,
                      description=(fn.__doc__ or "").strip())
@@ -359,17 +463,10 @@ def _cap(db, user: dict, kind: str, label: str) -> None:
         return
     plan = billing_service.account(db, user["uid"])["active_plan"]
     cap = billing_service.cap_for(kind, plan)
-    raise ToolError(
+    raise Refusal(
         f"You've reached the {_PLAN_NAMES[plan]} plan's limit of {cap} saved {label}. The limit doesn't "
         f"reset: delete {label} you no longer need in Reliafy to make room. "
-        + _upgrade_path(plan, lead="Or, for more storage, upgrade"))
-
-
-def _record(db, name: str, tool: str) -> None:
-    try:
-        metrics_service.record_event(db, name=name, path=f"/mcp/{tool}")
-    except Exception:  # pragma: no cover - analytics must never fail a tool
-        logger.warning("could not record MCP metrics event", exc_info=True)
+        + _upgrade_path(lead="Or, for more storage, upgrade"))
 
 
 def _finite(v):
@@ -442,6 +539,19 @@ def _fit_lead(summary: dict) -> dict:
     return {k: summary[k] for k in ("fit_ok", "warning", "warnings") if k in summary}
 
 
+def _fit_failure_warning(fit_warning: str | None) -> str:
+    """The single "didn't converge" warning for MCP callers: SurPyval's reason
+    without its Python-API advice (``init`` in ``fit()``), plus what an agent
+    can actually do about it."""
+    reason = re.sub(r"\s*The parameters below came back from a fit.*$", "", (fit_warning or "").strip(),
+                    flags=re.S)
+    sentences = [s for s in re.split(r"(?<=[.;])\s+", reason) if s and "init" not in s and "fit()" not in s]
+    reason = " ".join(sentences).rstrip(" ;")
+    return ("The fit did NOT converge — the parameters and metrics below are not a valid result; don't quote "
+            "them." + (f" Optimiser: {reason}" if reason else "") + " Try rescaling the times (e.g. a "
+            "larger unit), checking for extreme or mistyped values, or another distribution.")
+
+
 def _fit_summary(result: dict) -> dict:
     """The parts of a fit payload worth handing to a model (no plot arrays).
 
@@ -450,8 +560,7 @@ def _fit_summary(result: dict) -> dict:
     metrics = result.get("metrics") or _live_metrics((result.get("functions") or {}).get("model_id"))
     lead: dict[str, Any] = {}
     if result.get("fit_ok") is False or result.get("fit_warning"):
-        lead = {"fit_ok": False, "warning": "The fit did NOT converge — the parameters and metrics below are "
-                                            "not a valid result; don't quote them. " + (result.get("fit_warning") or "")}
+        lead = {"fit_ok": False, "warning": _fit_failure_warning(result.get("fit_warning"))}
     if result.get("warnings"):
         lead["warnings"] = result["warnings"]
     out = {
@@ -465,7 +574,7 @@ def _fit_summary(result: dict) -> dict:
         "gof": {g["id"]: g["value"] for g in result.get("gof") or []},
         "metrics": metrics,
     }
-    for key in ("extra_params", "coefficients", "randomness", "fit_warning", "options"):
+    for key in ("extra_params", "coefficients", "randomness", "options"):
         if result.get(key):
             out[key] = result[key]
     if result.get("selection"):
@@ -517,13 +626,14 @@ def get_model(
                 metrics = None
         out = {**_life_brief(m), "params": r.get("params", []), "gof": {g["id"]: g["value"] for g in r.get("gof") or []},
                "metrics": metrics}
-        for key in ("coefficients", "extra_params", "randomness", "fit_warning", "options", "warnings"):
+        for key in ("coefficients", "extra_params", "randomness", "options", "warnings"):
             if r.get(key):
                 out[key] = r[key]
         if (r.get("functions") or {}).get("covariates"):
             out["covariates"] = r["functions"]["covariates"]
         if r.get("fit_ok") is False or r.get("fit_warning"):
-            out = {"fit_ok": False, **out}  # lead with it, as the fit tools do
+            # Lead with it, as the fit tools do.
+            out = {"fit_ok": False, "warning": _fit_failure_warning(r.get("fit_warning")), **out}
         return out
     doc = recurrent_service.get_model(db, model_id, owners)
     if doc is not None:
@@ -669,7 +779,6 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         if created is not None:
             datasets_service.delete_dataset(db, created.id, uid)
         raise
-    _record(db, "mcp_fit", "fit_and_save_model")
     summary = _fit_summary(model.results or {})
     return {
         **_fit_lead(summary),
@@ -700,10 +809,10 @@ def fit_distribution(
     """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
     goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Saves nothing — use
     fit_and_save_model to keep the model. Reliafy's censoring convention: 0 = the unit failed, 1 = still
-    running (suspended); if the data marks failures with 1, pass c_invert=true. A fit that says every (or
+    running (suspended), -1 = left-censored (found failed, at some unknown earlier time); if the data marks
+    failures with 1, pass c_invert=true. A fit that says every (or
     all but one) row is censored almost always means the flags are inverted. Weibull beta < 1 = infant
-    mortality, ≈ 1 = random failures, > 1 = wear-out. Reliafy Pro only: on the Free and Agent plans, fit
-    locally with SurPyval and save the parameters with save_model."""
+    mortality, ≈ 1 = random failures, > 1 = wear-out."""
     return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
                 count_column=count_column, covariates=covariates, unit=unit, save=False, name=None)
@@ -728,8 +837,8 @@ def fit_and_save_model(
     """Fit a life distribution exactly as fit_distribution does, then save it as a model in the user's
     Reliafy workspace (inline data is saved as a dataset too) and return its id and url. Use it when the
     user wants to keep the model — for reliability_at, the calculators, or an RBD block. Same censoring
-    convention: 0 = failed, 1 = still running; c_invert=true when the data marks failures with 1. Reliafy
-    Pro only (on other plans, fit locally with SurPyval and use save_model)."""
+    convention: 0 = failed, 1 = still running, -1 = left-censored; c_invert=true when the data marks failures
+    with 1."""
     return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
                 count_column=count_column, covariates=covariates, unit=unit, save=True, name=name)
@@ -803,7 +912,6 @@ def save_model(
         metrics = fitting._life_metrics(live)
     except Exception:  # noqa: BLE001 - metrics are a convenience
         metrics = None
-    _record(db, "mcp_model", "save_model")
     r = model.results or {}
     out = {
         "saved": True,
@@ -909,6 +1017,12 @@ def reliability_at(
         if undefined:
             notes.append(f"conditional_reliability is null where it is undefined: the model gives "
                          f"R({conditional_age:g}) = 0, so no unit survives to that age.")
+        elif vals["sf"][-1] == 0 and vals["Hf"][-1] is not None:
+            # Not 0/0: R(age) is positive but below what a float can hold.
+            notes.append(f"R({conditional_age:g}) = exp(-{vals['Hf'][-1]:.4g}) is too small to show "
+                         "(it reads 0), but it isn't 0, so conditional_reliability is still defined: it's "
+                         "computed exactly as exp(-(H(age + t) - H(age))). Values of 0 there are too small "
+                         "to show, not impossible.")
     if ev.get("covariates") is not None:
         used = ev["covariates"]
         out["covariates_used"] = {c["name"]: c["value"] for c in used}
@@ -948,11 +1062,10 @@ def upload_dataset(
                                                         "semicolon-separated pastes are accepted too.")],
 ) -> dict[str, Any]:
     """Save a dataset (CSV text) to the user's workspace and return its id and columns. A censoring
-    column should use 0 = failed, 1 = still running (or flag c_invert when fitting)."""
+    column should use 0 = failed, 1 = still running, -1 = left-censored (or flag c_invert when fitting)."""
     user, db = _caller(ctx), _db()
     _cap(db, user, "datasets", "datasets")
     ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(csv), user["uid"])
-    _record(db, "mcp_dataset", "upload_dataset")
     return {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
             "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
 
@@ -1084,6 +1197,8 @@ def create_rbd(
     stages: Annotated[Optional[list[Stage]], Field(
         description="Simple form instead of nodes/edges: stages in SERIES (left to right), each holding one or "
                     "more components in PARALLEL, with optional k_of_n voting.")] = None,
+    include_graph: Annotated[bool, Field(description=(
+        "Also return the full compact graph. Default: just the node ids, types and labels."))] = False,
 ) -> dict[str, Any]:
     """Build, validate and save a reliability block diagram to the user's workspace. Layout is automatic.
 
@@ -1104,7 +1219,8 @@ def create_rbd(
     block. Only if the user wants a starting point, use values that differ by block class, set
     placeholder=true on EVERY guessed model, and tell the user the numbers are placeholders.
     Repairable diagrams: every block needs `repair` (graph form) or repair_distribution + repair_params
-    (stages form), e.g. a lognormal time to repair."""
+    (stages form), e.g. a lognormal time to repair.
+    Returns the node ids (the stages form generates them); change the diagram later with edit_rbd."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     owners = _owners(uid)
@@ -1128,9 +1244,229 @@ def create_rbd(
         raise ToolError("Invalid RBD structure: " + "; ".join(check.get("errors") or ["unknown problem"]))
     _cap(db, user, "rbds", "RBDs")
     rbd = rbds_service.save_rbd(db, name.strip(), graph, uid)
-    _record(db, "mcp_rbd", "create_rbd")
-    return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), "warnings": check.get("warnings") or [],
-            "placeholders": rbd_graph.placeholder_labels(graph), "graph": rbd_graph.compact_graph(graph)}
+    return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), **_rbd_outline(graph, check, include_graph)}
+
+
+def _rbd_outline(graph: dict, check: dict, include_graph: bool) -> dict:
+    """What a write tool returns about a diagram: validation warnings,
+    placeholders and a concise node list ({id, type, label}) — the full
+    compact graph only on request (get_rbd reads it any time)."""
+    out = {
+        "warnings": check.get("warnings") or [],
+        "placeholders": rbd_graph.placeholder_labels(graph),
+        "nodes": [{"id": n.get("id"), "type": n.get("type"), "label": (n.get("data") or {}).get("label")}
+                  for n in graph.get("nodes") or []],
+    }
+    if include_graph:
+        out["graph"] = rbd_graph.compact_graph(graph)
+    return out
+
+
+# ---- token-efficient editing --------------------------------------------------
+#
+# edit_rbd changes a saved diagram with a batch of small ops instead of a whole
+# new graph, so an agent never re-sends (or re-reads) a diagram to change one
+# block. One tool with a discriminated union of ops, not one tool per op: every
+# tool schema sits in the agent's context on every turn.
+
+def _lean_schema(schema: dict) -> None:
+    """Drop the auto-generated titles and null defaults from an op's JSON
+    schema: they carry nothing for the agent but sit in its context."""
+    for prop in (schema.get("properties") or {}).values():
+        prop.pop("title", None)
+        if "default" in prop and prop["default"] is None:
+            del prop["default"]
+
+
+class _Op(BaseModel):
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_lean_schema)
+
+
+class AddNodeOp(_Op):
+    op: Literal["add_node"]
+    node: RbdNode = Field(description="The new block (compact node, as create_rbd). Its id must be new.")
+    between: Optional[list[str]] = Field(None, min_length=2, max_length=2, description=(
+        "[source, target]: splice into that existing edge (source -> new -> target)."))
+    after: Optional[str] = Field(None, description="In series right after this node (takes over its outgoing edges).")
+    before: Optional[str] = Field(None, description="In series right before this node (takes over its incoming edges).")
+    parallel_to: Optional[str] = Field(None, description="In parallel with this block (copies its incoming and "
+                                                         "outgoing edges).")
+
+
+class RemoveNodeOp(_Op):
+    op: Literal["remove_node"]
+    id: str
+    reconnect: Literal["auto", "none"] = Field("auto", description=(
+        "auto = rejoin neighbours the removal disconnects (a series gap closes; removing one of parallel blocks "
+        "adds nothing). none = just drop it and its edges."))
+
+
+class UpdateNodeOp(_Op):
+    op: Literal["update_node"]
+    id: Optional[str] = None
+    ids: Optional[list[str]] = Field(None, min_length=1, description="Apply the same change to several nodes.")
+    label: Optional[str] = None
+    model: Optional[BlockModel] = None
+    repair: Optional[BlockModel] = None
+    n: Optional[int] = None
+    k: Optional[int] = None
+    spares: Optional[int] = None
+    cold: Optional[bool] = None
+    subsystem_rbd_id: Optional[str] = None
+
+
+class EdgeOp(_Op):
+    op: Literal["add_edge", "remove_edge"]
+    source: str
+    target: str
+
+
+class SetOp(_Op):
+    op: Literal["set"]
+    name: Optional[str] = None
+    unit: Optional[str] = Field(None, description="Relabels the unit; parameters are not rescaled.")
+    repairable: Optional[bool] = None
+
+
+class AddCcfOp(_Op):
+    op: Literal["add_ccf"]
+    members: list[str] = Field(min_length=2, description="2+ component block ids not already in a group.")
+    beta: float = Field(description="Beta factor: shared-cause fraction of each member's failures, 0 < beta < 1.")
+    id: Optional[str] = Field(None, description="Group id (default ccf-1, ccf-2, …).")
+
+
+class RemoveCcfOp(_Op):
+    op: Literal["remove_ccf"]
+    id: str
+
+
+EditOp = Annotated[Union[AddNodeOp, RemoveNodeOp, UpdateNodeOp, EdgeOp, SetOp, AddCcfOp, RemoveCcfOp],
+                   Field(discriminator="op")]
+
+
+def _op_dict(op: BaseModel) -> dict:
+    """An op as the plain dict rbd_edit applies: only the fields the caller
+    gave (update_node merges exactly those), nested models dumped."""
+    out = {"op": op.op}
+    for key in op.model_fields_set:
+        value = getattr(op, key)
+        if value is None:
+            continue
+        out[key] = value.model_dump(exclude_none=True) if isinstance(value, BaseModel) else value
+    return out
+
+
+def _resolver(db, owners):
+    return lambda mid: models_service.get_model(db, mid, owners)
+
+
+def _check_rbd(db, graph: dict, owners: list[str], lead: str) -> dict:
+    check = rbds_service.validate_graph(db, graph, owners)
+    if not check.get("valid", False):
+        raise ToolError(lead + "; ".join(check.get("errors") or ["unknown problem"]))
+    return check
+
+
+@_tool("clone_rbd", _WRITE, "Copy an RBD")
+def clone_rbd(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="One of the user's RBDs or a shared sample (list_rbds).")],
+    name: Annotated[Optional[str], Field(description="Name for the copy (default: “<name> (copy)”).")] = None,
+) -> dict[str, Any]:
+    """Copy a diagram — a shared sample or one of the user's own — into the user's workspace under a new id,
+    to edit with edit_rbd (samples are read-only). Copies the diagram only: not saved availability results or
+    share links. Returns the new id and its node ids."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    owners = _owners(uid)
+    src = _get_rbd(db, uid, rbd_id)
+    new_name = (name or "").strip() or f"{src.name} (copy)"
+    graph = copy.deepcopy(src.graph or {})
+    check = rbds_service.validate_graph(db, graph, owners)
+    _cap(db, user, "rbds", "RBDs")
+    rbd = rbds_service.save_rbd(db, new_name, graph, uid)
+    out = {**_rbd_brief(rbd), "cloned_from": src.id, **_rbd_outline(graph, check, False)}
+    if not check.get("valid", False):
+        # A draft saved unvalidated in the app copies as it is; say what to fix.
+        out["errors"] = check.get("errors") or []
+    return out
+
+
+@_tool("edit_rbd", _WRITE, "Edit an RBD")
+def edit_rbd(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="One of the user's own RBD ids (clone_rbd a sample first).")],
+    ops: Annotated[list[EditOp], Field(min_length=1, max_length=rbd_edit.MAX_OPS, description=(
+        "Applied in order, all or nothing."))],
+    if_updated_at: Annotated[Optional[str], Field(description=(
+        "The updated_at you last saw: refuse if the diagram changed since (e.g. edited in the app)."))] = None,
+    dry_run: Annotated[bool, Field(description="Validate and report without saving.")] = False,
+    include_graph: Annotated[bool, Field(description="Also return the full compact graph.")] = False,
+) -> dict[str, Any]:
+    """Change a saved RBD with a batch of ops instead of re-creating it. Atomic: if any op fails, or the result
+    isn't a valid diagram, nothing is saved and the error names the op (ops[i], 0-based) and why.
+
+    Ops (field `op`):
+    - add_node {node, between: [src, tgt] | after: id | before: id | parallel_to: id} — at most one placement;
+      none leaves it unconnected for add_edge. node is a compact node as in create_rbd.
+    - remove_node {id, reconnect: auto|none} — auto rejoins a series gap; removing one of two parallel
+      blocks adds no bypass. Every edge added is reported. Input/output can't be removed.
+    - update_node {id | ids, label?, model?, repair?, n?, k?, spares?, cold?, subsystem_rbd_id?} — merges
+      only the fields given (ids: same change to many nodes). A node's type can't change: remove and re-add.
+    - add_edge / remove_edge {source, target}
+    - set {name?, unit?, repairable?}
+    - add_ccf {members, beta, id?} / remove_ccf {id} — common-cause (beta-factor) groups, non-repairable only.
+    Removing a node drops it from its common-cause group (and the group if under 2 members remain).
+    Changing connections re-lays out the diagram automatically. Returns one line per op, the validation
+    warnings this edit introduced (warnings_unchanged counts the rest) and the node ids; read the full graph
+    with get_rbd."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    owners = _owners(uid)
+    rbd = _get_rbd(db, uid, rbd_id)
+    if samples_service.is_sample(rbd.owner_id) or rbd.owner_id != uid:
+        raise ToolError(f"“{rbd.name}” is a shared sample: samples are read-only — clone_rbd it first, then "
+                        "edit the copy.")
+    if if_updated_at and not access_service.timestamps_match(rbd.updated_at, if_updated_at):
+        raise ToolError(f"“{rbd.name}” has changed since {if_updated_at} (now updated_at "
+                        f"{rbd.updated_at.isoformat()}), e.g. edited in the app. Nothing was saved: re-read it with "
+                        "get_rbd and retry with the new updated_at.")
+    try:
+        result = rbd_edit.apply_ops(rbd.graph or {}, [_op_dict(op) for op in ops], rbd.name,
+                                    resolve_saved_model=_resolver(db, owners), self_id=rbd.id)
+    except rbd_edit.EditError as exc:
+        raise ToolError(f"Nothing was saved — {exc}") from None
+    graph = result.graph
+    check = _check_rbd(db, graph, owners, f"Nothing was saved — after all {len(ops)} op(s) the diagram is "
+                                          "invalid: ")
+    out_rbd = rbd
+    if not dry_run:
+        try:
+            out_rbd = rbds_service.save_rbd(db, result.name, graph, uid, rbd_id=rbd.id,
+                                            expected_updated_at=rbd.updated_at.isoformat())
+        except access_service.EditConflict:
+            raise ToolError(f"“{rbd.name}” was saved by someone else while this edit ran. Nothing was saved: "
+                            "re-read it with get_rbd and retry.") from None
+    else:
+        out_rbd = rbd.model_copy(update={"name": result.name, "graph": graph})
+    out = {**_rbd_brief(out_rbd)}
+    if dry_run:
+        out["dry_run"] = True
+        out["saved"] = False
+    out["applied"] = result.applied
+    out.update(_rbd_outline(graph, check, include_graph))
+    # Only the warnings this edit introduced: the rest were reported when the
+    # diagram was created, cloned or last edited, and repeating them on every
+    # small edit would cost more tokens than the edit itself.
+    try:
+        known = set(rbds_service.validate_graph(db, rbd.graph or {}, owners).get("warnings") or [])
+    except Exception:  # pragma: no cover - a malformed saved draft: report everything
+        known = set()
+    unchanged = [w for w in out["warnings"] if w in known]
+    if unchanged:
+        out["warnings"] = [w for w in out["warnings"] if w not in known]
+        out["warnings_unchanged"] = len(unchanged)
+    return out
 
 
 def _downsample(xs, ys, n: int = 21) -> list[dict]:
@@ -1196,9 +1532,9 @@ def analyze_rbd(
     """Analyse a saved RBD. Non-repairable diagrams: system reliability curve, MTTF, B-lives (B10/B50),
     component importance (Birnbaum, Fussell–Vesely, RAW/RRW) and minimal cut/path sets. Repairable
     diagrams: steady-state availability, mean up/down time, failure frequency and per-block downtime share.
-    Availability simulation is a paid feature (Pro or purchased credits; not part of the Free or Agent plans):
-    a saved result is always served; otherwise, without entitlement, this returns available=false with a
-    message instead of results — relay it, and offer export_rbd_python to run the simulation locally."""
+    Availability simulation is a paid feature (Pro or purchased credits): a saved result is always served;
+    otherwise, without entitlement, this returns available=false with a message instead of results — relay
+    it, and offer export_rbd_python to run the simulation locally."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -1236,6 +1572,8 @@ def analyze_rbd(
             status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners)
             if status != 200:
                 plan = user.get("mcp_plan", "pro")
+                if plan != "pro":
+                    _soft_refusal("pro_only")
                 message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
                 return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
                         "message": message}
@@ -1487,7 +1825,6 @@ def create_fleet_alert(
         )
     except (alerts_service.AlertValidationError, alerts_service.AlertLimitError) as exc:
         raise ToolError(str(exc)) from None
-    _record(db, "mcp_fleet_alert", "create_fleet_alert")
     return {"alert": alerts_service.public(doc, user["uid"], fleet),
             "url": _url(f"/fleet/forecasts/{fleet.id}#alerts")}
 
@@ -1548,7 +1885,6 @@ def delete_model(
             raise _sample_refusal("model", doc.name)
         m, affected, kind = doc, {"rbds": []}, "recurrent"
         recurrent_service.delete_model(db, doc.id, uid)
-    _record(db, "mcp_delete", "delete_model")
     out = {"deleted": True, "model_id": m.id, "name": m.name, "kind": kind}
     affected = {k: v for k, v in affected.items() if v}
     if affected:
@@ -1582,7 +1918,6 @@ def delete_dataset(
                         "(delete_model), or keep the dataset.")
     if not datasets_service.delete_dataset(db, ds.id, uid):
         raise ToolError("Dataset not found.")
-    _record(db, "mcp_delete", "delete_dataset")
     return {"deleted": True, "dataset_id": ds.id, "name": ds.name}
 
 
@@ -1602,7 +1937,6 @@ def delete_rbd(
     embedding = [r for r in _rbds_referencing(db, uid, lambda d: isinstance(d.get("rbd"), dict)
                                                and d["rbd"].get("id") == rbd.id) if r["id"] != rbd.id]
     rbds_service.delete_rbd(db, rbd.id, uid)
-    _record(db, "mcp_delete", "delete_rbd")
     out = {"deleted": True, "rbd_id": rbd.id, "name": rbd.name}
     if embedding:
         out["affected"] = {"rbds": embedding}
@@ -1617,20 +1951,20 @@ def delete_rbd(
 @_tool("upgrade_link", _LINK, "Get a link to upgrade")
 def upgrade_link(
     ctx: Context,
-    plan: Annotated[Literal["agent", "pro"], Field(
-        description=f"agent = Reliafy Agent ({AGENT_PRICE}, MCP only: higher daily limits and storage); "
-                    f"pro = Reliafy Pro ({PRO_PRICE}: everything, including fitting and simulation).")] = "agent",
+    plan: Annotated[Literal["pro"], Field(
+        description=f"pro = Reliafy Pro ({PRO_PRICE}: everything, including use from AI agents over MCP, "
+                    "fitting and simulation). The only plan on offer.")] = "pro",
 ) -> dict[str, Any]:
-    """A link the user opens to subscribe to a paid Reliafy plan: Stripe's own checkout page, where they see
-    the price and pay. Nothing is charged until they complete it there, so give them the link and let them
-    decide; never say the upgrade has happened. Works even when the daily tool-call limit is used up. A user
-    already on the other paid plan gets the billing page instead, to change plans there."""
+    """A link the user opens to subscribe to Reliafy Pro: Stripe's own checkout page, where they see the
+    price and pay. Nothing is charged until they complete it there, so give them the link and let them
+    decide; never say the upgrade has happened. Works without Pro and when a limit is used up. A user
+    already on another paid plan gets the billing page instead, to change plans there."""
     from backend.routers.billing import start_subscription  # local: routers import after this module
 
     user = _caller(ctx)
     base = f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}/"
     status, payload = start_subscription(_db(), user, plan, base, allow_switch=False)
-    name, price = f"Reliafy {_PLAN_NAMES[plan]}", AGENT_PRICE if plan == "agent" else PRO_PRICE
+    name, price = f"Reliafy {_PLAN_NAMES[plan]}", PRO_PRICE
     if status == 200:
         return {"plan": plan, "price": price, "url": payload["url"],
                 "note": f"Open this link to subscribe to {name} ({price}) on Stripe's checkout page. It's valid "
@@ -1710,7 +2044,59 @@ class McpHttpApp:
                                status_code=503)(scope, receive, send)
             return
         scope = {**scope, "state": {**(scope.get("state") or {}), "reliafy_user": user}}
-        await self._manager.handle_request(scope, receive, send)
+        if not usage_service.enabled():
+            await self._manager.handle_request(scope, receive, send)
+            return
+        # Note initialize / tools/list (connections — tool calls are logged by
+        # the tools themselves): keep the first few KB of the body as it
+        # streams past, and read the JSON-RPC method once it's answered.
+        body, done, status = bytearray(), [False], [0]
+
+        async def receive_tap():
+            message = await receive()
+            if message["type"] == "http.request" and len(body) <= _SNIFF_BYTES:
+                body.extend(message.get("body", b"")[: _SNIFF_BYTES + 1 - len(body)])
+                done[0] = not message.get("more_body", False)
+            return message
+
+        async def send_tap(message):
+            if message["type"] == "http.response.start":
+                status[0] = message["status"]
+            await send(message)
+
+        await self._manager.handle_request(scope, receive_tap, send_tap)
+        if done[0] and len(body) <= _SNIFF_BYTES:
+            methods = _protocol_methods(bytes(body))
+            if methods:
+                await anyio.to_thread.run_sync(_log_protocol, user, methods, status[0])
+
+
+_SNIFF_BYTES = 8192
+
+
+def _protocol_methods(raw: bytes) -> list[str]:
+    """The initialize / tools/list methods in a JSON-RPC body (or batch)."""
+    import json
+
+    try:
+        msg = json.loads(raw or b"null")
+    except ValueError:
+        return []
+    items = msg if isinstance(msg, list) else [msg]
+    return [m["method"] for m in items
+            if isinstance(m, dict) and m.get("method") in ("initialize", "tools/list")]
+
+
+def _log_protocol(user: dict, methods: list[str], status: int) -> None:
+    try:
+        db = _db()
+        for method in methods:
+            usage_service.record(
+                db, uid=user["uid"], channel="mcp", feature=method,
+                outcome="ok" if 200 <= status < 300 else "error",
+                plan=_usage_plan(user), client=usage_service.client_of(user))
+    except Exception:  # noqa: BLE001
+        logger.warning("could not log an MCP connection", exc_info=True)
 
 
 def _authenticate_request(authorization: str | None) -> tuple[int, dict | None, str]:
