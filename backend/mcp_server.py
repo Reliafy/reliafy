@@ -21,10 +21,11 @@ each entry of :data:`BEARER_RESOLVERS` in turn:
 Plans (:func:`billing.mcp_plan`, attached to the request as ``mcp_plan``):
 using Reliafy over MCP is part of Pro — the same entitlement as the REST API
 (:func:`billing.api_access_allowed`: Pro, operators, self-hosted installs) —
-with every tool and no quota. A Free OAuth user can still connect and list
-the tools, but every tool call except ``upgrade_link`` answers with the
-"part of Reliafy Pro" message (``mcp_locked``), so Claude can say why
-instead of showing a broken connection.
+with every tool and no quota. A Free OAuth user gets a small allowance to try
+it (``MCP_FREE_MONTHLY_CALLS`` tool calls per UTC calendar month, every tool
+except the Pro-only ones — fitting and fleets — within the Free storage
+caps); past it, each call answers with when the allowance resets and how to
+upgrade.
 
 Grandfathered: subscribers to the retired Agent plan (US$2/month, MCP only)
 keep what they had until their subscription ends — every tool except fitting
@@ -45,10 +46,13 @@ the message intact. Anything unexpected reaches the model only as "Error
 executing tool …"; the traceback goes to the log.
 """
 
+import contextvars
 import copy
 import functools
 import logging
+import math
 import re
+from datetime import timedelta
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Callable, Literal, Optional, Union
 
@@ -105,14 +109,8 @@ def _billing_url() -> str:
     return f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}/billing"
 
 
-def _mcp_pro_required() -> str:
-    """Every tool call's answer for a signed-in user without MCP (Free)."""
-    return (f"Using Reliafy from AI agents (MCP) is part of Reliafy Pro ({PRO_PRICE}) — upgrade at "
-            f"{_billing_url()}, or call upgrade_link for a payment link.")
-
-
 def _upgrade_path(lead: str = "To lift it, upgrade") -> str:
-    """How to lift a limit (only grandfathered Agent users meet one): Pro."""
+    """How to lift a limit (Free's allowance, a grandfathered Agent quota): Pro."""
     return (f"{lead} to Reliafy Pro ({PRO_PRICE}) at {_billing_url()} "
             "(or call upgrade_link for a direct payment link).")
 
@@ -136,14 +134,29 @@ def _pro_only_message(tool: str) -> str:
             "(or call upgrade_link for a payment link).")
 
 
+def _in_days(when) -> str:
+    """'in 12 days' (or, under a day, 'in 5 h 12 min') until ``when``."""
+    left = when - billing_service._now()
+    if left < timedelta(days=1):
+        return _until(when)
+    days = math.ceil(left.total_seconds() / 86400)
+    return f"in {days} day" + ("s" if days != 1 else "")
+
+
 def _quota_message(plan: str, quota: int) -> str:
+    if plan == "free":
+        reset = billing_service.next_month_start()
+        return (f"You've used this month's {quota:,} free Reliafy tool calls. They reset on "
+                f"{reset.day} {reset:%B} (UTC) — {_in_days(reset)}. Using Reliafy from AI agents without a "
+                f"limit is part of Reliafy Pro ({PRO_PRICE}) — upgrade at {_billing_url()}, or call "
+                "upgrade_link for a payment link.")
     reset = billing_service.next_day_start()
     return (f"You've used all {quota:,} Reliafy tool calls included per day on the {_PLAN_NAMES[plan]} "
             f"plan. The limit resets at 00:00 UTC ({_until(reset)}). " + _upgrade_path())
 
 
 def _simulation_message(plan: str) -> str:
-    """Why analyze_rbd can't simulate for a grandfathered Agent user, and the
+    """Why analyze_rbd can't simulate for a Free or grandfathered Agent user, and the
     two ways forward: Pro, or run the same diagram locally for free."""
     return (f"Availability simulation isn't included on the {_PLAN_NAMES[plan]} plan: it needs Reliafy Pro "
             f"({PRO_PRICE}; purchased AI credits unlock it too) — upgrade at {_billing_url()} (or call "
@@ -196,10 +209,8 @@ def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
 
     The user carries ``mcp_plan``: 'pro' for anyone with API access (Pro,
     operators, self-hosted — the only way an ``rlf_`` token gets in), else
-    the OAuth user's own plan, 'agent' (grandfathered) or 'free', which
-    :func:`_gate` gates tools and quotas on. A Free OAuth user also carries
-    ``mcp_locked``, the upgrade message: the connection works, tools/list
-    works, and every tool call but ``upgrade_link`` answers with it."""
+    the OAuth user's own plan, 'agent' (grandfathered) or 'free' (the daily
+    allowance), which :func:`_gate` gates tools and quotas on."""
     scheme, _, raw = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not raw.strip():
         return 401, None, (
@@ -214,8 +225,6 @@ def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
         return 200, {**user, "mcp_plan": "pro"}, ""
     if not user.get("via_oauth"):
         return 403, None, MCP_PRO_REQUIRED
-    if plan == "free":
-        return 200, {**user, "mcp_plan": "free", "mcp_locked": _mcp_pro_required()}, ""
     return 200, {**user, "mcp_plan": plan}, ""
 
 
@@ -258,10 +267,10 @@ placeholder=true and say so.
 - Availability simulation for repairable RBDs is a paid feature; a saved result is served when one exists.
 - Every artifact has a url; share it so the user can open the result in Reliafy.
 
-Plans: using Reliafy from AI agents (these tools) is part of Reliafy Pro, which includes everything. On \
-the Free plan the tools are listed but each call answers that MCP needs Pro. When a tool answers that a \
-limit or plan stops it, tell the user plainly what it says — the limit, when it resets and how to upgrade — \
-and don't retry it. If they want to upgrade, upgrade_link gives them a payment link to open themselves; \
+Plans: using Reliafy from AI agents (these tools) is part of Reliafy Pro, which includes everything with \
+no limit. The Free plan gets a few tool calls a month to try it (every tool except fitting and fleets, \
+within the Free storage limits). When a tool answers that a limit or plan stops it, tell the user plainly \
+what it says — the limit, when it resets and how to upgrade — and don't retry it. If they want to upgrade, upgrade_link gives them a payment link to open themselves; \
 nothing is charged until they complete it.
 """
 
@@ -292,34 +301,63 @@ _USER_ERRORS = (
 )
 
 
-# Tools a grandfathered Agent subscriber doesn't have (Free has no tools at
-# all). Fitting runs server-side CPU that plan doesn't pay for (agents fit
+# Tools the Free allowance and a grandfathered Agent subscriber don't have.
+# Fitting runs server-side CPU those plans don't pay for (agents fit
 # locally with SurPyval, then save_model); fleets depend on usage arriving
 # through the Pro API.
 _FIT_TOOLS = {"fit_distribution", "fit_and_save_model"}
 _FLEET_TOOLS = {"list_fleets", "fleet_forecast", "list_fleet_alerts", "create_fleet_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
-# Never gated or counted: the way to Pro must work for a locked Free user and
-# when a limit is hit.
+# Never gated or counted: the way to Pro must work when a limit is hit.
 UNGATED_TOOLS = {"upgrade_link"}
 
 
-def _gate(ctx: Context, name: str) -> None:
-    """Plan gating for one tool call: Free is locked out (``mcp_locked``);
-    a grandfathered Agent user meets the Pro-only tools, then the daily quota
-    (counted only for calls that pass the gate)."""
+class Refusal(ToolError):
+    """A tool error that is a plan or limit refusing the call, not a mistake in
+    it. ``outcome`` says which: 'limit' (a daily allowance or storage cap) or
+    'pro_only' (a Pro-only tool or feature on a plan without it). A refused
+    call is not counted against the daily allowance."""
+
+    def __init__(self, message: str, outcome: str = "limit"):
+        super().__init__(message)
+        self.outcome = outcome
+
+
+def _gate(ctx: Context, name: str) -> bool:
+    """Plan gating for one tool call: a Free or grandfathered Agent user meets
+    the Pro-only tools, then the daily quota (counted only for calls that pass
+    the gate)."""
     user = _caller(ctx)
     if name in UNGATED_TOOLS:
-        return
-    if user.get("mcp_locked"):
-        raise ToolError(user["mcp_locked"])
+        return False
     plan = user.get("mcp_plan", "pro")
     if plan == "pro":
-        return
+        return False
     if name in PRO_ONLY_TOOLS:
-        raise ToolError(_pro_only_message(name))
+        raise Refusal(_pro_only_message(name), "pro_only")
+    quota, _ = billing_service.mcp_quota(plan)
     if not billing_service.consume_mcp_call(_db(), user["uid"], plan):
-        raise ToolError(_quota_message(plan, billing_service.mcp_daily_quota(plan)))
+        raise Refusal(_quota_message(plan, quota), "limit")
+    return quota is not None
+
+
+# Per tool call: set by tools that answer normally but refuse the work (see
+# :func:`_soft_refusal`).
+_CALL: contextvars.ContextVar[dict | None] = contextvars.ContextVar("reliafy_mcp_call", default=None)
+
+
+def _soft_refusal(outcome: str) -> None:
+    """Mark the current call as refused by plan or limit although the tool
+    answers normally (e.g. analyze_rbd's ``available: false`` when a plan has
+    no availability simulation): it isn't counted against the allowance."""
+    state = _CALL.get()
+    if state is not None:
+        state["refused"] = outcome
+
+
+def _refund(ctx: Context) -> None:
+    user = _caller(ctx)
+    billing_service.refund_mcp_call(_db(), user["uid"], user.get("mcp_plan", "pro"))
 
 
 def _tool(name: str, annotations: ToolAnnotations, title: str):
@@ -329,10 +367,18 @@ def _tool(name: str, annotations: ToolAnnotations, title: str):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             ctx = next((v for v in (*args, *kwargs.values()) if isinstance(v, Context)), None)
-            if ctx is not None:
-                _gate(ctx, name)
+            counted = _gate(ctx, name) if ctx is not None else False
+            state: dict = {}
+            token = _CALL.set(state)
             try:
-                return fn(*args, **kwargs)
+                result = fn(*args, **kwargs)
+                if counted and state.get("refused"):  # answered, but as a refusal
+                    _refund(ctx)
+                return result
+            except Refusal:
+                if counted:  # refused calls don't count against the allowance
+                    _refund(ctx)
+                raise
             except ToolError:
                 raise
             except (models_service.ModelNotFound, recurrent_service.ModelNotFound, fitting.ModelNotFound):
@@ -343,6 +389,8 @@ def _tool(name: str, annotations: ToolAnnotations, title: str):
                 raise ToolError("Fleet not found.") from None
             except _USER_ERRORS as exc:
                 raise ToolError(str(exc) or "Invalid input.") from exc
+            finally:
+                _CALL.reset(token)
 
         mcp.add_tool(wrapper, name=name, title=title, annotations=annotations,
                      description=(fn.__doc__ or "").strip())
@@ -381,7 +429,7 @@ def _cap(db, user: dict, kind: str, label: str) -> None:
         return
     plan = billing_service.account(db, user["uid"])["active_plan"]
     cap = billing_service.cap_for(kind, plan)
-    raise ToolError(
+    raise Refusal(
         f"You've reached the {_PLAN_NAMES[plan]} plan's limit of {cap} saved {label}. The limit doesn't "
         f"reset: delete {label} you no longer need in Reliafy to make room. "
         + _upgrade_path(lead="Or, for more storage, upgrade"))
@@ -1503,6 +1551,8 @@ def analyze_rbd(
             status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners)
             if status != 200:
                 plan = user.get("mcp_plan", "pro")
+                if plan != "pro":
+                    _soft_refusal("pro_only")
                 message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
                 return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
                         "message": message}

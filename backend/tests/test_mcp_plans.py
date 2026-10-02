@@ -1,8 +1,9 @@
-"""MCP is part of Reliafy Pro; the retired Agent plan is grandfathered.
+"""MCP is part of Reliafy Pro; Free gets a small monthly allowance; the
+retired Agent plan is grandfathered.
 
-A Free OAuth user connects and lists the tools, but every call except
-``upgrade_link`` answers with the Pro message, and ``upgrade_link`` offers only
-Pro. Pro (and operators, and self-hosted installs) has every tool with no
+A Free OAuth user connects, lists the tools and has 20 tool calls a month
+(every tool except fitting, fleets and simulation); past them each call says
+when they reset, and ``upgrade_link`` (never counted) offers only Pro. Pro (and operators, and self-hosted installs) has every tool with no
 quota. ``rlf_`` API tokens stay Pro-only. A subscriber to the retired Agent
 plan (US$2/month, MCP only) keeps what they had until the subscription ends:
 the tools except fitting and fleets, a daily tool-call quota and the Agent
@@ -35,7 +36,6 @@ USERS = {
     AGENT: {"_id": AGENT, "email": "agent@example.org", "name": "Agent", "plan": "agent"},
     PRO: {"_id": PRO, "email": "pro@example.org", "name": "Pro", "plan": "pro"},
 }
-PRO_REQUIRED = "Using Reliafy from AI agents (MCP) is part of Reliafy Pro (US$19/month)"
 UPGRADE = "upgrade to Reliafy Pro (US$19/month)"
 WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
 N_TOOLS = 26
@@ -99,6 +99,12 @@ def _calls_today(db, uid):
     return billing.mcp_calls_today(db, uid)
 
 
+def _calls_used(db, uid, plan="free"):
+    from backend.services import billing
+
+    return billing.mcp_calls_used(db, uid, plan)
+
+
 def _post_mcp(token):
     """A raw tools/list POST to /mcp, with the session manager running."""
     from backend.tests.test_mcp_oauth import _post_mcp as post
@@ -106,37 +112,98 @@ def _post_mcp(token):
     return post(None, token)
 
 
-# ---- Free: connect and list, every call explains Pro ----------------------------------------
+# ---- Free: a small monthly allowance to try it --------------------------------------------
 
-def test_free_oauth_user_connects_and_lists_but_every_call_is_pro(env):
+FIT_ARGS = {"data": [120, 340, 510, 700, 980]}
+FREE_PRO_ONLY = "part of Reliafy Pro (US$19/month)"
+
+
+def test_free_user_tries_every_tool_but_the_pro_only_ones_within_the_allowance(env):
+    from backend import config
+    from backend.services import billing
+
+    assert config.MCP_FREE_MONTHLY_CALLS == 20
+    assert billing.mcp_quota("free") == (20, "month") and billing.mcp_quota("pro") == (None, None)
     token = env.oauth[FREE]
     assert _post_mcp(token).status_code == 200  # connecting works
     tools = {t.name for t in _run(token, lambda c: c.list_tools()).tools}
     assert len(tools) == N_TOOLS and {"upgrade_link", "list_models", "save_model"} <= tools
 
-    for name, args in [
-        ("list_models", {}),
-        ("save_model", {"name": "Bearing", "distribution": "weibull", "params": WEIBULL}),
-        ("optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL,
-                                 "planned_cost": 100, "unplanned_cost": 1000}),
-        ("fit_distribution", {"data": [120, 340, 510, 700, 980]}),
-        ("list_fleets", {}),
-        ("upload_dataset", {"name": "d", "csv": "t,c\n1,0\n"}),
-    ]:
-        msg = _err(_call(token, name, args))
-        assert msg.endswith(f"{PRO_REQUIRED} — upgrade at {BASE}/billing, or call upgrade_link for a payment "
-                            "link."), name
+    assert "life_models" in _ok(_call(token, "list_models"))
+    assert _ok(_call(token, "save_model", {"name": "Bearing", "distribution": "weibull", "params": WEIBULL}))["saved"]
+    assert _ok(_call(token, "optimal_replacement", {
+        "distribution_id": "weibull", "params": WEIBULL, "planned_cost": 100, "unplanned_cost": 1000}))
+    assert _ok(_call(token, "upload_dataset", {"name": "d", "csv": "t,c\n1,0\n2,0\n"}))["id"]
+    assert _calls_used(env.db, FREE) == 4
 
-    # Nothing ran: nothing saved, no quota kept for a plan without MCP.
-    assert env.db.models.count_documents({"owner_id": FREE}) == 0
-    assert env.db.datasets.count_documents({"owner_id": FREE}) == 0
-    assert env.db.mcp_usage.count_documents({}) == 0
+    # Fitting and fleets are Pro-only: refused, and refusals aren't counted.
+    for name, args in [("fit_distribution", FIT_ARGS),
+                       ("fit_and_save_model", {"name": "x", **FIT_ARGS}),
+                       ("list_fleets", {}),
+                       ("create_fleet_alert", {"fleet_id": "nope", "kind": "above", "threshold": 1})]:
+        msg = _err(_call(token, name, args))
+        assert FREE_PRO_ONLY in msg and f"{BASE}/billing" in msg and "upgrade_link" in msg, name
+    assert "SurPyval" in _err(_call(token, "fit_distribution", FIT_ARGS))
+    assert _calls_used(env.db, FREE) == 4
+    assert env.db.models.count_documents({"owner_id": FREE, "dataset_id": {"$ne": ""}}) == 0
+
+
+def test_free_user_gets_no_simulations_and_the_refusal_isnt_counted(env):
+    rid = _repairable(env, FREE, "Pumps")
+    assert _calls_used(env.db, FREE) == 1
+    out = _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid}))
+    assert out["available"] is False and out["code"] == "pro_required"
+    assert "isn't included on the Free plan" in out["message"] and "export_rbd_python" in out["message"]
+    assert env.simulations["n"] == 0
+    assert _calls_used(env.db, FREE) == 1
+
+
+def test_free_allowance_is_per_calendar_month(env, monkeypatch):
+    from backend.services import billing
+
+    now = {"t": datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)}
+    monkeypatch.setattr(billing, "_now", lambda: now["t"])
+    token = env.oauth[FREE]
+    for _ in range(20):
+        _ok(_call(token, "list_rbds"))
+    msg = _err(_call(token, "list_rbds"))  # the 21st
+    assert ("You've used this month's 20 free Reliafy tool calls. They reset on 1 November "
+            "(UTC) — in 29 days. ") in msg
+    assert ("Using Reliafy from AI agents without a limit is part of Reliafy Pro (US$19/month) — upgrade at "
+            f"{BASE}/billing, or call upgrade_link for a payment link.") in msg
+    assert _calls_used(env.db, FREE) == 20  # the refused call isn't counted
+    doc = env.db.mcp_usage.find_one({"uid": FREE})
+    assert doc["_id"].endswith(":2026-10")
+    assert doc["expires_at"].replace(tzinfo=timezone.utc) == datetime(2026, 11, 2, tzinfo=timezone.utc)
+
+    # No reset at a day boundary...
+    now["t"] = datetime(2026, 10, 4, 0, 5, tzinfo=timezone.utc)
+    assert "this month's 20 free" in _err(_call(token, "list_rbds"))
+    now["t"] = datetime(2026, 10, 31, 23, 30, tzinfo=timezone.utc)
+    assert "— in 30 min." in _err(_call(token, "list_rbds"))
+    # ...but on the first of the next month.
+    now["t"] = datetime(2026, 11, 1, 0, 1, tzinfo=timezone.utc)
+    _ok(_call(token, "list_rbds"))
+    assert _calls_used(env.db, FREE) == 1
+
+
+def test_next_month_start_rolls_the_year():
+    from backend.services import billing
+
+    assert billing.next_month_start(datetime(2026, 12, 31, 23, 59, tzinfo=timezone.utc)) == datetime(
+        2027, 1, 1, tzinfo=timezone.utc)
+    assert billing.next_month_start(datetime(2026, 1, 31, tzinfo=timezone.utc)) == datetime(
+        2026, 2, 1, tzinfo=timezone.utc)
 
 
 def test_a_lapsed_agent_plan_is_free_again(env):
+    from backend.services import billing
+
     past = datetime.now(timezone.utc) - timedelta(days=1)
     env.db.users.update_one({"_id": AGENT}, {"$set": {"plan_until": past}})
-    assert PRO_REQUIRED in _err(_call(env.oauth[AGENT], "list_models"))
+    _ok(_call(env.oauth[AGENT], "list_models"))
+    assert billing.mcp_calls_used(env.db, AGENT, "free") == 1 and _calls_today(env.db, AGENT) == 0
+    assert FREE_PRO_ONLY in _err(_call(env.oauth[AGENT], "fit_distribution", FIT_ARGS))
 
 
 @pytest.mark.parametrize("uid", [FREE, AGENT])
@@ -565,7 +632,9 @@ def test_webhook_handles_an_existing_agent_subscription_to_its_end(stripe_client
         "items": {"data": [{"id": "si_1", "price": {"id": "price_agent"}}]}}}})
     acct = billing.account(s.db, FREE)
     assert acct["active_plan"] == "free" and acct["stripe_subscription_id"] is None
-    assert PRO_REQUIRED in _err(_call(s.oauth[FREE], "list_models"))
+    _ok(_call(s.oauth[FREE], "list_models"))  # back on Free's allowance...
+    assert _calls_used(s.db, FREE) == 1
+    assert FREE_PRO_ONLY in _err(_call(s.oauth[FREE], "fit_distribution", FIT_ARGS))  # ...without fitting
 
     # customer.subscription.deleted ends one too.
     billing.set_plan(s.db, AGENT, "agent", customer_id="cus_a", subscription_id="sub_a")
@@ -665,23 +734,30 @@ def test_billing_status_shows_the_agent_quota_only_to_agent_subscribers(stripe_c
     assert not any("simulation" in key for key in [*body, *body["mcp"]])
 
     s.who["uid"] = FREE
+    _ok(_call(s.oauth[FREE], "list_models"))
     body = s.client.get("/api/billing").json()
     assert body["plan"] == "free" and body["mcp"]["daily_quota"] is None and body["mcp"]["calls_today"] == 0
+    assert body["mcp"]["quota"] == 20 and body["mcp"]["period"] == "month" and body["mcp"]["calls_used"] == 1
 
     s.who["uid"] = PRO
     body = s.client.get("/api/billing").json()
     assert body["plan"] == "pro" and body["plan_caps"] is None and body["mcp"]["daily_quota"] is None
+    assert body["mcp"]["quota"] is None and body["mcp"]["period"] is None
 
 
 # ---- upgrade_link: Pro only ---------------------------------------------------------------
 
-def test_upgrade_link_offers_only_pro_and_works_for_a_free_user(stripe_client):
+def test_upgrade_link_offers_only_pro_and_works_past_the_free_allowance(stripe_client, monkeypatch):
+    from backend import config
+
+    monkeypatch.setattr(config, "MCP_FREE_MONTHLY_CALLS", 1)
     s = stripe_client
     tools = _run(s.oauth[FREE], lambda c: c.list_tools()).tools
     schema = next(t for t in tools if t.name == "upgrade_link").input_schema["properties"]["plan"]
     assert schema.get("enum", [schema.get("const")]) == ["pro"] and schema["default"] == "pro"
 
-    _err(_call(s.oauth[FREE], "list_models"))  # locked...
+    _ok(_call(s.oauth[FREE], "list_models"))
+    assert "this month's 1 free" in _err(_call(s.oauth[FREE], "list_models"))  # allowance used...
     out = _ok(_call(s.oauth[FREE], "upgrade_link"))  # ...but the way to Pro works
     assert out["plan"] == "pro" and out["price"] == "US$19/month"
     assert out["url"].startswith("https://checkout.stripe.test/")
@@ -694,7 +770,7 @@ def test_upgrade_link_offers_only_pro_and_works_for_a_free_user(stripe_client):
     assert _call(s.oauth[FREE], "upgrade_link", {"plan": "agent"}).is_error
     assert not any(kw.get("metadata", {}).get("kind") == "agent" for _, kw in
                    [c for c in s.fake.calls if c[0] == "checkout"])
-    assert s.db.mcp_usage.count_documents({}) == 0
+    assert _calls_used(s.db, FREE) == 1  # upgrade_link isn't counted
 
 
 def test_upgrade_link_past_the_agent_quota_and_never_switching_a_subscriber(stripe_client, monkeypatch):

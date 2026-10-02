@@ -78,9 +78,9 @@ export default function BillingPage() {
   const starterCredits = data.free_grant_cents > 0 ? credits(data.free_grant_cents) : null;
   const packsOnly = starterCredits ? `${starterCredits} starter credits, then buy packs` : "Buy credit packs";
   // Every value here reflects how the backend actually gates the feature:
-  // caps from usage_summary, api_access_allowed (Pro only — the REST API and
-  // MCP alike), teams.py (create is Pro only), and reliability_agent.py (Pro
-  // or any purchased credits).
+  // caps from usage_summary, api_access_allowed (Pro only — the REST API; MCP
+  // is unlimited on Pro, a small monthly allowance on Free), teams.py (create
+  // is Pro only), and reliability_agent.py (Pro or any purchased credits).
   const compareRows = [
     ...ARTIFACTS.map(([label, key]) => ({ label, free: caps[key] ?? "—", pro: "Unlimited", mono: true })),
     {
@@ -94,7 +94,13 @@ export default function BillingPage() {
       free: "View saved results; run locally via Download as Python",
       pro: "Included",
     },
-    { label: "Use Reliafy from AI agents (MCP)", free: "—", pro: "Included" },
+    {
+      label: "Use Reliafy from AI agents (MCP)",
+      free: data.mcp_free_monthly_calls > 0
+        ? `${num(data.mcp_free_monthly_calls)} tool calls a month to try it (no fitting or fleets)`
+        : "—",
+      pro: "Unlimited",
+    },
     { label: "Programmatic API & data ingestion", free: "—", pro: "Included" },
     { label: "Team workspaces", free: "Join teams (view-only)", pro: "Create teams and edit together" },
   ];
@@ -221,8 +227,28 @@ export default function BillingPage() {
           )}
         </div>
 
-        {/* MCP use today: only the grandfathered Agent plan has a daily quota
-            (Pro and operators have none; Free has no MCP). */}
+        {/* MCP use against a quota: Free's monthly allowance (shown once
+            used) or the grandfathered Agent plan's daily quota. Pro and
+            operators have none. */}
+        {data.billing_enabled && !isAdmin && plan === "free" && mcp.period === "month" && mcp.calls_used > 0 && (
+          <div className="card bill-card">
+            <div className="bill-head">
+              <h2>Your AI agent (MCP)</h2>
+              <span className={"plan-badge " + plan}>{planName}</span>
+            </div>
+            <ul className="bill-usage">
+              <li>
+                <span>Tool calls this month</span>
+                <span className="bill-usage-n">{num(mcp.calls_used)} / {num(mcp.quota)}</span>
+              </li>
+            </ul>
+            <p className="muted-line">
+              Free includes {num(mcp.quota)} tool calls a month to try Reliafy from your AI agent
+              (everything except fitting, fleets and availability simulation); they reset on the 1st
+              (UTC). Pro removes the limit.
+            </p>
+          </div>
+        )}
         {data.billing_enabled && isAgent && !isAdmin && mcp.daily_quota != null && (
           <div className="card bill-card">
             <div className="bill-head">

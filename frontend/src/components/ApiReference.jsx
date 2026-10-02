@@ -509,12 +509,13 @@ export function McpDocs({ tokenNote }) {
           instances allow every tool for everyone.
         </p>
 
-        <h3>Part of Reliafy Pro</h3>
+        <h3>Free to try, unlimited on Pro</h3>
         <p className="muted-line">
           On Reliafy Cloud, using Reliafy from AI agents (MCP) is part of <b>Pro</b> (US$19/month):
-          every tool, no daily limit and unlimited storage. On the Free plan you can still connect
-          and see the tools, but each one answers that it needs Pro — and <code>upgrade_link</code>{" "}
-          gives you a link to subscribe.
+          every tool, no limit and unlimited storage. <b>Free</b> gives you 20 tool calls a month to
+          try it — every tool except fitting, fleets and availability simulation, within the Free
+          storage limits; the calls reset on the 1st of each month (UTC). Past them, each tool says
+          so, and <code>upgrade_link</code> gives you a link to subscribe.
         </p>
 
         <h3>Claude on the web, desktop and mobile</h3>

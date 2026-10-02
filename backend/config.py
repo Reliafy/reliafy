@@ -112,9 +112,11 @@ AGENT_MAX_FLEETS = _int("AGENT_MAX_FLEETS", 5)
 # Availability (Monte-Carlo) simulation is not part of the Agent plan: it stays
 # Pro / purchased credits (billing.premium_compute_allowed) on every surface.
 
-# MCP tool calls per user per UTC day for grandfathered Agent subscribers
-# (tools/list and initialize don't count). MCP is otherwise Pro-only, and Pro
-# has no daily quota, only the per-user rate limit every request gets.
+# MCP tool calls (tools/list and initialize don't count): a small allowance
+# per UTC calendar month so Free users can try Reliafy from their AI agent,
+# and the grandfathered Agent subscribers' quota per UTC day. Pro has no
+# quota, only the per-user rate limit every request gets.
+MCP_FREE_MONTHLY_CALLS = _int("MCP_FREE_MONTHLY_CALLS", 20)
 MCP_AGENT_DAILY_CALLS = _int("MCP_AGENT_DAILY_CALLS", 2000)
 
 # One-time prepaid credit packs (Stripe Checkout, mode=payment). `grant_cents`
