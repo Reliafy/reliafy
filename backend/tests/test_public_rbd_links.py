@@ -74,10 +74,10 @@ def test_rbd_link_public_read_carries_graph_and_analysis(client):
     client.act_as(A)
     rbd_id = _save_rbd(client)
     token = _link_rbd(client, rbd_id)
-    # Idempotent, like every other collection.
+    # Several links per artifact, like every other collection.
     assert client.post(
         "/api/public-links", json={"collection": "rbds", "artifact_id": rbd_id}
-    ).json()["token"] == token
+    ).json()["token"] != token
 
     client.act_as(None)
     pub = client.get(f"/api/public/{token}")
