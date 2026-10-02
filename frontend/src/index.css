@@ -3957,6 +3957,23 @@ select:disabled {
 .traffic-nums { width: 170px; color: var(--faint); white-space: nowrap; }
 .traffic-key { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%; }
 
+/* Admin: product usage */
+.usage-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.usage-check { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.usage-stats { flex-wrap: wrap; margin: 12px 0 4px; }
+.usage-stats .stat { min-width: 130px; }
+.usage-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 10px; }
+@media (max-width: 900px) { .usage-charts { grid-template-columns: 1fr; } }
+.usage-h { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 12px 0 0; }
+.dash-cards.usage-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 900px) { .dash-cards.usage-cards { grid-template-columns: 1fr; } }
+.usage-table-wrap { overflow-x: auto; }
+.usage-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.usage-table th, .usage-table td { padding: 0.4rem 0.55rem; border-bottom: 1px solid var(--line2); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.usage-table th { color: var(--muted); font-weight: 600; font-size: 11.5px; }
+.usage-table th:first-child, .usage-table td.usage-key { text-align: left; }
+.usage-table td.usage-key { font-family: var(--mono); color: var(--accent-strong); }
+
 /* Advanced fit options in the distribution step. */
 .fitopts { margin-top: 14px; }
 .fitopts-toggle {
@@ -4891,9 +4908,6 @@ select:disabled {
 .bill-compare-table td { color: var(--muted); width: 32%; }
 .bill-compare-table td.bill-compare-n { font-family: var(--mono); }
 .bill-compare-table td.bill-compare-pro { color: inherit; font-weight: 500; }
-.bill-compare-table.three { min-width: 640px; }
-.bill-compare-table.three tbody th { width: 28%; }
-.bill-compare-table.three td { width: 24%; }
 .bill-compare-cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .bill-compare-cta .muted-line { margin: 0; }
 
@@ -4914,7 +4928,7 @@ select:disabled {
 
 /* ---- Landing pricing ------------------------------------------------------ */
 .landing-pricing {
-  max-width: 1240px;
+  max-width: 1080px;
   width: 100%;
   margin: 0 auto;
   padding: 40px 40px 56px;
@@ -4938,12 +4952,11 @@ select:disabled {
 }
 .price-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 18px;
   align-items: stretch;
 }
-@media (max-width: 1100px) { .price-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 640px) { .price-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .price-grid { grid-template-columns: 1fr; } }
 
 .price-card {
   position: relative;

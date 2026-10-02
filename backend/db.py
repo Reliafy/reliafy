@@ -139,9 +139,14 @@ def init_db() -> None:
     db.oauth_tokens.create_index([("uid", 1), ("revoked", 1)])
     db.oauth_tokens.create_index([("family_id", 1)])
     db.oauth_tokens.create_index([("refresh_expires_at", 1)], expireAfterSeconds=0)
-    # MCP tool calls per user per UTC day (the Free / Agent quota): one
+    # MCP tool calls per user per UTC day (the retired Agent plan's quota): one
     # document per user per day, keyed by id; TTL drops it after the reset.
     db.mcp_usage.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Product-usage logging: account-linked events expire after 90 days (the
+    # privacy policy's promise); the identifier-free daily totals stay.
+    from backend.services import usage as usage_service
+
+    usage_service.ensure_indexes(db)
 
 
 def get_session() -> Iterator:

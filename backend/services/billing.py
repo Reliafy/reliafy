@@ -8,10 +8,14 @@ only ``credit_cents`` and are migrated lazily on first touch. The user-facing
 balance is whole credits (1 credit == 1 cent), floored. Every grant/charge is
 also appended to the ``credit_ledger`` collection for an audit trail.
 
-Plans: ``free`` (default), ``agent`` (US$2/month — Reliafy from an AI agent
-over MCP only: roomier storage than free and a larger daily tool-call quota)
-and ``pro``. The MCP tool-call counters live in the ``mcp_usage``
-collection, one document per user per UTC day.
+Plans: ``free`` (default) and ``pro``. Using Reliafy from an AI agent over MCP
+is part of Pro (:func:`mcp_plan`); Free gets a small monthly allowance of
+tool calls to try it. ``agent`` is a retired plan
+(US$2/month, MCP only, sold briefly in October 2026): it is no longer sold,
+but existing subscribers keep it — MCP access, its storage caps and its daily
+MCP tool-call quota — until their subscription ends. Those tool-call counters
+(and Free's monthly allowance) live in the ``mcp_usage`` collection, one
+document per user per UTC day (per UTC month for Free).
 
 Everything here is dormant unless :data:`backend.config.BILLING_ENABLED` is set:
 plan caps aren't enforced and AI calls aren't charged, so the app behaves
@@ -224,7 +228,13 @@ def set_plan(
         fields["stripe_customer_id"] = customer_id
     if subscription_id:
         fields["stripe_subscription_id"] = subscription_id
+    before = db.users.find_one({"_id": uid}, {"plan": 1, "plan_until": 1}) or {}
     db.users.update_one({"_id": uid}, {"$set": fields}, upsert=True)
+    # Usage logging: a move to Pro is a conversion (and, after an MCP plan
+    # wall, the one the agent-plan question turns on).
+    from backend.services import usage as usage_service
+
+    usage_service.on_plan_change(db, uid, active_plan(before), active_plan(fields))
 
 
 def set_customer(db, uid: str, customer_id: str) -> None:
@@ -338,12 +348,14 @@ def api_access_allowed(db, user: dict) -> bool:
 
 
 def mcp_plan(db, user: dict) -> str:
-    """The plan that governs this user's MCP use: 'pro' (no MCP limits beyond
-    the per-user rate limit), 'agent' or 'free'. Operator accounts and
-    self-hosted installs (billing off) count as Pro."""
-    if not config.BILLING_ENABLED or is_admin_user(user):
+    """The plan that governs this user's MCP use: 'pro' (everyone with API
+    access — Pro, operators, self-hosted installs with billing off: no MCP
+    limits beyond the per-user rate limit), 'agent' (a grandfathered Agent
+    subscriber: MCP within that plan's quota and caps) or 'free' (a small
+    monthly allowance of tool calls, without the Pro-only tools)."""
+    if api_access_allowed(db, user):
         return "pro"
-    return account(db, user["uid"])["active_plan"]
+    return "agent" if account(db, user["uid"])["is_agent"] else "free"
 
 
 def premium_compute_allowed(db, user: dict) -> bool:
@@ -364,10 +376,17 @@ def premium_compute_allowed(db, user: dict) -> bool:
     return account(db, uid)["is_pro"] or has_purchased_credits(db, uid)
 
 
-# ---- MCP daily quota (Free / Agent plans) --------------------------------
+# ---- MCP tool-call quotas (Free allowance, grandfathered Agent plan) -----
+#
+# Free: a small allowance per UTC calendar month, to try Reliafy from an AI
+# agent. Agent (retired, grandfathered): a quota per UTC day. Pro: none.
 
 def _day(now: datetime | None = None) -> str:
     return (now or _now()).strftime("%Y-%m-%d")
+
+
+def _month(now: datetime | None = None) -> str:
+    return (now or _now()).strftime("%Y-%m")
 
 
 def next_day_start(now: datetime | None = None) -> datetime:
@@ -376,70 +395,145 @@ def next_day_start(now: datetime | None = None) -> datetime:
     return datetime(now.year, now.month, now.day, tzinfo=timezone.utc) + timedelta(days=1)
 
 
+def next_month_start(now: datetime | None = None) -> datetime:
+    """When this month's (UTC) MCP tool-call allowance resets."""
+    now = now or _now()
+    year, month = (now.year + 1, 1) if now.month == 12 else (now.year, now.month + 1)
+    return datetime(year, month, 1, tzinfo=timezone.utc)
+
+
 def mcp_daily_quota(plan: str) -> int | None:
-    """MCP tool calls allowed per UTC day on ``plan`` (None = no quota)."""
-    return {"free": config.MCP_FREE_DAILY_CALLS, "agent": config.MCP_AGENT_DAILY_CALLS}.get(plan)
+    """MCP tool calls allowed per UTC day on ``plan``: only the retired Agent
+    plan has a daily quota."""
+    return config.MCP_AGENT_DAILY_CALLS if plan == "agent" else None
 
 
-def _calls_id(uid: str, day: str) -> str:
-    return f"calls:{uid}:{day}"
+def mcp_monthly_quota(plan: str) -> int | None:
+    """MCP tool calls allowed per UTC calendar month on ``plan``: only Free's
+    allowance to try it."""
+    return config.MCP_FREE_MONTHLY_CALLS if plan == "free" else None
 
 
-def mcp_calls_today(db, uid: str) -> int:
-    doc = db.mcp_usage.find_one({"_id": _calls_id(uid, _day())})
+def mcp_quota(plan: str) -> tuple[int | None, str | None]:
+    """``(quota, period)`` for ``plan``: (n, 'month') on Free, (n, 'day') on
+    the Agent plan, (None, None) on Pro."""
+    if (q := mcp_monthly_quota(plan)) is not None:
+        return q, "month"
+    if (q := mcp_daily_quota(plan)) is not None:
+        return q, "day"
+    return None, None
+
+
+def mcp_quota_resets_at(plan: str, now: datetime | None = None) -> datetime | None:
+    """When ``plan``'s current quota period ends (None: no quota)."""
+    _, period = mcp_quota(plan)
+    if period == "month":
+        return next_month_start(now)
+    if period == "day":
+        return next_day_start(now)
+    return None
+
+
+def _calls_id(uid: str, period_key: str) -> str:
+    # A day key (2026-10-03) and a month key (2026-10) never collide.
+    return f"calls:{uid}:{period_key}"
+
+
+def _period_key(plan: str, now: datetime | None = None) -> str | None:
+    _, period = mcp_quota(plan)
+    if period == "month":
+        return _month(now)
+    if period == "day":
+        return _day(now)
+    return None
+
+
+def mcp_calls_used(db, uid: str, plan: str) -> int:
+    """MCP tool calls counted in ``plan``'s current quota period."""
+    key = _period_key(plan)
+    if key is None:
+        return 0
+    doc = db.mcp_usage.find_one({"_id": _calls_id(uid, key)})
     return int((doc or {}).get("count", 0))
 
 
+def mcp_calls_today(db, uid: str) -> int:
+    """Today's counted calls on the (daily) Agent quota."""
+    return mcp_calls_used(db, uid, "agent")
+
+
 def consume_mcp_call(db, uid: str, plan: str) -> bool:
-    """Count one MCP tool call against today's quota for ``plan``; True if the
-    call may run. Nothing is counted on a plan without a quota, or once the
-    quota is reached. Atomic: the increment only matches while ``count`` is
-    under the quota, so concurrent calls can't both take the last slot."""
-    quota = mcp_daily_quota(plan)
+    """Count one MCP tool call against ``plan``'s quota for the current period;
+    True if the call may run. Nothing is counted on a plan without a quota, or
+    once the quota is reached. Atomic: the increment only matches while
+    ``count`` is under the quota, so concurrent calls can't both take the last
+    slot."""
+    quota, _ = mcp_quota(plan)
     if quota is None:
         return True
-    day = _day()
-    key = _calls_id(uid, day)
+    period_key = _period_key(plan)
+    key = _calls_id(uid, period_key)
     db.mcp_usage.update_one(
         {"_id": key},
-        # Kept a day past the reset, then the TTL index drops it.
-        {"$setOnInsert": {"uid": uid, "day": day, "count": 0,
-                          "expires_at": next_day_start() + timedelta(days=1)}},
+        # Kept a day past the reset (a month's allowance: ~32 days at most),
+        # then the TTL index drops it.
+        {"$setOnInsert": {"uid": uid, "period": period_key, "count": 0,
+                          "expires_at": mcp_quota_resets_at(plan) + timedelta(days=1)}},
         upsert=True,
     )
     res = db.mcp_usage.update_one({"_id": key, "count": {"$lt": int(quota)}}, {"$inc": {"count": 1}})
     return bool(getattr(res, "modified_count", 0))
 
 
+def refund_mcp_call(db, uid: str, plan: str) -> None:
+    """Give back a call :func:`consume_mcp_call` counted when the tool then
+    refused it (a storage cap, a Pro-only feature): refused calls don't count."""
+    key = _period_key(plan)
+    if key is None:
+        return
+    db.mcp_usage.update_one({"_id": _calls_id(uid, key), "count": {"$gt": 0}}, {"$inc": {"count": -1}})
+
+
 def mcp_usage_summary(db, uid: str, plan: str) -> dict:
-    """Today's MCP tool calls against the plan's quota, for the billing page."""
+    """MCP tool calls in the current period against the plan's quota, for the
+    billing page: ``calls_used`` of ``quota`` per ``period`` ('month' on Free,
+    'day' on the Agent plan, None on Pro), resetting at ``calls_reset_at``.
+    ``calls_today`` / ``daily_quota`` describe a daily quota only."""
+    quota, period = mcp_quota(plan)
+    used = mcp_calls_used(db, uid, plan)
+    resets = mcp_quota_resets_at(plan) or next_day_start()
     return {
-        "calls_today": mcp_calls_today(db, uid),
-        "daily_quota": mcp_daily_quota(plan),
-        "calls_reset_at": next_day_start().isoformat(),
+        "calls_today": used if period == "day" else 0,
+        "daily_quota": quota if period == "day" else None,
+        "calls_used": used,
+        "quota": quota,
+        "period": period,
+        "calls_reset_at": resets.isoformat(),
     }
 
 
 def usage_summary(db, uid: str, admin: bool = False) -> dict:
     """Plan, credit, caps and usage snapshot for GET /api/billing. ``admin``
-    (operator accounts) reports MCP use without quotas, as they have none."""
+    (operator accounts) reports MCP use without quotas, as they have none.
+    ``mcp`` is the MCP tool-call quota: Free's monthly allowance or a
+    grandfathered Agent subscriber's daily quota (``quota`` is None for Pro)."""
     acct = account(db, uid)
     plan = acct["active_plan"]
     return {
         "credit_cents": acct["credit_cents"],
         "plan": plan,
         "billing_enabled": config.BILLING_ENABLED,
-        # Free-plan caps (the Free vs paid comparison); ``plan_caps`` are the
-        # ones that apply to this user (None = unlimited).
+        # Free-plan caps (the Free vs Pro comparison); ``plan_caps`` are the
+        # ones that apply to this user (None = unlimited; a grandfathered
+        # Agent subscriber's are the Agent caps).
         "caps": plan_caps("free"),
-        "agent_caps": plan_caps("agent"),
         "plan_caps": plan_caps(plan),
         "mcp": mcp_usage_summary(db, uid, "pro" if admin or not config.BILLING_ENABLED else plan),
-        "mcp_free_daily_calls": config.MCP_FREE_DAILY_CALLS,
-        "mcp_agent_daily_calls": config.MCP_AGENT_DAILY_CALLS,
         # Quoted on /billing (Free vs Pro comparison) so the page never
         # hardcodes a number the operator can change with an env var.
         "free_grant_cents": config.FREE_GRANT_CENTS,
+        # Free's MCP allowance per UTC month, for the Free vs Pro comparison.
+        "mcp_free_monthly_calls": config.MCP_FREE_MONTHLY_CALLS,
         "pro_monthly_credit_cents": config.PRO_MONTHLY_CREDIT_CENTS,
         "usage": {kind: owned_count(db, uid, kind) for kind in CAPPED_KINDS},
         "packs": config.CREDIT_PACKS,

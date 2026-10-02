@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getAdminStats, getAdminTraffic } from "../api.js";
 import Select from "../components/Select.jsx";
+import UsageSection from "../components/UsageSection.jsx";
 
 const LABELS = {
   datasets: "Datasets",
@@ -139,6 +140,8 @@ export default function AdminPage() {
       {traffic && traffic.events.length > 0 && (
         <TopList title="Product events" rows={traffic.events} empty="" />
       )}
+
+      <UsageSection />
 
       <div className="card" style={{ marginTop: "1rem" }}>
         <h2>Artifacts (excluding samples)</h2>

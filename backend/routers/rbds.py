@@ -13,6 +13,7 @@ from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
 from backend.services import shares as shares_service
+from backend.services import usage as usage_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import Rbd
 from backend.services.rbd_analysis import AnalysisError
@@ -189,6 +190,7 @@ def availability_payload(
 def _availability(
     session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners
 ) -> JSONResponse:
+    usage_service.set_feature("availability_sim")
     status, payload = availability_payload(session, ctx, graph, t_max, rbd, force, resolve_owners)
     return JSONResponse(status_code=status, content=payload)
 
