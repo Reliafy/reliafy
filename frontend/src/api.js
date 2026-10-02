@@ -1115,6 +1115,11 @@ export function getAdminTraffic(days = 14) {
   return request(`/api/admin/traffic?days=${days}`);
 }
 
+// Operator-only product usage (app / MCP / API, the MCP plan wall).
+export function getAdminUsage(days = 30, includeAdmin = false) {
+  return request(`/api/admin/usage?days=${days}${includeAdmin ? "&include_admin=true" : ""}`);
+}
+
 // Un-hide all dismissed sample artifacts.
 export function restoreSamples() {
   return request("/api/samples/restore", { method: "POST" });
