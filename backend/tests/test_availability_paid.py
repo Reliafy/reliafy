@@ -37,6 +37,14 @@ PRO_PAYLOAD = {
 SAMPLE_ID = "sample-rbd-instrument-air-availability"
 
 
+def _paywall(r) -> bool:
+    """The free user's 402: the Pro payload, plus the quick-run offer (#147)."""
+    body = r.json()
+    return (r.status_code == 402
+            and {k: body.get(k) for k in PRO_PAYLOAD} == PRO_PAYLOAD
+            and body["quick"]["remaining_today"] >= 0)
+
+
 @pytest.fixture()
 def client(monkeypatch):
     from fastapi.testclient import TestClient
@@ -172,7 +180,7 @@ def test_free_user_gets_402_without_saved_result_and_cache_when_it_matches(clien
     rbd_id = _save(client, graph)
 
     r = _analyze(client, graph, rbd_id)
-    assert r.status_code == 402 and r.json() == PRO_PAYLOAD
+    assert _paywall(r)
     r = client.get(f"/api/rbds/{rbd_id}/analyze")
     assert r.status_code == 402 and r.json()["code"] == "pro_required"
     # Unsaved graphs too.
@@ -199,7 +207,7 @@ def test_free_user_gets_402_without_saved_result_and_cache_when_it_matches(clien
     assert _analyze(client, moved, rbd_id).json()["cached"] is True
     changed = _with_param(graph, 2500)
     r = _analyze(client, changed, rbd_id)
-    assert r.status_code == 402 and r.json() == PRO_PAYLOAD
+    assert _paywall(r)
     _save_over = client.post("/api/rbds", json={"name": "Loop", "graph": changed, "id": rbd_id})
     assert _save_over.status_code == 200
     assert client.get(f"/api/rbds/{rbd_id}/analyze").status_code == 402

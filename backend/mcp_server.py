@@ -45,6 +45,7 @@ import copy
 import functools
 import logging
 import re
+import time
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Callable, Literal, Optional, Union
 
@@ -75,6 +76,7 @@ from backend.services import oauth as oauth_service
 from backend.services import models as models_service
 from backend.services import rbd_edit
 from backend.services import rbd_graph
+from backend.services import rbd_jobs as rbd_jobs_service
 from backend.services import rbds as rbds_service
 from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
@@ -221,7 +223,9 @@ What you can do:
 it as a model, or save_model to save parameters fitted elsewhere; evaluate a saved model with reliability_at. \
 list_models / get_model read what is saved; list_datasets / upload_dataset manage the data.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
-B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script). Edit, \
+B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script). A long \
+availability simulation may come back as a job_id still queued or running: call get_job with it every few \
+seconds until it is done. Edit, \
 don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/remove/update blocks and \
 edges) rather than re-creating it; clone_rbd copies a sample or makes a variant to edit.
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
@@ -1427,9 +1431,34 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None) -
 
 def _availability_summary(result: dict) -> dict:
     keys = ("unit", "steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
-            "failure_frequency", "figures_basis", "n_simulations", "t_simulation", "per_node", "importance",
-            "criticality", "cached", "computed_at", "can_recompute")
+            "failure_frequency", "figures_basis", "n_simulations", "t_simulation", "quick", "precision",
+            "per_node", "importance", "criticality", "cached", "computed_at", "can_recompute")
     return {"kind": "repairable", **{k: result.get(k) for k in keys if k in result}}
+
+
+def _await_job(db, job_id: str, wait_s: float) -> Optional[dict]:
+    """Poll a queued job's record until it finishes or ``wait_s`` passes."""
+    deadline = time.monotonic() + max(float(wait_s), 0.0)
+    delay = 0.5
+    while True:
+        job = rbd_jobs_service.get(db, job_id)
+        if job is None or job.get("status") in rbd_jobs_service.FINISHED:
+            return job
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return job
+        time.sleep(min(delay, left))
+        delay = min(delay * 1.5, 2.0)
+
+
+def _job_pending(db, job: dict) -> dict:
+    return {
+        "job_id": job["_id"],
+        "status": job.get("status"),
+        "queue_position": rbd_jobs_service.queue_position(db, job),
+        "note": "The simulation is queued or running on Reliafy's calculation service. Call get_job with "
+                "this job_id in a few seconds for the result.",
+    }
 
 
 @_tool("analyze_rbd", _READ, "Analyse an RBD")
@@ -1486,10 +1515,27 @@ def analyze_rbd(
         if graph.get("repairable"):
             actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
                              read_owners=_owners(uid), list_owners=uid)
-            status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners)
+            # quick=True: where the plan allows only quick runs (Free/Agent with
+            # MCP_FREE_QUICK_SIMS on), an agent can't click "Run quick
+            # simulation", so asking is the click. Entitled users get full runs.
+            status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners,
+                                                   quick=True, surface="mcp")
+            if status == 202:
+                job = _await_job(db, payload["job_id"], config.MCP_JOB_WAIT_S)
+                if job is None:
+                    raise ToolError("The simulation job was lost. Run analyze_rbd again.")
+                if job.get("status") == "failed":
+                    raise ToolError(job.get("error") or rbd_jobs_service.FAILED_ERROR)
+                if job.get("status") != "done":
+                    return {**head, "kind": "repairable", "available": False, **_job_pending(db, job)}
+                view = rbd_jobs_service.view(db, job, billing_service.premium_compute_allowed(db, user))
+                return {**head, "available": True, **_availability_summary(view["result"])}
+            if status == 503:
+                raise ToolError(payload.get("detail") or rbd_jobs_service.QUEUE_UNAVAILABLE)
             if status != 200:
                 plan = user.get("mcp_plan", "pro")
-                message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
+                message = (_simulation_message(plan) if plan != "pro" and status == 402
+                           else payload.get("detail"))
                 return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
                         "message": message}
             return {**head, "available": True, **_availability_summary(payload)}
@@ -1507,6 +1553,31 @@ def analyze_rbd(
         raise ToolError(f"Reliafy couldn't analyse “{rbd.name}” ({type(exc).__name__}). Check its structure "
                         "with get_rbd: exactly one input and one output node, every block on a path between "
                         "them, and a life model on every block.") from exc
+
+
+@_tool("get_job", _READ, "Check an analysis job")
+def get_job(
+    ctx: Context,
+    job_id: Annotated[str, Field(description="A job_id returned by analyze_rbd.")],
+) -> dict[str, Any]:
+    """Check an analysis job that analyze_rbd queued (a long availability simulation runs on Reliafy's
+    calculation service). status is queued (with queue_position: jobs ahead of it), running, done (with the
+    same availability results analyze_rbd returns) or failed (with the reason in message). Call it every few
+    seconds until done; jobs and their results are kept for a week."""
+    user, db = _caller(ctx), _db()
+    job = rbd_jobs_service.get(db, job_id)
+    if job is None or job.get("uid") != user["uid"]:
+        raise ToolError("Job not found.")
+    out: dict[str, Any] = {"job_id": job["_id"], "status": job.get("status"), "kind": job.get("kind")}
+    if job.get("rbd_id"):
+        out["rbd_id"] = job["rbd_id"]
+        out["url"] = _url(f"/rbds/b/{job['rbd_id']}")
+    if job.get("status") == "done":
+        view = rbd_jobs_service.view(db, job, billing_service.premium_compute_allowed(db, user))
+        return {**out, "available": True, **_availability_summary(view["result"])}
+    if job.get("status") == "failed":
+        return {**out, "available": False, "message": job.get("error") or rbd_jobs_service.FAILED_ERROR}
+    return {**out, "available": False, **_job_pending(db, job)}
 
 
 @_tool("export_rbd_python", _READ, "Export an RBD as Python")

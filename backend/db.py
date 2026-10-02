@@ -142,6 +142,15 @@ def init_db() -> None:
     # MCP tool calls per user per UTC day (the Free / Agent quota): one
     # document per user per day, keyed by id; TTL drops it after the reset.
     db.mcp_usage.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Free quick availability simulations per user per UTC day (#147).
+    db.free_sim_usage.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Analysis jobs on the compute service (#146): queue position counts
+    # in-flight jobs by age; the app resumes a diagram's newest job; TTL drops
+    # finished jobs RBD_JOB_TTL_DAYS after they finish.
+    db.rbd_jobs.create_index([("status", 1), ("created_at", 1)])
+    db.rbd_jobs.create_index([("uid", 1), ("rbd_id", 1), ("created_at", -1)])
+    db.rbd_jobs.create_index([("uid", 1), ("cache_key", 1), ("created_at", -1)])
+    db.rbd_jobs.create_index([("expires_at", 1)], expireAfterSeconds=0)
 
 
 def get_session() -> Iterator:

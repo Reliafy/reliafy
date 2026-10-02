@@ -7,8 +7,11 @@ import logging
 from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse, Response
 
+from backend import config
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.services import free_sims as free_sims_service
+from backend.services import rbd_jobs as rbd_jobs_service
 from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
@@ -139,9 +142,10 @@ def delete_rbd(
     return JSONResponse(content={"ok": True})
 
 
-# Availability (repairable RBDs) runs thousands of Monte-Carlo replications on a
-# one-CPU service, so running it is a paid feature. Free users still build,
-# validate and view diagrams — and any saved (cached) result.
+# Availability (repairable RBDs) runs thousands of Monte-Carlo replications,
+# so a full run is a paid feature. Free users still build, validate and view
+# diagrams — and any saved (cached) result — and in the app they can run a
+# quick, time-capped simulation (#147), a few a day.
 AVAILABILITY_PRO_PAYLOAD = {
     "detail": (
         "Availability simulation is a paid feature. Subscribe to Pro or buy AI "
@@ -152,18 +156,36 @@ AVAILABILITY_PRO_PAYLOAD = {
 }
 
 
+def quick_sims_allowed(surface: str) -> bool:
+    """Whether a user without premium compute may run quick simulations on
+    this surface: always in the app; over MCP only with MCP_FREE_QUICK_SIMS."""
+    if int(config.FREE_SIMS_PER_DAY) <= 0 or float(config.FREE_SIM_SECONDS) <= 0:
+        return False
+    return surface == "app" or config.MCP_FREE_QUICK_SIMS
+
+
 def availability_payload(
-    session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners
+    session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners,
+    quick: bool = False, surface: str = "app",
 ) -> tuple[int, dict]:
     """A repairable (availability) analysis as ``(status, payload)``: the saved
     result when it matches the graph, else compute it — if the user is entitled
     (402 + :data:`AVAILABILITY_PRO_PAYLOAD` otherwise).
+
+    A user who isn't entitled gets the 402 with a ``quick`` summary (seconds,
+    runs left today) where quick runs are allowed (``surface``: "app" or
+    "mcp"); asking again with ``quick`` runs one — 429 ``free_sim_cap`` once
+    the day's runs are used.
 
     ``rbd`` is the saved diagram the request is about (None for an unsaved
     graph, which is never cached). A fresh result is written back only when
     the caller may edit the diagram; read-only viewers (samples, shares) get
     the computation without touching the owner's document. Shared by the REST
     endpoints below and the MCP server, so both apply the same paid gate.
+
+    The computation runs in-process, or — with the compute queue configured
+    — as a job: then the answer is 202 ``{job_id, status, queue_position}``
+    to poll at ``GET /api/rbd-jobs/{job_id}`` (see rbd_jobs).
     """
     key = rbds_service.availability_cache_key(graph, t_max)
     doc = session.rbds.find_one({"_id": rbd.id}) if rbd is not None else None
@@ -173,23 +195,35 @@ def availability_payload(
         # ``can_recompute`` lets the UI offer "Re-run" only to entitled users.
         return 200, {**cached, "can_recompute": entitled}
     if not entitled:
-        return 402, AVAILABILITY_PRO_PAYLOAD
+        if not quick_sims_allowed(surface):
+            return 402, AVAILABILITY_PRO_PAYLOAD
+        if not quick:
+            return 402, {**AVAILABILITY_PRO_PAYLOAD,
+                         "quick": free_sims_service.summary(session, ctx.uid)}
 
-    result = rbds_service.analyze_graph(session, graph, resolve_owners, t_max=t_max)
-    computed_at = None
-    if (
-        rbd is not None
-        and access_service.can_write(ctx, rbd.owner_id)
-        and rbds_service.should_store_availability(doc, key)
-    ):
-        computed_at = rbds_service.store_availability(session, rbd.id, key, result, ctx.uid)
-    return 200, {**result, "cached": False, "computed_at": computed_at, "can_recompute": True}
+    store = rbd is not None and access_service.can_write(ctx, rbd.owner_id)
+    return rbd_jobs_service.run_availability(
+        session,
+        uid=ctx.uid,
+        graph=graph,
+        cache_key=key,
+        t_max=t_max,
+        resolve_owners=resolve_owners,
+        rbd_id=rbd.id if rbd is not None else None,
+        store=store,
+        entitled=entitled,
+        quick=not entitled,
+        force=force,
+    )
 
 
 def _availability(
-    session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners
+    session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners,
+    quick: bool = False,
 ) -> JSONResponse:
-    status, payload = availability_payload(session, ctx, graph, t_max, rbd, force, resolve_owners)
+    status, payload = availability_payload(
+        session, ctx, graph, t_max, rbd, force, resolve_owners, quick=quick, surface="app"
+    )
     return JSONResponse(status_code=status, content=payload)
 
 
@@ -201,6 +235,7 @@ def analyze_graph(
     conditional_age: float | None = Body(default=None),
     rbd_id: str | None = Body(default=None),
     force: bool = Body(default=False),
+    quick: bool = Body(default=False),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -214,13 +249,14 @@ def analyze_graph(
     Repairable graphs run the (paid) availability simulation. ``rbd_id`` names
     the saved diagram being edited so a saved result can be served / stored;
     ``force`` re-runs even when a saved result matches (entitled users only).
+    ``quick`` runs a free, time-capped simulation (users without Pro).
     """
     try:
         if graph.get("repairable"):
             rbd = None
             if rbd_id:
                 rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
-            return _availability(session, ctx, graph, t_max, rbd, force, ctx.read_owners)
+            return _availability(session, ctx, graph, t_max, rbd, force, ctx.read_owners, quick)
         return JSONResponse(
             content=rbds_service.analyze_graph(
                 session,
@@ -245,6 +281,7 @@ def analyze_rbd(
     rbd_id: str,
     t_max: float | None = None,
     force: bool = False,
+    quick: bool = False,
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -256,7 +293,7 @@ def analyze_rbd(
     owners = [*ctx.read_owners, rbd.owner_id]
     try:
         if graph.get("repairable"):
-            return _availability(session, ctx, graph, t_max, rbd, force, owners)
+            return _availability(session, ctx, graph, t_max, rbd, force, owners, quick)
         return JSONResponse(
             content=rbds_service.analyze_graph(session, graph, owners, t_max=t_max)
         )
