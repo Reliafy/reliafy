@@ -38,7 +38,7 @@ USERS = {
 }
 UPGRADE = "upgrade to Reliafy Pro (US$19/month)"
 WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
-N_TOOLS = 26
+N_TOOLS = 27
 
 
 @pytest.fixture()
@@ -134,7 +134,8 @@ def test_free_user_tries_every_tool_but_the_pro_only_ones_within_the_allowance(e
     assert _ok(_call(token, "optimal_replacement", {
         "distribution_id": "weibull", "params": WEIBULL, "planned_cost": 100, "unplanned_cost": 1000}))
     assert _ok(_call(token, "upload_dataset", {"name": "d", "csv": "t,c\n1,0\n2,0\n"}))["id"]
-    assert _calls_used(env.db, FREE) == 4
+    assert _ok(_call(token, "plan_demonstration_test", {"reliability": 0.95}))["units"] == 59
+    assert _calls_used(env.db, FREE) == 5
 
     # Fitting and fleets are Pro-only: refused, and refusals aren't counted.
     for name, args in [("fit_distribution", FIT_ARGS),
@@ -144,7 +145,7 @@ def test_free_user_tries_every_tool_but_the_pro_only_ones_within_the_allowance(e
         msg = _err(_call(token, name, args))
         assert FREE_PRO_ONLY in msg and f"{BASE}/billing" in msg and "upgrade_link" in msg, name
     assert "SurPyval" in _err(_call(token, "fit_distribution", FIT_ARGS))
-    assert _calls_used(env.db, FREE) == 4
+    assert _calls_used(env.db, FREE) == 5
     assert env.db.models.count_documents({"owner_id": FREE, "dataset_id": {"$ne": ""}}) == 0
 
 
