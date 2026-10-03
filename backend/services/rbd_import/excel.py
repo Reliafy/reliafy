@@ -47,7 +47,7 @@ from .types import ImportedDiagram, RbdImportError
 SOURCE_FORMAT = "Excel"
 MAX_BLOCKS = 5000
 
-_REF_SPLIT = re.compile(r"\s*[;,\n|]\s*")
+_REF_SPLIT = re.compile(r"[;,\n|]")  # parts are stripped after splitting
 
 
 class ExcelNeedsMapping(RbdImportError):
@@ -176,7 +176,8 @@ def parse(data: bytes, filename: str, mapping: Optional[dict] = None) -> list[Im
          "connections": {"sheet": "Links", "header_row": 1,
                          "mapping": {"from": "From", "to": "To"}}}   # optional
     """
-    stem = re.sub(r"\.[^.]*$", "", (filename or "").rsplit("/", 1)[-1]) or "Imported diagram"
+    base = (filename or "").rsplit("/", 1)[-1]
+    stem = (base[:base.rfind(".")] if "." in base else base) or "Imported diagram"
     try:
         if mapping:
             blocks, links = _explicit(data, filename, mapping)
@@ -551,7 +552,7 @@ def _convert(blocks: _Sheet, links: Optional[_Sheet]) -> tuple[dict, list[str]]:
         text = _text(raw)
         if not text:
             return []
-        parts = [text] if _key(text) in by_ref or _special(text) else [p for p in _REF_SPLIT.split(text) if p]
+        parts = [text] if _key(text) in by_ref or _special(text) else [p for p in (q.strip() for q in _REF_SPLIT.split(text)) if p]
         out = []
         for p in parts:
             hits = by_ref.get(_key(p))

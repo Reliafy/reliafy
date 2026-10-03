@@ -41,10 +41,14 @@ import math
 import re
 from typing import Optional
 
+from backend.services import import_guard
+
 from . import fault_tree as ft
 from .types import ImportedDiagram, RbdImportError
 
 MAX_STATEMENTS = 100_000
+MAX_STATEMENT_CHARS = 64 * 1024  # one statement (a gate's or event's line)
+SNIFF_BYTES = 64 * 1024
 
 _DYNAMIC = {
     "pand": "priority-AND",
@@ -59,15 +63,23 @@ _DYNAMIC = {
 }
 _SPARE = {"csp": 0.0, "hsp": 1.0, "wsp": 0.5}  # default dormancy factors
 _KOFM = re.compile(r"^(\d+)of(\d+)$", re.I)
-_TOKEN = re.compile(r'"((?:[^"\\]|\\.)*)"|([^\s"]+)')
+
+
+def _has_toplevel(head: str) -> bool:
+    """Whether a line starts with the ``toplevel`` keyword."""
+    for line in head.splitlines():
+        s = line.lstrip()
+        if s[:8].lower() == "toplevel" and (len(s) == 8 or s[8].isspace() or s[8] == '"'):
+            return True
+    return False
 
 
 def sniff(data: bytes, filename: str) -> bool:
     name = (filename or "").lower()
-    head = data[:65536].decode("utf-8", "replace")
     if name.endswith(".dft") or name.endswith(".galileo"):
         return True
-    if re.search(r"^\s*toplevel\s", head, re.M) and ";" in head:
+    head = data[:SNIFF_BYTES].decode("utf-8", "replace")
+    if ";" in head and _has_toplevel(head):
         return True
     stripped = head.lstrip("﻿ \t\r\n")
     if stripped.startswith("{") and '"toplevel"' in head and '"nodes"' in head:
@@ -80,7 +92,8 @@ def parse(data: bytes, filename: str) -> list[ImportedDiagram]:
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError:
         text = data.decode("latin-1")
-    stem = re.sub(r"\.[^.]*$", "", (filename or "").rsplit("/", 1)[-1]) or "Imported DFT"
+    base = (filename or "").rsplit("/", 1)[-1]
+    stem = (base[:base.rfind(".")] if "." in base else base) or "Imported DFT"
     if text.lstrip().startswith("{"):
         top, gates, events = _parse_json(text)
     else:
@@ -94,8 +107,78 @@ def parse(data: bytes, filename: str) -> list[ImportedDiagram]:
 
 
 def _strip_comments(text: str) -> str:
-    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
-    return re.sub(r"//[^\n]*", "", text)
+    """Drop ``/* ... */`` blocks (each becomes a space; an unclosed one is
+    kept), then ``// ...`` to the end of the line. Linear scans."""
+    out, i = [], 0
+    while True:
+        a = text.find("/*", i)
+        if a == -1:
+            break
+        b = text.find("*/", a + 2)
+        if b == -1:
+            break
+        out.append(text[i:a])
+        out.append(" ")
+        i = b + 2
+    out.append(text[i:])
+    text = "".join(out)
+    out, i = [], 0
+    while True:
+        a = text.find("//", i)
+        if a == -1:
+            break
+        out.append(text[i:a])
+        e = text.find("\n", a)
+        i = len(text) if e == -1 else e
+    out.append(text[i:])
+    return "".join(out)
+
+
+def _closing_quote(stmt: str, start: int) -> int:
+    """Index of the ``"`` closing a quoted name opened at ``start`` (a quote
+    after an odd run of backslashes is escaped), or -1."""
+    j = start + 1
+    while True:
+        j = stmt.find('"', j)
+        if j == -1:
+            return -1
+        k, slashes = j - 1, 0
+        while k > start and stmt[k] == "\\":
+            slashes += 1
+            k -= 1
+        if slashes % 2 == 0:
+            return j
+        j += 1
+
+
+def _tokens(stmt: str) -> list[tuple[str, bool]]:
+    """``(token, quoted)`` pairs: ``"quoted names"`` (backslash escapes kept
+    as written) and bare words split on whitespace and quotes. ``a = b``
+    joins to ``a=b``."""
+    toks: list[tuple[str, bool]] = []
+    i, n, quotes = 0, len(stmt), True
+    while i < n:
+        q = stmt.find('"', i) if quotes else -1
+        seg = stmt[i:] if q == -1 else stmt[i:q]
+        toks.extend((t, False) for t in seg.replace('"', " ").split())
+        if q == -1:
+            break
+        end = _closing_quote(stmt, q)
+        if end == -1:
+            # An unclosed quote is skipped; no later quote can close either.
+            quotes = False
+            i = q + 1
+            continue
+        toks.append((stmt[q + 1:end], True))
+        i = end + 1
+    joined: list[tuple[str, bool]] = []
+    for tok, quoted in toks:
+        if (joined and not quoted and not joined[-1][1]
+                and (tok.startswith("=") or joined[-1][0].endswith("="))):
+            joined[-1] = (joined[-1][0] + tok, False)
+        else:
+            joined.append((tok, quoted))
+    return joined
 
 
 def _parse_text(text: str):
@@ -107,9 +190,12 @@ def _parse_text(text: str):
     if len(statements) > MAX_STATEMENTS:
         raise RbdImportError("The Galileo file has too many statements to import.")
     for stmt in statements:
-        stmt = re.sub(r"\s*=\s*", "=", stmt)  # tolerate "prob = 0.1"
-        toks = [(m.group(1), True) if m.group(1) is not None else (m.group(2), False)
-                for m in _TOKEN.finditer(stmt)]
+        import_guard.check()
+        if len(stmt) > MAX_STATEMENT_CHARS:
+            raise RbdImportError(
+                f"A statement in the Galileo file is longer than {MAX_STATEMENT_CHARS // 1024} KB "
+                f"(“{stmt[:40]}…”) — too long to import.")
+        toks = _tokens(stmt)  # tolerates "prob = 0.1"
         if not toks:
             continue
         first, quoted = toks[0]
