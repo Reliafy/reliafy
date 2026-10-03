@@ -10,7 +10,9 @@ from fastapi.responses import JSONResponse
 from backend.db import get_session
 from backend.fitting import FitError, options_from_form
 from backend import storage
+from backend.routers import excel as excel_router
 from backend.services import billing as billing_service
+from backend.services import excel as excel_service
 from backend.services import datasets as datasets_service
 from backend.services import models as models_service
 from backend.services import samples as samples_service
@@ -120,11 +122,31 @@ async def upload_dataset(
     file: UploadFile = File(...),
     name: str | None = Form(default=None),
     no_header: bool = Form(default=False),
+    sheet: str | None = Form(default=None),
+    header_row: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    """Store an uploaded CSV as a standalone dataset (no fit required)."""
+    """Store an uploaded CSV as a standalone dataset (no fit required).
+
+    An Excel workbook (.xlsx) works too: ``sheet`` (default: the first) is
+    converted to CSV from ``header_row`` (a sheet row number; blank = the
+    guessed header, 0 = none — as does ``no_header``) and stored exactly as
+    that CSV would be.
+    """
     contents = await file.read()
+    if excel_service.is_excel(contents, file.filename or ""):
+        try:
+            row = excel_router.header_row_param(header_row)
+            table = excel_service.read_table(
+                contents, sheet, 0 if no_header else row, file.filename or "",
+            )
+        except excel_service.ExcelError as exc:
+            return JSONResponse(status_code=422, content={"detail": str(exc)})
+        except Exception as exc:
+            return excel_router.excel_error(exc, "dataset", contents, file.filename or "")
+        contents = excel_service.to_csv(table)
+        no_header = False  # already applied: header-less sheets get col 1, col 2, …
     # Free-plan cap (new datasets only — re-uploading an existing file is fine).
     denied = _creation_denied(session, ctx, "datasets")
     if denied is not None:

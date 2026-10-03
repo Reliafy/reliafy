@@ -4,6 +4,10 @@ import Plot from "./Plot.jsx";
 import { analyzeRbd } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import CovariatesModal from "./CovariatesModal.jsx";
+import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./RbdBand.jsx";
+import AvailabilityCompare from "./AvailabilityCompare.jsx";
+import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
+import { precisionNote } from "./availabilityPrecision.js";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -63,9 +67,18 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
 
   const sysY = active === "sf" ? result.system.sf : result.system.ff;
   const sysAtT = t == null ? null : interp(x, sysY, Number(t));
+  // Confidence band (#103), when asked for: shaded under the system curve.
+  const band = result.band || null;
+  const bandAtT =
+    hasBand(band) && t != null
+      ? (active === "sf"
+          ? { lower: interp(x, band.sf_lower, Number(t)), upper: interp(x, band.sf_upper, Number(t)) }
+          : { lower: 1 - interp(x, band.sf_upper, Number(t)), upper: 1 - interp(x, band.sf_lower, Number(t)) })
+      : null;
 
   // System curve (bold) plus a faint curve per node.
   const traces = [
+    ...bandTraces(band, x, active),
     {
       x,
       y: sysY,
@@ -165,6 +178,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
             {cond ? "Mean residual life" : "MTTF"}
             {unit ? ` (${unit})` : ""}
           </div>
+          <BandInterval band={band} interval={band?.mttf} />
         </div>
         {result.blife && (
           <>
@@ -173,12 +187,14 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
               <div className="name" title="Time by which 10% of systems have failed">
                 B10 life{unit ? ` (${unit})` : ""}
               </div>
+              <BandInterval band={band} interval={band?.blife?.b10} />
             </div>
             <div className="stat">
               <div className="value">{fmt(result.blife.b50)}</div>
               <div className="name" title="Median system life (50% failed)">
                 B50 life{unit ? ` (${unit})` : ""}
               </div>
+              <BandInterval band={band} interval={band?.blife?.b50} />
             </div>
           </>
         )}
@@ -188,6 +204,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
             {active === "sf" ? "R" : "F"}(t={t ?? "—"}
             {cond ? ` | ${sLabel}` : ""})
           </div>
+          <BandInterval band={band} interval={bandAtT} />
         </div>
         <div className="stat">
           <div className="value">{(result.nodes || []).length}</div>
@@ -217,6 +234,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
         style={{ width: "100%" }}
         useResizeHandler
       />
+      <BandNote band={band} />
 
       {impNodes.length > 0 && (
         <div className="rbd-importance">
@@ -229,7 +247,9 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
               <tr>
                 <th>Component</th>
                 <th title="Birnbaum importance — sensitivity of system reliability to this component">Birnbaum</th>
-                <th title="Fussell-Vesely — fraction of system unreliability this component contributes to">F-V</th>
+                <th title={`Fussell-Vesely — fraction of system unreliability this component contributes to${importance.fussell_vesely_basis ? ` (from ${importance.fussell_vesely_basis}; this diagram has too many cut sets to derive them all)` : ""}`}>
+                  F-V{importance.fussell_vesely_basis ? "*" : ""}
+                </th>
                 <th title="Risk Achievement Worth — how much worse the system gets if this component fails">RAW</th>
                 <th title="Risk Reduction Worth — how much better the system gets if this component were perfect">RRW</th>
                 <th title="Criticality importance (failure-oriented) — the share of system failures this component accounts for">Crit.</th>
@@ -255,7 +275,11 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
 
       <div className="rbd-sets">
         <div className="rbd-set">
-          <div className="rbd-section-head">Minimal path sets</div>
+          <div className="rbd-section-head">
+            Minimal path sets
+            {result.structure.n_min_path_sets > result.structure.min_path_sets.length &&
+              ` — shortest ${result.structure.min_path_sets.length.toLocaleString()} of ${result.structure.n_min_path_sets.toLocaleString()}`}
+          </div>
           <ul>
             {result.structure.min_path_sets.map((s, i) => (
               <li key={i}>{s.join(" · ")}</li>
@@ -263,7 +287,11 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
           </ul>
         </div>
         <div className="rbd-set">
-          <div className="rbd-section-head">Minimal cut sets</div>
+          <div className="rbd-section-head">
+            Minimal cut sets
+            {result.structure.cut_sets_complete === false &&
+              ` — up to ${result.structure.cut_sets_max_order} blocks (too many to derive them all)`}
+          </div>
           <ul>
             {result.structure.min_cut_sets.map((s, i) => (
               <li key={i}>{s.join(" · ")}</li>
@@ -336,7 +364,10 @@ function importanceRows(result) {
 export function AvailabilityView({ result, unit }) {
   const u = unit ? ` ${unit}` : "";
   const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
-  const a = result.steady_state_availability;
+  // No exact long-run value (block replacement, timed proof tests — #100):
+  // the headline is the simulated availability over the window.
+  const simulatedOnly = result.availability_basis === "simulation";
+  const a = simulatedOnly ? result.precision?.window_availability : result.steady_state_availability;
   const per = result.per_node || [];
   const curve = result.curve;
   const basis = result.figures_basis || {};
@@ -365,10 +396,14 @@ export function AvailabilityView({ result, unit }) {
     <div className="rbd-avail">
       <div className="rbd-avail-hero">
         <div className="rbd-avail-big">{pct(a)}</div>
-        <div className="rbd-avail-cap">Steady-state availability (uptime)</div>
+        <div className="rbd-avail-cap">
+          {simulatedOnly
+            ? `Availability over the ${Number(result.t_simulation.toPrecision(5)).toLocaleString()}${u} window (simulated — no exact long-run value with this maintenance)`
+            : "Steady-state availability (uptime)"}
+        </div>
       </div>
       <div className="rbd-avail-metrics">
-        <div className="alt-metric"><span className="k">Unavailability</span><span className="v">{pct(result.unavailability)}</span></div>
+        <div className="alt-metric"><span className="k">Unavailability</span><span className="v">{pct(simulatedOnly ? (a == null ? null : 1 - a) : result.unavailability)}</span></div>
         <div className="alt-metric" title={basisNote("mean_up_time")}><span className="k">Mean up time</span><span className="v">{fmt(result.mean_up_time)}{u}</span></div>
         <div className="alt-metric" title={basisNote("mean_down_time")}><span className="k">Mean down time</span><span className="v">{fmt(result.mean_down_time)}{u}</span></div>
         <div className="alt-metric" title={basisNote("failure_frequency")}><span className="k">Failure frequency</span><span className="v">{fmt(result.failure_frequency)}{u ? ` /${unit}` : ""}</span></div>
@@ -388,6 +423,9 @@ export function AvailabilityView({ result, unit }) {
           ))}
         </div>
       )}
+
+      <DowntimeSplit result={result} unit={unit} />
+      <AvailabilityCosts result={result} unit={unit} />
 
       {blocks.length > 0 && (
         <div className="rbd-avail-imp">
@@ -440,8 +478,10 @@ export function AvailabilityView({ result, unit }) {
       )}
       <p className="muted-line" style={{ margin: 0 }}>
         Availability curve estimated by {result.n_simulations?.toLocaleString()} Monte-Carlo
-        replications over {fmt(result.t_simulation)}{u}
+        replications{result.precision?.antithetic ? " (in antithetic pairs)" : ""} over {fmt(result.t_simulation)}{u}
         {hasBand ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}.
+        {precisionNote(result)}
+        {result.horizon_shortened && " The window was shortened to keep the simulation quick; the long-run figures don't depend on it."}
         {basis.mean_up_time === "exact" && " Mean up/down time and failure frequency are exact steady-state values."}
       </p>
     </div>
@@ -495,6 +535,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
   const [covValues, setCovValues] = useState({}); // {nodeId: {covName: value}}
   const [calcSig, setCalcSig] = useState(null); // inputs used for the last calc
   const [showCov, setShowCov] = useState(false);
+  const [band, setBand] = useState({ on: false, level: 0.95 }); // confidence band (#103)
 
   const unitLabel = graph.unit ? ` (${graph.unit})` : "";
   const canCalculate = !!validation?.can_calculate && !stale;
@@ -538,7 +579,8 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
 
   // Signature of the calculation inputs, so we can tell when the shown result
   // is out of date with the current "To" / covariate / conditional selections.
-  const inputSig = JSON.stringify({ t: tMax, s: condAge, cov: covPayload() });
+  const bandSig = band.on ? band.level : null;
+  const inputSig = JSON.stringify({ t: tMax, s: condAge, cov: covPayload(), band: bandSig });
   const dirty = result != null && calcSig != null && inputSig !== calcSig;
 
   const runCalculation = async (force = false) => {
@@ -554,7 +596,11 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         cov,
         s,
         // Saved repairable diagrams can be served a saved availability result.
-        { rbdId: graph.repairable ? rbdId : null, force }
+        {
+          rbdId: graph.repairable ? rbdId : null,
+          force,
+          band: band.on && !graph.repairable ? { level: band.level } : null,
+        }
       );
       setResult(res);
       let usedTMax = tMax;
@@ -569,7 +615,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         }
         if (evalT === "") setEvalT(Number((limit / 2).toPrecision(4)));
       }
-      setCalcSig(JSON.stringify({ t: usedTMax, s: condAge, cov }));
+      setCalcSig(JSON.stringify({ t: usedTMax, s: condAge, cov, band: bandSig }));
       setPhase("idle");
     } catch (err) {
       if (err.status === 402 && err.code === "pro_required") {
@@ -671,6 +717,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
               onChange={(e) => setCondAge(e.target.value)}
             />
           </label>
+          <BandControls value={band} onChange={setBand} />
         </div>
       )}
 
@@ -712,6 +759,9 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
 
       {result && !stale && result.kind === "repairable" && (
         <AvailabilityView result={result} unit={graph.unit} />
+      )}
+      {result && !stale && result.kind === "repairable" && (
+        <AvailabilityCompare graph={graph} rbdId={rbdId} result={result} />
       )}
 
       {result && !stale && result.kind !== "repairable" && (

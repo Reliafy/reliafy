@@ -91,7 +91,7 @@ export default function NewModelPage() {
         <div className="card">
           <div className="ds-choose new-model-choose">
             <button className="ds-choice" onClick={() => start("data")}>
-              <span className="ds-choice-h">Upload a CSV</span>
+              <span className="ds-choice-h">Upload a CSV or Excel file</span>
               <span className="ds-choice-b">
                 Drop in a file with a time column (and optionally censoring and
                 covariates) — fit a distribution or PH model with a probability

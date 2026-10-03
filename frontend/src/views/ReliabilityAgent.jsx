@@ -6,7 +6,9 @@ import {
   reliabilityAgentStream,
   listAgentSessions,
   getAgentSession,
+  SPREADSHEET_ACCEPT,
 } from "../api.js";
+import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
 import { renderAgentMarkdown } from "../agentMarkdown.js";
 import { relativeTime } from "../instrument.js";
 
@@ -109,6 +111,7 @@ export default function ReliabilityAgent() {
   const [messages, setMessages] = useState([]); // [{role, text} | {role:'agent', parts:[], status, pending}]
   const [input, setInput] = useState("");
   const [file, setFile] = useState(null);
+  const { toCsv, modal: sheetModal } = useSpreadsheet();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [credit, setCredit] = useState(null);
@@ -351,9 +354,15 @@ export default function ReliabilityAgent() {
           {error && <div className="card error" style={{ marginTop: "0.6rem" }}>{error}</div>}
 
           <div className="chat-composer">
-            <label className="chat-attach" title={file ? file.name : "Attach a CSV"}>
-              <input type="file" accept=".csv,text/csv" style={{ display: "none" }}
-                     disabled={disabled} onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            <label className="chat-attach" title={file ? file.name : "Attach a CSV or Excel file"}>
+              <input type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} style={{ display: "none" }}
+                     disabled={disabled}
+                     onChange={async (e) => {
+                       const picked = e.target.files?.[0] || null;
+                       e.target.value = "";
+                       // A workbook is attached as a CSV of the chosen sheet.
+                       setFile(picked ? await toCsv(picked) : null);
+                     }} />
               {file ? `📎 ${file.name.length > 18 ? file.name.slice(0, 16) + "…" : file.name}` : "📎"}
             </label>
             <textarea
@@ -372,6 +381,7 @@ export default function ReliabilityAgent() {
             />
             <button onClick={send} disabled={disabled || !input.trim()}>{busy ? "…" : "Send"}</button>
           </div>
+          {sheetModal}
         </>
       )}
     </div>

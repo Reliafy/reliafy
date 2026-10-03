@@ -13,7 +13,9 @@ import {
   getDataset,
   fitRecurrent,
   saveRecurrentModel,
+  SPREADSHEET_ACCEPT,
 } from "../api.js";
+import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
 
 // Short blurbs under the model dropdown (keyed by recurrent model id).
 const MODEL_DESC = {
@@ -31,6 +33,8 @@ export default function RecurrentNewPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState(null); // null | "data" | "params"
   const [step, setStep] = useState(1);
+  // An Excel workbook becomes a CSV of the chosen sheet before anything else.
+  const { toCsv, modal: sheetModal } = useSpreadsheet();
 
   const [modelOpts, setModelOpts] = useState([]);
   const [datasets, setDatasets] = useState([]);
@@ -59,7 +63,9 @@ export default function RecurrentNewPage() {
 
   const modelName = modelOpts.find((m) => m.id === model)?.name || "model";
 
-  const pickFile = async (f) => {
+  const pickFile = async (picked) => {
+    if (!picked) return;
+    const f = await toCsv(picked);
     if (!f) return;
     if (f.size > 5 * 1024 * 1024) {
       setError(`That file is ${(f.size / (1024 * 1024)).toFixed(1)} MB — the limit is 5 MB. Try trimming unused columns or rows.`);
@@ -173,7 +179,7 @@ export default function RecurrentNewPage() {
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
-        <span className="hint" style={{ margin: 0 }}>Upload a CSV or pick a dataset to continue</span>
+        <span className="hint" style={{ margin: 0 }}>Upload a CSV or Excel file, or pick a dataset, to continue</span>
       </>
     );
   } else if (step === 2) {
@@ -271,11 +277,12 @@ export default function RecurrentNewPage() {
               ) : file ? (
                 <span className="dz-big filename">{file.name}</span>
               ) : (
-                <span className="dz-big">Drop a CSV here or <strong>click to browse</strong></span>
+                <span className="dz-big">Drop a CSV or Excel file here or <strong>click to browse</strong></span>
               )}
               <span className="dz-hint">long format — one row per event: system id · event time · window</span>
-              <input ref={inputRef} type="file" accept=".csv,text/csv" hidden
-                     onChange={(e) => pickFile(e.target.files?.[0])} />
+              <input ref={inputRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
+                     onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
+              {sheetModal}
             </div>
 
             {datasets.length > 0 && (

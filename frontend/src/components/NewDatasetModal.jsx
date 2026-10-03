@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import PreviewTable from "./PreviewTable.jsx";
-import { pasteDataset, uploadDataset } from "../api.js";
+import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
+import { SPREADSHEET_ACCEPT, isSpreadsheetFile, pasteDataset, uploadDataset } from "../api.js";
 
 // ---- paste preview (client-side sniff, server does the authoritative parse) --
 function sniff(text) {
@@ -61,6 +62,7 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const fileRef = useRef(null);
+  const { chooseSheet, modal: sheetModal } = useSpreadsheet();
 
   // paste
   const [text, setText] = useState("");
@@ -76,9 +78,16 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   // --- upload ---
   const onFile = async (file) => {
     if (!file) return;
+    // An Excel workbook: pick the sheet and header row; the server converts
+    // that sheet to CSV and stores it exactly as the CSV would be.
+    let excel = null;
+    if (isSpreadsheetFile(file)) {
+      excel = await chooseSheet(file);
+      if (!excel) return;
+    }
     setBusy(true); setError(null);
     try {
-      const ds = await uploadDataset(file, name.trim() || undefined, noHeader);
+      const ds = await uploadDataset(file, name.trim() || undefined, excel ? false : noHeader, excel);
       onCreated(ds);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -158,8 +167,8 @@ export default function NewDatasetModal({ onClose, onCreated }) {
       {step === "choose" && (
         <div className="ds-choose">
           <button className="ds-choice" onClick={() => { reset(); setStep("upload"); }}>
-            <span className="ds-choice-h">Upload a CSV</span>
-            <span className="ds-choice-b">Drop or browse for a .csv file.</span>
+            <span className="ds-choice-h">Upload a CSV or Excel file</span>
+            <span className="ds-choice-b">Drop or browse for a .csv or .xlsx file.</span>
           </button>
           <button className="ds-choice" onClick={() => { reset(); setStep("enter"); }}>
             <span className="ds-choice-h">Enter data</span>
@@ -182,14 +191,16 @@ export default function NewDatasetModal({ onClose, onCreated }) {
                 <path d="M12 16V4m0 0 4 4m-4-4-4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
               </svg>
             </span>
-            <span className="dz-big">{busy ? "Reading…" : <>Drop a CSV here or <strong>click to browse</strong></>}</span>
-            <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={(e) => onFile(e.target.files?.[0])} />
+            <span className="dz-big">{busy ? "Reading…" : <>Drop a CSV or Excel file here or <strong>click to browse</strong></>}</span>
+            <input ref={fileRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
+                   onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
           </div>
           <label className="ds-check">
             <input type="checkbox" checked={noHeader} onChange={(e) => setNoHeader(e.target.checked)} />
-            <span>No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, …</span>
+            <span>No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, … (for an Excel file you choose the header row next)</span>
           </label>
           {error && <div className="error">{error}</div>}
+          {sheetModal}
         </div>
       )}
 

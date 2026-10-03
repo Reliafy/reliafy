@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
-from fastapi import APIRouter, Body, Depends
+import os
+
+from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 
+from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.services import rbd_import
 from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
@@ -17,6 +22,7 @@ from backend.services import usage as usage_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import Rbd
 from backend.services.rbd_analysis import AnalysisError
+from backend.services.rbd_graph import GraphError, normalize_graph
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -29,6 +35,7 @@ def _summary(rbd, ctx: AccessCtx) -> dict:
         "name": rbd.name,
         "n_nodes": len(graph.get("nodes", [])),
         "n_edges": len(graph.get("edges", [])),
+        "repairable": bool(graph.get("repairable")),
         "created_at": rbd.created_at.isoformat(),
         "updated_at": rbd.updated_at.isoformat(),
         "is_sample": samples_service.is_sample(rbd.owner_id),
@@ -85,6 +92,83 @@ def save_rbd(
     access_service.stamp_editor(session, "rbds", rbd.id, ctx)
     rbd.updated_by = access_service.editor_of(ctx)
     return JSONResponse(content=_summary(rbd, ctx))
+
+
+@router.get("/rbds/import/template.xlsx")
+def rbd_import_template(user: dict = Depends(get_current_user)) -> Response:
+    """The Excel template for importing a diagram: a README sheet, and Blocks
+    + Connections sheets holding a small worked example."""
+    from backend.services.rbd_import import excel as rbd_excel
+
+    return Response(
+        content=rbd_excel.build_template(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="reliafy-rbd-template.xlsx"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.post("/rbds/import")
+def import_rbd_file(
+    file: UploadFile = File(...),
+    mapping: str | None = Form(default=None),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Parse another tool's diagram file into builder graphs — nothing is saved.
+
+    The builder opens the chosen diagram unsaved, so the usual save (and the
+    free-plan cap) applies when the user keeps it.
+
+    ``mapping`` (JSON, Excel workbooks only) names the sheets and columns
+    holding the blocks and connections. Without it a workbook must follow the
+    template; one that doesn't is refused with ``code: "excel_mapping"`` so
+    the frontend can ask the user to map its columns.
+    """
+    data = file.file.read(rbd_import.MAX_UPLOAD_BYTES + 1)
+    ext = os.path.splitext(file.filename or "")[1].lower()[:12]
+    kwargs = {}
+    if mapping:
+        try:
+            kwargs["excel_mapping"] = json.loads(mapping)
+        except ValueError:
+            return JSONResponse(status_code=422, content={"detail": "The column mapping isn't valid JSON."})
+    try:
+        diagrams = rbd_import.import_file(data, file.filename or "", **kwargs)
+    except rbd_import.RbdImportError as exc:
+        logger.info("RBD import refused: ext=%s bytes=%d — %s", ext, len(data), exc)
+        content = {"detail": str(exc)}
+        if getattr(exc, "code", None):
+            content["code"] = exc.code
+        return JSONResponse(status_code=422, content=content)
+    except Exception:  # untrusted input: never 500 on a malformed file
+        logger.exception("RBD import failed: ext=%s bytes=%d", ext, len(data))
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Couldn't read this file — it may be damaged or from an unsupported version."},
+        )
+
+    out = []
+    for d in diagrams:
+        try:
+            graph = normalize_graph(d.graph)
+        except GraphError as exc:
+            out.append({"name": d.name, "source_format": d.source_format, "error": str(exc), "warnings": d.warnings})
+            continue
+        out.append({
+            "name": d.name,
+            "source_format": d.source_format,
+            "warnings": d.warnings,
+            "graph": graph,
+            "n_nodes": len(graph["nodes"]),
+            "n_edges": len(graph["edges"]),
+        })
+    logger.info(
+        "RBD import: format=%s ext=%s diagrams=%d ok=%d",
+        diagrams[0].source_format, ext, len(out), sum(1 for d in out if "graph" in d),
+    )
+    return JSONResponse(content={"diagrams": out})
 
 
 @router.get("/rbds/{rbd_id}")
@@ -201,6 +285,7 @@ def analyze_graph(
     t_max: float | None = Body(default=None),
     covariates: dict = Body(default={}),
     conditional_age: float | None = Body(default=None),
+    band: dict | None = Body(default=None),
     rbd_id: str | None = Body(default=None),
     force: bool = Body(default=False),
     session=Depends(get_session),
@@ -211,7 +296,9 @@ def analyze_graph(
     ``t_max`` is the upper limit of the time axis to compute over.
     ``covariates`` maps node id -> covariate values for proportional-hazards
     nodes. ``conditional_age`` conditions the curves on having already survived
-    to that age (so the result is the conditional survival).
+    to that age (so the result is the conditional survival). ``band``
+    (``{"level": 0.95}``) adds a confidence band from the fitted blocks'
+    parameter uncertainty.
 
     Repairable graphs run the (paid) availability simulation. ``rbd_id`` names
     the saved diagram being edited so a saved result can be served / stored;
@@ -231,6 +318,7 @@ def analyze_graph(
                 t_max=t_max,
                 covariates=covariates,
                 conditional_age=conditional_age,
+                band=band,
             )
         )
     except AnalysisError as exc:

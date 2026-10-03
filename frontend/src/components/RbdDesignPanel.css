@@ -1,0 +1,179 @@
+/* "Design for a target" panel (redundancy allocation) on the RBD builder. */
+.rbd-design {
+  max-width: 1100px;
+}
+
+.rbd-design-intro {
+  margin: 0.2rem 0 1rem;
+}
+
+.rbd-design-goal {
+  justify-content: flex-start;
+}
+
+.rbd-design-goal .calc-t input {
+  width: 9rem;
+}
+
+.rbd-design-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.1rem;
+  margin: 0 0 0.9rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.rbd-design-toggles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.rbd-design-scroll {
+  overflow-x: auto;
+}
+
+.rbd-design-table td,
+.rbd-design-table th {
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.rbd-design-table tr.off td {
+  opacity: 0.55;
+}
+
+.rbd-design-table tr.off td.rbd-design-block {
+  opacity: 1;
+}
+
+.rbd-design-block {
+  text-align: left !important;
+}
+
+.rbd-design-block label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.rbd-design-block label input {
+  margin-top: 0.2rem;
+}
+
+.rbd-design-block label span {
+  display: flex;
+  flex-direction: column;
+  white-space: normal;
+  max-width: 17rem;
+}
+
+.rbd-design-block small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.rbd-design-num {
+  width: 6rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.3rem 0.45rem;
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+.rbd-design-num.sm {
+  width: 3.8rem;
+}
+
+.rbd-design-num:disabled {
+  background: var(--panel-2);
+}
+
+.rbd-design-strategy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+  min-width: 9.5rem;
+}
+
+.rbd-design-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.rbd-design-type td {
+  background: var(--panel-2);
+}
+
+.rbd-design-type-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 1.4rem;
+}
+
+.rbd-design-type-name input {
+  width: 8rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.85rem;
+}
+
+.rbd-design-type-note {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: left !important;
+}
+
+.rbd-design-fixed {
+  margin-top: 0.2rem;
+}
+
+.rbd-design-result {
+  margin-top: 0.4rem;
+}
+
+.rbd-design-head {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  margin-top: 1.2rem;
+}
+
+.rbd-design-out tr.changed td {
+  font-weight: 600;
+}
+
+.rbd-design-applied {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.rbd-design-applied p {
+  margin: 0;
+}
+
+.rbd-design-applied-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.rbd-design-table thead th:first-child,
+.rbd-design-out thead th:first-child {
+  text-align: left;
+}

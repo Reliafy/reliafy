@@ -43,6 +43,13 @@ const Chevron = ({ open }) => (
   </svg>
 );
 
+// "1 month", "2 months": units are stored as typed (usually plural), so
+// singularise them for an interval of exactly 1.
+function intervalUnit(interval, unit) {
+  const u = unit || "";
+  return Number(interval) === 1 && /[a-z]s$/i.test(u) ? u.slice(0, -1) : u;
+}
+
 // Inline-editable node label: click the pencil (or the placeholder) to edit,
 // Enter/blur to commit.
 function NodeText({ text, placeholder, readOnly, onCommit }) {
@@ -88,7 +95,7 @@ function DecisionChip({ mode, readOnly, onEdit }) {
     );
   }
   let label = OUTCOME_LABEL[d.outcome] || d.outcome;
-  if (d.interval != null) label += ` · ${d.interval} ${d.interval_unit || ""}`.trimEnd();
+  if (d.interval != null) label += ` · ${d.interval} ${intervalUnit(d.interval, d.interval_unit)}`.trimEnd();
   return (
     <button
       className={"decision-chip" + (readOnly ? "" : " clickable")}
@@ -227,6 +234,12 @@ export default function RcmTree({ functions, readOnly, onChange, onEditDecision 
                                 </div>
                               )}
                             </div>
+                            {(mode.effects || mode.notes) && (
+                              <div className="mode-detail">
+                                {mode.effects && <span><b>Effects</b> {mode.effects}</span>}
+                                {mode.notes && <span className="mode-notes">{mode.notes}</span>}
+                              </div>
+                            )}
                             {(d?.summary || d?.reason || d?.artifact_name) && (
                               <div className="mode-evidence">
                                 {d.artifact_name && d.artifact_link_path && (
