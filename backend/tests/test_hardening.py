@@ -212,3 +212,93 @@ def test_rbd_conflict_and_attribution(client):
     stale = client.post("/api/rbds", json={"name": "D3", "graph": graph, "id": saved["id"],
                                            "expected_updated_at": loaded_at})
     assert stale.status_code == 409 and stale.json()["code"] == "conflict"
+
+
+@pytest.mark.parametrize("gap_us", [0, 300, 999])
+def test_saves_within_a_millisecond_still_conflict(client, monkeypatch, gap_us):
+    """#91: a save landing within 1 ms of the one before (here the clock is
+    frozen there) used to match the earlier ``loaded_at`` under the old 1 ms
+    tolerance, so a stale save went through. Every write is now stamped at
+    least 1 ms after the one it replaces."""
+    from datetime import timedelta, timezone
+
+    from backend.services import access
+
+    client.act_as(A)
+    graph = {"nodes": [{"id": "input", "type": "input"}, {"id": "output", "type": "output"}],
+             "edges": [{"source": "input", "target": "output"}]}
+    saved = client.post("/api/rbds", json={"name": "D", "graph": graph}).json()
+    loaded_at = saved["updated_at"]
+    stored = client.db.rbds.find_one({"_id": saved["id"]})["updated_at"].replace(tzinfo=timezone.utc)
+    frozen = stored + timedelta(microseconds=gap_us)
+    monkeypatch.setattr(access, "_utcnow", lambda: frozen)
+
+    ok = client.post("/api/rbds", json={"name": "D2", "graph": graph, "id": saved["id"],
+                                        "expected_updated_at": loaded_at})
+    assert ok.status_code == 200
+    assert ok.json()["updated_at"] != loaded_at
+    stale = client.post("/api/rbds", json={"name": "D3", "graph": graph, "id": saved["id"],
+                                           "expected_updated_at": loaded_at})
+    assert stale.status_code == 409 and stale.json()["code"] == "conflict"
+    # The stamp handed back is exactly the stored one, and still saves.
+    again = client.post("/api/rbds", json={"name": "D4", "graph": graph, "id": saved["id"],
+                                           "expected_updated_at": ok.json()["updated_at"]})
+    assert again.status_code == 200
+    assert client.db.rbds.find_one({"_id": saved["id"]})["name"] == "D4"
+
+    # The same for an RCM study's tree (and a fleet's items: same helpers).
+    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
+    tree = {"functions": [{"text": "Fn", "failures": []}]}
+    first = client.put(f"/api/rcm/studies/{sid}/tree", json=tree).json()["updated_at"]
+    assert client.put(f"/api/rcm/studies/{sid}/tree",
+                      json={**tree, "expected_updated_at": first}).status_code == 200
+    r = client.put(f"/api/rcm/studies/{sid}/tree", json={**tree, "expected_updated_at": first})
+    assert r.status_code == 409
+
+
+def test_conditional_write_catches_a_save_racing_the_check(client, monkeypatch):
+    """Two saves that both pass the stamp check (they read before either
+    wrote): the second write's condition misses, so it conflicts instead of
+    overwriting."""
+    from backend.services import access
+    from backend.services import rbds as rbds_service
+
+    client.act_as(A)
+    graph = {"nodes": [{"id": "input", "type": "input"}, {"id": "output", "type": "output"}],
+             "edges": [{"source": "input", "target": "output"}]}
+    saved = client.post("/api/rbds", json={"name": "D", "graph": graph}).json()
+    loaded_at = saved["updated_at"]
+
+    # The other editor's save lands between this save's check and its write.
+    real = access.timestamps_match
+
+    def check_then_race(stored, expected):
+        matched = real(stored, expected)
+        monkeypatch.setattr(access, "timestamps_match", real)
+        rbds_service.save_rbd(client.db, "Theirs", graph, A, rbd_id=saved["id"],
+                              expected_updated_at=loaded_at)
+        return matched
+
+    monkeypatch.setattr(access, "timestamps_match", check_then_race)
+    mine = client.post("/api/rbds", json={"name": "Mine", "graph": graph, "id": saved["id"],
+                                          "expected_updated_at": loaded_at})
+    assert mine.status_code == 409
+    assert client.db.rbds.find_one({"_id": saved["id"]})["name"] == "Theirs"
+
+
+def test_timestamps_match_at_millisecond_precision():
+    from datetime import datetime, timedelta, timezone
+
+    from backend.services import access
+
+    t = datetime(2026, 10, 3, 12, 0, 0, 123000, tzinfo=timezone.utc)
+    # What the client loaded (microseconds, or an offset) vs what Mongo kept.
+    assert access.timestamps_match(t.replace(tzinfo=None), "2026-10-03T12:00:00.123456+00:00")
+    assert access.timestamps_match(t, "2026-10-03T22:00:00.123+10:00")
+    assert not access.timestamps_match(t + timedelta(milliseconds=1), "2026-10-03T12:00:00.123456+00:00")
+    assert not access.timestamps_match(t, "not a time")
+    # A new stamp is never within the same millisecond as the previous one,
+    # even one ahead of this clock.
+    ahead = access.next_updated_at() + timedelta(days=1)
+    assert access.next_updated_at(ahead) == ahead + timedelta(milliseconds=1)
+    assert access.next_updated_at(t) > t and access.next_updated_at(t).microsecond % 1000 == 0

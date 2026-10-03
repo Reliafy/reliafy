@@ -11,7 +11,6 @@ study is loaded.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
 from backend.services import access
 from backend.db import from_doc, to_doc
@@ -93,10 +92,6 @@ EXPECTED_EVIDENCE = {
 }
 
 
-def _now():
-    return datetime.now(timezone.utc)
-
-
 # ---- CRUD -------------------------------------------------------------------
 
 def create_study(db, name: str, system: str, description: str, owner_id: str) -> RcmStudy:
@@ -135,7 +130,7 @@ def rename_study(db, study_id: str, name: str, owner_id: str) -> RcmStudy:
     if study is None or study.owner_id != owner_id:
         raise StudyNotFound(study_id)
     study.name = name
-    study.updated_at = _now()
+    study.updated_at = access.next_updated_at(study.updated_at)
     db.rcm_studies.update_one(
         {"_id": study_id, "owner_id": owner_id},
         {"$set": {"name": name, "updated_at": study.updated_at}},
@@ -262,15 +257,19 @@ def replace_tree(db, study_id: str, functions, owner_id: str,
     study = get_study(db, study_id, owner_id)
     if study is None or study.owner_id != owner_id:
         raise StudyNotFound(study_id)
+    query = {"_id": study_id, "owner_id": owner_id}
     if expected_updated_at and study.updated_at is not None:
         if not access.timestamps_match(study.updated_at, expected_updated_at):
             raise access.EditConflict()
+        # Conditional on the stamp checked: a save racing in between conflicts.
+        query["updated_at"] = study.updated_at
     study.functions = clean_tree(functions)
-    study.updated_at = _now()
-    db.rcm_studies.update_one(
-        {"_id": study_id, "owner_id": owner_id},
-        {"$set": {"functions": study.functions, "updated_at": study.updated_at}},
+    study.updated_at = access.next_updated_at(study.updated_at)
+    result = db.rcm_studies.update_one(
+        query, {"$set": {"functions": study.functions, "updated_at": study.updated_at}},
     )
+    if result.matched_count == 0:
+        raise access.EditConflict()
     return study
 
 

@@ -34,22 +34,26 @@ def save_rbd(db, name: str, graph: dict, owner_id: str, rbd_id: str | None = Non
 
     ``expected_updated_at`` (the isoformat the client loaded) makes the update
     optimistic: a mismatch raises :class:`access.EditConflict` instead of
-    overwriting another editor's save.
+    overwriting another editor's save. The write is conditional on the stamp
+    it checked, so a save racing in between conflicts too.
     """
     if rbd_id:
         existing = db.rbds.find_one({"_id": rbd_id, "owner_id": owner_id})
         if existing is not None:
+            query = {"_id": rbd_id, "owner_id": owner_id}
             if expected_updated_at and existing.get("updated_at") is not None:
                 if not access.timestamps_match(existing["updated_at"], expected_updated_at):
                     raise access.EditConflict()
+                query["updated_at"] = existing["updated_at"]
             rbd = from_doc(Rbd, existing)
             rbd.name = name
             rbd.graph = graph
-            rbd.updated_at = datetime.now(timezone.utc)
-            db.rbds.update_one(
-                {"_id": rbd_id, "owner_id": owner_id},
-                {"$set": {"name": name, "graph": graph, "updated_at": rbd.updated_at}},
+            rbd.updated_at = access.next_updated_at(existing.get("updated_at"))
+            result = db.rbds.update_one(
+                query, {"$set": {"name": name, "graph": graph, "updated_at": rbd.updated_at}},
             )
+            if result.matched_count == 0:
+                raise access.EditConflict()
             return rbd
 
     rbd = Rbd(id=uuid.uuid4().hex, name=name, owner_id=owner_id, graph=graph)
@@ -81,7 +85,7 @@ def rename_rbd(db, rbd_id: str, name: str, owner_id: str) -> Rbd:
     if rbd is None or rbd.owner_id != owner_id:
         raise RbdNotFound(rbd_id)
     rbd.name = name
-    rbd.updated_at = datetime.now(timezone.utc)
+    rbd.updated_at = access.next_updated_at(rbd.updated_at)
     db.rbds.update_one(
         {"_id": rbd_id, "owner_id": owner_id},
         {"$set": {"name": name, "updated_at": rbd.updated_at}},
