@@ -119,7 +119,7 @@ RBD GRAPH schema (for set_current_rbd / save_rbd / validate_rbd). A diagram is {
 - Component: { id, type:"component", data:{ label, model:{ distribution_id, params:[{name,value},...], placeholder?:true } } }. Params by distribution: weibull [alpha (scale), beta (shape)], exponential [failure_rate], normal/lognormal [mu, sigma], gamma [alpha, beta]. Put "placeholder": true inside model ONLY for a guessed starting-point model (see RBD PLACEHOLDERS).
 - Series block (n identical units in series): { id, type:"series", data:{ label, n:<int>, model:{...} } }. Parallel block (n identical in parallel): type:"parallel" with the same shape.
 - k-of-n voting gate: { id, type:"knode", data:{ n:<required>, k:<branches> } } — it requires n of the branches feeding into it to work (e.g. "2 of 3 pumps": three component nodes each feeding one knode with n:2, which feeds the next stage).
-- Standby redundancy: { id, type:"standby", data:{ label, cold:<bool>, spares:<int>, model:{...} } }.
+- Standby redundancy: { id, type:"standby", data:{ label, cold:<bool>, dormancy:<0..1, optional>, spares:<int>, model:{...} } }. dormancy is how fast an idle spare ages relative to a running one: 0 cold, 1 hot, in between warm (e.g. 0.2); it overrides cold.
 - Sub-system (embed a saved RBD): { id, type:"subsystem", data:{ label, rbd:{ id:"<saved rbd id>" } } }.
 - edges: [{ source:"<node id>", target:"<node id>" }]. For two parallel blocks, fan out from the upstream node to each, and from each to the downstream node.
 - unit: the diagram's time unit ("Hours", "Days", "Cycles", ...) — pass it to set_current_rbd / save_rbd; every model's parameters are read in that unit.

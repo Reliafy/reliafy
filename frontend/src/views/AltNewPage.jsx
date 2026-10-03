@@ -5,8 +5,9 @@ import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import AltResultView from "../components/AltResultView.jsx";
 import {
-  getAltOptions, getColumns, listDatasets, getDataset, fitAlt, saveAltModel,
+  getAltOptions, getColumns, listDatasets, getDataset, fitAlt, saveAltModel, SPREADSHEET_ACCEPT,
 } from "../api.js";
+import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
 
 const STEPS = ["Source", "Model", "Data", "Result"];
 
@@ -16,6 +17,8 @@ const STEPS = ["Source", "Model", "Data", "Result"];
 export default function AltNewPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
+  // An Excel workbook becomes a CSV of the chosen sheet before anything else.
+  const { toCsv, modal: sheetModal } = useSpreadsheet();
 
   const [lifeModels, setLifeModels] = useState([]);
   const [dists, setDists] = useState([]);
@@ -65,7 +68,9 @@ export default function AltNewPage() {
     setStress(Array.from({ length: nStress }, (_, j) => ({ col: columns[j + 1] || "", label: "" })));
   };
 
-  const pickFile = async (f) => {
+  const pickFile = async (picked) => {
+    if (!picked) return;
+    const f = await toCsv(picked);
     if (!f) return;
     if (f.size > 5 * 1024 * 1024) {
       setError(`That file is ${(f.size / (1024 * 1024)).toFixed(1)} MB — the limit is 5 MB.`);
@@ -145,7 +150,7 @@ export default function AltNewPage() {
   let nav;
   if (step === 1) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
-      <span className="hint" style={{ margin: 0 }}>Upload a CSV or pick a dataset to continue</span></>);
+      <span className="hint" style={{ margin: 0 }}>Upload a CSV or Excel file, or pick a dataset, to continue</span></>);
   } else if (step === 2) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
       <button onClick={() => setStep(3)}>Next</button></>);
@@ -187,9 +192,11 @@ export default function AltNewPage() {
               </span>
               {loading ? <span className="dz-big">Reading file…</span>
                 : file ? <span className="dz-big filename">{file.name}</span>
-                : <span className="dz-big">Drop a CSV here or <strong>click to browse</strong></span>}
+                : <span className="dz-big">Drop a CSV or Excel file here or <strong>click to browse</strong></span>}
               <span className="dz-hint">one row per unit: failure time · stress level(s) · optional censoring</span>
-              <input ref={inputRef} type="file" accept=".csv,text/csv" hidden onChange={(e) => pickFile(e.target.files?.[0])} />
+              <input ref={inputRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
+                     onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
+              {sheetModal}
             </div>
             {datasets.length > 0 && (
               <div className="recent">
