@@ -7,6 +7,7 @@ import CovariatesModal from "./CovariatesModal.jsx";
 import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
 import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
+import AvailabilityPolicies from "./AvailabilityPolicies.jsx";
 import { precisionNote } from "./availabilityPrecision.js";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
@@ -430,6 +431,7 @@ export function AvailabilityView({ result, unit }) {
 
       <DowntimeSplit result={result} unit={unit} />
       <AvailabilityCosts result={result} unit={unit} />
+      <AvailabilityPolicies result={result} />
 
       {blocks.length > 0 && (
         <div className="rbd-avail-imp">

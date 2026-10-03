@@ -26,6 +26,7 @@ import RbdCalculator from "../components/RbdCalculator.jsx";
 import RbdFaultTree from "../components/RbdFaultTree.jsx";
 import RbdDesignPanel from "../components/RbdDesignPanel.jsx";
 import RbdCostsModal from "../components/RbdCostsModal.jsx";
+import RbdCrewsModal from "../components/RbdCrewsModal.jsx";
 import { applyBlockExtras } from "../components/RbdBlockCosts.jsx";
 import ValidationPanel, { graphSignature } from "../components/RbdValidation.jsx";
 import { saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP } from "../api.js";
@@ -176,6 +177,15 @@ const EDGE_OPTIONS = {
   markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
 };
 
+// A repairable diagram's crews, groups and safety settings (#156, #157): the
+// graph keys that are set.
+const POLICY_KEYS = ["repair_crews", "maintenance_groups", "safety_function", "target_sil"];
+function policyFields(policies) {
+  const out = {};
+  for (const k of POLICY_KEYS) if (policies?.[k]) out[k] = policies[k];
+  return out;
+}
+
 function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -202,7 +212,14 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   const [ccfGroups, setCcfGroups] = useState([]);
   // Diagram-level costs of a repairable diagram (#99): {downtime_rate, horizon}.
   const [diagramCosts, setDiagramCosts] = useState(null);
-  const costsField = useMemo(() => (diagramCosts ? { costs: diagramCosts } : {}), [diagramCosts]);
+  // Repair crews, maintenance groups and a safety function (#156, #157):
+  // {repair_crews, maintenance_groups, safety_function, target_sil}.
+  const [policies, setPolicies] = useState({});
+  // Carried with the diagram wherever the costs are (save, validate, analyse).
+  const costsField = useMemo(
+    () => ({ ...(diagramCosts ? { costs: diagramCosts } : {}), ...policyFields(policies) }),
+    [diagramCosts, policies]
+  );
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
   const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'tree' | 'design' | 'outages'
   const [validation, setValidation] = useState(null);
@@ -538,7 +555,15 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === standbyCtx?.nodeId
-            ? { ...node, data: { ...node.data, ...config } }
+            ? {
+                ...node,
+                // A repairable group's costs, priority and own repairer (#156):
+                // a null removes the key, as for a component's extras.
+                data: applyBlockExtras({ ...node.data, ...config }, {
+                  costs: config.costs, crew_priority: config.crew_priority,
+                  repair_one_at_a_time: config.repair_one_at_a_time,
+                }),
+              }
             : node
         )
       );
@@ -622,6 +647,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       setRepairable(!!graph?.repairable);
       setCcfGroups(graph?.ccf_groups || []);
       setDiagramCosts(graph?.costs || null);
+      setPolicies(policyFields(graph));
       setSavedRbdId(id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
@@ -648,6 +674,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     setRepairable(false);
     setCcfGroups([]);
     setDiagramCosts(null);
+    setPolicies({});
     setSavedRbdId(null);
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
@@ -670,6 +697,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     if (graph.repairable != null) setRepairable(!!graph.repairable);
     if (graph.ccf_groups != null) setCcfGroups(graph.ccf_groups);
     if (graph.costs !== undefined) setDiagramCosts(graph.costs || null);
+    if (POLICY_KEYS.some((k) => graph[k] !== undefined)) setPolicies(policyFields(graph));
     window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
   }, [setNodes, setEdges, fitView]);
 
@@ -829,6 +857,12 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     [setEdges]
   );
 
+  // The maintenance groups the blocks name (#157), for the group pickers.
+  const groupNames = useMemo(
+    () => [...new Set(nodes.map((n) => n.data?.maintenance_group).filter(Boolean))].sort(),
+    [nodes]
+  );
+
   // Common-cause: id -> beta (for the node badge), and the currently-selected
   // component nodes (the candidates for a new group).
   const ccfMap = useMemo(() => {
@@ -971,12 +1005,24 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
               Costs
             </button>
           )}
+          {repairable && (
+            <button
+              className={"rbd-costs-toggle" + (Object.keys(policyFields(policies)).length ? " set" : "")}
+              onClick={() => setModal("crews")}
+              title="Repair crews shared by the blocks, maintenance groups' set-up costs, and a safety function's PFDavg / SIL"
+            >
+              {policies.repair_crews?.crews
+                ? `${policies.repair_crews.crews} crew${policies.repair_crews.crews === 1 ? "" : "s"}`
+                : "Crews"}
+              {policies.safety_function ? " · SIF" : ""}
+            </button>
+          )}
           {/* Common-cause groups sit with the other diagram-level settings, as a
               chip that expands on demand. They used to float bottom-left, where
               they collided with the zoom controls and the hint bubble; a chip
               keeps the overlay one row tall so it doesn't cover the top of the
               diagram either. */}
-          {!repairable && ccfGroups.length > 0 && (
+          {(!repairable || policies.safety_function) && ccfGroups.length > 0 && (
             <div className="rbd-ccf-menu">
               <button
                 className={"rbd-ccf-toggle" + (ccfListOpen ? " open" : "")}
@@ -1037,7 +1083,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
             {validating ? "Validating…" : "Validate"}
           </button>
           </div>
-        {!repairable && selectedComponentIds.length >= 2 && (
+        {(!repairable || policies.safety_function) && selectedComponentIds.length >= 2 && (
           <div className="rbd-toolbar-float">
             <button className="rbd-btn accent" onClick={openCcfForSelection}
                     title="Couple these redundant components by a shared failure cause">
@@ -1101,11 +1147,12 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
               >
                 Add n-out-of-k node
               </button>
+              {/* A standby group works in both: repairable, its units are each repaired (#156). */}
+              <button onClick={() => { addBlock("standby", menu.flow); closeMenu(); }}>
+                Add standby node
+              </button>
               {!repairable && (
                 <>
-                  <button onClick={() => { addBlock("standby", menu.flow); closeMenu(); }}>
-                    Add standby node
-                  </button>
                   <button onClick={() => { addBlock("loadshare", menu.flow); closeMenu(); }}>
                     Add load-sharing node
                   </button>
@@ -1321,6 +1368,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         <LifeModelModal
           initial={nodes.find((n) => n.id === modalNodeId)?.data}
           repairable={repairable}
+          crews={!!policies.repair_crews}
+          groups={groupNames}
           onClose={() => {
             setModal(null);
             setModalNodeId(null);
@@ -1366,6 +1415,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       {modal === "standby" && (
         <StandbyModal
           initial={standbyCtx}
+          repairable={repairable}
+          crews={!!policies.repair_crews}
           onClose={() => {
             setModal(null);
             setStandbyCtx(null);
@@ -1388,6 +1439,14 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
           unit={rbdUnit}
           onClose={() => setModal(null)}
           onSubmit={(c) => { setDiagramCosts(c); setModal(null); }}
+        />
+      )}
+      {modal === "crews" && (
+        <RbdCrewsModal
+          initial={policies}
+          groupNames={groupNames}
+          onClose={() => setModal(null)}
+          onSubmit={(p) => { setPolicies(policyFields(p)); setModal(null); }}
         />
       )}
       {modal === "saverbd" && (
