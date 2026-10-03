@@ -24,9 +24,18 @@ becomes the number of copies) can be given copies — not a repeated block (one
 component drawn in several places, #102), which is refused explicitly; the
 rest of a diagram with repeated blocks is designed as usual. Everything else in the
 diagram — sub-systems, standby, k-of-n gates, load-sharing and series blocks —
-stays as drawn. Repairable diagrams and diagrams with common-cause groups are
-refused: the library allocates over reliability at a mission time, and does not
-yet extend a common-cause group to the copies of its members.
+stays as drawn. Repairable diagrams are refused here: the library allocates
+over reliability at a mission time (their cheapest design is #99's).
+
+Common-cause (beta-factor) groups are scored in every candidate design
+(RePyability 0.11, #140): a copy of a group member joins its group, so the
+shared cause that fails the member fails each of its copies too, with the
+group's ``beta`` unchanged at the larger size. Such a member's copies are
+active copies of its own model (``required`` of them needed): no alternative
+types and no cold spares, which the library doesn't model in a group.
+:func:`apply_design` draws each copy of a member as its own component and adds
+it to the member's group, so the applied diagram analyses to the reliability
+the design reported.
 """
 
 from __future__ import annotations
@@ -119,13 +128,25 @@ def _check_graph(graph: dict) -> dict:
             "Redundancy design works on non-repairable diagrams (reliability at a "
             "mission time). Switch the diagram to Non-repairable to design it."
         )
-    if graph.get("ccf_groups"):
-        raise DesignError(
-            "Redundancy design doesn't yet account for common-cause groups: a copy "
-            "of a group member would have to join its group. Remove the groups to "
-            "design the diagram, then add them back to the design you choose."
-        )
     return {n.get("id"): n for n in graph.get("nodes") or [] if isinstance(n, dict)}
+
+
+def _group_index(graph: dict) -> dict:
+    """Each node's common-cause group as drawn: ``{node id: index into
+    graph['ccf_groups']}``."""
+    out: dict = {}
+    for i, g in enumerate(graph.get("ccf_groups") or []):
+        if isinstance(g, dict):
+            for m in g.get("members") or []:
+                out.setdefault(m, i)
+    return out
+
+
+def _beta_text(group: dict) -> str:
+    try:
+        return f"{float(group.get('beta')):g}"
+    except (TypeError, ValueError):
+        return str(group.get("beta"))
 
 
 def _parse_blocks(graph: dict, raw_blocks) -> list[dict]:
@@ -133,6 +154,7 @@ def _parse_blocks(graph: dict, raw_blocks) -> list[dict]:
     each type uses, the life model of each type, and the redundancy options."""
     nodes = _check_graph(graph)
     repeated = set(rbd_repeats.find_repeats(list(nodes.values()))[0].values())
+    groups = _group_index(graph)
     if not isinstance(raw_blocks, list) or not raw_blocks:
         raise DesignError("Choose at least one block to design.")
     if len(raw_blocks) > MAX_BLOCKS:
@@ -168,6 +190,14 @@ def _parse_blocks(graph: dict, raw_blocks) -> list[dict]:
             )
         if not data.get("model"):
             raise DesignError(f"“{label}” has no life model — set one to design it.")
+        group = groups.get(bid)
+        if group is not None and ntype != "component":
+            # As drawn the whole block is one member; designed, each unit would
+            # have to join the group, which changes what the group means.
+            raise DesignError(
+                f"“{label}” is a parallel block in a common-cause group, so it can't be "
+                "given copies here. Draw its units as separate components in the group "
+                "to design it.")
         max_copies = _integer(raw.get("max_copies", 3), f"“{label}”: the most copies", 1, MAX_COPIES)
         required = _integer(raw.get("required", 1), f"“{label}”: the copies that must work", 1, max_copies)
         strategy = raw.get("strategy") or "active"
@@ -191,6 +221,16 @@ def _parse_blocks(graph: dict, raw_blocks) -> list[dict]:
         alternatives = raw.get("types") or []
         if not isinstance(alternatives, list):
             raise DesignError(f"“{label}”: the alternative types must be a list.")
+        if group is not None and strategy != "active":
+            raise DesignError(
+                f"“{label}” is in a common-cause group: its copies join the group as "
+                "active copies (a shared cause striking cold spares isn't modelled), so "
+                "use active redundancy for it.")
+        if group is not None and alternatives:
+            raise DesignError(
+                f"“{label}” is in a common-cause group, whose members are identical: "
+                "its copies join the group as copies of it, so it can't take "
+                "alternative component types.")
         if len(alternatives) + 1 > MAX_TYPES:
             raise DesignError(f"“{label}”: give at most {MAX_TYPES - 1} alternative types.")
         for i, alt in enumerate(alternatives, start=1):
@@ -215,6 +255,7 @@ def _parse_blocks(graph: dict, raw_blocks) -> list[dict]:
             "strategy": strategy,
             "switching": switching,
             "types": types,
+            "group": group,
         })
     return blocks
 
@@ -413,7 +454,9 @@ def design_redundancy(
             ty["amounts"] = {r: ty["amounts"].get(r, 0.0) for r in resources}
 
     ids = {b["id"] for b in parsed}
-    rbd, _labels, reliabilities = _build(_stripped(graph, ids), resolve_model, resolve_subsystem)
+    # The diagram's common-cause groups come with it: every candidate design
+    # is scored with them, a grouped block's copies joining its group.
+    rbd, labels, reliabilities = _build(_stripped(graph, ids), resolve_model, resolve_subsystem)
     for b in parsed:
         b["models"] = [reliabilities[b["id"]]] + [
             _type_model(b, ty, resolve_model) for ty in b["types"][1:]
@@ -505,7 +548,31 @@ def design_redundancy(
         "method": best.method,
         "front": front,
         "front_note": front_note,
+        "common_cause": _common_cause(graph, rbd, labels, reliabilities, ids),
     }
+
+
+def _common_cause(graph: dict, rbd, labels: dict, reliabilities: dict, designed: set) -> list[dict]:
+    """The common-cause groups the designs were scored with (those the
+    analysis takes in: at least two members and 0 < beta < 1), each with its
+    members' labels and which of them are being designed."""
+    taken = [frozenset(g.members) for g in getattr(rbd, "ccf_groups", None) or []]
+    out = []
+    for i, g in enumerate(graph.get("ccf_groups") or []):
+        if not isinstance(g, dict):
+            continue
+        # As rbd_analysis._ccf_groups reads them (a repeated block is no member).
+        members = [m for m in dict.fromkeys(g.get("members") or []) if m in reliabilities
+                   and not isinstance(reliabilities[m], str)]
+        if frozenset(members) not in taken:
+            continue
+        out.append({
+            "id": g.get("id") or f"group-{i + 1}",
+            "beta": float(g.get("beta")),
+            "members": [labels[m] for m in members],
+            "designed": [labels[m] for m in members if m in designed],
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -542,12 +609,20 @@ def _units(block: dict, chosen: dict) -> list[int]:
     return units
 
 
-def _replacement(block: dict, chosen: dict) -> tuple[list[dict], list[tuple[str, str]], str, str, bool]:
+def _replacement(
+    block: dict, chosen: dict, *, joins: bool = False
+) -> tuple[list[dict], list[tuple[str, str]], list[str], list[str], bool]:
     """The builder nodes for one designed block.
 
     Returns ``(nodes, inner_edges, entry, exit, adds_column)``: every node in
     ``entry`` takes the block's incoming edges, every node in ``exit`` its
     outgoing ones, and ``adds_column`` says a voting node was added after it.
+
+    A block in a common-cause group has each active copy drawn as its own
+    component, so each can join the group. ``joins`` says the block feeds a
+    voting node needing more than one input, which would count side-by-side
+    copies as separate inputs: they are then gathered at a junction (a
+    1-out-of-n voting node) first.
     """
     node, label, bid = block["node"], block["label"], block["id"]
     units = _units(block, chosen)
@@ -598,37 +673,59 @@ def _replacement(block: dict, chosen: dict) -> tuple[list[dict], list[tuple[str,
                         "standbyModel": model(spares[0]) if spares[0] != primary else None}}
         return [out], [], [bid], [bid], False
 
+    def voted(copies, need):
+        # Every copy on its own branch into a voting node needing ``need`` (a
+        # junction when one will do, as rbd_costs.apply_copies draws it).
+        vote_id = f"{bid}v" if need > 1 else f"{bid}j"
+        vote = {"id": vote_id, "type": "knode",
+                "position": {"x": pos.get("x", 0) + _COL_GAP, "y": pos.get("y", 0)},
+                "data": {"label": f"{need}-out-of-{len(copies)}" if need > 1 else "Junction",
+                         "n": need, "k": len(copies)}}
+        inner = [(c["id"], vote_id) for c in copies]
+        return copies + [vote], inner, [c["id"] for c in copies], [vote_id], True
+
     if k == 1:
-        kinds = sorted(set(units))
-        ys = stacked(len(kinds))
-        nodes = [
-            group(bid if j == 0 else f"{bid}x{j}", i, units.count(i), ys[j])
-            for j, i in enumerate(kinds)
-        ]
+        if block.get("group") is not None:
+            # Each copy its own component, so each can join the group.
+            ys = stacked(len(units))
+            nodes = [component(bid if j == 0 else f"{bid}x{j}", i, ys[j]) for j, i in enumerate(units)]
+        else:
+            kinds = sorted(set(units))
+            ys = stacked(len(kinds))
+            nodes = [
+                group(bid if j == 0 else f"{bid}x{j}", i, units.count(i), ys[j])
+                for j, i in enumerate(kinds)
+            ]
+        if len(nodes) > 1 and joins:
+            return voted(nodes, 1)
         ids = [n["id"] for n in nodes]
         return nodes, [], ids, ids, False
 
     # k-out-of-n: every copy on its own branch into a voting node.
     ys = stacked(len(units))
-    copies = [component(bid if j == 0 else f"{bid}x{j}", i, ys[j]) for j, i in enumerate(units)]
-    vote_id = f"{bid}v"
-    vote = {"id": vote_id, "type": "knode",
-            "position": {"x": pos.get("x", 0) + _COL_GAP, "y": pos.get("y", 0)},
-            "data": {"label": f"{k}-out-of-{len(units)}", "n": k, "k": len(units)}}
-    inner = [(c["id"], vote_id) for c in copies]
-    return copies + [vote], inner, [c["id"] for c in copies], [vote_id], True
+    return voted([component(bid if j == 0 else f"{bid}x{j}", i, ys[j]) for j, i in enumerate(units)], k)
 
 
 def apply_design(graph: dict, blocks, design_blocks) -> dict:
-    """The diagram with a design drawn on it, as the builder stores graphs.
+    """The diagram with a design drawn on it, as the builder stores graphs
+    (see :func:`apply_design_with_notes`)."""
+    return apply_design_with_notes(graph, blocks, design_blocks)[0]
+
+
+def apply_design_with_notes(graph: dict, blocks, design_blocks) -> tuple[dict, list[str]]:
+    """The diagram with a design drawn on it, as the builder stores graphs,
+    and notes on what happened to its common-cause groups.
 
     ``blocks`` is the same list :func:`design_redundancy` was given (it holds
     the component types' models); ``design_blocks`` is the ``blocks`` list of
     one design it returned. A block with one copy stays a component (of the
     chosen type); active copies become a ``parallel`` block (one per type when
-    types are mixed, all wired between the same neighbours); k-out-of-n copies
-    each get a branch into a voting node; cold spares become a cold ``standby``
-    block. Nothing is saved.
+    types are mixed, all wired between the same neighbours, or gathered at a
+    junction, a 1-out-of-n voting node, when they feed a vote needing more
+    than one input); k-out-of-n copies each get a branch into a voting node;
+    cold spares become a cold ``standby`` block. A common-cause group member's copies are each drawn as a component
+    and join its group (same beta), as the allocation scored them; a group
+    left with fewer than two members is removed. Nothing is saved.
     """
     parsed = {b["id"]: b for b in _parse_blocks(graph, blocks)}
     if not isinstance(design_blocks, list) or not design_blocks:
@@ -637,6 +734,8 @@ def apply_design(graph: dict, blocks, design_blocks) -> dict:
     nodes = list(out.get("nodes") or [])
     edges = list(out.get("edges") or [])
     taken = {n.get("id") for n in nodes}
+    groups = out.get("ccf_groups") or []
+    notes: list[str] = []
     # Right to left, so a voting node's new column shifts only what follows.
     chosen = [d for d in design_blocks if isinstance(d, dict)]
     for d in chosen:
@@ -648,7 +747,15 @@ def apply_design(graph: dict, blocks, design_blocks) -> dict:
         index = next(i for i, n in enumerate(nodes) if n.get("id") == block["id"])
         # The block as it now stands (an earlier shift may have moved it).
         block = {**block, "node": nodes[index]}
-        new_nodes, inner, entry, exit_, adds_column = _replacement(block, d)
+        # Copies side by side into a vote needing more than one input would
+        # each count as an input: they join at a junction first.
+        by_id = {n.get("id"): n for n in nodes}
+        joins = any(
+            (by_id.get(e.get("target")) or {}).get("type") == "knode"
+            and _required_of(by_id[e.get("target")]) > 1
+            for e in edges if e.get("source") == block["id"]
+        )
+        new_nodes, inner, entry, exit_, adds_column = _replacement(block, d, joins=joins)
         for n in new_nodes:
             if n["id"] != block["id"] and n["id"] in taken:
                 raise DesignError(f"“{block['label']}”: block id '{n['id']}' is already in use.")
@@ -668,9 +775,55 @@ def apply_design(graph: dict, blocks, design_blocks) -> dict:
         for e in outgoing:
             edges += [_edge(nid, e["target"]) for nid in exit_]
         edges += [_edge(s, t) for s, t in inner]
+        if block["group"] is not None:
+            # The copies join the member's group, as the allocation scored them.
+            group = groups[block["group"]]
+            copies = [n["id"] for n in new_nodes if n["type"] == "component" and n["id"] != block["id"]]
+            if copies:
+                group["members"] = list(dict.fromkeys([*(group.get("members") or []), *copies]))
+                notes.append(
+                    f"“{block['label']}”: {len(copies)} added cop{'y' if len(copies) == 1 else 'ies'} "
+                    f"joined its common-cause group (β = {_beta_text(group)}).")
+    # A designed member no longer drawn as a component (or not drawn at all)
+    # leaves its group; a group that leaves with fewer than two members is no
+    # group, and is removed. Groups the design didn't touch stay as they are.
+    after = {n.get("id"): n.get("type") for n in nodes}
+    gone = {bid for bid in parsed if after.get(bid) != "component"}
+    if gone and groups:
+        labels = {n.get("id"): (n.get("data") or {}).get("label") or n.get("id") for n in graph.get("nodes") or []}
+        out["ccf_groups"], dropped = _prune_groups(groups, gone, labels)
+        notes += dropped
     out["nodes"] = nodes
     out["edges"] = edges
-    return out
+    return out, notes
+
+
+def _required_of(vote: dict) -> int:
+    """How many working inputs a voting node needs (its ``n``)."""
+    try:
+        return int((vote.get("data") or {}).get("n") or 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def _prune_groups(groups: list, gone: set, labels: dict) -> tuple[list, list[str]]:
+    """The common-cause groups without the members in ``gone``, and a note for
+    each group that drops below two members and is removed."""
+    kept, notes = [], []
+    for g in groups:
+        before = list(g.get("members") or []) if isinstance(g, dict) else []
+        members = [m for m in before if m not in gone]
+        if members == before:
+            kept.append(g)
+            continue
+        if len(set(members)) < 2:
+            names = ", ".join(str(labels.get(m, m)) for m in dict.fromkeys(before))
+            notes.append(
+                f"The common-cause group of {names} (β = {_beta_text(g)}) was left with "
+                "fewer than two members, so it was removed.")
+            continue
+        kept.append({**g, "members": members})
+    return kept, notes
 
 
 def applied_reliability(graph: dict, t, resolve_model=None, resolve_subsystem=None) -> float:

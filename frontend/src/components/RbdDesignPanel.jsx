@@ -196,9 +196,15 @@ export default function RbdDesignPanel({ graph, onApply, onView }) {
         design: shown.blocks,
         t: result.t,
       });
-      const prev = { nodes: graph.nodes, edges: graph.edges };
+      // Common-cause groups too: a grouped block's copies join its group.
+      const prev = { nodes: graph.nodes, edges: graph.edges, ccf_groups: graph.ccf_groups || [] };
       onApply(res.graph);
-      setApplied({ prev, reliability: res.reliability, sig: graphSignature({ ...graph, ...res.graph }) });
+      setApplied({
+        prev,
+        reliability: res.reliability,
+        notes: res.notes || [],
+        sig: graphSignature({ ...graph, ...res.graph }),
+      });
     } catch (e) {
       setError(e.message);
     }
@@ -433,6 +439,7 @@ export default function RbdDesignPanel({ graph, onApply, onView }) {
             <b>Drawn on the diagram — not saved.</b> Its reliability at t = {fmtN(result.t)}
             {unit} is {fmtR(applied.reliability)}. Review it on the Builder tab, then Save RBD to keep it.
           </p>
+          {applied.notes.map((note) => <p key={note}>{note}</p>)}
           <div className="rbd-design-applied-actions">
             <button type="button" onClick={onView}>View the diagram</button>
             <button type="button" className="secondary" onClick={undo}>Undo</button>
@@ -543,6 +550,14 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
           </div>
         ))}
       </div>
+      {(result.common_cause || []).map((g) => (
+        <p className="hint" key={g.id}>
+          Common-cause group {g.members.join(" · ")} (β = {g.beta}) is included
+          {g.designed.length
+            ? ": extra copies share the group, so redundancy pays off less than with independent failures."
+            : " in every design's reliability."}
+        </p>
+      ))}
       {result.method === "greedy" && (
         <p className="hint">
           Too many combinations for a proven optimum in reasonable time, so this is the library's

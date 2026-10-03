@@ -5,6 +5,7 @@ non-dominated and sorted trade-off curve, clear refusals, and designs written
 back onto the diagram that analyse to the reliability the search reported.
 """
 
+import copy
 import itertools
 import time
 import math
@@ -272,7 +273,6 @@ def test_front_respects_weight_limits():
     "mutate, blocks, kwargs, needle",
     [
         (lambda g: g.update(repairable=True), None, {}, "non-repairable"),
-        (lambda g: g.update(ccf_groups=[{"members": ["a", "b"], "beta": 0.1}]), None, {}, "common-cause"),
         (None, [], {}, "at least one block"),
         (None, [_block("zz", 1)], {}, "isn't in the diagram"),
         (None, [_block("a", 0)], {}, "unit cost"),
@@ -402,6 +402,260 @@ def test_apply_refuses_a_design_for_other_blocks():
 
 
 # ---------------------------------------------------------------------------
+# Common-cause (beta-factor) groups: copies join the group (RePyability 0.11, #140)
+# ---------------------------------------------------------------------------
+PUMP = _weibull(400.0, 1.5)
+
+
+def _pumps(beta=0.1, ctrl_rate=0.0005):
+    """input -> ctrl -> {pumpA | pumpB} -> output, the (identical) pumps in a
+    beta-factor common-cause group."""
+    nodes = _io() + [
+        _node("ctrl", _exp(ctrl_rate), x=200),
+        _node("pumpA", PUMP, x=400, y=-80),
+        _node("pumpB", PUMP, x=400, y=80),
+    ]
+    edges = _edges(("input", "ctrl"), ("ctrl", "pumpA"), ("ctrl", "pumpB"),
+                   ("pumpA", "output"), ("pumpB", "output"))
+    graph = {"nodes": nodes, "edges": edges, "unit": "hours"}
+    if beta:
+        graph["ccf_groups"] = [{"id": "g1", "members": ["pumpA", "pumpB"], "beta": beta}]
+    return graph
+
+
+def _with_copies(graph, copies):
+    """The diagram with each block's extra active copies drawn by hand: each
+    a component wired in parallel with it, and in its common-cause group."""
+    out = copy.deepcopy(graph)
+    for bid, n in copies.items():
+        node = next(x for x in out["nodes"] if x["id"] == bid)
+        ins = [e["source"] for e in out["edges"] if e["target"] == bid]
+        outs = [e["target"] for e in out["edges"] if e["source"] == bid]
+        for j in range(1, n):
+            cid = f"{bid}_{j}"
+            out["nodes"].append({**copy.deepcopy(node), "id": cid})
+            out["edges"] += _edges(*[(s, cid) for s in ins], *[(cid, t) for t in outs])
+            for g in out.get("ccf_groups") or []:
+                if bid in g["members"]:
+                    g["members"].append(cid)
+    return out
+
+
+PUMP_BLOCKS = [_block("ctrl", 3, 3), _block("pumpA", 2, 3), _block("pumpB", 2, 3)]
+
+
+def _units(design):
+    return {b["id"]: b["copies"] for b in design["blocks"]}
+
+
+def test_a_common_cause_diagram_is_designed():
+    graph = _pumps()
+    res = rd.design_redundancy(graph, T, PUMP_BLOCKS, budget={"cost": 14})
+    assert res["common_cause"] == [
+        {"id": "g1", "beta": 0.1, "members": ["Pumpa", "Pumpb"], "designed": ["Pumpa", "Pumpb"]}
+    ]
+    # As drawn, with the group (below the same diagram without it).
+    assert res["current"]["reliability"] == pytest.approx(rd.applied_reliability(graph, T), rel=1e-12)
+    assert res["current"]["reliability"] < rd.applied_reliability(_pumps(beta=0), T)
+    # A group with a member left out of the design is still scored.
+    res = rd.design_redundancy(graph, T, [_block("ctrl", 3, 3)], budget={"cost": 6})
+    assert res["common_cause"][0]["designed"] == []
+    assert res["design"]["reliability"] == pytest.approx(
+        rd.applied_reliability(_with_copies(graph, {"ctrl": 2}), T), rel=1e-12)
+
+
+def test_common_cause_scores_match_brute_force_and_the_library():
+    import surpyval as surv
+    from repyability import BetaFactor, CCFGroup, NonRepairableRBD
+
+    graph = _pumps()
+    res = rd.design_redundancy(graph, T, PUMP_BLOCKS, budget={"cost": 14})
+    # Every design within the budget, its copies drawn in the group by hand.
+    best = 0.0
+    for c, a, b in itertools.product(range(1, 4), repeat=3):
+        if 3 * c + 2 * a + 2 * b <= 14:
+            units = {"ctrl": c, "pumpA": a, "pumpB": b}
+            best = max(best, rd.applied_reliability(_with_copies(graph, units), T))
+    assert res["design"]["reliability"] == pytest.approx(best, rel=1e-12)
+    for d in res["front"]:
+        drawn = rd.applied_reliability(_with_copies(graph, _units(d)), T)
+        assert d["reliability"] == pytest.approx(drawn, rel=1e-12)
+    # RePyability's allocation with the group, called directly.
+    pump = surv.Weibull.from_params([400.0, 1.5])
+    rbd = NonRepairableRBD(
+        [("input", "ctrl"), ("ctrl", "pumpA"), ("ctrl", "pumpB"), ("pumpA", "output"), ("pumpB", "output")],
+        {"ctrl": surv.Exponential.from_params([0.0005]), "pumpA": pump, "pumpB": pump},
+        ccf_groups=[CCFGroup(["pumpA", "pumpB"], BetaFactor(0.1))],
+    )
+    costs = {"ctrl": {"cost": 3.0}, "pumpA": {"cost": 2.0}, "pumpB": {"cost": 2.0}}
+    want = rbd.allocate_redundancy(costs, budget={"cost": 14.0}, t=T, max_units=3)
+    assert res["design"]["reliability"] == pytest.approx(want.reliability, rel=1e-12)
+    assert _units(res["design"]) == {k: int(v) for k, v in want.units.items()}
+
+
+def test_common_cause_makes_redundancy_pay_off_less():
+    blocks = [_block("ctrl", 2, 3), _block("pumpA", 2, 3), _block("pumpB", 2, 3)]
+    free = rd.design_redundancy(_pumps(beta=0, ctrl_rate=1e-4), T, blocks, budget={"cost": 8})
+    shared = rd.design_redundancy(_pumps(beta=0.3, ctrl_rate=1e-4), T, blocks, budget={"cost": 8})
+    # Independent pumps: the spare money buys a third pump. With a shared
+    # cause that a third pump can't escape, it buys a second controller.
+    assert sorted(_units(free["design"]).items()) == [("ctrl", 1), ("pumpA", 2), ("pumpB", 1)]
+    assert _units(shared["design"]) == {"ctrl": 2, "pumpA": 1, "pumpB": 1}
+    assert shared["design"]["reliability"] < free["design"]["reliability"]
+    gain = {beta: r["design"]["reliability"] - r["current"]["reliability"]
+            for beta, r in ((0, free), (0.3, shared))}
+    assert 0 < gain[0.3] < gain[0]
+    # More copies can't get past the shared cause: a target independent pumps
+    # reach is out of reach with the group, and one both reach costs more.
+    with pytest.raises(DesignError, match="unreachable"):
+        rd.design_redundancy(_pumps(beta=0.1), T, PUMP_BLOCKS, target=0.99)
+    assert rd.design_redundancy(_pumps(beta=0), T, PUMP_BLOCKS, target=0.99)["design"]["cost"] == 12
+    cheap = {beta: rd.design_redundancy(_pumps(beta=beta), T, PUMP_BLOCKS, target=0.97)["design"]
+             for beta in (0, 0.1)}
+    assert cheap[0.1]["cost"] >= cheap[0]["cost"]
+    # The front's best design with the group stays below the cap at which
+    # only the shared cause is left.
+    shared = rd.design_redundancy(_pumps(beta=0.1), T, PUMP_BLOCKS, budget={"cost": 40})
+    q = 1 - math.exp(-((T / 400.0) ** 1.5))
+    cap = (1 - 0.1 * q) * _active(_p(0.0005), 3)
+    assert max(d["reliability"] for d in shared["front"]) < cap
+
+
+@pytest.mark.parametrize("mode", [{"budget": {"cost": 14}}, {"target": 0.97}])
+def test_applied_copies_join_the_group_and_analyse_as_designed(mode):
+    graph = _pumps()
+    res = rd.design_redundancy(graph, T, PUMP_BLOCKS, **mode)
+    assert res["mode"] == ("target" if "target" in mode else "budget")
+    for d in [res["design"], *res["front"]]:
+        out, notes = rd.apply_design_with_notes(graph, PUMP_BLOCKS, d["blocks"])
+        assert rd.applied_reliability(out, T) == pytest.approx(d["reliability"], rel=1e-12)
+        members = set(out["ccf_groups"][0]["members"])
+        units = _units(d)
+        pumps = {n["id"] for n in out["nodes"] if n["id"].startswith("pump")}
+        assert members == pumps and len(pumps) == units["pumpA"] + units["pumpB"]
+        assert all(n["type"] == "component" for n in out["nodes"] if n["id"] in pumps)
+        assert out["ccf_groups"][0]["beta"] == 0.1 and out["ccf_groups"][0]["id"] == "g1"
+        added = len(pumps) - 2
+        assert len(notes) == (units["pumpA"] > 1) + (units["pumpB"] > 1)
+        assert all("joined its common-cause group (β = 0.1)" in n for n in notes) or not added
+    # The diagram given is untouched.
+    assert graph["ccf_groups"][0]["members"] == ["pumpA", "pumpB"]
+
+
+def _instrument_air():
+    from backend.services import samples
+
+    return samples._instrument_air_design_graph()
+
+
+def test_instrument_air_compressor_copies_join_their_group_behind_a_junction():
+    graph = _instrument_air()
+    t = 4000.0
+    blocks = [_block(c, 40, 3) for c in ("compA", "compB", "compC")] + [
+        _block("filter", 2, 3), _block("header", 10, 3)]
+    res = rd.design_redundancy(graph, t, blocks, budget={"cost": 200})
+    assert res["common_cause"][0]["beta"] == 0.1
+    design = _units(res["design"])
+    assert sum(design[c] for c in ("compA", "compB", "compC")) == 4
+    out, notes = rd.apply_design_with_notes(graph, blocks, res["design"]["blocks"])
+    assert rd.applied_reliability(out, t) == pytest.approx(res["design"]["reliability"], rel=1e-12)
+    # Four compressors in the group; the extra one joins its twin at a
+    # junction, so the 2-out-of-3 vote still has three inputs.
+    group = out["ccf_groups"][0]
+    assert len(group["members"]) == 4 and group["beta"] == 0.1
+    assert sorted(e["source"] for e in out["edges"] if e["target"] == "vote") == sorted(
+        [c for c in ("compA", "compB", "compC") if design[c] == 1]
+        + [f"{c}j" for c in ("compA", "compB", "compC") if design[c] == 2])
+    junction = next(n for n in out["nodes"] if n["id"].endswith("j"))
+    assert junction["type"] == "knode" and junction["data"]["n"] == 1
+    assert len(notes) == 1 and "1 added copy joined its common-cause group (β = 0.1)" in notes[0]
+    # Independent compressors would have done better with the same money.
+    free = {**graph, "ccf_groups": []}
+    assert rd.design_redundancy(free, t, blocks, budget={"cost": 200})["design"]["reliability"] > (
+        res["design"]["reliability"])
+
+
+def test_mixed_type_copies_feeding_a_vote_join_at_a_junction():
+    """Side-by-side copies feeding a 2-out-of-3 vote would each count as an
+    input: they join at a junction, and the vote keeps its three inputs."""
+    graph = {**_instrument_air(), "ccf_groups": []}
+    premium = {"name": "Premium", "model": _weibull(20000, 1.6), "cost": 60}
+    blocks = [_block("compA", 40, 3, types=[premium])]
+    design = [{"id": "compA", "strategy": "active",
+               "mix": [{"type": 0, "copies": 1}, {"type": 1, "copies": 1}]}]
+    out = rd.apply_design(graph, blocks, design)
+    assert sorted(e["source"] for e in out["edges"] if e["target"] == "vote") == ["compAj", "compB", "compC"]
+    t = 4000.0
+    # As if Compressor A were the pair: its reliability folded into one block.
+    pair = 1 - (1 - math.exp(-((t / 12000) ** 1.6))) * (1 - math.exp(-((t / 20000) ** 1.6)))
+    alpha = t / (-math.log(pair)) ** (1 / 1.6)  # a Weibull with R(t) = pair
+    same = copy.deepcopy(graph)
+    next(n for n in same["nodes"] if n["id"] == "compA")["data"]["model"] = _weibull(alpha, 1.6)
+    assert rd.applied_reliability(out, t) == pytest.approx(rd.applied_reliability(same, t), rel=1e-9)
+
+
+def test_k_out_of_n_copies_of_a_member_join_the_group():
+    graph = _pumps()
+    blocks = [_block("pumpA", 1, 4, required=2), _block("pumpB", 1, 1)]
+    res = rd.design_redundancy(graph, T, blocks, budget={"cost": 5})
+    out, _ = rd.apply_design_with_notes(graph, blocks, res["design"]["blocks"])
+    assert rd.applied_reliability(out, T) == pytest.approx(res["design"]["reliability"], rel=1e-12)
+    copies = [n["id"] for n in out["nodes"] if n["id"].startswith("pumpA") and n["type"] == "component"]
+    assert len(copies) == 4
+    assert set(out["ccf_groups"][0]["members"]) == {*copies, "pumpB"}
+
+
+@pytest.mark.parametrize(
+    "block, needle",
+    [
+        (_block("pumpA", 1, 3, strategy="cold"), "active redundancy"),
+        (_block("pumpA", 1, 3, strategy="choose"), "active redundancy"),
+        (_block("pumpA", 1, 3, types=[{"name": "Big", "model": PUMP, "cost": 2}]), "alternative component types"),
+    ],
+)
+def test_a_member_takes_active_copies_of_itself(block, needle):
+    with pytest.raises(DesignError, match=needle):
+        rd.design_redundancy(_pumps(), T, [block], budget={"cost": 6})
+
+
+def test_a_parallel_block_in_a_group_is_not_redesigned():
+    graph = _pumps()
+    graph["nodes"][3] = _node("pumpA", PUMP, "parallel", x=400, y=-80, n=2, kind="parallel")
+    with pytest.raises(DesignError, match="parallel block in a common-cause group"):
+        rd.design_redundancy(graph, T, [_block("pumpA", 1)], budget={"cost": 4})
+
+
+def test_a_group_left_with_one_member_is_removed():
+    groups = [{"id": "g", "members": ["a", "b"], "beta": 0.1},
+              {"id": "h", "members": ["c", "d", "e"], "beta": 0.2},
+              {"id": "k", "members": ["f", "g"], "beta": 0.3}]
+    kept, notes = rd._prune_groups(groups, {"a", "c"}, {"a": "Pump A", "b": "Pump B"})
+    assert kept == [{"id": "h", "members": ["d", "e"], "beta": 0.2}, groups[2]]
+    assert notes == ["The common-cause group of Pump A, Pump B (β = 0.1) was left with fewer "
+                     "than two members, so it was removed."]
+
+
+def test_a_repairable_diagram_with_a_group_gets_its_cheapest_design():
+    """Repairable diagrams' Design tab is the cheapest design (#99), on the
+    availability analysis, which leaves common-cause groups out (as do
+    RePyability's repairable allocations): a group changes nothing there."""
+    from backend.services import rbd_costs
+
+    def pump(nid, y):
+        return _node(nid, _exp(1e-3), x=200, y=y, repair=_exp(0.1),
+                     costs={"repair": 500, "acquisition": 2000})
+
+    graph = {"repairable": True, "unit": "hours", "costs": {"downtime_rate": 500, "horizon": 87600},
+             "nodes": _io() + [pump("a", -80), pump("b", 80)],
+             "edges": _edges(("input", "a"), ("input", "b"), ("a", "output"), ("b", "output"))}
+    plain = rbd_costs.cheapest_design(graph, horizon=87600)
+    grouped = rbd_costs.cheapest_design({**graph, "ccf_groups": [{"members": ["a", "b"], "beta": 0.1}]},
+                                        horizon=87600)
+    assert grouped["design"]["units"] == plain["design"]["units"]
+    assert grouped["design"]["total_cost"] == pytest.approx(plain["design"]["total_cost"])
+
+
+# ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
 USER = {"uid": "user-design", "email": "design@example.org", "name": "Designer"}
@@ -450,3 +704,19 @@ def test_design_endpoint_reports_bad_input_as_422(client):
     r = client.post("/api/rbds/design", json={"graph": graph, "t": T, "blocks": [_block("a", 1)], "budget": {"cost": 5}})
     assert r.status_code == 422
     assert "non-repairable" in r.json()["detail"]
+
+
+def test_design_endpoint_designs_and_applies_a_common_cause_diagram(client):
+    graph = _pumps()
+    r = client.post("/api/rbds/design", json={"graph": graph, "t": T, "blocks": PUMP_BLOCKS, "budget": {"cost": 14}})
+    assert r.status_code == 200, r.text
+    res = r.json()
+    assert res["common_cause"][0]["beta"] == 0.1
+    r = client.post("/api/rbds/design/apply", json={
+        "graph": graph, "blocks": PUMP_BLOCKS, "design": res["design"]["blocks"], "t": T,
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["reliability"] == pytest.approx(res["design"]["reliability"], rel=1e-12)
+    assert len(body["graph"]["ccf_groups"][0]["members"]) > 2
+    assert body["notes"] and "common-cause group" in body["notes"][0]
