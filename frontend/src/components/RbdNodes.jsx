@@ -201,6 +201,7 @@ export function StructureNode({ data: nodeData, type }) {
   const data = nodeData.kind ? nodeData : { ...nodeData, kind: type };
   const meta = BLOCK_TYPES[data.kind] || {};
   const rbdUnit = useContext(RbdUnitContext);
+  const repairable = useContext(RbdRepairableContext) && data.kind === "standby";
   // Series/parallel/standby carry a life model whose unit can be checked.
   const warn = unitWarning(data.model, rbdUnit);
 
@@ -221,6 +222,14 @@ export function StructureNode({ data: nodeData, type }) {
         {data.model && (
           <div className="rbd-block-model">{modelSummary(data.model)}</div>
         )}
+        {/* Repairable: each unit is repaired after it fails (#156). */}
+        {repairable && (data.repair ? (
+          <div className="rbd-comp-repair">
+            🛠 {modelSummary(data.repair)}{data.repair_one_at_a_time ? " · one at a time" : ""}
+          </div>
+        ) : (
+          <div className="rbd-comp-empty warn">No repair time — double-click to set</div>
+        ))}
       </>
     );
   } else if (data.kind === "loadshare") {

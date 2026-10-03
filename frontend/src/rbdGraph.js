@@ -86,6 +86,20 @@ function fleshModel(model) {
   return out;
 }
 
+// Repairable blocks: instant repair, costs and maintenance (#99/#100), the
+// maintenance group, crew priority and a standby group's own repairer (#156/#157).
+const BLOCK_KEYS = [
+  "instant_repair", "costs", "preventive", "inspection", "rcm_source",
+  "maintenance_group", "crew_priority", "repair_one_at_a_time",
+];
+// Diagram-level settings of a repairable diagram, carried as given.
+const DIAGRAM_KEYS = ["costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil"];
+function diagramSettings(graph) {
+  const out = {};
+  for (const k of DIAGRAM_KEYS) if (graph[k]) out[k] = graph[k];
+  return out;
+}
+
 // Normalise a minimal {nodes, edges, unit} into the full builder/persisted shape.
 export function normalizeRbdGraph(graph = {}) {
   const rawNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
@@ -116,7 +130,7 @@ export function normalizeRbdGraph(graph = {}) {
   }));
 
   const laidOut = layoutGraph(nodes, edges);
-  return { nodes: laidOut, edges, unit: graph.unit ?? "", ...(graph.costs ? { costs: graph.costs } : {}) };
+  return { nodes: laidOut, edges, unit: graph.unit ?? "", ...diagramSettings(graph) };
 }
 
 // Strip a live/canvas graph down to the fields the assistant needs to read and
@@ -138,10 +152,10 @@ export function compactGraph(graph = {}) {
     }
     for (const k of ["n", "k", "spares", "cold", "dormancy", "repeat_of"]) if (d[k] != null) node[k] = d[k];
     // Repairable blocks: instant repair, costs and maintenance (#99/#100).
-    for (const k of ["instant_repair", "costs", "preventive", "inspection", "rcm_source"]) if (d[k] != null) node[k] = d[k];
+    for (const k of BLOCK_KEYS) if (d[k] != null) node[k] = d[k];
     if (d.rbd?.id) node.subsystem_rbd_id = d.rbd.id;
     return node;
   });
   const edges = (graph.edges || []).map((e) => ({ source: e.source, target: e.target }));
-  return { nodes, edges, unit: graph.unit || "", ...(graph.costs ? { costs: graph.costs } : {}) };
+  return { nodes, edges, unit: graph.unit || "", ...diagramSettings(graph) };
 }

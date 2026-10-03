@@ -927,7 +927,7 @@ def _helpers(script: _Script) -> str:
                 models it."""
                 return NonRepairable(
                     surv.Weibull.from_params([1e12, 1.0]),
-                    surv.LogNormal.from_params([0.1, 0.1]),
+                    surv.Exponential.from_params([1.0]),
                 )
         '''))
     return "\n\n\n".join(h.strip("\n") for h in out)
@@ -1274,12 +1274,12 @@ def _repairable_body(script: _Script, graph) -> str:
                 nodes, {nid: rbd_repeats.repeat_of(node)}), label)
             comps.append((nid, var, label))
             continue
-        if ntype != "component":
+        if ntype not in ("component", "standby"):
             script.missing(var, (
                 f"Block '{label}' is a '{ntype}' block, which Reliafy doesn't "
                 "support in repairable (availability) diagrams - use "
-                "component blocks (each with a life model and a repair time) "
-                "and k-of-n gates."
+                "component and standby blocks (each with a life model and a "
+                "repair time) and k-of-n gates."
             ), label)
             comps.append((nid, var, label))
             continue
@@ -1307,6 +1307,11 @@ def _repairable_body(script: _Script, graph) -> str:
         else:
             repair = script.dist(data.get("repair"), f"{label} (repair time)",
                                  repair_var)
+        if ntype == "standby":
+            # A duty unit plus spares, each repaired on its own (#156).
+            rbd_export_costs.standby(script, nid, data, label, var, life, repair)
+            comps.append((nid, var, label))
+            continue
         if rbd_maintenance.has_extras(data):
             # Costs, instant repair, maintenance (#99/#100): a component spec.
             rbd_export_costs.component(script, data, label, var, life, repair)
@@ -1344,10 +1349,15 @@ def _repairable_body(script: _Script, graph) -> str:
     out.append("")
     out += _pins({"working": working, "broken": broken})
     out.append("")
-    if graph.get("ccf_groups"):
-        out.append("# Common-cause groups are a reliability-only feature and "
-                   "are ignored in an")
-        out.append("# availability diagram (as in Reliafy).")
+    groups = rbd_export_costs.diagram_lines(graph)
+    if groups:
+        out += groups
+        out.append("")
+    ccf = _repairable_ccf(graph, {nid for nid, _, _ in comps})
+    if ccf and not graph.get("safety_function"):
+        out.append("# Common-cause groups enter a repairable diagram only through a "
+                   "safety")
+        out.append("# function's PFDavg, so they are ignored here (as in Reliafy).")
     io = []
     if "input" in node_ids:
         io.append("input_node='input'")
@@ -1356,6 +1366,18 @@ def _repairable_body(script: _Script, graph) -> str:
     io += rbd_export_costs.rbd_kwargs(graph)
     out.append("rbd = RepairableRBD(\n    EDGES,\n    COMPONENTS,\n    k=K,\n"
                + "".join(f"    {a},\n" for a in io) + ")")
+    if graph.get("safety_function"):
+        ccf_expr = None
+        if ccf:
+            script.imports.update({"CCFGroup", "BetaFactor"})
+            groups_src = "".join(
+                f"        CCFGroup(members={members!r}, model=BetaFactor({beta!r})),\n"
+                for members, beta in ccf)
+            ccf_expr = ("RepairableRBD(\n    EDGES,\n    COMPONENTS,\n    k=K,\n"
+                        + "".join(f"    {a},\n" for a in io)
+                        + "    ccf_groups=[\n" + groups_src + "    ],\n)")
+        out.append("")
+        out += rbd_export_costs.safety_constants(graph, ccf_expr)
     out.append("")
     out.append("")
     out.append("# " + "-" * 75)
@@ -1409,6 +1431,21 @@ def _repairable_body(script: _Script, graph) -> str:
     out.append("")
     out.append(rbd_export_costs.main_source(_REPAIRABLE_MAIN, graph).strip("\n"))
     return "\n".join(out)
+
+
+def _repairable_ccf(graph: dict, nodes: set) -> list:
+    """``(members, beta)`` of the common-cause groups Reliafy builds for a
+    repairable diagram's PFDavg (as :func:`rbd_analysis._ccf_groups`)."""
+    out = []
+    for g in graph.get("ccf_groups") or []:
+        members = list(dict.fromkeys(m for m in g.get("members") or [] if m in nodes))
+        try:
+            beta = float(g.get("beta"))
+        except (TypeError, ValueError):
+            continue
+        if len(members) >= 2 and 0.0 < beta < 1.0:
+            out.append((members, beta))
+    return out
 
 
 _REPAIRABLE_MAIN = '''

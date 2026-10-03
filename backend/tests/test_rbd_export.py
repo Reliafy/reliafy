@@ -390,9 +390,9 @@ def test_repairable_pins_and_unsupported_blocks(tmp_path):
 
     # A block type availability mode doesn't support is a placeholder (the
     # app refuses to calculate it).
-    graph["nodes"].append(_node("sb", "standby", "Dryers", model=_w(1, 1)))
+    graph["nodes"].append(_node("sb", "loadshare", "Dryers", model=_w(1, 1)))
     code = rbd_export.to_python(graph, "Rep", exported_at=WHEN)
-    assert "dryers = missing_model(" in code and "'standby' block" in code
+    assert "dryers = missing_model(" in code and "'loadshare' block" in code
 
 
 # ---------------------------------------------------------------------------

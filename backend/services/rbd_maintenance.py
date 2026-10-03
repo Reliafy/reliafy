@@ -1,6 +1,8 @@
 """What a repairable RBD block holds beyond its life and repair models (#99,
-#100): costs, instant repair, scheduled preventive maintenance and proof-tested
-hidden failures — turned into RePyability 0.9 ``RepairableRBD`` component specs.
+#100, #156, #157): costs, instant repair, scheduled preventive maintenance
+(age, block or condition-based replacement, opportunistic renewal in a
+maintenance group) and proof-tested hidden failures (staggered, imperfect
+tests) — turned into RePyability 0.11 ``RepairableRBD`` component specs.
 
 Graph format (all optional; a block without any of them is built exactly as
 before, as a plain ``NonRepairable``)::
@@ -14,15 +16,35 @@ before, as a plain ``NonRepairable``)::
                   "downtime": 50,                   # per unit time *this block* is down
                   "acquisition": 20000},            # purchase price (one-off)
         "preventive": {"policy": "age" | "block",   # scheduled replacement
-                       "interval": 580, "duration": 7, "cost": 1000},
+                       "interval": 580, "duration": 7, "cost": 1000,
+                       "opportunity": 400},         # age policy: renewed early, from
+                                                    #   this age, at a stop of its
+                                                    #   maintenance group (#108)
+        "preventive": {"policy": "condition",       # replaced on condition (#96):
+                       "interval": 720,             #   inspected this often, and
+                       "threshold": 0.05,           #   replaced if more likely than
+                       "inspection_cost": 40,       #   this to fail before the next
+                       "duration": 7, "cost": 1000},
         "inspection": {"interval": 8760,            # hidden failures, found only
-                       "duration": 4, "cost": 300}, #   at these proof tests
+                       "duration": 4, "cost": 300,  #   at these proof tests (any
+                       "offset": 4380,              #   life, #144); the first test
+                       "coverage": 0.9,             #   (staggered), the share of
+                       "full_test": 43800},         #   failures a test finds, and
+                                                    #   the full test that finds
+                                                    #   the rest (#136)
+        "maintenance_group": "north pumps",    # shares the group's set-up cost
+        "crew_priority": 2,                    # its place in the repair-crew queue
         "rcm_source": {"study_id", "mode_id", ...}, # where the schedule was filled
                                                     #   from (display only: never
                                                     #   analysed, not in the cache key)
     }
     graph["costs"] = {"downtime_rate": 500,    # per unit time the *system* is down
                       "horizon": 87600}        # ownership horizon for the total cost
+    graph["maintenance_groups"] = {"north pumps": {"setup_cost": 2000,
+                                                   "system_down": false}}
+
+The diagram's repair crews, standby groups and safety function are in
+:mod:`backend.services.rbd_policies`.
 
 A ``duration`` is a number (a fixed time), ``0``/missing for instant, or a
 life-model-like spec (``distribution_id`` + ``params``). A cost charged per
@@ -64,7 +86,9 @@ COST_NAMES = {
 }
 #: The block costs that may be a range (RePyability draws them per failure).
 RANGED_COSTS = ("repair", "replace")
-POLICIES = ("age", "block")
+POLICIES = ("age", "block", "condition")
+#: Block fields beyond the models that make a block a component spec.
+EXTRA_KEYS = ("instant_repair", "costs", "preventive", "inspection", "maintenance_group", "crew_priority")
 #: The default simulation window covers at least this many of the longest
 #: maintenance or test interval in the diagram.
 HORIZON_INTERVALS = 10
@@ -162,19 +186,41 @@ def _duration(raw, what: str, label: str, resolve_model):
     return sp.ExactEventTime.from_params(value)
 
 
+def _probability(value, what: str, label: str) -> Optional[float]:
+    """A probability in [0, 1], None when left blank."""
+    x = _number(value, what, label)
+    if x is not None and x > 1.0:
+        raise AnalysisError(f"“{label}”: the {what} must be a probability, from 0 to 1.")
+    return x
+
+
 def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict]:
-    """RePyability's ``"preventive"`` spec for the block, or None."""
+    """RePyability's ``"preventive"`` spec for the block, or None.
+
+    ``"age"`` and ``"block"`` replace on a schedule; ``"condition"`` (#96)
+    inspects the unit every ``interval`` while it is up, in no time, and
+    replaces it when it is more likely than ``threshold`` to fail before the
+    next inspection. An age-replaced block in a maintenance group may also be
+    renewed early, from its ``opportunity`` age, at the group's stops (#108).
+    """
     pm = _dict(data.get("preventive"), "the preventive maintenance", label)
     if pm is None:
         return None
     policy = pm.get("policy") or "age"
     if policy not in POLICIES:
         raise AnalysisError(
-            f"“{label}”: the preventive-maintenance policy must be age or block replacement."
+            f"“{label}”: the preventive-maintenance policy must be age, block or condition-based "
+            "replacement."
         )
-    interval = _number(pm.get("interval"), "preventive-maintenance interval", label, positive=True)
+    condition = policy == "condition"
+    interval = _number(pm.get("interval"),
+                       "inspection interval" if condition else "preventive-maintenance interval",
+                       label, positive=True)
     if interval is None:
-        raise AnalysisError(f"“{label}”: set the preventive-maintenance interval (how often it's replaced).")
+        raise AnalysisError(
+            f"“{label}”: set the inspection interval (how often its condition is checked)."
+            if condition else
+            f"“{label}”: set the preventive-maintenance interval (how often it's replaced).")
     spec: dict[str, Any] = {
         "interval": interval,
         "policy": policy,
@@ -183,11 +229,46 @@ def preventive_spec(data: dict, label: str, resolve_model=None) -> Optional[dict
     cost = _cost(pm.get("cost"), "preventive-maintenance cost", label)
     if _priced(cost):
         spec["cost"] = cost
+    if condition:
+        threshold = _probability(pm.get("threshold"), "replacement threshold", label)
+        if threshold is None:
+            raise AnalysisError(
+                f"“{label}”: set the replacement threshold — the chance of failing before the next "
+                "inspection above which the unit is replaced (e.g. 0.05).")
+        spec["threshold"] = threshold
+        inspecting = _cost(pm.get("inspection_cost"), "condition inspection cost", label)
+        if _priced(inspecting):
+            spec["inspection_cost"] = inspecting
+    else:
+        for key, name in (("threshold", "a replacement threshold"), ("inspection_cost", "an inspection cost")):
+            if not _blank(pm.get(key)):
+                raise AnalysisError(
+                    f"“{label}”: {name} applies only to condition-based replacement.")
+    opportunity = pm.get("opportunity")
+    if not _blank(opportunity):
+        if policy != "age":
+            raise AnalysisError(
+                f"“{label}”: early renewal at a group stop (the opportunity age) applies only to age "
+                "replacement.")
+        age = _number(opportunity, "opportunity age", label)
+        if age > interval:
+            raise AnalysisError(
+                f"“{label}”: the opportunity age must be from 0 to the replacement interval "
+                f"({interval:g}).")
+        if maintenance_group(data, label) is None:
+            raise AnalysisError(
+                f"“{label}”: early renewal needs a maintenance group whose stops give the "
+                "opportunity — set the block's maintenance group.")
+        spec["opportunity"] = age
     return spec
 
 
 def inspection_spec(data: dict, label: str, resolve_model=None) -> Optional[dict]:
-    """RePyability's ``"inspection"`` spec (hidden failures, proof-tested), or None."""
+    """RePyability's ``"inspection"`` spec (hidden failures, proof-tested), or None.
+
+    Any life distribution (#144). A test may be staggered (``offset``, the time
+    of the first test) and imperfect (``coverage``, the share of failures a
+    test finds; the rest wait for a ``full_test``, which finds every one)."""
     test = _dict(data.get("inspection"), "the proof test", label)
     if test is None:
         return None
@@ -203,17 +284,58 @@ def inspection_spec(data: dict, label: str, resolve_model=None) -> Optional[dict
     cost = _cost(test.get("cost"), "proof-test cost", label)
     if _priced(cost):
         spec["cost"] = cost
+    offset = _number(test.get("offset"), "first proof-test time", label)
+    if offset:
+        if offset >= interval:
+            raise AnalysisError(
+                f"“{label}”: the first proof test must fall within the first interval — from 0 to "
+                f"less than {interval:g}.")
+        spec["offset"] = offset
+    coverage = _probability(test.get("coverage"), "proof-test coverage", label)
+    if coverage is not None and coverage < 1.0:
+        full = _number(test.get("full_test"), "full proof-test interval", label, positive=True)
+        if full is None:
+            raise AnalysisError(
+                f"“{label}”: a proof test that finds only {coverage:.0%} of failures needs a full test "
+                "that finds the rest — set the full-test interval (a whole multiple of the test "
+                "interval).")
+        ratio = full / interval
+        if round(ratio) < 1 or abs(ratio - round(ratio)) > 1e-9 * ratio:
+            raise AnalysisError(
+                f"“{label}”: the full-test interval ({full:g}) must be a whole multiple of the "
+                f"proof-test interval ({interval:g}).")
+        spec["coverage"] = coverage
+        spec["full_test"] = interval * round(ratio)
     return spec
+
+
+def maintenance_group(data: dict, label: str) -> Optional[str]:
+    """The block's maintenance group name (#108), or None."""
+    group = data.get("maintenance_group")
+    if _blank(group):
+        return None
+    if not isinstance(group, str):
+        raise AnalysisError(f"“{label}”: the maintenance group must be a name.")
+    return group.strip()
+
+
+def crew_priority(data: dict, label: str) -> Optional[float]:
+    """The block's place in the repair-crew queue (higher first), or None."""
+    value = data.get("crew_priority")
+    if _blank(value):
+        return None
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        raise AnalysisError(f"“{label}”: the repair-crew priority must be a number.") from None
+    if isinstance(value, bool) or not np.isfinite(x):
+        raise AnalysisError(f"“{label}”: the repair-crew priority must be a finite number.")
+    return x
 
 
 def has_extras(data: dict) -> bool:
     """Whether a block uses anything beyond a life and a repair model."""
-    return bool(
-        data.get("instant_repair")
-        or data.get("costs")
-        or data.get("preventive")
-        or data.get("inspection")
-    )
+    return any(data.get(key) not in (None, False, "", {}) for key in EXTRA_KEYS)
 
 
 def repairable_component(data: dict, label: str, reliability, resolve_model=None):
@@ -238,6 +360,16 @@ def repairable_component(data: dict, label: str, reliability, resolve_model=None
         spec["preventive"] = preventive
     if inspection:
         spec["inspection"] = inspection
+    group = maintenance_group(data, label)
+    if group is not None:
+        if inspection:
+            raise AnalysisError(
+                f"“{label}”: a block with hidden failures can't be in a maintenance group — nobody "
+                "knows it has failed when the group stops.")
+        spec["group"] = group
+    priority = crew_priority(data, label)
+    if priority is not None:
+        spec["priority"] = priority
     return spec
 
 
@@ -282,6 +414,11 @@ def validation_errors(graph: dict) -> list[str]:
                     f"“{label}”: a block has either scheduled preventive maintenance or proof "
                     "tests for hidden failures, not both."
                 )
+            if test and maintenance_group(data, label) is not None:
+                raise AnalysisError(
+                    f"“{label}”: a block with hidden failures can't be in a maintenance group — "
+                    "nobody knows it has failed when the group stops.")
+            crew_priority(data, label)
         except AnalysisError as exc:
             errors.append(str(exc))
         except Exception:  # noqa: BLE001 - a duration model that won't build

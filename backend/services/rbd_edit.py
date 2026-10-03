@@ -14,7 +14,8 @@ Ops (plain dicts, already shape-checked by the MCP layer's pydantic models)::
     {"op": "update_node", "id": ... | "ids": [...], "label"?, "model"?, ...}
     {"op": "add_edge", "source": ..., "target": ...}
     {"op": "remove_edge", "source": ..., "target": ...}
-    {"op": "set", "name"?, "unit"?, "repairable"?}
+    {"op": "set", "name"?, "unit"?, "repairable"?, "repair_crews"?, "maintenance_groups"?,
+     "safety_function"?, "target_sil"?}
     {"op": "add_ccf", "members": [...], "beta": ..., "id"?}
     {"op": "remove_ccf", "id": ...}
 
@@ -50,8 +51,19 @@ _FIELD_TYPES = {
     "spares": ("standby",),
     "cold": ("standby",),
     "subsystem_rbd_id": ("subsystem",),
+    # A repairable block's costs and maintenance (#99, #100, #156, #157).
+    "instant_repair": ("component",),
+    "costs": ("component", "standby"),
+    "preventive": ("component",),
+    "inspection": ("component",),
+    "maintenance_group": ("component",),
+    "crew_priority": ("component", "standby"),
+    "repair_one_at_a_time": ("standby",),
 }
 UPDATE_FIELDS = ("label", *_FIELD_TYPES)
+#: Block settings ``update_node``'s ``clear`` can remove.
+CLEARABLE = ("costs", "preventive", "inspection", "maintenance_group", "crew_priority", "instant_repair",
+             "repair_one_at_a_time")
 
 
 class EditError(ValueError):
@@ -242,8 +254,14 @@ class _Editor:
         if bool(op.get("id")) == bool(op.get("ids")):
             raise EditError("give exactly one of id or ids.")
         changes = {k: op[k] for k in UPDATE_FIELDS if k in op}
-        if not changes:
-            raise EditError(f"nothing to update — give one or more of {', '.join(UPDATE_FIELDS)}.")
+        clear = list(dict.fromkeys(op.get("clear") or []))
+        for key in clear:
+            if key not in CLEARABLE:
+                raise EditError(f"clear takes {', '.join(CLEARABLE)}, not {key}.")
+            if key in changes:
+                raise EditError(f"{key} is both set and cleared — give one or the other.")
+        if not changes and not clear:
+            raise EditError(f"nothing to update — give one or more of {', '.join(UPDATE_FIELDS)}, or clear.")
         ids = list(dict.fromkeys(ids))
         for nid in ids:
             node = self.node(nid)
@@ -269,10 +287,23 @@ class _Editor:
                     if not label:
                         raise EditError("label can't be blank.")
                     data["label"] = label
+                elif key in ("preventive", "inspection"):
+                    # A block has a schedule or proof tests, not both: the new
+                    # one replaces the other (and the RCM link it carried).
+                    data.pop("inspection" if key == "preventive" else "preventive", None)
+                    data.pop("rcm_source", None)
+                    data[key] = value
                 else:
                     data[key] = value
+            for key in clear:
+                data.pop(key, None)
+                if key in ("preventive", "inspection"):
+                    data.pop("rcm_source", None)
             node["data"] = data
-        return f"updated {', '.join(changes)} of {', '.join(ids)}"
+        parts = [f"updated {', '.join(changes)}"] if changes else []
+        if clear:
+            parts.append(f"cleared {', '.join(clear)}")
+        return f"{' and '.join(parts)} of {', '.join(ids)}"
 
     def add_edge(self, op: dict) -> str:
         s, t = op["source"], op["target"]
@@ -314,9 +345,54 @@ class _Editor:
                 self.graph.pop("repairable", None)
             parts.append("made repairable (availability)" if op["repairable"]
                          else "made non-repairable (reliability)")
+        parts += self._set_repairable_settings(op)
         if not parts:
-            raise EditError("nothing to set — give name, unit and/or repairable.")
+            raise EditError("nothing to set — give name, unit, repairable, repair_crews, maintenance_groups, "
+                            "safety_function and/or target_sil.")
         return "; ".join(parts)
+
+    def _set_repairable_settings(self, op: dict) -> list[str]:
+        """``set``'s repairable-diagram settings (#156, #157)."""
+        parts = []
+        given = [k for k in ("repair_crews", "maintenance_groups", "safety_function", "target_sil")
+                 if op.get(k) is not None]
+        if given and not self.graph.get("repairable"):
+            raise EditError(f"{', '.join(given)} apply to repairable diagrams only — set repairable true too.")
+        if op.get("repair_crews") is not None:
+            crews = int(op["repair_crews"])
+            if crews:
+                self.graph["repair_crews"] = {"crews": crews}
+                parts.append(f"{crews} repair crew{'s' if crews != 1 else ''} shared by every block")
+            else:
+                self.graph.pop("repair_crews", None)
+                parts.append("repair crews: as many as needed")
+        if op.get("maintenance_groups") is not None:
+            groups = dict(op["maintenance_groups"])
+            if groups:
+                self.graph["maintenance_groups"] = groups
+                parts.append(f"maintenance groups set ({', '.join(groups)})")
+            else:
+                self.graph.pop("maintenance_groups", None)
+                parts.append("maintenance groups cleared")
+        if op.get("safety_function") is not None:
+            if op["safety_function"]:
+                self.graph["safety_function"] = True
+                parts.append("marked as a safety function (PFDavg and SIL)")
+            else:
+                self.graph.pop("safety_function", None)
+                self.graph.pop("target_sil", None)
+                parts.append("no longer a safety function")
+        if op.get("target_sil") is not None:
+            sil = int(op["target_sil"])
+            if sil:
+                if not self.graph.get("safety_function"):
+                    raise EditError("target_sil applies to a safety function — set safety_function true too.")
+                self.graph["target_sil"] = sil
+                parts.append(f"target SIL {sil}")
+            else:
+                self.graph.pop("target_sil", None)
+                parts.append("target SIL cleared")
+        return parts
 
     def _set_ccf(self, groups: list[dict]) -> None:
         if groups:
@@ -325,8 +401,8 @@ class _Editor:
             self.graph.pop("ccf_groups", None)
 
     def add_ccf(self, op: dict) -> str:
-        if self.graph.get("repairable"):
-            raise EditError("common-cause groups are reliability-only — this diagram is repairable (availability).")
+        # In a repairable diagram a group enters a safety function's PFDavg
+        # (RePyability 0.11, #136); validation warns when it would be ignored.
         try:
             beta = float(op.get("beta"))
         except (TypeError, ValueError):
