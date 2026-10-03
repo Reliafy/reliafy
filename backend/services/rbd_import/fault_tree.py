@@ -32,6 +32,11 @@ first), which the analysis treats as the one component. The diagram is then
 exactly the tree. Repeated blocks are reliability-only, so a repairable tree
 with repeated events is imported as non-repairable (with a warning).
 
+A basic event with a fixed failure probability and no failure-time model
+(a demand failure, a human error) becomes a block with a *placeholder*
+exponential life model, listed in the import notes (see
+:func:`fixed_probability_leaf`).
+
 What can't be represented honestly raises :class:`RbdImportError`:
 non-coherent logic (NOT / XOR), and a repeated event that isn't a plain
 component (e.g. a Galileo spare gate used under two gates).
@@ -442,6 +447,32 @@ def gamma_model(shape: float, rate: float) -> dict:
 def lognormal_model(mu: float, sigma: float) -> dict:
     return {"distribution_id": "lognormal",
             "params": [{"name": "mu", "value": float(mu)}, {"name": "sigma", "value": float(sigma)}]}
+
+
+def fixed_probability_leaf(name: str, q: float, label: Optional[str] = None) -> Leaf:
+    """A basic event with a fixed failure probability ``q`` (0 < q < 1) and no
+    failure-time model. A Reliafy block needs a life distribution, so it gets
+    a *placeholder* exponential (flagged ``placeholder``) with rate
+    ``-ln(1 - q)``: it fails with probability ``q`` within one time unit. The
+    importer reports it with :func:`fixed_probability_note`."""
+    model = exponential_model(-math.log1p(-q))
+    model["placeholder"] = True
+    return Leaf(name, {"type": "component", "model": model}, label=label)
+
+
+def fixed_probability_note(events: list[tuple[str, float]]) -> Optional[str]:
+    """The import note for ``(name, q)`` events made by
+    :func:`fixed_probability_leaf` (None when there are none)."""
+    if not events:
+        return None
+    shown = ", ".join(f"“{n}” (q = {q:g})" for n, q in events[:8])
+    if len(events) > 8:
+        shown += f" and {len(events) - 8} more"
+    one = len(events) == 1
+    return (f"{shown} {'has' if one else 'have'} a fixed failure probability and no failure-time model. "
+            f"{'It was' if one else 'They were'} imported with a placeholder exponential life model "
+            "(rate −ln(1−q): failing with probability q within one time unit) — give "
+            f"{'it' if one else 'each'} a life model before relying on the analysis.")
 
 
 def model_key(model: Optional[dict]):

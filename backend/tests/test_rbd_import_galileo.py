@@ -111,7 +111,6 @@ def test_constant_events_fold_away():
 
 
 @pytest.mark.parametrize("attrs, match", [
-    ("prob=0.3", "fixed failure probability"),
     ("lambda=1e-3 prob=0.5", "only with probability"),
     ("lambda=1e-3 cov=0.9", "coverage"),
     ("lambda=1e-3 repl=2", "replicated"),
@@ -123,6 +122,20 @@ def test_constant_events_fold_away():
 def test_unsupported_event_attributes_are_refused(attrs, match):
     with pytest.raises(RbdImportError, match=match):
         load(f'toplevel "T"; "T" or "A" "B"; "A" {attrs}; "B" lambda=1;')
+
+
+def test_fixed_probability_events_import_as_flagged_placeholders():
+    # #188: the issue's tree, with the MCC a demand failure (prob=, no lambda).
+    d = load('toplevel "System"; "System" or "Pumps" "MCC" "Valve"; "Pumps" and "PA" "PB"; '
+             '"PA" lambda=1e-4; "PB" lambda=1e-4; "MCC" prob=0.01; "Valve" lambda=2e-5;')
+    mcc = by_label(d.graph, "MCC")
+    assert mcc["model"]["distribution_id"] == "exponential" and mcc["model"]["placeholder"] is True
+    assert 1 - math.exp(-mcc["model"]["params"][0]["value"]) == pytest.approx(0.01)
+    assert "placeholder" not in by_label(d.graph, "PA")["model"]
+    (note,) = [w for w in d.warnings if "fixed failure probability" in w]
+    assert "“MCC” (q = 0.01)" in note and "placeholder" in note
+    res = analyse(d, t_max=10)
+    assert res["system"]["sf"][0] == pytest.approx(1.0)
 
 
 def test_restoration_factor_thins_the_rate():
@@ -323,11 +336,12 @@ def test_storm_json_variant():
     assert "Never" not in {n.get("label") for n in g["nodes"]}
 
 
-def test_storm_json_rejects_probability_events_and_dynamic_gates():
+def test_storm_json_probability_events_import_as_placeholders_and_dynamic_gates_are_refused():
     m = _json_model()
     m["nodes"][-1]["data"].update(distribution="probability", prob="0.2")
-    with pytest.raises(RbdImportError, match="fixed failure probability"):
-        load(json.dumps(m), "m.json")
+    d = load(json.dumps(m), "m.json")
+    assert by_label(d.graph, "Never")["model"]["placeholder"] is True
+    assert any("“Never” (q = 0.2)" in w for w in d.warnings)
     m = _json_model()
     m["nodes"][1]["data"]["type"] = "pand"
     with pytest.raises(RbdImportError, match="priority-AND"):
@@ -349,3 +363,83 @@ def test_mttf_of_exponential_series_is_exact():
     d = load('toplevel "T"; "T" or "A" "B"; "A" lambda=0.002; "B" lambda=0.003;')
     assert analyse(d)["mttf"] == pytest.approx(1 / 0.005, rel=1e-3)
     assert math.isclose(1 / 0.005, 200.0)
+
+
+# ---------------------------------------------------------------------------
+# Time unit and structure summary (#187)
+# ---------------------------------------------------------------------------
+
+PUMPS = ('toplevel "System"; "System" or "Pumps" "MCC" "Valve"; "Pumps" and "PA" "PB"; '
+         '"PA" lambda=1e-4; "PB" lambda=1e-4; "MCC" lambda=1e-5; "Valve" lambda=2e-5;')
+
+
+def test_import_file_defaults_the_unit_to_hours_or_takes_one():
+    from backend.services import rbd_import
+
+    (d,) = rbd_import.import_file(PUMPS.encode(), "pumps.dft")
+    assert d.graph["unit"] == "Hours"
+    (note,) = [w for w in d.warnings if "time unit" in w]
+    assert "Galileo DFT" in note and "per hour" in note
+    (d,) = rbd_import.import_file(PUMPS.encode(), "pumps.dft", unit="Days")
+    assert d.graph["unit"] == "Days" and any("read in “Days”" in w for w in d.warnings)
+    assert not any("set to Hours" in w for w in d.warnings)
+
+
+def test_a_unit_the_file_states_wins_and_conflicting_units_stay_blank():
+    from backend.services import rbd_import
+
+    def psa(*units):
+        params = "".join(f'<define-parameter name="R{i}" unit="{u}"><float value="1e-4"/></define-parameter>'
+                         for i, u in enumerate(units))
+        events = "".join(f'<define-basic-event name="E{i}"><exponential><parameter name="R{i}"/>'
+                         '<system-mission-time/></exponential></define-basic-event>' for i in range(len(units)))
+        refs = "".join(f'<basic-event name="E{i}"/>' for i in range(len(units)))
+        return f'<opsa-mef><define-gate name="T"><or>{refs}</or></define-gate>{params}{events}</opsa-mef>'.encode()
+
+    (d,) = rbd_import.import_file(psa("hours-1", "hours-1"), "m.xml", unit="Years")
+    assert d.graph["unit"] == "hours" and any("was ignored" in w for w in d.warnings)
+    (d,) = rbd_import.import_file(psa("hours-1", "hours-1"), "m.xml", unit="Hours")
+    assert not any("ignored" in w or "time unit" in w for w in d.warnings)
+    (d,) = rbd_import.import_file(psa("hours-1", "years-1"), "m.xml")
+    assert d.graph["unit"] == "" and any("several time units" in w for w in d.warnings)
+    (d,) = rbd_import.import_file(psa("hours-1", "years-1"), "m.xml", unit="Hours")
+    assert d.graph["unit"] == "Hours"
+
+
+@pytest.mark.parametrize("text, structure, cuts", [
+    (PUMPS, "(PA ∥ PB) → MCC → Valve", [["MCC"], ["Valve"], ["PA", "PB"]]),
+    # A voting gate; its knode is a drawing device, so in no cut set.
+    ('toplevel "T"; "T" or "A" "V"; "V" 2of3 "C1" "C2" "C3"; "A" lambda=1; "C1" lambda=1; '
+     '"C2" lambda=1; "C3" lambda=1;', "A → 2-of-3(C1, C2, C3)",
+     [["A"], ["C1", "C2"], ["C1", "C3"], ["C2", "C3"]]),
+    # Series of parallels, wired as a mesh: still read as series-parallel.
+    ('toplevel "T"; "T" or "G1" "G2"; "G1" and "A" "B"; "G2" and "C" "D" "E"; "A" lambda=1; '
+     '"B" lambda=1; "C" lambda=1; "D" lambda=1; "E" lambda=1;', "(A ∥ B) → (C ∥ D ∥ E)",
+     [["A", "B"], ["C", "D", "E"]]),
+    # A shared event: drawn twice (↺), one component in the cut sets.
+    ('toplevel "T"; "T" and "G1" "G2"; "G1" or "A" "S"; "G2" or "B" "S"; "A" lambda=1; '
+     '"B" lambda=1; "S" lambda=1;', "(A → S) ∥ (B → ↺ S)", [["S"], ["A", "B"]]),
+], ids=["pumps", "vote", "mesh", "repeated"])
+def test_structure_summary_and_cut_sets(text, structure, cuts):
+    from backend.services import rbd_structure
+
+    out = rbd_structure.describe(normalize_graph(load(text).graph))
+    assert out["structure"] == structure
+    assert out["min_cut_sets"] == cuts
+    assert out["n_min_cut_sets"] == len(cuts) and out["cut_sets_complete"] is True
+
+
+def test_structure_of_a_bridge_names_its_blocks():
+    from backend.services import rbd_structure
+
+    m = {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 1.0}]}
+    wires = [("input", "A"), ("input", "B"), ("A", "C"), ("B", "D"), ("A", "E"), ("E", "D"),
+             ("C", "output"), ("D", "output")]
+    graph = {"nodes": [{"id": "input", "type": "input"},
+                       *[{"id": x, "type": "component", "label": x, "model": m} for x in "ABCDE"],
+                       {"id": "output", "type": "output"}],
+             "edges": [{"source": s, "target": t} for s, t in wires]}
+    out = rbd_structure.describe(normalize_graph(graph))
+    assert out["structure"] == "network of (A, B, C, D, E)"
+    assert out["min_cut_sets"] == [["A", "B"], ["A", "D"], ["C", "D"], ["B", "C", "E"]]
+    assert rbd_structure.describe({"nodes": [], "edges": []}) == {}

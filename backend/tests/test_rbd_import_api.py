@@ -111,3 +111,18 @@ def test_empty_file_is_rejected(client):
     r = _post(client, b"", "empty.dft")
     assert r.status_code == 422
     assert "empty" in r.json()["detail"]
+
+
+def test_galileo_and_open_psa_imports_default_to_hours(client):
+    # #187: neither format states a time unit; rates are conventionally per hour.
+    r = _post(client, b'toplevel "T"; "T" or "A" "B"; "A" lambda=1e-4; "B" lambda=2e-4;', "plant.dft")
+    (d,) = r.json()["diagrams"]
+    assert d["graph"]["unit"] == "Hours"
+    assert any("set to Hours" in w and "per hour" in w for w in d["warnings"])
+    xml = (b'<opsa-mef><define-gate name="T"><or><basic-event name="A"/><basic-event name="B"/></or></define-gate>'
+           b'<define-basic-event name="A"><exponential><float value="1e-4"/><system-mission-time/></exponential>'
+           b'</define-basic-event><define-basic-event name="B"><exponential><float value="1e-4"/>'
+           b'<system-mission-time/></exponential></define-basic-event></opsa-mef>')
+    (d,) = _post(client, xml, "plant.xml").json()["diagrams"]
+    assert d["graph"]["unit"] == "Hours"
+    assert any("Open-PSA" in w and "set to Hours" in w for w in d["warnings"])

@@ -213,12 +213,64 @@ def test_cardinality_up_to_n_is_atleast():
     assert (v["n"], v["k"]) == (2, 3)
 
 
-def test_fixed_probabilities_and_missing_data_are_refused():
-    fixed = ('<opsa-mef><define-gate name="T"><or><basic-event name="A"/><basic-event name="B"/></or>'
-             '</define-gate><define-basic-event name="A"><float value="0.01"/></define-basic-event>'
-             + exp_event("B", 1) + "</opsa-mef>")
-    with pytest.raises(RbdImportError, match="fixed probability.*“A”"):
-        load(fixed)
+def test_fixed_probability_events_import_as_flagged_placeholders():
+    # #188: a demand failure (fixed probability, no failure-time model) no
+    # longer refuses the file — it becomes a placeholder exponential block.
+    xml = ('<opsa-mef><define-gate name="T"><or><gate name="Pumps"/><basic-event name="MCC"/>'
+           '<basic-event name="Valve"/></or></define-gate>'
+           '<define-gate name="Pumps"><and><basic-event name="PA"/><basic-event name="PB"/></and></define-gate>'
+           '<define-basic-event name="MCC"><label>Motor control centre</label><float value="0.01"/>'
+           '</define-basic-event>'
+           '<define-basic-event name="Valve"><parameter name="QV"/></define-basic-event>'
+           '<define-parameter name="QV"><float value="0.002"/></define-parameter>'
+           + exp_event("PA", 1e-4) + exp_event("PB", 1e-4) + "</opsa-mef>")
+    d = one(xml)
+    mcc = by_label(d.graph, "Motor control centre")
+    assert mcc["type"] == "component"
+    assert mcc["model"]["distribution_id"] == "exponential" and mcc["model"]["placeholder"] is True
+    # Rate −ln(1−q): the block fails with probability q within one time unit.
+    rate = mcc["model"]["params"][0]["value"]
+    assert 1 - np.exp(-rate) == pytest.approx(0.01)
+    assert by_label(d.graph, "Valve")["model"]["placeholder"] is True
+    assert "placeholder" not in by_label(d.graph, "PA")["model"]
+    (note,) = [w for w in d.warnings if "fixed failure probability" in w]
+    assert "“Motor control centre” (q = 0.01)" in note and "“Valve” (q = 0.002)" in note
+    assert "placeholder" in note and "life model" in note
+    # The placeholders survive normalisation (and so are listed by the MCP tools).
+    from backend.services import rbd_graph
+    assert sorted(rbd_graph.placeholder_labels(normalize_graph(d.graph))) == ["Motor control centre", "Valve"]
+    # The diagram is analysable as imported.
+    res = rbd_analysis.analyze(normalize_graph(d.graph), t_max=10)
+    assert res["system"]["sf"][0] == pytest.approx(1.0)
+
+
+def test_fixed_probabilities_of_0_and_1_fold_and_bad_ones_are_refused():
+    def tree(q):
+        return ('<opsa-mef><define-gate name="T"><or><basic-event name="A"/><basic-event name="B"/></or>'
+                f'</define-gate><define-basic-event name="A"><float value="{q}"/></define-basic-event>'
+                + exp_event("B", 1) + "</opsa-mef>")
+    d = one(tree(0))
+    assert {n.get("label") for n in d.graph["nodes"]} == {"Input", "Output", "B"}
+    assert not any("fixed failure probability" in w for w in d.warnings)
+    with pytest.raises(RbdImportError, match="certainly occurred"):
+        load(tree(1))
+    with pytest.raises(RbdImportError, match="between 0 and 1"):
+        load(tree(1.5))
+
+
+def test_exponential_over_a_fixed_time_imports_its_rate():
+    xml = ('<opsa-mef><define-gate name="T"><or><basic-event name="A"/><basic-event name="B"/></or>'
+           '</define-gate><define-basic-event name="A"><exponential><float value="2e-4"/>'
+           '<parameter name="T24"/></exponential></define-basic-event>'
+           '<define-parameter name="T24"><float value="24"/></define-parameter>'
+           + exp_event("B", 1) + "</opsa-mef>")
+    d = one(xml)
+    a = by_label(d.graph, "A")["model"]
+    assert a == {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 2e-4}]}
+    assert any("fixed time" in w and "“A”" in w for w in d.warnings)
+
+
+def test_missing_data_and_undefined_gates_are_refused():
     with pytest.raises(RbdImportError, match="no data"):
         load('<opsa-mef><define-gate name="T"><or><basic-event name="A"/>'
              '<basic-event name="B"/></or></define-gate>' + exp_event("B", 1) + "</opsa-mef>")
