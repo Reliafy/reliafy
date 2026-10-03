@@ -1252,3 +1252,44 @@ export function setEmailPreferences(prefs) {
     body: JSON.stringify(prefs),
   });
 }
+
+// ---- Outage logs: an RBD's observed history (issue #159) -------------------
+
+function outageJson(method, url, body) {
+  return request(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+}
+
+export function listOutageLogs(rbdId) {
+  return request(`/api/rbds/${rbdId}/outage-logs`);
+}
+
+// Check a log before saving: headers, detected mapping, parsed outages or
+// every error (ok: false). Body: { csv, mapping?, unit?, window_start?,
+// window_end?, date_order?, asset_map? }.
+export function previewOutageLog(rbdId, body) {
+  return outageJson("POST", `/api/rbds/${rbdId}/outage-logs/preview`, body);
+}
+
+export function saveOutageLog(rbdId, body) {
+  return outageJson("POST", `/api/rbds/${rbdId}/outage-logs`, body);
+}
+
+export function updateOutageLog(rbdId, logId, body) {
+  return outageJson("PATCH", `/api/rbds/${rbdId}/outage-logs/${logId}`, body);
+}
+
+export function deleteOutageLog(rbdId, logId) {
+  return request(`/api/rbds/${rbdId}/outage-logs/${logId}`, { method: "DELETE" });
+}
+
+export function getOutageHistory(rbdId, logId) {
+  return request(`/api/rbds/${rbdId}/outage-logs/${logId}/history`);
+}
+
+export function fitOutageModels(rbdId, logId, body) {
+  return outageJson("POST", `/api/rbds/${rbdId}/outage-logs/${logId}/fit`, body);
+}

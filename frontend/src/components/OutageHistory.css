@@ -1,0 +1,57 @@
+/* RBD builder: the "Outage history" tab (OutageHistory.jsx). */
+.outage-history { display: flex; flex-direction: column; gap: 14px; max-width: 1100px; }
+.outage-history > .hint { margin: 0; }
+.outage-empty { margin: 0; }
+
+.outage-import { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; }
+.outage-import .hint { margin: 0; }
+.outage-import-src { display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap; }
+.outage-paste {
+  flex: 1 1 360px; min-width: 0; font-family: var(--mono); font-size: 12px; line-height: 1.45;
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--panel);
+  color: var(--text); resize: vertical;
+}
+.outage-import-side { display: flex; flex-direction: column; gap: 8px; flex: 0 1 200px; min-width: 160px; }
+.outage-file {
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; background: var(--panel);
+}
+.outage-file:hover { border-color: var(--acc); color: var(--acc); }
+.outage-input {
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font-size: 13px; min-width: 0;
+  background: var(--panel); color: var(--text);
+}
+.outage-input:focus { outline: none; border-color: var(--acc); }
+
+.outage-mapper { display: flex; flex-direction: column; gap: 10px; }
+.outage-map-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.outage-opts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; }
+.outage-opts label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+
+.outage-check p { margin: 0 0 8px; }
+.outage-assets { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px 14px; }
+.outage-asset { display: grid; grid-template-columns: minmax(70px, 1fr) auto minmax(120px, 1.2fr); gap: 8px; align-items: center; font-size: 13px; }
+.outage-asset-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.outage-asset.unmapped .outage-asset-name { color: #a23a3a; }
+.outage-notes { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+.outage-errors ul { margin: 6px 0 0; padding-left: 18px; }
+
+.outage-bar, .outage-window { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.outage-bar > :first-child { min-width: 220px; }
+.outage-window .outage-input { width: 150px; }
+
+.outage-chart { width: 100%; min-width: 0; }
+.outage-table td { white-space: nowrap; }
+.outage-tag {
+  margin-left: 6px; font-size: 10.5px; font-weight: 500; color: #a23a3a; border: 1px solid #f3c9c9;
+  border-radius: 8px; padding: 0 5px;
+}
+.outage-tag.planned { color: #8a5a00; border-color: #f0dca8; }
+
+@media (max-width: 720px) {
+  .outage-map-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .outage-opts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .outage-import-side { flex: 1 1 100%; }
+  .outage-bar > :first-child { min-width: 0; flex: 1 1 100%; }
+  .outage-window .outage-input { width: 130px; }
+}
