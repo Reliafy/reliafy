@@ -66,10 +66,34 @@ from backend.routers import email_prefs as email_prefs_router
 from backend.routers import feeds as feeds_router
 from backend.routers import oauth as oauth_router
 from backend.routers import outage_logs as outage_logs_router
+from backend.routers import uploads as uploads_router
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class _RedactUploadTokens(logging.Filter):
+    """Keep upload-link tokens (``/api/uploads/<id>?t=…``) out of uvicorn's
+    access log: the token is the upload's only credential (see
+    backend/services/uploads.py). Rewrites the logged path; never drops a line."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            if isinstance(record.args, tuple) and any("?t=" in str(a) or "&t=" in str(a) for a in record.args):
+                from backend.services.uploads import redact_query
+
+                record.args = tuple(redact_query(a) if isinstance(a, str) else a for a in record.args)
+            elif isinstance(record.msg, str) and ("?t=" in record.msg or "&t=" in record.msg):
+                from backend.services.uploads import redact_query
+
+                record.msg = redact_query(record.msg)
+        except Exception:  # noqa: BLE001 - a log filter must never fail a request
+            pass
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_RedactUploadTokens())
 
 from contextlib import asynccontextmanager  # noqa: E402
 
@@ -171,6 +195,8 @@ app.include_router(ingest_router.router)
 app.include_router(public_api_router.router)
 app.include_router(email_prefs_router.router)
 app.include_router(outage_logs_router.router)
+# MCP file uploads: PUT /api/uploads/{id}?t=… (token-authed, see services/uploads.py).
+app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
 app.include_router(feeds_router.router)
 

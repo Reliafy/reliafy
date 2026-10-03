@@ -337,6 +337,11 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/excel/inspect", "excel_inspect"),
     ("POST", "/api/excel/table", "excel_import"),
     ("POST", "/api/excel/csv", "excel_import"),
+    # MCP file uploads: the PUT carries no user auth (its token is the
+    # credential), so the route records its own upload_put event on the mcp
+    # channel; listed here so the name is the same if it's ever attributed.
+    ("PUT", "/api/uploads/{id}", "upload_put"),
+    ("POST", "/api/uploads/{id}", "upload_put"),
     # Fleets
     ("POST", "/api/fleet/fleets", "fleet_create"),
     ("PUT", "/api/fleet/fleets/{id}/items", "fleet_items"),
