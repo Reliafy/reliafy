@@ -99,3 +99,56 @@ def test_diagram_with_exact_figures_is_unchanged(env):
     out = _analyze(env, rid, simulate=False)
     assert out["available"] is True and "needs_simulation" not in out
     assert 0 < out["steady_state_availability"] < 1
+
+
+# ---- #185 common cause left out of the headline figures: say so -----------------
+
+def _sif():
+    """1oo2 pressure transmitters -> logic solver -> trip valve, proof-tested yearly."""
+    def block(nid, label, rate):
+        return {"id": nid, "type": "component", "label": label, "model": _m("exponential", failure_rate=rate),
+                "instant_repair": True, "inspection": {"interval": 8760}}
+
+    return {
+        "nodes": [{"id": "input", "type": "input"}, {"id": "output", "type": "output"},
+                  block("pt_a", "PT A", 1e-6), block("pt_b", "PT B", 1e-6),
+                  block("ls", "Logic solver", 1e-7), block("tv", "Trip valve", 2e-6)],
+        "edges": [{"source": "input", "target": "pt_a"}, {"source": "input", "target": "pt_b"},
+                  {"source": "pt_a", "target": "ls"}, {"source": "pt_b", "target": "ls"},
+                  {"source": "ls", "target": "tv"}, {"source": "tv", "target": "output"}],
+    }
+
+
+def _create_sif(env, **settings):
+    return _ok(_call(env.token[A], "create_rbd", {"name": "High-pressure trip", "repairable": True, **_sif(),
+                                                  **settings}))["id"]
+
+
+def test_headline_availability_says_it_leaves_common_cause_out(env):
+    rid = _create_sif(env, safety_function=True, target_sil=2)
+    before = _analyze(env, rid, simulate=False)
+    assert "common_cause" not in before
+    assert not any("common cause" in w for w in before.get("warnings") or [])
+
+    _edit(env, rid, {"op": "add_ccf", "members": ["pt_a", "pt_b"], "beta": 0.05})
+    out = _analyze(env, rid, simulate=False)
+    # The headline figures are those without common cause; PFDavg takes it in.
+    assert out["unavailability"] == before["unavailability"]
+    assert out["safety"]["common_cause"]["included"] is True
+    assert out["safety"]["pfd_avg"] > out["unavailability"]
+    cc = out["common_cause"]
+    assert cc["groups"] == 1 and cc["included"] is False
+    assert "leave out the 1 common-cause group" in cc["note"] and "safety.pfd_avg includes them" in cc["note"]
+    # Beside the headline figures, and in the warnings with both numbers.
+    keys = list(out)
+    assert keys.index("steady_state_availability") < keys.index("common_cause") < keys.index("safety")
+    warning = next(w for w in out["warnings"] if "leave out common cause" in w)
+    assert f"{out['unavailability']:.4g}" in warning and f"{out['safety']['pfd_avg']:.4g}" in warning
+
+
+def test_common_cause_outside_a_safety_function_is_noted(env):
+    rid = _create_sif(env)
+    _edit(env, rid, {"op": "add_ccf", "members": ["pt_a", "pt_b"], "beta": 0.05})
+    out = _analyze(env, rid, simulate=False)
+    assert out["common_cause"]["included"] is False and "safety_function=true" in out["common_cause"]["note"]
+    assert any("so they are optimistic" in w for w in out["warnings"])

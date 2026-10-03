@@ -1897,13 +1897,50 @@ def _exact_summary(exact: dict | None) -> dict | None:
     return out
 
 
-def _availability_summary(result: dict) -> dict:
+def _common_cause(graph: dict, result: dict) -> tuple[Optional[dict], Optional[str]]:
+    """``(common_cause, warning)`` for a repairable diagram with common-cause
+    groups (#185), else ``(None, None)``. RePyability's repairable analysis
+    has no common cause in its long-run, over-time or simulated values
+    (RePyability#158), so the headline figures leave the groups out; only a
+    safety function's PFDavg takes them, where its chain can."""
+    groups = [g for g in graph.get("ccf_groups") or [] if len(g.get("members") or []) >= 2]
+    if not groups:
+        return None, None
+    what = f"{len(groups)} common-cause group" + ("s" if len(groups) != 1 else "")
+    safety = result.get("safety") or {}
+    included = bool((safety.get("common_cause") or {}).get("included"))
+    if included:
+        where = ("safety.pfd_avg includes them, so quote it (not 1 - availability) for the safety function's "
+                 "probability of failure on demand")
+    elif graph.get("safety_function"):
+        why = (safety.get("common_cause") or {}).get("note")
+        where = "safety.pfd_avg leaves them out too" + (f": {why}" if why else "")
+    else:
+        where = ("common cause enters a repairable diagram only through a safety function's PFDavg (edit_rbd "
+                 "set safety_function=true)")
+    note = (f"The availability figures (steady_state_availability, unavailability, the exact figures over time "
+            f"and the simulation) leave out the {what}; {where}.")
+    u, pfd = result.get("unavailability"), safety.get("pfd_avg")
+    if included and u is not None and pfd is not None:
+        warning = (f"The availability figures leave out common cause: unavailability {u:.4g} without it, "
+                   f"safety.pfd_avg {pfd:.4g} with it. Quote safety.pfd_avg for the safety function.")
+    else:
+        warning = (f"The availability figures leave out the diagram's {what}, so they are optimistic "
+                   "(see common_cause.note).")
+    return {"groups": len(groups), "included": False, "note": note}, warning
+
+
+def _availability_summary(result: dict, graph: Optional[dict] = None) -> dict:
     keys = ("unit", "steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
-            "failure_frequency", "figures_basis", "has_simulation", "n_simulations", "t_simulation", "precision",
-            "per_node", "importance", "criticality", "cached", "computed_at", "can_recompute", "current_state",
+            "failure_frequency", "figures_basis", "common_cause", "has_simulation", "n_simulations",
+            "t_simulation", "precision", "per_node", "importance", "criticality", "cached", "computed_at",
+            "can_recompute", "current_state",
             # How the long-run values were found, the repair crews, a safety
             # function's PFDavg and SIL band (#156, #157).
             "long_run_method", "repair_crews", "safety", "opportunistic_renewals")
+    common_cause, _ = _common_cause(graph or {}, result)
+    if common_cause:
+        result = {**result, "common_cause": common_cause}
     out = {"kind": "repairable", **{k: result.get(k) for k in keys if k in result}}
     if not result.get("has_simulation", True):
         # The simulation's own figures aren't there: don't list empty ones.
@@ -2050,7 +2087,10 @@ def analyze_rbd(
                 message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
                 return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
                         "message": message}
-            out = {**head, "available": True, **_availability_summary(payload)}
+            out = {**head, "available": True, **_availability_summary(payload, graph)}
+            _, cc_warning = _common_cause(graph, payload)
+            if cc_warning:
+                out["warnings"] = [*out.get("warnings", []), cc_warning]
             sim_state = (payload.get("simulation_status") or {}).get("state")
             if sim_state == "pro_required" and (simulate or recompute):
                 out["simulation"] = {
