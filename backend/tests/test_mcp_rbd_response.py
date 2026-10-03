@@ -152,3 +152,73 @@ def test_common_cause_outside_a_safety_function_is_noted(env):
     out = _analyze(env, rid, simulate=False)
     assert out["common_cause"]["included"] is False and "safety_function=true" in out["common_cause"]["note"]
     assert any("so they are optimistic" in w for w in out["warnings"])
+
+
+# ---- #186 response cleanups --------------------------------------------------------
+
+BLOCKER = "it has no place for a standby group"
+
+
+def test_refusal_reasons_are_in_mcp_terms_and_given_once(env):
+    import json
+
+    out = _analyze(env, _create_cw(env), simulate=False)
+    text = json.dumps(out, ensure_ascii=False)
+    # RePyability's Python API isn't something an MCP client can call.
+    assert "availability()" not in text and "cost()" not in text
+    reason = out["long_run_method"]["reason"]
+    assert BLOCKER in reason and "analyze_rbd with simulate=true" in reason and "export_rbd_python" in reason
+    # The crews' count is the repair jobs repair_crews counts (a standby unit each).
+    assert "1 repair crew(s) for 5 repair jobs" in reason and out["repair_crews"]["jobs"] == 5
+    # The blocker's paragraph once, not once per route.
+    assert text.count(BLOCKER) == 1
+    exact = out["exact"]
+    assert exact["routes"]["mean_availability"] == {"route": "refused"}
+    assert exact["routes"]["availability"] == {"route": "simulated"}
+    refused = next(g for g in exact["route_reasons"] if "mean_availability" in g["routes"])
+    assert set(refused["routes"]) >= {"mean_availability", "point_availability", "mission_availability",
+                                      "expected_failures", "expected_events"}
+    assert refused["reason"] == "As long_run_method.reason."
+    assert exact["message"].endswith("long_run_method.reason says why.")
+
+
+def test_simulated_result_has_a_headline_availability_and_no_null_importance(env):
+    out = _analyze(env, _create_cw(env), simulate=True)
+    head = out["availability"]
+    assert head["basis"] == "simulation" and head["value"] == out["precision"]["window_availability"]
+    assert head["interval"]["lower"] <= head["value"] <= head["interval"]["upper"]
+    assert head["interval"]["confidence"] == out["precision"]["confidence"]
+    # Nothing computed for importance: one note, not nine nulls per block.
+    assert "importance" not in out
+    assert "long_run_method" in out["importance_note"] and "criticality" in out["importance_note"]
+    assert out["criticality"]
+
+
+def test_exact_result_has_a_headline_availability_and_its_importance(env):
+    graph = _cw_pump_train()
+    graph["nodes"][4] = {"id": "pumps", "type": "component", "label": "CW pump", "model": _m(
+        "exponential", failure_rate=1e-4), "repair": REPAIR}
+    rid = _ok(_call(env.token[A], "create_rbd", {"name": "Exact", "repairable": True, **graph}))["id"]
+    out = _analyze(env, rid, simulate=False)
+    assert out["availability"] == {"value": out["steady_state_availability"], "basis": "exact",
+                                   "measure": "long-run (steady-state) availability", "interval": None}
+    assert set(out["importance"]) == {"mcc", "strainer", "pumps", "cv"} and "importance_note" not in out
+    assert all(row["birnbaum"] is not None for row in out["importance"].values())
+
+
+def test_block_counts_agree(env):
+    from backend.services import rbd_analysis
+
+    created = _ok(_call(env.token[A], "create_rbd", {"name": "CW", "repairable": True, **_cw_pump_train(),
+                                                     "repair_crews": 1}))
+    # The standby group is one block everywhere; its units are repair jobs.
+    out = _analyze(env, created["id"], simulate=False)
+    assert created["n_blocks"] == out["exact"]["n_blocks"] == 4
+    assert out["repair_crews"]["blocks"] == 4
+    assert rbd_analysis.count_blocks(_cw_pump_train()) == 4
+    # A voting gate isn't a block.
+    stage = {"label": "Pumps", "k_of_n": 2, "components": [
+        {"label": f"Pump {i}", "distribution": "weibull",
+         "params": [{"name": "alpha", "value": 900}, {"name": "beta", "value": 1.4}]} for i in (1, 2, 3)]}
+    voted = _ok(_call(env.token[A], "create_rbd", {"name": "2oo3", "stages": [stage]}))
+    assert any(n["type"] == "knode" for n in voted["nodes"]) and voted["n_blocks"] == 3

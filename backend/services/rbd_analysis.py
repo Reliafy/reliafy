@@ -2303,9 +2303,11 @@ _OVER_TIME_OK = ("exact", "numerical")
 
 
 def count_blocks(graph: dict) -> int:
-    """The component blocks of a diagram (voting gates, input and output
-    aren't blocks): what the exact figures' cost scales with."""
-    return sum(1 for n in (graph or {}).get("nodes") or [] if n.get("type") == "component")
+    """The blocks of a diagram — components, standby groups and the other
+    block types (voting gates, input and output aren't blocks): what the
+    exact figures' cost scales with, and the count every response gives as
+    ``n_blocks`` (#186)."""
+    return sum(1 for n in (graph or {}).get("nodes") or [] if n.get("type") in _BLOCK_TYPES)
 
 
 def exact_deferral(graph: dict, requested: bool) -> Optional[dict]:
