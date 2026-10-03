@@ -612,3 +612,13 @@ def test_rbd_cap_is_all_or_nothing(free_env, monkeypatch):
         "upload_id": link["upload_id"], "save": False}))["diagrams"]]
     out = _ok(_call(env.token[FREE], "import_rbd", {"upload_id": link["upload_id"], "only": names[:1]}))
     assert len(out["diagrams"]) == 1 and env.db.rbds.count_documents({"owner_id": FREE}) == 2
+
+
+
+def test_upload_links_can_point_straight_at_cloud_run(env, monkeypatch):
+    """UPLOAD_BASE_URL sends the PUT around the Firebase Hosting proxy."""
+    from backend import config
+    monkeypatch.setattr(config, "UPLOAD_BASE_URL", "https://reliafy-123.australia-southeast1.run.app")
+    out = _ok(_call(env.token[A], "create_upload", {"purpose": "rbd_import", "filename": "x.xml"}))
+    assert out["url"].startswith("https://reliafy-123.australia-southeast1.run.app/api/uploads/")
+    assert out["url"] in out["curl"]

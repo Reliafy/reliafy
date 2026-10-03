@@ -2671,7 +2671,8 @@ def create_upload(
     doc, token = uploads_service.create(
         db, user["uid"], purpose, filename, size_bytes,
         plan=_usage_plan(user), client=usage_service.client_of(user))
-    url = _url(f"/api/uploads/{doc['_id']}?t={token}")
+    path = f"/api/uploads/{doc['_id']}?t={token}"
+    url = f"{config.UPLOAD_BASE_URL}{path}" if config.UPLOAD_BASE_URL else _url(path)
     return {
         "upload_id": doc["_id"],
         "url": url,

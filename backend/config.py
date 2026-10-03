@@ -151,6 +151,10 @@ PRO_MONTHLY_CREDIT_CENTS = _int("PRO_MONTHLY_CREDIT_CENTS", 1000)
 # proxy (Firebase Hosting forwards to Cloud Run with the service host). Unset =
 # fall back to the request's own base URL.
 PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/") or None
+# Where MCP upload links point. reliafy.com sits behind Firebase Hosting, whose
+# proxy to Cloud Run may cap request size and time; set this to the Cloud Run
+# service URL so a 30 MB PUT goes straight to the app. Defaults to PUBLIC_BASE_URL.
+UPLOAD_BASE_URL = (os.environ.get("UPLOAD_BASE_URL") or "").strip().rstrip("/") or None
 
 # ---- Stripe -----------------------------------------------------------------
 # The double-underscore names are kept for continuity with older deploy config;
