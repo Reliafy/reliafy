@@ -1783,6 +1783,7 @@ def edit_rbd(
         raise ToolError(f"“{rbd.name}” has changed since {if_updated_at} (now updated_at "
                         f"{rbd.updated_at.isoformat()}), e.g. edited in the app. Nothing was saved: re-read it with "
                         "get_rbd and retry with the new updated_at.")
+    saved_doc = db.rbds.find_one({"_id": rbd.id}, {"availability_cache": 1})
     try:
         result = rbd_edit.apply_ops(rbd.graph or {}, [_op_dict(op) for op in ops], rbd.name,
                                     resolve_saved_model=_resolver(db, owners), self_id=rbd.id)
@@ -1818,6 +1819,17 @@ def edit_rbd(
     if unchanged:
         out["warnings"] = [w for w in out["warnings"] if w not in known]
         out["warnings_unchanged"] = len(unchanged)
+    # The saved simulation result (#184): an edit that changes the analysis
+    # leaves it stale, and analyze_rbd no longer serves it.
+    if rbds_service.saved_availability_applies(saved_doc, rbd.graph or {}):
+        if rbds_service.saved_availability_applies(saved_doc, graph):
+            out["saved_simulation"] = {"status": "kept"}
+        else:
+            out["saved_simulation"] = {"status": "discarded", "message": (
+                ("This edit would discard" if dry_run else "This edit discarded")
+                + " the saved simulation result: it was for the diagram before the edit. analyze_rbd gives the "
+                "exact figures only until the simulation runs again (simulate=true)."
+            )}
     return out
 
 
@@ -1901,6 +1913,45 @@ def _availability_summary(result: dict) -> dict:
     return out
 
 
+# The figures a repairable result carries; all null when nothing was computed.
+_FIGURE_KEYS = ("steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
+                "failure_frequency", "figures_basis", "t_simulation", "importance")
+
+
+def _needs_simulation(payload: dict) -> bool:
+    """Whether a repairable result has nothing to report without the
+    simulation (#184): none ran (or was saved), and there is neither an exact
+    long-run availability nor exact figures over time."""
+    if payload.get("has_simulation") or payload.get("steady_state_availability") is not None:
+        return False
+    return (payload.get("exact") or {}).get("status") != "ok"
+
+
+def _simulation_needed(out: dict, payload: dict, saved: Optional[bool], from_now: bool) -> dict:
+    """``out`` as a plain answer that nothing was computed (#184): available
+    false, why and what to call, and none of the null figures. ``saved`` is
+    whether the diagram's saved simulation applies to it (None: there is
+    none)."""
+    why = (" (long_run_method.reason says why)" if (payload.get("long_run_method") or {}).get("reason")
+           else "")
+    reason = ("Nothing was computed: this diagram has no exact availability figures, so they need the "
+              f"simulation{why}.")
+    if from_now:
+        pass  # A run from a current state never reads the saved (from-new) result.
+    elif saved is False:
+        reason += (" The saved simulation result is for the diagram before it was last edited, so it no longer "
+                   "applies.")
+    elif saved:
+        reason += " The saved simulation result ran over a different horizon (t_max), so it isn't served for this one."
+    reason += " Call analyze_rbd with simulate=true, or export_rbd_python to run the simulation locally."
+    if (payload.get("exact") or {}).get("status") == "on_request":
+        reason += " compute_exact=true computes the exact figures over time, where this diagram has them."
+    head = {k: out[k] for k in ("rbd_id", "name", "url", "placeholders", "warning", "warnings") if k in out}
+    rest = {k: v for k, v in out.items() if k not in head and k not in _FIGURE_KEYS and k != "available"}
+    return {**head, "kind": "repairable", "available": False, "needs_simulation": True, "reason": reason,
+            **rest}
+
+
 class BlockState(BaseModel):
     down: Optional[bool] = Field(None, description="True: the block is down now (in a repair).")
     since: Optional[float] = Field(None, ge=0, description=(
@@ -1945,7 +1996,9 @@ def analyze_rbd(
     (Pro or purchased credits): a saved result is always served; otherwise, without entitlement, the
     response carries `simulation: {available: false, message}` — relay it, and offer export_rbd_python to
     run the simulation locally. A diagram whose figures are simulation-only (exact.status
-    'simulation_only', e.g. proof tests that take time) returns available=false without entitlement."""
+    'simulation_only', e.g. proof tests that take time) returns available=false without entitlement, and
+    with simulate=false returns available=false, needs_simulation=true and the reason (no saved result
+    applies)."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -2007,6 +2060,10 @@ def analyze_rbd(
                 }
             else:
                 out["simulation"] = {"available": bool(payload.get("has_simulation")), "state": sim_state}
+            if _needs_simulation(payload):
+                saved = rbds_service.saved_availability_applies(
+                    db.rbds.find_one({"_id": rbd.id}, {"availability_cache": 1}), graph)
+                return _simulation_needed(out, payload, saved, bool(state))
             return out
 
         result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
