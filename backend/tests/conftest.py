@@ -14,6 +14,17 @@ def _fast_sample_availability(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_exact_cache():
+    """The exact availability figures are kept in a per-process cache; each
+    test starts without another's."""
+    from backend.services import rbds
+
+    rbds.clear_exact_lru()
+    yield
+    rbds.clear_exact_lru()
+
+
+@pytest.fixture(autouse=True)
 def _no_background_usage_rollup(monkeypatch):
     """Usage logging rolls up finished days in a background thread at most
     every few minutes; tests call usage.rollup() themselves rather than race

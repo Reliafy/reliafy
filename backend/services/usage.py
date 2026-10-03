@@ -289,7 +289,8 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/models/{id}/evaluate", "model_evaluate"),
     ("POST", "/api/models/{id}/confidence", "model_evaluate"),
     ("DELETE", "/api/models/{id}", "model_delete"),
-    # RBDs (a repairable analysis is re-labelled availability_sim by the route)
+    # RBDs (a repairable analysis is re-labelled availability_exact, or
+    # availability_sim when the simulation runs, by the route)
     ("POST", "/api/rbds", "rbd_save"),
     ("POST", "/api/rbds/analyze", "rbd_analyze"),
     ("GET", "/api/rbds/{id}/analyze", "rbd_analyze"),
