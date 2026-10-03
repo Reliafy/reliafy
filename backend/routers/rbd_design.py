@@ -75,10 +75,11 @@ def apply_rbd_design(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    """The diagram with a design drawn on it (not saved), and its R(t)."""
+    """The diagram with a design drawn on it (not saved), its R(t), and notes
+    on its common-cause groups (copies that joined one, a group removed)."""
     resolve_model, resolve_subsystem = _resolvers(session, ctx.read_owners)
     try:
-        out = rbd_design.apply_design(graph, blocks, design)
+        out, notes = rbd_design.apply_design_with_notes(graph, blocks, design)
         reliability = (
             rbd_design.applied_reliability(out, t, resolve_model, resolve_subsystem)
             if t is not None else None
@@ -90,4 +91,4 @@ def apply_rbd_design(
         return JSONResponse(
             status_code=500, content={"detail": "Couldn't draw this design on the diagram."}
         )
-    return JSONResponse(content={"graph": out, "reliability": reliability})
+    return JSONResponse(content={"graph": out, "reliability": reliability, "notes": notes})
