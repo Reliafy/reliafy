@@ -45,6 +45,16 @@ import {
   RbdUnitContext,
   StructureNode,
 } from "../components/RbdNodes.jsx";
+import { lazy, Suspense } from "react";
+
+// The "Outage history" tab (an observed-history import and charts) loads on
+// first open, so the builder's own bundle doesn't carry it.
+const OutageHistory = lazy(() => import("../components/OutageHistory.jsx"));
+// ?tab=outages (the MCP tools' links) opens the builder on that tab.
+const initialTab = () =>
+  typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "outages"
+    ? "outages"
+    : "builder";
 
 const TIME_UNITS = [
   "Seconds",
@@ -194,7 +204,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   const [diagramCosts, setDiagramCosts] = useState(null);
   const costsField = useMemo(() => (diagramCosts ? { costs: diagramCosts } : {}), [diagramCosts]);
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
-  const [tab, setTab] = useState("builder"); // 'builder' | 'calc' | 'tree' | 'design'
+  const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'tree' | 'design' | 'outages'
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
   const [checkedSig, setCheckedSig] = useState(null);
@@ -881,6 +891,12 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       >
         Design
       </button>
+      <button
+        className={"tab" + (tab === "outages" ? " active" : "")}
+        onClick={() => setTab("outages")}
+      >
+        Outage history
+      </button>
     </div>
     <div
       className="rbd-canvas"
@@ -1419,6 +1435,21 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         }}
       />
     </div>
+    {tab === "outages" && (
+      <div className="rbd-calc-panel">
+        <Suspense fallback={<p className="muted-line">Loading…</p>}>
+          <OutageHistory
+            rbdId={savedRbdId}
+            graph={{ nodes, edges, unit: rbdUnit }}
+            readOnly={savedRbdReadOnly}
+            onApplyModels={(updates) =>
+              // Models fitted from the log, put on their blocks (unsaved).
+              setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: { ...n.data, ...updates[n.id] } } : n)))
+            }
+          />
+        </Suspense>
+      </div>
+    )}
     </div>
     </RbdCcfContext.Provider>
     </RbdRepairableContext.Provider>

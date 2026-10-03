@@ -86,6 +86,7 @@ from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
 from backend.services import oauth as oauth_service
+from backend.services import outage_logs as outage_logs_service
 from backend.services import models as models_service
 from backend.services import rbd_edit
 from backend.services import rbd_graph
@@ -253,6 +254,9 @@ list_models / get_model read what is saved; list_datasets / upload_dataset manag
 B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script). Edit, \
 don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/remove/update blocks and \
 edges) rather than re-creating it; clone_rbd copies a sample or makes a variant to edit.
+- Observed history: upload_outage_log saves a real outage log (asset, start, end; blank end = still down) \
+against one of the user's diagrams; system_history then gives the system's actual availability over the \
+window, its outages each attributed to the block that took it down, and the blocks ranked by downtime share.
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
@@ -1945,6 +1949,121 @@ def delete_rbd(
         out["affected"] = {"rbds": embedding}
         out["note"] = "These diagrams embedded it as a sub-system and can no longer be analysed as they are."
     return out
+
+
+# ---------------------------------------------------------------------------
+# Outage history (an RBD's observed up/down record; issue #159)
+# ---------------------------------------------------------------------------
+
+class OutageColumns(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    asset: str = Field(description="Column naming the asset/block of each outage (a block's label or node id).")
+    start: str = Field(description="Column with when the outage started.")
+    end: Optional[str] = Field(default=None, description="Column with when it ended (blank cell = still down).")
+    duration: Optional[str] = Field(default=None, description="Instead of end: a column with how long it lasted "
+                                                              "(in `unit`).")
+    reason: Optional[str] = Field(default=None, description="Optional column with the reason or failure mode.")
+    planned: Optional[str] = Field(default=None, description="Optional column: yes/no (planned/unplanned, 1/0) "
+                                                             "for planned maintenance outages.")
+
+
+def _own_rbd(db, uid: str, rbd_id: str):
+    rbd = _get_rbd(db, uid, rbd_id)
+    if samples_service.is_sample(rbd.owner_id):
+        raise ToolError(f"“{rbd.name}” is a shared sample diagram: outage logs go on the user's own diagrams. "
+                        "Copy it with clone_rbd first, then upload the log to the copy.")
+    return rbd
+
+
+def _outages_url(rbd_id: str) -> str:
+    return _url(f"/rbds/b/{rbd_id}?tab=outages")
+
+
+@_tool("upload_outage_log", _WRITE, "Upload an outage log")
+def upload_outage_log(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="One of the user's own RBD ids (list_rbds) the log belongs to.")],
+    csv: Annotated[str, Field(min_length=1, description=(
+        "The outage log as CSV text, header row first (tab- or semicolon-separated also accepted): one row per "
+        "outage with the asset, its start and its end (blank = still down)."))],
+    columns: Annotated[Optional[OutageColumns], Field(description=(
+        "Which column holds what. Omit to detect from the headers (asset/equipment, start/down, end/restored, "
+        "duration, reason, planned)."))] = None,
+    unit: Annotated[Optional[str], Field(description=(
+        "The unit numeric times and durations are in (hours, days, …). Default: the diagram's unit. Dates and "
+        "times (ISO or day/month/year) are converted to the diagram's unit."))] = None,
+    window_start: Annotated[Optional[str], Field(description=(
+        "When observation began (a date-time for a dated log, else a number). Default: the first outage start."
+    ))] = None,
+    window_end: Annotated[Optional[str], Field(description=(
+        "When observation ended (e.g. now). Default: the last record. Open outages run to it."))] = None,
+    date_order: Annotated[Literal["auto", "dmy", "mdy"], Field(description=(
+        "How to read numeric dates like 03/04/2024: dmy (day first), mdy, or auto (detected; ambiguous -> dmy)."
+    ))] = "auto",
+    asset_map: Annotated[Optional[dict[str, str]], Field(description=(
+        "Map asset names in the log to node ids where they don't match a block's label or id exactly "
+        "(get_rbd lists the nodes)."))] = None,
+    name: Annotated[Optional[str], Field(description="A name for the log.")] = None,
+) -> dict[str, Any]:
+    """Save a real outage log against one of the user's RBDs and return the system's observed history from it.
+    Each block's outages become its up/down timeline; RePyability merges them through the diagram's structure
+    into the system's history and attributes every system outage to the block that took it down. Overlapping
+    outages of one asset are merged; assets that match no block are listed and left out. Returns the log id,
+    import notes and the history (as system_history does)."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    rbd = _own_rbd(db, uid, rbd_id)
+    _cap(db, user, "outage_logs", "outage logs")
+    mapping = columns.model_dump(exclude_none=True) if columns else None
+    try:
+        parsed = outage_logs_service.parse_log(
+            csv, rbd.graph or {}, mapping, unit=unit, window_start=window_start, window_end=window_end,
+            date_order=date_order, asset_map=asset_map)
+    except outage_logs_service.OutageLogError as exc:
+        raise ToolError(str(exc)) from exc
+    log = outage_logs_service.create_log(db, rbd, parsed, uid, name or "")
+    out = {
+        "log_id": log["_id"], "name": log["name"], "rbd_id": rbd.id, "n_outages": len(parsed["rows"]),
+        "columns": parsed["columns"], "unit": parsed["unit"],
+        "asset_map": parsed["asset_map"], "unmapped": parsed["unmapped"],
+        "url": _outages_url(rbd.id),
+    }
+    try:
+        out["history"] = outage_logs_service.lean_history(
+            outage_logs_service.system_history(rbd.graph or {}, log))
+    except outage_logs_service.OutageLogError as exc:
+        out["history_error"] = str(exc)
+    return out
+
+
+@_tool("system_history", _READ, "Observed system history")
+def system_history(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="One of the user's own RBD ids (list_rbds).")],
+    log_id: Annotated[Optional[str], Field(description=(
+        "An outage log id (from upload_outage_log). Default: the diagram's latest log."))] = None,
+) -> dict[str, Any]:
+    """A diagram's observed availability history from its outage log: KPIs over the observation window
+    (availability, system outages, failures vs planned, total and mean downtime, observed MTBF), the 10
+    longest system outages each with the block that caused it (the last to go down) and any others down with
+    it, and the blocks ranked by their share of the system's downtime. Times are in the log's unit."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    rbd = _own_rbd(db, uid, rbd_id)
+    if log_id:
+        log = outage_logs_service.get_log(db, log_id, [uid], rbd_id=rbd.id)
+        if log is None:
+            raise ToolError("Outage log not found for this diagram.")
+    else:
+        log = outage_logs_service.latest_log(db, rbd.id, [uid])
+        if log is None:
+            raise ToolError(f"“{rbd.name}” has no outage log yet — upload one with upload_outage_log.")
+    try:
+        result = outage_logs_service.system_history(rbd.graph or {}, log)
+    except outage_logs_service.OutageLogError as exc:
+        raise ToolError(str(exc)) from exc
+    return {"rbd_id": rbd.id, "name": rbd.name, "log_id": log["_id"], "log_name": log.get("name"),
+            **outage_logs_service.lean_history(result), "url": _outages_url(rbd.id)}
 
 
 # ---------------------------------------------------------------------------

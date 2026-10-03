@@ -91,6 +91,8 @@ def delete_rbd(db, rbd_id: str, owner_id: str) -> None:
     result = db.rbds.delete_one({"_id": rbd_id, "owner_id": owner_id})
     if result.deleted_count == 0:
         raise RbdNotFound(rbd_id)
+    # Its outage logs go with it (they mean nothing without the diagram).
+    db.outage_logs.delete_many({"rbd_id": rbd_id, "owner_id": owner_id})
 
 
 # Node-data keys that reference the owner's other saved artifacts by id. A

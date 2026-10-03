@@ -483,6 +483,7 @@ const MCP_TOOLS = [
   ["clone_rbd", "Copy a sample or one of your diagrams into your workspace, to edit or to make a variant."],
   ["analyze_rbd", "System reliability, MTTF, B-lives and importance; availability for repairable diagrams (a paid feature, saved results are reused)."],
   ["export_rbd_python", "A diagram as a standalone SurPyval + RePyability script."],
+  ["upload_outage_log / system_history", "Save a real outage log (asset, down, back up) against one of your diagrams, then read the system’s observed availability, its outages each with the block that caused it, and the blocks ranked by downtime share."],
   ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function."],
   ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model."],
   ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items."],
