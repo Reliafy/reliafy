@@ -31,7 +31,7 @@ N = 400  # fixed simulation counts keep the suite quick
 
 def _exp(rate):
     return {"source": "params", "distribution": "Exponential", "distribution_id": "exponential",
-            "params": [{"name": "lambda", "value": rate}]}
+            "params": [{"name": "failure_rate", "value": rate}]}
 
 
 def _w(alpha, beta):
@@ -163,14 +163,19 @@ def test_age_replacement_raises_availability_and_lowers_cost():
     assert instant["downtime"]["maintenance"] == 0.0
 
 
-def test_block_replacement_is_simulated_and_labelled_so():
+def test_block_replacement_is_exact_and_labelled_so():
+    """RePyability 0.10 (#92) gives block replacement exact long-run values
+    (it was simulated only); the simulation over the window agrees."""
     r = ra.analyze_availability(
         _wearing({"policy": "block", "interval": 580, "duration": 7, "cost": 1000}), n_simulations=N)
-    assert r["steady_state_availability"] is None and r["availability_basis"] == "simulation"
-    assert r["costs"]["cost_rate_basis"] == "simulation"
-    assert r["costs"]["cost_rate"] == pytest.approx(r["costs"]["simulated"]["cost_rate"])
-    assert r["downtime"]["basis"] == "simulation"
+    assert r["steady_state_availability"] is not None and r["availability_basis"] == "exact"
+    assert r["costs"]["cost_rate_basis"] == "exact"
+    assert r["costs"]["cost_rate"] == pytest.approx(r["costs"]["simulated"]["cost_rate"], rel=0.05)
+    assert r["downtime"]["basis"] == "exact"
     assert 0 < r["downtime"]["maintenance"] < r["downtime"]["total"]
+    assert r["downtime"]["total"] == pytest.approx(1 - r["steady_state_availability"], rel=1e-9)
+    p = r["precision"]
+    assert p["lower"] - 1e-3 <= r["steady_state_availability"] <= p["upper"] + 1e-3
     # The default window covers several replacement intervals.
     assert r["t_simulation"] >= 10 * 580
 
@@ -246,7 +251,7 @@ def test_graph_format_carries_costs_and_maintenance():
         "nodes": [
             {"id": "input", "type": "input"}, {"id": "output", "type": "output"},
             {"id": "p", "type": "component", "label": "Pump",
-             "model": {"distribution_id": "exponential", "params": [{"name": "lambda", "value": 1e-3}]},
+             "model": {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 1e-3}]},
              "instant_repair": True, "costs": {"replace": 40},
              "preventive": {"interval": 500, "duration": {"distribution_id": "weibull",
                                                           "params": [{"name": "alpha", "value": 8},
@@ -305,8 +310,8 @@ def test_old_diagrams_build_and_analyse_exactly_as_before():
     )
     ov = {"working_nodes": working | gates, "broken_nodes": broken}
     assert rbd.mean_availability(**ov) == old.mean_availability(**ov)
-    new_res = rbd.availability(t_simulation=5000, N=40, method="c", seed=1, antithetic=True, **ov)
-    old_res = old.availability(t_simulation=5000, N=40, method="c", seed=1, antithetic=True, **ov)
+    new_res = rbd.availability(t_simulation=5000, mc_samples=40, method="c", seed=1, antithetic=True, **ov)
+    old_res = old.availability(t_simulation=5000, mc_samples=40, method="c", seed=1, antithetic=True, **ov)
     assert np.array_equal(new_res.uptimes, old_res.uptimes)
     r = ra.analyze_availability(g, n_simulations=40)
     assert "costs" not in r and "downtime" not in r and r["availability_basis"] == "exact"
@@ -371,7 +376,8 @@ def test_export_runs_block_replacement_to_the_same_precision_target(tmp_path):
     assert res["precision"]["window_availability"] == pytest.approx(
         app["precision"]["window_availability"], rel=1e-12)
     assert res["precision"]["tolerance"] == pytest.approx(app["precision"]["tolerance"], rel=1e-12)
-    assert res["costs"]["cost_rate_basis"] == "simulation"
+    # Exact since RePyability 0.10 (#92); the window is still simulated.
+    assert res["costs"]["cost_rate_basis"] == "exact"
     assert res["costs"]["cost_rate"] == pytest.approx(app["costs"]["cost_rate"], rel=1e-12)
 
 
@@ -458,10 +464,16 @@ def test_applied_copies_join_a_vote_through_a_junction():
 def test_cheapest_design_needs_prices_and_exact_costs():
     with pytest.raises(AnalysisError, match="purchase price"):
         rbd_costs.cheapest_design(_series(_pump()), horizon=1000)
+    # Proof tests that take time have no exact long-run costs (block
+    # replacement has had them since RePyability 0.10, #92).
+    timed = _series(_node("v", model=_exp(1e-4), instant_repair=True,
+                          inspection={"interval": 1000, "duration": 5},
+                          costs={"acquisition": 1000}), costs={"downtime_rate": 100})
+    with pytest.raises(AnalysisError, match="instant tests"):
+        rbd_costs.cheapest_design(timed, horizon=1000)
     block = _wearing({"policy": "block", "interval": 580})
     block["nodes"][2]["data"]["costs"]["acquisition"] = 1000
-    with pytest.raises(AnalysisError, match="block replacement"):
-        rbd_costs.cheapest_design(block, horizon=1000)
+    assert rbd_costs.cheapest_design(block, horizon=1000)["design"]["availability"] > 0
     with pytest.raises(AnalysisError, match="horizon"):
         rbd_costs.cheapest_design(_plant() | {"costs": {"downtime_rate": 100}})
 
@@ -510,13 +522,17 @@ def test_compare_notes_when_only_one_design_is_priced():
     assert "cost" not in unpriced["differences"] and unpriced["cost_note"] is None
 
 
-def test_fault_tree_explains_why_block_replacement_has_no_tree():
+def test_fault_tree_explains_why_timed_proof_tests_have_no_tree():
     from backend.services.rbd_fault_tree import fault_tree
 
-    with pytest.raises(AnalysisError, match="block replacement"):
-        fault_tree(_wearing({"policy": "block", "interval": 580}))
-    # Age replacement has exact long-run values, so its tree is drawn.
+    timed = _series(_node("v", model=_exp(1e-4), instant_repair=True,
+                          inspection={"interval": 1000, "duration": 5}))
+    with pytest.raises(AnalysisError, match="test time or a repair"):
+        fault_tree(timed)
+    # Age and (since RePyability 0.10, #92) block replacement have exact
+    # long-run values, so their trees are drawn.
     assert fault_tree(_wearing({"policy": "age", "interval": 580}))["unavailability"] > 0
+    assert fault_tree(_wearing({"policy": "block", "interval": 580}))["unavailability"] > 0
 
 
 def test_costs_and_repeats_work_together_in_the_graph_format_and_refusals():

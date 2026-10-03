@@ -1010,13 +1010,24 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
         out.append("rbd = NonRepairableRBD(\n    EDGES,\n    RELIABILITIES,\n"
                    "    k=K,\n" + io_args + "    ccf_groups=CCF_GROUPS,\n)")
         out.append("")
-        out.append("# RePyability's importance measures assume independent "
-                   "blocks, so (as in")
-        out.append("# Reliafy) they are evaluated on the same diagram without "
-                   "the coupling.")
-        out.append("rbd_independent = NonRepairableRBD(\n    EDGES,\n"
-                   "    RELIABILITIES,\n    k=K,\n" + io_args + ")")
-        imp_rbd = "rbd_independent"
+        pinned = set(s["working"]) | set(s["broken"])
+        if any(m in pinned for members, _ in s["ccf"] for m in members):
+            out.append("# RePyability's importance measures can't hold a "
+                       "common-cause group's member")
+            out.append("# working or failed, so (as in Reliafy) they are "
+                       "evaluated on the same diagram")
+            out.append("# without the coupling.")
+            out.append("rbd_independent = NonRepairableRBD(\n    EDGES,\n"
+                       "    RELIABILITIES,\n    k=K,\n" + io_args + ")")
+            imp_rbd = "rbd_independent"
+        else:
+            # RePyability 0.11 (#140): the importance measures take the
+            # groups in, as the app's do.
+            out.append("# The importance measures take the common-cause "
+                       "groups in: a member is")
+            out.append("# conditioned on its state through the groups' "
+                       "shocks.")
+            imp_rbd = "rbd"
     else:
         out.append("rbd = NonRepairableRBD(\n    EDGES,\n    RELIABILITIES,\n"
                    "    k=K,\n" + io_args + ")")
@@ -1060,7 +1071,8 @@ def mean_time_to_failure(model, horizon, **overrides):
 
     The horizon is doubled (up to 8 times) until R(t) has decayed below 1e-4,
     then R(t) is integrated with the trapezoid rule on 4000 points.
-    (RePyability's own ``rbd.mean()`` is a slower Monte-Carlo estimate.)
+    (RePyability's own ``rbd.mean()`` is exact too, by quadrature, but it
+    refuses common-cause groups that split a probability.)
     """
     t_end = horizon
     for _ in range(8):
@@ -1397,15 +1409,15 @@ def simulate(availability, tolerance, overrides):
     histories when set, else run to the tolerance."""
     run = dict(t_simulation=T_SIMULATION, method="c", seed=1, antithetic=True)
     if N_SIMS:
-        return rbd.availability(N=N_SIMS + N_SIMS % 2, **run, **overrides)
+        return rbd.availability(mc_samples=N_SIMS + N_SIMS % 2, **run, **overrides)
     max_n = max(2, MAX_SIMS - MAX_SIMS % 2)
     batch = min(BATCH, max_n)
-    sim = rbd.availability(N=batch, tolerance=tolerance, confidence=CONFIDENCE,
-                           max_N=max_n, **run, **overrides)
+    sim = rbd.availability(mc_samples=batch, tolerance=tolerance, confidence=CONFIDENCE,
+                           max_samples=max_n, **run, **overrides)
     # One batch that saw no system downtime has a zero-width interval: for a
     # system that does go down, that's a lack of evidence, not precision.
     if availability < 1.0 and not sim.system_downtime > 0 and sim.n_simulations < max_n:
-        sim = rbd.availability(N=max_n, **run, **overrides)
+        sim = rbd.availability(mc_samples=max_n, **run, **overrides)
     return sim
 
 

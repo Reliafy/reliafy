@@ -339,8 +339,8 @@ def without_planned_outages(graph: dict) -> dict:
 
 def estimated_unavailability(rbd, t_sim: float, overrides: dict) -> Optional[float]:
     """A quick simulated unavailability, to set the precision target when the
-    exact long-run availability isn't known (block replacement, proof tests
-    that take time, ...)."""
+    exact long-run availability isn't known (proof tests whose tests or
+    repairs take time)."""
     from backend.services import rbd_analysis as ra
 
     try:

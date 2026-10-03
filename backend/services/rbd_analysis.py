@@ -105,8 +105,8 @@ class _ReducedModel:
         # Series fails at the first unit failure; parallel at the last.
         return draws.min(axis=0) if self.kind == "series" else draws.max(axis=0)
 
-    def mean(self, N: int = _MTTF_SAMPLES) -> float:
-        return float(self.random(N).mean())
+    def mean(self, mc_samples: int = _MTTF_SAMPLES) -> float:
+        return float(self.random(mc_samples).mean())
 
 
 class _PHModel:
@@ -305,7 +305,8 @@ def _standby_model(data: dict, label: str, resolve_model=None, cov_values=None):
     if dormancy < 1.0:
         # Warm standby: an idle spare ages at `dormancy` × its operating rate
         # (cumulative exposure) and can fail latent, dead before it's needed.
-        # Exact for identical exponential units, simulated otherwise.
+        # Numerical for any units since RePyability 0.11 (one operating), no
+        # longer a fit to simulated lifetimes.
         return StandbyModel(units, k=1, dormancy_factor=dormancy)
     # Hot standby: every unit runs from t=0 -> active parallel redundancy.
     return _ReducedModel(units, "parallel")
@@ -488,6 +489,12 @@ def _build_rbd(
     ]
     if not edges:
         raise AnalysisError("The diagram has no connections to analyse.")
+    # Repeated blocks (#102): a linked copy is passed to RePyability as the
+    # name of the node it repeats, so every appearance is one component. A
+    # broken link is the more specific problem, so it is reported first.
+    repeats, problems = rbd_repeats.find_repeats(nodes)
+    if problems:
+        raise AnalysisError(next(iter(problems.values())))
     io_errors = _io_errors(graph)
     koon_errors, _ = _koon_checks(nodes, edges, {})
     if io_errors or koon_errors:
@@ -503,11 +510,6 @@ def _build_rbd(
     # RePyability's native ``working_nodes``/``broken_nodes`` arguments.
     working_nodes: set = set()
     broken_nodes: set = set()
-    # Repeated blocks (#102): a linked copy is passed to RePyability as the
-    # name of the node it repeats, so every appearance is one component.
-    repeats, problems = rbd_repeats.find_repeats(nodes)
-    if problems:
-        raise AnalysisError(next(iter(problems.values())))
 
     for node in nodes:
         nid = node.get("id")
@@ -817,9 +819,11 @@ def validate_graph(
 
     valid = len(errors) == 0
     analytic = valid and len(non_analytic) == 0
-    # Standby and load-sharing nodes have no closed form, but ``analyze`` solves
-    # them by simulation (StandbyModel / LoadSharingModel), so a valid diagram
-    # is always calculable — ``analytic`` only tells the UI how to label it.
+    # Since RePyability 0.11 only nodes whose reliability is fitted to
+    # simulated lifetimes are non-analytic (load sharing of different units,
+    # say); cold, warm and hot standby are exact or numerical. ``analyze``
+    # still solves the rest, so a valid diagram is always calculable —
+    # ``analytic`` only tells the UI how to label it.
     return {
         "valid": valid,
         "analytic": analytic,
@@ -1178,7 +1182,7 @@ def _structure_sets(rbd) -> dict:
 def _fussell_vesely(probs: dict, cut_sets, q_sys: float) -> dict:
     """Fussell–Vesely importance from a list of minimal cut sets: the share of
     system unreliability (unavailability) from cut sets containing the node —
-    RePyability's cut-set form with the rare-event sum (``approx=True``)."""
+    the rare-event sum, the fallback when RePyability 0.11's exact measure fails."""
     num: dict = {}
     for cut in cut_sets:
         prob = 1.0
@@ -1188,6 +1192,30 @@ def _fussell_vesely(probs: dict, cut_sets, q_sys: float) -> dict:
             num[m] = num.get(m, 0.0) + prob
     with np.errstate(all="ignore"):
         return {n: np.float64(num.get(n, 0.0)) / np.float64(q_sys) for n in probs}
+
+
+def _ccf_importance(rbd, t: float, s: float, working_nodes, broken_nodes) -> Optional[dict]:
+    """The six importance measures at ``t`` with the diagram's common-cause
+    groups taken in (RePyability 0.11, #140: a member is conditioned on its
+    state through the groups' shocks), or None when they can't be: no groups,
+    curves conditioned on an age ``s`` (the measures are RePyability's at a
+    time from new), or a group member pinned working or failed."""
+    if not getattr(rbd, "ccf_groups", None) or s > 0.0:
+        return None
+    pins = {"working_nodes": set(working_nodes), "broken_nodes": set(broken_nodes)}
+    at = float(t)
+    try:
+        with np.errstate(all="ignore"):
+            return {
+                "birnbaum": rbd.birnbaum_importance(at, **pins),
+                "risk_achievement_worth": rbd.risk_achievement_worth(at, **pins),
+                "risk_reduction_worth": rbd.risk_reduction_worth(at, **pins),
+                "criticality": rbd.criticality_importance(at, kind="failure", **pins),
+                "improvement_potential": rbd.improvement_potential(at, **pins),
+                "fussell_vesely": rbd.fussell_vesely(at, **pins),
+            }
+    except NotImplementedError:  # a group member held working or failed
+        return None
 
 
 def _mttf(rbd, base_hi: float, s: float = 0.0, **sf_kwargs) -> Optional[float]:
@@ -1319,19 +1347,36 @@ def analyze(
         # Criticality is the failure-oriented form (RePyability 0.9's
         # default): the share of system failures a block accounts for. The
         # success-oriented form it replaced is exactly 1 for every block in
-        # series, however unreliable, so it couldn't rank them.
-        q_sys = 1.0 - float(np.atleast_1d(rbd.system_probability(node_probs))[0])
-        importance = {
-            "time": t_rep,
-            "birnbaum": _imp(rbd._birnbaum_importance(node_probs)),
-            "fussell_vesely": _imp(_fussell_vesely(node_probs, sets["cuts"], q_sys)),
-            "risk_achievement_worth": _imp(rbd._risk_achievement_worth(node_probs)),
-            "risk_reduction_worth": _imp(rbd._risk_reduction_worth(node_probs)),
-            "criticality": _imp(rbd._criticality_importance(node_probs, kind="failure")),
-            "improvement_potential": _imp(rbd._improvement_potential(node_probs)),
-        }
-        if not sets["cuts_complete"]:
-            importance["fussell_vesely_basis"] = f"cut sets of up to {_LOW_ORDER_CUT_MAX} blocks"
+        # series, however unreliable, so it couldn't rank them. Perfect
+        # junctions (voting gates) are left out by RePyability 0.11 itself.
+        measures = _ccf_importance(rbd, t_rep, s, working_nodes, broken_nodes)
+        with_ccf = measures is not None
+        fv_basis = None
+        if measures is None:
+            measures = {
+                "birnbaum": rbd._birnbaum_importance(node_probs),
+                "risk_achievement_worth": rbd._risk_achievement_worth(node_probs),
+                "risk_reduction_worth": rbd._risk_reduction_worth(node_probs),
+                "criticality": rbd._criticality_importance(node_probs, kind="failure"),
+                "improvement_potential": rbd._improvement_potential(node_probs),
+            }
+            try:
+                # Exact since RePyability 0.11 (#137): the probability that a
+                # minimal cut set containing the block has failed, over the
+                # system's unreliability — between 0 and 1.
+                measures["fussell_vesely"] = rbd._fussell_vesely(node_probs, fv_type="c")
+            except Exception:  # noqa: BLE001 - the rare-event sum over the listed cut sets
+                q_sys = 1.0 - float(np.atleast_1d(rbd.system_probability(node_probs))[0])
+                measures["fussell_vesely"] = _fussell_vesely(node_probs, sets["cuts"], q_sys)
+                if not sets["cuts_complete"]:
+                    fv_basis = f"cut sets of up to {_LOW_ORDER_CUT_MAX} blocks"
+        importance = {"time": t_rep, **{k: _imp(v) for k, v in measures.items()}}
+        if fv_basis:
+            importance["fussell_vesely_basis"] = fv_basis
+        if rbd.ccf_groups:
+            # Whether the measures take the common-cause groups in (not when
+            # conditioned on an age, or with a group member pinned).
+            importance["common_cause"] = with_ccf
     except Exception:
         importance = {}
 
@@ -1633,8 +1678,8 @@ def _availability_curve(res, t_simulation: float) -> Optional[dict]:
 _IMPORTANCE_METHODS = {
     # payload key -> RepairableRBD method (each evaluated at the blocks'
     # long-run availabilities)
-    # (Fussell–Vesely is computed from the listed cut sets — see
-    # _structure_sets — so a diagram with millions of cut sets stays fast.)
+    # (Fussell–Vesely, exact since RePyability 0.11, is taken separately, with
+    # the rare-event sum over the listed cut sets as its fallback.)
     "birnbaum": "birnbaum_importance",
     "criticality": "criticality_importance",  # failure-oriented (0.9 default)
     "risk_achievement_worth": "risk_achievement_worth",
@@ -1659,12 +1704,18 @@ def _steady_importance(rbd, labels, gate_ids, overrides, steady, cut_sets) -> di
     except Exception:  # noqa: BLE001
         node_av = {}
     try:
-        probs = rbd._probabilities_with_overrides(
-            node_av, overrides.get("working_nodes"), overrides.get("broken_nodes"))
-        q_sys = (1.0 - steady) if steady is not None and np.isfinite(steady) else np.nan
-        measures["fussell_vesely"] = {n: float(v) for n, v in _fussell_vesely(probs, cut_sets, q_sys).items()}
-    except Exception:  # noqa: BLE001
-        measures["fussell_vesely"] = {}
+        # Exact since RePyability 0.11 (#137), at the long-run availabilities.
+        with np.errstate(all="ignore"):
+            measures["fussell_vesely"] = {n: float(v) for n, v in rbd.fussell_vesely(**overrides).items()}
+    except Exception:  # noqa: BLE001 - the rare-event sum over the listed cut sets
+        try:
+            probs = rbd._probabilities_with_overrides(
+                node_av, overrides.get("working_nodes"), overrides.get("broken_nodes"))
+            q_sys = (1.0 - steady) if steady is not None and np.isfinite(steady) else np.nan
+            measures["fussell_vesely"] = {
+                n: float(v) for n, v in _fussell_vesely(probs, cut_sets, q_sys).items()}
+        except Exception:  # noqa: BLE001
+            measures["fussell_vesely"] = {}
     working = overrides.get("working_nodes") or set()
     broken = overrides.get("broken_nodes") or set()
     sys_unavail = (1.0 - steady) if steady is not None and np.isfinite(steady) else None
@@ -1795,11 +1846,11 @@ def _simulate(rbd, t_sim: float, overrides: dict, n: int, **kwargs):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         try:
-            res = rbd.availability(t_simulation=t_sim, N=_even(n), method="c", seed=_AVAIL_SEED,
+            res = rbd.availability(t_simulation=t_sim, mc_samples=_even(n), method="c", seed=_AVAIL_SEED,
                                    antithetic=True, **kwargs, **overrides)
             return res, True
         except NotImplementedError:
-            return rbd.availability(t_simulation=t_sim, N=n, method="c", seed=_AVAIL_SEED,
+            return rbd.availability(t_simulation=t_sim, mc_samples=n, method="c", seed=_AVAIL_SEED,
                                     **kwargs, **overrides), False
 
 
@@ -1830,7 +1881,7 @@ def _run_to_precision(rbd, t_sim: float, overrides: dict, batch: int, max_n: int
     precision, so the run is then repeated at ``max_n``."""
     kwargs = {"confidence": _AVAIL_CONFIDENCE}
     if max_n > batch:
-        kwargs.update(tolerance=tolerance, max_N=max_n)
+        kwargs.update(tolerance=tolerance, max_samples=max_n)
     res, antithetic = _simulate(rbd, t_sim, overrides, batch, **kwargs)
     if (expect_downtime and max_n > getattr(res, "n_simulations", max_n)
             and not float(getattr(res, "system_downtime", 1.0) or 0.0) > 0.0):
@@ -1898,9 +1949,9 @@ def analyze_availability(
     try:
         steady = float(rbd.mean_availability(**overrides))
     except NotImplementedError:
-        # Block replacement, or proof tests other than a constant failure rate
-        # with instant tests and repairs (#100): RePyability has no exact
-        # long-run value, so the simulation gives the availability.
+        # Proof tests whose tests or repairs take time (#100): RePyability
+        # 0.11 has no exact long-run value, so the simulation gives the
+        # availability. (Block replacement is exact since 0.10.)
         steady = None
     except Exception as exc:  # noqa: BLE001
         raise AnalysisError(f"Couldn't compute availability: {exc}") from exc

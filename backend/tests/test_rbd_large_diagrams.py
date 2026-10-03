@@ -129,7 +129,16 @@ def test_millions_of_cut_sets_fall_back_to_the_lowest_order():
     st = res["structure"]
     assert st["n_min_cut_sets"] == 12 ** 4 and st["cut_sets_complete"] is False
     assert st["min_cut_sets"] == [] and st["cut_sets_max_order"] == 3
-    assert res["importance"]["fussell_vesely_basis"] == "cut sets of up to 3 blocks"
+    # Fussell-Vesely doesn't need the listing: exact since RePyability 0.11
+    # (#137), over all 20,736 cut sets.
+    assert "fussell_vesely_basis" not in res["importance"]
+    rbd = ra._build_rbd(_chains(4, 12), None, None, None, None)[0]
+    t = res["importance"]["time"]
+    probs = {n: rbd.reliabilities[n].sf(np.array([t])) for n in rbd.nodes}
+    want = rbd._fussell_vesely(probs, fv_type="c")
+    for n, v in res["importance"]["fussell_vesely"].items():
+        assert v == pytest.approx(float(np.atleast_1d(want[n])[0]), rel=1e-12)
+        assert 0.0 <= v <= 1.0
     assert st["n_min_path_sets"] == 4 and len(st["min_path_sets"]) == 4
 
 

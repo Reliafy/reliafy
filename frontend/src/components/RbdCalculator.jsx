@@ -368,7 +368,7 @@ function importanceRows(result) {
 export function AvailabilityView({ result, unit }) {
   const u = unit ? ` ${unit}` : "";
   const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
-  // No exact long-run value (block replacement, timed proof tests — #100):
+  // No exact long-run value (proof tests whose tests or repairs take time — #100):
   // the headline is the simulated availability over the window.
   const simulatedOnly = result.availability_basis === "simulation";
   const a = simulatedOnly ? result.precision?.window_availability : result.steady_state_availability;

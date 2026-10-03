@@ -90,7 +90,7 @@ def test_run_stops_at_the_limit_when_the_target_is_out_of_reach(monkeypatch):
 
 def test_stopped_run_equals_a_fixed_run_of_that_many():
     """RePyability: without n_jobs, a run that stops after n simulations gives
-    the result of a run of N=n — so the budget-derived limit never changes a
+    the result of a run of mc_samples=n — so the budget-derived limit never changes a
     result that reached its target."""
     graph = _series_repairable_graph()
     run = ra.analyze_availability(graph)
@@ -175,9 +175,10 @@ def test_paired_run_is_repyabilitys_compare():
     b = rbd_compare._design(_pumps(1.0), None)
     t = 5000.0
     key = rbd_compare._key(7)
-    ours = np.mean(rbd_compare._paired_fractions(b, t, 60, key)
-                   - rbd_compare._paired_fractions(a, t, 60, key))
-    theirs = b["rbd"].compare(a["rbd"], t, N=60, seed=7)
+    widths = rbd_compare._common_widths(b, a, t)
+    ours = np.mean(rbd_compare._paired_fractions(b, t, 60, key, widths)
+                   - rbd_compare._paired_fractions(a, t, 60, key, widths))
+    theirs = b["rbd"].compare(a["rbd"], t, mc_samples=60, seed=7)
     assert ours == pytest.approx(theirs.estimate, abs=1e-12)
 
 

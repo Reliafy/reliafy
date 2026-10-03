@@ -382,14 +382,14 @@ export function BlockCostSection({ initial, onChange, unit = "" }) {
             <p className="hint">
               {s.policy === "age"
                 ? "Replaced as new once it reaches the interval's age; a failure restarts the clock."
-                : "Replaced at every multiple of the interval, whatever its age (skipped while it's down). Priced by simulation."}
+                : "Replaced at every multiple of the interval, whatever its age (skipped while it's down)."}
             </p>
           </>
         )}
         {s.kind === "inspection" && (
           <p className="hint">
             A failure stays hidden — the block is down but nobody knows — until the next proof test
-            finds it; its repair starts then. Exact figures need an exponential life and instant tests
+            finds it; its repair starts then. Exact figures need instant tests
             and repairs; otherwise they're simulated.
           </p>
         )}

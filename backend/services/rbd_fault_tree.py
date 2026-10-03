@@ -574,18 +574,26 @@ def _payload(
 
     cuts = _ranked_cut_sets(tree, q, t)
     # Fussell–Vesely: the share of the top event carried by the cut sets
-    # containing the event (rare-event sum, as FaultTree.fussell_vesely);
-    # only over the lowest-order ones when there are too many to list and
-    # repeated events rule out the closed form.
-    fv: dict[str, float] = {}
-    if cuts["basis"] == "most_likely":  # no repeats: exact without the list
-        fv = _module_fussell_vesely(tree, q)
-    else:
-        for cut, p in cuts["ranked"]:
-            for e in cut:
-                fv[e] = fv.get(e, 0.0) + p
-    for e in tree.events:
-        importance[e]["fussell_vesely"] = ra._f(fv.get(e, 0.0) / top_p) if top_p > 0 else None
+    # containing the event. Exact since RePyability 0.11 (#137): the
+    # probability that one of them has occurred, as the calculator reports
+    # it. Should that fail, the rare-event sum stands in: in closed form
+    # without repeated events, else over the listed cut sets (only the
+    # lowest-order ones when there are too many to list).
+    try:
+        with np.errstate(all="ignore"):
+            exact = tree.fussell_vesely(t)
+        for e in tree.events:
+            importance[e]["fussell_vesely"] = ra._f(float(np.atleast_1d(exact[e])[0])) if top_p > 0 else None
+    except Exception:  # noqa: BLE001
+        fv: dict[str, float] = {}
+        if cuts["basis"] == "most_likely":  # no repeats: closed form without the list
+            fv = _module_fussell_vesely(tree, q)
+        else:
+            for cut, p in cuts["ranked"]:
+                for e in cut:
+                    fv[e] = fv.get(e, 0.0) + p
+        for e in tree.events:
+            importance[e]["fussell_vesely"] = ra._f(fv.get(e, 0.0) / top_p) if top_p > 0 else None
 
     order = list(codes)  # gates top-down; events in first-seen order under them
     seen_events: list[str] = []
@@ -683,13 +691,12 @@ def fault_tree(
         try:
             tree, event_info, unavailability = _repairable_tree(graph, resolve_model)
         except NotImplementedError:
-            # #100: block replacement, or proof tests other than an exponential
-            # life with instant tests and repairs, have no exact long-run values.
+            # #100: proof tests whose tests or repairs take time have no
+            # exact long-run values (RePyability 0.11).
             raise AnalysisError(
                 "The fault tree uses the blocks' exact long-run unavailabilities, which "
-                "RePyability doesn't have for block replacement or for proof tests with a "
-                "non-exponential life, test time or repair time — the Calculator tab "
-                "simulates them."
+                "RePyability doesn't have for proof tests with a test time or a repair "
+                "time — the Calculator tab simulates them."
             ) from None
         out = _payload(tree, {tree.top: {"label": None, "role": "top"}}, event_info, 1.0, "availability")
         out["unavailability"] = ra._f(unavailability)

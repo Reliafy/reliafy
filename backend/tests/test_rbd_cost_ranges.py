@@ -30,8 +30,11 @@ def _pump(repair):
 
 
 def test_a_range_keeps_the_exact_rate_at_its_mean_and_widens_the_simulated_spread():
-    fixed = ra.analyze_availability(_pump(500), n_simulations=N)
-    ranged = ra.analyze_availability(_pump({"min": 0, "max": 1000}), n_simulations=N)
+    # A window of about 20 failures: over the default one (about 0.1 failures
+    # a window) the spread rests on a few dozen repairs, and which run's is
+    # wider is down to the seed (RePyability 0.11 draws new numbers, #119).
+    fixed = ra.analyze_availability(_pump(500), t_simulation=20_000, n_simulations=N)
+    ranged = ra.analyze_availability(_pump({"min": 0, "max": 1000}), t_simulation=20_000, n_simulations=N)
     assert ranged["costs"]["cost_rate_basis"] == "exact"
     assert ranged["costs"]["cost_rate"] == pytest.approx(fixed["costs"]["cost_rate"], rel=1e-12)
     assert fixed["costs"]["cost_rate"] == pytest.approx(500 / 1010, rel=1e-12)

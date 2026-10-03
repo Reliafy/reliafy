@@ -215,12 +215,13 @@ def test_large_trees_list_the_most_likely_cut_sets_without_enumerating():
     assert sorted(cuts["listed"][0]["events"]) == ["c0_0", "c1_0", "c2_0", "c3_0"]
     q = {e["id"]: e["probability"] for e in res["events"]}
     assert probs[0] == pytest.approx(np.prod([q[f"c{c}_0"] for c in range(4)]))
-    # Fussell-Vesely still covers all 2.56 million (closed form, no listing):
-    # by symmetry each chain's blocks carry the whole rare-event sum.
-    fv = sum(e["importance"]["fussell_vesely"] for e in res["events"] if e["id"].startswith("c0_"))
-    assert fv == pytest.approx(
-        np.prod([sum(q[f"c{c}_{i}"] for i in range(40)) for c in range(4)]) / res["top_event_probability"]
-    )
+    # Fussell-Vesely still covers all 2.56 million, without the listing: exact
+    # since RePyability 0.11 (#137), a block of chain 0 is in a failed cut set
+    # when it has failed and so has some block of every other chain.
+    others = np.prod([1.0 - np.prod([1.0 - q[f"c{c}_{i}"] for i in range(40)]) for c in range(1, 4)])
+    for i in (0, 17, 39):
+        fv = next(e["importance"]["fussell_vesely"] for e in res["events"] if e["id"] == f"c0_{i}")
+        assert fv == pytest.approx(q[f"c0_{i}"] * others / res["top_event_probability"], rel=1e-9)
 
 
 def test_closed_form_fussell_vesely_matches_repyability():
@@ -235,7 +236,9 @@ def test_closed_form_fussell_vesely_matches_repyability():
     )
     q = {e: float(p) for e, p in tree.events.items()}
     top = tree.top_event_probability()
-    expected = tree.fussell_vesely()
+    # The closed form is the rare-event sum (the fallback); RePyability 0.11's
+    # default is the exact union (#137), so compare with its rare-event form.
+    expected = tree.fussell_vesely(method="rare_event")
     for e, share in _module_fussell_vesely(tree, q).items():
         assert share / top == pytest.approx(expected[e], rel=1e-12)
 

@@ -2,7 +2,7 @@
 // in a repairable diagram's availability results. Shown only when the diagram
 // prices or maintains something (``result.costs`` / ``result.downtime``).
 // Every figure says whether it's exact (RePyability's long-run values) or
-// simulated (block replacement, timed proof tests...).
+// simulated (proof tests whose tests or repairs take time).
 
 const CATEGORY_LABELS = {
   repair: "Repairs",
@@ -10,6 +10,7 @@ const CATEGORY_LABELS = {
   preventive: "Scheduled replacement",
   inspection: "Proof tests",
   component_downtime: "Block downtime",
+  setup: "Maintenance set-up",
   system_downtime: "Lost production",
 };
 
@@ -145,7 +146,7 @@ export default function AvailabilityCosts({ result, unit }) {
         {c.priced
           ? c.cost_rate_basis === "exact"
             ? "The running cost is RePyability's exact long-run rate"
-            : "The running cost is the simulated mean — this diagram has no exact long-run value (block replacement, or proof tests other than an exponential life with instant tests and repairs)"
+            : "The running cost is the simulated mean — this diagram has no exact long-run value (proof tests whose tests or repairs take time)"
           : "Nothing is priced per failure or per hour"}
         {c.downtime_cost_rate > 0 && `; lost production is ${fmtMoney(c.downtime_cost_rate)}${per(unit)} of system downtime`}.{" "}
         The total cost of ownership is the purchase prices plus that rate over {fmtT(c.horizon)}{u}

@@ -7,8 +7,7 @@
   horizon (purchase + running), and the simulated cost of the window with its
   spread, from the same simulation as the availability. Exact figures come from
   ``RepairableRBD.expected_cost_rate`` where RePyability has them (not for
-  block replacement, or proof tests other than a constant failure rate with
-  instant tests and repairs); otherwise the simulated rate stands in, and every
+  proof tests whose tests or repairs take time); otherwise the simulated rate stands in, and every
   figure says which it is (``basis``).
 * :func:`cheapest_design` — ``RepairableRBD.allocate_redundancy``: how many
   active copies of each priced block give the lowest total cost of ownership
@@ -271,8 +270,7 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
         raise AnalysisError(
             "The cheapest design needs exact long-run costs, which RePyability doesn't have "
             "for this diagram: " + _friendly(str(exc), labels).split(": estimate")[0].split(". Estimate")[0]
-            + ". Use age replacement (not block replacement), and for proof-tested blocks an "
-            "exponential life with instant tests and instant repair."
+            + ". For proof-tested blocks, use instant tests and instant repair."
         ) from exc
     except ValueError as exc:
         msg = _friendly(str(exc), labels)

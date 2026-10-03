@@ -2,7 +2,8 @@
 maintenance (#99, #100): the RePyability component specs, the system downtime
 cost, and the cost report — so the script reproduces the app's cost rate,
 total cost of ownership and simulated window cost, and still runs when the
-exact long-run values don't exist (block replacement, timed proof tests).
+exact long-run values don't exist (proof tests whose tests or repairs take
+time).
 
 A diagram without any of these exports exactly as before: every hook below
 expands to the original text.
@@ -127,8 +128,8 @@ _EXACT = '''    # Exact long-run figures (independent blocks; Birnbaum/Vesely fo
         birnbaum = rbd.birnbaum_importance(**overrides)
 '''
 _EXACT_OR_NOT = '''    # Exact long-run figures (independent blocks; Birnbaum/Vesely formula).
-    # Block replacement and proof tests other than an exponential life with
-    # instant tests and repairs have none: the simulation gives them.
+    # Proof tests whose tests or repairs take time have none: the
+    # simulation gives them.
     try:
         with np.errstate(all="ignore"):
             availability = float(rbd.mean_availability(**overrides))
@@ -169,9 +170,9 @@ def pilot_unavailability(overrides):
     when there is no exact value)."""
     run = dict(t_simulation=T_SIMULATION, method="c", seed=1)
     try:
-        pilot = rbd.availability(N=PILOT_SIMS, antithetic=True, **run, **overrides)
+        pilot = rbd.availability(mc_samples=PILOT_SIMS, antithetic=True, **run, **overrides)
     except NotImplementedError:
-        pilot = rbd.availability(N=PILOT_SIMS, **run, **overrides)
+        pilot = rbd.availability(mc_samples=PILOT_SIMS, **run, **overrides)
     return 1.0 - pilot.system_uptime / (pilot.n_simulations * T_SIMULATION)
 
 
