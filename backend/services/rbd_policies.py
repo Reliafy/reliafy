@@ -250,7 +250,9 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
                 pfd = float(twin.mean_unavailability(**overrides))
             basis, reason = _route_basis(twin)
         except (NotImplementedError, ValueError, AnalysisError) as exc:
-            note = str(exc)
+            labels = {n.get("id"): (n.get("data") or {}).get("label") or n.get("id")
+                      for n in graph.get("nodes") or []}
+            note = _named(str(exc), labels)
         out["common_cause"] = {"groups": len(groups), "included": pfd is not None, "note": note}
     if pfd is None and steady is not None:
         try:
@@ -290,8 +292,15 @@ def long_run_method(rbd, labels: dict) -> Optional[dict]:
         route = rbd.analysis_routes()["mean_availability"]
     except Exception:  # noqa: BLE001
         return None
-    return {"route": route.route, "reason": route.reason,
+    return {"route": route.route, "reason": _named(route.reason, labels),
             "blocks": [labels.get(n, str(n)) for n in route.nodes or ()]}
+
+
+def _named(text: str, labels: dict) -> str:
+    """RePyability's text with block ids replaced by their labels."""
+    from backend.services.rbd_analysis import _component_message
+
+    return _component_message(text, labels)
 
 
 def crews_summary(rbd, graph: dict, labels: dict, gate_ids: set) -> Optional[dict]:
