@@ -353,14 +353,82 @@ def _t_sim(t_simulation) -> float | None:
     return t if t > 0 else None
 
 
-def availability_cache_key(graph: dict, t_simulation: float | None = None) -> str:
+# Saved-model kinds the analysis resolves by id (the live fit), rather than
+# from the parameters stored on the block (rbd_analysis._build_distribution).
+_RESOLVED_KINDS = frozenset({"regression", "nonparametric"})
+
+
+def _ref_id(model) -> str | None:
+    if not isinstance(model, dict):
+        return None
+    ref = model.get("modelId") or model.get("model_id")
+    return ref if isinstance(ref, str) and ref else None
+
+
+def _resolved_refs(value, out: set) -> set:
+    """The ids of the regression / non-parametric models referenced anywhere
+    in ``value`` (node data: life, spare, repair and maintenance models)."""
+    if isinstance(value, dict):
+        if value.get("kind") in _RESOLVED_KINDS and _ref_id(value):
+            out.add(_ref_id(value))
+        for v in value.values():
+            _resolved_refs(v, out)
+    elif isinstance(value, list):
+        for v in value:
+            _resolved_refs(v, out)
+    return out
+
+
+def _fit_fingerprint(doc: dict) -> str:
+    """A hash of a saved model's fit (what the analysis resolves), so a
+    refit changes it but a rename or a note doesn't; ``updated_at`` for a
+    model with no stored fit."""
+    spec = {k: v for k, v in (doc.get("spec") or {}).items() if k != "notes"}
+    fit = {k: doc.get(k) for k in ("kind", "distribution_id", "results", "serialized")}
+    if not any(fit.values()):
+        return f"updated:{doc.get('updated_at')}"
+    blob = json.dumps({**fit, "spec": spec}, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def model_fingerprints(db, graph: dict, owner_id) -> dict:
+    """``{model_id: fit fingerprint}`` for every saved fitted model the graph
+    resolves by id (proportional-hazards and non-parametric models, wherever
+    they're used, and a load-sharing block's load-life model), in
+    ``owner_id``'s scope as the analysis resolves them; None for one that
+    doesn't resolve (#92). Those blocks carry only the id, so without these a
+    refit wouldn't change a saved result's key. Parametric blocks carry their
+    parameters, already in the key."""
+    refs = set()
+    for n in (graph or {}).get("nodes") or []:
+        if not isinstance(n, dict):
+            continue
+        data = n.get("data") or {}
+        _resolved_refs(data, refs)
+        if n.get("type") == "loadshare" and _ref_id(data.get("model")):
+            refs.add(_ref_id(data["model"]))
+    if not refs:
+        return {}
+    docs = {
+        d["_id"]: d
+        for d in db.models.find({"_id": {"$in": sorted(refs)}, "owner_id": {"$in": access.owner_in(owner_id)}})
+    }
+    return {mid: (_fit_fingerprint(docs[mid]) if mid in docs else None) for mid in sorted(refs)}
+
+
+def availability_cache_key(graph: dict, t_simulation: float | None = None,
+                           models: dict | None = None) -> str:
     """Deterministic key for an availability result: sha256 of the canonical
-    JSON of the analysis graph plus the simulation settings."""
+    JSON of the analysis graph plus the simulation settings, and the fits of
+    the saved models it references (``models``: :func:`model_fingerprints`)."""
     payload = {
         "v": AVAILABILITY_CACHE_VERSION,
         "graph": canonical_analysis_graph(graph),
         "t_simulation": _t_sim(t_simulation),
     }
+    # Only when the graph references saved models, so other keys are unchanged.
+    if models:
+        payload["models"] = models
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -392,11 +460,12 @@ def store_availability(db, rbd_id: str, key: str, result: dict, uid: str | None)
     return computed_at
 
 
-def availability_state_key(graph: dict, t_simulation: float | None, state: dict | None) -> str:
+def availability_state_key(graph: dict, t_simulation: float | None, state: dict | None,
+                           models: dict | None = None) -> str:
     """The key of a simulation from a current state (#155): never the saved
     from-new key, so such a run can't be served as, or replace, the saved
     result."""
-    payload = {"base": availability_cache_key(graph, t_simulation), "state": state or {}}
+    payload = {"base": availability_cache_key(graph, t_simulation, models), "state": state or {}}
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -418,15 +487,19 @@ _exact_lru: "OrderedDict[tuple, dict]" = OrderedDict()
 _exact_lock = threading.Lock()
 
 
-def exact_cache_key(graph: dict, horizon: float | None, state: dict | None) -> str:
+def exact_cache_key(graph: dict, horizon: float | None, state: dict | None,
+                    models: dict | None = None) -> str:
     """sha256 of the canonical analysis graph, the window (None: the default
-    horizon) and the canonical current state."""
+    horizon), the canonical current state and the referenced models' fits
+    (``models``, as for :func:`availability_cache_key`)."""
     payload = {
         "v": EXACT_CACHE_VERSION,
         "graph": canonical_analysis_graph(graph),
         "horizon": _t_sim(horizon),
         "state": state or {},
     }
+    if models:
+        payload["models"] = models
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -504,14 +577,18 @@ def long_run_only(db, graph: dict, owner_id, horizon: float | None = None) -> di
         graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False)
 
 
-def should_store_availability(doc: dict | None, key: str) -> bool:
+def should_store_availability(doc: dict | None, key: str, db=None, owner_id=None) -> bool:
     """Whether a freshly computed result for ``key`` should replace the saved
     one. Always when it's for the diagram as saved; for an unsaved what-if
     variation only when the saved entry is already stale (so exploring edits
-    never clobbers the result public links and free viewers rely on)."""
+    never clobbers the result public links and free viewers rely on). With
+    ``db``, the saved diagram's key includes its referenced models' fits
+    (resolved in ``owner_id``'s scope), as ``key`` should."""
     if doc is None:
         return False
-    saved_key = availability_cache_key(doc.get("graph") or {})
+    graph = doc.get("graph") or {}
+    models = model_fingerprints(db, graph, owner_id) if db is not None else None
+    saved_key = availability_cache_key(graph, models=models)
     if key == saved_key:
         return True
     entry = doc.get("availability_cache") or {}
