@@ -81,6 +81,8 @@ from surpyval import (
 from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
+from backend.formula_check import FormulaRejected, check_formula
+
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
 # ``offsetable``: supports the 3-parameter offset (failure-free period) —
 # only distributions on the half real line; a location shift is meaningless
@@ -1642,7 +1644,10 @@ def _fit_regression(
         if mapping.get(field):
             fit_kwargs[kw] = mapping[field]
     if formula:
-        fit_kwargs["formula"] = formula
+        try:
+            fit_kwargs["formula"] = check_formula(formula, df.columns)
+        except FormulaRejected as exc:
+            raise FitError(str(exc)) from exc
     elif covariates:
         fit_kwargs["Z_cols"] = list(covariates)
 

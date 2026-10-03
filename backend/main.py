@@ -446,6 +446,16 @@ def confidence_endpoint(model_id: str, body: dict = Body(default={})) -> JSONRes
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
+
+def contained_path(path: Path, root: Path) -> Path | None:
+    """``path`` resolved, or None if it resolves outside ``root``."""
+    try:
+        resolved = path.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return resolved if resolved.is_relative_to(root.resolve()) else None
+
+
 if FRONTEND_DIST.is_dir():
     # Hashed assets (JS/CSS/images) from the Vite build. Their names change
     # whenever their content does, so they can be cached forever; HTML must not
@@ -467,6 +477,10 @@ if FRONTEND_DIST.is_dir():
     # deploy has deleted, and the app then crashes on load. (main.jsx also
     # reloads once on vite:preloadError, for pages already open or cached.)
     _NO_CACHE = {"Cache-Control": "no-cache"}
+    _DIST_ROOT = FRONTEND_DIST.resolve()
+
+    def _within_dist(path: Path) -> Path | None:
+        return contained_path(path, _DIST_ROOT)
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str) -> FileResponse:
@@ -476,11 +490,13 @@ if FRONTEND_DIST.is_dir():
         HTML under ``dist/static/<route>/index.html`` — generated at build
         time for search indexing — which wins over the SPA shell there.
         """
-        prerendered = FRONTEND_DIST / "static" / (full_path or ".") / "index.html"
-        if prerendered.is_file():
+        prerendered = _within_dist(
+            FRONTEND_DIST / "static" / (full_path or ".") / "index.html"
+        )
+        if prerendered is not None and prerendered.is_file():
             return FileResponse(prerendered, headers=_NO_CACHE)
-        candidate = FRONTEND_DIST / full_path
-        if full_path and candidate.is_file():
+        candidate = _within_dist(FRONTEND_DIST / full_path)
+        if full_path and candidate is not None and candidate.is_file():
             headers = _NO_CACHE if candidate.suffix == ".html" else None
             return FileResponse(candidate, headers=headers)
         return FileResponse(FRONTEND_DIST / "index.html", headers=_NO_CACHE)
