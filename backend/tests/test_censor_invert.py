@@ -106,6 +106,29 @@ def test_without_the_option_the_guard_refuses_and_points_at_the_checkbox():
     assert r["params"]
 
 
+# ---- (b2) a column named like a failure flag, and the counts a fit used ----
+# The guard above needs nearly every row censored; an even split never trips
+# it. These back the fit tools' name warning and counts (#190).
+
+def test_failure_named_columns_are_recognised_on_whole_tokens():
+    reads = fitting.censor_column_reads_as_failures
+    for name in ("failed", "Failed", "FAILURE", "fail", "failures", "is_failed", "isFailed", "failed?",
+                 "Event", "status", "Status flag", "broken", "unit-failed"):
+        assert reads(name), name
+    for name in ("Censored", "censor", "c", "running", "is_running", "suspended", "suspension", "cens",
+                 "failure_mode", "time_to_failure", "failed_or_censored", "", "failsafe", "eventual"):
+        assert not reads(name), name
+
+
+def test_censoring_counts_follow_the_inversion_and_the_weights():
+    assert fitting.censoring_counts(_df(), _MAPPING) == {
+        "failed": 1, "right_censored": 7, "left_censored": 0, "interval_censored": 0}
+    assert fitting.censoring_counts(_df(), _MAPPING, c_invert=True)["failed"] == 7
+    df = pd.DataFrame({"lo": [1, 2, 3, 4], "hi": [1, 5, np.inf, 6], "n": [1, 2, 3, 4]})
+    assert fitting.censoring_counts(df, {"xl": "lo", "xr": "hi", "n": "n"}) == {
+        "failed": 1, "right_censored": 3, "left_censored": 0, "interval_censored": 6}
+
+
 # ---- (c) a saved model with c_invert in its spec re-fits identically -------
 
 @pytest.fixture()

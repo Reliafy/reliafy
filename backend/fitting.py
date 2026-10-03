@@ -26,6 +26,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import re
 import warnings
 import uuid
 from collections import OrderedDict
@@ -318,6 +319,53 @@ def failure_count(kwargs: dict) -> tuple[int, int]:
     n = kwargs.get("n")
     weights = np.asarray(n, dtype=float) if n is not None else np.ones_like(c, dtype=float)
     return int(np.sum(weights[c != 1])), int(np.sum(weights))
+
+
+def censoring_counts(df: pd.DataFrame, mapping: dict, c_invert: bool = False) -> dict:
+    """Observations a fit reads as failed / right- / left- / interval-censored.
+
+    Weighted by the ``n`` column and taken after the ``c_invert`` flip, so they
+    are the counts the fit actually used. Without a censor column, interval
+    bounds are read as SurPyval reads them: equal = failed, open (``inf``)
+    upper bound = right-censored, otherwise interval-censored.
+    """
+    if c_invert and mapping.get("c"):
+        df = invert_censor_column(df, mapping["c"])
+    kwargs = build_fit_inputs(df, {k: mapping.get(k) for k in ("x", "xl", "xr", "c", "n")})
+    c = kwargs.get("c")
+    if c is None:
+        if "xl" in kwargs and "xr" in kwargs:
+            xl, xr = kwargs["xl"], kwargs["xr"]
+            c = np.where(xl == xr, 0, np.where(np.isinf(xr), 1, 2))
+        else:
+            c = np.zeros(np.size(kwargs.get("x", [])))
+    n = kwargs.get("n")
+    weights = np.asarray(n, dtype=float) if n is not None else np.ones(np.size(c))
+    return {key: int(np.sum(weights[np.asarray(c) == code]))
+            for key, code in (("failed", 0), ("right_censored", 1), ("left_censored", -1),
+                              ("interval_censored", 2))}
+
+
+# Name tokens of a censor column that reads as a failure indicator (1 = failed,
+# the inverse of the convention), and tokens that say it's a censoring flag,
+# a time or a mode after all ("failed_or_censored", "time_to_failure").
+_FAILURE_FLAG_WORDS = frozenset({
+    "fail", "failed", "fails", "failure", "failures", "failing", "event", "events", "status",
+    "broken", "broke", "dead", "died", "death", "defect", "defective", "fault", "faulty",
+})
+_CENSOR_FLAG_WORDS = frozenset({
+    "censor", "censored", "censoring", "cens", "running", "suspended", "suspension", "susp",
+    "survived", "surviving", "alive", "working", "time", "times", "hours", "age", "date", "mode",
+    "modes", "cause", "type", "code", "count", "counts",
+})
+
+
+def censor_column_reads_as_failures(name: str) -> bool:
+    """True when a censor column's name sounds like 1 = failed ("failed",
+    "is_failed", "FailureFlag", "status"). Matched on whole name tokens,
+    case-insensitively, so "censored", "running" or "failsafe" don't match."""
+    words = set(re.findall(r"[a-z]+", re.sub(r"([a-z])([A-Z])", r"\1 \2", str(name or "")).lower()))
+    return bool(words & _FAILURE_FLAG_WORDS) and not words & _CENSOR_FLAG_WORDS
 
 
 def check_fittable(kwargs: dict, distribution_name: str) -> None:

@@ -803,6 +803,25 @@ def _per_row(values, n: int, label: str) -> list:
     return list(values)
 
 
+def _fit_checks(summary: dict, df: pd.DataFrame, mapping: dict, c_invert: bool,
+                censor_column: str | None) -> dict:
+    """The censoring counts the fit used, to lead the result so they can be
+    checked against what the user said. A censor column named like a failure
+    flag without c_invert adds a (non-blocking) warning to ``summary``: a
+    roughly even split fits silently with the flags backwards."""
+    n = fitting.censoring_counts(df, mapping, c_invert)
+    counts = {"n_failed": n["failed"], "n_right_censored": n["right_censored"]}
+    counts.update({f"n_{k}": n[k] for k in ("left_censored", "interval_censored") if n[k]})
+    if censor_column and not c_invert and fitting.censor_column_reads_as_failures(censor_column):
+        summary["warnings"] = [
+            f'The censor column "{censor_column}" sounds like 1 = failed, but Reliafy reads 1 as still '
+            f"running (this fit counted {n['failed']} failed and {n['right_censored']} still running). If 1 "
+            "marks failures, refit with c_invert=true.",
+            *(summary.get("warnings") or []),
+        ]
+    return counts
+
+
 def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, dataset_id, time_column,
               censor_column, count_column, covariates, unit, data_right, trunc_left, trunc_right,
               time_right_column, trunc_left_column, trunc_right_column, method,
@@ -881,7 +900,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
     if not save:
         result = fitting.fit(dist, df, mapping, covariates=covariates, unit=unit, options=options)
         summary = _fit_summary(result)
-        return {**_fit_lead(summary), "saved": False, **summary}
+        tally = _fit_checks(summary, df, mapping, c_invert, censor_column)
+        return {**_fit_lead(summary), "saved": False, **tally, **summary}
 
     name = (name or "").strip()
     if not name:
@@ -907,9 +927,11 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             datasets_service.delete_dataset(db, created.id, uid)
         raise
     summary = _fit_summary(model.results or {})
+    tally = _fit_checks(summary, df, mapping, c_invert, censor_column)
     return {
         **_fit_lead(summary),
         "saved": True,
+        **tally,
         "model_id": model.id,
         "name": model.name,
         "dataset_id": dataset.id,
@@ -946,9 +968,10 @@ def fit_distribution(
     running (suspended), -1 = left-censored (found failed, at some unknown earlier time), 2 = interval-censored
     (failed between two inspections: the upper bound goes in data_right / time_right_column); if the data marks
     failures with 1, pass c_invert=true. Units already in service when records began are left-truncated:
-    give their entry age in trunc_left (trunc_left_column) rather than fitting them as new. A fit that says
-    every (or all but one) row is censored almost always means the flags are inverted. Weibull beta < 1 =
-    infant mortality, ≈ 1 = random failures, > 1 = wear-out."""
+    give their entry age in trunc_left (trunc_left_column) rather than fitting them as new. The result leads
+    with the counts the fit used (n_failed, n_right_censored, …): check them against what the user said. A
+    fit that says every (or all but one) row is censored almost always means the flags are inverted. Weibull
+    beta < 1 = infant mortality, ≈ 1 = random failures, > 1 = wear-out."""
     return _fit(ctx, distribution=distribution, data=data, data_right=data_right, censored=censored,
                 counts=counts, trunc_left=trunc_left, trunc_right=trunc_right, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
