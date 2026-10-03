@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
+from backend import config
 from backend.db import get_session
+from backend.http_limits import read_upload
 from backend.fitting import FitError, options_from_form
 from backend import storage
 from backend.routers import excel as excel_router
@@ -118,7 +120,7 @@ def list_datasets(session=Depends(get_session), ctx: AccessCtx = Depends(get_acc
 
 
 @router.post("/datasets")
-async def upload_dataset(
+def upload_dataset(
     file: UploadFile = File(...),
     name: str | None = Form(default=None),
     no_header: bool = Form(default=False),
@@ -134,7 +136,9 @@ async def upload_dataset(
     guessed header, 0 = none — as does ``no_header``) and stored exactly as
     that CSV would be.
     """
-    contents = await file.read()
+    # Up to the Excel reader's limit here; a CSV (or the CSV a sheet becomes)
+    # is held to MAX_UPLOAD_BYTES by create_dataset.
+    contents = read_upload(file, max(excel_service.MAX_FILE_BYTES, config.MAX_UPLOAD_BYTES))
     if excel_service.is_excel(contents, file.filename or ""):
         try:
             row = excel_router.header_row_param(header_row)
@@ -160,10 +164,10 @@ async def upload_dataset(
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store dataset")
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to store dataset: {exc}"}
+            status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."}
         )
     return JSONResponse(content=_dataset_detail(dataset, session, ctx))
 
@@ -195,9 +199,9 @@ def paste_dataset(
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store pasted dataset")
-        return JSONResponse(status_code=500, content={"detail": f"Failed to store dataset: {exc}"})
+        return JSONResponse(status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."})
     return JSONResponse(content=_dataset_detail(dataset, session, ctx))
 
 
@@ -258,7 +262,7 @@ def list_models(session=Depends(get_session), ctx: AccessCtx = Depends(get_acces
 
 
 @router.post("/models")
-async def save_model(
+def save_model(
     name: str = Form(...),
     distribution: str = Form(...),
     file: UploadFile | None = File(default=None),
@@ -301,7 +305,7 @@ async def save_model(
                 )
         elif file is not None:
             dataset = datasets_service.create_dataset(
-                session, file.filename or "dataset.csv", await file.read(), ctx.write_owner
+                session, file.filename or "dataset.csv", read_upload(file), ctx.write_owner
             )
         else:
             return JSONResponse(
@@ -318,10 +322,12 @@ async def save_model(
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except HTTPException:
+        raise
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to save model")
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to save model: {exc}"}
+            status_code=500, content={"detail": "Failed to save the model. The error has been logged."}
         )
     return JSONResponse(content=_model_detail(model, ctx))
 

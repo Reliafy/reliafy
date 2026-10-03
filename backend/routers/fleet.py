@@ -305,8 +305,12 @@ def create_tracked_fleet(
         fleet = degradation_service.create_tracked_fleet(session, name, model_id, ctx.write_owner)
     except degradation_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Degradation model not found."})
-    except Exception as exc:
+    except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except Exception:
+        logger.exception("Failed to create a tracked fleet")
+        return JSONResponse(status_code=500,
+                            content={"detail": "Couldn't create the fleet. The error has been logged."})
     access_service.stamp_editor(session, "tracked_fleets", fleet.id, ctx)
     model = degradation_service.get_model(session, model_id, ctx.read_owners)
     return JSONResponse(content=_tracked_summary(fleet, model, [], ctx))
