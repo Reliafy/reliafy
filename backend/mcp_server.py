@@ -251,6 +251,9 @@ What you can do:
 - Life data: fit_distribution to failure times (inline data or a saved dataset), fit_and_save_model to keep \
 it as a model, or save_model to save parameters fitted elsewhere; evaluate a saved model with reliability_at. \
 list_models / get_model read what is saved; list_datasets / upload_dataset manage the data.
+- Datasets: get_dataset reads a dataset's columns, row count and rows, a page at a time (offset / limit).
+- Confidence: reliability_at with confidence (e.g. 0.95) adds lower/upper bounds on R(t) and F(t); quote them \
+with the point values. Bounds are null, with bounds_note saying why, where a model has none — never invent them.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
 B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script). Edit, \
 don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/remove/update blocks and \
@@ -268,6 +271,8 @@ test per unit with a known Weibull shape; or an MTBF test). It needs no saved da
 (never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
 Only on the user's explicit \
 request: confirm by name first, and relay anything the response lists as affected.
+- Tidying: update_model / update_dataset rename the user's own models and datasets or set their notes (never \
+the data or the fit; never shared samples).
 - Sharing: share_link publishes a read-only page of one of the user's own items (model, dataset, RBD, \
 strategy analysis, RCM study, fleet) that anyone with the URL can open without a Reliafy account, optionally \
 password-protected (password=true: Reliafy generates a passphrase and returns it once — tell the user to send \
@@ -275,6 +280,9 @@ the link and the passphrase to the recipient separately) and expiring (expires_i
 several links, each with a label; list_share_links shows them and revoke_share_link ends one at once. Share \
 only when the user asks to.
 - Plans: upgrade_link gives the user a Stripe payment link for Reliafy Pro, to open themselves.
+- Account: get_account shows the plan, on Free the tool calls used and left this month (and the date they \
+reset; Pro is unlimited), storage used against the limits and whether simulation is included; it's never \
+counted, even past the allowance.
 
 Conventions — follow them exactly:
 - Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension); \
@@ -338,8 +346,9 @@ _USER_ERRORS = (
 _FIT_TOOLS = {"fit_distribution", "fit_and_save_model"}
 _FLEET_TOOLS = {"list_fleets", "fleet_forecast", "list_fleet_alerts", "create_fleet_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
-# Never gated or counted: the way to Pro must work when a limit is hit.
-UNGATED_TOOLS = {"upgrade_link"}
+# Never gated or counted: the way to Pro, and seeing where the allowance
+# stands, must work when a limit is hit.
+UNGATED_TOOLS = {"upgrade_link", "get_account"}
 
 
 class Refusal(ToolError):
@@ -652,6 +661,8 @@ def get_model(
                 out[key] = r[key]
         if (r.get("functions") or {}).get("covariates"):
             out["covariates"] = r["functions"]["covariates"]
+        if (m.spec or {}).get("notes"):
+            out["notes"] = m.spec["notes"]
         if r.get("fit_ok") is False or r.get("fit_warning"):
             # Lead with it, as the fit tools do.
             out = {"fit_ok": False, "warning": _fit_failure_warning(r.get("fit_warning")), **out}
@@ -659,7 +670,10 @@ def get_model(
     doc = recurrent_service.get_model(db, model_id, owners)
     if doc is not None:
         r = doc.results or {}
-        return {**_recurrent_brief(doc), "params": r.get("params"), "gof": r.get("gof"), "trend": r.get("trend")}
+        out = {**_recurrent_brief(doc), "params": r.get("params"), "gof": r.get("gof"), "trend": r.get("trend")}
+        if (doc.spec or {}).get("notes"):
+            out["notes"] = doc.spec["notes"]
+        return out
     raise ToolError("Model not found.")
 
 
@@ -952,6 +966,68 @@ def save_model(
     return out
 
 
+# ---- confidence bounds for reliability_at (#134) -------------------------------
+# The app's band (POST /api/models/{id}/confidence) is SurPyval's ``model.cb``
+# on the live fit — Fisher-matrix (Wald / delta-method) bounds. The same call
+# here, but at the requested times themselves rather than on the plot grid, so
+# nothing is interpolated. Where there's no covariance to propagate, no bounds:
+# never invented ones.
+
+def _cb_pairs(cb) -> list:
+    arr = np.asarray(cb, dtype=float).reshape(-1, 2)
+    return [[_finite(lo), _finite(hi)] for lo, hi in arr]
+
+
+def _reliability_bounds(db, m, ts: list[float], owners, ev: dict, confidence: float):
+    """``(reliability_bounds, failure_bounds, note)`` at ``ts`` — both lists of
+    ``[lower, upper]``, or both None with the note saying why."""
+    level = f"{confidence * 100:g}%"
+    results = m.results or {}
+    dist_id = results.get("distribution_id") or m.distribution_id
+    if dist_id == fitting.MIXTURE_ID:
+        return None, None, f"No {level} bounds: a mixture fit has no covariance matrix to base them on."
+    if m.kind == "nonparametric":
+        return None, None, (f"No {level} bounds: this is a non-parametric model, whose values here are "
+                            "interpolated on its stored curve, so bounds at exactly these times wouldn't match "
+                            "them. The app's calculator draws its pointwise band.")
+    if (m.spec or {}).get("params_only"):
+        return None, None, (f"No {level} bounds: this model was saved from parameters alone, without the data "
+                            "they were fitted to, so there's no covariance matrix to base them on. Save it "
+                            "with its data (or fit it in Reliafy) for bounds.")
+    if m.kind not in ("distribution", "discrete", "regression") or ev["method"] != "exact":
+        return None, None, f"No {level} bounds: confidence bounds aren't available for this {m.kind} model."
+    try:
+        entry = fitting._MODEL_STORE.get(models_service._live_cache_id(db, m.id, owners))
+    except (models_service.ModelNotFound, fitting.ModelNotFound, FitError):
+        entry = None
+    live = (entry or {}).get("model")
+    if live is None:
+        return None, None, (f"No {level} bounds: the data this model was fitted to is no longer available, "
+                            "so its covariance can't be recovered.")
+    if not hasattr(live, "cb"):
+        return None, None, (f"No {level} bounds: this model type ({results.get('distribution') or dist_id}) "
+                            "doesn't provide covariance-based confidence bounds.")
+    t = np.asarray(ts, dtype=float)
+    alpha = 1.0 - confidence
+    args = (t,)
+    if m.kind == "regression":
+        args = (t, pd.DataFrame({c["name"]: [c["value"]] for c in ev.get("covariates") or []}))
+    try:
+        with np.errstate(all="ignore"):
+            r = _cb_pairs(live.cb(*args, on="sf", alpha_ci=alpha, bound="two-sided"))
+            f = _cb_pairs(live.cb(*args, on="ff", alpha_ci=alpha, bound="two-sided"))
+    except Exception as exc:  # noqa: BLE001 - e.g. no covariance (singular fit), non-MLE fit
+        reason = str(exc).strip() or type(exc).__name__
+        return None, None, f"No {level} bounds: SurPyval can't compute them for this fit ({reason})."
+    note = (f"reliability_bounds / failure_bounds are two-sided {level} Fisher-matrix (Wald / delta-method) "
+            "confidence bounds from the fit's covariance — the same method as the app's confidence band — "
+            "computed at exactly these times.")
+    if m.kind == "regression":
+        note += (" For this proportional-hazards model they're at the covariate values used; the app's "
+                 "calculator doesn't draw a band for these models.")
+    return r, f, note
+
+
 @_tool("reliability_at", _READ, "Evaluate a model's reliability")
 def reliability_at(
     ctx: Context,
@@ -964,13 +1040,21 @@ def reliability_at(
     covariates: Annotated[Optional[dict[str, Any]], Field(
         description="Proportional-hazards models only: covariate values by name (see get_model). Any not "
                     "given use the fit's default (the training-data mean); the response says which.")] = None,
+    confidence: Annotated[Optional[float], Field(
+        gt=0, lt=1, description="Optional two-sided confidence level, e.g. 0.9 or 0.95. Adds reliability_bounds "
+                                "and failure_bounds [lower, upper] at each time (the app's Fisher-matrix "
+                                "confidence bounds); null, with bounds_note saying why, where the model has "
+                                "none.")] = None,
 ) -> dict[str, Any]:
     """Evaluate a saved life model at given times: reliability R(t) (probability of surviving to t),
     failure probability F(t) = 1 − R(t), hazard rate h(t), cumulative hazard H(t) and density f(t).
     Optionally conditional on a unit already having survived to `conditional_age`. Parametric models are
     evaluated exactly from the distribution (method=exact); non-parametric and mixture models are
     interpolated on their stored curve (method=interpolated). Proportional-hazards models report the
-    covariate values used (the fit's defaults for any not given)."""
+    covariate values used (the fit's defaults for any not given). With `confidence` (e.g. 0.95), each
+    time also gets two-sided confidence bounds on R(t) and F(t) — quote those alongside the point values;
+    models without a covariance (non-parametric, mixtures, parameters saved without data) get null bounds
+    and a bounds_note saying why."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
@@ -1056,6 +1140,14 @@ def reliability_at(
                          "covariate not given (the training-data mean; the most common level for a "
                          "categorical one). Pass `covariates` to evaluate other conditions.")
     out["note"] = " ".join(notes)
+    if confidence is not None:
+        r_bounds, f_bounds, bounds_note = _reliability_bounds(
+            db, m, ts, owners, ev, float(confidence))
+        for i, p in enumerate(points):
+            p["reliability_bounds"] = r_bounds[i] if r_bounds else None
+            p["failure_bounds"] = f_bounds[i] if f_bounds else None
+        out["confidence"] = float(confidence)
+        out["bounds_note"] = bounds_note
     return out
 
 
@@ -1089,6 +1181,67 @@ def upload_dataset(
     ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(csv), user["uid"])
     return {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
             "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
+
+
+# ---- get_dataset (#135): a dataset's rows, a page at a time --------------------
+
+_DATASET_PAGE_MAX = 500
+
+
+def _cell(v):
+    """One dataset value as plain JSON: numbers as numbers, blanks as null."""
+    if v is None or (isinstance(v, float) and not np.isfinite(v)):
+        return None
+    if isinstance(v, (bool, np.bool_)):
+        return bool(v)
+    if isinstance(v, (int, np.integer)):
+        return int(v)
+    if isinstance(v, (float, np.floating)):
+        return _finite(v)
+    try:
+        if pd.isna(v):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return str(v)
+
+
+@_tool("get_dataset", _READ, "Read a dataset")
+def get_dataset(
+    ctx: Context,
+    dataset_id: Annotated[str, Field(description="A dataset id (list_datasets) — the user's own or a shared sample.")],
+    offset: Annotated[int, Field(ge=0, description="First row to return (0-based).")] = 0,
+    limit: Annotated[int, Field(ge=1, le=_DATASET_PAGE_MAX,
+                                description=f"Rows to return, at most {_DATASET_PAGE_MAX}.")] = 50,
+) -> dict[str, Any]:
+    """Read a saved dataset: its name and notes, columns with their types, the total row_count, and a slice
+    of rows (`offset`, `limit` ≤ 500) as lists in column order. Page through a large dataset with
+    next_offset; summarise rather than reading every row when you don't need them all."""
+    user, db = _caller(ctx), _db()
+    ds = datasets_service.get_dataset(db, dataset_id, _owners(user["uid"]))
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    df = datasets_service.load_dataframe(ds)
+    total = int(df.shape[0])
+    page = df.iloc[offset:offset + limit]
+    rows = [[_cell(v) for v in row] for row in page.itertuples(index=False, name=None)]
+    end = offset + len(rows)
+    out = {
+        "id": ds.id,
+        "name": ds.name,
+        "is_sample": samples_service.is_sample(ds.owner_id),
+        "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
+        "row_count": total,
+        "offset": offset,
+        "rows": rows,
+        "next_offset": end if end < total else None,
+        "url": _url(f"/datasets/d/{ds.id}"),
+    }
+    if ds.notes:
+        out["notes"] = ds.notes
+    if offset >= total and total:
+        out["note"] = f"offset {offset} is past the last row (the dataset has {total} rows)."
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -2471,8 +2624,147 @@ def revoke_share_link(
 
 
 # ---------------------------------------------------------------------------
+# Metadata: rename / annotate (#135)
+# ---------------------------------------------------------------------------
+# Name and notes only — never the data or the fit — and, like the deletes,
+# owner-only and never a shared sample.
+
+_NAME_MAX, _NOTES_MAX = 200, 5000
+_NewName = Annotated[Optional[str], Field(max_length=_NAME_MAX, description="A new name (omit to keep it).")]
+_NewNotes = Annotated[Optional[str], Field(max_length=_NOTES_MAX,
+                                           description="New notes, replacing any there are; \"\" clears them. "
+                                                       "Omit to keep them.")]
+
+
+def _details(name: str | None, notes: str | None) -> tuple[str | None, str | None]:
+    """Validated (name, notes): at least one given, and a name isn't blank."""
+    if name is None and notes is None:
+        raise ToolError("Nothing to change: give a new name, notes, or both.")
+    if name is not None:
+        name = name.strip()
+        if not name:
+            raise ToolError("name can't be blank.")
+    return name, (notes.strip() if notes is not None else None)
+
+
+def _changed(name: str | None, notes: str | None) -> list[str]:
+    return [k for k, v in (("name", name), ("notes", notes)) if v is not None]
+
+
+@_tool("update_model", _WRITE, "Rename or annotate a model")
+def update_model(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="One of the user's own model ids (list_models) — life or recurrent.")],
+    name: _NewName = None,
+    notes: _NewNotes = None,
+) -> dict[str, Any]:
+    """Rename one of the user's own saved models (life or recurrent) and/or set its notes. Only the name and
+    notes change — never the fit, parameters or data. Shared samples can't be changed."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    name, notes = _details(name, notes)
+    m = models_service.get_model(db, model_id, _owners(uid))
+    service, kind = models_service, "life"
+    if m is None:
+        m, service, kind = recurrent_service.get_model(db, model_id, _owners(uid)), recurrent_service, "recurrent"
+    if m is None:
+        raise ToolError("Model not found.")
+    if samples_service.is_sample(m.owner_id):
+        raise ToolError(f"“{m.name}” is a shared sample model, not yours — it can't be renamed or annotated.")
+    if name is not None:
+        m = service.rename_model(db, m.id, name, uid)
+    if notes is not None:
+        m = service.set_notes(db, m.id, notes, uid)
+    return {"updated": _changed(name, notes), "model_id": m.id, "kind": kind, "name": m.name,
+            "notes": (m.spec or {}).get("notes"),
+            "url": _url(f"/modelling/m/{m.id}" if kind == "life" else f"/modelling/recurrent/{m.id}")}
+
+
+@_tool("update_dataset", _WRITE, "Rename or annotate a dataset")
+def update_dataset(
+    ctx: Context,
+    dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list_datasets).")],
+    name: _NewName = None,
+    notes: _NewNotes = None,
+) -> dict[str, Any]:
+    """Rename one of the user's own datasets and/or set its notes. Only the name and notes change — never the
+    data. Shared samples can't be changed."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    name, notes = _details(name, notes)
+    ds = datasets_service.get_dataset(db, dataset_id, _owners(uid))
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    if samples_service.is_sample(ds.owner_id):
+        raise ToolError(f"“{ds.name}” is a shared sample dataset, not yours — it can't be renamed or annotated.")
+    ds = datasets_service.update_details(db, ds.id, uid, name=name, notes=notes)
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    return {"updated": _changed(name, notes), "dataset_id": ds.id, "name": ds.name, "notes": ds.notes,
+            "url": _url(f"/datasets/d/{ds.id}")}
+
+
+# ---------------------------------------------------------------------------
 # Plans
 # ---------------------------------------------------------------------------
+
+# ---- get_account (#133): the caller's plan and what's left on it -------------
+# Ungated like upgrade_link: an agent asks "what's left?" most when nothing is.
+
+@_tool("get_account", _READ, "Your plan and usage")
+def get_account(ctx: Context) -> dict[str, Any]:
+    """The user's Reliafy plan and what's left on it. Free: the tool calls used and left this month (a small
+    allowance to try Reliafy from an agent), with the date they reset (the 1st, 00:00 UTC). Pro: unlimited.
+    A subscriber to the retired Agent plan (grandfathered): the calls used and left today, resetting at
+    00:00 UTC. Also saved items per kind against the plan's storage limits (limit null = unlimited), whether
+    availability simulation is included, and how to upgrade. Never counted against the allowance, and works
+    when it's used up — check it before a long job, or to explain a limit to the user."""
+    user, db = _caller(ctx), _db()
+    admin = billing_service.is_admin_user(user)
+    unlimited = admin or not config.BILLING_ENABLED
+    # The plan governing MCP use: free / pro / agent (grandfathered). Operators
+    # and self-hosted installs have Pro's access.
+    plan = "pro" if unlimited else (user.get("mcp_plan") or billing_service.mcp_plan(db, user))
+    summary = billing_service.usage_summary(db, user["uid"], admin=admin)
+    quota, period = billing_service.mcp_quota(plan)
+    if quota is None:
+        calls = {"unlimited": True, "period": None, "used": None, "limit": None, "left": None,
+                 "resets_at": None, "resets_in": None}
+    else:
+        used = min(billing_service.mcp_calls_used(db, user["uid"], plan), quota)
+        reset = billing_service.mcp_quota_resets_at(plan)
+        calls = {"unlimited": False, "period": period, "used": used, "limit": quota, "left": quota - used,
+                 "resets_at": reset.isoformat(), "resets_in": _in_days(reset).removeprefix("in ")}
+        if period == "month":
+            calls["resets_on"] = f"{reset.day} {reset:%B %Y} (UTC)"
+    caps = None if unlimited or plan == "pro" else summary["plan_caps"]
+    storage = {kind: {"used": n, "limit": None if caps is None else caps[kind]}
+               for kind, n in summary["usage"].items()}
+    if admin:
+        note = "Operator account: no tool-call limit and no storage limits."
+    elif not config.BILLING_ENABLED:
+        note = "Self-hosted install: no plan limits."
+    elif plan == "pro":
+        note = "Reliafy Pro: unlimited tool calls and storage."
+    elif plan == "free":
+        note = (f"Reliafy Free: {quota:,} tool calls a month to try Reliafy from an AI agent (get_account and "
+                "upgrade_link aren't counted), within the storage limits shown. Fitting and fleets are Pro-only.")
+    else:
+        note = (f"Reliafy Agent (a retired plan, kept until the subscription ends): {quota:,} tool calls a day "
+                "(get_account and upgrade_link aren't counted) and the storage limits shown. Fitting and fleets "
+                "are Pro-only.")
+    return {
+        "plan": plan,
+        "plan_name": _PLAN_NAMES[plan],
+        "grandfathered": plan == "agent",
+        "operator": admin,
+        "tool_calls": calls,
+        "storage": storage,
+        "simulation_available": billing_service.premium_compute_allowed(db, user),
+        "upgrade": None if plan == "pro" else _upgrade_path(lead="To lift these limits, upgrade"),
+        "note": note,
+    }
+
 
 @_tool("upgrade_link", _LINK, "Get a link to upgrade")
 def upgrade_link(
