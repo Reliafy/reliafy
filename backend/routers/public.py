@@ -99,7 +99,7 @@ def revoke_link(
 # Detail handlers per collection, replayed under the guest ctx. Imported
 # lazily inside the endpoint to avoid circular imports at module load.
 def _detail_handler(collection: str):
-    from backend.routers import degradation, fleet, models, rbds, rcm, strategy
+    from backend.routers import degradation, fleet, models, rbds, rcm, recurrent, strategy
 
     return {
         "models": models.get_model,
@@ -109,6 +109,7 @@ def _detail_handler(collection: str):
         "rcm_studies": rcm.get_study,
         "fleets": fleet.get_fleet,
         "rbds": rbds.get_rbd,
+        "recurrent_models": recurrent.get_model,
     }[collection]
 
 
