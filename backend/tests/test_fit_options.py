@@ -354,6 +354,22 @@ def test_create_from_params_endpoint(client):
     assert got["results"]["distribution"] == "Weibull"
 
 
+def test_create_from_params_with_lfp(client):
+    """A limited failure population typed in (no data) saves: its curves run
+    to the 99th quantile of the units that fail, since F never reaches 0.99."""
+    r = client.post(
+        "/api/models/from-params",
+        json={"name": "LFP", "distribution": "weibull",
+              "params": [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 3}],
+              "extras": {"p": 0.6, "gamma": 100}},
+    )
+    assert r.status_code == 200, r.text
+    res = r.json()["results"]
+    assert res["extras"] == {"p": 0.6, "gamma": 100.0}
+    x = res["functions"]["curves"]["x"]
+    assert x[-1] == pytest.approx(100 + 1000 * (-np.log(0.01)) ** (1 / 3))
+
+
 def test_create_from_params_with_offset_and_validation(client):
     r = client.post(
         "/api/models/from-params",

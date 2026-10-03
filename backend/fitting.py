@@ -2006,9 +2006,18 @@ def _function_curves(model, points: int = 300) -> dict:
         hi = float(model.qf(0.99))
     except Exception:
         hi = None
+    if (hi is None or not np.isfinite(hi) or hi <= 0) and getattr(model, "data", None) is None:
+        # A limited failure population never reaches F = 0.99 (qf is inf); with
+        # no data either (typed-in params), use the 99th quantile of the units
+        # that do fail: the base distribution's, past the offset.
+        try:
+            hi = float(model.dist.qf(0.99, *model.params)) + float(getattr(model, "gamma", 0) or 0)
+        except Exception:
+            hi = None
     if hi is None or not np.isfinite(hi) or hi <= 0:
         # Fall back to the data range if the quantile is unavailable.
-        xd = np.asarray(model.data["x"], dtype=float)
+        data = getattr(model, "data", None)
+        xd = np.asarray(data["x"] if data is not None else [], dtype=float)
         xd = xd[np.isfinite(xd)]
         hi = float(xd.max()) * 1.5 if xd.size else 1.0
     return _eval_functions(model, np.linspace(0.0, hi, points))
