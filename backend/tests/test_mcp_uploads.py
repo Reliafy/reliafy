@@ -622,3 +622,27 @@ def test_upload_links_can_point_straight_at_cloud_run(env, monkeypatch):
     out = _ok(_call(env.token[A], "create_upload", {"purpose": "rbd_import", "filename": "x.xml"}))
     assert out["url"].startswith("https://reliafy-123.australia-southeast1.run.app/api/uploads/")
     assert out["url"] in out["curl"]
+
+
+def test_create_upload_says_what_to_do_when_the_put_cant_reach_reliafy(env):
+    """A sandboxed agent's egress proxy may refuse the PUT (#191): the link,
+    the tool description and the server instructions all give the fallback,
+    with import_rbd's real inline limit."""
+    from backend import mcp_server
+
+    kb = f"{mcp_server.INLINE_MAX_BYTES // 1024} KB"
+    note = _ok(_call(env.token[A], "create_upload", {"purpose": "dataset", "filename": "lives.csv"}))["note"]
+    assert "can't reach this URL (a proxy 403, no network)" in note
+    assert f"paste a small text file instead (up to {kb})" in note
+    assert all(tool in note for tool in ("upload_dataset", "upload_outage_log", "import_rbd"))
+    assert note.endswith("Tell the user larger files need uploading in the Reliafy app.")
+
+    tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
+    desc = " ".join(tools["create_upload"].description.split())
+    assert "can't reach the URL (a proxy 403, no network)" in desc and f"up to {kb}" in desc
+    assert "larger files need uploading in the Reliafy app" in desc
+
+    instructions = " ".join(mcp_server.INSTRUCTIONS.split())
+    assert "never read a file into your context to paste it" in instructions
+    assert "If the PUT can't reach Reliafy from your environment (a proxy 403, no network)" in instructions
+    assert f"up to {kb}" in instructions and "larger files need uploading in the Reliafy app" in instructions

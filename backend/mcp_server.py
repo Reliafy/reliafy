@@ -267,8 +267,10 @@ window, its outages each attributed to the block that took it down, and the bloc
 - Files: never read a file into your context to paste it. For any file (a BlockSim / Open-PSA / Galileo \
 diagram, an Excel workbook, a CSV of failure times or outages): create_upload, then send the file with the \
 curl PUT it returns, inspect_upload if you need its sheets, columns or diagrams, then import_rbd / \
-import_excel / upload_dataset / upload_outage_log with the upload_id. Paste only small text formats \
-(import_rbd's content, upload_dataset's csv). Relay the import notes: they say what was approximated.
+import_excel / upload_dataset / upload_outage_log with the upload_id. Paste only small text (import_rbd's \
+content, upload_dataset's or upload_outage_log's csv; up to 200 KB). If the PUT can't reach Reliafy from your \
+environment (a proxy 403, no network), paste a small text file that way instead and tell the user larger \
+files need uploading in the Reliafy app. Relay the import notes: they say what was approximated.
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
@@ -2660,6 +2662,16 @@ def _upload_table_text(db, uid: str, upload_id: str, sheet: Optional[str]) -> tu
     return doc, uploads_service.as_text(data)
 
 
+# Sandboxed agents often can't reach the upload host (an egress proxy's 403,
+# no network) (#191): small text files can still go inline; larger ones only
+# through the app. import_rbd enforces INLINE_MAX_BYTES; the csv tools take
+# more, but a paste that size already costs the agent's context.
+_UPLOAD_FALLBACK = (
+    "If the PUT fails because your environment can't reach this URL (a proxy 403, no network), paste a small "
+    f"text file instead (up to {INLINE_MAX_BYTES // 1024} KB): upload_dataset's or upload_outage_log's csv, or "
+    "import_rbd's content. Tell the user larger files need uploading in the Reliafy app.")
+
+
 @_tool("create_upload", _WRITE, "Get a file upload link")
 def create_upload(
     ctx: Context,
@@ -2678,7 +2690,10 @@ def create_upload(
     tool with upload_id: import_rbd (diagram files), import_excel (workbooks), upload_dataset or
     upload_outage_log. inspect_upload shows a workbook's sheets and columns, or a diagram file's diagrams,
     before importing. The URL expires in 15 minutes and works once; the file is deleted after its import, or
-    after an hour. Never read a file into your context to paste it: use this."""
+    after an hour. Never read a file into your context to paste it: use this. Only if the PUT fails because
+    your environment can't reach the URL (a proxy 403, no network): paste a small text file instead (up to
+    200 KB, as upload_dataset's or upload_outage_log's csv or import_rbd's content) and tell the user larger
+    files need uploading in the Reliafy app."""
     user, db = _caller(ctx), _db()
     doc, token = uploads_service.create(
         db, user["uid"], purpose, filename, size_bytes,
@@ -2694,7 +2709,7 @@ def create_upload(
         "expires_at": doc["expires_at"].isoformat(),
         "curl": (f"curl -sS -X PUT --data-binary @{shlex.quote(doc['filename'])} "
                  f"-H \"Content-Type: application/octet-stream\" \"{url}\""),
-        "note": _UPLOAD_NOTE + " Replace the @file in curl with the file's path.",
+        "note": _UPLOAD_NOTE + " Replace the @file in curl with the file's path. " + _UPLOAD_FALLBACK,
     }
 
 
