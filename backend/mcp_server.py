@@ -263,7 +263,9 @@ don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/re
 edges) rather than re-creating it; clone_rbd copies a sample or makes a variant to edit.
 - Observed history: upload_outage_log saves a real outage log (asset, start, end; blank end = still down) \
 against one of the user's diagrams; system_history then gives the system's actual availability over the \
-window, its outages each attributed to the block that took it down, and the blocks ranked by downtime share.
+window, its outages each attributed to the block that took it down, and the blocks ranked by downtime share. \
+Map each unit of a standby, parallel or load-sharing block as its own asset (or to "<block id>#<n>"), so the \
+block counts as down only while more of its units are down than it can spare; relay any warnings first.
 - Files: never read a file into your context to paste it. For any file (a BlockSim / Open-PSA / Galileo \
 diagram, an Excel workbook, a CSV of failure times or outages): create_upload, then send the file with the \
 curl PUT it returns, inspect_upload if you need its sheets, columns or diagrams, then import_rbd / \
