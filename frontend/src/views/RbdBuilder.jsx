@@ -682,6 +682,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     idRef.current = Math.max(idRef.current, (nums.length ? Math.max(...nums) : 0) + 1);
     setNodes(graph.nodes);
     setEdges(graph.edges);
+    // A common-cause member's copies join its group (and Undo restores it).
+    if (graph.ccf_groups != null) setCcfGroups(graph.ccf_groups);
   }, [setNodes, setEdges]);
 
   // Expose the live canvas to the AI assistant while the builder is mounted.
