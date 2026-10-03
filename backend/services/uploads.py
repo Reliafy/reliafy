@@ -449,13 +449,13 @@ def preview_diagrams(data: bytes, filename: str, fmt: Optional[str] = None,
                      excel_mapping: Optional[dict] = None) -> dict:
     """Parse a diagram file without saving: each diagram's name, format,
     block count and number of import notes."""
-    from backend.services import rbd_import
+    from backend.services import rbd_analysis, rbd_import
 
     diagrams = rbd_import.import_file(data, filename, excel_mapping=excel_mapping, format=fmt)
     items = [{
         "name": d.name,
         "source_format": d.source_format,
-        "n_blocks": sum(1 for n in (d.graph or {}).get("nodes") or [] if n.get("type") not in ("input", "output")),
+        "n_blocks": rbd_analysis.count_blocks(d.graph),
         "n_warnings": len(d.warnings),
     } for d in diagrams[:INSPECT_DIAGRAMS]]
     out = {"diagrams": items, "n_diagrams": len(diagrams)}

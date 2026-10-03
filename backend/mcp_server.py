@@ -3093,7 +3093,7 @@ def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool,
         if saved:
             item.update(_rbd_brief(saved[i]))
         else:
-            item["n_blocks"] = sum(1 for n in graph["nodes"] if n.get("type") not in ("input", "output"))
+            item["n_blocks"] = rbd_analysis.count_blocks(graph)
             item["unit"] = graph.get("unit") or ""
         item["analytic"] = check.get("analytic", True)
         item["import_notes"] = d.warnings[:_IMPORT_NOTES]
@@ -3342,9 +3342,11 @@ _SHARE_KINDS = {
     "strategy_analysis": "strategy_analyses",
     "rcm_study": "rcm_studies",
     "fleet": "fleets",
+    "recurrent_model": "recurrent_models",
 }
 _KIND_OF = {collection: kind for kind, collection in _SHARE_KINDS.items()}
-_ShareKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis", "rcm_study", "fleet"]
+_ShareKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis", "rcm_study", "fleet",
+                     "recurrent_model"]
 
 
 def _share_brief(db, link: dict) -> dict:
@@ -3367,7 +3369,8 @@ def _share_brief(db, link: dict) -> dict:
 def share_link(
     ctx: Context,
     kind: Annotated[_ShareKind, Field(description="What to share: model (a fitted life model), dataset, rbd, "
-                                                  "degradation_model, strategy_analysis, rcm_study or fleet.")],
+                                                  "degradation_model, strategy_analysis, rcm_study, fleet "
+                                                  "or recurrent_model (a repairable-system model).")],
     id: Annotated[str, Field(description="The id of one of the user's own items of that kind (e.g. from "
                                          "list_models or list_rbds). Shared samples can't be shared.")],
     password: Annotated[bool, Field(description="Protect the link with a passphrase Reliafy generates. It is "

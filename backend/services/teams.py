@@ -17,7 +17,7 @@ from backend.services import email as email_service
 ARTIFACT_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models",
     "tracked_items", "tracked_fleets", "strategy_analyses", "rcm_studies", "fleets",
-    "outage_logs",
+    "outage_logs", "recurrent_models",
 )
 
 
