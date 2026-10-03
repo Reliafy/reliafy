@@ -534,6 +534,8 @@ def test_mcp_create_rbd_round_trips_the_new_fields(env):
     assert res["repair_crews"]["crews"] == 2 and res["long_run_method"]["route"] in (
         "exact", "numerical", "refused")
     assert res["safety"]["pfd_avg"] > 0
+    # ...beside #154's exact block (here simulation-only: proof tests take time).
+    assert res["exact"]["status"] in ("ok", "simulation_only", "on_request")
 
 
 def test_mcp_create_rbd_refuses_settings_on_a_reliability_diagram(env):
@@ -629,3 +631,26 @@ def test_export_with_crews_groups_and_one_at_a_time_standby(tmp_path):
     assert res["precision"]["window_availability"] == pytest.approx(
         app["precision"]["window_availability"], rel=1e-12)
     assert res["costs"]["cost_rate"] == pytest.approx(app["costs"]["cost_rate"], rel=1e-9)
+
+
+def test_export_with_crews_has_the_exact_figures_over_time_too(tmp_path):
+    """Crews (#156/#157) and the exact availability over time (#154/#155) in
+    one script: one repair crew for two exponential pumps in parallel is a
+    Markov chain RePyability solves, so the script prints the long-run method,
+    the PFDavg and the exact figures over the window, as the app does."""
+    nodes = [_node("a", model=_exp(0.01), repair=_exp(0.5)), _node("b", model=_exp(0.01), repair=_exp(0.5))]
+    edges = [("input", "a"), ("input", "b"), ("a", "output"), ("b", "output")]
+    g = {"repairable": True, "unit": "hours", "nodes": [*_io(), *nodes],
+         "edges": [{"id": f"e{i}", "source": s, "target": t} for i, (s, t) in enumerate(edges)],
+         "repair_crews": {"crews": 1}, "safety_function": True}
+    code = rbd_export.to_python(g, "Crew", exported_at=WHEN)
+    assert "repair_crews=1" in code and "def exact_over_window" in code and "STATE = {}" in code
+    app = ra.analyze_availability(g, simulate=False)
+    exact = ra.exact_availability(g)
+    assert app["long_run_method"]["route"] == "exact" and app["repair_crews"]["limited"] is True
+    assert exact["status"] == "ok"
+    res, proc = _run(code, tmp_path, n_sims="40")
+    assert res["steady_state_availability"] == pytest.approx(app["steady_state_availability"], rel=1e-12)
+    assert res["safety"]["pfd_avg"] == pytest.approx(app["safety"]["pfd_avg"], rel=1e-12)
+    assert res["exact"]["mission_availability"] == pytest.approx(exact["mission_availability"], rel=1e-9)
+    assert "Exact over" in proc.stdout and "PFDavg" in proc.stdout
