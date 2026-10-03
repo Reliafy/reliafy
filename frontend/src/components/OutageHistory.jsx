@@ -351,13 +351,13 @@ function TimelineChart({ history, labels }) {
         layout={{
           autosize: true,
           height,
-          margin: { l: 110, r: 16, t: 10, b: 40 },
+          margin: { l: 20, r: 12, t: 28, b: 36 },
           paper_bgcolor: "rgba(0,0,0,0)",
           plot_bgcolor: "rgba(0,0,0,0)",
           barmode: "overlay",
           bargap: 0.3,
           showlegend: true,
-          legend: { orientation: "h", x: 0, y: -0.12, yanchor: "top", font: { size: 11 } },
+          legend: { orientation: "h", x: 0, y: 1.0, yanchor: "bottom", font: { size: 11 } },
           xaxis: {
             type: dated ? "date" : "linear",
             title: dated ? undefined : `Time (${unit || "diagram unit"})`,
@@ -374,6 +374,7 @@ function TimelineChart({ history, labels }) {
           },
           yaxis2: {
             domain: [0.8, 1],
+            automargin: true,
             range: [-0.15, 1.15],
             tickvals: [0, 1],
             ticktext: ["Down", "Up"],

@@ -1117,7 +1117,7 @@ def fit_models(graph: dict, log: dict, distribution: str = "weibull",
             failures = sum(1 for v in c if v == 0)
             info = {"n": len(x), "failures": failures, "censored": len(x) - failures}
             if failures < 2:
-                what = "failures" if key == "life" else "completed repairs"
+                what = ("failure" if key == "life" else "completed repair") + ("" if failures == 1 else "s")
                 info["error"] = f"{failures} {what} in the window — at least 2 are needed to fit."
                 entry[key] = info
                 continue

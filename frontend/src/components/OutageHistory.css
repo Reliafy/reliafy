@@ -54,4 +54,6 @@
   .outage-import-side { flex: 1 1 100%; }
   .outage-bar > :first-child { min-width: 0; flex: 1 1 100%; }
   .outage-window .outage-input { width: 130px; }
+  .outage-history .rbd-avail-bar { grid-template-columns: minmax(60px, 100px) 1fr 42px; }
+  .rbd-calc-panel:has(> .outage-history) { padding: 0.75rem 0.6rem 1.25rem; }
 }
