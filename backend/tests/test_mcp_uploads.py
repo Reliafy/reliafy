@@ -352,6 +352,29 @@ def test_open_psa_fixed_probability_events_import_as_placeholders(env):
     assert out["saved"] and out["diagrams"][0]["placeholders"] == ["MCC"]
 
 
+def test_import_preview_shows_structure_cut_sets_and_unit(env):
+    # #187: the preview shows how the blocks are wired, not just which there are.
+    galileo = ('toplevel "System"; "System" or "Pumps" "MCC" "Valve"; "Pumps" and "PA" "PB"; '
+               '"PA" lambda=1e-4; "PB" lambda=1e-4; "MCC" lambda=1e-5; "Valve" lambda=2e-5;')
+    preview = _ok(_call(env.token[A], "import_rbd", {"content": galileo, "save": False}))
+    (d,) = preview["diagrams"]
+    assert d["structure"] == "(PA ∥ PB) → MCC → Valve"
+    assert d["min_cut_sets"] == [["MCC"], ["Valve"], ["PA", "PB"]] and d["cut_sets_complete"] is True
+    ids = {n["label"]: n["id"] for n in d["nodes"]}
+    assert {"source": ids["PA"], "target": ids["MCC"]} in d["edges"]
+    assert {"source": "input", "target": ids["PA"]} in d["edges"] and len(d["edges"]) == 6
+    assert d["unit"] == "Hours" and any("per hour" in n for n in d["import_notes"])
+    # The same for Open-PSA; a unit can be given for a file that states none.
+    preview = _ok(_call(env.token[A], "import_rbd", {"content": PUMPS_OPENPSA, "save": False, "unit": "Days"}))
+    (d,) = preview["diagrams"]
+    assert d["structure"] == "(PA ∥ PB) → MCC → Valve" and d["unit"] == "Days"
+    # Saving returns the lean brief: no edges or cut sets, but the unit.
+    out = _ok(_call(env.token[A], "import_rbd", {"content": galileo}))
+    (d,) = out["diagrams"]
+    assert d["unit"] == "Hours" and "edges" not in d and "structure" not in d
+    assert env.db.rbds.find_one({"_id": d["id"]})["graph"]["unit"] == "Hours"
+
+
 # ---- Excel targets -------------------------------------------------------------------------
 
 def test_excel_dataset_needs_a_sheet_then_maps_columns(env):

@@ -29,13 +29,15 @@ def _module(name: str):
 
 
 def import_file(data: bytes, filename: str, excel_mapping: Optional[dict] = None,
-                format: Optional[str] = None) -> list[ImportedDiagram]:
+                format: Optional[str] = None, unit: Optional[str] = None) -> list[ImportedDiagram]:
     """Parse an uploaded file into one or more diagrams.
 
     ``excel_mapping`` (Excel workbooks only) says which sheets and columns
     hold the blocks and connections when the workbook doesn't follow the
     template (see :func:`.excel.parse`). ``format`` (a :data:`FORMATS` key)
-    skips the sniffing and parses the file as that format."""
+    skips the sniffing and parses the file as that format. ``unit`` is the
+    time unit the file's rates and times are in, for a file that doesn't say;
+    without it such a diagram's unit defaults to Hours (see :func:`_set_unit`)."""
     if not data:
         raise RbdImportError("The file is empty.")
     if len(data) > MAX_UPLOAD_BYTES:
@@ -56,6 +58,7 @@ def import_file(data: bytes, filename: str, excel_mapping: Optional[dict] = None
                 diagrams = mod.parse(data, filename or "")
             for d in diagrams:
                 d.source_format = d.source_format or label
+                _set_unit(d, unit)
             if not diagrams:
                 raise RbdImportError(f"No reliability block diagrams found in this {label} file.")
             return diagrams
@@ -64,3 +67,33 @@ def import_file(data: bytes, filename: str, excel_mapping: Optional[dict] = None
         "use File › Pack and E-mail in BlockSim), Open-PSA XML, Galileo .dft files and "
         "Excel workbooks (.xlsx — download the template)."
     )
+
+
+DEFAULT_UNIT = "Hours"
+
+
+def _same_unit(a: str, b: str) -> bool:
+    return a.strip().lower().rstrip("s") == b.strip().lower().rstrip("s")
+
+
+def _set_unit(d: ImportedDiagram, unit: Optional[str]) -> None:
+    """Give a diagram whose file states no time unit the ``unit`` asked for,
+    else Hours (the usual convention for failure rates, and the rest of
+    Reliafy's default), saying so in an import note. A unit the file states
+    wins over ``unit``."""
+    unit = (unit or "").strip()[:40]
+    stated = str(d.graph.get("unit") or "").strip()
+    if stated:
+        if unit and not _same_unit(unit, stated):
+            d.warnings.append(f"The file gives its time unit as “{stated}”, so the unit given on import "
+                              f"(“{unit}”) was ignored.")
+        return
+    if unit:
+        d.graph["unit"] = unit
+        d.warnings.append(f"Rates and times were read in “{unit}”, the unit given on import.")
+    elif not d.unit_conflict:
+        d.graph["unit"] = DEFAULT_UNIT
+        d.warnings.append(
+            f"The {d.source_format} file doesn't state a time unit, so the diagram's unit was set to "
+            f"{DEFAULT_UNIT}: its rates were read per hour and its times in hours. If they're in "
+            "another unit, change the diagram's unit.")

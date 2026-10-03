@@ -2710,12 +2710,30 @@ def _lean_outline(graph: dict, check: dict) -> dict:
     return out
 
 
+_PREVIEW_EDGES = 200     # edges per previewed diagram
+
+
+def _import_preview(graph: dict) -> dict:
+    """What a preview adds so the conversion can be checked before saving
+    (#187): the edges (by node id), a one-line structure and the smallest
+    minimal cut sets."""
+    from backend.services import rbd_structure
+
+    edges = [{"source": e.get("source"), "target": e.get("target")} for e in graph.get("edges") or []]
+    out: dict[str, Any] = {"edges": edges[:_PREVIEW_EDGES]}
+    if len(edges) > _PREVIEW_EDGES:
+        out.update(n_edges=len(edges), edges_truncated=True)
+    out.update(rbd_structure.describe(graph))
+    return out
+
+
 def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool, only: Optional[list[str]],
                    upload: Optional[dict], rbd_id: Optional[str] = None) -> dict:
     """Validate imported diagrams and (``save``) save them — all or nothing
-    against the RBD cap. Returns each diagram's brief, import notes and a
-    concise node list (never the whole graph); deletes the upload once
-    saved."""
+    against the RBD cap. Returns each diagram's brief, its time unit, import
+    notes and a concise node list (never the whole graph) — a preview adds the
+    edges, a one-line structure and the minimal cut sets; deletes the upload
+    once saved."""
     uid = user["uid"]
     owners = _owners(uid)
     if only:
@@ -2769,11 +2787,14 @@ def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool,
             item.update(_rbd_brief(saved[i]))
         else:
             item["n_blocks"] = sum(1 for n in graph["nodes"] if n.get("type") not in ("input", "output"))
+            item["unit"] = graph.get("unit") or ""
         item["analytic"] = check.get("analytic", True)
         item["import_notes"] = d.warnings[:_IMPORT_NOTES]
         if len(d.warnings) > _IMPORT_NOTES:
             item["more_import_notes"] = len(d.warnings) - _IMPORT_NOTES
         item.update(_lean_outline(graph, check))
+        if not save:
+            item.update(_import_preview(graph))
         items.append(item)
     out: dict[str, Any] = {"saved": bool(saved), "diagrams": items}
     if target is not None and saved:
@@ -2814,12 +2835,17 @@ def import_rbd(
     only: Annotated[Optional[list[str]], Field(description=(
         "Import just these diagrams, by name (a BlockSim project can hold many; preview with save=false or "
         "inspect_upload)."))] = None,
+    unit: Annotated[Optional[str], Field(max_length=40, description=(
+        "The time unit the file's rates and times are in, for a file that doesn't state one (Galileo, most "
+        "Open-PSA). Default: Hours. A unit the file states wins."))] = None,
 ) -> dict[str, Any]:
     """Import reliability block diagrams from another tool's file — BlockSim, Open-PSA, Galileo, or Reliafy's
     Excel RBD template — and save each as an RBD in the user's workspace (all or nothing against the plan's
     RBD limit). Send files with create_upload and pass upload_id; paste only small text formats into content.
-    Returns, per diagram, its id and url, the import notes (what was approximated — tell the user), and a
-    concise node list; get_rbd reads the full graph, edit_rbd changes it. save=false previews."""
+    Returns, per diagram, its id and url, its time unit, the import notes (what was approximated — tell the
+    user), placeholders (blocks needing a real life model) and a concise node list; get_rbd reads the full
+    graph, edit_rbd changes it. save=false previews, adding the edges, a one-line structure (→ series,
+    ∥ parallel) and the minimal cut sets to check the conversion before saving."""
     user, db = _caller(ctx), _db()
     if (upload_id is None) == (content is None):
         raise ToolError("Give either upload_id (a file sent through create_upload) or content (small text) — "
@@ -2840,7 +2866,7 @@ def import_rbd(
         filename = upload["filename"]
     with _untrusted_file():
         try:
-            diagrams = rbd_import.import_file(data, filename, format=format)
+            diagrams = rbd_import.import_file(data, filename, format=format, unit=unit)
         except rbd_import.RbdImportError as exc:
             if getattr(exc, "code", None) == "excel_mapping":
                 raise _excel_mapping_error(exc, data, filename) from None

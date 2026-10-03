@@ -661,7 +661,8 @@ def _convert(model: _Model, top: str) -> ImportedDiagram:
     ft_name = model.gate_ft.get(top)
     if ft_name and ft_name != top:
         name = f"{ft_name} — {top}"
-    return ImportedDiagram(name=name, graph=graph, warnings=conv.all_warnings() + more)
+    return ImportedDiagram(name=name, graph=graph, warnings=conv.all_warnings() + more,
+                           unit_conflict=len(conv.units) > 1)
 
 
 def _used_leaves(tree: ft.FaultTree) -> set[str]:

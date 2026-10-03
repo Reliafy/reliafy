@@ -13,6 +13,8 @@ accepts (the same one the assistant and the MCP server write): nodes with ids
 and optional ``repairable`` and ``ccf_groups``. Anything the source file holds
 that Reliafy can't represent goes in ``warnings`` (imported approximately) or
 makes the importer raise :class:`RbdImportError` (can't be imported honestly).
+A format that states no time unit leaves the graph's ``unit`` blank;
+:func:`backend.services.rbd_import.import_file` then defaults it to Hours.
 """
 
 from __future__ import annotations
@@ -34,3 +36,6 @@ class ImportedDiagram:
     graph: dict
     warnings: list[str] = field(default_factory=list)
     source_format: str = ""
+    # The file states several time units that disagree, so the diagram's unit
+    # is left blank (with a warning) rather than defaulted (see ``import_file``).
+    unit_conflict: bool = False
