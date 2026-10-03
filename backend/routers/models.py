@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from anyio import to_thread
 from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
@@ -138,9 +139,10 @@ async def upload_dataset(
     if excel_service.is_excel(contents, file.filename or ""):
         try:
             row = excel_router.header_row_param(header_row)
-            table = excel_service.read_table(
-                contents, sheet, 0 if no_header else row, file.filename or "",
-            )
+            # Off the event loop, under the user's import guard.
+            table = await to_thread.run_sync(
+                lambda: excel_router.guarded(ctx.uid, excel_service.read_table, contents, sheet,
+                                             0 if no_header else row, file.filename or ""))
         except excel_service.ExcelError as exc:
             return JSONResponse(status_code=422, content={"detail": str(exc)})
         except Exception as exc:
