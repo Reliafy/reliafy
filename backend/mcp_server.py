@@ -1132,15 +1132,71 @@ class BlockModel(BaseModel):
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
 
 
+class CostRange(BaseModel):
+    min: float = Field(ge=0)
+    max: float = Field(ge=0)
+
+
+Cost = Union[float, CostRange]
+
+
+class BlockCosts(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    repair: Optional[Cost] = Field(None, description="Per failure (labour); a number or {min, max} drawn uniformly.")
+    replace: Optional[Cost] = Field(None, description="Per failure (parts); a number or {min, max}.")
+    downtime: Optional[float] = Field(None, ge=0, description="Per unit time THIS block is down.")
+    acquisition: Optional[float] = Field(None, ge=0, description="Purchase price, once.")
+
+
+class Preventive(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    policy: Literal["age", "block", "condition"] = Field("age", description=(
+        "age = replaced at this age (a failure restarts the clock); block = at every multiple of the interval; "
+        "condition = inspected every interval (in no time) and replaced when its chance of failing before the "
+        "next inspection exceeds threshold."))
+    interval: float = Field(gt=0, description="Replacement interval (age/block) or inspection interval (condition).")
+    duration: Optional[float] = Field(None, ge=0, description="Time off-line per replacement; 0/omit = instant.")
+    cost: Optional[Cost] = Field(None, description="Per replacement.")
+    threshold: Optional[float] = Field(None, ge=0, le=1, description=(
+        "condition only (required): the probability of failing before the next inspection above which it's "
+        "replaced, e.g. 0.05."))
+    inspection_cost: Optional[Cost] = Field(None, description="condition only: per condition inspection.")
+    opportunity: Optional[float] = Field(None, ge=0, description=(
+        "age only, with maintenance_group: renewed early at a stop of its group once at least this old "
+        "(0 to interval)."))
+
+
+class ProofTest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    interval: float = Field(gt=0, description="Proof-test interval.")
+    duration: Optional[float] = Field(None, ge=0, description="Time off-line per test; 0/omit = instant (exact "
+                                                              "values need instant tests and instant repair).")
+    cost: Optional[Cost] = Field(None, description="Per test.")
+    offset: Optional[float] = Field(None, ge=0, description=(
+        "Time of the first test, 0 to < interval: stagger redundant channels' tests (e.g. interval/2)."))
+    coverage: Optional[float] = Field(None, ge=0, le=1, description=(
+        "Proof-test coverage: the fraction of failures a test finds (default 1). Below 1 needs full_test."))
+    full_test: Optional[float] = Field(None, gt=0, description=(
+        "With coverage < 1: the interval of the full test that finds every failure (a whole multiple of interval)."))
+
+
+class MaintenanceGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    setup_cost: Optional[float] = Field(None, ge=0, description="Charged once per group stop (shared mobilisation).")
+    system_down: Optional[bool] = Field(None, description="Every system outage is also a stop of the group.")
+
+
 class RbdNode(BaseModel):
     id: str = Field(description="Unique node id. The diagram needs exactly one 'input' and one 'output' node.")
     type: Literal["input", "output", "component", "series", "parallel", "knode", "standby", "subsystem"] = Field(
         description="component = one block; series/parallel = n identical blocks sharing one model; knode = "
                     "k-of-n voting gate (n = required, k = branches feeding it); standby = spare(s) idle until "
-                    "the running unit fails; subsystem = embed a saved RBD.")
+                    "the running unit fails (repairable: identical units, each repaired after it fails); "
+                    "subsystem = embed a saved RBD. Repairable diagrams take component, standby and knode.")
     label: Optional[str] = None
     model: Optional[BlockModel] = Field(None, description="Life model (component, series, parallel, standby).")
-    repair: Optional[BlockModel] = Field(None, description="Repairable diagrams only: time-to-repair distribution.")
+    repair: Optional[BlockModel] = Field(None, description="Repairable diagrams only: time-to-repair distribution "
+                                                           "(component, standby).")
     n: Optional[int] = Field(None, description="series/parallel: number of identical units; knode: number REQUIRED to work.")
     k: Optional[int] = Field(None, description="knode: number of branches feeding the gate.")
     spares: Optional[int] = Field(None, description="standby: number of spares.")
@@ -1149,6 +1205,23 @@ class RbdNode(BaseModel):
         "standby: how fast an idle spare ages relative to a running one — 0 cold, 1 hot, "
         "in between warm (e.g. 0.2 for a spare kept warm and pressurised). Overrides `cold`."))
     subsystem_rbd_id: Optional[str] = Field(None, description="subsystem: the saved RBD id to embed.")
+    # Repairable diagrams: a block's costs and maintenance (#99, #100, #156, #157).
+    instant_repair: Optional[bool] = Field(None, description="Repairable component: repaired in zero time (still "
+                                                             "fails and costs, never down); no repair model needed.")
+    costs: Optional[BlockCosts] = Field(None, description="Repairable component or standby group: its costs.")
+    preventive: Optional[Preventive] = Field(None, description=(
+        "Repairable component: scheduled (age/block) or condition-based replacement. Not with inspection."))
+    inspection: Optional[ProofTest] = Field(None, description=(
+        "Repairable component: its failures are HIDDEN until a proof test finds them (any life model). "
+        "Not with preventive."))
+    maintenance_group: Optional[str] = Field(None, description=(
+        "Repairable component: a maintenance group name — members share the group's set-up cost (create_rbd/"
+        "set maintenance_groups) and, with preventive.opportunity, are renewed early at its stops."))
+    crew_priority: Optional[float] = Field(None, description=(
+        "Repairable component or standby group: place in the repair-crew queue, higher first (default 0)."))
+    repair_one_at_a_time: Optional[bool] = Field(None, description=(
+        "Repairable standby group: one repairer of its own, so its failed units are repaired one at a time "
+        "(otherwise each failed unit is a job for the diagram's repair crews). No costs on such a group."))
 
 
 class RbdEdge(BaseModel):
@@ -1206,6 +1279,17 @@ def create_rbd(
                     "more components in PARALLEL, with optional k_of_n voting.")] = None,
     include_graph: Annotated[bool, Field(description=(
         "Also return the full compact graph. Default: just the node ids, types and labels."))] = False,
+    repair_crews: Annotated[Optional[int], Field(ge=1, description=(
+        "Repairable only: how many repair crews share ALL the blocks' repairs (omit = as many as needed). With "
+        "fewer crews than repair jobs, a failed block can wait; order by each block's crew_priority."))] = None,
+    maintenance_groups: Annotated[Optional[dict[str, MaintenanceGroup]], Field(description=(
+        "Repairable only: options per maintenance group named by blocks' maintenance_group, e.g. "
+        "{\"north pumps\": {\"setup_cost\": 2000}}."))] = None,
+    safety_function: Annotated[bool, Field(description=(
+        "Repairable only: the diagram is a (low-demand) safety function — analyze_rbd reports its PFDavg, "
+        "with common cause, and its SIL band."))] = False,
+    target_sil: Annotated[Optional[int], Field(ge=1, le=4, description="With safety_function: the SIL it must meet."
+                                               )] = None,
 ) -> dict[str, Any]:
     """Build, validate and save a reliability block diagram to the user's workspace. Layout is automatic.
 
@@ -1226,7 +1310,10 @@ def create_rbd(
     block. Only if the user wants a starting point, use values that differ by block class, set
     placeholder=true on EVERY guessed model, and tell the user the numbers are placeholders.
     Repairable diagrams: every block needs `repair` (graph form) or repair_distribution + repair_params
-    (stages form), e.g. a lognormal time to repair.
+    (stages form), e.g. a lognormal time to repair. Blocks may carry costs, preventive (age/block/condition-
+    based replacement), inspection (hidden failures with proof tests: staggered via offset, imperfect via
+    coverage + full_test), maintenance_group and crew_priority; the diagram repair_crews, maintenance_groups,
+    safety_function and target_sil. Common-cause groups (edit_rbd add_ccf) enter a safety function's PFDavg.
     Returns the node ids (the stages form generates them); change the diagram later with edit_rbd."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
@@ -1236,14 +1323,18 @@ def create_rbd(
     if stages is not None and edges:
         raise ToolError("edges belong to the graph form (nodes + edges); the stages form is wired automatically. "
                         "Give exactly one form.")
+    settings = _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil)
+    if settings and not repairable:
+        raise ToolError(f"{', '.join(settings)} apply to repairable diagrams only — set repairable=true.")
     if stages is not None:
         graph = _stage_graph(db, uid, stages, repairable)
         graph["unit"] = unit
+        graph.update(settings)
     else:
         graph = rbd_graph.normalize_graph(
             {"nodes": [n.model_dump(exclude_none=True) for n in nodes],
              "edges": [e.model_dump() for e in edges or []],
-             "unit": unit, "repairable": repairable},
+             "unit": unit, "repairable": repairable, **settings},
             resolve_saved_model=lambda mid: models_service.get_model(db, mid, owners),
         )
     check = rbds_service.validate_graph(db, graph, owners)
@@ -1252,6 +1343,24 @@ def create_rbd(
     _cap(db, user, "rbds", "RBDs")
     rbd = rbds_service.save_rbd(db, name.strip(), graph, uid)
     return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), **_rbd_outline(graph, check, include_graph)}
+
+
+def _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil) -> dict:
+    """create_rbd's repairable-diagram settings (#156, #157) as graph keys,
+    only those given."""
+    out: dict[str, Any] = {}
+    if repair_crews:
+        out["repair_crews"] = {"crews": int(repair_crews)}
+    if maintenance_groups:
+        out["maintenance_groups"] = {name: g.model_dump(exclude_none=True)
+                                     for name, g in maintenance_groups.items()}
+    if safety_function:
+        out["safety_function"] = True
+    if target_sil:
+        if not safety_function:
+            raise ToolError("target_sil applies to a safety function — set safety_function=true too.")
+        out["target_sil"] = int(target_sil)
+    return out
 
 
 def _rbd_outline(graph: dict, check: dict, include_graph: bool) -> dict:
@@ -1320,6 +1429,16 @@ class UpdateNodeOp(_Op):
     spares: Optional[int] = None
     cold: Optional[bool] = None
     subsystem_rbd_id: Optional[str] = None
+    instant_repair: Optional[bool] = None
+    costs: Optional[BlockCosts] = Field(None, description="Replaces the block's costs.")
+    preventive: Optional[Preventive] = Field(None, description="Replaces the schedule (drops inspection).")
+    inspection: Optional[ProofTest] = Field(None, description="Replaces the proof tests (drops preventive).")
+    maintenance_group: Optional[str] = None
+    crew_priority: Optional[float] = None
+    repair_one_at_a_time: Optional[bool] = None
+    clear: Optional[list[Literal["costs", "preventive", "inspection", "maintenance_group", "crew_priority",
+                                 "instant_repair", "repair_one_at_a_time"]]] = Field(
+        None, description="Remove these block settings.")
 
 
 class EdgeOp(_Op):
@@ -1333,6 +1452,12 @@ class SetOp(_Op):
     name: Optional[str] = None
     unit: Optional[str] = Field(None, description="Relabels the unit; parameters are not rescaled.")
     repairable: Optional[bool] = None
+    repair_crews: Optional[int] = Field(None, ge=0, description="Repair crews shared by all blocks; 0 = as many "
+                                                                 "as needed.")
+    maintenance_groups: Optional[dict[str, MaintenanceGroup]] = Field(None, description=(
+        "Replaces the maintenance groups' options ({} clears them)."))
+    safety_function: Optional[bool] = None
+    target_sil: Optional[int] = Field(None, ge=0, le=4, description="0 clears it.")
 
 
 class AddCcfOp(_Op):
@@ -1359,7 +1484,12 @@ def _op_dict(op: BaseModel) -> dict:
         value = getattr(op, key)
         if value is None:
             continue
-        out[key] = value.model_dump(exclude_none=True) if isinstance(value, BaseModel) else value
+        if isinstance(value, BaseModel):
+            value = value.model_dump(exclude_none=True)
+        elif isinstance(value, dict):
+            value = {k: v.model_dump(exclude_none=True) if isinstance(v, BaseModel) else v
+                     for k, v in value.items()}
+        out[key] = value
     return out
 
 
@@ -1418,11 +1548,15 @@ def edit_rbd(
       none leaves it unconnected for add_edge. node is a compact node as in create_rbd.
     - remove_node {id, reconnect: auto|none} — auto rejoins a series gap; removing one of two parallel
       blocks adds no bypass. Every edge added is reported. Input/output can't be removed.
-    - update_node {id | ids, label?, model?, repair?, n?, k?, spares?, cold?, subsystem_rbd_id?} — merges
-      only the fields given (ids: same change to many nodes). A node's type can't change: remove and re-add.
+    - update_node {id | ids, label?, model?, repair?, n?, k?, spares?, cold?, subsystem_rbd_id?,
+      instant_repair?, costs?, preventive?, inspection?, maintenance_group?, crew_priority?,
+      repair_one_at_a_time?, clear?: [field…]} — merges only the fields given (ids: same change to many
+      nodes); clear removes block settings. A node's type can't change: remove and re-add.
     - add_edge / remove_edge {source, target}
-    - set {name?, unit?, repairable?}
-    - add_ccf {members, beta, id?} / remove_ccf {id} — common-cause (beta-factor) groups, non-repairable only.
+    - set {name?, unit?, repairable?, repair_crews? (0 = as many as needed), maintenance_groups?,
+      safety_function?, target_sil? (0 clears)}
+    - add_ccf {members, beta, id?} / remove_ccf {id} — common-cause (beta-factor) groups; in a repairable
+      diagram they enter a safety function's PFDavg.
     Removing a node drops it from its common-cause group (and the group if under 2 members remain).
     Changing connections re-lays out the diagram automatically. Returns one line per op, the validation
     warnings this edit introduced (warnings_unchanged counts the rest) and the node ids; read the full graph
@@ -1518,7 +1652,10 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None) -
 def _availability_summary(result: dict) -> dict:
     keys = ("unit", "steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
             "failure_frequency", "figures_basis", "n_simulations", "t_simulation", "precision", "per_node", "importance",
-            "criticality", "cached", "computed_at", "can_recompute")
+            "criticality", "cached", "computed_at", "can_recompute",
+            # How the long-run values were found, the repair crews, a safety
+            # function's PFDavg and SIL band (#156, #157).
+            "long_run_method", "repair_crews", "safety", "opportunistic_renewals")
     return {"kind": "repairable", **{k: result.get(k) for k in keys if k in result}}
 
 
@@ -1538,7 +1675,9 @@ def analyze_rbd(
 ) -> dict[str, Any]:
     """Analyse a saved RBD. Non-repairable diagrams: system reliability curve, MTTF, B-lives (B10/B50),
     component importance (Birnbaum, Fussell–Vesely, RAW/RRW) and minimal cut/path sets. Repairable
-    diagrams: steady-state availability, mean up/down time, failure frequency and per-block downtime share.
+    diagrams: steady-state availability, mean up/down time, failure frequency and per-block downtime share,
+    how the long-run values were found (long_run_method: exact / numerical / simulated, e.g. the repair crews'
+    Markov chain), the repair crews, and for a safety function its PFDavg and SIL band (safety).
     Availability simulation is a paid feature (Pro or purchased credits): a saved result is always served;
     otherwise, without entitlement, this returns available=false with a message instead of results — relay
     it, and offer export_rbd_python to run the simulation locally."""
