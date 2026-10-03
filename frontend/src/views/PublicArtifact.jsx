@@ -8,6 +8,7 @@ import DegradationResultView from "../components/DegradationResultView.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
+import DemoTestResult from "../components/DemoTestResult.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import RcmTree from "../components/RcmTree.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
@@ -115,6 +116,7 @@ function Body({ collection, a, token }) {
           {a.kind === "optimal_replacement" && <ReplacementResult result={a.results} />}
           {a.kind === "compare_two" && <CompareResult result={a.results} />}
           {a.kind === "failure_finding" && <FfiResult result={a.results} />}
+          {a.kind === "demonstration_test" && <DemoTestResult result={a.results} />}
         </div>
       );
     case "datasets":

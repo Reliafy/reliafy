@@ -469,6 +469,63 @@ body {
   font-weight: 600;
 }
 
+.demo-toggles {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.demo-toggles .seg {
+  max-width: 100%;
+}
+
+.demo-toggles .seg-btn {
+  font-family: inherit;
+  font-weight: 600;
+  white-space: normal;
+}
+
+.demo-h {
+  margin: 1.25rem 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.demo-table-wrap {
+  overflow-x: auto;
+}
+
+.demo-table-wrap .calc-table {
+  margin-top: 0;
+  min-width: 420px;
+}
+
+.demo-table-wrap .calc-table .calc-row-label {
+  display: table-cell;
+  white-space: nowrap;
+}
+
+.demo-table-wrap .calc-table thead th:first-child {
+  text-align: left;
+}
+
+.demo-table-wrap .calc-table tr.demo-selected {
+  background: #f0f9ff;
+}
+
+.demo-table-wrap .calc-table td.strategy-best {
+  background: #dbeafe;
+  color: #1e3a8a;
+  font-weight: 700;
+}
+
+.demo-assumptions {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
 .strategy-form {
   border: 1px solid var(--border);
   border-radius: 10px;

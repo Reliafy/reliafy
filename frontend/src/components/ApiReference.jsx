@@ -215,6 +215,20 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
         ]}
         returns={`{ "interval": 176.4, "method": "…", "mttf": 8760, "target_availability": 0.99 }`}
       />
+      <ClientFn
+        sig="strategy.demonstration_test(reliability, *, confidence=0.95, mission_time=None, failures=0, test_multiple=1.0, shape=None, units=None, method='attribute', mtbf=None, unit=None)"
+        endpoint="POST /api/v1/strategy/demonstration-test"
+        desc="Plan a reliability demonstration test: units to test, test time per unit, allowed failures."
+        params={[
+          { name: "reliability", type: "number", req: true, desc: "Reliability to show over one mission, in (0,1)." },
+          { name: "confidence", type: "number", req: false, desc: "Confidence in (0,1), default 0.95." },
+          { name: "mission_time", type: "number", req: false, desc: "The mission the reliability is over." },
+          { name: "failures", type: "int", req: false, desc: "Failures allowed, default 0 (success run)." },
+          { name: "test_multiple / shape", type: "number", req: false, desc: "Test each unit k missions, Weibull shape known." },
+          { name: "units", type: "int", req: false, desc: "Units available: solve for test time per unit (needs shape)." },
+        ]}
+        returns={`{ "units": 59, "test_time_per_unit": 1000, "summary": "Test 59 units for 1,000 hours each…", "tradeoff": {…} }`}
+      />
 
       <h3>reliafy.fleet</h3>
       <ClientFn
@@ -387,6 +401,28 @@ function HttpDocs({ base }) {
         returns={`{ "distribution": "Exponential", "unit": "hours", "mttf": 8760,
   "target_availability": 0.99, "interval": 176.4, "method": "…", "note": "…" }`}
       />
+      <Endpoint
+        method="POST"
+        path="/api/v1/strategy/demonstration-test"
+        desc="Plan a reliability demonstration test (success run, binomial, Weibayes or MTBF)."
+        request={[
+          { name: "reliability", type: "number", req: true, desc: "Reliability to show over one mission, in (0,1) (attribute tests)." },
+          { name: "confidence", type: "number", req: false, desc: "Confidence in (0,1), default 0.95." },
+          { name: "mission_time", type: "number", req: false, desc: "The mission time; omit to plan in missions." },
+          { name: "failures", type: "int", req: false, desc: "Failures the test allows, default 0." },
+          { name: "test_multiple", type: "number", req: false, desc: "Test length per unit in missions (needs shape when not 1)." },
+          { name: "shape", type: "number", req: false, desc: "Weibull shape β of the lifetime, assumed known." },
+          { name: "units", type: "int", req: false, desc: "Units available: solve for the test time per unit instead." },
+          { name: "method / mtbf", type: "string / number", req: false, desc: "method=\"mtbf\" with an MTBF plans a constant-rate (chi-squared) test." },
+          { name: "design_reliability", type: "number", req: false, desc: "A design's true reliability: its chance of passing." },
+          { name: "unit", type: "string", req: false, desc: "Time unit for display." },
+        ]}
+        returns={`{ "method": "attribute", "solve_for": "units", "units": 59,
+  "test_time_per_unit": 1000, "total_test_time": 59000, "failures": 0,
+  "demonstrated_reliability": 0.9505, "consumer_risk": 0.0485,
+  "summary": "Test 59 units for 1,000 hours each with no failures to show …",
+  "assumptions": ["…"], "tradeoff": { "failures": [0,1,2,3], "rows": [{ "label": "1,000 hours (1×)", "values": [59,93,124,153] }] } }`}
+      />
 
       <h3>Push operational data (ingest)</h3>
       <p className="muted-line">
@@ -485,6 +521,7 @@ const MCP_TOOLS = [
   ["export_rbd_python", "A diagram as a standalone SurPyval + RePyability script."],
   ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function."],
   ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model."],
+  ["plan_demonstration_test", "Plan a reliability demonstration test — units, test time per unit and allowed failures to show a reliability at a confidence — with a units-vs-failures trade-off table. Needs no saved data."],
   ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items."],
   ["list_fleet_alerts / create_fleet_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API."],
   ["delete_model / delete_dataset / delete_rbd", "Permanently delete your own models, datasets and diagrams (never shared samples; Claude asks first). A dataset still used by a model can’t be deleted, nor a model a fleet forecast runs on."],
