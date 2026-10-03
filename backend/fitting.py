@@ -26,6 +26,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import re
 import warnings
 import uuid
 from collections import OrderedDict
@@ -318,6 +319,53 @@ def failure_count(kwargs: dict) -> tuple[int, int]:
     n = kwargs.get("n")
     weights = np.asarray(n, dtype=float) if n is not None else np.ones_like(c, dtype=float)
     return int(np.sum(weights[c != 1])), int(np.sum(weights))
+
+
+def censoring_counts(df: pd.DataFrame, mapping: dict, c_invert: bool = False) -> dict:
+    """Observations a fit reads as failed / right- / left- / interval-censored.
+
+    Weighted by the ``n`` column and taken after the ``c_invert`` flip, so they
+    are the counts the fit actually used. Without a censor column, interval
+    bounds are read as SurPyval reads them: equal = failed, open (``inf``)
+    upper bound = right-censored, otherwise interval-censored.
+    """
+    if c_invert and mapping.get("c"):
+        df = invert_censor_column(df, mapping["c"])
+    kwargs = build_fit_inputs(df, {k: mapping.get(k) for k in ("x", "xl", "xr", "c", "n")})
+    c = kwargs.get("c")
+    if c is None:
+        if "xl" in kwargs and "xr" in kwargs:
+            xl, xr = kwargs["xl"], kwargs["xr"]
+            c = np.where(xl == xr, 0, np.where(np.isinf(xr), 1, 2))
+        else:
+            c = np.zeros(np.size(kwargs.get("x", [])))
+    n = kwargs.get("n")
+    weights = np.asarray(n, dtype=float) if n is not None else np.ones(np.size(c))
+    return {key: int(np.sum(weights[np.asarray(c) == code]))
+            for key, code in (("failed", 0), ("right_censored", 1), ("left_censored", -1),
+                              ("interval_censored", 2))}
+
+
+# Name tokens of a censor column that reads as a failure indicator (1 = failed,
+# the inverse of the convention), and tokens that say it's a censoring flag,
+# a time or a mode after all ("failed_or_censored", "time_to_failure").
+_FAILURE_FLAG_WORDS = frozenset({
+    "fail", "failed", "fails", "failure", "failures", "failing", "event", "events", "status",
+    "broken", "broke", "dead", "died", "death", "defect", "defective", "fault", "faulty",
+})
+_CENSOR_FLAG_WORDS = frozenset({
+    "censor", "censored", "censoring", "cens", "running", "suspended", "suspension", "susp",
+    "survived", "surviving", "alive", "working", "time", "times", "hours", "age", "date", "mode",
+    "modes", "cause", "type", "code", "count", "counts",
+})
+
+
+def censor_column_reads_as_failures(name: str) -> bool:
+    """True when a censor column's name sounds like 1 = failed ("failed",
+    "is_failed", "FailureFlag", "status"). Matched on whole name tokens,
+    case-insensitively, so "censored", "running" or "failsafe" don't match."""
+    words = set(re.findall(r"[a-z]+", re.sub(r"([a-z])([A-Z])", r"\1 \2", str(name or "")).lower()))
+    return bool(words & _FAILURE_FLAG_WORDS) and not words & _CENSOR_FLAG_WORDS
 
 
 def check_fittable(kwargs: dict, distribution_name: str) -> None:
@@ -659,16 +707,21 @@ def distribution_capabilities(dist_id: str) -> dict:
 def methods_for_data(mapping: Optional[dict]) -> dict:
     """Methods the *data* rules out, keyed by method id -> why.
 
-    MOM can't take censoring or truncation; MSE can't take truncation. Known
-    from the column mapping alone, so the picker can grey them out rather than
-    letting the fit fail.
+    MOM can't take censoring or truncation; MSE can't take truncation; MPS
+    and MPP (without the Turnbull heuristic, which isn't offered) can't take
+    interval bounds. Known from the column mapping alone, so the picker can
+    grey them out rather than letting the fit fail.
     """
     mapping = mapping or {}
-    censored = bool(mapping.get("c"))
+    interval = bool(mapping.get("xl") or mapping.get("xr"))
+    censored = bool(mapping.get("c")) or interval
     truncated = bool(mapping.get("tl") or mapping.get("tr"))
     out = {}
     if censored:
         out["MOM"] = "Method of moments doesn't support censored data."
+    if interval:
+        out["MPS"] = "Maximum product spacing doesn't support interval-censored data."
+        out["MPP"] = "Probability plotting doesn't support interval-censored data."
     if truncated:
         out["MOM"] = "Method of moments doesn't support truncation."
         out["MSE"] = "Mean square error doesn't support truncation."
@@ -1361,10 +1414,13 @@ def _fit_distribution(
         # (otherwise the confidence band would be all-NaN).
         _ensure_covariance(model)
 
-        # Left (c=-1) and interval (c=2) censoring require the Turnbull
-        # estimator for the empirical plotting positions.
+        # Left (c=-1) and interval (c=2) censoring, and right truncation,
+        # require the Turnbull estimator for the empirical plotting positions.
         c = np.asarray(model.data["c"])
-        heuristic = "Turnbull" if np.any((c == -1) | (c == 2)) else "Nelson-Aalen"
+        t = model.data.get("t")
+        right_truncated = t is not None and np.any(np.isfinite(np.asarray(t, dtype=float)[..., -1]))
+        heuristic = ("Turnbull" if np.any((c == -1) | (c == 2)) or right_truncated
+                     else "Nelson-Aalen")
         plot = _shape_plot(model, dist, heuristic=heuristic)
         curves = _function_curves(model)
         gof = _goodness_of_fit(model)
