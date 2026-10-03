@@ -335,3 +335,23 @@ def test_dispatcher_routes_open_psa(monkeypatch):
     monkeypatch.setattr(rbd_import, "FORMATS", {"openpsa": "Open-PSA MEF", "galileo": "Galileo DFT"})
     diagrams = rbd_import.import_file(TWO_TRAIN.encode(), "cooling.xml")
     assert [d.source_format for d in diagrams] == ["Open-PSA MEF"]
+
+
+def test_fit_rates_are_converted_to_per_hour():
+    """A parameter in FIT (failures per 10⁹ hours) is a rate per hour after
+    scaling by 1e-9: the diagram's unit is hours (also beside an hours-1
+    parameter), and a note says what was converted."""
+    d = one("""<opsa-mef><define-fault-tree name="FT">
+      <define-gate name="TOP"><or><basic-event name="A"/><basic-event name="B"/></or></define-gate>
+      <define-basic-event name="A"><exponential><parameter name="RateA"/><mission-time/></exponential>
+      </define-basic-event>
+      <define-basic-event name="B"><exponential><mul><float value="2"/><parameter name="RateB"/></mul>
+        <mission-time/></exponential></define-basic-event>
+      <define-parameter name="RateA" unit="fit"><parameter name="Base"/></define-parameter>
+      <define-parameter name="Base"><float value="100"/></define-parameter>
+      <define-parameter name="RateB" unit="hours-1"><float value="1e-6"/></define-parameter>
+    </define-fault-tree></opsa-mef>""")
+    assert d.graph["unit"] == "hours"
+    rate = {n["label"]: n["model"]["params"][0]["value"] for n in d.graph["nodes"] if n.get("type") == "component"}
+    assert rate["A"] == pytest.approx(1e-7) and rate["B"] == pytest.approx(2e-6)
+    assert any("FIT" in w and "RateA" in w for w in d.warnings)
