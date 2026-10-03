@@ -13,7 +13,7 @@ COMPACT = {
     "nodes": [
         {"id": "input", "type": "input"},
         {"id": "a", "type": "component", "label": "Pump A",
-         "model": {"distribution_id": "exponential", "params": [{"name": "lambda", "value": 1e-3}]}},
+         "model": {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 1e-3}]}},
         {"id": "b", "type": "component", "label": "Pump B",
          "model": {"distribution_id": "weibull", "params": [{"name": "alpha", "value": 900}, {"name": "beta", "value": 1.4}]}},
         {"id": "output", "type": "output"},

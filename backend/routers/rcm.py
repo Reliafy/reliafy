@@ -302,7 +302,7 @@ def import_worksheet(
             and not billing_service.is_admin_user(ctx.user)
             and billing_service.would_exceed_cap(session, ctx.uid, "rcm_studies")
         ):
-            return JSONResponse(status_code=402, content={"detail": _CAP_MSG, "code": "cap", "upgrade": True})
+            return JSONResponse(status_code=402, content={"detail": billing_service.cap_message(session, ctx.uid, "rcm_studies"), "code": "cap", "upgrade": True})
 
     data = excel_router.read_upload(file)
     try:

@@ -295,6 +295,12 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("GET", "/api/rbds/{id}/analyze", "rbd_analyze"),
     ("GET", "/api/rbds/{id}/export.py", "export_python"),
     ("DELETE", "/api/rbds/{id}", "rbd_delete"),
+    ("POST", "/api/rbds/import", "rbd_import"),
+    ("POST", "/api/rbds/compare", "availability_compare"),
+    ("POST", "/api/rbds/design/cheapest", "rbd_cheapest_design"),
+    ("POST", "/api/rbds/design/apply", "rbd_design_apply"),
+    ("POST", "/api/rbds/design", "rbd_design"),
+    ("POST", "/api/rbds/fault-tree", "rbd_fault_tree"),
     # Maintenance strategy
     ("POST", "/api/strategy/optimal-replacement", "strategy_replacement"),
     ("POST", "/api/strategy/compare-two", "strategy_compare"),
@@ -316,6 +322,12 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     # RCM
     ("POST", "/api/rcm/studies", "rcm_create"),
     ("PUT", "/api/rcm/studies/{id}/tree", "rcm_edit"),
+    ("POST", "/api/rcm/import/preview", "rcm_import_preview"),
+    ("POST", "/api/rcm/import", "rcm_import"),
+    # Excel (.xlsx) uploads: sheets read for a dataset, an RCM study or an RBD
+    ("POST", "/api/excel/inspect", "excel_inspect"),
+    ("POST", "/api/excel/table", "excel_import"),
+    ("POST", "/api/excel/csv", "excel_import"),
     # Fleets
     ("POST", "/api/fleet/fleets", "fleet_create"),
     ("PUT", "/api/fleet/fleets/{id}/items", "fleet_items"),
