@@ -425,6 +425,30 @@ def test_calculators_match_the_strategy_service(env):
     assert "model_id" in msg
 
 
+def test_calculators_use_a_saved_models_extras(env):
+    """A saved model's offset / LFP fraction reach the calculators, as in the
+    app: an LFP wear-out model is run-to-failure, an offset lengthens the
+    failure-finding interval."""
+    from backend.services import strategy
+
+    weib = [{"name": "alpha", "value": 1000.0}, {"name": "beta", "value": 3.0}]
+    lfp = _ok(_call(env.token[A], "save_model", {
+        "name": "LFP pumps", "distribution": "weibull", "params": weib + [{"name": "p", "value": 0.6}]}))
+    out = _ok(_call(env.token[A], "optimal_replacement", {
+        "model_id": lfp["model_id"], "planned_cost": 100, "unplanned_cost": 1000}))
+    assert out["beneficial"] is False and "40% of units never fail" in out["recommendation"]
+
+    rate = [{"name": "failure_rate", "value": 1e-3}]
+    off = _ok(_call(env.token[A], "save_model", {
+        "name": "Offset relief valve", "distribution": "exponential",
+        "params": rate + [{"name": "gamma", "value": 500.0}]}))
+    ff = _ok(_call(env.token[A], "failure_finding_interval", {
+        "model_id": off["model_id"], "target_availability": 0.99}))
+    ref = strategy.failure_finding("exponential", rate, 0.99, extras={"gamma": 500.0})
+    assert ff["interval"] == pytest.approx(ref["interval"])
+    assert ff["interval"] > strategy.failure_finding("exponential", rate, 0.99)["interval"]
+
+
 def test_plan_demonstration_test(env):
     out = _ok(_call(env.token[A], "plan_demonstration_test", {
         "reliability": 0.95, "confidence": 0.95, "mission_time": 1000, "unit": "hours"}))

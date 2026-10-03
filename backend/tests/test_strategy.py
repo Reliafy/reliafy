@@ -152,6 +152,33 @@ def test_saved_analyses_roundtrip_and_isolation(monkeypatch):
 
 # ---- parameter uncertainty (#189) ----------------------------------------------
 
+def test_compute_and_saved_analyses_keep_the_models_extras():
+    """The calculators' extras (offset, LFP fraction, zero inflation) are
+    used when computing and saving, so a saved analysis matches what the
+    calculator showed."""
+    import mongomock
+
+    from backend.services import strategy_store
+
+    weib = [{"name": "alpha", "value": 1000.0}, {"name": "beta", "value": 3.0}]
+    inputs = {"distribution_id": "weibull", "params": weib, "planned_cost": 100, "unplanned_cost": 1000,
+              "extras": {"p": 0.6}}
+    shown = st.optimal_replacement("weibull", weib, 100, 1000, extras={"p": 0.6})
+    assert shown["beneficial"] is False
+    assert strategy_store.compute("optimal_replacement", inputs)["beneficial"] is False
+    db = mongomock.MongoClient()["t"]
+    saved = strategy_store.save_analysis(db, "LFP pumps", "optimal_replacement", inputs, "user-a")
+    assert saved.results["beneficial"] is False and saved.results["recommendation"] == shown["recommendation"]
+
+    rate = [{"name": "failure_rate", "value": 1e-3}]
+    ff = strategy_store.compute("failure_finding", {
+        "distribution_id": "exponential", "params": rate, "target_availability": 0.99,
+        "extras": {"gamma": 500.0}})
+    assert ff["interval"] == pytest.approx(
+        st.failure_finding("exponential", rate, 0.99, extras={"gamma": 500.0})["interval"])
+    assert ff["interval"] > st.failure_finding("exponential", rate, 0.99)["interval"]
+
+
 def _weibull(beta_ci, alpha=7746.0, beta=1.77):
     return [{"name": "alpha", "value": alpha, "se": 1000.0, "ci": [alpha - 1960, alpha + 1960]},
             {"name": "beta", "value": beta, "se": 0.37, "ci": beta_ci}]
