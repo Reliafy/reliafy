@@ -23,12 +23,17 @@ identical units is ``1 - (1 - R)^n``); cold standby uses RePyability's
 from __future__ import annotations
 
 import re
+import time
+import warnings
+from itertools import combinations
+from math import comb
 from typing import Any, Callable, Optional
 
 import numpy as np
 import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS, FitError, param_values
+from backend.services import rbd_repeats
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 from repyability.rbd.repairable_rbd import RepairableRBD
@@ -100,8 +105,8 @@ class _ReducedModel:
         # Series fails at the first unit failure; parallel at the last.
         return draws.min(axis=0) if self.kind == "series" else draws.max(axis=0)
 
-    def mean(self, N: int = _MTTF_SAMPLES) -> float:
-        return float(self.random(N).mean())
+    def mean(self, mc_samples: int = _MTTF_SAMPLES) -> float:
+        return float(self.random(mc_samples).mean())
 
 
 class _PHModel:
@@ -289,15 +294,39 @@ def _standby_model(data: dict, label: str, resolve_model=None, cov_values=None):
     )
     units = [primary] + [spare for _ in range(max(spares, 0))]
 
-    if data.get("cold"):
+    dormancy = _standby_dormancy(data, label)
+    if dormancy == 0.0:
         # Cold standby: spares are dormant until switched in (k=1 operating).
         try:
             switch = float(data.get("startProb", 1.0))
         except (TypeError, ValueError):
             switch = 1.0
         return StandbyModel(units, k=1, switching_probability=switch)
+    if dormancy < 1.0:
+        # Warm standby: an idle spare ages at `dormancy` × its operating rate
+        # (cumulative exposure) and can fail latent, dead before it's needed.
+        # Numerical for any units since RePyability 0.11 (one operating), no
+        # longer a fit to simulated lifetimes.
+        return StandbyModel(units, k=1, dormancy_factor=dormancy)
     # Hot standby: every unit runs from t=0 -> active parallel redundancy.
     return _ReducedModel(units, "parallel")
+
+
+def _standby_dormancy(data: dict, label: str) -> float:
+    """A standby node's dormancy factor: 0 cold, 1 hot, in between warm.
+
+    ``dormancy`` wins when set; older diagrams carry only ``cold`` (true =
+    cold, otherwise hot)."""
+    raw = data.get("dormancy")
+    if raw is None or raw == "":
+        return 0.0 if data.get("cold") else 1.0
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        raise AnalysisError(f"{label}: the dormancy factor must be a number from 0 (cold) to 1 (hot).") from None
+    if not 0.0 <= value <= 1.0:
+        raise AnalysisError(f"{label}: the dormancy factor must be between 0 (cold) and 1 (hot).")
+    return value
 
 
 def _node_reliability(
@@ -460,6 +489,12 @@ def _build_rbd(
     ]
     if not edges:
         raise AnalysisError("The diagram has no connections to analyse.")
+    # Repeated blocks (#102): a linked copy is passed to RePyability as the
+    # name of the node it repeats, so every appearance is one component. A
+    # broken link is the more specific problem, so it is reported first.
+    repeats, problems = rbd_repeats.find_repeats(nodes)
+    if problems:
+        raise AnalysisError(next(iter(problems.values())))
     io_errors = _io_errors(graph)
     koon_errors, _ = _koon_checks(nodes, edges, {})
     if io_errors or koon_errors:
@@ -484,6 +519,10 @@ def _build_rbd(
         data = node.get("data") or {}
         labels[nid] = data.get("label") or nid
         node_types[nid] = ntype
+        if nid in repeats:
+            # The original's model and pinned state apply to every appearance.
+            reliabilities[nid] = repeats[nid]
+            continue
         state = data.get("state")
         pinned = state in ("working", "failed")
         if state == "working":
@@ -506,11 +545,15 @@ def _build_rbd(
 
     if not reliabilities:
         raise AnalysisError("The diagram has no component nodes to analyse.")
+    labels.update(rbd_repeats.copy_labels(nodes, repeats))
 
     input_node = "input" if "input" in node_ids else None
     output_node = "output" if "output" in node_ids else None
 
     ccf_groups = _ccf_groups(graph, reliabilities)
+    if repeats and not rbd_repeats.core_search_fits(
+            edges, reliabilities, repeats, k, input_node, output_node):
+        raise AnalysisError(rbd_repeats.CORE_MESSAGE)
 
     def _make(with_ccf: bool):
         try:
@@ -542,7 +585,9 @@ def _ccf_groups(graph: dict, reliabilities: dict) -> list:
     members aren't all present (or fewer than two) are skipped."""
     out = []
     for g in graph.get("ccf_groups") or []:
-        members = [m for m in (g.get("members") or []) if m in reliabilities]
+        # A repeated block (its model is the name of its original) is no member.
+        members = [m for m in (g.get("members") or []) if m in reliabilities
+                   and not isinstance(reliabilities[m], str)]
         if len(set(members)) < 2:
             continue
         try:
@@ -653,12 +698,20 @@ def validate_graph(
     k: dict[Any, int] = {}
     labels: dict[Any, str] = {}
     visited: set = set()
+    repeats, problems = rbd_repeats.find_repeats(nodes)
+    errors.extend(problems.values())
     for node in nodes:
         ntype = node.get("type")
         if ntype in ("input", "output"):
             continue
         nid = node.get("id")
         labels[nid] = (node.get("data") or {}).get("label") or nid
+        if nid in repeats:
+            reliabilities[nid] = repeats[nid]  # a linked copy: no model of its own
+            continue
+        if rbd_repeats.repeat_of(node) is not None:
+            reliabilities[nid] = PerfectReliability  # a broken copy (reported above)
+            continue
         # A node pinned working/failed is overridden in analysis, so it needs
         # no life model — don't flag one as missing here.
         pinned = (node.get("data") or {}).get("state") in ("working", "failed")
@@ -679,10 +732,16 @@ def validate_graph(
     errors.extend(koon_errors)
     warnings.extend(koon_warnings)
 
+    labels.update(rbd_repeats.copy_labels(nodes, repeats))
+    node_ids = {n.get("id") for n in nodes}
+    too_tied = bool(edges and reliabilities and repeats) and not rbd_repeats.core_search_fits(
+        edges, reliabilities, repeats, k,
+        "input" if "input" in node_ids else None, "output" if "output" in node_ids else None)
+    if too_tied:
+        errors.append(rbd_repeats.CORE_MESSAGE)
     # An impossible voting gate leaves no path through, which RePyability
     # reports only as "RBD has no paths through!" — already explained above.
-    if edges and reliabilities and not koon_errors:
-        node_ids = {n.get("id") for n in nodes}
+    if edges and reliabilities and not koon_errors and not too_tied:
         try:
             rbd = NonRepairableRBD(
                 edges,
@@ -718,9 +777,11 @@ def validate_graph(
         # repair-time distribution, only component + k-of-n blocks are supported,
         # and common-cause coupling is reliability-only. Check that here so the
         # Validate step reflects what Calculate will actually accept.
+        if repeats:
+            errors.append(rbd_repeats.repairable_message(nodes, repeats))
         for node in nodes:
             ntype = node.get("type")
-            if ntype in ("input", "output"):
+            if ntype in ("input", "output") or node.get("id") in repeats:
                 continue
             lbl = labels.get(node.get("id"), node.get("id"))
             data = node.get("data") or {}
@@ -731,11 +792,15 @@ def validate_graph(
                     f"“{lbl}” isn't supported in a repairable diagram — availability "
                     "uses component blocks (each with a life model and a repair time) "
                     "and k-of-n gates. Switch to a non-repairable diagram to use it.")
-            elif data.get("state") not in ("working", "failed") and not data.get("repair"):
+            elif (data.get("state") not in ("working", "failed") and not data.get("repair")
+                  and not data.get("instant_repair")):
                 errors.append(
                     f"“{lbl}” has no repair-time distribution. Repairable diagrams "
                     "analyse availability, so every component needs one (double-click "
-                    "the block to set it).")
+                    "the block to set it), or mark it as repaired instantly.")
+        from backend.services import rbd_maintenance
+
+        errors.extend(rbd_maintenance.validation_errors(graph))
         if graph.get("ccf_groups"):
             warnings.append(
                 "Common-cause groups are a reliability-only feature and are "
@@ -754,9 +819,11 @@ def validate_graph(
 
     valid = len(errors) == 0
     analytic = valid and len(non_analytic) == 0
-    # Standby and load-sharing nodes have no closed form, but ``analyze`` solves
-    # them by simulation (StandbyModel / LoadSharingModel), so a valid diagram
-    # is always calculable — ``analytic`` only tells the UI how to label it.
+    # Since RePyability 0.11 only nodes whose reliability is fitted to
+    # simulated lifetimes are non-analytic (load sharing of different units,
+    # say); cold, warm and hot standby are exact or numerical. ``analyze``
+    # still solves the rest, so a valid diagram is always calculable —
+    # ``analytic`` only tells the UI how to label it.
     return {
         "valid": valid,
         "analytic": analytic,
@@ -993,6 +1060,164 @@ def _conditional_sf(model, times, s: float = 0.0, **sf_kwargs) -> np.ndarray:
     return np.clip(out, 0.0, 1.0)
 
 
+# ---------------------------------------------------------------------------
+# Path and cut sets on large diagrams
+# ---------------------------------------------------------------------------
+# RePyability (0.9+) evaluates any diagram exactly and fast: series–parallel
+# parts reduce to closed-form modules, so even 10^9 path sets cost
+# milliseconds. What can still explode is *listing* the sets: path sets
+# multiply with redundancy in series (30 duplicated stages have 2^30), cut sets
+# with long chains in parallel (4 chains of 40 blocks have 40^4). They're
+# counted exactly first, from the same decomposition, and enumerated only when
+# that's sensible; otherwise the lowest-order cut sets are found directly —
+# they're what an engineer reads cut sets for, and they dominate the
+# Fussell–Vesely importance, which is a sum over cut sets.
+_MAX_ENUMERATED_SETS = 20_000
+_LISTED_SETS = 200  # shown in the result, smallest first; the count is always given
+_LOW_ORDER_CUT_MAX = 3
+_LOW_ORDER_CANDIDATES_MAX = 250_000
+
+
+def _set_counts(rbd) -> tuple[Optional[int], Optional[int]]:
+    """``(minimal path sets, minimal cut sets)`` counted from RePyability's
+    modular decomposition without enumerating them — the recursion of its
+    ``Decomposition._families`` with sizes instead of lists (series adds,
+    parallel multiplies, k-of-n sums products over the needed members). Exact
+    for a series–parallel diagram; an upper bound over a non-reducible core.
+    ``(None, None)`` if the (private) decomposition isn't available."""
+    try:
+        from repyability.rbd.modular import KOON, NODE, SERIES
+
+        dec = rbd._decomposition()
+        if dec.always_works:
+            return 1, 0
+
+        def counts(paths: bool) -> list:
+            out: list = [0] * len(dec.terms)
+            for i, term in enumerate(dec.terms):
+                if term[0] == NODE:
+                    out[i] = 1
+                    continue
+                members = [out[c] for c in term[1]]
+                if term[0] == KOON:
+                    size = term[2] if paths else len(members) - term[2] + 1
+                    out[i] = sum(_product(chosen) for chosen in combinations(members, size))
+                elif (term[0] == SERIES) == paths:
+                    out[i] = _product(members)
+                else:
+                    out[i] = sum(members)
+            return out
+
+        result = []
+        for paths in (True, False):
+            fam = counts(paths)
+            if dec.root is not None:
+                result.append(fam[dec.root])
+            else:
+                core = dec.core if paths else dec.core_cut_sets()
+                result.append(sum(_product(fam[c] for c in chosen) for chosen in core or []))
+        return result[0], result[1]
+    except Exception:  # noqa: BLE001 - fall back to conservative listing
+        return None, None
+
+
+def _product(values) -> int:
+    out = 1
+    for v in values:
+        out *= v
+    return out
+
+
+def _low_order_cut_sets(rbd, max_order: int = _LOW_ORDER_CUT_MAX) -> list:
+    """Minimal cut sets of up to ``max_order`` components, found by evaluating
+    the structure function: a set of components is a cut set iff the system
+    fails with them failed and everything else working. Every candidate of a
+    given size is one column of a single vectorised exact evaluation."""
+    comps = sorted((n for n in rbd.nodes if n not in (rbd.input_node, rbd.output_node)), key=str)
+    if not comps:
+        return []
+    found: list[int] = []  # bitmasks, for the minimality (superset) check
+    out: list[frozenset] = []
+    for k in range(1, max_order + 1):
+        if comb(len(comps), k) > _LOW_ORDER_CANDIDATES_MAX:
+            break
+        cands = []
+        for cand in combinations(range(len(comps)), k):
+            mask = 0
+            for i in cand:
+                mask |= 1 << i
+            if not any(f & mask == f for f in found):
+                cands.append((cand, mask))
+        for start in range(0, len(cands), 20_000):
+            chunk = cands[start:start + 20_000]
+            probs = {n: np.ones(len(chunk)) for n in rbd.nodes}
+            for col, (cand, _) in enumerate(chunk):
+                for i in cand:
+                    probs[comps[i]][col] = 0.0
+            works = np.asarray(rbd.system_probability(probs), dtype=float)
+            for col, (cand, mask) in enumerate(chunk):
+                if works[col] < 0.5:
+                    found.append(mask)
+                    out.append(frozenset(comps[i] for i in cand))
+    return out
+
+
+def _structure_sets(rbd) -> dict:
+    """The diagram's minimal path and cut sets, within listing limits:
+    ``{paths, n_paths, cuts, n_cuts, cuts_complete}`` (``n_*`` None when the
+    count isn't known)."""
+    n_paths, n_cuts = _set_counts(rbd)
+    paths = None
+    if n_paths is not None and n_paths <= _MAX_ENUMERATED_SETS:
+        paths = list(rbd.get_min_path_sets(include_in_out_nodes=False))
+        n_paths = len(paths)
+    if n_cuts is not None and n_cuts <= _MAX_ENUMERATED_SETS:
+        cuts = list(rbd.get_min_cut_sets(include_in_out_nodes=False))
+        return {"paths": paths, "n_paths": n_paths, "cuts": cuts,
+                "n_cuts": len(cuts), "cuts_complete": True}
+    return {"paths": paths, "n_paths": n_paths, "cuts": _low_order_cut_sets(rbd),
+            "n_cuts": n_cuts, "cuts_complete": False}
+
+
+def _fussell_vesely(probs: dict, cut_sets, q_sys: float) -> dict:
+    """Fussell–Vesely importance from a list of minimal cut sets: the share of
+    system unreliability (unavailability) from cut sets containing the node —
+    the rare-event sum, the fallback when RePyability 0.11's exact measure fails."""
+    num: dict = {}
+    for cut in cut_sets:
+        prob = 1.0
+        for m in cut:
+            prob *= 1.0 - float(np.atleast_1d(probs[m])[0])
+        for m in cut:
+            num[m] = num.get(m, 0.0) + prob
+    with np.errstate(all="ignore"):
+        return {n: np.float64(num.get(n, 0.0)) / np.float64(q_sys) for n in probs}
+
+
+def _ccf_importance(rbd, t: float, s: float, working_nodes, broken_nodes) -> Optional[dict]:
+    """The six importance measures at ``t`` with the diagram's common-cause
+    groups taken in (RePyability 0.11, #140: a member is conditioned on its
+    state through the groups' shocks), or None when they can't be: no groups,
+    curves conditioned on an age ``s`` (the measures are RePyability's at a
+    time from new), or a group member pinned working or failed."""
+    if not getattr(rbd, "ccf_groups", None) or s > 0.0:
+        return None
+    pins = {"working_nodes": set(working_nodes), "broken_nodes": set(broken_nodes)}
+    at = float(t)
+    try:
+        with np.errstate(all="ignore"):
+            return {
+                "birnbaum": rbd.birnbaum_importance(at, **pins),
+                "risk_achievement_worth": rbd.risk_achievement_worth(at, **pins),
+                "risk_reduction_worth": rbd.risk_reduction_worth(at, **pins),
+                "criticality": rbd.criticality_importance(at, kind="failure", **pins),
+                "improvement_potential": rbd.improvement_potential(at, **pins),
+                "fussell_vesely": rbd.fussell_vesely(at, **pins),
+            }
+    except NotImplementedError:  # a group member held working or failed
+        return None
+
+
 def _mttf(rbd, base_hi: float, s: float = 0.0, **sf_kwargs) -> Optional[float]:
     """Mean time to failure as ``integral_0^inf R(t) dt``, or — when ``s > 0`` —
     the mean residual life ``integral_0^inf R(t | s) dt`` at age ``s``.
@@ -1034,6 +1259,7 @@ def analyze(
     resolve_model=None,
     conditional_age: Optional[float] = None,
     at_times=None,
+    band: Optional[dict] = None,
 ) -> dict:
     """Analyse a builder graph and return a JSON-serialisable result payload.
 
@@ -1046,7 +1272,10 @@ def analyze(
     each reliability is ``R(s + t) / R(s)``; the MTTF becomes the mean residual
     life at ``s``. ``at_times`` adds ``at: {t, sf}`` — the system reliability
     evaluated exactly at those times (not read off the grid, so times past the
-    axis end are still right). Raises :class:`AnalysisError` with a
+    axis end are still right). ``band`` (``{"level": 0.95}``) adds a
+    confidence band on the reliability, MTTF and B-lives from the fitted
+    blocks' parameter uncertainty (see :mod:`backend.services.rbd_uncertainty`);
+    it isn't computed unless asked for. Raises :class:`AnalysisError` with a
     user-facing message if the graph can't be turned into a valid RBD.
     """
     rbd, labels, node_types, reliabilities, working_nodes, broken_nodes, baseline = _build_rbd(
@@ -1054,6 +1283,7 @@ def analyze(
     )
     # RePyability's native what-if override for the system-level calls.
     overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
+    sets = _structure_sets(rbd)
 
     s = float(conditional_age) if conditional_age and conditional_age > 0 else 0.0
     grid = _time_grid(reliabilities, t_max)
@@ -1114,17 +1344,39 @@ def analyze(
             return out
 
         # All six RePyability importance measures, at the representative time.
-        # (fussell_vesely is the correct double-l private method; the single-l
-        # spelling was renamed upstream.)
-        importance = {
-            "time": t_rep,
-            "birnbaum": _imp(rbd._birnbaum_importance(node_probs)),
-            "fussell_vesely": _imp(rbd._fussell_vesely(node_probs, fv_type="c")),
-            "risk_achievement_worth": _imp(rbd._risk_achievement_worth(node_probs)),
-            "risk_reduction_worth": _imp(rbd._risk_reduction_worth(node_probs)),
-            "criticality": _imp(rbd._criticality_importance(node_probs, kind="failure")),
-            "improvement_potential": _imp(rbd._improvement_potential(node_probs)),
-        }
+        # Criticality is the failure-oriented form (RePyability 0.9's
+        # default): the share of system failures a block accounts for. The
+        # success-oriented form it replaced is exactly 1 for every block in
+        # series, however unreliable, so it couldn't rank them. Perfect
+        # junctions (voting gates) are left out by RePyability 0.11 itself.
+        measures = _ccf_importance(rbd, t_rep, s, working_nodes, broken_nodes)
+        with_ccf = measures is not None
+        fv_basis = None
+        if measures is None:
+            measures = {
+                "birnbaum": rbd._birnbaum_importance(node_probs),
+                "risk_achievement_worth": rbd._risk_achievement_worth(node_probs),
+                "risk_reduction_worth": rbd._risk_reduction_worth(node_probs),
+                "criticality": rbd._criticality_importance(node_probs, kind="failure"),
+                "improvement_potential": rbd._improvement_potential(node_probs),
+            }
+            try:
+                # Exact since RePyability 0.11 (#137): the probability that a
+                # minimal cut set containing the block has failed, over the
+                # system's unreliability — between 0 and 1.
+                measures["fussell_vesely"] = rbd._fussell_vesely(node_probs, fv_type="c")
+            except Exception:  # noqa: BLE001 - the rare-event sum over the listed cut sets
+                q_sys = 1.0 - float(np.atleast_1d(rbd.system_probability(node_probs))[0])
+                measures["fussell_vesely"] = _fussell_vesely(node_probs, sets["cuts"], q_sys)
+                if not sets["cuts_complete"]:
+                    fv_basis = f"cut sets of up to {_LOW_ORDER_CUT_MAX} blocks"
+        importance = {"time": t_rep, **{k: _imp(v) for k, v in measures.items()}}
+        if fv_basis:
+            importance["fussell_vesely_basis"] = fv_basis
+        if rbd.ccf_groups:
+            # Whether the measures take the common-cause groups in (not when
+            # conditioned on an age, or with a group member pinned).
+            importance["common_cause"] = with_ccf
     except Exception:
         importance = {}
 
@@ -1161,9 +1413,14 @@ def analyze(
         )
 
     structure = {
-        "min_path_sets": _named_sets(rbd.get_min_path_sets(include_in_out_nodes=False)),
-        "min_cut_sets": _named_sets(rbd.get_min_cut_sets(include_in_out_nodes=False)),
+        "min_path_sets": _named_sets(sets["paths"] or [])[:_LISTED_SETS],
+        "min_cut_sets": _named_sets(sets["cuts"])[:_LISTED_SETS],
+        "n_min_path_sets": sets["n_paths"],
+        "n_min_cut_sets": sets["n_cuts"],
+        "cut_sets_complete": sets["cuts_complete"],
     }
+    if not sets["cuts_complete"]:
+        structure["cut_sets_max_order"] = _LOW_ORDER_CUT_MAX
 
     # Common-cause impact: system reliability WITH vs WITHOUT the coupling, at the
     # representative time and across the grid — the headline "CCF cost".
@@ -1194,7 +1451,7 @@ def analyze(
         at_t = np.asarray([float(v) for v in at_times], dtype=float)
         at = {"t": at_t.tolist(), "sf": _clean(_conditional_sf(rbd, at_t, s, **overrides))}
 
-    return {
+    result = {
         "unit": (graph.get("unit") or "").strip(),
         "time": grid.tolist(),
         "system": {"sf": _clean(system_sf), "ff": _clean(1.0 - system_sf)},
@@ -1208,6 +1465,15 @@ def analyze(
         "ccf": ccf,
         "repyability_version": _repyability_version(),
     }
+    if band is not None:
+        from backend.services import rbd_uncertainty
+
+        result["band"] = rbd_uncertainty.system_band(
+            graph, rbd, grid, s, working_nodes, broken_nodes,
+            resolve_subsystem=resolve_subsystem, resolve_model=resolve_model,
+            covariates=covariates, level=(band or {}).get("level"),
+        )
+    return result
 
 
 def _valid_beta(v) -> bool:
@@ -1225,13 +1491,34 @@ def _valid_beta(v) -> bool:
 # characterised by its *availability* (long-run uptime), not a one-shot
 # reliability curve. Built on RePyability's RepairableRBD.
 
-_AVAIL_SIMS = 2000  # Monte-Carlo replications for the availability estimate
+# The availability simulation runs to a precision target (#104): replications
+# are added in batches of _AVAIL_BATCH, in antithetic pairs, until the
+# confidence interval of the window's mean availability is within the
+# tolerance (see _availability_tolerance) — or the wall-clock budget runs out.
+# A pilot batch measures the cost per replication to turn the budget into a
+# replication limit (never below the minimum); if even the minimum wouldn't
+# fit, the default horizon is shortened. The exact long-run figures don't
+# depend on the simulation at all.
+_AVAIL_SIMS = 20_000  # the most replications a run makes (the budget usually binds first)
+_AVAIL_BATCH = 500  # first batch and step of a run to the target; also shapes the curve's band
+_AVAIL_TIME_BUDGET = 20.0
+_AVAIL_MIN_SIMS = 100
+_AVAIL_PILOT_SIMS = 20
+_AVAIL_SEED = 1
+_AVAIL_CONFIDENCE = 0.95
+# Tolerance on the window's mean availability, relative to the unavailability
+# (a fixed absolute tolerance is meaningless at 99.99%: ±0.001 would swamp a
+# 0.0001 unavailability), and never looser than 0.1 percentage point.
+_AVAIL_REL_TOLERANCE = 0.05
+_AVAIL_MAX_TOLERANCE = 1e-3
+_AVAIL_MIN_TOLERANCE = 1e-12  # RePyability wants > 0; a never-down system meets it at once
 
 
 def _always_up():
     """A repairable stand-in that never fails — used for pure logic/voting
     (k-of-n) gates, which carry no failure or repair behaviour of their own but
-    must still be a repairable component for RePyability's availability solver."""
+    must still be a repairable component for RePyability's availability solver.
+    Callers also pin it working (``working_nodes``), so it is exactly perfect."""
     import surpyval as sp
 
     return NonRepairable(
@@ -1264,6 +1551,8 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
     stand-in is used when it has none. Returns
     ``(rbd, labels, gate_ids, working_nodes, broken_nodes)``.
     """
+    from backend.services import rbd_maintenance
+
     nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
     edges = [
@@ -1277,6 +1566,14 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
     koon_errors, _ = _koon_checks(nodes, edges, {})
     if io_errors or koon_errors:
         raise AnalysisError(" ".join(io_errors + koon_errors))
+
+    # RePyability's RepairableRBD simulates each node as its own unit, so a
+    # repeated block (#102) can't be honoured: refuse rather than approximate.
+    repeats, problems = rbd_repeats.find_repeats(nodes)
+    if problems:
+        raise AnalysisError(next(iter(problems.values())))
+    if repeats:
+        raise AnalysisError(rbd_repeats.repairable_message(nodes, repeats))
 
     node_ids = {n.get("id") for n in nodes}
     components: dict[Any, Any] = {}
@@ -1311,13 +1608,13 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
                 "diagrams yet — use component blocks (each with a life model and "
                 "a repair time), optionally with a k-of-n voting gate."
             )
-        if pinned and not (data.get("model") and data.get("repair")):
+        if pinned and not (data.get("model") and (data.get("repair") or data.get("instant_repair"))):
             # The override fixes its state; the stand-in is never consulted.
             components[nid] = _always_up()
             continue
         reliability = _build_distribution(data.get("model"), label, resolve_model, None)
-        repair = _repair_distribution(data, label, resolve_model)
-        components[nid] = NonRepairable(reliability, repair)
+        # Life + repair; plus costs, instant repair and maintenance (#99/#100).
+        components[nid] = rbd_maintenance.repairable_component(data, label, reliability, resolve_model)
 
     if not components:
         raise AnalysisError("The diagram has no component nodes to analyse.")
@@ -1327,6 +1624,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
     try:
         rbd = RepairableRBD(
             edges, components, k=k, input_node=input_node, output_node=output_node,
+            downtime_cost_rate=rbd_maintenance.downtime_cost_rate(graph),
         )
     except ValueError as exc:
         raise AnalysisError(
@@ -1380,18 +1678,20 @@ def _availability_curve(res, t_simulation: float) -> Optional[dict]:
 _IMPORTANCE_METHODS = {
     # payload key -> RepairableRBD method (each evaluated at the blocks'
     # long-run availabilities)
+    # (Fussell–Vesely, exact since RePyability 0.11, is taken separately, with
+    # the rare-event sum over the listed cut sets as its fallback.)
     "birnbaum": "birnbaum_importance",
-    "fussell_vesely": "fussell_vesely",
-    "criticality": "criticality_importance",
+    "criticality": "criticality_importance",  # failure-oriented (0.9 default)
     "risk_achievement_worth": "risk_achievement_worth",
     "risk_reduction_worth": "risk_reduction_worth",
     "improvement_potential": "improvement_potential",
 }
 
 
-def _steady_importance(rbd, labels, gate_ids, overrides, steady) -> dict:
-    """Per-block steady-state importance measures, keyed by node id. Voting
-    gates are not components and are left out."""
+def _steady_importance(rbd, labels, gate_ids, overrides, steady, cut_sets) -> dict:
+    """Per-block steady-state importance measures, keyed by node id, evaluated
+    at the blocks' long-run availabilities (RePyability's RepairableRBD
+    methods). Voting gates are not components and are left out."""
     measures: dict[str, dict] = {}
     for key, method in _IMPORTANCE_METHODS.items():
         try:
@@ -1403,6 +1703,19 @@ def _steady_importance(rbd, labels, gate_ids, overrides, steady) -> dict:
         node_av = rbd.node_availability()
     except Exception:  # noqa: BLE001
         node_av = {}
+    try:
+        # Exact since RePyability 0.11 (#137), at the long-run availabilities.
+        with np.errstate(all="ignore"):
+            measures["fussell_vesely"] = {n: float(v) for n, v in rbd.fussell_vesely(**overrides).items()}
+    except Exception:  # noqa: BLE001 - the rare-event sum over the listed cut sets
+        try:
+            probs = rbd._probabilities_with_overrides(
+                node_av, overrides.get("working_nodes"), overrides.get("broken_nodes"))
+            q_sys = (1.0 - steady) if steady is not None and np.isfinite(steady) else np.nan
+            measures["fussell_vesely"] = {
+                n: float(v) for n, v in _fussell_vesely(probs, cut_sets, q_sys).items()}
+        except Exception:  # noqa: BLE001
+            measures["fussell_vesely"] = {}
     working = overrides.get("working_nodes") or set()
     broken = overrides.get("broken_nodes") or set()
     sys_unavail = (1.0 - steady) if steady is not None and np.isfinite(steady) else None
@@ -1471,6 +1784,140 @@ def _simulated_criticality(res, labels, gate_ids) -> dict:
     return out
 
 
+def _z(confidence: float) -> float:
+    """The two-sided normal quantile for ``confidence``."""
+    from scipy.stats import norm
+
+    return float(norm.ppf(0.5 + confidence / 2.0))
+
+
+def _even(n) -> int:
+    """``n`` rounded down to an even count (antithetic runs come in pairs),
+    at least 2."""
+    return max(2, int(n) - int(n) % 2)
+
+
+def _availability_tolerance(unavailability) -> float:
+    """The half-width target for the window's mean availability:
+    :data:`_AVAIL_REL_TOLERANCE` of the long-run unavailability (of the
+    availability, for a system that is mostly down), never looser than
+    :data:`_AVAIL_MAX_TOLERANCE`. So 99.99% is pinned to ±0.0005 percentage
+    points, 98% to ±0.1."""
+    try:
+        u = float(unavailability)
+    except (TypeError, ValueError):
+        return _AVAIL_MAX_TOLERANCE
+    if not np.isfinite(u):
+        return _AVAIL_MAX_TOLERANCE
+    scale = min(max(u, 0.0), max(1.0 - u, 0.0))
+    return float(min(max(_AVAIL_REL_TOLERANCE * scale, _AVAIL_MIN_TOLERANCE), _AVAIL_MAX_TOLERANCE))
+
+
+def _plan_simulation(per_rep: float, n_max: int, t_sim: float,
+                     user_horizon: bool) -> tuple[int, int, float, bool]:
+    """``(batch, max_n, horizon, shortened)`` fitting :data:`_AVAIL_TIME_BUDGET`
+    at ``per_rep`` seconds per replication.
+
+    ``max_n`` is the most replications that fit the budget, capped at
+    ``n_max`` and floored at :data:`_AVAIL_MIN_SIMS`, and rounded down to
+    whole batches so it moves in coarse steps (a run that reaches its target
+    doesn't depend on it at all). When even the floor won't fit, a *default*
+    horizon is shortened in proportion (simulation cost is proportional to the
+    number of failure events, i.e. to the horizon); a horizon the user chose is
+    kept.
+    """
+    n_max = _even(n_max)
+    n_floor = _even(min(_AVAIL_MIN_SIMS, n_max))
+    if per_rep * n_floor > _AVAIL_TIME_BUDGET:
+        if user_horizon:
+            return n_floor, n_floor, t_sim, False
+        return n_floor, n_floor, t_sim * _AVAIL_TIME_BUDGET / (per_rep * n_floor), True
+    max_n = _even(min(n_max, max(n_floor, _AVAIL_TIME_BUDGET / per_rep)))
+    batch = _even(min(_AVAIL_BATCH, max_n))
+    return batch, batch * (max_n // batch), t_sim, False
+
+
+def _simulate(rbd, t_sim: float, overrides: dict, n: int, **kwargs):
+    """``(result, antithetic)``: RePyability's availability simulation, seeded,
+    in antithetic pairs when every block's draws can be replayed (surpyval
+    parametric models) and plain otherwise. ``kwargs`` pass the stopping rule
+    through; its "did not converge" warning is reported in the result's
+    precision instead."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        try:
+            res = rbd.availability(t_simulation=t_sim, mc_samples=_even(n), method="c", seed=_AVAIL_SEED,
+                                   antithetic=True, **kwargs, **overrides)
+            return res, True
+        except NotImplementedError:
+            return rbd.availability(t_simulation=t_sim, mc_samples=n, method="c", seed=_AVAIL_SEED,
+                                    **kwargs, **overrides), False
+
+
+def _size_simulation(rbd, t_sim: float, n_max: int, overrides: dict,
+                     user_horizon: bool) -> tuple[int, int, float, bool]:
+    """``(batch, max_n, horizon, shortened)`` for a run to the precision
+    target: a pilot batch times one replication and :func:`_plan_simulation`
+    turns the time budget into a replication limit."""
+    if n_max <= _AVAIL_PILOT_SIMS:
+        n = _even(n_max)
+        return n, n, t_sim, False
+    start = time.perf_counter()
+    try:
+        _simulate(rbd, t_sim, overrides, _AVAIL_PILOT_SIMS)
+    except Exception:  # noqa: BLE001 - the real run reports the problem
+        n = _even(min(_AVAIL_BATCH, n_max))
+        return n, n, t_sim, False
+    per_rep = max((time.perf_counter() - start) / _AVAIL_PILOT_SIMS, 1e-9)
+    return _plan_simulation(per_rep, n_max, t_sim, user_horizon)
+
+
+def _run_to_precision(rbd, t_sim: float, overrides: dict, batch: int, max_n: int,
+                      tolerance: float, expect_downtime: bool):
+    """``(result, antithetic)`` of a run to ``tolerance`` on the window's mean
+    availability. RePyability stops as soon as the interval is narrow enough,
+    and one batch that saw no system downtime at all has a zero-width
+    interval — for a system that does go down that is a lack of evidence, not
+    precision, so the run is then repeated at ``max_n``."""
+    kwargs = {"confidence": _AVAIL_CONFIDENCE}
+    if max_n > batch:
+        kwargs.update(tolerance=tolerance, max_samples=max_n)
+    res, antithetic = _simulate(rbd, t_sim, overrides, batch, **kwargs)
+    if (expect_downtime and max_n > getattr(res, "n_simulations", max_n)
+            and not float(getattr(res, "system_downtime", 1.0) or 0.0) > 0.0):
+        res, antithetic = _simulate(rbd, t_sim, overrides, max_n)
+    return res, antithetic
+
+
+def _precision(res, tolerance: float, antithetic: bool, max_n: Optional[int],
+               expect_downtime: bool) -> Optional[dict]:
+    """How precisely the simulation pinned down the window's mean availability:
+    its confidence interval, the target it was run to, and whether it got
+    there (``max_n`` is None for a fixed replication count)."""
+    try:
+        ci = res.mean_availability_interval(_AVAIL_CONFIDENCE)
+    except Exception:  # noqa: BLE001 - a result without per-run up times
+        return None
+    se = _f(ci.standard_error)
+    # z·SE, unclipped: the interval is clipped to [0, 1], its precision isn't.
+    half = None if se is None else _z(_AVAIL_CONFIDENCE) * se
+    reached = half is not None and half <= tolerance and (se > 0.0 or not expect_downtime)
+    return {
+        "window_availability": _f(ci.estimate),
+        "lower": _f(ci.lower),
+        "upper": _f(ci.upper),
+        "half_width": half,
+        "standard_error": se,
+        "confidence": _AVAIL_CONFIDENCE,
+        "tolerance": tolerance,
+        "reached": bool(reached),
+        "n_simulations": int(res.n_simulations),
+        "max_simulations": max_n,
+        "antithetic": bool(antithetic),
+        "mode": "fixed" if max_n is None else "tolerance",
+    }
+
+
 def analyze_availability(
     graph: dict,
     resolve_model=None,
@@ -1481,31 +1928,66 @@ def analyze_availability(
     down time, failure frequency, each component's share of downtime, and
     per-block importance / criticality measures.
 
-    ``n_simulations`` overrides the Monte-Carlo replication count (default
-    :data:`_AVAIL_SIMS`, read at call time so tests can shrink it)."""
-    n_sims = int(n_simulations) if n_simulations else _AVAIL_SIMS
+    The simulation runs to a precision target on the window's mean
+    availability (see :func:`_availability_tolerance`), bounded by the time
+    budget and by :data:`_AVAIL_SIMS` replications (read at call time so tests
+    can shrink it). ``n_simulations`` runs exactly that many instead (rounded
+    up to whole antithetic pairs)."""
+    from backend.services import rbd_costs, rbd_maintenance
+
+    fixed_n = bool(n_simulations)
+    n_sims = int(n_simulations) + int(n_simulations) % 2 if n_simulations else _AVAIL_SIMS
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(
         graph, resolve_model
     )
-    overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
+    # Voting gates are pinned working too: their never-failing stand-in is only
+    # *nearly* perfect (unavailable ~1e-12), which would otherwise add a bias to
+    # every exact figure of a highly available system.
+    overrides = {"working_nodes": working_nodes | gate_ids, "broken_nodes": broken_nodes}
+    sets = _structure_sets(rbd)
 
     try:
         steady = float(rbd.mean_availability(**overrides))
+    except NotImplementedError:
+        # Proof tests whose tests or repairs take time (#100): RePyability
+        # 0.11 has no exact long-run value, so the simulation gives the
+        # availability. (Block replacement is exact since 0.10.)
+        steady = None
     except Exception as exc:  # noqa: BLE001
         raise AnalysisError(f"Couldn't compute availability: {exc}") from exc
 
     # A simulation horizon long enough to reach steady state: a few multiples of
     # the slowest component's characteristic life, unless the user set one.
-    if not t_simulation or t_simulation <= 0:
+    user_horizon = bool(t_simulation and t_simulation > 0)
+    if not user_horizon:
         t_simulation = _availability_horizon(graph)
+    horizon_shortened = False
+    batch = max_n = n_sims
+    if not fixed_n:
+        batch, max_n, t_simulation, horizon_shortened = _size_simulation(
+            rbd, float(t_simulation), n_sims, overrides, user_horizon)
+    if steady is not None:
+        tolerance = _availability_tolerance(1.0 - steady)
+    else:
+        tolerance = _availability_tolerance(
+            rbd_maintenance.estimated_unavailability(rbd, float(t_simulation), overrides))
+    expect_downtime = bool(steady is None or (np.isfinite(steady) and steady < 1.0))
 
+    res = None
     per_node = []
     sim = {"mean_up_time": None, "mean_down_time": None, "failure_frequency": None}
     curve = None
     criticality: dict = {}
+    precision = None
     try:
-        res = rbd.availability(t_simulation=float(t_simulation), mc_samples=n_sims,
-                               method="c", seed=1, **overrides)
+        if fixed_n:
+            res, antithetic = _simulate(rbd, float(t_simulation), overrides, n_sims)
+        else:
+            res, antithetic = _run_to_precision(
+                rbd, float(t_simulation), overrides, batch, max_n, tolerance, expect_downtime)
+        n_sims = int(getattr(res, "n_simulations", n_sims))
+        precision = _precision(res, tolerance, antithetic, None if fixed_n else max_n,
+                               expect_downtime)
         sim = {
             "mean_up_time": _f(getattr(res, "mean_up_time", None)),
             "mean_down_time": _f(getattr(res, "mean_down_time", None)),
@@ -1551,15 +2033,33 @@ def analyze_availability(
     }
 
     try:
-        importance = _steady_importance(rbd, labels, gate_ids, overrides, steady)
+        importance = _steady_importance(rbd, labels, gate_ids, overrides, steady, sets["cuts"])
     except Exception:  # noqa: BLE001
         importance = {}
+
+    # Cost of ownership (#99) and the failures/maintenance downtime split
+    # (#100) — only for diagrams that price or maintain something.
+    extras: dict[str, Any] = {}
+    try:
+        costs = rbd_costs.cost_summary(rbd, graph, labels, gate_ids, overrides, res,
+                                       float(t_simulation), per_node, importance)
+        if costs is not None:
+            extras["costs"] = costs
+        split = rbd_maintenance.downtime_split(graph, resolve_model, overrides, steady, res,
+                                               float(t_simulation))
+        if split is not None:
+            extras["downtime"] = split
+    except Exception:  # noqa: BLE001 - never lose the availability result
+        import logging
+
+        logging.getLogger(__name__).exception("Cost/maintenance summary failed")
 
     return {
         "kind": "repairable",
         "unit": (graph.get("unit") or "").strip(),
         "steady_state_availability": steady,
-        "unavailability": (1.0 - steady) if np.isfinite(steady) else None,
+        "availability_basis": "exact" if steady is not None else "simulation",
+        "unavailability": (1.0 - steady) if steady is not None and np.isfinite(steady) else None,
         "mean_up_time": figures["mean_up_time"],
         "mean_down_time": figures["mean_down_time"],
         "failure_frequency": figures["failure_frequency"],
@@ -1567,6 +2067,8 @@ def analyze_availability(
         "simulated": sim,
         "n_simulations": n_sims,
         "t_simulation": float(t_simulation),
+        "horizon_shortened": horizon_shortened,
+        "precision": precision,
         "per_node": per_node,
         "importance": importance,
         "criticality": criticality,
@@ -1575,6 +2077,7 @@ def analyze_availability(
             "failed": sorted(str(n) for n in broken_nodes),
         },
         "curve": curve,
+        **extras,
         "repyability_version": _repyability_version(),
     }
 
@@ -1587,19 +2090,70 @@ def _f(v) -> Optional[float]:
         return None
 
 
+def _spec_mean(spec) -> Optional[float]:
+    """Mean of an inline/saved life or repair spec (``distribution_id`` +
+    ``params``), or None when it can't be built without more context."""
+    try:
+        entry = DISTRIBUTIONS[spec["distribution_id"]]
+        values = [float(p["value"]) for p in spec.get("params") or []]
+        mean = float(entry["dist"].from_params(values).mean())
+    except Exception:  # noqa: BLE001 - covariate models, odd specs: skip
+        return None
+    return mean if np.isfinite(mean) and mean > 0 else None
+
+
+def _settling_time(model: dict, repair: Optional[dict]) -> Optional[float]:
+    """How long a component's point availability takes to settle, roughly: a
+    few failure-repair cycles for a wear-out (non-exponential) life, but only a
+    few repair times for an exponential one — its availability relaxes at rate
+    λ + μ, however rare the failures."""
+    life = _spec_mean(model)
+    if life is None:
+        return None
+    mttr = _spec_mean(repair) if isinstance(repair, dict) else None
+    if model.get("distribution_id") == "exponential":
+        return mttr if mttr is not None else None
+    return life + (mttr or 0.0)
+
+
 def _availability_horizon(graph: dict) -> float:
-    """A simulation length that reaches steady state: ~10× the largest component
-    scale parameter found in the graph (fallback 1000)."""
-    hi = 0.0
-    for node in graph.get("nodes") or []:
-        data = node.get("data") or {}
-        for spec in (data.get("model"), data.get("repair")):
-            for p in (spec or {}).get("params") or []:
-                try:
-                    hi = max(hi, abs(float(p.get("value"))))
-                except (TypeError, ValueError):
-                    pass
-    return (hi * 10.0) if hi > 0 else 1000.0
+    """A simulation length that reaches steady state: 10× the slowest settling
+    time among the components that matter — those carrying ≥1% of the largest
+    downtime weight (Birnbaum importance × unavailability). A reliable block
+    off in a redundant corner, or an exponential block that rarely fails, no
+    longer stretches the simulation for every other block. Fallback 1000.
+    """
+    from backend.services.rbd_maintenance import horizon_floor
+
+    # Maintenance cycles (#100): cover a few of the longest interval.
+    floor = horizon_floor(graph)
+    nodes = {n.get("id"): (n.get("data") or {}) for n in graph.get("nodes") or []}
+    settle = {
+        nid: t for nid, data in nodes.items()
+        if isinstance(data.get("model"), dict)
+        and (t := _settling_time(data["model"], data.get("repair"))) is not None
+    }
+    if not settle:
+        return max(1000.0, floor)
+    keep = set(settle)
+    try:
+        # Graph only (no model resolver), so the exported script computes the
+        # very same horizon; saved life models carry their parameters inline.
+        rbd, _, gate_ids, working, broken = _build_repairable_rbd(graph)
+        probs = rbd._probabilities_with_overrides(
+            rbd.node_availability(), working | gate_ids, broken)
+        birnbaum = rbd._birnbaum_importance(probs)
+        weight = {
+            nid: float(np.atleast_1d(birnbaum.get(nid, 0.0))[0]) * (1.0 - float(np.atleast_1d(probs[nid])[0]))
+            for nid in settle if nid in probs
+        }
+        top = max(weight.values(), default=0.0)
+        if top > 0:
+            keep = {nid for nid, w in weight.items() if w >= 0.01 * top}
+    except Exception:  # noqa: BLE001 - fall back to every component
+        pass
+    hi = max((settle[nid] for nid in keep), default=0.0)
+    return max((hi * 10.0) if hi > 0 else 1000.0, floor)
 
 
 def _repyability_version() -> Optional[str]:

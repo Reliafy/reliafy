@@ -137,6 +137,7 @@ def analyze_graph(
     conditional_age: float | None = None,
     n_simulations: int | None = None,
     at_times=None,
+    band: dict | None = None,
 ) -> dict:
     """Run the RePyability reliability analysis for a graph.
 
@@ -147,7 +148,8 @@ def analyze_graph(
     covariate values for proportional-hazards nodes. ``conditional_age``
     conditions the curves on having already survived to that age.
     ``at_times`` (non-repairable) adds the system reliability evaluated
-    exactly at those times.
+    exactly at those times. ``band`` (``{"level": 0.95}``) adds a confidence band from the fitted blocks'
+    parameter uncertainty (non-repairable diagrams only).
     """
 
     def resolve_subsystem(sub_id: str) -> dict | None:
@@ -173,6 +175,7 @@ def analyze_graph(
         resolve_model=resolve_model,
         conditional_age=conditional_age,
         at_times=at_times,
+        band=band,
     )
 
 
@@ -287,6 +290,16 @@ def _strip_ui(value):
     return value
 
 
+# Node data that records where values came from (#100: the RCM study a
+# block's maintenance was filled from). The filled values themselves are in
+# the key; the link isn't, so it never invalidates a saved result.
+_PROVENANCE_KEYS = frozenset({"rcm_source"})
+
+
+def _analysis_data(data: dict) -> dict:
+    return _strip_ui({k: v for k, v in data.items() if k not in _PROVENANCE_KEYS})
+
+
 def canonical_analysis_graph(graph: dict) -> dict:
     """The analysis-relevant part of a graph, in a canonical order."""
     graph = graph or {}
@@ -294,7 +307,7 @@ def canonical_analysis_graph(graph: dict) -> dict:
         {
             "id": n.get("id"),
             "type": n.get("type"),
-            "data": _strip_ui(n.get("data") or {}),
+            "data": _analysis_data(n.get("data") or {}),
         }
         for n in graph.get("nodes") or []
         if isinstance(n, dict)
@@ -307,13 +320,19 @@ def canonical_analysis_graph(graph: dict) -> dict:
             if isinstance(e, dict) and e.get("source") and e.get("target")
         }
     )
-    return {
+    out = {
         "nodes": nodes,
         "edges": [list(e) for e in edges],
         "unit": (graph.get("unit") or "").strip(),
         "repairable": bool(graph.get("repairable")),
         "ccf_groups": graph.get("ccf_groups") or [],
     }
+    # Diagram-level costs (#99: system downtime cost, ownership horizon).
+    # Block costs and maintenance live in node data, already covered above.
+    # Only present when set, so diagrams without costs keep their saved key.
+    if graph.get("costs"):
+        out["costs"] = graph["costs"]
+    return out
 
 
 def _t_sim(t_simulation) -> float | None:

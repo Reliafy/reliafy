@@ -93,6 +93,8 @@ export function normalizeRbdGraph(graph = {}) {
 
   const nodes = rawNodes.map((n) => {
     const data = { ...(n.data || {}) };
+    // A repeated block (#102) may carry repeat_of on the compact node itself.
+    if (n.repeat_of && !data.repeat_of) data.repeat_of = n.repeat_of;
     if (data.model) data.model = fleshModel(data.model);
     if (!data.label) data.label = n.type === "input" ? "Input" : n.type === "output" ? "Output" : n.id;
     const base = { id: n.id, type: n.type, data, position: n.position };
@@ -114,7 +116,7 @@ export function normalizeRbdGraph(graph = {}) {
   }));
 
   const laidOut = layoutGraph(nodes, edges);
-  return { nodes: laidOut, edges, unit: graph.unit ?? "" };
+  return { nodes: laidOut, edges, unit: graph.unit ?? "", ...(graph.costs ? { costs: graph.costs } : {}) };
 }
 
 // Strip a live/canvas graph down to the fields the assistant needs to read and
@@ -134,10 +136,12 @@ export function compactGraph(graph = {}) {
         ...(d.model.placeholder ? { placeholder: true } : {}),
       };
     }
-    for (const k of ["n", "k", "spares", "cold"]) if (d[k] != null) node[k] = d[k];
+    for (const k of ["n", "k", "spares", "cold", "dormancy", "repeat_of"]) if (d[k] != null) node[k] = d[k];
+    // Repairable blocks: instant repair, costs and maintenance (#99/#100).
+    for (const k of ["instant_repair", "costs", "preventive", "inspection", "rcm_source"]) if (d[k] != null) node[k] = d[k];
     if (d.rbd?.id) node.subsystem_rbd_id = d.rbd.id;
     return node;
   });
   const edges = (graph.edges || []).map((e) => ({ source: e.source, target: e.target }));
-  return { nodes, edges, unit: graph.unit || "" };
+  return { nodes, edges, unit: graph.unit || "", ...(graph.costs ? { costs: graph.costs } : {}) };
 }

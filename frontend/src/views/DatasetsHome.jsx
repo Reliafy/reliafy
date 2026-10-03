@@ -98,7 +98,7 @@ export default function DatasetsHome() {
           <h1>Datasets</h1>
           <p>
             Stored once and shared across the models fitted from them. Upload a
-            CSV, paste from a spreadsheet, or type data into a form.
+            CSV or Excel file, paste from a spreadsheet, or type data into a form.
           </p>
         </div>
         <button onClick={() => setNewOpen(true)}>
@@ -113,7 +113,7 @@ export default function DatasetsHome() {
       ) : datasets.length === 0 ? (
         <div className="card empty">
           <h2>No datasets yet</h2>
-          <p>Upload a CSV, paste from a spreadsheet, type data into a form, or fit a model to create one.</p>
+          <p>Upload a CSV or Excel file, paste from a spreadsheet, type data into a form, or fit a model to create one.</p>
           <button style={{ marginTop: "1rem" }} onClick={() => setNewOpen(true)}>
             <PlusIcon /> New dataset
           </button>

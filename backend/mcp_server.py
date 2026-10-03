@@ -1145,6 +1145,9 @@ class RbdNode(BaseModel):
     k: Optional[int] = Field(None, description="knode: number of branches feeding the gate.")
     spares: Optional[int] = Field(None, description="standby: number of spares.")
     cold: Optional[bool] = Field(None, description="standby: true = cold (spares don't age while idle).")
+    dormancy: Optional[float] = Field(None, ge=0, le=1, description=(
+        "standby: how fast an idle spare ages relative to a running one — 0 cold, 1 hot, "
+        "in between warm (e.g. 0.2 for a spare kept warm and pressurised). Overrides `cold`."))
     subsystem_rbd_id: Optional[str] = Field(None, description="subsystem: the saved RBD id to embed.")
 
 
@@ -1514,7 +1517,7 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None) -
 
 def _availability_summary(result: dict) -> dict:
     keys = ("unit", "steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
-            "failure_frequency", "figures_basis", "n_simulations", "t_simulation", "per_node", "importance",
+            "failure_frequency", "figures_basis", "n_simulations", "t_simulation", "precision", "per_node", "importance",
             "criticality", "cached", "computed_at", "can_recompute")
     return {"kind": "repairable", **{k: result.get(k) for k in keys if k in result}}
 

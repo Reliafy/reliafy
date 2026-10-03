@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import CopyId from "../components/CopyId.jsx";
 import RcmTree from "../components/RcmTree.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
+import RcmImportModal from "../components/RcmImportModal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getRcmStudy, getRcmOptions, putRcmTree, renameRcmStudy } from "../api.js";
@@ -16,7 +17,7 @@ function exportCsv(study, functions) {
   const header = [
     "function", "functional_failure", "failure_mode", "effects", "consequence",
     "outcome", "rtf_basis", "task", "interval", "interval_unit",
-    "evidence_type", "evidence_name", "evidence_status", "evidence_detail",
+    "evidence_type", "evidence_name", "evidence_status", "evidence_detail", "notes",
   ];
   const rows = [header];
   for (const fn of functions) {
@@ -27,6 +28,7 @@ function exportCsv(study, functions) {
           fn.text, fail.text, mode.text, mode.effects || "", mode.consequence || "",
           d.outcome || "", d.rtf_basis || "", d.task || "", d.interval ?? "", d.interval_unit || "",
           d.evidence?.type || "", d.artifact_name || "", d.status || "", d.summary || d.reason || "",
+          mode.notes || "",
         ]);
       }
     }
@@ -54,6 +56,8 @@ export default function RcmStudyPage() {
   const [error, setError] = useState(null);
   const [editTarget, setEditTarget] = useState(null); // { fnId, failId, mode }
   const [conflict, setConflict] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [imported, setImported] = useState(null); // { counts, warnings } of the last import
 
   useEffect(() => {
     getRcmStudy(id)
@@ -103,6 +107,15 @@ export default function RcmStudyPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const onImported = (fresh) => {
+    setStudy(fresh);
+    setFunctions(fresh.functions || []);
+    setDirty(false);
+    setError(null);
+    setImported(fresh.imported || null);
+    setImportOpen(false);
   };
 
   const onReload = () => {
@@ -166,6 +179,16 @@ export default function RcmStudyPage() {
           {!readOnly && (
             <button className="secondary" onClick={onRename}>Rename</button>
           )}
+          {!readOnly && (
+            <button
+              className="secondary"
+              onClick={() => setImportOpen(true)}
+              disabled={dirty}
+              title={dirty ? "Save or discard your edits first" : "Append or replace the worksheet from an FMEA / RCM spreadsheet"}
+            >
+              Import from Excel
+            </button>
+          )}
           <button className="secondary" onClick={() => exportCsv(study, functions)}>
             Export CSV
           </button>
@@ -185,6 +208,17 @@ export default function RcmStudyPage() {
               <button className="secondary" onClick={onReload}>Reload latest version</button>
             </div>
           )}
+        </div>
+      )}
+      {imported && (
+        <div className="card note xl-imported">
+          <p>
+            Imported {imported.counts.modes} failure mode{imported.counts.modes === 1 ? "" : "s"} under{" "}
+            {imported.counts.functions} function{imported.counts.functions === 1 ? "" : "s"}
+            {imported.counts.decisions ? ` (${imported.counts.decisions} with a decision)` : ""} — saved.
+            <button className="link-btn" style={{ marginLeft: "0.6rem" }} onClick={() => setImported(null)}>Dismiss</button>
+          </p>
+          {imported.warnings.map((w, i) => <p key={i}>{w}</p>)}
         </div>
       )}
       {readOnly && study.is_sample && (
@@ -210,6 +244,10 @@ export default function RcmStudyPage() {
           onEditDecision={(fnId, failId, mode) => setEditTarget({ fnId, failId, mode })}
         />
       </div>
+
+      {importOpen && (
+        <RcmImportModal study={{ ...study, functions }} onClose={() => setImportOpen(false)} onImported={onImported} />
+      )}
 
       {editTarget && options && (
         <DecisionModal

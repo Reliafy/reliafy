@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import ReactFlow, {
   Background,
   Controls,
@@ -23,12 +23,17 @@ import Select from "../components/Select.jsx";
 import SubsystemModal from "../components/SubsystemModal.jsx";
 import RbdSaveModal from "../components/RbdSaveModal.jsx";
 import RbdCalculator from "../components/RbdCalculator.jsx";
+import RbdFaultTree from "../components/RbdFaultTree.jsx";
+import RbdDesignPanel from "../components/RbdDesignPanel.jsx";
+import RbdCostsModal from "../components/RbdCostsModal.jsx";
+import { applyBlockExtras } from "../components/RbdBlockCosts.jsx";
 import ValidationPanel, { graphSignature } from "../components/RbdValidation.jsx";
 import { saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP } from "../api.js";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import CopyId from "../components/CopyId.jsx";
 import { registerRbdCanvas } from "../rbdBridge.js";
 import { normalizeRbdGraph } from "../rbdGraph.js";
+import { isRepeat, makeRepeat, originalId, promoteRepeats } from "../rbdRepeats.js";
 // The node components (and the contexts they read) live in RbdNodes.jsx so
 // the public read-only view renders the very same blocks.
 import {
@@ -171,7 +176,7 @@ const EDGE_OPTIONS = {
   markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
 };
 
-function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
+function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
@@ -195,8 +200,11 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // Common-cause groups: [{id, members:[nodeId], beta}] — redundant components
   // coupled by a shared failure cause (reliability analysis only).
   const [ccfGroups, setCcfGroups] = useState([]);
+  // Diagram-level costs of a repairable diagram (#99): {downtime_rate, horizon}.
+  const [diagramCosts, setDiagramCosts] = useState(null);
+  const costsField = useMemo(() => (diagramCosts ? { costs: diagramCosts } : {}), [diagramCosts]);
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
-  const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'outages'
+  const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'tree' | 'design' | 'outages'
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
   const [checkedSig, setCheckedSig] = useState(null);
@@ -205,7 +213,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // Always-current snapshot of the canvas, so the AI assistant can read the
   // live diagram via the bridge without stale-closure issues.
   const liveRef = useRef({ nodes: [], edges: [], unit: "" });
-  liveRef.current = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups };
+  liveRef.current = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField };
   const { screenToFlowPosition, fitView } = useReactFlow();
   const nodeTypes = useMemo(
     () => ({
@@ -228,17 +236,17 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // position-independent signature lets us flag the result as stale once the
   // diagram changes.
   const sig = useMemo(
-    () => graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }),
-    [nodes, edges, rbdUnit, repairable, ccfGroups]
+    () => graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }),
+    [nodes, edges, rbdUnit, repairable, ccfGroups, costsField]
   );
   const validationStale = validation != null && sig !== checkedSig;
 
   const runValidate = useCallback(async () => {
     setValidating(true);
     try {
-      const v = await validateRbd({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups });
+      const v = await validateRbd({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField });
       setValidation(v);
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }));
+      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
     } catch (err) {
       setValidation({
         valid: false,
@@ -248,11 +256,11 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         warnings: [],
         non_analytic_nodes: {},
       });
-      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }));
+      setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
     } finally {
       setValidating(false);
     }
-  }, [nodes, edges, rbdUnit, repairable, ccfGroups]);
+  }, [nodes, edges, rbdUnit, repairable, ccfGroups, costsField]);
 
   const onConnect = useCallback(
     (params) => setEdges((eds) => addEdge({ ...params, ...EDGE_OPTIONS }, eds)),
@@ -370,11 +378,12 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // Manually mark a node working/failed, or clear it (state = null).
   const setNodeState = useCallback(
     (id, state) => {
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === id ? { ...node, data: { ...node.data, state } } : node
-        )
-      );
+      setNodes((nds) => {
+        const target = originalId(nds, id); // a repeated block pins its original
+        return nds.map((node) =>
+          node.id === target ? { ...node, data: { ...node.data, state } } : node
+        );
+      });
     },
     [setNodes]
   );
@@ -461,6 +470,30 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       });
     },
     [setNodes, newId]
+  );
+
+  // Repeated block (#102): a linked copy of a component, drawn again elsewhere
+  // (e.g. one power supply feeding two trains) and analysed as the same one.
+  const repeatNode = useCallback(
+    (id) => {
+      const copyId = newId("component");
+      setNodes((nds) => {
+        const copy = makeRepeat(nds, id, copyId);
+        return copy ? nds.concat(copy) : nds;
+      });
+    },
+    [setNodes, newId]
+  );
+
+  // Removing a component hands its model to its first copy (see
+  // promoteRepeats) — whether it's deleted from the menu or with the keyboard.
+  const handleNodesChange = useCallback(
+    (changes) => {
+      const removed = changes.filter((c) => c.type === "remove").map((c) => c.id);
+      if (removed.length) setNodes((nds) => promoteRepeats(nds, removed));
+      onNodesChange(changes);
+    },
+    [setNodes, onNodesChange]
   );
 
   // Apply the n/k from the modal: add a new node or update the edited one.
@@ -550,7 +583,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   // Persist the current diagram as a saved RBD (updates the open one if any).
   const onSaveRbd = useCallback(
     async (name) => {
-      const graph = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups };
+      const graph = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField };
       const saved = await saveRbd(name, graph, savedRbdId, savedRbdUpdatedAt);
       setSavedRbdId(saved.id);
       setSavedRbdName(name);
@@ -559,7 +592,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setModal(null);
       onSaved?.(saved.id);
     },
-    [nodes, edges, rbdUnit, repairable, ccfGroups, savedRbdId, savedRbdUpdatedAt, onSaved]
+    [nodes, edges, rbdUnit, repairable, ccfGroups, costsField, savedRbdId, savedRbdUpdatedAt, onSaved]
   );
 
   // Replace the canvas with a saved graph; bump the id counter past loaded ids.
@@ -588,6 +621,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       setRbdUnit(graph?.unit || "");
       setRepairable(!!graph?.repairable);
       setCcfGroups(graph?.ccf_groups || []);
+      setDiagramCosts(graph?.costs || null);
       setSavedRbdId(id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
@@ -613,6 +647,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     setRbdUnit("");
     setRepairable(false);
     setCcfGroups([]);
+    setDiagramCosts(null);
     setSavedRbdId(null);
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
@@ -634,8 +669,20 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     if (graph.unit != null) setRbdUnit(graph.unit);
     if (graph.repairable != null) setRepairable(!!graph.repairable);
     if (graph.ccf_groups != null) setCcfGroups(graph.ccf_groups);
+    if (graph.costs !== undefined) setDiagramCosts(graph.costs || null);
     window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
   }, [setNodes, setEdges, fitView]);
+
+  // Put a redundancy design (Design tab) on the canvas as it is — unsaved, and
+  // keeping the user's layout — clearing the id counter past any new ids.
+  const applyDesign = useCallback((graph) => {
+    const nums = graph.nodes
+      .map((n) => parseInt(String(n.id).replace(/^\D+/, ""), 10))
+      .filter((x) => !Number.isNaN(x));
+    idRef.current = Math.max(idRef.current, (nums.length ? Math.max(...nums) : 0) + 1);
+    setNodes(graph.nodes);
+    setEdges(graph.edges);
+  }, [setNodes, setEdges]);
 
   // Expose the live canvas to the AI assistant while the builder is mounted.
   useEffect(() => {
@@ -646,22 +693,26 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
   }, [applyGraph]);
 
   // Load the saved RBD named in the route (once per id); a route with no id is
-  // a fresh diagram.
+  // a fresh diagram — or one just imported from another tool's file, which
+  // opens unsaved (Save keeps it, under the usual plan limits).
   const loadedRef = useRef(null);
   useEffect(() => {
     if (rbdId && loadedRef.current !== rbdId) {
       loadedRef.current = rbdId;
       openRbd(rbdId).catch(() => {});
+    } else if (!rbdId && imported?.graph && loadedRef.current !== imported) {
+      loadedRef.current = imported;
+      loadGraph(imported.graph, null, imported.name || "");
     }
-  }, [rbdId, openRbd]);
+  }, [rbdId, imported, openRbd, loadGraph]);
 
   // Assign a life model (saved or from parameters) to the node the modal targets.
   const setNodeModel = useCallback(
-    ({ model, repair }) => {
+    ({ model, repair, extras }) => {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === modalNodeId
-            ? { ...node, data: { ...node.data, model, ...(repair !== undefined ? { repair } : {}) } }
+            ? { ...node, data: applyBlockExtras({ ...node.data, model, ...(repair !== undefined ? { repair } : {}) }, extras) }
             : node
         )
       );
@@ -703,13 +754,16 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
 
   const onNodeContextMenu = useCallback((event, node) => {
     event.preventDefault();
+    // A repeated block shows (and sets) its original's pinned state.
+    const shown = liveRef.current.nodes.find((n) => n.id === originalId(liveRef.current.nodes, node.id));
     setMenu({
       kind: "node",
       x: event.clientX,
       y: event.clientY,
       id: node.id,
       nodeType: node.type,
-      state: node.data?.state || null,
+      repeat: isRepeat(node),
+      state: shown?.data?.state || null,
       protectedNode: node.deletable === false,
     });
   }, []);
@@ -730,7 +784,8 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         case "component":
         case "series":
         case "parallel":
-          setModalNodeId(node.id);
+          // A repeated block edits the component it repeats.
+          setModalNodeId(originalId(liveRef.current.nodes, node.id));
           setModal("lifemodel");
           break;
         case "knode":
@@ -763,7 +818,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
 
   const deleteNode = useCallback(
     (id) => {
-      setNodes((nds) => nds.filter((n) => n.id !== id));
+      setNodes((nds) => promoteRepeats(nds, [id]).filter((n) => n.id !== id));
       setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
     },
     [setNodes, setEdges]
@@ -782,7 +837,8 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
     return m;
   }, [ccfGroups]);
   const selectedComponentIds = useMemo(
-    () => nodes.filter((n) => n.selected && n.type === "component").map((n) => n.id),
+    // A repeated block is its original, not another member.
+    () => nodes.filter((n) => n.selected && n.type === "component" && !isRepeat(n)).map((n) => n.id),
     [nodes]
   );
   const labelFor = (id) => nodes.find((n) => n.id === id)?.data?.label || id;
@@ -823,6 +879,19 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         Calculator
       </button>
       <button
+        className={"tab" + (tab === "tree" ? " active" : "")}
+        onClick={() => setTab("tree")}
+      >
+        Fault tree
+      </button>
+      <button
+        className={"tab" + (tab === "design" ? " active" : "")}
+        onClick={() => setTab("design")}
+        title="How many copies of each block: most reliable within a budget, or cheapest to reach a target"
+      >
+        Design
+      </button>
+      <button
         className={"tab" + (tab === "outages" ? " active" : "")}
         onClick={() => setTab("outages")}
       >
@@ -838,7 +907,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onPaneContextMenu={onPaneContextMenu}
@@ -857,7 +926,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
       >
-        <Panel position="top-left">
+        <Panel position="top-left" className="rbd-toolbar">
           <div className="rbd-toolbar-row">
           <span className="rbd-name">{savedRbdName || "Untitled RBD"}</span>
           <label className="rbd-unit-field">
@@ -889,6 +958,19 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
               ]}
             />
           </div>
+          {repairable && (
+            <button
+              className={"rbd-costs-toggle" + (diagramCosts ? " set" : "")}
+              onClick={() => setModal("costs")}
+              title={
+                diagramCosts?.downtime_rate != null
+                  ? `System downtime costs ${Number(diagramCosts.downtime_rate).toLocaleString()} per ${(rbdUnit || "time unit").replace(/s$/, "")} — click to edit`
+                  : "System downtime cost and ownership horizon (block costs are on each block)"
+              }
+            >
+              Costs
+            </button>
+          )}
           {/* Common-cause groups sit with the other diagram-level settings, as a
               chip that expands on demand. They used to float bottom-left, where
               they collided with the zoom controls and the hint bubble; a chip
@@ -920,16 +1002,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
             </div>
           )}
           </div>
-        </Panel>
-        {!repairable && selectedComponentIds.length >= 2 && (
-          <Panel position="top-center">
-            <button className="rbd-btn accent" onClick={openCcfForSelection}
-                    title="Couple these redundant components by a shared failure cause">
-              ⚭ Common-cause group ({selectedComponentIds.length})
-            </button>
-          </Panel>
-        )}
-        <Panel position="top-right">
+          <div className="rbd-toolbar-actions">
           <button className="rbd-btn" onClick={() => setModal("saverbd")}>
             Save RBD
           </button>
@@ -963,9 +1036,17 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
           >
             {validating ? "Validating…" : "Validate"}
           </button>
-        </Panel>
+          </div>
+        {!repairable && selectedComponentIds.length >= 2 && (
+          <div className="rbd-toolbar-float">
+            <button className="rbd-btn accent" onClick={openCcfForSelection}
+                    title="Couple these redundant components by a shared failure cause">
+              ⚭ Common-cause group ({selectedComponentIds.length})
+            </button>
+          </div>
+        )}
         {validation && (
-          <Panel position="top-center">
+          <div className="rbd-toolbar-float">
             <div className="rbd-validate-card">
               <button
                 className="rbd-validate-close"
@@ -977,8 +1058,9 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
               </button>
               <ValidationPanel validation={validation} stale={validationStale} />
             </div>
-          </Panel>
+          </div>
         )}
+        </Panel>
         <Background gap={22} color="#e8e7e2" />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable />
@@ -1055,12 +1137,12 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
                   <>
                     <button
                       onClick={() => {
-                        setModalNodeId(menu.id);
+                        setModalNodeId(originalId(nodes, menu.id));
                         setModal("lifemodel");
                         closeMenu();
                       }}
                     >
-                      Edit life model
+                      {menu.repeat ? "Edit life model (original)" : "Edit life model"}
                     </button>
                     {(menu.nodeType === "series" ||
                       menu.nodeType === "parallel") && (
@@ -1178,11 +1260,23 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
                   </button>
                 )}
                 <div className="rbd-menu-sep" />
+                {menu.nodeType === "component" && !repairable && (
+                  <button
+                    onClick={() => {
+                      repeatNode(menu.id);
+                      closeMenu();
+                    }}
+                    title="Draw the same component again elsewhere (e.g. one power supply feeding two trains): it works or fails in every place at once"
+                  >
+                    Repeat block
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     cloneNode(menu.id);
                     closeMenu();
                   }}
+                  title={menu.repeat ? "Another linked copy of the same component" : "An independent copy with its own model"}
                 >
                   Clone
                 </button>
@@ -1217,7 +1311,7 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
             Right-click the canvas to add a component · drag between handles, or
             select blocks and press <kbd>C</kbd>, to connect · double-click a block to edit
             {repairable
-              ? " · double-click each component to set its repair time"
+              ? " · double-click each component to set its repair time, costs and maintenance"
               : " · shift-click 2+ redundant components to add a common-cause group"}
           </>
         )}
@@ -1288,6 +1382,14 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
           onPick={pickSubsystem}
         />
       )}
+      {modal === "costs" && (
+        <RbdCostsModal
+          initial={diagramCosts}
+          unit={rbdUnit}
+          onClose={() => setModal(null)}
+          onSubmit={(c) => { setDiagramCosts(c); setModal(null); }}
+        />
+      )}
       {modal === "saverbd" && (
         <RbdSaveModal
           initialName={savedRbdName}
@@ -1301,10 +1403,36 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
       style={{ display: tab === "calc" ? undefined : "none" }}
     >
       <RbdCalculator
-        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups }}
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         validation={validation}
         stale={validationStale}
         rbdId={savedRbdId}
+      />
+    </div>
+    <div
+      className="rbd-calc-panel"
+      style={{ display: tab === "tree" ? undefined : "none" }}
+    >
+      <RbdFaultTree
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        validation={validation}
+        stale={validationStale}
+        active={tab === "tree"}
+        name={savedRbdName}
+      />
+    </div>
+    <div
+      className="rbd-calc-panel"
+      style={{ display: tab === "design" ? undefined : "none" }}
+    >
+      <RbdDesignPanel
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        onApply={applyDesign}
+        onView={() => {
+          setTab("builder");
+          // Once the canvas is shown again (it can't be fitted while hidden).
+          window.setTimeout(() => fitView({ padding: 0.35, duration: 300 }), 60);
+        }}
       />
     </div>
     {tab === "outages" && (
@@ -1332,6 +1460,9 @@ function Builder({ rbdId, onNew, onOpenLibrary, onSaved }) {
 export default function RbdBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const imported = id ? null : location.state?.imported || null;
+  const [notesHidden, setNotesHidden] = useState(false);
   return (
     <div className="app rbd-app">
       <header>
@@ -1343,11 +1474,25 @@ export default function RbdBuilder() {
           <CopyId id={id} />
         </div>
       </header>
+      {imported && !notesHidden && (
+        <div className="card note rbd-import-note">
+          <p>
+            <b>Imported from {imported.source_format || "file"}</b> — not saved yet. Check the blocks, then Save to keep it.
+            {" "}<button className="link-btn" onClick={() => setNotesHidden(true)}>Dismiss</button>
+          </p>
+          {imported.warnings?.length > 0 && (
+            <ul>
+              {imported.warnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="card rbd-wrap">
         <ReactFlowProvider>
           <Builder
             key={id || "new"}
             rbdId={id}
+            imported={imported}
             onNew={() => navigate("/rbds/b")}
             onOpenLibrary={() => navigate("/rbds/list")}
             onSaved={(savedId) => navigate(`/rbds/b/${savedId}`, { replace: true })}

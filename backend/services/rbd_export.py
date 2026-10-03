@@ -10,7 +10,9 @@ calculation the app does:
   lives and the six importance measures at the app's representative time;
 * a **repairable** diagram prints the exact steady-state availability, mean
   up/down time and failure frequency, then runs the same seeded availability
-  simulation (``t_simulation``, ``N``) as the app.
+  simulation as the app: the same ``t_simulation``, antithetic pairs, run to
+  the same precision target on the window's mean availability (so a run that
+  reaches it reproduces the app's numbers exactly).
 
 The translation mirrors ``rbd_analysis`` block by block — one RBD node per
 builder node, series/parallel count blocks and hot standby as a single
@@ -42,7 +44,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 
 from backend.fitting import DISTRIBUTIONS
-from backend.services import rbd_analysis
+from backend.services import rbd_analysis, rbd_repeats
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_VERSIONS = {"surpyval": "0.21.0", "repyability": "0.11"}
@@ -387,6 +389,10 @@ class _Script:
             name = _one_line(spec.get("name") or "")
             self.comment(f'Fitted in Reliafy - saved model "{name}".' if name
                          else "Fitted in Reliafy (a saved model).")
+            # The app's optional confidence band (drawn from the fit's
+            # covariance) isn't reproduced: the script uses point estimates.
+            self.comment("Point estimate - Reliafy's confidence band draws "
+                         "these parameters from the fit's covariance.")
         if spec and spec.get("placeholder"):
             self.lines.append(
                 "# NOTE: placeholder parameters - illustrative values, "
@@ -488,7 +494,28 @@ class _Script:
             spare = self.dist(spare_spec, f"{label} (spare)",
                               self.names.make(f"{var}_spare"))
         n_units = 1 + spares
-        if data.get("cold"):
+        dormancy = rbd_analysis._standby_dormancy(data, label)
+        if 0.0 < dormancy < 1.0:
+            self.imports.add("StandbyModel")
+            self.comment(
+                f"{label}: warm standby - the duty unit plus {spares} idle "
+                f"spare{'s' if spares != 1 else ''} that age at {dormancy:g} x "
+                "the operating rate while waiting (and can fail before "
+                "they're needed)."
+            )
+            units = ", ".join([duty] + [spare] * spares)
+            line = f"{var} = StandbyModel([{units}], k=1, " \
+                   f"dormancy_factor={_num(dormancy)})"
+            if len(line) > 79:
+                self.lines.append(f"{var} = StandbyModel(")
+                self.lines.append(f"    [{units}],")
+                self.lines.append("    k=1,")
+                self.lines.append(f"    dormancy_factor={_num(dormancy)},")
+                self.lines.append(")")
+            else:
+                self.lines.append(line)
+            return var
+        if dormancy == 0.0:
             try:
                 switch = float(data.get("startProb", 1.0))
             except (TypeError, ValueError):
@@ -596,6 +623,10 @@ class _Script:
         rel: list[tuple[Any, str, str]] = []  # (id, expr, label)
         k: dict[Any, int] = {}
         working, broken = [], []
+        # Repeated blocks: RePyability takes a copy as the *name* of the node
+        # it repeats, so every appearance is one component (as in Reliafy).
+        repeats, problems = rbd_repeats.find_repeats(nodes)
+        copy_labels = rbd_repeats.copy_labels(nodes, repeats)
         for node in nodes:
             ntype = node.get("type")
             if ntype in ("input", "output"):
@@ -603,6 +634,14 @@ class _Script:
             nid = node.get("id")
             data = node.get("data") or {}
             label = _one_line(data.get("label") or nid)
+            if nid in repeats:
+                rel.append((nid, _lit(repeats[nid]), _one_line(copy_labels[nid])))
+                continue
+            if rbd_repeats.repeat_of(node) is not None:
+                var = self.names.make(label)
+                self.lines.append("")
+                rel.append((nid, self.missing(var, problems[nid], label), label))
+                continue
             expr, k_required = self.block(node, visited)
             if k_required is not None:
                 k[nid] = k_required
@@ -611,7 +650,7 @@ class _Script:
                 working.append(nid)
             elif data.get("state") == "failed":
                 broken.append(nid)
-        present = {nid for nid, _, _ in rel}
+        present = {nid for nid, _, _ in rel if nid not in repeats}
         ccf = []
         for g in graph.get("ccf_groups") or []:
             members = [m for m in (g.get("members") or []) if m in present]
@@ -634,6 +673,7 @@ class _Script:
             "working": working if top else [],
             "broken": broken if top else [],
             "ignored_pins": (working + broken) if not top else [],
+            "repeats": repeats,
         }
 
     def _rbd_call(self, var: str, s: dict, with_ccf: bool) -> None:
@@ -646,7 +686,8 @@ class _Script:
         L.append("    ],")
         L.append("    {")
         for nid, expr, label in s["rel"]:
-            L.append(f"        {_lit(nid)}: {expr},  # {label[:60]}")
+            note = " (repeated)" if nid in s["repeats"] else ""
+            L.append(f"        {_lit(nid)}: {expr},  # {label[:60]}{note}")
         L.append("    },")
         if s["k"]:
             L.append("    k={" + ", ".join(
@@ -825,8 +866,10 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
     ]
     if repairable:
         lines += textwrap.wrap(
-            "Set RELIAFY_N_SIMS to change the number of simulated histories "
-            "(default 2000, as in Reliafy; fewer runs faster). The "
+            "The simulation runs until the window's mean availability is "
+            "known precisely enough, as in Reliafy (up to RELIAFY_MAX_SIMS "
+            "histories, default 20000). Set RELIAFY_N_SIMS to run exactly "
+            "that many histories instead (fewer runs faster). The "
             "steady-state figures are exact and don't depend on it.", 79)
         lines.append("")
     lines += textwrap.wrap(
@@ -874,7 +917,8 @@ def _helpers(script: _Script) -> str:
             def voting_gate():
                 """A k-of-n voting gate in an availability model: pure logic that
                 never fails (RePyability needs every node to be a repairable
-                component), exactly as Reliafy models it."""
+                component; main() also pins it working), exactly as Reliafy
+                models it."""
                 return NonRepairable(
                     surv.Weibull.from_params([1e12, 1.0]),
                     surv.LogNormal.from_params([0.1, 0.1]),
@@ -915,10 +959,19 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
     out += _edges_lines(s["edges"])
     out.append("")
     out.append("# Each block's reliability model.")
+    if s["repeats"]:
+        out.append("# A value naming another block makes that entry a repeated "
+                   "block: one physical")
+        out.append("# component drawn in several places, which works or has "
+                   "failed in all of them")
+        out.append("# at once. Its results are reported once, under the "
+                   "original block.")
     out.append("RELIABILITIES = {")
     for nid, expr, label in s["rel"]:
         note = (f"  # voting gate: {s['k'][nid]} of its inputs must work"
                 if nid in s["k"] else "")
+        if nid in s["repeats"]:
+            note = f"  # {label[:40]}: the same component, drawn again"
         out.append(f"    {_lit(nid)}: {expr},{note}")
     out.append("}")
     out.append("")
@@ -928,6 +981,8 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
     out.append("")
     out.append("LABELS = {")
     for nid, _, label in s["rel"]:
+        if nid in s["repeats"]:
+            continue
         out.append(f"    {_lit(nid)}: {_lit(label)},")
     out.append("}")
     out.append("")
@@ -955,13 +1010,24 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
         out.append("rbd = NonRepairableRBD(\n    EDGES,\n    RELIABILITIES,\n"
                    "    k=K,\n" + io_args + "    ccf_groups=CCF_GROUPS,\n)")
         out.append("")
-        out.append("# RePyability's importance measures assume independent "
-                   "blocks, so (as in")
-        out.append("# Reliafy) they are evaluated on the same diagram without "
-                   "the coupling.")
-        out.append("rbd_independent = NonRepairableRBD(\n    EDGES,\n"
-                   "    RELIABILITIES,\n    k=K,\n" + io_args + ")")
-        imp_rbd = "rbd_independent"
+        pinned = set(s["working"]) | set(s["broken"])
+        if any(m in pinned for members, _ in s["ccf"] for m in members):
+            out.append("# RePyability's importance measures can't hold a "
+                       "common-cause group's member")
+            out.append("# working or failed, so (as in Reliafy) they are "
+                       "evaluated on the same diagram")
+            out.append("# without the coupling.")
+            out.append("rbd_independent = NonRepairableRBD(\n    EDGES,\n"
+                       "    RELIABILITIES,\n    k=K,\n" + io_args + ")")
+            imp_rbd = "rbd_independent"
+        else:
+            # RePyability 0.11 (#140): the importance measures take the
+            # groups in, as the app's do.
+            out.append("# The importance measures take the common-cause "
+                       "groups in: a member is")
+            out.append("# conditioned on its state through the groups' "
+                       "shocks.")
+            imp_rbd = "rbd"
     else:
         out.append("rbd = NonRepairableRBD(\n    EDGES,\n    RELIABILITIES,\n"
                    "    k=K,\n" + io_args + ")")
@@ -1005,7 +1071,8 @@ def mean_time_to_failure(model, horizon, **overrides):
 
     The horizon is doubled (up to 8 times) until R(t) has decayed below 1e-4,
     then R(t) is integrated with the trapezoid rule on 4000 points.
-    (RePyability's own ``rbd.mean()`` is a slower Monte-Carlo estimate.)
+    (RePyability's own ``rbd.mean()`` is exact too, by quadrature, but it
+    refuses common-cause groups that split a probability.)
     """
     t_end = horizon
     for _ in range(8):
@@ -1155,6 +1222,8 @@ if __name__ == "__main__":
 # Repairable (availability)
 # ---------------------------------------------------------------------------
 def _repairable_body(script: _Script, graph) -> str:
+    from backend.services import rbd_export_costs, rbd_maintenance
+
     L = script.lines
     L.append("# " + "-" * 75)
     L.append("# Blocks: each component fails by its life model and is "
@@ -1192,6 +1261,13 @@ def _repairable_body(script: _Script, graph) -> str:
             continue
         var = script.names.make(label)
         L.append("")
+        if rbd_repeats.repeat_of(node) is not None:
+            # As in Reliafy: availability analysis can't honour a repeated
+            # block, so the script stops here rather than approximate it.
+            script.missing(var, rbd_repeats.repairable_message(
+                nodes, {nid: rbd_repeats.repeat_of(node)}), label)
+            comps.append((nid, var, label))
+            continue
         if ntype != "component":
             script.missing(var, (
                 f"Block '{label}' is a '{ntype}' block, which Reliafy doesn't "
@@ -1201,7 +1277,7 @@ def _repairable_body(script: _Script, graph) -> str:
             ), label)
             comps.append((nid, var, label))
             continue
-        if pinned and not (data.get("model") and data.get("repair")):
+        if pinned and not (data.get("model") and (data.get("repair") or data.get("instant_repair"))):
             script.uses_voting_gate = True
             script.comment(
                 f"{label}: pinned {state} in Reliafy with no life/repair "
@@ -1214,7 +1290,9 @@ def _repairable_body(script: _Script, graph) -> str:
         life = script.dist(data.get("model"), f"{label} (life)",
                            script.names.make(f"{var}_life"))
         repair_var = script.names.make(f"{var}_repair")
-        if not data.get("repair"):
+        if data.get("instant_repair"):
+            repair = '"instant"'  # repaired in zero time: fails, never down
+        elif not data.get("repair"):
             repair = script.missing(repair_var, (
                 f"Block '{label}' has no repair-time distribution. Repairable "
                 "diagrams need one on every component, e.g. "
@@ -1223,6 +1301,11 @@ def _repairable_body(script: _Script, graph) -> str:
         else:
             repair = script.dist(data.get("repair"), f"{label} (repair time)",
                                  repair_var)
+        if rbd_maintenance.has_extras(data):
+            # Costs, instant repair, maintenance (#99/#100): a component spec.
+            rbd_export_costs.component(script, data, label, var, life, repair)
+            comps.append((nid, var, label))
+            continue
         line = f"{var} = NonRepairable({life}, {repair})"
         if len(line) > 79:
             line = f"{var} = NonRepairable(\n    {life},\n    {repair},\n)"
@@ -1264,6 +1347,7 @@ def _repairable_body(script: _Script, graph) -> str:
         io.append("input_node='input'")
     if "output" in node_ids:
         io.append("output_node='output'")
+    io += rbd_export_costs.rbd_kwargs(graph)
     out.append("rbd = RepairableRBD(\n    EDGES,\n    COMPONENTS,\n    k=K,\n"
                + "".join(f"    {a},\n" for a in io) + ")")
     out.append("")
@@ -1276,10 +1360,28 @@ def _repairable_body(script: _Script, graph) -> str:
                "parameter in the")
     out.append("# diagram, long enough to reach steady state.")
     out.append(f"T_SIMULATION = {_num(horizon)}")
-    out.append('N_SIMS = int(os.environ.get("RELIAFY_N_SIMS", "2000"))')
+    out.append("# Reliafy runs the simulation to a precision target: antithetic "
+               "pairs of")
+    out.append("# histories, in batches of BATCH, until the confidence interval "
+               "of the")
+    out.append("# window's mean availability is within the tolerance (see "
+               "availability_tolerance)")
+    out.append("# or MAX_SIMS have run (Reliafy's limit comes from a time "
+               "budget).")
+    out.append(f"CONFIDENCE = {rbd_analysis._AVAIL_CONFIDENCE!r}")
+    out.append(f"BATCH = {rbd_analysis._AVAIL_BATCH}")
+    out.append(f"REL_TOLERANCE = {rbd_analysis._AVAIL_REL_TOLERANCE!r}")
+    out.append(f"MAX_TOLERANCE = {rbd_analysis._AVAIL_MAX_TOLERANCE!r}")
+    out.append(f"MIN_TOLERANCE = {rbd_analysis._AVAIL_MIN_TOLERANCE!r}")
+    out.append('MAX_SIMS = int(os.environ.get("RELIAFY_MAX_SIMS", '
+               f'"{rbd_analysis._AVAIL_SIMS}"))')
+    out.append("# Set RELIAFY_N_SIMS to run exactly that many histories instead.")
+    out.append('N_SIMS = int(os.environ.get("RELIAFY_N_SIMS") or 0)')
+    if rbd_export_costs.uses_extras(graph):
+        out += rbd_export_costs.pilot_constant() + rbd_export_costs.constants(graph)
     out.append("")
     out.append("")
-    out.append(_REPAIRABLE_MAIN.strip("\n"))
+    out.append(rbd_export_costs.main_source(_REPAIRABLE_MAIN, graph).strip("\n"))
     return "\n".join(out)
 
 
@@ -1292,8 +1394,36 @@ def save_results(results):
             json.dump(results, fh, indent=2)
 
 
+def availability_tolerance(unavailability):
+    """The precision target for the window's mean availability, as in
+    Reliafy: REL_TOLERANCE of the unavailability (of the availability, for a
+    system that is mostly down), never looser than MAX_TOLERANCE."""
+    if not np.isfinite(unavailability):
+        return MAX_TOLERANCE
+    scale = min(max(unavailability, 0.0), max(1.0 - unavailability, 0.0))
+    return float(min(max(REL_TOLERANCE * scale, MIN_TOLERANCE), MAX_TOLERANCE))
+
+
+def simulate(availability, tolerance, overrides):
+    """The seeded availability simulation, in antithetic pairs: N_SIMS
+    histories when set, else run to the tolerance."""
+    run = dict(t_simulation=T_SIMULATION, method="c", seed=1, antithetic=True)
+    if N_SIMS:
+        return rbd.availability(mc_samples=N_SIMS + N_SIMS % 2, **run, **overrides)
+    max_n = max(2, MAX_SIMS - MAX_SIMS % 2)
+    batch = min(BATCH, max_n)
+    sim = rbd.availability(mc_samples=batch, tolerance=tolerance, confidence=CONFIDENCE,
+                           max_samples=max_n, **run, **overrides)
+    # One batch that saw no system downtime has a zero-width interval: for a
+    # system that does go down, that's a lack of evidence, not precision.
+    if availability < 1.0 and not sim.system_downtime > 0 and sim.n_simulations < max_n:
+        sim = rbd.availability(mc_samples=max_n, **run, **overrides)
+    return sim
+
+
 def main():
-    overrides = {"working_nodes": WORKING_NODES, "broken_nodes": BROKEN_NODES}
+    # Voting gates (the ids in K) are pinned working so they're exactly perfect.
+    overrides = {"working_nodes": WORKING_NODES | set(K), "broken_nodes": BROKEN_NODES}
     unit = f" {UNIT}" if UNIT else ""
     blocks = [n for n in LABELS if n not in K]  # voting gates aren't blocks
 
@@ -1312,10 +1442,17 @@ def main():
           + (f" ({UNIT})" if UNIT else ""))
 
     # Monte-Carlo availability over time, seeded exactly as in Reliafy.
-    print(f"\\nSimulating {N_SIMS} histories of {T_SIMULATION:,.6g}{unit}...")
-    sim = rbd.availability(
-        t_simulation=T_SIMULATION, mc_samples=N_SIMS, method="c", seed=1, **overrides
-    )
+    tolerance = availability_tolerance(1.0 - availability)
+    if N_SIMS:
+        print(f"\\nSimulating {N_SIMS} histories of {T_SIMULATION:,.6g}{unit}...")
+    else:
+        print(f"\\nSimulating histories of {T_SIMULATION:,.6g}{unit} until the "
+              f"window's mean availability is known to +/-{tolerance:.3g}...")
+    sim = simulate(availability, tolerance, overrides)
+    window = sim.mean_availability_interval(CONFIDENCE)
+    print(f"  window mean availability: {window.estimate:.6f} "
+          f"({CONFIDENCE:.0%} CI {window.lower:.6f} to {window.upper:.6f}, "
+          f"{sim.n_simulations} histories)")
     print(f"  simulated mean up time: {sim.mean_up_time:,.6g}{unit}")
     print(f"  simulated mean down time: {sim.mean_down_time:,.6g}{unit}")
     print(f"  simulated failure frequency: {sim.failure_frequency:.6g}")
@@ -1345,7 +1482,14 @@ def main():
         "mean_down_time": mean_down,
         "failure_frequency": frequency,
         "t_simulation": T_SIMULATION,
-        "n_simulations": N_SIMS,
+        "n_simulations": int(sim.n_simulations),
+        "precision": {
+            "window_availability": window.estimate,
+            "lower": window.lower,
+            "upper": window.upper,
+            "standard_error": window.standard_error,
+            "tolerance": tolerance,
+        },
         "simulated": {
             "mean_up_time": sim.mean_up_time,
             "mean_down_time": sim.mean_down_time,

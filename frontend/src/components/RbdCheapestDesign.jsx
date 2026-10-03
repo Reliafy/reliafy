@@ -1,0 +1,178 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { cheapestRbdDesign } from "../api.js";
+import { graphSignature } from "./RbdValidation.jsx";
+import { fmtMoney } from "./AvailabilityCosts.jsx";
+
+// The Design tab for a repairable diagram (#99): how many copies of each block
+// with a purchase price own the system at the lowest total cost over a
+// horizon — buying them, running them (repairs, parts, maintenance, tests)
+// and the lost production they save — optionally keeping it at least so
+// available. RePyability's allocate_redundancy scores every design exactly.
+// "Apply to diagram" draws the copies on the canvas, unsaved (as the
+// non-repairable Design panel does).
+const fmtT = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(5)).toLocaleString());
+const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(4)}%`);
+
+export default function RbdCheapestDesign({ graph, onApply, onView }) {
+  const priced = (graph.nodes || []).filter((n) => n.type === "component" && Number(n.data?.costs?.acquisition) > 0);
+  const [horizon, setHorizon] = useState(graph.costs?.horizon != null ? String(graph.costs.horizon) : "");
+  const [floor, setFloor] = useState("");
+  const [phase, setPhase] = useState("idle");
+  const [run, setRun] = useState(null); // {result, sig}
+  const [error, setError] = useState(null);
+  const [needsPro, setNeedsPro] = useState(false);
+  const [applied, setApplied] = useState(null); // {prev, sig}
+  const sig = graphSignature(graph);
+  const unit = graph.unit ? ` ${graph.unit}` : "";
+
+  const find = async () => {
+    setPhase("working");
+    setError(null);
+    setNeedsPro(false);
+    try {
+      const result = await cheapestRbdDesign({
+        graph,
+        horizon: horizon === "" ? null : Number(horizon),
+        minAvailability: floor === "" ? null : Number(floor) / 100,
+      });
+      setRun({ result, sig });
+    } catch (e) {
+      setRun(null);
+      if (e.status === 402 && e.code === "pro_required") setNeedsPro(true);
+      else setError(e.message);
+    } finally {
+      setPhase("idle");
+    }
+  };
+
+  const result = run?.result;
+  const appliedCurrent = applied && applied.sig === sig;
+  const stale = run != null && run.sig !== sig && !appliedCurrent;
+  const apply = () => {
+    const prev = { nodes: graph.nodes, edges: graph.edges };
+    onApply(result.graph);
+    setApplied({ prev, sig: graphSignature({ ...graph, ...result.graph }) });
+  };
+  const undo = () => {
+    onApply(applied.prev);
+    setApplied(null);
+  };
+
+  return (
+    <div className="rbd-design rbd-cheapest">
+      <p className="muted-line" style={{ marginTop: 0 }}>
+        The cheapest design: how many copies of each block with a purchase price own this system at the
+        lowest total cost — buying the copies, running them (repairs, parts, maintenance, tests), and the
+        lost production they save. Every design is scored exactly.
+      </p>
+      {priced.length === 0 && (
+        <div className="card note" role="status">
+          Give at least one block a <b>purchase price</b> (double-click it on the Builder tab →
+          Cost &amp; maintenance), and set the <b>system downtime cost</b> under Costs, so extra copies can be
+          weighed against the downtime they save.
+        </div>
+      )}
+      {priced.length > 0 && (
+        <>
+          <div className="param-fields rbd-cheapest-inputs">
+            <label className="param-field rbd-cost-field" title="How long the system is owned: purchase prices plus running cost over this long.">
+              <span>Ownership horizon</span>
+              <input type="number" step="any" min="0" value={horizon} placeholder="e.g. 87600"
+                     onChange={(e) => setHorizon(e.target.value)} />
+              <small>{graph.unit || "time"}</small>
+            </label>
+            <label className="param-field rbd-cost-field" title="Only designs at least this available (long run). Blank: no floor.">
+              <span>Minimum availability</span>
+              <input type="number" step="any" min="0" max="100" value={floor} placeholder="optional"
+                     onChange={(e) => setFloor(e.target.value)} />
+              <small>% (e.g. 99.95)</small>
+            </label>
+          </div>
+          <div className="rbd-calc-actions">
+            <button type="button" onClick={find} disabled={phase === "working" || horizon === ""}>
+              {phase === "working" ? "Finding…" : "Find the cheapest design"}
+            </button>
+            <span className="hint">
+              Copies are active and repaired independently; {priced.length} priced block{priced.length === 1 ? "" : "s"}
+              {" "}({priced.map((n) => n.data?.label || n.id).join(", ")}).
+            </span>
+          </div>
+        </>
+      )}
+      {needsPro && (
+        <div className="card note" role="status">
+          The cheapest design uses the exact availability and cost figures of the availability analysis —
+          it's part of Pro. <Link to="/billing">Upgrade to Pro</Link>
+        </div>
+      )}
+      {error && <div className="card error">{error}</div>}
+
+      {result && (
+        <div className={"rbd-cheapest-result" + (stale ? " stale" : "")}>
+          {stale && <p className="hint">The diagram changed since this design was found — find it again.</p>}
+          <p className={`rbd-compare-verdict ${result.changed ? "b_higher" : ""}`}>
+            {!result.changed
+              ? <>The design as drawn is already the cheapest over {fmtT(result.horizon)}{unit}: extra copies cost more than the downtime they save.</>
+              : result.saving >= 0
+                ? <>Adding copies saves <b>{fmtMoney(result.saving)}</b> over {fmtT(result.horizon)}{unit}: {fmtMoney(result.current.total_cost)} → <b>{fmtMoney(result.design.total_cost)}</b>.</>
+                : <>Meeting {pct(result.min_availability)} availability at the lowest cost takes <b>{fmtMoney(-result.saving)}</b> more than the design as drawn (which is {pct(result.current.availability)} available).</>}
+          </p>
+          <div className="rbd-avail-imp-scroll">
+            <table className="calc-table rbd-costs-table">
+              <thead>
+                <tr><th>Block</th><th>Copies now</th><th>Cheapest</th><th>Price each</th></tr>
+              </thead>
+              <tbody>
+                {result.design.blocks.map((b) => (
+                  <tr key={b.id} className={b.copies !== 1 ? "changed" : ""}>
+                    <td className="calc-row-label">{b.label}</td>
+                    <td>1</td>
+                    <td>{b.copies}</td>
+                    <td>{fmtMoney(b.price)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="rbd-avail-imp-scroll">
+            <table className="calc-table rbd-costs-table">
+              <thead>
+                <tr><th></th><th>As drawn</th><th>Cheapest</th></tr>
+              </thead>
+              <tbody>
+                <tr><td className="calc-row-label">Total cost over {fmtT(result.horizon)}{unit}</td><td>{fmtMoney(result.current.total_cost)}</td><td><b>{fmtMoney(result.design.total_cost)}</b></td></tr>
+                <tr><td className="calc-row-label">Purchase</td><td>{fmtMoney(result.current.acquisition_cost)}</td><td>{fmtMoney(result.design.acquisition_cost)}</td></tr>
+                <tr><td className="calc-row-label">Running cost{unit ? ` /${graph.unit.replace(/s$/, "")}` : " per unit time"}</td><td>{fmtMoney(result.current.cost_rate)}</td><td>{fmtMoney(result.design.cost_rate)}</td></tr>
+                <tr><td className="calc-row-label">Long-run availability</td><td>{pct(result.current.availability)}</td><td>{pct(result.design.availability)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          {result.note && <p className="hint" style={{ margin: 0 }}>{result.note}</p>}
+          {result.changed && (!stale || appliedCurrent) && (
+            <div className="rbd-calc-actions">
+              {appliedCurrent ? (
+                <>
+                  <button type="button" onClick={() => onView?.()}>View on canvas</button>
+                  <button type="button" className="secondary" onClick={undo}>Undo</button>
+                  <span className="hint">Drawn on the canvas — review it and save when you're happy.</span>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={apply} title="Draw these copies on the canvas — nothing is saved">
+                    Apply to diagram
+                  </button>
+                  <span className="hint">Draws the copies on the canvas for you to review; nothing is saved.</span>
+                </>
+              )}
+            </div>
+          )}
+          <p className="muted-line" style={{ margin: 0 }}>
+            RePyability {result.repyability_version} · allocate_redundancy ({result.method}), up to {result.max_copies} copies
+            of each priced block. Copies of a proof-tested block are tested together. Costs aren't discounted.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
