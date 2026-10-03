@@ -104,6 +104,125 @@ def _model_from_params(distribution_id: str, params: list, extras: dict | None =
         raise StrategyError(str(exc)) from exc
 
 
+def _replacement_policy(model, cp: float, cu: float, p_fail: float = 1.0) -> dict:
+    """The cost-optimal replacement age for one model: the optimum, its cost
+    rate, run-to-failure's and the saving (``beneficial`` when it pays)."""
+    lfp = p_fail < 1.0
+    nr = NonRepairable(model)
+    nr.set_costs_planned_and_unplanned(cp, cu)
+
+    try:
+        t_opt = _scalar(nr.find_optimal_replacement())
+    except Exception:
+        t_opt = None
+
+    mttf = None if lfp else _scalar(model.mean())
+    if lfp:
+        rtf_rate = 0.0
+    else:
+        rtf_rate = cu / mttf if mttf and mttf > 0 else None
+
+    opt_rate = None
+    if t_opt and np.isfinite(t_opt):
+        with np.errstate(all="ignore"):
+            opt_rate = _scalar(nr.cost_rate(t_opt))
+
+    savings = 0.0
+    if opt_rate is not None and rtf_rate:
+        savings = (rtf_rate - opt_rate) / rtf_rate
+    # Preventive replacement only helps with a wear-out (increasing-hazard)
+    # trend; otherwise the "optimum" is spurious (e.g. the memoryless
+    # exponential) and run-to-failure is correct.
+    beneficial = bool(t_opt and np.isfinite(t_opt) and savings > 0.005)
+    return {"nr": nr, "t_opt": t_opt, "mttf": mttf, "rtf_rate": rtf_rate, "opt_rate": opt_rate,
+            "savings": savings, "beneficial": beneficial}
+
+
+# ---------------------------------------------------------------------------
+# Parameter uncertainty (#189). A model fitted to data carries each
+# parameter's 95% CI (``value ± 1.96·se`` from the fit's covariance, see
+# ``fitting._params_with_uncertainty``); typed-in parameters don't. Where the
+# CI is there, the calculators report how their answer moves across it.
+# ---------------------------------------------------------------------------
+
+_CI_LEVEL = 0.95
+# Shape parameters for which 1 is the boundary between a falling and a rising
+# hazard (Weibull β; the gamma's shape α): at or below 1 there's no wear-out,
+# so preventive replacement can't pay.
+_SHAPE_PARAMS = {"weibull": ("beta", "β"), "gamma": ("alpha", "α")}
+# A shape interval whose lower end is at or below this shows wear-out only weakly.
+_WEAK_WEAROUT = 1.1
+
+
+def _param_ci(params: list, name: str) -> Optional[tuple]:
+    """``(estimate, lower, upper)`` from a parameter's stored CI, or None
+    where it has none (typed in, or saved without data)."""
+    for p in params or []:
+        if isinstance(p, dict) and str(p.get("name", "")).strip().lower() == name:
+            try:
+                lo, hi = (float(v) for v in p.get("ci"))
+                value = float(p["value"])
+            except (TypeError, ValueError, KeyError):
+                return None
+            ok = all(np.isfinite(v) for v in (value, lo, hi)) and lo < hi
+            return (value, lo, hi) if ok else None
+    return None
+
+
+def _with_param(params: list, name: str, value: float) -> list:
+    return [{"name": p["name"], "value": value} if str(p.get("name", "")).strip().lower() == name
+            else {"name": p.get("name"), "value": p.get("value")} for p in params]
+
+
+def _shape_sensitivity(distribution_id, params, extras, cp, cu, beneficial, unit_s) -> Optional[dict]:
+    """The optimum and saving at each end of the shape's 95% CI, the other
+    parameters held at their estimates — plus a note when the interval
+    reaches (or nears) 1, where preventive replacement stops paying."""
+    spec = _SHAPE_PARAMS.get(distribution_id)
+    found = _param_ci(params, spec[0]) if spec else None
+    if found is None:
+        return None
+    name, symbol = spec
+    value, lo, hi = found
+    lo = max(lo, 0.0)  # a Wald interval can dip below 0; the shape can't
+    times, savings = [], []
+    for end in (lo, hi):
+        if end <= 1.0:  # no wear-out: run-to-failure is optimal
+            times.append(None)
+            savings.append(0.0)
+            continue
+        model, _ = _model_from_params(distribution_id, _with_param(params, name, end), extras)
+        r = _replacement_policy(model, cp, cu)
+        times.append(r["t_opt"] if r["beneficial"] else None)
+        savings.append(r["savings"] if r["beneficial"] else 0.0)
+
+    note = None
+    if beneficial and (lo <= _WEAK_WEAROUT or times[0] is None):
+        if lo <= 1.0:
+            note = (f"The shape's {_CI_LEVEL:.0%} interval ({fmt_num(lo)} to {fmt_num(hi)}) includes 1: the "
+                    "data don't rule out random failures, and if failures are random, preventive replacement "
+                    "saves nothing.")
+        else:
+            note = (f"The shape's {_CI_LEVEL:.0%} interval reaches {fmt_num(lo)}: the data only weakly show "
+                    "wear-out, and if failures are close to random, preventive replacement saves little or "
+                    "nothing.")
+        ends = []
+        for end, t, s in zip((lo, hi), times, savings):
+            ends.append(f"at {symbol} = {fmt_num(end)} preventive replacement doesn't pay" if t is None else
+                        f"at {symbol} = {fmt_num(end)}, replace at about {fmt_num(t)}{unit_s} ({s:.0%} saving)")
+        note += f" Across the interval (other parameters at their estimates): {'; '.join(ends)}."
+    return {
+        "shape_ci": {"name": name, "value": value, "lower": lo, "upper": hi, "level": _CI_LEVEL},
+        "optimal_time_range": times,
+        "savings_range": savings,
+        "sensitivity_method": (
+            f"optimal_time_range and savings_range are the optimum at the lower and upper ends of the shape's "
+            f"{_CI_LEVEL:.0%} confidence interval, with the other parameters held at their estimates; null / 0 "
+            "where preventive replacement doesn't pay at that end."),
+        "uncertainty_note": note,
+    }
+
+
 def optimal_replacement(
     distribution_id: str,
     params: list,
@@ -116,6 +235,11 @@ def optimal_replacement(
 
     ``planned_cost`` (cp) is the cost of a planned replacement, ``unplanned_cost``
     (cu) the cost of an unplanned (failure) replacement; cp must be < cu.
+
+    When ``params`` carry the fit's CIs (a model fitted to data), the result
+    also gives the optimum across the shape's CI (``shape_ci``,
+    ``optimal_time_range``, ``savings_range``) and an ``uncertainty_note``
+    when the data only weakly show wear-out (#189).
     """
     if planned_cost is None or unplanned_cost is None:
         raise StrategyError("Enter both the planned and unplanned costs.")
@@ -132,19 +256,10 @@ def optimal_replacement(
     # the ones that never will fail.
     p_fail = float(extras["p"]) if extras and extras.get("p") is not None else 1.0
     lfp = p_fail < 1.0
-    nr = NonRepairable(model)
-    nr.set_costs_planned_and_unplanned(cp, cu)
-
-    try:
-        t_opt = _scalar(nr.find_optimal_replacement())
-    except Exception:
-        t_opt = None
-
-    mttf = None if lfp else _scalar(model.mean())
-    if lfp:
-        rtf_rate = 0.0
-    else:
-        rtf_rate = cu / mttf if mttf and mttf > 0 else None
+    policy = _replacement_policy(model, cp, cu, p_fail)
+    nr, t_opt, mttf = policy["nr"], policy["t_opt"], policy["mttf"]
+    rtf_rate, opt_rate, savings = policy["rtf_rate"], policy["opt_rate"], policy["savings"]
+    beneficial = policy["beneficial"]
 
     # Time grid for the cost-rate curve: focus around the optimum / 95th pct
     # (of the units that fail, for a limited failure population).
@@ -161,19 +276,7 @@ def optimal_replacement(
     with np.errstate(all="ignore"):
         cost = np.asarray(nr.cost_rate(grid), dtype=float)
 
-    opt_rate = None
-    if t_opt and np.isfinite(t_opt):
-        with np.errstate(all="ignore"):
-            opt_rate = _scalar(nr.cost_rate(t_opt))
-
-    savings = 0.0
-    if opt_rate is not None and rtf_rate:
-        savings = (rtf_rate - opt_rate) / rtf_rate
-    # Preventive replacement only helps with a wear-out (increasing-hazard)
-    # trend; otherwise the "optimum" is spurious (e.g. the memoryless
-    # exponential) and run-to-failure is correct.
-    beneficial = bool(t_opt and np.isfinite(t_opt) and savings > 0.005)
-
+    unit_s = f" {unit}" if unit else ""
     if lfp and not beneficial:
         recommendation = (
             f"No replacement age pays off: {1 - p_fail:.0%} of units never fail (a limited "
@@ -182,7 +285,6 @@ def optimal_replacement(
             "replace on failure (run-to-failure)."
         )
     elif beneficial:
-        unit_s = f" {unit}" if unit else ""
         recommendation = (
             f"Replace preventively at about {fmt_num(t_opt)}{unit_s}. "
             f"This lowers the long-run cost rate by {savings:.0%} versus "
@@ -193,6 +295,12 @@ def optimal_replacement(
             "Preventive replacement isn't worthwhile here — there's no wear-out "
             "trend, so replace on failure (run-to-failure)."
         )
+
+    # A limited failure population never pays, whatever the shape.
+    sensitivity = None if lfp else _shape_sensitivity(
+        distribution_id, params, extras, cp, cu, beneficial, unit_s)
+    if sensitivity and sensitivity["uncertainty_note"]:
+        recommendation += " " + sensitivity["uncertainty_note"]
 
     return {
         "distribution": name,
@@ -206,6 +314,7 @@ def optimal_replacement(
         "run_to_failure_cost_rate": rtf_rate,
         "savings": savings if beneficial else 0.0,
         "recommendation": recommendation,
+        **(sensitivity or {}),
         "curve": {"t": grid.tolist(), "cost_rate": _clean(cost)},
     }
 
@@ -489,6 +598,14 @@ def failure_finding(
 
     interval = 2.0 * (1.0 - availability) * mttf
     unit_s = f" {unit.strip()}" if unit and unit.strip() else ""
+    note = (
+        f"Check the hidden function about every {fmt_num(interval)}{unit_s} to keep its "
+        f"availability near {availability * 100:.10g}%. Uses the standard approximation "
+        "FFI = 2 x (1 - A) x MTTF, accurate for availability targets above ~90%."
+    )
+    sensitivity = _rate_sensitivity(distribution_id, params, availability, unit_s)
+    if sensitivity:
+        note += " " + sensitivity["uncertainty_note"]
     return {
         "distribution": name,
         "unit": (unit or "").strip(),
@@ -496,11 +613,41 @@ def failure_finding(
         "target_availability": availability,
         "interval": float(interval),
         "method": "approx_2(1-A)MTTF",
-        "note": (
-            f"Check the hidden function about every {fmt_num(interval)}{unit_s} to keep its "
-            f"availability near {availability * 100:.10g}%. Uses the standard approximation "
-            "FFI = 2 x (1 - A) x MTTF, accurate for availability targets above ~90%."
-        ),
+        "note": note,
+        **(sensitivity or {}),
+    }
+
+
+def _rate_sensitivity(distribution_id, params, availability, unit_s) -> Optional[dict]:
+    """The interval across the failure rate's 95% CI (#189). Exponential only:
+    there MTTF = 1 / rate, so the rate's CI maps straight onto the interval.
+    For other distributions the MTTF's CI needs the parameters' joint
+    covariance, which isn't stored with them (only each one's own CI)."""
+    found = _param_ci(params, "failure_rate") if distribution_id == "exponential" else None
+    if found is None:
+        return None
+    value, lo, hi = found
+    lo = max(lo, 0.0)
+    if hi <= 0:
+        return None
+    k = 2.0 * (1.0 - availability)
+    shortest = k / hi
+    longest = k / lo if lo > 0 else None
+    if longest is None:
+        note = (f"The failure rate's {_CI_LEVEL:.0%} interval reaches 0, so the data don't bound the interval "
+                f"from above; at the rate's upper bound ({fmt_num(hi)}) it is {fmt_num(shortest)}{unit_s}, the "
+                "cautious choice.")
+    else:
+        note = (f"Across the failure rate's {_CI_LEVEL:.0%} interval ({fmt_num(lo)} to {fmt_num(hi)}) the "
+                f"interval runs from {fmt_num(shortest)} to {fmt_num(longest)}{unit_s}; the shorter one is the "
+                "cautious choice.")
+    return {
+        "rate_ci": {"name": "failure_rate", "value": value, "lower": lo, "upper": hi, "level": _CI_LEVEL},
+        "interval_range": [shortest, longest],
+        "sensitivity_method": (
+            f"interval_range is the interval at the upper and lower ends of the failure rate's {_CI_LEVEL:.0%} "
+            "confidence interval (shortest first); null where the rate's lower bound reaches 0."),
+        "uncertainty_note": note,
     }
 
 

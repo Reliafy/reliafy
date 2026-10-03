@@ -267,8 +267,10 @@ window, its outages each attributed to the block that took it down, and the bloc
 - Files: never read a file into your context to paste it. For any file (a BlockSim / Open-PSA / Galileo \
 diagram, an Excel workbook, a CSV of failure times or outages): create_upload, then send the file with the \
 curl PUT it returns, inspect_upload if you need its sheets, columns or diagrams, then import_rbd / \
-import_excel / upload_dataset / upload_outage_log with the upload_id. Paste only small text formats \
-(import_rbd's content, upload_dataset's csv). Relay the import notes: they say what was approximated.
+import_excel / upload_dataset / upload_outage_log with the upload_id. Paste only small text (import_rbd's \
+content, upload_dataset's or upload_outage_log's csv; up to 200 KB). If the PUT can't reach Reliafy from your \
+environment (a proxy 403, no network), paste a small text file that way instead and tell the user larger \
+files need uploading in the Reliafy app. Relay the import notes: they say what was approximated.
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
@@ -2349,7 +2351,11 @@ def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None
         if m.kind != "distribution":
             raise ToolError(f"“{m.name}” is a {m.kind} model — the calculators need a plain life distribution.")
         r = m.results or {}
-        return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": _plain_params(r),
+        # With each parameter's 95% CI where the fit has one, so the
+        # calculators can say how far the answer moves across it (#189).
+        params = [{**p, "ci": src["ci"]} if src.get("ci") else p
+                  for p, src in zip(_plain_params(r), r.get("params") or [])]
+        return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": params,
                 "unit": unit or r.get("unit") or ""}
     if not distribution_id or not params:
         raise ToolError("Give a model_id, or distribution_id + params.")
@@ -2389,7 +2395,10 @@ def optimal_replacement(
     include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Cost-optimal preventive (age) replacement interval for a component with a known life distribution.
-    beneficial=false means run-to-failure is cheaper (e.g. no wear-out, or planned ≈ unplanned cost)."""
+    beneficial=false means run-to-failure is cheaper (e.g. no wear-out, or planned ≈ unplanned cost).
+    For a saved Weibull (or gamma) model fitted to data, optimal_time_range / savings_range give the answer
+    at each end of the shape's 95% interval (shape_ci), and uncertainty_note says when the data only weakly
+    show wear-out — relay it with the recommendation."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
     out = strategy_store.compute("optimal_replacement", {
@@ -2408,7 +2417,8 @@ def failure_finding_interval(
     unit: _UNIT = None,
 ) -> dict[str, Any]:
     """Inspection (proof-test) interval that keeps a hidden, protective function — a relief valve,
-    trip, alarm, standby unit — at the target availability."""
+    trip, alarm, standby unit — at the target availability. For a saved exponential model fitted to data,
+    interval_range gives the interval across the failure rate's 95% interval (rate_ci)."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
     return strategy_store.compute("failure_finding", {**inputs, "target_availability": target_availability})
@@ -2484,16 +2494,20 @@ def optimal_overhaul(
     include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Optimal overhaul interval for a repairable system (minimal repair between overhauls) from a saved
-    recurrent-event model. Only a deteriorating system (growth shape beta > 1) has a finite optimum."""
+    recurrent-event model. Only a deteriorating system (growth shape beta > 1) has a finite optimum. For a
+    model fitted to data, interval_range / saving_pct_range give the answer at each end of beta's 95%
+    interval (shape_ci), and uncertainty_note says when the data only weakly show deterioration — relay it."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     if t_max is not None and (not np.isfinite(t_max) or t_max <= 0):
         raise ToolError(f"t_max must be a positive time; got {t_max:g}. Omit it to search automatically.")
-    if recurrent_service.get_model(db, model_id, owners) is None:
+    doc = recurrent_service.get_model(db, model_id, owners)
+    if doc is None:
         raise ToolError("Recurrent model not found — optimal_overhaul needs a recurrent (repairable-system) "
                         "model id from list_models kind=recurrent.")
     live = recurrent_service.get_live_model(db, model_id, owners)
-    return _maybe_curve(recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max), include_curve)
+    return _maybe_curve(recurrent_fit.optimal_overhaul(
+        live, cost_repair, cost_overhaul, t_max=t_max, **recurrent_fit.shape_inputs(doc.results)), include_curve)
 
 
 # ---------------------------------------------------------------------------
@@ -2955,6 +2969,16 @@ def _upload_table_text(db, uid: str, upload_id: str, sheet: Optional[str]) -> tu
     return doc, uploads_service.as_text(data)
 
 
+# Sandboxed agents often can't reach the upload host (an egress proxy's 403,
+# no network) (#191): small text files can still go inline; larger ones only
+# through the app. import_rbd enforces INLINE_MAX_BYTES; the csv tools take
+# more, but a paste that size already costs the agent's context.
+_UPLOAD_FALLBACK = (
+    "If the PUT fails because your environment can't reach this URL (a proxy 403, no network), paste a small "
+    f"text file instead (up to {INLINE_MAX_BYTES // 1024} KB): upload_dataset's or upload_outage_log's csv, or "
+    "import_rbd's content. Tell the user larger files need uploading in the Reliafy app.")
+
+
 @_tool("create_upload", _WRITE, "Get a file upload link")
 def create_upload(
     ctx: Context,
@@ -2973,7 +2997,10 @@ def create_upload(
     tool with upload_id: import_rbd (diagram files), import_excel (workbooks), upload_dataset or
     upload_outage_log. inspect_upload shows a workbook's sheets and columns, or a diagram file's diagrams,
     before importing. The URL expires in 15 minutes and works once; the file is deleted after its import, or
-    after an hour. Never read a file into your context to paste it: use this."""
+    after an hour. Never read a file into your context to paste it: use this. Only if the PUT fails because
+    your environment can't reach the URL (a proxy 403, no network): paste a small text file instead (up to
+    200 KB, as upload_dataset's or upload_outage_log's csv or import_rbd's content) and tell the user larger
+    files need uploading in the Reliafy app."""
     user, db = _caller(ctx), _db()
     doc, token = uploads_service.create(
         db, user["uid"], purpose, filename, size_bytes,
@@ -2989,7 +3016,7 @@ def create_upload(
         "expires_at": doc["expires_at"].isoformat(),
         "curl": (f"curl -sS -X PUT --data-binary @{shlex.quote(doc['filename'])} "
                  f"-H \"Content-Type: application/octet-stream\" \"{url}\""),
-        "note": _UPLOAD_NOTE + " Replace the @file in curl with the file's path.",
+        "note": _UPLOAD_NOTE + " Replace the @file in curl with the file's path. " + _UPLOAD_FALLBACK,
     }
 
 

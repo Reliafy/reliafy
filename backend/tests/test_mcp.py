@@ -466,6 +466,42 @@ def test_optimal_overhaul_uses_a_recurrent_model(env):
     assert doc.id in [m["id"] for m in _ok(_call(env.token[A], "list_models", {"kind": "recurrent"}))["recurrent_models"]]
     msg = _err(_call(env.token[A], "optimal_overhaul", {"model_id": "nope", "cost_repair": 1, "cost_overhaul": 2}))
     assert "Recurrent model not found" in msg
+    # Typed-in parameters have no covariance: no sensitivity fields (#189).
+    assert "shape_ci" not in out and "uncertainty_note" not in out
+
+
+def test_strategy_tools_report_the_fit_uncertainty(env):
+    """A model fitted to data carries its parameters' CIs; the strategy tools
+    report the answer across the shape's (#189)."""
+    from backend.services import datasets as datasets_service
+    from backend.services import recurrent as recurrent_service
+
+    model = _ok(_call(env.token[A], "fit_and_save_model", {
+        "data": TIMES, "censored": FLAGS, "distribution": "weibull", "name": "Bearings"}))
+    params = _ok(_call(env.token[A], "get_model", {"model_id": model["model_id"]}))["params"]
+    beta = next(p for p in params if p["name"] == "beta")
+    out = _ok(_call(env.token[A], "optimal_replacement", {
+        "model_id": model["model_id"], "planned_cost": 100, "unplanned_cost": 1000}))
+    assert out["shape_ci"]["value"] == pytest.approx(beta["value"])
+    assert [out["shape_ci"]["lower"], out["shape_ci"]["upper"]] == pytest.approx([max(beta["ci"][0], 0), beta["ci"][1]])
+    assert len(out["optimal_time_range"]) == 2 and len(out["savings_range"]) == 2
+    assert "uncertainty_note" in out and "sensitivity_method" in out
+    # The same parameters typed in: no CI, so none of it.
+    inline = _ok(_call(env.token[A], "optimal_replacement", {
+        "distribution_id": "weibull", "params": [{"name": p["name"], "value": p["value"]} for p in params],
+        "planned_cost": 100, "unplanned_cost": 1000}))
+    assert inline["optimal_time"] == pytest.approx(out["optimal_time"]) and "shape_ci" not in inline
+
+    times = [50, 120, 200, 260, 310, 350, 380, 400, 420, 440]
+    csv = "system,time\n" + "".join(f"S1,{t}\n" for t in times)
+    ds = datasets_service.create_dataset(env.db, "Compressor events", csv.encode(), A)
+    doc = recurrent_service.save_model(env.db, "Compressor", ds, {
+        "mapping": {"i": "system", "x": "time"}, "model_id": "crow_amsaa", "unit": "hours"}, A)
+    oh = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": doc.id, "cost_repair": 100, "cost_overhaul": 1000}))
+    assert [oh["shape_ci"]["lower"], oh["shape_ci"]["upper"]] == pytest.approx(
+        [max(doc.results["beta_ci"][0], 0), doc.results["beta_ci"][1]])
+    # This shape's interval (about 0.67 to 2.9) includes 1.
+    assert oh["interval_range"][0] is None and "includes 1" in oh["uncertainty_note"]
 
 
 # ---- scoping -------------------------------------------------------------------------

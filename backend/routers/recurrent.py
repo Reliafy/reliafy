@@ -251,7 +251,8 @@ def overhaul(
     try:
         live = recurrent_service.get_live_model(session, model_id, [*ctx.read_owners, doc.owner_id])
         return JSONResponse(content=recurrent_fit.optimal_overhaul(
-            live, body["cost_repair"], body["cost_overhaul"], t_max=body.get("t_max")))
+            live, body["cost_repair"], body["cost_overhaul"], t_max=body.get("t_max"),
+            **recurrent_fit.shape_inputs(doc.results)))
     except recurrent_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:

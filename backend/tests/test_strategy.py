@@ -148,3 +148,77 @@ def test_saved_analyses_roundtrip_and_isolation(monkeypatch):
     )
     assert abs(ffi.results["interval"] - 175.2) < 0.1
     assert "Check every" in strategy_store.headline(ffi)
+
+
+# ---- parameter uncertainty (#189) ----------------------------------------------
+
+def _weibull(beta_ci, alpha=7746.0, beta=1.77):
+    return [{"name": "alpha", "value": alpha, "se": 1000.0, "ci": [alpha - 1960, alpha + 1960]},
+            {"name": "beta", "value": beta, "se": 0.37, "ci": beta_ci}]
+
+
+def test_replacement_flags_a_shape_interval_reaching_one():
+    # The issue's case: β = 1.77, 95% CI [1.05, 2.49], costs 4,000 / 25,000.
+    res = st.optimal_replacement("weibull", _weibull([1.05, 2.49]), 4000, 25000, unit="hours")
+    assert res["beneficial"] is True and res["optimal_time"] == pytest.approx(3610, rel=1e-3)
+    assert res["shape_ci"] == {"name": "beta", "value": 1.77, "lower": 1.05, "upper": 2.49, "level": 0.95}
+
+    # At β = 1.05 preventive replacement doesn't pay; at 2.49 it does, as the
+    # calculator gives for those parameters typed in.
+    assert res["optimal_time_range"][0] is None and res["savings_range"][0] == 0.0
+    upper = st.optimal_replacement("weibull", [{"name": "alpha", "value": 7746.0}, {"name": "beta", "value": 2.49}],
+                                   4000, 25000)
+    assert res["optimal_time_range"][1] == pytest.approx(upper["optimal_time"])
+    assert res["savings_range"][1] == pytest.approx(upper["savings"])
+
+    note = res["uncertainty_note"]
+    assert note.startswith("The shape's 95% interval reaches 1.05: the data only weakly show wear-out")
+    assert "at β = 1.05 preventive replacement doesn't pay" in note
+    assert "at β = 2.49, replace at about 3,416 hours (45% saving)" in note
+    assert res["recommendation"].startswith("Replace preventively at about 3,610 hours.")
+    assert res["recommendation"].endswith(note)
+    assert "held at their estimates" in res["sensitivity_method"]
+
+
+def test_replacement_shape_interval_including_one():
+    res = st.optimal_replacement("weibull", _weibull([-0.2, 2.7]), 4000, 25000)
+    assert res["shape_ci"]["lower"] == 0.0  # a Wald interval below 0 is floored: the shape can't be negative
+    assert "includes 1: the data don't rule out random failures" in res["uncertainty_note"]
+    assert res["optimal_time_range"][0] is None and res["optimal_time_range"][1] > 0
+
+
+def test_replacement_clear_wear_out_has_ranges_but_no_note():
+    res = st.optimal_replacement("weibull", _weibull([2.2, 3.8], beta=3.0), 4000, 25000)
+    assert res["uncertainty_note"] is None
+    assert all(t > 0 for t in res["optimal_time_range"]) and all(s > 0 for s in res["savings_range"])
+    assert "Replace preventively" in res["recommendation"] and "interval" not in res["recommendation"]
+
+
+def test_replacement_without_a_covariance_is_unchanged():
+    # Parameters typed in (or saved without data) carry no CI: no new fields.
+    plain = [{"name": "alpha", "value": 7746.0}, {"name": "beta", "value": 1.77}]
+    for params in (plain, [{**p, "se": None, "ci": None} for p in plain]):
+        res = st.optimal_replacement("weibull", params, 4000, 25000)
+        assert res["beneficial"] is True
+        assert not {"shape_ci", "optimal_time_range", "savings_range", "uncertainty_note"} & set(res)
+
+
+def test_failure_finding_reports_the_rate_interval():
+    params = [{"name": "failure_rate", "value": 1e-3, "se": 2.5e-4, "ci": [5e-4, 1.5e-3]}]
+    res = st.failure_finding("exponential", params, 0.99, "hours")
+    assert res["interval"] == pytest.approx(20.0)
+    assert res["interval_range"] == pytest.approx([0.02 / 1.5e-3, 0.02 / 5e-4])  # shortest first
+    assert res["rate_ci"]["lower"] == 5e-4 and res["rate_ci"]["level"] == 0.95
+    assert "runs from 13.3 to 40 hours" in res["uncertainty_note"]
+    assert res["note"].endswith(res["uncertainty_note"])
+
+    # A lower bound at 0: no upper limit on the interval.
+    open_ended = st.failure_finding(
+        "exponential", [{"name": "failure_rate", "value": 1e-3, "ci": [-2e-4, 2.2e-3]}], 0.99)
+    assert open_ended["interval_range"][0] == pytest.approx(0.02 / 2.2e-3)
+    assert open_ended["interval_range"][1] is None
+    assert "don't bound the interval from above" in open_ended["uncertainty_note"]
+
+    # No CI (typed in), or not exponential: unchanged.
+    assert "interval_range" not in st.failure_finding("exponential", [{"name": "failure_rate", "value": 1e-3}], 0.99)
+    assert "interval_range" not in st.failure_finding("weibull", _weibull([1.05, 2.49]), 0.99)
