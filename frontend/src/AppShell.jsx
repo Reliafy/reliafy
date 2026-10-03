@@ -28,6 +28,7 @@ const StrategyDashboard = lazy(() => import("./views/StrategyDashboard.jsx"));
 const StrategyReplacement = lazy(() => import("./views/StrategyReplacement.jsx"));
 const StrategyCompare = lazy(() => import("./views/StrategyCompare.jsx"));
 const StrategyFailureFinding = lazy(() => import("./views/StrategyFailureFinding.jsx"));
+const StrategyDemonstration = lazy(() => import("./views/StrategyDemonstration.jsx"));
 const StrategyAnalyses = lazy(() => import("./views/StrategyAnalyses.jsx"));
 const StrategyTracking = lazy(() => import("./views/StrategyTracking.jsx"));
 const FleetDashboard = lazy(() => import("./views/FleetDashboard.jsx"));
@@ -111,6 +112,7 @@ export default function AppShell() {
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
             <Route path="/strategy/failure-finding" element={<StrategyFailureFinding />} />
+            <Route path="/strategy/demonstration-test" element={<StrategyDemonstration />} />
             <Route path="/strategy/tracking" element={<Navigate to="/fleet/tracking" replace />} />
             <Route path="/strategy/tracking/:modelId" element={<TrackingRedirect />} />
             <Route path="/fleet" element={<FleetDashboard />} />

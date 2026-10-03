@@ -271,6 +271,23 @@ def failure_finding(distribution: str, params, target_availability: float,
     })
 
 
+def demonstration_test(reliability: float | None = None, *, confidence: float = 0.95,
+                       mission_time: float | None = None, failures: int = 0,
+                       test_multiple: float = 1.0, shape: float | None = None,
+                       units: int | None = None, method: str = "attribute",
+                       mtbf: float | None = None, unit: str | None = None) -> dict:
+    """Plan a reliability demonstration test: the units to test (or, given
+    ``units``, the test time per unit) to show ``reliability`` over a mission
+    at ``confidence`` with at most ``failures`` failures. ``test_multiple``
+    and ``units`` need the lifetime's Weibull ``shape``; ``method="mtbf"``
+    with ``mtbf`` plans a constant-failure-rate test instead."""
+    body = {"reliability": reliability, "confidence": confidence, "mission_time": mission_time,
+            "failures": failures, "test_multiple": test_multiple, "shape": shape,
+            "units": units, "method": method, "mtbf": mtbf, "unit": unit}
+    return _request("POST", "/api/v1/strategy/demonstration-test",
+                    {k: v for k, v in body.items() if v is not None})
+
+
 # ---- namespaces ------------------------------------------------------------
 # The public surface is grouped: reliafy.models.* / reliafy.data.* /
 # reliafy.strategy.* / reliafy.fleet.* (plus reliafy.configure).
@@ -299,10 +316,11 @@ strategy = _Namespace(
     "strategy",
     optimal_replacement=optimal_replacement,
     failure_finding=failure_finding,
+    demonstration_test=demonstration_test,
 )
 fleet = _Namespace("fleet", forecast=fleet_forecast)
 
 # The namespaces hold the only references now; drop the flat names so the API
 # is exclusively reliafy.models.* / data.* / strategy.* / fleet.*.
 del (push, push_params, list_models, get_model, reliability, upload_dataset,
-     fit, fleet_forecast, optimal_replacement, failure_finding)
+     fit, fleet_forecast, optimal_replacement, failure_finding, demonstration_test)

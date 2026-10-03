@@ -32,7 +32,8 @@ FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]  # 0 = failed, 1 = still running
 READ_TOOLS = {
     "list_models", "get_model", "reliability_at", "list_datasets", "list_rbds", "get_rbd",
     "analyze_rbd", "fit_distribution", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
-    "optimal_overhaul", "list_fleets", "fleet_forecast", "list_fleet_alerts", "upgrade_link", "system_history",
+    "optimal_overhaul", "plan_demonstration_test", "list_fleets", "fleet_forecast", "list_fleet_alerts",
+    "upgrade_link", "system_history",
 }
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
@@ -420,6 +421,36 @@ def test_calculators_match_the_strategy_service(env):
 
     msg = _err(_call(env.token[A], "optimal_replacement", {"planned_cost": 1, "unplanned_cost": 2}))
     assert "model_id" in msg
+
+
+def test_plan_demonstration_test(env):
+    out = _ok(_call(env.token[A], "plan_demonstration_test", {
+        "reliability": 0.95, "confidence": 0.95, "mission_time": 1000, "unit": "hours"}))
+    assert out["units"] == 59 and out["solve_for"] == "units"
+    assert out["summary"] == (
+        "Test 59 units for 1,000 hours each with no failures to show R(1,000 hours) ≥ 95% at 95% confidence.")
+    assert out["assumptions"] and out["tradeoff"]["cells"] == "Units to test"
+    assert out["tradeoff"]["columns"] == "allowed failures 0, 1, 2, 3"
+    assert out["tradeoff"]["rows"] == {"1,000 hours (1×)": [59, 93, 124, 153]}
+    assert "rows" not in out["tradeoff"]["rows"] and "curve" not in out  # lean: no plotting fields
+
+    # Weibayes: test twice as long with a known shape, fewer units; the same plan the app computes.
+    ext = _ok(_call(env.token[A], "plan_demonstration_test", {
+        "reliability": 0.95, "mission_time": 1000, "test_multiple": 2, "shape": 2, "unit": "hours"}))
+    assert ext["units"] == 15 and ext["test_time_per_unit"] == 2000
+    assert ext["tradeoff"]["rows"]["2,000 hours (2×)"] == [15, 24, 32, 40]
+
+    # Units given: solve for the test time per unit.
+    tt = _ok(_call(env.token[A], "plan_demonstration_test", {
+        "reliability": 0.95, "mission_time": 1000, "shape": 2, "units": 20, "unit": "hours"}))
+    assert tt["solve_for"] == "test_time" and round(tt["test_time_per_unit"]) == 1709
+
+    mtbf = _ok(_call(env.token[A], "plan_demonstration_test", {"method": "mtbf", "mtbf": 1000, "unit": "hours"}))
+    assert round(mtbf["total_test_time"]) == 2996 and mtbf["summary"].startswith("Run 2,996 hours")
+
+    assert "Weibull shape" in _err(_call(env.token[A], "plan_demonstration_test", {
+        "reliability": 0.95, "test_multiple": 2}))
+    assert "Target reliability" in _err(_call(env.token[A], "plan_demonstration_test", {}))
 
 
 def test_optimal_overhaul_uses_a_recurrent_model(env):

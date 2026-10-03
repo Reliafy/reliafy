@@ -177,7 +177,7 @@ class StrategyAnalysis(BaseModel):
     updated_by: Optional[dict] = None
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
-    kind: str = "optimal_replacement"  # | 'compare_two' | 'failure_finding'
+    kind: str = "optimal_replacement"  # | 'compare_two' | 'failure_finding' | 'demonstration_test'
     inputs: dict = Field(default_factory=dict)
     results: dict = Field(default_factory=dict)
 

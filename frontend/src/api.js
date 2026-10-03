@@ -987,6 +987,15 @@ export function failureFinding(distributionId, params, targetAvailability, unit,
   });
 }
 
+// Plan a reliability demonstration test (units, test time, allowed failures).
+export function demonstrationTest(body) {
+  return request("/api/strategy/demonstration-test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // Persist a strategy analysis (results recomputed server-side from inputs).
 export function saveStrategyAnalysis(name, kind, inputs) {
   return request("/api/strategy/analyses", {

@@ -313,6 +313,7 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/strategy/optimal-replacement", "strategy_replacement"),
     ("POST", "/api/strategy/compare-two", "strategy_compare"),
     ("POST", "/api/strategy/failure-finding", "strategy_failure_finding"),
+    ("POST", "/api/strategy/demonstration-test", "strategy_demonstration"),
     ("POST", "/api/strategy/analyses", "strategy_save"),
     ("POST", "/api/recurrent/models/{id}/overhaul", "strategy_overhaul"),
     # Recurrent, degradation, ALT
@@ -374,6 +375,7 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("GET", "/api/v1/fleets/{id}/forecast", "fleet_forecast"),
     ("POST", "/api/v1/strategy/optimal-replacement", "strategy_replacement"),
     ("POST", "/api/v1/strategy/failure-finding", "strategy_failure_finding"),
+    ("POST", "/api/v1/strategy/demonstration-test", "strategy_demonstration"),
 )
 
 # Never logged: operator, telemetry, webhooks, previews and checks the UI

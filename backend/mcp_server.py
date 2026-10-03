@@ -260,6 +260,9 @@ window, its outages each attributed to the block that took it down, and the bloc
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
+- Test planning: plan_demonstration_test sizes a reliability demonstration test — units, test time per unit \
+and allowed failures to show reliability R over a mission at confidence C (success run / binomial; a longer \
+test per unit with a known Weibull shape; or an MTBF test). It needs no saved data.
 - Housekeeping: delete_model, delete_dataset and delete_rbd permanently delete the user's own artifacts \
 (never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
 Only on the user's explicit \
@@ -1914,6 +1917,64 @@ def failure_finding_interval(
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
     return strategy_store.compute("failure_finding", {**inputs, "target_availability": target_availability})
+
+
+def _lean_demonstration(out: dict) -> dict:
+    """The demonstration plan without the app's plotting fields: the trade-off
+    table as {row label: values by allowed failures}."""
+    keep = ("method", "solve_for", "summary", "units", "test_time_per_unit", "total_test_time",
+            "test_multiple", "failures", "unit", "consumer_risk", "pass_probability", "assumptions")
+    lean = {k: out[k] for k in keep if out.get(k) is not None}
+    t = out.get("tradeoff") or {}
+    lean["tradeoff"] = {
+        "cells": t.get("value_label"),
+        "columns": f"allowed failures {', '.join(str(f) for f in t.get('failures', []))}",
+        "rows": {row["label"]: [None if v is None else (v if isinstance(v, int) else float(f"{v:.4g}"))
+                                for v in row["values"]] for row in t.get("rows", [])},
+    }
+    return lean
+
+
+@_tool("plan_demonstration_test", _READ, "Plan a demonstration test")
+def plan_demonstration_test(
+    ctx: Context,
+    reliability: Annotated[Optional[float], Field(gt=0, lt=1, description="Reliability to demonstrate over one "
+                                                                         "mission, e.g. 0.95. Needed unless "
+                                                                         "method='mtbf'.")] = None,
+    confidence: Annotated[float, Field(gt=0, lt=1, description="Confidence level, e.g. 0.9 or 0.95.")] = 0.95,
+    mission_time: Annotated[Optional[float], Field(gt=0, description="The mission (time, cycles) the "
+                                                                     "reliability is over, e.g. 1000. Optional: "
+                                                                     "without it the plan is in missions.")] = None,
+    failures: Annotated[int, Field(ge=0, le=100, description="Failures the test may allow and still pass "
+                                                             "(0 = success run).")] = 0,
+    test_multiple: Annotated[float, Field(gt=0, le=100, description="Test each unit for this many missions "
+                                                                     "(needs shape when not 1): test longer, "
+                                                                     "fewer units.")] = 1.0,
+    shape: Annotated[Optional[float], Field(gt=0, le=20, description="Weibull shape (beta) of the lifetime, "
+                                                                     "assumed known — needed for test_multiple "
+                                                                     "!= 1 or units.")] = None,
+    units: Annotated[Optional[int], Field(ge=1, description="Units available: solve for the test time per unit "
+                                                            "instead of the unit count (needs shape).")] = None,
+    method: Annotated[Literal["attribute", "mtbf"], Field(description="'attribute' (binomial pass/fail, the "
+                                                                      "default) or 'mtbf' (constant failure "
+                                                                      "rate, total test time, chi-squared).")]
+    = "attribute",
+    mtbf: Annotated[Optional[float], Field(gt=0, description="MTBF to demonstrate (method='mtbf').")] = None,
+    design_reliability: Annotated[Optional[float], Field(gt=0, lt=1, description="Optional: a design's true "
+                                                                                 "reliability, to report its "
+                                                                                 "chance of passing.")] = None,
+    unit: _UNIT = None,
+) -> dict[str, Any]:
+    """Plan a reliability demonstration test: how many units to test, for how long, with how many failures
+    allowed, to show reliability R over a mission at confidence C (success run / binomial; Weibayes with a
+    known Weibull shape to trade test time for units; or an MTBF chi-squared test). Returns a one-line plan,
+    the assumptions and a units-vs-failures(-vs-test-length) trade-off table."""
+    _caller(ctx)
+    out = strategy_store.compute("demonstration_test", {
+        "method": method, "reliability": reliability, "confidence": confidence, "mission_time": mission_time,
+        "failures": failures, "test_multiple": test_multiple, "shape": shape, "units": units, "mtbf": mtbf,
+        "design_reliability": design_reliability, "unit": unit or ""})
+    return _lean_demonstration(out)
 
 
 @_tool("optimal_overhaul", _READ, "Optimal overhaul interval")

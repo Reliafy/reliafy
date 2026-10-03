@@ -129,6 +129,7 @@ const ITEMS = [
       { to: "/strategy/replacement", label: "Optimal replacement" },
       { to: "/strategy/compare", label: "Compare two models" },
       { to: "/strategy/failure-finding", label: "Failure finding" },
+      { to: "/strategy/demonstration-test", label: "Demonstration test" },
       { to: "/strategy/analyses", label: "Saved analyses" },
     ],
   },

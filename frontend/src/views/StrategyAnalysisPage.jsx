@@ -4,6 +4,7 @@ import CopyId from "../components/CopyId.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
+import DemoTestResult from "../components/DemoTestResult.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getStrategyAnalysis } from "../api.js";
 
@@ -11,6 +12,7 @@ const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
   compare_two: "Two-model comparison",
   failure_finding: "Failure finding",
+  demonstration_test: "Demonstration test",
 };
 
 // A saved strategy analysis, rendered read-only from its stored results.
@@ -63,6 +65,7 @@ export default function StrategyAnalysisPage() {
         {doc.kind === "optimal_replacement" && <ReplacementResult result={doc.results} />}
         {doc.kind === "compare_two" && <CompareResult result={doc.results} />}
         {doc.kind === "failure_finding" && <FfiResult result={doc.results} />}
+        {doc.kind === "demonstration_test" && <DemoTestResult result={doc.results} />}
       </div>
     </div>
   );
