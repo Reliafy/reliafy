@@ -272,7 +272,7 @@ def _loadshare_model(data: dict, label: str, resolve_model=None):
     if k > n:
         raise AnalysisError(f"{label}: k ({k}) can't exceed the number of units ({n}).")
     try:
-        return LoadSharingModel([fitted] * n, load=load, k=k, n_sims=_LOADSHARE_SIMS, seed=1)
+        return LoadSharingModel([fitted] * n, load=load, k=k, mc_samples=_LOADSHARE_SIMS, seed=1)
     except Exception as exc:  # RePyability validates the AFT unit
         raise AnalysisError(
             f"{label}: {exc} — load-sharing needs an accelerated-failure-time (AFT) "
@@ -1504,7 +1504,7 @@ def analyze_availability(
     curve = None
     criticality: dict = {}
     try:
-        res = rbd.availability(t_simulation=float(t_simulation), N=n_sims,
+        res = rbd.availability(t_simulation=float(t_simulation), mc_samples=n_sims,
                                method="c", seed=1, **overrides)
         sim = {
             "mean_up_time": _f(getattr(res, "mean_up_time", None)),

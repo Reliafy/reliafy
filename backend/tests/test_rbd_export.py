@@ -117,9 +117,9 @@ def test_instrument_air_design_matches_app(tmp_path):
                 assert not np.isfinite(got)
             else:
                 assert got == pytest.approx(value, abs=1e-9)
-    # Matches the app to the printed precision (app: 9,206.0104 h since the
-    # system-sized axis, #93 — the integral now starts from a tighter horizon).
-    assert "MTTF: 9,206.01 Hours" in proc.stdout
+    # Matches the app to the printed precision (RePyability 0.11's exact
+    # cold-standby sums moved it from 9,206.01 h to 9,205.98 h; both agree).
+    assert f"MTTF: {app['mttf']:,.2f} Hours" in proc.stdout
 
 
 def test_pump_station_matches_app_including_importance(tmp_path):
@@ -384,7 +384,7 @@ def test_output_is_deterministic_and_self_describing():
     assert head.startswith(name)
     assert "Exported from Reliafy <https://reliafy.com>".lower() in head.lower().replace("\n", " ")
     assert "on 2026-09-26 (UTC)" in head
-    assert "SurPyval.git@v0.21.0" in head and "RePyability.git@v0.10.1" in head
+    assert "SurPyval.git@v0.21.0" in head and "RePyability.git@v0.11" in head
     assert "--no-deps" in head and "surpyval==0.21.0" in head
     assert "python instrument_air_2oo3_compressors_cold_standby_dryer_ccf.py" in head
     # One commented variable per block, with its label.
@@ -405,7 +405,7 @@ def test_imports_only_what_is_used():
 
 
 def test_versions_come_from_the_build_pins():
-    assert rbd_export.detect_versions() == {"surpyval": "0.21.0", "repyability": "0.10.1"}
+    assert rbd_export.detect_versions() == {"surpyval": "0.21.0", "repyability": "0.11"}
 
 
 def test_names_are_safe_identifiers_and_unique():
