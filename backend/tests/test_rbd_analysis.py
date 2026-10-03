@@ -444,7 +444,7 @@ def test_validate_flags_dangling_node():
     assert any("B" in e for e in v["errors"])
 
 
-def test_validate_blocks_non_analytic_standby():
+def test_validate_cold_standby_is_analytic():
     graph = {
         "nodes": _io_nodes()
         + [
@@ -466,11 +466,11 @@ def test_validate_blocks_non_analytic_standby():
         "edges": [_edge("input", "sb"), _edge("sb", "output")],
     }
     v = validate_graph(graph)
-    # Structurally valid; standby has no closed form so it isn't analytic, but
-    # ``analyze`` simulates it, so the diagram is still calculable.
-    assert v["valid"] and not v["analytic"]
+    # RePyability 0.11 solves cold standby of identical units numerically (no
+    # fit to simulated lifetimes), so the diagram is analytic and calculable.
+    assert v["valid"] and v["analytic"]
     assert v["can_calculate"]
-    assert v["non_analytic_nodes"] == {"Standby": "StandbyModel"}
+    assert not v["non_analytic_nodes"]
     # And the analysis really does run on it.
     result = analyze(graph)
     assert result["mttf"] > 0 and len(result["system"]["sf"]) > 0
