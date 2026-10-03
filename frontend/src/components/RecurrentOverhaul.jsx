@@ -100,6 +100,7 @@ export default function RecurrentOverhaul({ modelId, unit }) {
             <span>
               Overhaul every <b>{fmt(opt.interval)}{unit ? ` ${unit}` : ""}</b> — about{" "}
               {fmt(opt.expected_failures_per_cycle)} repairs expected between overhauls.
+              {result.uncertainty_note ? ` ${result.uncertainty_note}` : ""}
             </span>
           </div>
           <div className="params">

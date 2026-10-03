@@ -177,6 +177,25 @@ def _param_names(model_id: str, n: int) -> list:
     return names if len(names) == n else [f"p{k}" for k in range(n)]
 
 
+def _params_with_ci(para, names: list, values) -> list:
+    """Parameters with standard errors and 95% CIs (``value ± 1.96·se``) from
+    the fit's covariance, as the life fits give them; without a covariance
+    (a singular fit), just the values."""
+    try:
+        ses = np.sqrt(np.diag(np.asarray(para.covariance(), dtype=float)))
+    except Exception:  # noqa: BLE001 - uncertainty is optional
+        ses = [None] * len(values)
+    z = 1.959963984540054  # 95%
+    out = []
+    for n, v, se in zip(names, values, ses):
+        entry = {"name": n, "value": float(v)}
+        if se is not None and np.isfinite(se) and se > 0:
+            entry["se"] = float(se)
+            entry["ci"] = [float(v - z * se), float(v + z * se)]
+        out.append(entry)
+    return out
+
+
 def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
     n_systems = int(len(set(i.tolist())))
     n_events = int(len(x))
@@ -230,14 +249,20 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
         trend = None
 
     param_names = _param_names(model_id, params_arr.size)
+    params = _params_with_ci(para, param_names, params_arr)
+    # The growth shape β's CI (#189): Crow-AMSAA's beta, Duane's alpha (see
+    # _power_law); an HPP's β is 1 by construction.
+    shape_index = {"crow_amsaa": 1, "duane": 0}.get(model_id)
+    beta_ci = params[shape_index].get("ci") if shape_index is not None and shape_index < len(params) else None
     payload = {
         "kind": "recurrent",
         "unit": (unit or "").strip(),
         "n_systems": n_systems,
         "n_events": n_events,
         "model": {"id": model_id, "name": MODELS[model_id]["name"]},
-        "params": [{"name": n, "value": float(v)} for n, v in zip(param_names, params_arr)],
+        "params": params,
         "beta": beta,
+        "beta_ci": beta_ci,
         "growth": growth,
         "rocof": rocof,
         "mtbf": mtbf,
@@ -402,7 +427,8 @@ def _growth_exponent(model) -> float:
     return float(np.log(b / a) / np.log(2.0)), t_ref
 
 
-def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, horizon=None) -> dict:
+def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, horizon=None,
+                     shape_ci=None, anchor=None, unit=None) -> dict:
     """Optimal overhaul interval for a repairable system under minimal repair.
 
     Between overhauls each failure is minimally repaired (cost ``cost_repair``,
@@ -420,9 +446,11 @@ def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, ho
     repairs-only cost rate ``cr·Λ(H)/H`` averaged over a horizon ``H``
     (``horizon`` if given, else the curve's end ``t_max``, default 3·T*).
     For β < 1 its limit is 0; for an HPP it is ``cr·λ``.
-    """
-    from repyability.repairable import Repairable
 
+    ``shape_ci`` (the growth β's 95% CI, a fitted model's ``beta_ci``) adds
+    the optimum across it — ``interval_range`` / ``saving_pct_range`` — and an
+    ``uncertainty_note`` when the data only weakly show deterioration (#189).
+    """
     cr = _positive(cost_repair, "Repair cost")
     co = _positive(cost_overhaul, "Overhaul cost")
     if co <= cr:
@@ -434,6 +462,14 @@ def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, ho
     horizon = _positive(horizon, "Horizon") if horizon is not None else None
 
     model = _as_cif_model(model_or_params)
+    out = _overhaul_policy(model, cr, co, t_max, horizon)
+    sensitivity = _overhaul_sensitivity(model, cr, co, out, shape_ci, anchor, unit)
+    return {**out, **sensitivity} if sensitivity else out
+
+
+def _overhaul_policy(model, cr: float, co: float, t_max, horizon) -> dict:
+    from repyability.repairable import Repairable
+
     shape, t_ref = _growth_exponent(model)
     base = {"cost_repair": cr, "cost_overhaul": co, "shape": shape}
 
@@ -483,4 +519,76 @@ def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, ho
         "never_overhaul": {"horizon": h, "cost_rate": none_rate, "limit_cost_rate": None},  # unbounded as T → ∞
         "saving_pct": saving,
         "curve": {"t": grid.tolist(), "cost_rate": curve.tolist()},
+    })
+
+
+def shape_inputs(results: dict | None) -> dict:
+    """``optimal_overhaul``'s ``shape_ci`` / ``anchor`` from a saved model's
+    results: the growth β's CI (fits from data; none for parameters typed in
+    or fits saved before it was stored) and the last observed time."""
+    results = results or {}
+    xs = ((results.get("mcf") or {}).get("fitted") or {}).get("x") or []
+    return {"shape_ci": results.get("beta_ci"), "anchor": xs[-1] if xs else None, "unit": results.get("unit")}
+
+
+def _overhaul_sensitivity(model, cr: float, co: float, base: dict, shape_ci, anchor, unit) -> dict | None:
+    """The optimum at each end of the growth β's 95% CI (#189). Each end is
+    the power law through the fitted cumulative intensity at ``anchor`` (the
+    last observed time): for a single system that's the scale's profile
+    estimate at that β — the data pin the failures seen by then. Without an
+    anchor, the time by which one failure is expected is held instead."""
+    try:
+        lo, hi = (float(v) for v in shape_ci)
+    except (TypeError, ValueError):
+        return None
+    if not (np.isfinite(lo) and np.isfinite(hi) and lo < hi):
+        return None
+    shape, t_ref = _growth_exponent(model)
+    if not np.isfinite(shape):
+        return None
+    anchored = anchor is not None and np.isfinite(anchor) and anchor > 0
+    a = float(anchor) if anchored else t_ref
+    lam = _cif_at(model, a)
+    if not (np.isfinite(lam) and lam > 0):
+        return None
+    lo = max(lo, 0.0)  # a Wald interval can dip below 0; the shape can't
+    h = (base.get("never_overhaul") or {}).get("horizon")
+    intervals, savings = [], []
+    for end in (lo, hi):
+        if end <= 1.0 + 1e-6:  # constant or improving: an overhaul never pays
+            intervals.append(None)
+            savings.append(0.0)
+            continue
+        # Λ(t) = Λ(a)·(t/a)^β in Crow-AMSAA form (t/θ)^β.
+        r = _overhaul_policy(CrowAMSAA.from_params([a * lam ** (-1.0 / end), end]), cr, co, None, h)
+        opt = r.get("optimal")
+        intervals.append(opt["interval"] if opt else None)
+        savings.append(r.get("saving_pct") if opt else 0.0)
+
+    from backend.services.strategy import fmt_num
+
+    unit_s = f" {unit.strip()}" if unit and unit.strip() else ""
+    note = None
+    if base.get("optimal") and (lo <= 1.1 or intervals[0] is None):
+        if lo <= 1.0:
+            note = (f"The growth shape's 95% interval ({lo:.3g} to {hi:.3g}) includes 1: the data don't rule out "
+                    "a constant failure rate, and then an overhaul doesn't pay.")
+        else:
+            note = (f"The growth shape's 95% interval reaches {lo:.3g}: the data only weakly show deterioration, "
+                    "and if the failure rate is close to constant, overhauls save little or nothing.")
+        ends = [f"at β = {end:.3g} an overhaul doesn't pay" if t is None else
+                f"at β = {end:.3g}, overhaul about every {fmt_num(t)}{unit_s}"
+                + (f" ({s:.0f}% saving)" if s is not None else "")
+                for end, t, s in zip((lo, hi), intervals, savings)]
+        note += f" Across the interval: {'; '.join(ends)}."
+    return _json_safe({
+        "shape_ci": {"name": "beta", "value": shape, "lower": lo, "upper": hi, "level": 0.95},
+        "interval_range": intervals,
+        "saving_pct_range": savings,
+        "sensitivity_method": (
+            "interval_range and saving_pct_range are the optimum at the lower and upper ends of the growth "
+            "shape's 95% confidence interval, each a power law through the fitted cumulative failures "
+            + ("at the last observed time" if anchored else "where one failure is expected")
+            + "; null / 0 where an overhaul doesn't pay at that end."),
+        "uncertainty_note": note,
     })

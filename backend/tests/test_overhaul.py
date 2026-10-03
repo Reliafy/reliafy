@@ -123,3 +123,83 @@ def test_api_overhaul_owner_share_and_isolation(monkeypatch):
         assert test_db.recurrent_models.find_one({"_id": mid}) == before  # computing wrote nothing
     finally:
         app.dependency_overrides.clear()
+
+
+# ---- the growth shape's uncertainty (#189) ----------------------------------------
+
+def _single_system(times):
+    import pandas as pd
+
+    return pd.DataFrame({"system": ["S1"] * len(times), "time": times})
+
+
+def test_fit_stores_the_growth_shape_ci():
+    from backend import recurrent as rec
+
+    df = _single_system([50, 120, 200, 260, 310, 350, 380, 400, 420, 440])
+    crow, _ = rec.fit(df, {"i": "system", "x": "time"}, "crow_amsaa", "hours")
+    beta = crow["params"][1]
+    assert beta["name"] == "beta" and beta["se"] > 0
+    assert beta["ci"] == pytest.approx([beta["value"] - 1.96 * beta["se"], beta["value"] + 1.96 * beta["se"]], rel=1e-3)
+    assert crow["beta_ci"] == beta["ci"] and crow["params"][0]["ci"]
+
+    # Duane's shape is its alpha (#88); an HPP's is 1 by construction.
+    duane, _ = rec.fit(df, {"i": "system", "x": "time"}, "duane", "hours")
+    assert duane["beta_ci"] == duane["params"][0]["ci"]
+    assert duane["beta_ci"] == pytest.approx(crow["beta_ci"], rel=1e-3)
+    hpp, _ = rec.fit(df, {"i": "system", "x": "time"}, "hpp", "hours")
+    assert hpp["beta_ci"] is None
+
+
+def test_overhaul_across_the_shape_interval():
+    from backend import recurrent as rec
+
+    model = _crow(1000.0, 1.8)
+    anchor = 5000.0
+    lam = (anchor / 1000.0) ** 1.8  # the fitted failures expected by the anchor
+    out = rec.optimal_overhaul(model, 100, 1000, shape_ci=[1.05, 2.6], anchor=anchor, unit="hours")
+    assert out["shape_ci"]["lower"] == 1.05 and out["shape_ci"]["upper"] == 2.6
+    # Each end is the power law through Λ(anchor): scale = anchor · Λ^(-1/β).
+    at_upper = rec.optimal_overhaul(_crow(anchor * lam ** (-1 / 2.6), 2.6), 100, 1000,
+                                    horizon=out["never_overhaul"]["horizon"])
+    assert out["interval_range"][1] == pytest.approx(at_upper["optimal"]["interval"])
+    assert out["saving_pct_range"][1] == pytest.approx(at_upper["saving_pct"])
+    # β = 1.05 still has a finite optimum, far out — and the note flags how weak the evidence is.
+    assert out["interval_range"][0] > out["optimal"]["interval"]
+    note = out["uncertainty_note"]
+    assert note.startswith("The growth shape's 95% interval reaches 1.05: the data only weakly show deterioration")
+    assert "at β = 2.6, overhaul about every" in note and "hours" in note
+    assert "last observed time" in out["sensitivity_method"]
+
+    # An interval including 1: no overhaul pays at that end.
+    out = rec.optimal_overhaul(model, 100, 1000, shape_ci=[0.7, 2.9])
+    assert out["interval_range"][0] is None and out["saving_pct_range"][0] == 0.0
+    assert "includes 1" in out["uncertainty_note"]
+    assert "where one failure is expected" in out["sensitivity_method"]  # no anchor given
+
+    # Clear deterioration: ranges, no note. No CI (typed-in parameters): unchanged.
+    assert rec.optimal_overhaul(model, 100, 1000, shape_ci=[1.5, 2.1])["uncertainty_note"] is None
+    plain = rec.optimal_overhaul(model, 100, 1000, shape_ci=None)
+    assert not {"shape_ci", "interval_range", "uncertainty_note"} & set(plain)
+
+
+def test_api_overhaul_reports_the_shape_interval_for_a_fitted_model(monkeypatch):
+    from backend.auth import get_current_user
+    from backend.tests.test_recurrent import _events_csv
+
+    test_db = mongomock.MongoClient()["reliafy_test"]
+    client, app = _client(monkeypatch, test_db)
+    app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": A}
+    form = {"i": "system", "x": "time", "t": "obs_end", "model": "crow_amsaa", "unit": "hours", "name": "Fleet"}
+    try:
+        r = client.post("/api/recurrent/models", data=form, files={"file": ("events.csv", _events_csv(), "text/csv")})
+        assert r.status_code == 200, r.text
+        mid = r.json()["id"]
+        beta_ci = client.get(f"/api/recurrent/models/{mid}").json()["results"]["beta_ci"]
+        out = client.post(f"/api/recurrent/models/{mid}/overhaul", json={"cost_repair": 100, "cost_overhaul": 1000})
+        assert out.status_code == 200, out.text
+        body = out.json()
+        assert [body["shape_ci"]["lower"], body["shape_ci"]["upper"]] == pytest.approx([max(beta_ci[0], 0), beta_ci[1]])
+        assert len(body["interval_range"]) == 2 and "uncertainty_note" in body
+    finally:
+        app.dependency_overrides.clear()

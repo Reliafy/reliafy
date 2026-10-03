@@ -2055,7 +2055,11 @@ def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None
         if m.kind != "distribution":
             raise ToolError(f"“{m.name}” is a {m.kind} model — the calculators need a plain life distribution.")
         r = m.results or {}
-        return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": _plain_params(r),
+        # With each parameter's 95% CI where the fit has one, so the
+        # calculators can say how far the answer moves across it (#189).
+        params = [{**p, "ci": src["ci"]} if src.get("ci") else p
+                  for p, src in zip(_plain_params(r), r.get("params") or [])]
+        return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": params,
                 "unit": unit or r.get("unit") or ""}
     if not distribution_id or not params:
         raise ToolError("Give a model_id, or distribution_id + params.")
@@ -2095,7 +2099,10 @@ def optimal_replacement(
     include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Cost-optimal preventive (age) replacement interval for a component with a known life distribution.
-    beneficial=false means run-to-failure is cheaper (e.g. no wear-out, or planned ≈ unplanned cost)."""
+    beneficial=false means run-to-failure is cheaper (e.g. no wear-out, or planned ≈ unplanned cost).
+    For a saved Weibull (or gamma) model fitted to data, optimal_time_range / savings_range give the answer
+    at each end of the shape's 95% interval (shape_ci), and uncertainty_note says when the data only weakly
+    show wear-out — relay it with the recommendation."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
     out = strategy_store.compute("optimal_replacement", {
@@ -2114,7 +2121,8 @@ def failure_finding_interval(
     unit: _UNIT = None,
 ) -> dict[str, Any]:
     """Inspection (proof-test) interval that keeps a hidden, protective function — a relief valve,
-    trip, alarm, standby unit — at the target availability."""
+    trip, alarm, standby unit — at the target availability. For a saved exponential model fitted to data,
+    interval_range gives the interval across the failure rate's 95% interval (rate_ci)."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
     return strategy_store.compute("failure_finding", {**inputs, "target_availability": target_availability})
@@ -2190,16 +2198,20 @@ def optimal_overhaul(
     include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Optimal overhaul interval for a repairable system (minimal repair between overhauls) from a saved
-    recurrent-event model. Only a deteriorating system (growth shape beta > 1) has a finite optimum."""
+    recurrent-event model. Only a deteriorating system (growth shape beta > 1) has a finite optimum. For a
+    model fitted to data, interval_range / saving_pct_range give the answer at each end of beta's 95%
+    interval (shape_ci), and uncertainty_note says when the data only weakly show deterioration — relay it."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     if t_max is not None and (not np.isfinite(t_max) or t_max <= 0):
         raise ToolError(f"t_max must be a positive time; got {t_max:g}. Omit it to search automatically.")
-    if recurrent_service.get_model(db, model_id, owners) is None:
+    doc = recurrent_service.get_model(db, model_id, owners)
+    if doc is None:
         raise ToolError("Recurrent model not found — optimal_overhaul needs a recurrent (repairable-system) "
                         "model id from list_models kind=recurrent.")
     live = recurrent_service.get_live_model(db, model_id, owners)
-    return _maybe_curve(recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max), include_curve)
+    return _maybe_curve(recurrent_fit.optimal_overhaul(
+        live, cost_repair, cost_overhaul, t_max=t_max, **recurrent_fit.shape_inputs(doc.results)), include_curve)
 
 
 # ---------------------------------------------------------------------------
