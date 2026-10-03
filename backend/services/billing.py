@@ -161,12 +161,50 @@ def ensure_starter_grant(db, uid: str) -> None:
         _ledger(db, uid, "grant", config.FREE_GRANT_CENTS * 1000, "starter")
 
 
+def _grant_key(reason: str, ref: str) -> str:
+    return f"grant:{reason}:{ref}"
+
+
+def grant_credits_once(db, uid: str, cents: int, reason: str, ref: str) -> bool:
+    """Add credit for an external event (a Stripe checkout session, a paid
+    invoice) at most once per ``(reason, ref)``. True if credit was added.
+
+    The ledger row is written first, under an ``_id`` derived from the reason
+    and the reference, and the balance is only incremented when that insert
+    succeeds — so a repeated delivery of the same event (a webhook retry or a
+    replay, even two arriving at once) fails on the unique ``_id`` and adds
+    nothing. Rows written before these keys existed are matched by
+    ``(kind, reason, ref)``.
+    """
+    from pymongo.errors import DuplicateKeyError
+
+    if not ref:
+        raise ValueError("an idempotent grant needs a reference")
+    mc = int(cents) * 1000
+    if db.credit_ledger.find_one({"kind": "grant", "reason": reason, "ref": ref}) is not None:
+        return False
+    _ensure_millicents(db, uid)
+    try:
+        db.credit_ledger.insert_one({
+            "_id": _grant_key(reason, ref), "uid": uid, "kind": "grant", "millicents": mc,
+            "cents": round(mc / 1000, 3), "reason": reason, "ref": ref, "ts": _now(),
+        })
+    except DuplicateKeyError:
+        return False
+    db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": mc}}, upsert=True)
+    return True
+
+
 def grant_credits(db, uid: str, cents: int, reason: str, ref: str = "") -> int:
     """Add credit to a user (purchase/grant, always whole cents). Returns the
-    new balance in cents."""
+    new balance in cents. With a ``ref`` the grant happens at most once per
+    ``(reason, ref)`` (see :func:`grant_credits_once`)."""
+    if ref:
+        grant_credits_once(db, uid, cents, reason, ref)
+        return account(db, uid)["credit_cents"]
     _ensure_millicents(db, uid)
-    db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": int(cents) * 1000}}, upsert=True)
     _ledger(db, uid, "grant", int(cents) * 1000, reason, ref)
+    db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": int(cents) * 1000}}, upsert=True)
     return account(db, uid)["credit_cents"]
 
 
@@ -215,8 +253,9 @@ def grant_monthly_pro_credits(
         return False
     if db.credit_ledger.find_one({"ref": invoice_id, "kind": "grant"}) is not None:
         return False  # already granted for this invoice
-    grant_credits(db, doc["_id"], config.PRO_MONTHLY_CREDIT_CENTS, "pro-monthly", invoice_id)
-    return True
+    # Ledger row first, keyed by the invoice: a concurrent duplicate fails the
+    # insert instead of adding the credit twice.
+    return grant_credits_once(db, doc["_id"], config.PRO_MONTHLY_CREDIT_CENTS, "pro-monthly", invoice_id)
 
 
 def set_plan(
