@@ -33,14 +33,15 @@ READ_TOOLS = {
     "list_models", "get_model", "reliability_at", "list_datasets", "list_rbds", "get_rbd",
     "analyze_rbd", "fit_distribution", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
     "optimal_overhaul", "plan_demonstration_test", "list_fleets", "fleet_forecast", "list_fleet_alerts",
-    "upgrade_link", "system_history", "list_share_links", "get_account", "get_dataset",
+    "upgrade_link", "system_history", "list_share_links", "get_account", "get_dataset", "inspect_upload",
 }
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
 WRITE_TOOLS = {"fit_and_save_model", "save_model", "upload_dataset", "create_rbd", "clone_rbd", "edit_rbd",
                "create_fleet_alert",
                "delete_model", "delete_dataset", "delete_rbd", "upload_outage_log", "share_link",
-               "revoke_share_link", "update_model", "update_dataset"}
+               "revoke_share_link", "update_model", "update_dataset",
+               "create_upload", "import_rbd", "import_excel"}
 
 
 def _weibull(alpha, beta, placeholder=False):

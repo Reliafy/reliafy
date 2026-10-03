@@ -58,9 +58,10 @@ import functools
 import logging
 import math
 import re
+import shlex
 import time
 from datetime import timedelta
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from typing import Annotated, Any, Callable, Literal, Optional, Union
 
 import anyio
@@ -91,11 +92,13 @@ from backend.services import models as models_service
 from backend.services import public_links as links_service
 from backend.services import rbd_edit
 from backend.services import rbd_graph
+from backend.services import rbd_import
 from backend.services import rbds as rbds_service
 from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
 from backend.services import strategy_store
 from backend.services import tokens as tokens_service
+from backend.services import uploads as uploads_service
 from backend.services import usage as usage_service
 from backend.services import rbd_analysis
 from backend.services import rbd_export
@@ -261,6 +264,11 @@ edges) rather than re-creating it; clone_rbd copies a sample or makes a variant 
 - Observed history: upload_outage_log saves a real outage log (asset, start, end; blank end = still down) \
 against one of the user's diagrams; system_history then gives the system's actual availability over the \
 window, its outages each attributed to the block that took it down, and the blocks ranked by downtime share.
+- Files: never read a file into your context to paste it. For any file (a BlockSim / Open-PSA / Galileo \
+diagram, an Excel workbook, a CSV of failure times or outages): create_upload, then send the file with the \
+curl PUT it returns, inspect_upload if you need its sheets, columns or diagrams, then import_rbd / \
+import_excel / upload_dataset / upload_outage_log with the upload_id. Paste only small text formats \
+(import_rbd's content, upload_dataset's csv). Relay the import notes: they say what was approximated.
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
@@ -487,12 +495,29 @@ def _url(path: str) -> str:
     return f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}{path}"
 
 
-def _cap(db, user: dict, kind: str, label: str) -> None:
-    """Refuse a save past the caller's plan storage cap (operators have none)."""
-    if billing_service.is_admin_user(user) or not billing_service.would_exceed_cap(db, user["uid"], kind):
+def _cap(db, user: dict, kind: str, label: str, n: int = 1) -> None:
+    """Refuse a save past the caller's plan storage cap (operators have none).
+    ``n`` > 1 checks room for that many new items at once (an import saving
+    several diagrams is all or nothing)."""
+    if billing_service.is_admin_user(user):
+        return
+    if n <= 1:
+        if not billing_service.would_exceed_cap(db, user["uid"], kind):
+            return
+    elif not config.BILLING_ENABLED:
         return
     plan = billing_service.account(db, user["uid"])["active_plan"]
     cap = billing_service.cap_for(kind, plan)
+    if cap is None:
+        return
+    if n > 1:
+        owned = billing_service.owned_count(db, user["uid"], kind)
+        if owned + n <= cap:
+            return
+        raise Refusal(
+            f"This would save {n} {label}, but the {_PLAN_NAMES[plan]} plan allows {cap} and you have {owned} — "
+            f"nothing was saved. Import fewer (pick them by name), or delete {label} you no longer need. "
+            + _upgrade_path(lead="Or, for more storage, upgrade"))
     raise Refusal(
         f"You've reached the {_PLAN_NAMES[plan]} plan's limit of {cap} saved {label}. The limit doesn't "
         f"reset: delete {label} you no longer need in Reliafy to make room. "
@@ -1171,14 +1196,30 @@ def list_datasets(ctx: Context) -> dict[str, Any]:
 def upload_dataset(
     ctx: Context,
     name: Annotated[str, Field(min_length=1, description="A short name for the dataset.")],
-    csv: Annotated[str, Field(min_length=1, description="The CSV text, header row first. Tab- or "
-                                                        "semicolon-separated pastes are accepted too.")],
+    csv: Annotated[Optional[str], Field(min_length=1, description=(
+        "The CSV text, header row first. Tab- or semicolon-separated pastes are accepted too. For a file, "
+        "use upload_id instead."))] = None,
+    upload_id: Annotated[Optional[str], Field(description=(
+        "Instead of csv: a file sent through create_upload (CSV/TSV, or an .xlsx workbook with sheet)."))] = None,
+    sheet: Annotated[Optional[str], Field(description=(
+        "With an .xlsx upload_id: the sheet to read (needed when the workbook has several; inspect_upload "
+        "lists them)."))] = None,
 ) -> dict[str, Any]:
-    """Save a dataset (CSV text) to the user's workspace and return its id and columns. A censoring
-    column should use 0 = failed, 1 = still running, -1 = left-censored (or flag c_invert when fitting)."""
+    """Save a dataset to the user's workspace and return its id and columns: CSV text in csv, or a file
+    uploaded with create_upload in upload_id. A censoring column should use 0 = failed, 1 = still running,
+    -1 = left-censored (or flag c_invert when fitting)."""
     user, db = _caller(ctx), _db()
+    if (csv is None) == (upload_id is None):
+        raise ToolError("Give either csv (text) or upload_id (a file sent through create_upload) — exactly one.")
     _cap(db, user, "datasets", "datasets")
-    ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(csv), user["uid"])
+    upload = None
+    if upload_id is not None:
+        upload, text = _upload_table_text(db, user["uid"], upload_id, sheet)
+    else:
+        text = csv
+    ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(text), user["uid"])
+    if upload is not None:
+        uploads_service.delete(db, upload["_id"])
     return {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
             "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
 
@@ -2423,9 +2464,9 @@ def _outages_url(rbd_id: str) -> str:
 def upload_outage_log(
     ctx: Context,
     rbd_id: Annotated[str, Field(description="One of the user's own RBD ids (list_rbds) the log belongs to.")],
-    csv: Annotated[str, Field(min_length=1, description=(
+    csv: Annotated[Optional[str], Field(min_length=1, description=(
         "The outage log as CSV text, header row first (tab- or semicolon-separated also accepted): one row per "
-        "outage with the asset, its start and its end (blank = still down)."))],
+        "outage with the asset, its start and its end (blank = still down). For a file, use upload_id."))] = None,
     columns: Annotated[Optional[OutageColumns], Field(description=(
         "Which column holds what. Omit to detect from the headers (asset/equipment, start/down, end/restored, "
         "duration, reason, planned)."))] = None,
@@ -2444,16 +2485,26 @@ def upload_outage_log(
         "Map asset names in the log to node ids where they don't match a block's label or id exactly "
         "(get_rbd lists the nodes)."))] = None,
     name: Annotated[Optional[str], Field(description="A name for the log.")] = None,
+    upload_id: Annotated[Optional[str], Field(description=(
+        "Instead of csv: a file sent through create_upload (CSV/TSV, or an .xlsx workbook with sheet)."))] = None,
+    sheet: Annotated[Optional[str], Field(description=(
+        "With an .xlsx upload_id: the sheet holding the log (needed when the workbook has several)."))] = None,
 ) -> dict[str, Any]:
     """Save a real outage log against one of the user's RBDs and return the system's observed history from it.
+    Give the log as CSV text (csv) or as a file uploaded with create_upload (upload_id).
     Each block's outages become its up/down timeline; RePyability merges them through the diagram's structure
     into the system's history and attributes every system outage to the block that took it down. Overlapping
     outages of one asset are merged; assets that match no block are listed and left out. Returns the log id,
     import notes and the history (as system_history does)."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
+    if (csv is None) == (upload_id is None):
+        raise ToolError("Give either csv (text) or upload_id (a file sent through create_upload) — exactly one.")
     rbd = _own_rbd(db, uid, rbd_id)
     _cap(db, user, "outage_logs", "outage logs")
+    upload = None
+    if upload_id is not None:
+        upload, csv = _upload_table_text(db, uid, upload_id, sheet)
     mapping = columns.model_dump(exclude_none=True) if columns else None
     try:
         parsed = outage_logs_service.parse_log(
@@ -2462,6 +2513,8 @@ def upload_outage_log(
     except outage_logs_service.OutageLogError as exc:
         raise ToolError(str(exc)) from exc
     log = outage_logs_service.create_log(db, rbd, parsed, uid, name or "")
+    if upload is not None:
+        uploads_service.delete(db, upload["_id"])
     out = {
         "log_id": log["_id"], "name": log["name"], "rbd_id": rbd.id, "n_outages": len(parsed["rows"]),
         "columns": parsed["columns"], "unit": parsed["unit"],
@@ -2504,6 +2557,440 @@ def system_history(
         raise ToolError(str(exc)) from exc
     return {"rbd_id": rbd.id, "name": rbd.name, "log_id": log["_id"], "log_name": log.get("name"),
             **outage_logs_service.lean_history(result), "url": _outages_url(rbd.id)}
+
+
+# ---------------------------------------------------------------------------
+# Files: upload links, inspection and imports (#141)
+# ---------------------------------------------------------------------------
+# A file never passes through the agent's context: create_upload gives a
+# single-use URL the agent PUTs the bytes to (curl), and the import tools take
+# the upload_id. backend/services/uploads.py has the design, the storage and
+# the security review. Small text formats can still be pasted inline
+# (import_rbd's content). Every tool here counts like any other; an upload
+# counts towards no storage cap and is deleted once its import is saved.
+
+_UPLOAD_NOTE = (
+    "Send the file with an HTTP PUT to this URL (it's single-use and expires in 15 minutes). Then call "
+    "import_rbd / import_excel / upload_dataset / upload_outage_log with upload_id. Don't paste the file's "
+    "contents into a tool call.")
+# Inline content (import_rbd): small text formats only — anything larger goes
+# through create_upload rather than the agent's context.
+INLINE_MAX_BYTES = 200 * 1024
+_OUTLINE_NODES = 100    # node list per imported diagram
+_IMPORT_NOTES = 30      # import notes per diagram
+_RCM_VALUES = 20        # unmapped consequence / decision values listed
+
+_Purpose = Literal["rbd_import", "excel", "dataset", "outage_log"]
+_RbdFormat = Literal["blocksim", "openpsa", "galileo", "excel"]
+_UPLOAD_ID = Annotated[str, Field(min_length=1, max_length=64, description="An upload_id from create_upload.")]
+
+
+@contextmanager
+def _untrusted_file():
+    """Parsing an uploaded file: the importers' own errors reach the agent
+    as they are; anything else (a malformed file tripping a parser) is a
+    plain "couldn't read" — never a traceback, never "Error executing tool"."""
+    try:
+        yield
+    except (ToolError, ValueError, TypeError):
+        raise
+    except Exception:  # noqa: BLE001 - untrusted input
+        logger.warning("MCP import: couldn't read an uploaded file", exc_info=True)
+        raise ToolError("Couldn't read this file — it may be damaged or from an unsupported version.") from None
+
+
+def _sheet_list(data: bytes, filename: str, limit: int = 10) -> str:
+    """'Sheets: “Data” (120 rows: Time, Status); …' for an error message."""
+    from backend.services import excel
+
+    sheets = excel.inspect(data, filename)["sheets"]
+    parts = []
+    for s in sheets[:limit]:
+        if not s["rows"]:
+            continue
+        try:
+            cols = excel.read_table(data, s["name"], None, filename, max_rows=1).header
+        except ValueError:
+            cols = []
+        shown = ", ".join(cols[:15]) + (", …" if len(cols) > 15 else "")
+        parts.append(f"“{s['name']}” ({s['rows']} rows: {shown})")
+    more = f"; and {len(sheets) - limit} more" if len(sheets) > limit else ""
+    return "Sheets: " + "; ".join(parts) + more + "."
+
+
+def _workbook_table(data: bytes, filename: str, sheet: Optional[str], header_row: Optional[int] = None):
+    """One sheet as a table. ``sheet`` may be omitted when only one sheet
+    holds data; otherwise the error lists the sheets and their columns."""
+    from backend.services import excel
+
+    if not sheet:
+        filled = [s for s in excel.inspect(data, filename)["sheets"] if s["rows"]]
+        if len(filled) > 1:
+            raise ToolError("This workbook has several sheets — say which one with sheet. "
+                            + _sheet_list(data, filename))
+        sheet = filled[0]["name"] if filled else None
+    return excel.read_table(data, sheet, header_row, filename)
+
+
+def _upload_table_text(db, uid: str, upload_id: str, sheet: Optional[str]) -> tuple[dict, str]:
+    """An upload for upload_dataset / upload_outage_log as CSV text: a CSV /
+    TSV file as it is, a workbook's sheet converted (as the app's Excel
+    import does)."""
+    from backend.services import excel
+
+    doc, data = uploads_service.read(db, upload_id, uid)
+    with _untrusted_file():
+        if uploads_service.is_excel(doc):
+            return doc, excel.to_csv(_workbook_table(data, doc["filename"], sheet)).decode("utf-8")
+    if doc.get("detected_format") not in ("csv", "text"):
+        raise ToolError(f"This upload is a {doc.get('detected_format')} file, not a table: upload CSV / TSV text "
+                        "or an .xlsx workbook. (Diagram files go to import_rbd.)")
+    return doc, uploads_service.as_text(data)
+
+
+@_tool("create_upload", _WRITE, "Get a file upload link")
+def create_upload(
+    ctx: Context,
+    purpose: Annotated[_Purpose, Field(description=(
+        "What the file is for: rbd_import (a BlockSim .rsgz / .rsr, Open-PSA XML or Galileo .dft diagram file, "
+        "then import_rbd); excel (an .xlsx workbook — a data sheet, an RCM/FMEA worksheet or Reliafy's RBD "
+        "template — then import_excel); dataset (CSV or .xlsx life data, then upload_dataset); outage_log (CSV "
+        "or .xlsx, then upload_outage_log)."))],
+    filename: Annotated[str, Field(min_length=1, max_length=255, description=(
+        "The file's name with its extension, e.g. pump-skid.rsgz or fmea.xlsx."))],
+    size_bytes: Annotated[Optional[int], Field(ge=1, description=(
+        "The file's size if known — refused here at once if it's over the limit."))] = None,
+) -> dict[str, Any]:
+    """Get a single-use URL to send a file to Reliafy without pasting it into a tool call. Run the returned
+    curl command (or any HTTP PUT of the raw bytes) from a shell that can read the file, then call the import
+    tool with upload_id: import_rbd (diagram files), import_excel (workbooks), upload_dataset or
+    upload_outage_log. inspect_upload shows a workbook's sheets and columns, or a diagram file's diagrams,
+    before importing. The URL expires in 15 minutes and works once; the file is deleted after its import, or
+    after an hour. Never read a file into your context to paste it: use this."""
+    user, db = _caller(ctx), _db()
+    doc, token = uploads_service.create(
+        db, user["uid"], purpose, filename, size_bytes,
+        plan=_usage_plan(user), client=usage_service.client_of(user))
+    url = _url(f"/api/uploads/{doc['_id']}?t={token}")
+    return {
+        "upload_id": doc["_id"],
+        "url": url,
+        "method": "PUT",
+        "headers": {"Content-Type": "application/octet-stream"},
+        "max_bytes": doc["max_bytes"],
+        "expires_at": doc["expires_at"].isoformat(),
+        "curl": (f"curl -sS -X PUT --data-binary @{shlex.quote(doc['filename'])} "
+                 f"-H \"Content-Type: application/octet-stream\" \"{url}\""),
+        "note": _UPLOAD_NOTE + " Replace the @file in curl with the file's path.",
+    }
+
+
+@_tool("inspect_upload", _READ, "Inspect an uploaded file")
+def inspect_upload(ctx: Context, upload_id: _UPLOAD_ID) -> dict[str, Any]:
+    """Look inside a file sent through create_upload before importing it. A workbook: each sheet's header
+    row, columns, row count, a few sample rows and what it looks like (looks_like.rcm / looks_like.rbd_blocks:
+    a guessed column mapping) — use them to pick import_excel's target, sheet and mapping. A diagram file
+    (BlockSim, Open-PSA, Galileo): the diagrams it holds with their block counts. CSV text: its columns and
+    row count. Only the user's own uploads."""
+    user, db = _caller(ctx), _db()
+    doc, data = uploads_service.read(db, upload_id, user["uid"])
+    with _untrusted_file():
+        details = uploads_service.inspect(doc, data)
+    return {**uploads_service.brief(doc), **details}
+
+
+def _lean_outline(graph: dict, check: dict) -> dict:
+    """create_rbd's lean outline, with the node list capped for big imports."""
+    out = _rbd_outline(graph, check, False)
+    if len(out["nodes"]) > _OUTLINE_NODES:
+        out["n_nodes"] = len(out["nodes"])
+        out["nodes"] = out["nodes"][:_OUTLINE_NODES]
+        out["nodes_truncated"] = True
+    return out
+
+
+def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool, only: Optional[list[str]],
+                   upload: Optional[dict], rbd_id: Optional[str] = None) -> dict:
+    """Validate imported diagrams and (``save``) save them — all or nothing
+    against the RBD cap. Returns each diagram's brief, import notes and a
+    concise node list (never the whole graph); deletes the upload once
+    saved."""
+    uid = user["uid"]
+    owners = _owners(uid)
+    if only:
+        wanted = {o.strip().lower() for o in only if o and o.strip()}
+        picked = [d for d in diagrams if d.name.strip().lower() in wanted]
+        if not picked:
+            raise ToolError("None of the diagrams named in only are in this file. It holds: "
+                            + "; ".join(f"“{d.name}”" for d in diagrams[:50]) + ".")
+        diagrams = picked
+    ready, skipped = [], []
+    for d in diagrams:
+        try:
+            graph = rbd_graph.normalize_graph(d.graph)
+        except rbd_graph.GraphError as exc:
+            skipped.append({"name": d.name, "error": str(exc)})
+            continue
+        check = rbds_service.validate_graph(db, graph, owners)
+        if not check.get("valid", False):
+            skipped.append({"name": d.name, "error": "; ".join(check.get("errors") or ["invalid structure"])})
+            continue
+        ready.append((d, graph, check))
+    if not ready:
+        raise ToolError("Nothing in this file could be imported: "
+                        + "; ".join(f"{s['name']}: {s['error']}" for s in skipped[:10]))
+    target = None
+    if rbd_id:
+        if len(ready) != 1:
+            raise ToolError("rbd_id replaces one diagram, but this import holds several.")
+        target = _own_rbd(db, uid, rbd_id)
+
+    def title(d) -> str:
+        if target is not None and not name:
+            return target.name
+        if name and name.strip():
+            return name.strip() if len(ready) == 1 else f"{name.strip()} — {d.name}"
+        return d.name
+
+    saved = []
+    if save:
+        if target is None:
+            _cap(db, user, "rbds", "RBDs", n=len(ready))
+        for d, graph, _ in ready:
+            saved.append(rbds_service.save_rbd(db, title(d)[:200], graph, uid,
+                                               rbd_id=target.id if target is not None else None))
+        if upload is not None:
+            uploads_service.delete(db, upload["_id"])
+    items = []
+    for i, (d, graph, check) in enumerate(ready):
+        item = {"name": title(d), "source_format": d.source_format}
+        if saved:
+            item.update(_rbd_brief(saved[i]))
+        else:
+            item["n_blocks"] = sum(1 for n in graph["nodes"] if n.get("type") not in ("input", "output"))
+        item["analytic"] = check.get("analytic", True)
+        item["import_notes"] = d.warnings[:_IMPORT_NOTES]
+        if len(d.warnings) > _IMPORT_NOTES:
+            item["more_import_notes"] = len(d.warnings) - _IMPORT_NOTES
+        item.update(_lean_outline(graph, check))
+        items.append(item)
+    out: dict[str, Any] = {"saved": bool(saved), "diagrams": items}
+    if target is not None and saved:
+        out["replaced"] = target.id
+    if skipped:
+        out["skipped"] = skipped
+    if not save:
+        out["note"] = ("Preview only — nothing saved. Call again with save=true (only=[names] picks diagrams)"
+                       + ("; the upload is kept for an hour." if upload is not None else "."))
+    return out
+
+
+def _excel_mapping_error(exc: Exception, data: bytes, filename: str) -> ToolError:
+    from backend.services.rbd_import import excel as rbd_excel
+
+    fields = ", ".join(f["id"] for f in rbd_excel.BLOCK_FIELDS)
+    return ToolError(
+        f"{exc} Call import_excel with target=rbd_template and mapping — {{field: column}} plus sheet for the "
+        "blocks sheet, or the full form {\"blocks\": {\"sheet\", \"header_row\", \"mapping\": {field: column}}, "
+        "\"connections\": {\"sheet\", \"mapping\": {\"from\": column, \"to\": column}}}. Block fields: "
+        f"{fields}. " + _sheet_list(data, filename))
+
+
+@_tool("import_rbd", _WRITE, "Import RBDs from a file")
+def import_rbd(
+    ctx: Context,
+    upload_id: Annotated[Optional[str], Field(max_length=64, description=(
+        "A file sent through create_upload (purpose rbd_import): ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA "
+        "XML, Galileo .dft, or an .xlsx in Reliafy's RBD template layout."))] = None,
+    content: Annotated[Optional[str], Field(description=(
+        "Instead of upload_id, for SMALL text files only (Open-PSA XML, Galileo DFT text or JSON), at most "
+        "200 KB. Anything else or larger: create_upload."))] = None,
+    format: Annotated[Optional[_RbdFormat], Field(description=(
+        "Parse as this format. Omit to detect it from the content."))] = None,
+    name: Annotated[Optional[str], Field(max_length=200, description=(
+        "A name for the diagram (a prefix when the file holds several). Default: the file's own names."))] = None,
+    save: Annotated[bool, Field(description="False = preview what would be imported, saving nothing.")] = True,
+    only: Annotated[Optional[list[str]], Field(description=(
+        "Import just these diagrams, by name (a BlockSim project can hold many; preview with save=false or "
+        "inspect_upload)."))] = None,
+) -> dict[str, Any]:
+    """Import reliability block diagrams from another tool's file — BlockSim, Open-PSA, Galileo, or Reliafy's
+    Excel RBD template — and save each as an RBD in the user's workspace (all or nothing against the plan's
+    RBD limit). Send files with create_upload and pass upload_id; paste only small text formats into content.
+    Returns, per diagram, its id and url, the import notes (what was approximated — tell the user), and a
+    concise node list; get_rbd reads the full graph, edit_rbd changes it. save=false previews."""
+    user, db = _caller(ctx), _db()
+    if (upload_id is None) == (content is None):
+        raise ToolError("Give either upload_id (a file sent through create_upload) or content (small text) — "
+                        "exactly one.")
+    upload = None
+    if content is not None:
+        data = content.encode("utf-8")
+        if len(data) > INLINE_MAX_BYTES:
+            raise ToolError(
+                f"content is {len(data) // 1024} KB; inline content is limited to {INLINE_MAX_BYTES // 1024} KB. "
+                "Call create_upload(purpose='rbd_import', filename=…) and send the file with the curl command it "
+                "gives, then import_rbd(upload_id=…).")
+        if format in ("blocksim", "excel"):
+            raise ToolError(f"{format} files are binary — send them with create_upload, not as content.")
+        filename = {"openpsa": "inline.xml", "galileo": "inline.dft"}.get(format or "", "inline.txt")
+    else:
+        upload, data = uploads_service.read(db, upload_id, user["uid"])
+        filename = upload["filename"]
+    with _untrusted_file():
+        try:
+            diagrams = rbd_import.import_file(data, filename, format=format)
+        except rbd_import.RbdImportError as exc:
+            if getattr(exc, "code", None) == "excel_mapping":
+                raise _excel_mapping_error(exc, data, filename) from None
+            raise
+        return _save_imported(db, user, diagrams, name=name, save=save, only=only, upload=upload)
+
+
+def _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row) -> dict:
+    from backend.services import excel
+
+    filename = doc["filename"]
+    table = _workbook_table(data, filename, sheet, header_row)
+    if mapping:
+        missing = [str(src) for src in mapping.values() if not isinstance(src, str) or src not in table.header]
+        if missing:
+            raise ToolError(f"Sheet “{table.sheet}” has no column “{missing[0]}”. Its columns: "
+                            + ", ".join(table.header) + ".")
+        idx = [table.header.index(src) for src in mapping.values()]
+        table = excel.Table(sheet=table.sheet, header=[str(k) for k in mapping],
+                            rows=[[r[i] for i in idx] for r in table.rows], row_numbers=table.row_numbers,
+                            header_row=table.header_row, notes=table.notes)
+    _cap(db, user, "datasets", "datasets")
+    text = excel.to_csv(table).decode("utf-8")
+    default = excel.csv_filename(filename, table.sheet, 2).rsplit(".", 1)[0]
+    ds = datasets_service.create_dataset(db, (name or default).strip()[:200],
+                                         datasets_service.normalize_pasted(text), user["uid"])
+    uploads_service.delete(db, doc["_id"])
+    out = {"target": "dataset", "sheet": table.sheet, "header_row": table.header_row,
+           "id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
+           "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
+    if table.notes:
+        out["notes"] = table.notes
+    return out
+
+
+def _excel_rcm(db, user, doc, data, sheet, mapping, name, header_row, study_id) -> dict:
+    from backend.services import excel, rcm_import
+    from backend.services import rcm as rcm_service
+
+    uid = user["uid"]
+    filename = doc["filename"]
+    table = _workbook_table(data, filename, sheet, header_row)
+    if mapping and isinstance(mapping.get("mapping"), dict):
+        options = dict(mapping)
+    elif mapping:
+        options = {"mapping": dict(mapping)}
+    else:
+        guess = excel.guess_mapping(table.header, rcm_import.FIELDS)
+        if "mode" not in guess:
+            raise ToolError(
+                f"Couldn't tell which column of “{table.sheet}” holds the failure modes. Give mapping: "
+                f"{{field: column}} with fields {', '.join(rcm_import.FIELD_IDS)} (mode is required). Its "
+                "columns: " + ", ".join(table.header) + ".")
+        options = {"mapping": guess}
+    options.setdefault("extra_columns", rcm_import.default_extra_columns(table.header, options["mapping"]))
+    result = rcm_import.build_tree(table.header, table.rows, options, table.row_numbers)
+    imported = result["functions"]
+    if study_id:
+        study = rcm_service.get_study(db, study_id, [uid])
+        if study is None:
+            raise ToolError("RCM study not found (only the user's own studies can be imported into).")
+        study = rcm_service.replace_tree(db, study.id, [*(study.functions or []), *imported], uid)
+    else:
+        _cap(db, user, "rcm_studies", "RCM studies")
+        stem = excel.csv_filename(filename, table.sheet).rsplit(".", 1)[0]
+        study = rcm_service.create_study(db, (name or stem).strip()[:200], "", "", uid)
+        study = rcm_service.replace_tree(db, study.id, imported, uid)
+    uploads_service.delete(db, doc["_id"])
+    unmapped = {k: [v for v in vals if v.get("guess") is None][:_RCM_VALUES]
+                for k, vals in (result.get("values") or {}).items()}
+    out = {
+        "target": "rcm", "study_id": study.id, "name": study.name, "appended": bool(study_id),
+        "sheet": table.sheet, "header_row": table.header_row,
+        "mapping": options["mapping"], "extra_columns": options.get("extra_columns") or [],
+        "counts": result["counts"], "warnings": (result.get("warnings") or [])[:_IMPORT_NOTES],
+        "url": _url(f"/rcm/studies/{study.id}"),
+    }
+    if any(unmapped.values()):
+        out["unmapped_values"] = {k: v for k, v in unmapped.items() if v}
+        out["unmapped_note"] = ("These consequence / decision values weren't recognised and were left unset. To "
+                                "set them, import again with mapping {mapping: {...}, consequence_map: {value: "
+                                "category}, outcome_map: {value: decision}}.")
+    if table.notes:
+        out["notes"] = table.notes
+    return out
+
+
+def _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id) -> dict:
+    filename = doc["filename"]
+    excel_mapping = mapping
+    if mapping and "blocks" not in mapping:
+        if not sheet:
+            raise ToolError("A flat {field: column} mapping needs sheet (the blocks sheet).")
+        excel_mapping = {"blocks": {"sheet": sheet, "header_row": header_row, "mapping": mapping}}
+    try:
+        diagrams = rbd_import.import_file(data, filename, excel_mapping=excel_mapping, format="excel")
+    except rbd_import.RbdImportError as exc:
+        if getattr(exc, "code", None) == "excel_mapping":
+            raise _excel_mapping_error(exc, data, filename) from None
+        raise
+    return {"target": "rbd_template",
+            **_save_imported(db, user, diagrams, name=name, save=True, only=None, upload=doc, rbd_id=rbd_id)}
+
+
+@_tool("import_excel", _WRITE, "Import from an Excel workbook")
+def import_excel(
+    ctx: Context,
+    upload_id: _UPLOAD_ID,
+    target: Annotated[Literal["dataset", "rcm", "rbd_template"], Field(description=(
+        "dataset: one sheet saved as a dataset; rcm: an FMEA / RCM worksheet (one row per failure mode) into an "
+        "RCM study; rbd_template: Reliafy's Excel RBD template (Blocks + Connections sheets) saved as an RBD."))],
+    sheet: Annotated[Optional[str], Field(description=(
+        "The sheet to read. Needed when the workbook has several sheets with data (inspect_upload lists them)."
+    ))] = None,
+    mapping: Annotated[Optional[dict[str, Any]], Field(description=(
+        "dataset: optional {dataset column: sheet column} to keep (and rename) only those columns. rcm: "
+        "{field: column} with fields function, standard, failure, mode (required), effects, consequence, "
+        "outcome, task, interval, interval_unit, notes — omit to use the guess from the headers; or "
+        "{mapping, consequence_map, outcome_map, extra_columns}. rbd_template: omit for the template layout; "
+        "else {field: column} for the blocks sheet (with sheet) or {blocks: {sheet, header_row, mapping}, "
+        "connections: {sheet, mapping: {from, to}}}."))] = None,
+    name: Annotated[Optional[str], Field(max_length=200, description=(
+        "A name for the new dataset, study or diagram. Default: from the file and sheet."))] = None,
+    rbd_id: Annotated[Optional[str], Field(description=(
+        "rbd_template only: replace this existing diagram of the user's (its structure) instead of creating one."
+    ))] = None,
+    study_id: Annotated[Optional[str], Field(description=(
+        "rcm only: append the imported functions to this existing study of the user's instead of creating one."
+    ))] = None,
+    header_row: Annotated[Optional[int], Field(ge=0, description=(
+        "The sheet row holding the column names (1-based; 0 = no header row). Default: guessed."))] = None,
+) -> dict[str, Any]:
+    """Import an .xlsx workbook sent through create_upload: a sheet as a dataset (the same columns
+    upload_dataset returns), an FMEA / RCM worksheet into a new or existing RCM study, or Reliafy's Excel
+    RBD template as an RBD. Call inspect_upload first to see the sheets, their columns and a guessed mapping.
+    Formulas are read as the values Excel last saved; nothing is ever evaluated."""
+    user, db = _caller(ctx), _db()
+    doc, data = uploads_service.read(db, upload_id, user["uid"])
+    if not uploads_service.is_excel(doc):
+        raise ToolError(f"This upload isn't an Excel workbook (it's {doc.get('detected_format')}). CSV goes to "
+                        "upload_dataset / upload_outage_log with upload_id; diagram files to import_rbd.")
+    if rbd_id and target != "rbd_template":
+        raise ToolError("rbd_id applies to target rbd_template.")
+    if study_id and target != "rcm":
+        raise ToolError("study_id applies to target rcm.")
+    with _untrusted_file():
+        if target == "dataset":
+            return _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row)
+        if target == "rcm":
+            return _excel_rcm(db, user, doc, data, sheet, mapping, name, header_row, study_id)
+        return _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id)
 
 
 # ---------------------------------------------------------------------------
