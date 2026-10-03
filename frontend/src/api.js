@@ -630,7 +630,14 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 // the entitlement gets a 402 with ``code: "pro_required"`` unless a saved
 // result matches; results carry ``cached`` and ``computed_at``.
 // `band` ({ level }) adds a confidence band from the fitted blocks' uncertainty.
-export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = null, force = false, band = null } = {}) {
+// Repairable diagrams (#154/#155): ``simulate`` false gets the exact figures
+// (free) without running the paid simulation, true asks for it;
+// ``currentState`` ({nodeId: {down: true, since} | {age}}) starts the figures
+// from now; ``exact`` computes the figures over time of a large diagram.
+export function analyzeRbd(
+  graph, tMax, covariates, conditionalAge,
+  { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false } = {}
+) {
   return request("/api/rbds/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -642,6 +649,9 @@ export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = nu
       rbd_id: rbdId || null,
       force: !!force,
       ...(band ? { band } : {}),
+      ...(simulate != null ? { simulate } : {}),
+      ...(currentState ? { current_state: currentState } : {}),
+      ...(exact ? { exact: true } : {}),
     }),
   });
 }

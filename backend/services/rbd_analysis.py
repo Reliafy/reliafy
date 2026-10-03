@@ -806,10 +806,13 @@ def validate_graph(
                 "Common-cause groups are a reliability-only feature and are "
                 "ignored in a repairable (availability) diagram.")
         valid = len(errors) == 0
-        # Availability is always estimated by simulation — never "analytic".
+        # ``analytic`` describes the reliability curve and stays False here;
+        # how each availability figure is computed (#154: exact, numerical or
+        # only by simulation) comes from RePyability's analysis_routes().
         return {
             "valid": valid, "analytic": False, "can_calculate": valid,
             "errors": errors, "warnings": warnings, "non_analytic_nodes": {},
+            "availability_routes": _availability_routes(graph) if valid else None,
         }
 
     # Non-repairable (reliability): common-cause groups should couple identical
@@ -1514,6 +1517,11 @@ _AVAIL_MAX_TOLERANCE = 1e-3
 _AVAIL_MIN_TOLERANCE = 1e-12  # RePyability wants > 0; a never-down system meets it at once
 
 
+class _NoSimulation(Exception):
+    """Raised inside :func:`analyze_availability` to skip the simulation's
+    results when it wasn't asked for (``simulate=False``)."""
+
+
 def _always_up():
     """A repairable stand-in that never fails — used for pure logic/voting
     (k-of-n) gates, which carry no failure or repair behaviour of their own but
@@ -1923,6 +1931,8 @@ def analyze_availability(
     resolve_model=None,
     t_simulation: Optional[float] = None,
     n_simulations: Optional[int] = None,
+    simulate: bool = True,
+    state: Optional[dict] = None,
 ) -> dict:
     """Availability analysis of a repairable RBD: steady-state uptime, mean up/
     down time, failure frequency, each component's share of downtime, and
@@ -1932,7 +1942,13 @@ def analyze_availability(
     availability (see :func:`_availability_tolerance`), bounded by the time
     budget and by :data:`_AVAIL_SIMS` replications (read at call time so tests
     can shrink it). ``n_simulations`` runs exactly that many instead (rounded
-    up to whole antithetic pairs)."""
+    up to whole antithetic pairs).
+
+    ``simulate=False`` skips the simulation: the exact long-run figures,
+    importance, costs and downtime split only (what every user gets for free,
+    beside :func:`exact_availability`). ``state`` (canonical, from
+    :func:`parse_current_state`) starts the simulation from the blocks'
+    current states; the long-run figures don't depend on it."""
     from backend.services import rbd_costs, rbd_maintenance
 
     fixed_n = bool(n_simulations)
@@ -1944,6 +1960,10 @@ def analyze_availability(
     # *nearly* perfect (unavailable ~1e-12), which would otherwise add a bias to
     # every exact figure of a highly available system.
     overrides = {"working_nodes": working_nodes | gate_ids, "broken_nodes": broken_nodes}
+    # The simulation alone takes the current state (the long-run figures and
+    # importance are the same whatever the blocks' states now).
+    node_states = _node_states(state, labels)
+    sim_overrides = {**overrides, "state": node_states} if node_states else overrides
     sets = _structure_sets(rbd)
 
     try:
@@ -1963,10 +1983,12 @@ def analyze_availability(
         t_simulation = _availability_horizon(graph)
     horizon_shortened = False
     batch = max_n = n_sims
-    if not fixed_n:
+    if simulate and not fixed_n:
         batch, max_n, t_simulation, horizon_shortened = _size_simulation(
-            rbd, float(t_simulation), n_sims, overrides, user_horizon)
-    if steady is not None:
+            rbd, float(t_simulation), n_sims, sim_overrides, user_horizon)
+    if not simulate:
+        tolerance = None
+    elif steady is not None:
         tolerance = _availability_tolerance(1.0 - steady)
     else:
         tolerance = _availability_tolerance(
@@ -1980,11 +2002,15 @@ def analyze_availability(
     criticality: dict = {}
     precision = None
     try:
-        if fixed_n:
-            res, antithetic = _simulate(rbd, float(t_simulation), overrides, n_sims)
+        if not simulate:
+            n_sims = 0
+        elif fixed_n:
+            res, antithetic = _simulate(rbd, float(t_simulation), sim_overrides, n_sims)
         else:
             res, antithetic = _run_to_precision(
-                rbd, float(t_simulation), overrides, batch, max_n, tolerance, expect_downtime)
+                rbd, float(t_simulation), sim_overrides, batch, max_n, tolerance, expect_downtime)
+        if res is None:
+            raise _NoSimulation
         n_sims = int(getattr(res, "n_simulations", n_sims))
         precision = _precision(res, tolerance, antithetic, None if fixed_n else max_n,
                                expect_downtime)
@@ -2078,6 +2104,10 @@ def analyze_availability(
         },
         "curve": curve,
         **extras,
+        # Whether the figures above include a simulation (``simulate=False``:
+        # the exact long-run figures only), and the state it started from.
+        "has_simulation": res is not None,
+        "current_state": state or None,
         "repyability_version": _repyability_version(),
     }
 
@@ -2171,3 +2201,327 @@ def _repyability_version() -> Optional[str]:
         return version("repyability")
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Exact availability over time (#154), from new or from the current state (#155)
+# ---------------------------------------------------------------------------
+# RePyability 0.11 computes from each block's renewal equation, with no
+# simulation, what the Monte-Carlo run estimates: the availability A(t) at
+# each time (``point_availability``), its mean over a window
+# (``mission_availability``), and the expected system failures, planned
+# outages, downtime and cost over the window (``expected_events`` /
+# ``expected_cost``). ``analysis_routes()`` says, without running anything,
+# whether each is exact, numerical (deterministic, to ~1e-7), simulated or
+# refused for a given diagram. These figures are free for every user; the
+# simulation stays paid for what only it gives (distributions, P(no outage),
+# criticality indices). Everything runs through :func:`exact_availability`,
+# one call the compute service (#149) can take over.
+
+EXACT_POINTS = 200        # evenly spaced points of the A(t) curve over the window
+EXACT_EARLY_POINTS = 40   # plus log-spaced points near the start, for the early transient
+# Cost grows with the blocks (and roughly with their square for the window
+# figures). Timed on RePyability 0.11 (Apple M-series, one process) over the
+# default horizon: 10 blocks ~1.1 s, 20 ~2.7 s, 30 ~5.2 s, 40 ~7.7 s, 60 ~16 s,
+# 80 ~30 s for the curve + window figures. Up to EXACT_AUTO_MAX_BLOCKS they are
+# computed with every Calculate; above it only on request, and above
+# EXACT_MAX_BLOCKS not on this service at all.
+EXACT_AUTO_MAX_BLOCKS = 30
+EXACT_MAX_BLOCKS = 120
+
+# The routes shown with the figures, in this order.
+_EXACT_ROUTE_KEYS = (
+    "mean_availability", "point_availability", "mission_availability",
+    "expected_failures", "expected_events", "expected_cost", "availability",
+)
+_OVER_TIME_OK = ("exact", "numerical")
+
+
+def count_blocks(graph: dict) -> int:
+    """The component blocks of a diagram (voting gates, input and output
+    aren't blocks): what the exact figures' cost scales with."""
+    return sum(1 for n in (graph or {}).get("nodes") or [] if n.get("type") == "component")
+
+
+def exact_deferral(graph: dict, requested: bool) -> Optional[dict]:
+    """None when the exact figures should be computed now; otherwise the
+    ``exact`` block saying why not: ``on_request`` for a diagram above
+    :data:`EXACT_AUTO_MAX_BLOCKS` blocks (unless ``requested``), and
+    ``too_large`` above :data:`EXACT_MAX_BLOCKS`."""
+    n = count_blocks(graph)
+    if n > EXACT_MAX_BLOCKS:
+        return {
+            "status": "too_large", "n_blocks": n,
+            "message": (
+                f"This diagram has {n} blocks; the exact figures over time are computed here for up to "
+                f"{EXACT_MAX_BLOCKS}. Download it as Python to compute them locally (the script makes the "
+                "same calls), or run the simulation."),
+        }
+    if n > EXACT_AUTO_MAX_BLOCKS and not requested:
+        return {
+            "status": "on_request", "n_blocks": n,
+            "message": (
+                f"This diagram has {n} blocks, so the exact availability over time and the window figures "
+                "take a while to compute (from several seconds to a minute or so): they're computed on "
+                "request."),
+        }
+    return None
+
+
+def _number(value, what: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise AnalysisError(f"{what} must be a number (in the diagram's time unit); got {value!r}.")
+    v = float(value)
+    if not np.isfinite(v) or v < 0:
+        raise AnalysisError(f"{what} must be finite and ≥ 0 (in the diagram's time unit); got {value!r}.")
+    return v
+
+
+def parse_current_state(graph: dict, raw) -> Optional[dict]:
+    """Validate a current state (#155) and return it canonical — or None for
+    none (every block new).
+
+    ``raw`` maps block ids to ``{"down": true, "since": <time into its
+    repair>}`` or ``{"age": <time since new or its last renewal>}``. A block
+    at age 0 is new and left out, so equal states give equal cache keys.
+    Raises :class:`AnalysisError` with a message for the user."""
+    if raw is None or raw == {}:
+        return None
+    if not isinstance(raw, dict):
+        raise AnalysisError(
+            "current_state must be an object keyed by block id, each "
+            '{"down": true, "since": <time into the repair>} or {"age": <time since new>}.')
+    nodes = {n.get("id"): n for n in (graph or {}).get("nodes") or [] if isinstance(n, dict)}
+    out: dict[str, dict] = {}
+    for nid, spec in raw.items():
+        node = nodes.get(nid)
+        if node is None or node.get("type") != "component":
+            raise AnalysisError(f"current_state names {nid!r}, which isn't a component block of this diagram.")
+        data = node.get("data") or {}
+        label = data.get("label") or nid
+        if data.get("state") in ("working", "failed"):
+            raise AnalysisError(f"{label} is pinned {data['state']}, so it takes no current state.")
+        if not isinstance(spec, dict):
+            raise AnalysisError(f'{label}: give {{"down": true, "since": …}} or {{"age": …}}; got {spec!r}.')
+        unknown = sorted(set(spec) - {"down", "since", "age"})
+        if unknown:
+            raise AnalysisError(f"{label}: unknown current-state field(s) {', '.join(unknown)} "
+                                "(use down + since, or age).")
+        down = spec.get("down", False)
+        if not isinstance(down, bool):
+            raise AnalysisError(f"{label}: down must be true or false; got {down!r}.")
+        if down:
+            if spec.get("age") not in (None, 0):
+                raise AnalysisError(f"{label} is down, so it has no age: give since, the time into its repair.")
+            since = spec.get("since")
+            out[str(nid)] = {"down": True, "since": 0.0 if since is None else _number(since, f"{label}: since")}
+        else:
+            if spec.get("since") is not None:
+                raise AnalysisError(f"{label}: since is the time into a repair — set down: true with it, "
+                                    "or give age for a running block.")
+            age = spec.get("age")
+            age = 0.0 if age is None else _number(age, f"{label}: age")
+            if age > 0:
+                out[str(nid)] = {"age": age}
+    return dict(sorted(out.items())) or None
+
+
+def _node_states(state: Optional[dict], labels: Optional[dict] = None) -> Optional[dict]:
+    """A canonical current state as RePyability ``NodeState``s, by node id."""
+    if not state:
+        return None
+    from repyability import NodeState
+
+    out = {}
+    for nid, spec in state.items():
+        try:
+            if spec.get("down"):
+                out[nid] = NodeState(alive=False, down_for=float(spec.get("since") or 0.0))
+            else:
+                out[nid] = NodeState(age=float(spec.get("age") or 0.0))
+        except ValueError as exc:
+            label = (labels or {}).get(nid, nid)
+            raise AnalysisError(f"{label}: {exc}") from exc
+    return out
+
+
+def _with_labels(text: str, labels: dict) -> str:
+    """RePyability's message with the node ids it quotes replaced by the
+    blocks' labels."""
+    for nid, label in sorted(labels.items(), key=lambda kv: -len(str(kv[0]))):
+        text = text.replace(repr(nid), f"“{label}”")
+    return text
+
+
+def _routes_summary(routes: dict, labels: dict) -> dict:
+    """The routes of the analyses behind the availability figures: how each
+    is computed (exact / numerical / simulated / refused), why, and the
+    blocks that decide it."""
+    out = {}
+    for key in _EXACT_ROUTE_KEYS:
+        r = routes.get(key)
+        if r is None:
+            continue
+        out[key] = {
+            "route": r.route,
+            "reason": _with_labels(r.reason, labels),
+            "blocks": [labels.get(n, str(n)) for n in r.nodes],
+        }
+    return out
+
+
+def _availability_routes(graph: dict) -> Optional[dict]:
+    """For the Validate panel: how a repairable diagram's long-run figures,
+    figures over time and simulation are computed (route + reason), or None
+    when the diagram can't be built from the graph alone (a saved model
+    that needs resolving, say)."""
+    try:
+        rbd, labels, *_ = _build_repairable_rbd(graph)
+        summary = _routes_summary(rbd.analysis_routes(), labels)
+    except Exception:  # noqa: BLE001 - only a label; Calculate reports problems
+        return None
+    return {
+        "long_run": summary.get("mean_availability"),
+        "over_time": summary.get("point_availability"),
+        "window": summary.get("expected_events"),
+        "simulation": summary.get("availability"),
+    }
+
+
+def _exact_grid(horizon: float) -> np.ndarray:
+    """The A(t) curve's times: evenly spaced over the window, plus log-spaced
+    points near the start, where the curve moves fastest (a block down now
+    recovers within a repair time)."""
+    even = np.linspace(0.0, horizon, EXACT_POINTS)
+    early = np.geomspace(horizon * 1e-4, horizon * 0.05, EXACT_EARLY_POINTS)
+    return np.unique(np.concatenate([even, early]))
+
+
+def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float] = None,
+                       state: Optional[dict] = None) -> dict:
+    """The exact availability over time and the window's figures for a
+    repairable diagram, with no simulation: the ``exact`` block of an
+    availability result.
+
+    ``horizon`` is the window (default: the simulation's default horizon,
+    long enough to settle); ``state`` a canonical current state
+    (:func:`parse_current_state`), the window then running from now. When
+    ``analysis_routes()`` says the figures over time aren't exact or
+    numerical for this diagram (e.g. proof tests that take time), the block
+    says so (``status: "simulation_only"``) and nothing is computed.
+
+    This is the one function the compute service (#149) will run: it takes
+    the graph and returns plain JSON."""
+    started = time.perf_counter()
+    rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(graph, resolve_model)
+    overrides = {"working_nodes": working_nodes | gate_ids, "broken_nodes": broken_nodes}
+    node_states = _node_states(state, labels)
+    window = float(horizon) if horizon and horizon > 0 else float(_availability_horizon(graph))
+    routes = rbd.analysis_routes()
+    summary = _routes_summary(routes, labels)
+    base: dict[str, Any] = {
+        "from": "now" if node_states else "new",
+        "current_state": state or None,
+        "window": window,
+        "unit": (graph.get("unit") or "").strip(),
+        "n_blocks": count_blocks(graph),
+        "routes": summary,
+    }
+
+    def simulation_only(reason: str) -> dict:
+        return {
+            **base, "status": "simulation_only",
+            "message": ("The exact availability over time isn't available for this diagram, so only the "
+                        f"simulation gives it. {reason}"),
+            "compute_seconds": time.perf_counter() - started,
+        }
+
+    for key in ("point_availability", "expected_events"):
+        route = summary.get(key) or {}
+        if route.get("route") not in _OVER_TIME_OK:
+            return simulation_only(route.get("reason") or "RePyability has no exact route for it.")
+
+    grid = _exact_grid(window)
+    state_kw = {"state": node_states} if node_states else {}
+    cost = None
+    cost_note = None
+    try:
+        with warnings.catch_warnings(), np.errstate(all="ignore"):
+            warnings.simplefilter("ignore", RuntimeWarning)
+            curve = np.asarray(rbd.point_availability(grid, **overrides, **state_kw), dtype=float)
+            events = rbd.expected_events(window, **overrides, **state_kw)
+            if rbd.has_costs:
+                if (summary.get("expected_cost") or {}).get("route") in _OVER_TIME_OK:
+                    cost = rbd.expected_cost(window, **overrides, **state_kw)
+                else:
+                    cost_note = (summary.get("expected_cost") or {}).get("reason")
+    except NotImplementedError as exc:
+        return simulation_only(_with_labels(str(exc), labels))
+    except (ValueError, TypeError) as exc:
+        # A current state the blocks can't be in (a repair longer than it can
+        # last, say): the user's input, not a bug.
+        if node_states:
+            raise AnalysisError(f"That current state can't be used: {_with_labels(str(exc), labels)}") from exc
+        raise
+
+    downtime = _f(events.system_downtime)
+    failures = _f(events.system_failures)
+    planned = _f(events.system_planned_outages)
+    mission = None if downtime is None else max(0.0, min(1.0, 1.0 - downtime / window))
+    finite = np.where(np.isfinite(curve), curve, np.nan)
+    i_min = int(np.nanargmin(finite)) if np.isfinite(finite).any() else None
+
+    node_down = {n: _f(v) for n, v in (events.node_downtime or {}).items() if n not in gate_ids}
+    total_down = sum(v for v in node_down.values() if v) or 0.0
+    per_node = sorted(
+        (
+            {
+                "id": str(n), "label": labels.get(n, str(n)),
+                "failures": _f((events.node_failures or {}).get(n)),
+                "downtime": d,
+                "share": (d / total_down) if (d is not None and total_down > 0) else 0.0,
+            }
+            for n, d in node_down.items()
+        ),
+        key=lambda r: (-(r["downtime"] or 0.0), r["label"]),
+    )
+
+    cost_out = None
+    if cost is not None:
+        cost_out = {
+            "mean": _f(cost.mean),
+            "by_category": {k: _f(v) for k, v in (cost.by_category or {}).items()},
+            "acquisition_cost": _f(cost.acquisition_cost),
+        }
+
+    def method(key: str) -> Optional[str]:
+        return (summary.get(key) or {}).get("route")
+
+    return {
+        **base,
+        "status": "ok",
+        "message": None,
+        "curve": {"t": _clean(grid), "availability": _clean(curve)},
+        "availability_start": _f(curve[0]),
+        "availability_end": _f(curve[-1]),
+        "availability_min": None if i_min is None else _f(curve[i_min]),
+        "availability_min_at": None if i_min is None else float(grid[i_min]),
+        "mission_availability": mission,
+        "expected_failures": failures,
+        "planned_outages": planned,
+        "expected_outages": None if failures is None else failures + (planned or 0.0),
+        "downtime": downtime,
+        "cost": cost_out,
+        "cost_note": cost_note,
+        "per_node": per_node,
+        "method": {
+            "steady_state": method("mean_availability"),
+            "curve": method("point_availability"),
+            "mission_availability": method("mission_availability"),
+            "expected_failures": method("expected_failures"),
+            "expected_outages": method("expected_events"),
+            "downtime": method("expected_events"),
+            "cost": method("expected_cost") if cost_out is not None else None,
+        },
+        "compute_seconds": time.perf_counter() - started,
+    }

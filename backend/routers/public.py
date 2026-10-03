@@ -100,7 +100,15 @@ def _with_rbd_analysis(session, payload: dict, rbd_id: str, owner_id: str, ctx) 
             analysis = rbds_service.cached_availability(
                 doc, rbds_service.availability_cache_key(graph)
             )
-            if analysis is None:
+            # The owner's saved exact figures (#154) ride along, or stand in
+            # for a simulation that hasn't been run: read, never computed here.
+            exact = rbds_service.cached_exact(doc, rbds_service.exact_cache_key(graph, None, None))
+            if analysis is not None:
+                analysis = {**analysis, "has_simulation": True,
+                            **({"exact": exact["exact"]} if exact else {})}
+            elif exact is not None:
+                analysis = {**exact, "has_simulation": False, "cached": False, "computed_at": None}
+            else:
                 note = AVAILABILITY_NOT_RUN
         else:
             analysis = rbds_service.analyze_graph(session, graph, [*ctx.read_owners, owner_id])

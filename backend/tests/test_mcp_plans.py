@@ -60,12 +60,13 @@ def env(monkeypatch):
     for u in USERS.values():
         test_db.users.insert_one(dict(u))
 
-    # Count real availability simulations.
+    # Count real availability simulations (not the exact, simulate=False, analyses).
     sims = {"n": 0}
     real = rbd_analysis.analyze_availability
 
     def spy(*args, **kwargs):
-        sims["n"] += 1
+        if kwargs.get("simulate", True):
+            sims["n"] += 1
         return real(*args, **kwargs)
 
     monkeypatch.setattr(rbd_analysis, "analyze_availability", spy)
@@ -148,14 +149,53 @@ def test_free_user_tries_every_tool_but_the_pro_only_ones_within_the_allowance(e
     assert env.db.models.count_documents({"owner_id": FREE, "dataset_id": {"$ne": ""}}) == 0
 
 
-def test_free_user_gets_no_simulations_and_the_refusal_isnt_counted(env):
+def test_free_user_gets_the_exact_figures_but_no_simulations(env):
     rid = _repairable(env, FREE, "Pumps")
     assert _calls_used(env.db, FREE) == 1
     out = _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid}))
+    # The exact figures (#154) on the Free plan, within the allowance...
+    assert out["available"] is True and out["has_simulation"] is False
+    exact = out["exact"]
+    assert exact["status"] == "ok" and exact["method"]["mission_availability"] in ("exact", "numerical")
+    assert 0 < exact["mission_availability"] <= 1 and exact["expected_failures"] > 0
+    assert len(exact["curve"]) == 21 and exact["routes"]["availability"]["route"] == "simulated"
+    # ...the simulation refused, with the way forward.
+    sim = out["simulation"]
+    assert sim["available"] is False and sim["code"] == "pro_required"
+    assert "isn't included on the Free plan" in sim["message"] and "export_rbd_python" in sim["message"]
+    assert env.simulations["n"] == 0
+    assert _calls_used(env.db, FREE) == 2  # an answer, so it counts
+
+
+def test_free_user_simulation_only_diagram_is_refused_and_not_counted(env):
+    """No exact figures at all (proof tests that take time): as before #154."""
+    rid = _repairable(env, FREE, "Pumps")
+    doc = env.db.rbds.find_one({"_id": rid})
+    graph = doc["graph"]
+    first = next(n for n in graph["nodes"] if n["type"] == "component")
+    first["data"]["inspection"] = {"interval": 500, "duration": 2}
+    env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
+    out = _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid}))
     assert out["available"] is False and out["code"] == "pro_required"
-    assert "isn't included on the Free plan" in out["message"] and "export_rbd_python" in out["message"]
+    assert "isn't included on the Free plan" in out["message"]
     assert env.simulations["n"] == 0
     assert _calls_used(env.db, FREE) == 1
+
+
+def test_free_user_current_state(env):
+    rid = _repairable(env, FREE, "Pumps")
+    graph = env.db.rbds.find_one({"_id": rid})["graph"]
+    ids = [n["id"] for n in graph["nodes"] if n["type"] == "component"]
+    new = _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid, "t_max": 100}))["exact"]
+    now = _ok(_call(env.oauth[FREE], "analyze_rbd", {
+        "rbd_id": rid, "t_max": 100, "current_state": {ids[0]: {"down": True, "since": 0.5}}}))
+    assert now["current_state"] == {ids[0]: {"down": True, "since": 0.5}}
+    assert now["exact"]["from"] == "now" and new["from"] == "new"
+    assert now["exact"]["mission_availability"] < new["mission_availability"]
+    msg = _err(_call(env.oauth[FREE], "analyze_rbd", {
+        "rbd_id": rid, "current_state": {"nope": {"age": 3}}}))
+    assert "isn't a component block" in msg
+    assert "availability_cache" not in env.db.rbds.find_one({"_id": rid})
 
 
 def test_free_allowance_is_per_calendar_month(env, monkeypatch):
@@ -328,8 +368,9 @@ def _repairable(env, uid, name):
 def test_grandfathered_agent_gets_no_simulations(env):
     rid = _repairable(env, AGENT, "Pumps")
     out = _ok(_call(env.oauth[AGENT], "analyze_rbd", {"rbd_id": rid}))
-    assert out["available"] is False and out["code"] == "pro_required"
-    msg = out["message"]
+    assert out["available"] is True and out["exact"]["status"] == "ok"
+    assert out["simulation"]["available"] is False and out["simulation"]["code"] == "pro_required"
+    msg = out["simulation"]["message"]
     assert "needs Reliafy Pro (US$19/month" in msg and f"{BASE}/billing" in msg
     assert "export_rbd_python" in msg and "Download as Python" in msg and "RePyability" in msg
     assert env.simulations["n"] == 0
@@ -346,6 +387,12 @@ def test_pro_and_purchased_credits_simulate_and_the_saved_result_is_served_after
     rid = _repairable(env, PRO, "Pumps")
     out = _ok(_call(env.oauth[PRO], "analyze_rbd", {"rbd_id": rid}))
     assert out["available"] and out["cached"] is False and env.simulations["n"] == 1
+    assert out["has_simulation"] is True and out["simulation"]["available"] is True
+    assert out["exact"]["status"] == "ok" and out["precision"]
+    # simulate=false: the exact figures only (the saved simulation still served).
+    fast = _ok(_call(env.oauth[PRO], "analyze_rbd", {"rbd_id": rid, "simulate": False, "t_max": 500}))
+    assert fast["has_simulation"] is False and fast["exact"]["window"] == 500
+    assert env.simulations["n"] == 1
 
     # An Agent user who bought credits is entitled, as in the app...
     billing.grant_credits(env.db, AGENT, 500, "purchase")
