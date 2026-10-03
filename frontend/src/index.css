@@ -6183,6 +6183,38 @@ button.danger:hover { background: #fdeeee; }
 .rbd-avail-legend { margin: 0; padding-left: 18px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
 .rbd-avail-legend b { color: var(--text, inherit); font-weight: 600; }
 
+/* Exact availability over time (#154) and "As of now" (#155). */
+.rbd-method {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em; text-transform: none;
+  vertical-align: middle; line-height: 1.6; cursor: help;
+  color: #0f7a55; background: rgba(15, 138, 106, 0.1);
+}
+.rbd-method.numerical { color: #2457c5; background: rgba(47, 109, 246, 0.1); }
+.rbd-method.simulated { color: #9a5b00; background: #fff4dd; }
+.rbd-method.refused { color: var(--muted); background: var(--bg, #f3f5f8); }
+.rbd-exact, .rbd-sim { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.rbd-exact .ds-section-h, .rbd-sim .ds-section-h { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.rbd-exact-metrics { justify-content: flex-start; }
+.rbd-exact-metrics .alt-metric .k { display: flex; align-items: center; flex-wrap: wrap; }
+.rbd-exact-note p, .rbd-sim-offer p { font-size: 13px; }
+.rbd-sim-offer { display: flex; flex-direction: column; gap: 4px; }
+.rbd-routes { font-size: 12px; color: var(--muted); }
+.rbd-routes summary { cursor: pointer; }
+.rbd-routes ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.rbd-routes code { font-size: 11.5px; }
+.rbd-asof { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.rbd-asof-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); cursor: pointer; padding-bottom: 8px; }
+.rbd-asof-toggle input { margin: 0; }
+.rbd-asof-panel { display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
+.rbd-asof-table { margin-bottom: 0; }
+.rbd-asof-table select, .rbd-asof-table input {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--text);
+  padding: 3px 6px; font: inherit; font-size: 13px;
+}
+.rbd-asof-table input { width: 110px; }
+.rbd-asof-table tr.is-down .calc-row-label { color: #b42318; font-weight: 600; }
+
 /* Repeated blocks (#102): a linked copy of a component, drawn again */
 .rbd-comp.repeat:not(.state-working):not(.state-failed) {
   background: repeating-linear-gradient(135deg, var(--panel) 0 9px, rgba(47, 109, 246, 0.05) 9px 18px);

@@ -1,4 +1,5 @@
 // Shared RBD validation feedback, used on both the Builder and Calculator tabs.
+import MethodTag from "./MethodTag.jsx";
 
 // A structural signature of the diagram (ignoring node positions) so callers
 // can tell when it has changed since the last validation.
@@ -45,6 +46,40 @@ export default function ValidationPanel({ validation, stale }) {
     non_analytic_nodes: nonAnalytic,
   } = validation;
   const nonAnalyticList = Object.entries(nonAnalytic || {});
+
+  // A repairable diagram (#154): how each availability figure is computed.
+  const routes = validation.availability_routes;
+  if (valid && routes) {
+    const overTime = routes.over_time?.route;
+    const exactOverTime = overTime === "exact" || overTime === "numerical";
+    return (
+      <div className="rbd-check rbd-check-ok">
+        <span className="rbd-check-icon">✓</span>
+        <div>
+          <strong>
+            {exactOverTime
+              ? "Valid — availability computed with no simulation."
+              : "Valid — availability over time needs the simulation."}
+          </strong>
+          <p className="rbd-check-note">
+            Long-run figures <MethodTag method={routes.long_run?.route} /> · availability over time{" "}
+            <MethodTag method={overTime} /> · expected failures and downtime{" "}
+            <MethodTag method={routes.window?.route} />
+            {exactOverTime
+              ? ". The simulation adds the spread of outcomes (distributions, criticality)."
+              : `. ${routes.over_time?.reason || ""}`}
+          </p>
+          {warnings && warnings.length > 0 && (
+            <ul className="rbd-check-list rbd-check-warn">
+              {warnings.map((w, i) => (
+                <li key={i}>⚠ {w}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // A valid diagram is always calculable. Closed-form when every node is
   // analytic; otherwise the standby / load-sharing nodes are simulated, which
