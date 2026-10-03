@@ -198,7 +198,7 @@ def _build_distribution(
 
     ``model`` is the object the picker stores on a node: ``distribution_id`` and
     an ordered list of ``{name, value}`` params. Parameters are reordered to the
-    distribution's own ``param_names`` so the positional ``from_params`` call is
+    distribution's own ``parameter_names`` so the positional ``from_params`` call is
     correct regardless of the order they arrive in.
     """
     if not model:

@@ -283,7 +283,7 @@ def _build_payload(
 
     # Distribution shape parameters: everything after the substituted scale
     # (index 0, a fixed placeholder). Names come from the distribution.
-    dist_param_names = list(getattr(dist_of(distribution_id), "param_names", []) or [])
+    dist_param_names = list(getattr(dist_of(distribution_id), "parameter_names", []) or [])
     shape_params = []
     for i in range(1, k_dist):
         name = dist_param_names[i] if i < len(dist_param_names) else f"p{i}"

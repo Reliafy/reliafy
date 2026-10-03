@@ -791,7 +791,7 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
     if fixed is not None:
         if not isinstance(fixed, dict):
             raise FitError('fixed must be an object like {"beta": 2}.')
-        names = set(getattr(entry["dist"], "param_names", []) or [])
+        names = set(getattr(entry["dist"], "parameter_names", []) or [])
         # Extras can be fixed too when their option is active.
         if out["offset"]:
             names.add("gamma")
@@ -929,7 +929,7 @@ def param_values(distribution_id: str, params: list, where: str = "") -> list[fl
             f"'{distribution_id}' isn't a supported plain distribution. "
             f"Supported: {', '.join(DISTRIBUTIONS)}."
         )
-    names = list(getattr(entry["dist"], "param_names", []) or [])
+    names = list(getattr(entry["dist"], "parameter_names", []) or [])
     prefix = f"{where}: " if where else ""
     takes = f"{entry['name']} takes the parameters {', '.join(names)}"
     params = list(params or [])
@@ -1004,7 +1004,7 @@ def result_from_params(
     except Exception as exc:
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
 
-    names = list(getattr(dist, "param_names", []) or [f"p{i}" for i in range(len(values))])
+    names = list(getattr(dist, "parameter_names", []) or [f"p{i}" for i in range(len(values))])
     result = {
         "distribution": entry["name"],
         "distribution_id": distribution_id,
@@ -1298,7 +1298,7 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> 
     except Exception as exc:
         raise FitError(_fit_failure_hint(exc, kwargs, f"a {entry['name']} mixture")) from exc
 
-    base_names = list(getattr(dist, "param_names", []) or [])
+    base_names = list(getattr(dist, "parameter_names", []) or [])
     values = np.asarray(raw.params, dtype=float).reshape(raw.m, -1)
     weights = np.ravel(np.asarray(raw.w, dtype=float))
     params = []
@@ -1372,8 +1372,8 @@ def _fit_distribution(
         raise FitError(_fit_failure_hint(exc, kwargs, entry["name"])) from exc
 
     param_names = (
-        getattr(model, "param_names", None)
-        or getattr(dist, "param_names", None)
+        getattr(model, "parameter_names", None)
+        or getattr(dist, "parameter_names", None)
         or [f"p{i}" for i in range(len(model.params))]
     )
     params = _params_with_uncertainty(model, param_names)
@@ -1481,8 +1481,8 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
 
     param_names = (
-        getattr(model, "param_names", None)
-        or getattr(dist, "param_names", None)
+        getattr(model, "parameter_names", None)
+        or getattr(dist, "parameter_names", None)
         or [f"p{i}" for i in range(len(model.params))]
     )
     params = _params_with_uncertainty(model, param_names)
@@ -1674,7 +1674,7 @@ def _fit_regression(
 
     # Baseline distribution parameters (empty for semi-parametric Cox).
     base_dist = getattr(model, "distribution", None)
-    base_names = getattr(base_dist, "param_names", None) or [
+    base_names = getattr(base_dist, "parameter_names", None) or [
         f"p{i}" for i in range(k_dist)
     ]
     baseline = [

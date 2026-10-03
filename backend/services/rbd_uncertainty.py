@@ -135,7 +135,7 @@ def _matches(model: dict, live) -> bool:
     if live.dist is not dist and getattr(live.dist, "name", None) != getattr(dist, "name", ""):
         return False
     by_name = {p.get("name"): p.get("value") for p in (model.get("params") or [])}
-    names = list(getattr(dist, "param_names", []) or [])
+    names = list(getattr(dist, "parameter_names", []) or [])
     try:
         values = [float(by_name[n]) for n in names]
     except (KeyError, TypeError, ValueError):
@@ -147,7 +147,7 @@ def _matches(model: dict, live) -> bool:
 def _drawn_model(model: dict, params: list) -> dict:
     """The block's life model with draw ``params`` in place of its own."""
     dist = DISTRIBUTIONS[model["distribution_id"]]["dist"]
-    names = list(getattr(dist, "param_names", []) or [])
+    names = list(getattr(dist, "parameter_names", []) or [])
     return {
         "source": "params",
         "distribution_id": model["distribution_id"],

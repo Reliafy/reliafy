@@ -315,7 +315,7 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
     params = model.get("params") or []
     try:
         by_name = {p["name"]: float(p["value"]) for p in params if "name" in p}
-        names = list(getattr(entry["dist"], "param_names", []) or [])
+        names = list(getattr(entry["dist"], "parameter_names", []) or [])
         if names and all(n in by_name for n in names):
             pairs = [(n, by_name[n]) for n in names]
         else:  # the order they were given in, as the app does

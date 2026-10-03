@@ -173,7 +173,7 @@ def _power_law(model_id: str, params) -> tuple:
 
 def _param_names(model_id: str, n: int) -> list:
     fitter = MODELS.get(model_id, {}).get("fitter")
-    names = list(getattr(fitter, "param_names", []) or [])
+    names = list(getattr(fitter, "parameter_names", []) or [])
     return names if len(names) == n else [f"p{k}" for k in range(n)]
 
 

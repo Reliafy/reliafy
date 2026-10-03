@@ -912,7 +912,7 @@ def save_model(
     uid = user["uid"]
     dist_id = fitting.resolve_distribution_id(distribution)  # FitError -> tool error listing the options
     entry = fitting.DISTRIBUTIONS[dist_id]
-    names = list(getattr(entry["dist"], "param_names", []) or [])
+    names = list(getattr(entry["dist"], "parameter_names", []) or [])
 
     given: dict[str, float] = {}
     for p in params:
