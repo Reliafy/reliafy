@@ -499,7 +499,10 @@ def test_common_cause_makes_redundancy_pay_off_less():
     shared = rd.design_redundancy(_pumps(beta=0.3, ctrl_rate=1e-4), T, blocks, budget={"cost": 8})
     # Independent pumps: the spare money buys a third pump. With a shared
     # cause that a third pump can't escape, it buys a second controller.
-    assert sorted(_units(free["design"]).items()) == [("ctrl", 1), ("pumpA", 2), ("pumpB", 1)]
+    # Pumps A and B are identical, so the third pump on either is the same
+    # design: which one wins the exact tie differs by platform.
+    free_units = _units(free["design"])
+    assert free_units["ctrl"] == 1 and sorted((free_units["pumpA"], free_units["pumpB"])) == [1, 2]
     assert _units(shared["design"]) == {"ctrl": 2, "pumpA": 1, "pumpB": 1}
     assert shared["design"]["reliability"] < free["design"]["reliability"]
     gain = {beta: r["design"]["reliability"] - r["current"]["reliability"]
