@@ -897,6 +897,9 @@ _UNIT_SUFFIX = re.compile(
     r"^(?P<stem>.*?[a-z0-9])(?:[\s\-_#/.]+(?P<tok>[a-h]|\d+|i{1,3}|iv|left|right|port|starboard|north|"
     r"south|east|west|primary|secondary|upper|lower)|(?P<num>\d+))$")
 _BLOCK_TYPES = ("component", "series", "parallel", "standby", "subsystem", "loadshare")
+# Blocks that already hold their own redundancy: a label such as "Pumps A/B
+# (duty/standby)" on one describes what is inside it, not a missing partner.
+_REDUNDANT_TYPES = ("parallel", "standby", "loadshare", "knode")
 
 
 def _label_stem(label: str) -> tuple[str, Optional[str]]:
@@ -910,13 +913,27 @@ def _label_stem(label: str) -> tuple[str, Optional[str]]:
     return m.group("stem").strip(" -_#/."), m.group("tok") or m.group("num")
 
 
+def _same_item(stem_a: str, stem_b: str) -> bool:
+    """Whether two label stems name the same kind of item: equal, or ending
+    in the same word ("main pump" / "pump", "pumps")."""
+    if not stem_a or not stem_b:
+        return False
+    if stem_a == stem_b:
+        return True
+    head_a, head_b = stem_a.split()[-1].rstrip("s"), stem_b.split()[-1].rstrip("s")
+    return bool(head_a) and head_a == head_b
+
+
 def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> list:
     """Warn (never block) when two blocks wired directly in series look like
     a redundant pair — labels that differ only by a trailing A/B, 1/2, i/ii,
-    left/right…, or that call one of them duty/standby/spare/backup/redundant.
-    Redundancy wired in series makes the system look far less reliable than
-    it is. Only directly adjacent series blocks (the one's sole output feeding
-    the other's sole input) are compared, to keep false positives low."""
+    left/right…, or name the same item with one of them called duty/standby/
+    spare/backup/redundant ("Main pump" -> "Standby pump"). Redundancy wired
+    in series makes the system look far less reliable than it is. Only
+    directly adjacent series blocks (the one's sole output feeding the
+    other's sole input) are compared, to keep false positives low; a
+    standby, parallel, load-sharing or voting block's own redundancy words
+    describe what is inside it, so they never count (#183)."""
     nodes = {n.get("id"): n for n in graph.get("nodes") or []}
     edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
              if e.get("source") in nodes and e.get("target") in nodes]
@@ -938,10 +955,12 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
         seen.add((s, t))
         la, lb = label(s), label(t)
         (stem_a, tok_a), (stem_b, tok_b) = _label_stem(la), _label_stem(lb)
+        worded = [lab for nid, lab in ((s, la), (t, lb))
+                  if _REDUNDANCY_WORDS.search(lab) and nodes[nid].get("type") not in _REDUNDANT_TYPES]
         if stem_a and stem_a == stem_b and tok_a != tok_b:
             why = "the same item with a different unit suffix"
-        elif _REDUNDANCY_WORDS.search(la) or _REDUNDANCY_WORDS.search(lb):
-            why = "one is labelled duty/standby/spare/backup/redundant"
+        elif worded and _same_item(stem_a, stem_b):
+            why = "the same item, one labelled duty/standby/spare/backup/redundant"
         else:
             continue
         out.append(

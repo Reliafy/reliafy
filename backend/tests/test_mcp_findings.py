@@ -321,13 +321,46 @@ def test_redundancy_heuristic_keeps_false_positives_low():
         return rbd_analysis.series_redundancy_warnings(rbd_graph.normalize_graph(_chain(*labels)))
 
     for pair in (("Valve 1", "Valve 2"), ("P1", "P2"), ("Train i", "Train ii"), ("Fan left", "Fan right"),
-                 ("Controller", "Backup battery"), ("Duty pump", "Filter")):
+                 ("Main pump", "Standby pump"), ("Pump", "Pump (standby)"), ("Duty pump", "Spare pumps"),
+                 ("Battery", "Backup battery")):
         assert warned(*pair), pair
+    # A redundancy word alone isn't enough: the two must name the same item (#183).
     for pair in (("Controller", "Pump A"), ("Stage 1 pump", "Stage 2 pump"), ("Main pump", "Main valve"),
-                 ("Motor", "Gearbox"), ("Bearing", "Bearing")):
+                 ("Motor", "Gearbox"), ("Bearing", "Bearing"), ("Controller", "Backup battery"),
+                 ("Duty pump", "Filter")):
         assert not warned(*pair), pair
     # Only directly adjacent series blocks: a parallel pair is fine.
     assert not rbd_analysis.series_redundancy_warnings(rbd_graph.normalize_graph(GRAPH))
+
+
+def _cw_pump_train(pumps_type="standby", pumps_label="CW pumps A/B (duty/standby)"):
+    """#183's diagram: MCC -> strainer -> a redundant pump block -> check valve."""
+    graph = _chain("MCC", "Suction strainer", pumps_label, "Discharge check valve")
+    pumps = graph["nodes"][3]
+    pumps["type"] = pumps_type
+    if pumps_type == "standby":
+        pumps["spares"] = 1
+    else:
+        pumps["n"] = 2
+    return graph
+
+
+def test_redundancy_words_on_a_redundant_block_describe_its_inside():
+    from backend.services import rbd_analysis, rbd_graph
+
+    for kind in ("standby", "parallel"):
+        graph = rbd_graph.normalize_graph(_cw_pump_train(kind))
+        assert not rbd_analysis.series_redundancy_warnings(graph), kind
+    # The same words on two single components of one item still warn.
+    graph = rbd_graph.normalize_graph(_chain("CW pump (duty)", "CW pump (standby)"))
+    assert rbd_analysis.series_redundancy_warnings(graph)
+
+
+def test_standby_node_between_unrelated_blocks_is_not_a_redundant_pair(env):
+    out = _ok(_call(env.token[A], "create_rbd", {"name": "CW", **_cw_pump_train()}))
+    assert not any("redundant pair" in w for w in out["warnings"]), out["warnings"]
+    res = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": out["id"]}))
+    assert not any("redundant pair" in w for w in res.get("warnings") or [])
 
 
 # ---- P2.8 conflicting inputs are refused, never resolved silently ----------------
