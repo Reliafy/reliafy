@@ -185,8 +185,10 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
     nx = np.asarray(np_model.x, dtype=float)
     mcf_obs = np.asarray(np_model.mcf_hat, dtype=float)
     try:
-        cb = np.asarray(np_model.mcf_cb(nx, confidence=0.95), dtype=float)
-        upper, lower = cb[:, 0].tolist(), cb[:, 1].tolist()
+        cb = np.asarray(np_model.mcf_cb(nx, alpha_ci=0.05), dtype=float)
+        # Order-proof: SurPyval 0.22 returns (lower, upper); earlier releases
+        # returned (upper, lower).
+        lower, upper = np.minimum(cb[:, 0], cb[:, 1]).tolist(), np.maximum(cb[:, 0], cb[:, 1]).tolist()
     except Exception:  # pragma: no cover - bounds are optional
         upper = lower = None
 
@@ -215,6 +217,8 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
         tt = laplace(x=x, i=i)
         signif = tt.p_value < 0.05
         direction = getattr(tt, "trend", None)
+        if direction == "none":  # SurPyval 0.22 says "none"; the app and API say "no trend"
+            direction = "no trend"
         trend = {
             "test": getattr(tt, "test", "Laplace"),
             "statistic": float(tt.statistic),
