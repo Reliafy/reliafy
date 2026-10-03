@@ -3,7 +3,8 @@ import { useRef, useState } from "react";
 import ModelPicker from "./ModelPicker.jsx";
 import CompareResult from "./CompareResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
-import { getColumns, compareTwoModels } from "../api.js";
+import { getColumns, compareTwoModels, SPREADSHEET_ACCEPT } from "../api.js";
+import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 
 const COLORS = { a: "#0284c7", b: "#db2777" };
 
@@ -40,8 +41,11 @@ function parseColumn(text, col, censorCol) {
 function SideEditor({ tag, side, onChange }) {
   const inputRef = useRef(null);
   const set = (patch) => onChange({ ...side, ...patch });
+  const { toCsv, modal: sheetModal } = useSpreadsheet();
 
-  const pickFile = async (f) => {
+  const pickFile = async (picked) => {
+    if (!picked) return;
+    const f = await toCsv(picked);
     if (!f) return;
     try {
       const cols = await getColumns(f);
@@ -91,15 +95,16 @@ function SideEditor({ tag, side, onChange }) {
       ) : (
         <div className="compare-data">
           <button className="secondary" onClick={() => inputRef.current?.click()}>
-            {side.file ? side.file.name : "Upload CSV"}
+            {side.file ? side.file.name : "Upload CSV or Excel"}
           </button>
           <input
             ref={inputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`}
             hidden
-            onChange={(e) => pickFile(e.target.files?.[0])}
+            onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }}
           />
+          {sheetModal}
           {side.columns?.length > 0 && (
             <div className="compare-cols">
               <label className="calc-t">

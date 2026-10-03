@@ -215,6 +215,20 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
         ]}
         returns={`{ "interval": 176.4, "method": "…", "mttf": 8760, "target_availability": 0.99 }`}
       />
+      <ClientFn
+        sig="strategy.demonstration_test(reliability, *, confidence=0.95, mission_time=None, failures=0, test_multiple=1.0, shape=None, units=None, method='attribute', mtbf=None, unit=None)"
+        endpoint="POST /api/v1/strategy/demonstration-test"
+        desc="Plan a reliability demonstration test: units to test, test time per unit, allowed failures."
+        params={[
+          { name: "reliability", type: "number", req: true, desc: "Reliability to show over one mission, in (0,1)." },
+          { name: "confidence", type: "number", req: false, desc: "Confidence in (0,1), default 0.95." },
+          { name: "mission_time", type: "number", req: false, desc: "The mission the reliability is over." },
+          { name: "failures", type: "int", req: false, desc: "Failures allowed, default 0 (success run)." },
+          { name: "test_multiple / shape", type: "number", req: false, desc: "Test each unit k missions, Weibull shape known." },
+          { name: "units", type: "int", req: false, desc: "Units available: solve for test time per unit (needs shape)." },
+        ]}
+        returns={`{ "units": 59, "test_time_per_unit": 1000, "summary": "Test 59 units for 1,000 hours each…", "tradeoff": {…} }`}
+      />
 
       <h3>reliafy.fleet</h3>
       <ClientFn
@@ -387,6 +401,28 @@ function HttpDocs({ base }) {
         returns={`{ "distribution": "Exponential", "unit": "hours", "mttf": 8760,
   "target_availability": 0.99, "interval": 176.4, "method": "…", "note": "…" }`}
       />
+      <Endpoint
+        method="POST"
+        path="/api/v1/strategy/demonstration-test"
+        desc="Plan a reliability demonstration test (success run, binomial, Weibayes or MTBF)."
+        request={[
+          { name: "reliability", type: "number", req: true, desc: "Reliability to show over one mission, in (0,1) (attribute tests)." },
+          { name: "confidence", type: "number", req: false, desc: "Confidence in (0,1), default 0.95." },
+          { name: "mission_time", type: "number", req: false, desc: "The mission time; omit to plan in missions." },
+          { name: "failures", type: "int", req: false, desc: "Failures the test allows, default 0." },
+          { name: "test_multiple", type: "number", req: false, desc: "Test length per unit in missions (needs shape when not 1)." },
+          { name: "shape", type: "number", req: false, desc: "Weibull shape β of the lifetime, assumed known." },
+          { name: "units", type: "int", req: false, desc: "Units available: solve for the test time per unit instead." },
+          { name: "method / mtbf", type: "string / number", req: false, desc: "method=\"mtbf\" with an MTBF plans a constant-rate (chi-squared) test." },
+          { name: "design_reliability", type: "number", req: false, desc: "A design's true reliability: its chance of passing." },
+          { name: "unit", type: "string", req: false, desc: "Time unit for display." },
+        ]}
+        returns={`{ "method": "attribute", "solve_for": "units", "units": 59,
+  "test_time_per_unit": 1000, "total_test_time": 59000, "failures": 0,
+  "demonstrated_reliability": 0.9505, "consumer_risk": 0.0485,
+  "summary": "Test 59 units for 1,000 hours each with no failures to show …",
+  "assumptions": ["…"], "tradeoff": { "failures": [0,1,2,3], "rows": [{ "label": "1,000 hours (1×)", "values": [59,93,124,153] }] } }`}
+      />
 
       <h3>Push operational data (ingest)</h3>
       <p className="muted-line">
@@ -475,19 +511,28 @@ const MCP_TOOLS = [
   ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset, and report the result — nothing is saved."],
   ["fit_and_save_model", "The same fit, saved as a model in your workspace (Claude asks before saving)."],
   ["save_model", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval — with an optional dataset reference and notes."],
-  ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age."],
-  ["list_datasets / upload_dataset", "Your datasets, and saving new CSV data."],
+  ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age, and with confidence bounds (the same as the app’s band) where the model has them."],
+  ["list_datasets / get_dataset / upload_dataset", "Your datasets, reading one’s columns and rows a page at a time, and saving new data — CSV text, or a CSV or Excel file sent with create_upload."],
   ["list_rbds / get_rbd", "Your reliability block diagrams and their structure."],
   ["create_rbd", "Build and save a diagram — series, parallel, k-of-n, standby, sub-systems — which opens in the RBD builder."],
   ["edit_rbd", "Change a saved diagram with a short batch of edits — add a block in series or parallel, remove one, swap a model on several blocks at once — all or nothing, instead of rebuilding it."],
   ["clone_rbd", "Copy a sample or one of your diagrams into your workspace, to edit or to make a variant."],
   ["analyze_rbd", "System reliability, MTTF, B-lives and importance; availability for repairable diagrams (a paid feature, saved results are reused)."],
   ["export_rbd_python", "A diagram as a standalone SurPyval + RePyability script."],
+  ["upload_outage_log / system_history", "Save a real outage log (asset, down, back up) — as CSV text, or a CSV or Excel file sent with create_upload — against one of your diagrams, then read the system’s observed availability, its outages each with the block that caused it, and the blocks ranked by downtime share."],
+  ["create_upload", "A single-use link (15 minutes) to send a file to Reliafy with a plain HTTP PUT — a ready curl command — so the file never passes through the conversation. Up to 30 MB; deleted after its import, or after an hour."],
+  ["inspect_upload", "Look inside an uploaded file before importing it: a workbook’s sheets with their header rows, columns, row counts and a guessed mapping; a diagram file’s diagrams and block counts."],
+  ["import_rbd", "Import diagrams from ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA XML, Galileo DFT or Reliafy’s Excel RBD template, saved as RBDs with notes on anything approximated. Preview first if you like; small text files can be pasted instead of uploaded."],
+  ["import_excel", "Import an Excel workbook: a sheet as a dataset, an FMEA / RCM worksheet into a new or existing RCM study, or the RBD template as a diagram."],
   ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function."],
   ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model."],
+  ["plan_demonstration_test", "Plan a reliability demonstration test — units, test time per unit and allowed failures to show a reliability at a confidence — with a units-vs-failures trade-off table. Needs no saved data."],
   ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items."],
   ["list_fleet_alerts / create_fleet_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API."],
   ["delete_model / delete_dataset / delete_rbd", "Permanently delete your own models, datasets and diagrams (never shared samples; Claude asks first). A dataset still used by a model can’t be deleted, nor a model a fleet forecast runs on."],
+  ["update_model / update_dataset", "Rename your own models and datasets, or set their notes — never the data or the fit, and never shared samples."],
+  ["share_link / list_share_links / revoke_share_link", "Publish a read-only page of one of your own items — a model, dataset, diagram, strategy analysis, RCM study or fleet — that anyone with the link can open without an account. Optionally password-protected (Reliafy makes up a passphrase and shows it once, for you to send separately from the link) and expiring; an item can have several links, each revoked on its own."],
+  ["get_account", "Your plan; on Free, the tool calls used and left this month and the date they reset (Pro is unlimited); storage used against your plan’s limits, and whether simulation is included. Never counted against the allowance."],
   ["upgrade_link", "A Stripe checkout link for Reliafy Pro, for you to open and pay yourself — nothing is charged until you complete it. Works before you have Pro."],
 ];
 
@@ -555,6 +600,21 @@ export function McpDocs({ tokenNote }) {
     }
   }
 }`}</Code>
+
+        <h3>Sending files</h3>
+        <p className="muted-line">
+          Files never go through the conversation. <code>create_upload</code> returns a single-use
+          upload URL; Claude sends the file there from its shell, then imports it by its{" "}
+          <code>upload_id</code>:
+        </p>
+        <Code>{`curl -X PUT --data-binary @plant.rsgz \\
+  -H "Content-Type: application/octet-stream" \\
+  "${base}/api/uploads/UPLOAD_ID?t=TOKEN"`}</Code>
+        <ul className="api-list">
+          <li><code>PUT /api/uploads/{"{upload_id}"}?t=…</code> (or <code>POST</code> with the raw body) — no sign-in: the link’s token is the credential. It works once and expires after 15 minutes. Answers <code>{`{ upload_id, size, sha256, detected_format }`}</code>.</li>
+          <li>Errors: <code>404</code> (no such upload, or a wrong token), <code>409</code> (already used), <code>410</code> (expired), <code>413</code> (over the size limit — 30 MB at most), <code>429</code> (too many attempts).</li>
+          <li>Uploads are private to you, are never served back, and are deleted once imported or after an hour.</li>
+        </ul>
 
         <h3>Tools</h3>
         <ul className="api-list">

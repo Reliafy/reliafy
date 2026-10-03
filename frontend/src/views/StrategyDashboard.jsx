@@ -1,5 +1,5 @@
 import DashboardSection from "../components/DashboardSection.jsx";
-import { CostIcon, CompareIcon, ListIcon, StrategyIcon } from "../components/icons.jsx";
+import { CostIcon, CompareIcon, ListIcon, StrategyIcon, TestIcon } from "../components/icons.jsx";
 
 export default function StrategyDashboard() {
   // The strategy tools work on data you provide; saved analyses persist their
@@ -24,6 +24,13 @@ export default function StrategyDashboard() {
       icon: <StrategyIcon />,
       title: "Failure finding",
       body: "Set the inspection interval that keeps a hidden protective function available.",
+      cta: "Open",
+    },
+    {
+      to: "/strategy/demonstration-test",
+      icon: <TestIcon />,
+      title: "Demonstration test",
+      body: "Plan a reliability test: units, test time and allowed failures to show R at a confidence.",
       cta: "Open",
     },
     {

@@ -41,6 +41,10 @@ from backend.auth import get_current_user
 from backend.routers import auth as auth_router
 from backend.routers import models as models_router
 from backend.routers import rbds as rbds_router
+from backend.routers import rbd_compare as rbd_compare_router
+from backend.routers import rbd_fault_tree as rbd_fault_tree_router
+from backend.routers import rbd_design as rbd_design_router
+from backend.routers import rbd_costs as rbd_costs_router
 from backend.routers import strategy as strategy_router
 from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
@@ -49,6 +53,7 @@ from backend.routers import degradation as degradation_router
 from backend.routers import recurrent as recurrent_router
 from backend.routers import alt as alt_router
 from backend.routers import rcm as rcm_router
+from backend.routers import excel as excel_router
 from backend.routers import teams as teams_router
 from backend.routers import shares as shares_router
 from backend.routers import telemetry as telemetry_router
@@ -60,10 +65,35 @@ from backend.routers import public_api as public_api_router
 from backend.routers import email_prefs as email_prefs_router
 from backend.routers import feeds as feeds_router
 from backend.routers import oauth as oauth_router
+from backend.routers import outage_logs as outage_logs_router
+from backend.routers import uploads as uploads_router
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class _RedactUploadTokens(logging.Filter):
+    """Keep upload-link tokens (``/api/uploads/<id>?t=…``) out of uvicorn's
+    access log: the token is the upload's only credential (see
+    backend/services/uploads.py). Rewrites the logged path; never drops a line."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            if isinstance(record.args, tuple) and any("?t=" in str(a) or "&t=" in str(a) for a in record.args):
+                from backend.services.uploads import redact_query
+
+                record.args = tuple(redact_query(a) if isinstance(a, str) else a for a in record.args)
+            elif isinstance(record.msg, str) and ("?t=" in record.msg or "&t=" in record.msg):
+                from backend.services.uploads import redact_query
+
+                record.msg = redact_query(record.msg)
+        except Exception:  # noqa: BLE001 - a log filter must never fail a request
+            pass
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_RedactUploadTokens())
 
 from contextlib import asynccontextmanager  # noqa: E402
 
@@ -142,6 +172,10 @@ async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
 app.include_router(auth_router.router)
 app.include_router(models_router.router)
 app.include_router(rbds_router.router)
+app.include_router(rbd_compare_router.router)
+app.include_router(rbd_fault_tree_router.router)
+app.include_router(rbd_design_router.router)
+app.include_router(rbd_costs_router.router)
 app.include_router(strategy_router.router)
 app.include_router(billing_router.router)
 app.include_router(assistant_router.router)
@@ -150,6 +184,7 @@ app.include_router(degradation_router.router)
 app.include_router(recurrent_router.router)
 app.include_router(alt_router.router)
 app.include_router(rcm_router.router)
+app.include_router(excel_router.router)
 app.include_router(teams_router.router)
 app.include_router(shares_router.router)
 app.include_router(telemetry_router.router)
@@ -159,6 +194,9 @@ app.include_router(public_router.router)
 app.include_router(ingest_router.router)
 app.include_router(public_api_router.router)
 app.include_router(email_prefs_router.router)
+app.include_router(outage_logs_router.router)
+# MCP file uploads: PUT /api/uploads/{id}?t=… (token-authed, see services/uploads.py).
+app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
 app.include_router(feeds_router.router)
 
@@ -259,7 +297,7 @@ def distributions_endpoint() -> dict:
                 "id": key,
                 "name": entry["name"],
                 "covariates": False,
-                "params": list(getattr(entry["dist"], "param_names", [])),
+                "params": list(getattr(entry["dist"], "parameter_names", [])),
                 # Derived from SurPyval, not hand-listed: which fit methods and
                 # which model adjustments this distribution actually supports.
                 **distribution_capabilities(key),
@@ -269,7 +307,7 @@ def distributions_endpoint() -> dict:
     ]
     discrete = [
         {"id": key, "name": entry["name"], "covariates": False,
-         "discrete": True, "params": list(getattr(entry["dist"], "param_names", []))}
+         "discrete": True, "params": list(getattr(entry["dist"], "parameter_names", []))}
         for key, entry in DISCRETE.items()
     ]
     nonparametric = [
@@ -408,6 +446,16 @@ def confidence_endpoint(model_id: str, body: dict = Body(default={})) -> JSONRes
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
+
+def contained_path(path: Path, root: Path) -> Path | None:
+    """``path`` resolved, or None if it resolves outside ``root``."""
+    try:
+        resolved = path.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return resolved if resolved.is_relative_to(root.resolve()) else None
+
+
 if FRONTEND_DIST.is_dir():
     # Hashed assets (JS/CSS/images) from the Vite build. Their names change
     # whenever their content does, so they can be cached forever; HTML must not
@@ -429,6 +477,10 @@ if FRONTEND_DIST.is_dir():
     # deploy has deleted, and the app then crashes on load. (main.jsx also
     # reloads once on vite:preloadError, for pages already open or cached.)
     _NO_CACHE = {"Cache-Control": "no-cache"}
+    _DIST_ROOT = FRONTEND_DIST.resolve()
+
+    def _within_dist(path: Path) -> Path | None:
+        return contained_path(path, _DIST_ROOT)
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str) -> FileResponse:
@@ -438,11 +490,13 @@ if FRONTEND_DIST.is_dir():
         HTML under ``dist/static/<route>/index.html`` — generated at build
         time for search indexing — which wins over the SPA shell there.
         """
-        prerendered = FRONTEND_DIST / "static" / (full_path or ".") / "index.html"
-        if prerendered.is_file():
+        prerendered = _within_dist(
+            FRONTEND_DIST / "static" / (full_path or ".") / "index.html"
+        )
+        if prerendered is not None and prerendered.is_file():
             return FileResponse(prerendered, headers=_NO_CACHE)
-        candidate = FRONTEND_DIST / full_path
-        if full_path and candidate.is_file():
+        candidate = _within_dist(FRONTEND_DIST / full_path)
+        if full_path and candidate is not None and candidate.is_file():
             headers = _NO_CACHE if candidate.suffix == ".html" else None
             return FileResponse(candidate, headers=headers)
         return FileResponse(FRONTEND_DIST / "index.html", headers=_NO_CACHE)

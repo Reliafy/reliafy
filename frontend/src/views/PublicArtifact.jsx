@@ -1,23 +1,28 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Plot from "../components/Plot.jsx";
-import PublicNav from "../components/PublicNav.jsx";
-import PublicFooter from "../components/PublicFooter.jsx";
+import Logo from "../components/Logo.jsx";
+import { useAuth } from "../AuthProvider.jsx";
 import ResultView from "../components/ResultView.jsx";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
+import DemoTestResult from "../components/DemoTestResult.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import RcmTree from "../components/RcmTree.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import PublicRbd from "../components/PublicRbd.jsx";
-import { getPublicArtifact } from "../api.js";
+import { getPublicArtifact, unlockPublicLink } from "../api.js";
 
 // Public, read-only view of a shared artifact (/p/:token) — no account
 // needed. Renders the same payloads as the in-app detail pages through the
 // same presentational components. This route is its own lazy chunk so the
-// marketing pages don't inherit its Plotly dependency.
+// marketing pages don't inherit its Plotly dependency. The page is
+// deliberately bare — just the brand bar and the content, no marketing nav
+// or footer — because it's what an owner (or their agent) hands to a client
+// or colleague. The one prompt is "Create free account" at the bar's right,
+// for visitors who aren't signed in.
 
 const KIND_LABEL = {
   models: "Fitted life model",
@@ -103,7 +108,7 @@ function FleetView({ a }) {
   );
 }
 
-function Body({ collection, a, token }) {
+function Body({ collection, a, token, unlock }) {
   switch (collection) {
     case "models":
       return <div className="card"><ResultView result={a.results} /></div>;
@@ -115,6 +120,7 @@ function Body({ collection, a, token }) {
           {a.kind === "optimal_replacement" && <ReplacementResult result={a.results} />}
           {a.kind === "compare_two" && <CompareResult result={a.results} />}
           {a.kind === "failure_finding" && <FfiResult result={a.results} />}
+          {a.kind === "demonstration_test" && <DemoTestResult result={a.results} />}
         </div>
       );
     case "datasets":
@@ -142,24 +148,127 @@ function Body({ collection, a, token }) {
     case "fleets":
       return <FleetView a={a} />;
     case "rbds":
-      return <PublicRbd a={a} token={token} />;
+      return <PublicRbd a={a} token={token} unlock={unlock} />;
     default:
       return <div className="card empty">This artifact type doesn't have a public view.</div>;
   }
 }
 
-export default function PublicArtifact() {
-  const { token } = useParams();
-  const [data, setData] = useState(null);
+// A protected link's unlock token lives for the tab (sessionStorage), so a
+// reload doesn't ask again; storage can be unavailable (private modes).
+const unlockKey = (token) => `reliafy.unlock.${token}`;
+function readUnlock(token) {
+  try {
+    return sessionStorage.getItem(unlockKey(token)) || null;
+  } catch {
+    return null;
+  }
+}
+function storeUnlock(token, value) {
+  try {
+    if (value) sessionStorage.setItem(unlockKey(token), value);
+    else sessionStorage.removeItem(unlockKey(token));
+  } catch {
+    /* the unlock still works for this page view */
+  }
+}
+
+const LockIcon = () => (
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
+    <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+  </svg>
+);
+
+// The password prompt for a protected link. It knows nothing about what's
+// behind it (the server reveals nothing before unlock), so it names nothing.
+function PasswordGate({ token, onUnlocked }) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    if (!password) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { unlock_token: unlock } = await unlockPublicLink(token, password.trim());
+      onUnlocked(unlock);
+    } catch (err) {
+      setError(err.status === 401 ? "That password isn't right." : err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="card share-gate" onSubmit={onSubmit}>
+      <div className="share-gate-icon"><LockIcon /></div>
+      <h2>This share is password-protected</h2>
+      <p className="muted-line">Enter the password you were sent with the link.</p>
+      <label className="login-field">
+        <span>Password</span>
+        <input
+          type="password"
+          autoFocus
+          autoComplete="off"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </label>
+      {error && <div className="error" role="alert">{error}</div>}
+      <button type="submit" disabled={busy || !password}>{busy ? "Checking…" : "Unlock"}</button>
+    </form>
+  );
+}
+
+export default function PublicArtifact() {
+  const { token } = useParams();
+  const { user, loading } = useAuth();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [locked, setLocked] = useState(false);
+  const [unlock, setUnlock] = useState(() => readUnlock(token));
+
   useEffect(() => {
+    let live = true;
     setData(null);
     setError(null);
-    getPublicArtifact(token)
-      .then(setData)
-      .catch((e) => setError(e.message));
-  }, [token]);
+    setLocked(false);
+    getPublicArtifact(token, unlock)
+      .then((d) => live && setData(d))
+      .catch((e) => {
+        if (!live) return;
+        if (e.passwordRequired) {
+          // No unlock yet, or it expired / the password was changed.
+          if (unlock) {
+            storeUnlock(token, null);
+            setUnlock(null);
+          }
+          setLocked(true);
+        } else {
+          setError(e.message);
+        }
+      });
+    return () => {
+      live = false;
+    };
+  }, [token, unlock]);
+
+  const onUnlocked = (value) => {
+    storeUnlock(token, value);
+    setUnlock(value);
+  };
+
+  // Share links are private to whoever holds them: keep them out of search.
+  useEffect(() => {
+    const meta = document.createElement("meta");
+    meta.name = "robots";
+    meta.content = "noindex";
+    document.head.appendChild(meta);
+    return () => meta.remove();
+  }, []);
 
   // Name the tab after the shared artifact (the SPA shell's title is generic).
   useEffect(() => {
@@ -173,7 +282,16 @@ export default function PublicArtifact() {
 
   return (
     <div className="landing">
-      <PublicNav />
+      <header className="landing-nav share-bar">
+        <Link className="brand" to="/">
+          <Logo size={26} />
+          <span className="brand-name">Reliafy</span>
+        </Link>
+        {/* Only once auth has settled, so a signed-in viewer never sees it flash. */}
+        {!loading && !user && (
+          <Link className="cta cta-solid" to="/login?signup">Create free account</Link>
+        )}
+      </header>
       <div className="public-artifact">
         {error && (
           <div className="card empty" style={{ margin: "3rem auto", maxWidth: 520 }}>
@@ -181,25 +299,23 @@ export default function PublicArtifact() {
             <p>{error}</p>
           </div>
         )}
-        {!error && !data && <div className="card empty" style={{ margin: "3rem auto", maxWidth: 520 }}>Loading…</div>}
+        {locked && !error && <PasswordGate token={token} onUnlocked={onUnlocked} />}
+        {!error && !locked && !data && (
+          <div className="card empty" style={{ margin: "3rem auto", maxWidth: 520 }}>Loading…</div>
+        )}
         {data && (
           <div className="app" style={{ margin: "0 auto", maxWidth: 1080 }}>
             <header>
               <div>
                 <div className="crumb">{KIND_LABEL[data.collection] || "Analysis"} · shared by {data.shared_by}</div>
                 <h1>{data.artifact.name}</h1>
-                <p>
-                  Read-only view, shared via Reliafy.{" "}
-                  <Link to="/login?signup" className="evidence-link">Create a free account</Link>{" "}
-                  to build your own.
-                </p>
               </div>
             </header>
-            <Body collection={data.collection} a={data.artifact} token={token} />
+            <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} />
           </div>
         )}
       </div>
-      <PublicFooter />
     </div>
   );
 }
+

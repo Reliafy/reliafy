@@ -1,14 +1,27 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+
+// Open modals, oldest first: Escape closes only the topmost one (a sheet
+// picker opened from inside another dialog, say).
+const openModals = [];
 
 // Lightweight modal dialog with an overlay. Closes on Escape and overlay click
 // (unless locked, e.g. while a request is in flight). Rendered through a portal
 // to <body> so the overlay covers the whole viewport (including the top bar)
 // regardless of where it's mounted in the tree.
 export default function Modal({ title, onClose, locked, children, footer, className }) {
+  const token = useRef({});
+  useEffect(() => {
+    const me = token.current;
+    openModals.push(me);
+    return () => {
+      const i = openModals.indexOf(me);
+      if (i >= 0) openModals.splice(i, 1);
+    };
+  }, []);
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === "Escape" && !locked) onClose();
+      if (e.key === "Escape" && !locked && openModals[openModals.length - 1] === token.current) onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);

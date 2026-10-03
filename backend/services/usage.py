@@ -289,16 +289,31 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/models/{id}/evaluate", "model_evaluate"),
     ("POST", "/api/models/{id}/confidence", "model_evaluate"),
     ("DELETE", "/api/models/{id}", "model_delete"),
-    # RBDs (a repairable analysis is re-labelled availability_sim by the route)
+    # RBDs (a repairable analysis is re-labelled availability_exact, or
+    # availability_sim when the simulation runs, by the route)
     ("POST", "/api/rbds", "rbd_save"),
     ("POST", "/api/rbds/analyze", "rbd_analyze"),
     ("GET", "/api/rbds/{id}/analyze", "rbd_analyze"),
     ("GET", "/api/rbds/{id}/export.py", "export_python"),
     ("DELETE", "/api/rbds/{id}", "rbd_delete"),
+    ("POST", "/api/rbds/import", "rbd_import"),
+    ("POST", "/api/rbds/compare", "availability_compare"),
+    ("POST", "/api/rbds/design/cheapest", "rbd_cheapest_design"),
+    ("POST", "/api/rbds/design/apply", "rbd_design_apply"),
+    ("POST", "/api/rbds/design", "rbd_design"),
+    ("POST", "/api/rbds/fault-tree", "rbd_fault_tree"),
+    # Outage logs: an RBD's observed history (issue #159)
+    ("POST", "/api/rbds/{id}/outage-logs/preview", "outage_log_preview"),
+    ("POST", "/api/rbds/{id}/outage-logs", "outage_log_upload"),
+    ("PATCH", "/api/rbds/{id}/outage-logs/{lid}", "outage_log_edit"),
+    ("DELETE", "/api/rbds/{id}/outage-logs/{lid}", "outage_log_delete"),
+    ("GET", "/api/rbds/{id}/outage-logs/{lid}/history", "outage_history"),
+    ("POST", "/api/rbds/{id}/outage-logs/{lid}/fit", "outage_fit"),
     # Maintenance strategy
     ("POST", "/api/strategy/optimal-replacement", "strategy_replacement"),
     ("POST", "/api/strategy/compare-two", "strategy_compare"),
     ("POST", "/api/strategy/failure-finding", "strategy_failure_finding"),
+    ("POST", "/api/strategy/demonstration-test", "strategy_demonstration"),
     ("POST", "/api/strategy/analyses", "strategy_save"),
     ("POST", "/api/recurrent/models/{id}/overhaul", "strategy_overhaul"),
     # Recurrent, degradation, ALT
@@ -316,6 +331,17 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     # RCM
     ("POST", "/api/rcm/studies", "rcm_create"),
     ("PUT", "/api/rcm/studies/{id}/tree", "rcm_edit"),
+    ("POST", "/api/rcm/import/preview", "rcm_import_preview"),
+    ("POST", "/api/rcm/import", "rcm_import"),
+    # Excel (.xlsx) uploads: sheets read for a dataset, an RCM study or an RBD
+    ("POST", "/api/excel/inspect", "excel_inspect"),
+    ("POST", "/api/excel/table", "excel_import"),
+    ("POST", "/api/excel/csv", "excel_import"),
+    # MCP file uploads: the PUT carries no user auth (its token is the
+    # credential), so the route records its own upload_put event on the mcp
+    # channel; listed here so the name is the same if it's ever attributed.
+    ("PUT", "/api/uploads/{id}", "upload_put"),
+    ("POST", "/api/uploads/{id}", "upload_put"),
     # Fleets
     ("POST", "/api/fleet/fleets", "fleet_create"),
     ("PUT", "/api/fleet/fleets/{id}/items", "fleet_items"),
@@ -329,6 +355,8 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     # Sharing, teams, tokens, connected apps
     ("POST", "/api/shares", "share_user"),
     ("POST", "/api/public-links", "share_link"),
+    ("PATCH", "/api/public-links/{id}", "share_link_edit"),  # label, expiry, password (#125)
+    ("DELETE", "/api/public-links/{id}", "share_link_revoke"),
     ("POST", "/api/teams", "team_create"),
     ("POST", "/api/teams/{id}/members", "team_invite"),
     ("POST", "/api/tokens", "api_token_create"),
@@ -354,6 +382,7 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("GET", "/api/v1/fleets/{id}/forecast", "fleet_forecast"),
     ("POST", "/api/v1/strategy/optimal-replacement", "strategy_replacement"),
     ("POST", "/api/v1/strategy/failure-finding", "strategy_failure_finding"),
+    ("POST", "/api/v1/strategy/demonstration-test", "strategy_demonstration"),
 )
 
 # Never logged: operator, telemetry, webhooks, previews and checks the UI

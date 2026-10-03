@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import Modal from "../components/Modal.jsx";
+import RcmImportModal from "../components/RcmImportModal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { listRcmStudies, createRcmStudy, deleteRcmStudy } from "../api.js";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
@@ -9,6 +10,11 @@ import { relativeTime } from "../instrument.js";
 const PlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+const ImportIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
   </svg>
 );
 const OpenIcon = () => (
@@ -36,6 +42,7 @@ export default function RcmHome() {
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const refresh = useCallback(() => {
     listRcmStudies()
@@ -85,9 +92,15 @@ export default function RcmHome() {
             and the link is re-checked each time you open the study.
           </p>
         </div>
-        <button onClick={() => { setCreateError(null); setModalOpen(true); }}>
-          <PlusIcon /> New study
-        </button>
+        <div className="head-actions">
+          <button className="secondary" onClick={() => setImportOpen(true)}
+                  title="Create a study from an FMEA / RCM worksheet in Excel">
+            <ImportIcon /> Import from Excel
+          </button>
+          <button onClick={() => { setCreateError(null); setModalOpen(true); }}>
+            <PlusIcon /> New study
+          </button>
+        </div>
       </header>
 
       {error && <div className="card error">{error}</div>}
@@ -160,6 +173,13 @@ export default function RcmHome() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {importOpen && (
+        <RcmImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={(study) => navigate(`/rcm/studies/${study.id}`)}
+        />
       )}
 
       {modalOpen && (

@@ -99,6 +99,7 @@ def init_db() -> None:
     db.models.create_index([("owner_id", 1), ("dataset_id", 1)])
     db.models.create_index([("owner_id", 1), ("created_at", -1)])
     db.rbds.create_index([("owner_id", 1), ("created_at", -1)])
+    db.outage_logs.create_index([("owner_id", 1), ("rbd_id", 1), ("created_at", -1)])
     db.strategy_analyses.create_index([("owner_id", 1), ("created_at", -1)])
     db.rcm_studies.create_index([("owner_id", 1), ("created_at", -1)])
     db.degradation_models.create_index([("owner_id", 1), ("created_at", -1)])
@@ -120,6 +121,11 @@ def init_db() -> None:
     )
     db.public_links.create_index([("collection", 1), ("artifact_id", 1)])
     db.public_links.create_index([("grantor_uid", 1)])
+    # Expiring share links: an expired link already resolves to nothing; the
+    # TTL index then deletes it (links without an expiry have no date and are
+    # never touched). Unlock-attempt windows drop the same way.
+    db.public_links.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    db.public_link_attempts.create_index([("expires_at", 1)], expireAfterSeconds=0)
     db.api_tokens.create_index([("token_hash", 1)], unique=True)
     db.api_tokens.create_index([("uid", 1)])
     # Product-update emails: the unsubscribe token is the lookup key for the
@@ -142,6 +148,11 @@ def init_db() -> None:
     # MCP tool calls per user per UTC day (the retired Agent plan's quota): one
     # document per user per day, keyed by id; TTL drops it after the reset.
     db.mcp_usage.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # MCP file uploads (backend/services/uploads.py): TTL drops every upload
+    # and its chunks an hour after it arrived (or, unused, after its link).
+    from backend.services import uploads as uploads_service
+
+    uploads_service.ensure_indexes(db)
     # Product-usage logging: account-linked events expire after 90 days (the
     # privacy policy's promise); the identifier-free daily totals stay.
     from backend.services import usage as usage_service

@@ -79,8 +79,16 @@ def test_simulation_refusal_is_logged_pro_only(env):
 
     rid = _ok(_call(env.oauth[FREE], "create_rbd", {
         "name": "Pumps", "repairable": True, "stages": REPAIRABLE_STAGES}))["id"]
+    # The exact figures are an answer (#154)...
+    assert _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid}))["available"] is True
+    assert _events(env.db, feature="analyze_rbd")[0]["outcome"] == "ok"
+    # ...a simulation-only diagram (proof tests that take time) is the refusal.
+    graph = env.db.rbds.find_one({"_id": rid})["graph"]
+    next(n for n in graph["nodes"] if n["type"] == "component")["data"]["inspection"] = {
+        "interval": 500, "duration": 2}
+    env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
     assert _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid}))["available"] is False
-    assert _events(env.db, feature="analyze_rbd")[0]["outcome"] == "pro_only"
+    assert {e["outcome"] for e in _events(env.db, feature="analyze_rbd")} == {"ok", "pro_only"}
 
 
 def test_daily_totals_carry_no_account_ids(env):
@@ -146,6 +154,8 @@ def test_init_db_creates_the_usage_indexes(monkeypatch):
     ("POST", "/api/datasets/paste", "dataset_upload"),
     ("POST", "/api/assistant/stream", "assistant"),
     ("POST", "/api/public-links", "share_link"),
+    ("PATCH", "/api/public-links/tok1", "share_link_edit"),
+    ("DELETE", "/api/public-links/tok1", "share_link_revoke"),
     ("POST", "/api/billing/subscribe", "billing_subscribe"),
     ("DELETE", "/api/me/oauth-grants/g1", "mcp_disconnect"),
     ("POST", "/api/v1/fit", "fit"),

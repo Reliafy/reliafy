@@ -54,14 +54,14 @@ function Canvas({ graph }) {
 }
 
 // "Download as Python" for a public RBD — free, no sign-in needed.
-function DownloadPython({ token }) {
+function DownloadPython({ token, unlock }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const onClick = async () => {
     setBusy(true);
     setError(null);
     try {
-      await downloadPublicRbdPython(token);
+      await downloadPublicRbdPython(token, unlock);
     } catch (e) {
       setError(e.message || "Download failed.");
     } finally {
@@ -78,7 +78,7 @@ function DownloadPython({ token }) {
   );
 }
 
-export default function PublicRbd({ a, token }) {
+export default function PublicRbd({ a, token, unlock }) {
   const graph = a.graph || {};
   const unit = graph.unit || "";
   const repairable = !!graph.repairable;
@@ -121,7 +121,7 @@ export default function PublicRbd({ a, token }) {
               {(graph.ccf_groups || []).length > 0 && (
                 <span><b>{graph.ccf_groups.length}</b> common-cause group{graph.ccf_groups.length === 1 ? "" : "s"}</span>
               )}
-              {token && <DownloadPython token={token} />}
+              {token && <DownloadPython token={token} unlock={unlock} />}
             </div>
           </div>
 

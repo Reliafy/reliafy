@@ -4,6 +4,12 @@ import Plot from "./Plot.jsx";
 import { analyzeRbd } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import CovariatesModal from "./CovariatesModal.jsx";
+import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./RbdBand.jsx";
+import AvailabilityCompare from "./AvailabilityCompare.jsx";
+import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
+import AvailabilityPolicies from "./AvailabilityPolicies.jsx";
+import { precisionNote } from "./availabilityPrecision.js";
+import MethodTag from "./MethodTag.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -63,9 +69,18 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
 
   const sysY = active === "sf" ? result.system.sf : result.system.ff;
   const sysAtT = t == null ? null : interp(x, sysY, Number(t));
+  // Confidence band (#103), when asked for: shaded under the system curve.
+  const band = result.band || null;
+  const bandAtT =
+    hasBand(band) && t != null
+      ? (active === "sf"
+          ? { lower: interp(x, band.sf_lower, Number(t)), upper: interp(x, band.sf_upper, Number(t)) }
+          : { lower: 1 - interp(x, band.sf_upper, Number(t)), upper: 1 - interp(x, band.sf_lower, Number(t)) })
+      : null;
 
   // System curve (bold) plus a faint curve per node.
   const traces = [
+    ...bandTraces(band, x, active),
     {
       x,
       y: sysY,
@@ -165,6 +180,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
             {cond ? "Mean residual life" : "MTTF"}
             {unit ? ` (${unit})` : ""}
           </div>
+          <BandInterval band={band} interval={band?.mttf} />
         </div>
         {result.blife && (
           <>
@@ -173,12 +189,14 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
               <div className="name" title="Time by which 10% of systems have failed">
                 B10 life{unit ? ` (${unit})` : ""}
               </div>
+              <BandInterval band={band} interval={band?.blife?.b10} />
             </div>
             <div className="stat">
               <div className="value">{fmt(result.blife.b50)}</div>
               <div className="name" title="Median system life (50% failed)">
                 B50 life{unit ? ` (${unit})` : ""}
               </div>
+              <BandInterval band={band} interval={band?.blife?.b50} />
             </div>
           </>
         )}
@@ -188,6 +206,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
             {active === "sf" ? "R" : "F"}(t={t ?? "—"}
             {cond ? ` | ${sLabel}` : ""})
           </div>
+          <BandInterval band={band} interval={bandAtT} />
         </div>
         <div className="stat">
           <div className="value">{(result.nodes || []).length}</div>
@@ -217,6 +236,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
         style={{ width: "100%" }}
         useResizeHandler
       />
+      <BandNote band={band} />
 
       {impNodes.length > 0 && (
         <div className="rbd-importance">
@@ -224,12 +244,17 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
             Importance at t = {fmt(importance.time)}
             {unit ? ` ${unit}` : ""}
           </div>
+          {/* Scrolls sideways on a phone rather than widening the page,
+              as the availability table already does. */}
+          <div className="rbd-avail-imp-scroll">
           <table className="calc-table">
             <thead>
               <tr>
                 <th>Component</th>
                 <th title="Birnbaum importance — sensitivity of system reliability to this component">Birnbaum</th>
-                <th title="Fussell-Vesely — fraction of system unreliability this component contributes to">F-V</th>
+                <th title={`Fussell-Vesely — fraction of system unreliability this component contributes to${importance.fussell_vesely_basis ? ` (from ${importance.fussell_vesely_basis}; this diagram has too many cut sets to derive them all)` : ""}`}>
+                  F-V{importance.fussell_vesely_basis ? "*" : ""}
+                </th>
                 <th title="Risk Achievement Worth — how much worse the system gets if this component fails">RAW</th>
                 <th title="Risk Reduction Worth — how much better the system gets if this component were perfect">RRW</th>
                 <th title="Criticality importance (failure-oriented) — the share of system failures this component accounts for">Crit.</th>
@@ -250,12 +275,17 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
       <div className="rbd-sets">
         <div className="rbd-set">
-          <div className="rbd-section-head">Minimal path sets</div>
+          <div className="rbd-section-head">
+            Minimal path sets
+            {result.structure.n_min_path_sets > result.structure.min_path_sets.length &&
+              ` — shortest ${result.structure.min_path_sets.length.toLocaleString()} of ${result.structure.n_min_path_sets.toLocaleString()}`}
+          </div>
           <ul>
             {result.structure.min_path_sets.map((s, i) => (
               <li key={i}>{s.join(" · ")}</li>
@@ -263,7 +293,11 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
           </ul>
         </div>
         <div className="rbd-set">
-          <div className="rbd-section-head">Minimal cut sets</div>
+          <div className="rbd-section-head">
+            Minimal cut sets
+            {result.structure.cut_sets_complete === false &&
+              ` — up to ${result.structure.cut_sets_max_order} blocks (too many to derive them all)`}
+          </div>
           <ul>
             {result.structure.min_cut_sets.map((s, i) => (
               <li key={i}>{s.join(" · ")}</li>
@@ -299,7 +333,7 @@ const IMP_COLS = [
   { key: "birnbaum", label: "Birnbaum", fmt: fmt3,
     help: "How much system availability changes per unit change in this block's availability." },
   { key: "crit", label: "Share of downtime", fmt: fmtPct,
-    help: "Long-run share of system downtime caused by this block (failure-oriented criticality: Birnbaum × block unavailability ÷ system unavailability). Exact, unlike the simulated bars above." },
+    help: "Long-run share of system downtime caused by this block (failure-oriented criticality: Birnbaum × block unavailability ÷ system unavailability). Exact, at the long-run availabilities." },
   { key: "risk_achievement_worth", label: "RAW", fmt: fmt3,
     help: "Risk achievement worth: how many times worse system unavailability gets while this block is down." },
   { key: "failure_criticality", label: "Drives trips", fmt: fmtPct,
@@ -307,6 +341,9 @@ const IMP_COLS = [
   { key: "restoration_criticality", label: "Drives restoration", fmt: fmtPct,
     help: "Share of simulated system restorations this block's repair completed." },
 ];
+
+// The columns only the simulation fills.
+const SIM_COLS = new Set(["failure_criticality", "restoration_criticality"]);
 
 function importanceRows(result) {
   const imp = result.importance || {};
@@ -333,18 +370,203 @@ function importanceRows(result) {
   return rows;
 }
 
-export function AvailabilityView({ result, unit }) {
+const fmtTime = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(4)).toLocaleString());
+const fmtCount = (v) =>
+  v == null || !Number.isFinite(v) ? "—" : v >= 100 ? Math.round(v).toLocaleString() : Number(v.toPrecision(3)).toString();
+const fmtMoney = (v) =>
+  v == null || !Number.isFinite(v) ? "—" : v >= 100 ? Math.round(v).toLocaleString() : Number(v.toPrecision(3)).toLocaleString();
+
+function DowntimeBars({ rows, title, note }) {
+  if (!rows?.length) return null;
+  return (
+    <div className="rbd-avail-nodes">
+      <div className="ds-section-h">{title}</div>
+      {rows.map((n) => (
+        <div className="rbd-avail-bar" key={n.id}>
+          <span className="rbd-avail-bar-label" title={n.label}>{n.label}</span>
+          <span className="rbd-avail-bar-track">
+            <span className="rbd-avail-bar-fill" style={{ width: `${Math.round((n.share || 0) * 100)}%` }} />
+          </span>
+          <span className="rbd-avail-bar-pct">{((n.share || 0) * 100).toFixed(1)}%</span>
+        </div>
+      ))}
+      {note && <p className="muted-line" style={{ margin: 0 }}>{note}</p>}
+    </div>
+  );
+}
+
+// The exact figures over time (#154), from new or from the current state
+// (#155): the window's figures, each labelled with its method, and A(t).
+function ExactSection({ exact, steady, unit, onCompute, computing }) {
   const u = unit ? ` ${unit}` : "";
   const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
-  const a = result.steady_state_availability;
-  const per = result.per_node || [];
-  const curve = result.curve;
+  if (!exact) return null;
+  if (exact.status === "on_request") {
+    return (
+      <div className="card note rbd-exact-note" role="status">
+        <p style={{ margin: 0 }}>{exact.message}</p>
+        {onCompute && (
+          <div className="rbd-upgrade-actions">
+            <button type="button" onClick={onCompute} disabled={computing}>
+              {computing ? "Computing…" : "Compute exact figures"}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (exact.status !== "ok") {
+    return (
+      <div className="card note rbd-exact-note" role="status">
+        <p style={{ margin: 0 }}>{exact.message}</p>
+      </div>
+    );
+  }
+  const m = exact.method || {};
+  const fromNow = exact.from === "now";
+  const span = `${fmtTime(exact.window)}${u}`;
+  const c = exact.curve || {};
+  const traces = [
+    {
+      x: c.t, y: c.availability, mode: "lines", type: "scatter",
+      line: { color: "#2f6df6", width: 2 }, name: "A(t)",
+      hovertemplate: `t = %{x:.4g}${u}<br>A(t) = %{y:.5f}<extra></extra>`,
+    },
+  ];
+  const shapes = steady != null && c.t?.length
+    ? [{
+        type: "line", xref: "x", yref: "y", x0: c.t[0], x1: c.t[c.t.length - 1], y0: steady, y1: steady,
+        line: { color: "#94a3b8", width: 1, dash: "dash" },
+      }]
+    : [];
+  const routes = Object.entries(exact.routes || {});
+  return (
+    <div className="rbd-exact">
+      <div className="ds-section-h">
+        {fromNow ? `Over the next ${span}, from now` : `Over the first ${span}, from new`}
+        <MethodTag method={m.curve} />
+      </div>
+      <div className="rbd-avail-metrics rbd-exact-metrics">
+        <div className="alt-metric accent">
+          <span className="k">Mission availability <MethodTag method={m.mission_availability} /></span>
+          <span className="v">{pct(exact.mission_availability)}</span>
+        </div>
+        {fromNow && (
+          <div className="alt-metric" title={`Lowest point of A(t), at t = ${fmtTime(exact.availability_min_at)}${u}`}>
+            <span className="k">Lowest A(t) <MethodTag method={m.curve} /></span>
+            <span className="v">{pct(exact.availability_min)}</span>
+          </div>
+        )}
+        <div className="alt-metric">
+          <span className="k">Expected failures <MethodTag method={m.expected_failures} /></span>
+          <span className="v">{fmtCount(exact.expected_failures)}</span>
+        </div>
+        <div className="alt-metric" title="System failures plus planned outages (maintenance and tests that take the system down)">
+          <span className="k">Expected outages <MethodTag method={m.expected_outages} /></span>
+          <span className="v">{fmtCount(exact.expected_outages)}</span>
+        </div>
+        <div className="alt-metric">
+          <span className="k">Expected downtime <MethodTag method={m.downtime} /></span>
+          <span className="v">{fmtTime(exact.downtime)}{u}</span>
+        </div>
+        {exact.cost && (
+          <div className="alt-metric" title="Expected running cost over the window (repairs, maintenance, tests and downtime), excluding purchase">
+            <span className="k">Expected cost <MethodTag method={m.cost} /></span>
+            <span className="v">{fmtMoney(exact.cost.mean)}</span>
+          </div>
+        )}
+      </div>
+      {c.t?.length > 1 && (
+        <Plot
+          data={traces}
+          layout={{
+            autosize: true, height: 280, margin: { l: 56, r: 16, t: 12, b: 44 },
+            paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
+            xaxis: { title: unit ? `Time ${fromNow ? "from now" : "from new"} (${unit})` : "Time", gridcolor: "#eef1f5", zeroline: false },
+            yaxis: { title: "Availability A(t)", gridcolor: "#eef1f5", rangemode: fromNow ? "tozero" : "normal" },
+            shapes, showlegend: false,
+          }}
+          useResizeHandler style={{ width: "100%" }} config={{ displayModeBar: false, responsive: true }}
+        />
+      )}
+      <DowntimeBars
+        rows={exact.per_node}
+        title="Block downtime over the window"
+        note={
+          "Each block's share of the blocks' own expected downtime. A redundant block can be down " +
+          "without taking the system down: its share of the system's downtime is under Block importance."
+        }
+      />
+      <p className="muted-line" style={{ margin: 0 }}>
+        Computed {fromNow ? "from the blocks' states now" : "with every block new at the start"}, with no
+        simulation{steady != null ? "; the dashed line is the long-run availability" : ""}.
+        {exact.cost_note ? ` No exact cost: ${exact.cost_note}` : ""}
+      </p>
+      {routes.length > 0 && (
+        <details className="rbd-routes">
+          <summary>How each figure is computed</summary>
+          <ul>
+            {routes.map(([k, r]) => (
+              <li key={k}>
+                <code>{k}</code> <MethodTag method={r.route} /> — {r.reason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+// Shown in place of the simulation's results when none has been run: what it
+// adds over the exact figures, and the way to run it (Pro, or credits).
+function SimulationOffer({ canSimulate, onSimulate, simulating, graph }) {
+  const [upgrade, setUpgrade] = useState(false);
+  if (!onSimulate) return null;
+  return (
+    <div className="card rbd-sim-offer">
+      <div className="ds-section-h" style={{ marginTop: 0 }}>Simulation</div>
+      <p style={{ margin: "4px 0 0" }}>
+        The figures above are exact. A Monte-Carlo simulation adds the spread of outcomes: the chance of no
+        outage, percentiles, criticality indices (which block trips the system, which restores it) and a
+        confidence band.
+      </p>
+      <div className="rbd-upgrade-actions">
+        <button
+          type="button"
+          className={canSimulate ? "" : "secondary"}
+          disabled={simulating}
+          onClick={() => (canSimulate ? onSimulate() : setUpgrade(true))}
+        >
+          {simulating ? "Simulating…" : canSimulate ? "Run simulation" : "Run simulation (Pro)"}
+        </button>
+      </div>
+      {upgrade && !canSimulate && <AvailabilityUpgrade graph={graph} />}
+    </div>
+  );
+}
+
+export function AvailabilityView({ result, unit, graph = null, onSimulate = null, onCompute = null, busy = null }) {
+  const u = unit ? ` ${unit}` : "";
+  const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
+  // A result saved before #154 is a simulation result (no has_simulation flag).
+  const hasSim = result.has_simulation !== false;
+  const exact = result.exact || null;
+  const exactOk = exact?.status === "ok";
+  // No exact long-run value (proof tests whose tests or repairs take time — #100):
+  // the headline is the simulated availability over the window.
+  const simulatedOnly = result.availability_basis === "simulation";
+  const a = simulatedOnly ? result.precision?.window_availability : result.steady_state_availability;
+  const curve = hasSim ? result.curve : null;
   const basis = result.figures_basis || {};
   const basisNote = (k) =>
     basis[k] === "exact"
       ? "Exact steady-state value"
       : `Simulation estimate over ${fmt(result.t_simulation)}${u}`;
   const hasBand = curve && curve.lower?.length === curve.t?.length && curve.upper?.length === curve.t?.length;
+  // The exact A(t) over the simulated one, when both cover the same window from the same start.
+  const sameWindow =
+    exactOk && curve && Math.abs((exact.window || 0) - (result.t_simulation || 0)) <= 1e-9 * (exact.window || 1);
   const curveTraces = !curve
     ? []
     : [
@@ -357,37 +579,46 @@ export function AvailabilityView({ result, unit }) {
               },
             ]
           : []),
-        { x: curve.t, y: curve.availability, mode: "lines", type: "scatter", line: { color: "#2f6df6", width: 2 }, name: "Availability" },
+        { x: curve.t, y: curve.availability, mode: "lines", type: "scatter", line: { color: "#2f6df6", width: 2 }, name: "Simulated" },
+        ...(sameWindow
+          ? [{ x: exact.curve.t, y: exact.curve.availability, mode: "lines", type: "scatter", line: { color: "#0f172a", width: 1, dash: "dot" }, name: "Exact" }]
+          : []),
       ];
   const blocks = importanceRows(result);
+  // The simulation's columns only when it ran.
+  const impCols = hasSim ? IMP_COLS : IMP_COLS.filter((c) => !SIM_COLS.has(c.key));
+  const simPer = hasSim ? result.per_node || [] : [];
 
   return (
     <div className="rbd-avail">
       <div className="rbd-avail-hero">
         <div className="rbd-avail-big">{pct(a)}</div>
-        <div className="rbd-avail-cap">Steady-state availability (uptime)</div>
+        <div className="rbd-avail-cap">
+          {simulatedOnly
+            ? `Availability over the ${Number(result.t_simulation.toPrecision(5)).toLocaleString()}${u} window (simulated — no exact long-run value with this maintenance)`
+            : <>Steady-state availability (uptime) <MethodTag method={exact?.method?.steady_state || (basis.mean_up_time === "exact" ? "exact" : null)} /></>}
+        </div>
       </div>
       <div className="rbd-avail-metrics">
-        <div className="alt-metric"><span className="k">Unavailability</span><span className="v">{pct(result.unavailability)}</span></div>
+        <div className="alt-metric"><span className="k">Unavailability</span><span className="v">{pct(simulatedOnly ? (a == null ? null : 1 - a) : result.unavailability)}</span></div>
         <div className="alt-metric" title={basisNote("mean_up_time")}><span className="k">Mean up time</span><span className="v">{fmt(result.mean_up_time)}{u}</span></div>
         <div className="alt-metric" title={basisNote("mean_down_time")}><span className="k">Mean down time</span><span className="v">{fmt(result.mean_down_time)}{u}</span></div>
         <div className="alt-metric" title={basisNote("failure_frequency")}><span className="k">Failure frequency</span><span className="v">{fmt(result.failure_frequency)}{u ? ` /${unit}` : ""}</span></div>
       </div>
 
-      {per.length > 0 && (
-        <div className="rbd-avail-nodes">
-          <div className="ds-section-h">What drives downtime</div>
-          {per.map((n) => (
-            <div className="rbd-avail-bar" key={n.id}>
-              <span className="rbd-avail-bar-label" title={n.label}>{n.label}</span>
-              <span className="rbd-avail-bar-track">
-                <span className="rbd-avail-bar-fill" style={{ width: `${Math.round((n.share || 0) * 100)}%` }} />
-              </span>
-              <span className="rbd-avail-bar-pct">{((n.share || 0) * 100).toFixed(1)}%</span>
-            </div>
-          ))}
-        </div>
-      )}
+      <ExactSection
+        exact={exact}
+        steady={simulatedOnly ? null : result.steady_state_availability}
+        unit={unit}
+        onCompute={onCompute}
+        computing={busy === "exact"}
+      />
+
+      {!exactOk && <DowntimeBars rows={simPer} title="What drives downtime" />}
+
+      <DowntimeSplit result={result} unit={unit} />
+      <AvailabilityCosts result={result} unit={unit} />
+      <AvailabilityPolicies result={result} />
 
       {blocks.length > 0 && (
         <div className="rbd-avail-imp">
@@ -397,7 +628,7 @@ export function AvailabilityView({ result, unit }) {
               <thead>
                 <tr>
                   <th>Block</th>
-                  {IMP_COLS.map((c) => (
+                  {impCols.map((c) => (
                     <th key={c.key} title={c.help}>{c.label}</th>
                   ))}
                 </tr>
@@ -409,7 +640,7 @@ export function AvailabilityView({ result, unit }) {
                       {b.label}
                       {b.pinned && <span className="rbd-avail-pin">pinned {b.pinned}</span>}
                     </td>
-                    {IMP_COLS.map((c) => (
+                    {impCols.map((c) => (
                       <td key={c.key}>{c.fmt(b[c.key])}</td>
                     ))}
                   </tr>
@@ -418,32 +649,50 @@ export function AvailabilityView({ result, unit }) {
             </table>
           </div>
           <ul className="rbd-avail-legend">
-            {IMP_COLS.map((c) => (
+            {impCols.map((c) => (
               <li key={c.key}><b>{c.label}</b> — {c.help}</li>
             ))}
           </ul>
         </div>
       )}
 
-      {curve && curve.t?.length > 1 && (
-        <Plot
-          data={curveTraces}
-          layout={{
-            autosize: true, height: 300, margin: { l: 56, r: 16, t: 16, b: 44 },
-            paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-            xaxis: { title: unit ? `Time (${unit})` : "Time", gridcolor: "#eef1f5", zeroline: false },
-            yaxis: { title: "Availability", gridcolor: "#eef1f5", rangemode: "tozero" },
-            showlegend: false,
-          }}
-          useResizeHandler style={{ width: "100%" }} config={{ displayModeBar: false, responsive: true }}
+      {hasSim ? (
+        <div className="rbd-sim">
+          <div className="ds-section-h">
+            Simulation{result.current_state ? " from now" : ""} <MethodTag method="simulated" />
+          </div>
+          {exactOk && <DowntimeBars rows={simPer} title="Simulated share of downtime" />}
+          {curve && curve.t?.length > 1 && (
+            <Plot
+              data={curveTraces}
+              layout={{
+                autosize: true, height: 300, margin: { l: 56, r: 16, t: 16, b: 44 },
+                paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
+                xaxis: { title: unit ? `Time (${unit})` : "Time", gridcolor: "#eef1f5", zeroline: false },
+                yaxis: { title: "Availability", gridcolor: "#eef1f5", rangemode: "tozero" },
+                showlegend: sameWindow, legend: { orientation: "h", y: -0.25 },
+              }}
+              useResizeHandler style={{ width: "100%" }} config={{ displayModeBar: false, responsive: true }}
+            />
+          )}
+          <p className="muted-line" style={{ margin: 0 }}>
+            Availability curve estimated by {result.n_simulations?.toLocaleString()} Monte-Carlo
+            replications{result.precision?.antithetic ? " (in antithetic pairs)" : ""} over {fmt(result.t_simulation)}{u}
+            {hasBand ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}
+            {sameWindow ? "; the dotted line is the exact A(t)" : ""}.
+            {precisionNote(result)}
+            {result.horizon_shortened && " The window was shortened to keep the simulation quick; the long-run figures don't depend on it."}
+            {basis.mean_up_time === "exact" && " Mean up/down time and failure frequency are exact steady-state values."}
+          </p>
+        </div>
+      ) : (
+        <SimulationOffer
+          canSimulate={!!result.can_simulate}
+          onSimulate={onSimulate}
+          simulating={busy === "simulate"}
+          graph={graph}
         />
       )}
-      <p className="muted-line" style={{ margin: 0 }}>
-        Availability curve estimated by {result.n_simulations?.toLocaleString()} Monte-Carlo
-        replications over {fmt(result.t_simulation)}{u}
-        {hasBand ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}.
-        {basis.mean_up_time === "exact" && " Mean up/down time and failure frequency are exact steady-state values."}
-      </p>
     </div>
   );
 }
@@ -471,7 +720,7 @@ function AvailabilityUpgrade({ graph }) {
   return (
     <div className="card note rbd-upgrade" role="status">
       <p>
-        <b>Availability runs thousands of simulations — it's part of Pro.</b>{" "}
+        <b>The simulation runs thousands of histories — it's part of Pro.</b>{" "}
         Subscribe to Pro or buy AI credits to run it here.
       </p>
       <div className="rbd-upgrade-actions">
@@ -495,6 +744,11 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
   const [covValues, setCovValues] = useState({}); // {nodeId: {covName: value}}
   const [calcSig, setCalcSig] = useState(null); // inputs used for the last calc
   const [showCov, setShowCov] = useState(false);
+  const [band, setBand] = useState({ on: false, level: 0.95 }); // confidence band (#103)
+  // Repairable (#155): "As of now" — the blocks' current states.
+  const [asOf, setAsOf] = useState(false);
+  const [blockStates, setBlockStates] = useState({}); // {nodeId: {mode: "new"|"age"|"down", value}}
+  const [busy, setBusy] = useState(null); // null | "exact" | "simulate": what the running request adds
 
   const unitLabel = graph.unit ? ` (${graph.unit})` : "";
   const canCalculate = !!validation?.can_calculate && !stale;
@@ -536,25 +790,66 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
     return out;
   };
 
+  // The blocks a current state can be given: components not pinned working/failed.
+  const stateBlocks = useMemo(
+    () =>
+      (graph.nodes || [])
+        .filter((n) => n.type === "component" && !["working", "failed"].includes(n.data?.state))
+        .map((n) => ({ id: n.id, label: n.data?.label || n.id })),
+    [graph.nodes]
+  );
+
+  // The current state sent to the backend: {id: {down: true, since} | {age}}.
+  const statePayload = () => {
+    if (!graph.repairable || !asOf) return null;
+    const out = {};
+    for (const b of stateBlocks) {
+      const st = blockStates[b.id];
+      if (!st || st.mode === "new") continue;
+      const v = st.value === "" || st.value == null ? 0 : Number(st.value);
+      if (st.mode === "down") out[b.id] = { down: true, since: v };
+      else if (v > 0) out[b.id] = { age: v };
+    }
+    return Object.keys(out).length ? out : null;
+  };
+
   // Signature of the calculation inputs, so we can tell when the shown result
   // is out of date with the current "To" / covariate / conditional selections.
-  const inputSig = JSON.stringify({ t: tMax, s: condAge, cov: covPayload() });
+  const bandSig = band.on ? band.level : null;
+  const inputSig = JSON.stringify({ t: tMax, s: condAge, cov: covPayload(), band: bandSig, now: statePayload() });
   const dirty = result != null && calcSig != null && inputSig !== calcSig;
 
-  const runCalculation = async (force = false) => {
+  // ``simulate`` asks for the (paid) simulation; ``exact`` for the exact
+  // figures of a diagram above the automatic size cap. A plain Calculate of a
+  // repairable diagram gets the exact figures (free) and any saved simulation.
+  const runCalculation = async (force = false, { simulate = false, exact = false } = {}) => {
     setPhase("calculating");
+    setBusy(simulate || force ? "simulate" : exact ? "exact" : null);
     setError(null);
     setNeedsPro(false);
     try {
       const cov = covPayload();
       const s = condAge === "" ? null : Number(condAge);
+      const now = statePayload();
       const res = await analyzeRbd(
         graph,
         tMax === "" ? null : Number(tMax),
         cov,
         s,
         // Saved repairable diagrams can be served a saved availability result.
-        { rbdId: graph.repairable ? rbdId : null, force }
+        {
+          rbdId: graph.repairable ? rbdId : null,
+          force,
+          band: band.on && !graph.repairable ? { level: band.level } : null,
+          ...(graph.repairable
+            ? {
+                simulate: simulate || force,
+                currentState: now,
+                // Keep large diagrams' exact figures once asked for.
+                exact: exact || result?.exact?.status === "ok",
+              }
+            : {}),
+        }
       );
       setResult(res);
       let usedTMax = tMax;
@@ -569,10 +864,13 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         }
         if (evalT === "") setEvalT(Number((limit / 2).toPrecision(4)));
       }
-      setCalcSig(JSON.stringify({ t: usedTMax, s: condAge, cov }));
+      setCalcSig(JSON.stringify({ t: usedTMax, s: condAge, cov, band: bandSig, now }));
       setPhase("idle");
+      setBusy(null);
     } catch (err) {
+      setBusy(null);
       if (err.status === 402 && err.code === "pro_required") {
+        // A simulation-only diagram (no exact figures): the paywall.
         setResult(null);
         setNeedsPro(true);
         setPhase("idle");
@@ -582,6 +880,9 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
       setPhase("error");
     }
   };
+
+  const setBlockState = (id, patch) =>
+    setBlockStates((prev) => ({ ...prev, [id]: { mode: "new", value: "", ...prev[id], ...patch } }));
 
   return (
     <div className="rbd-calc">
@@ -671,6 +972,84 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
               onChange={(e) => setCondAge(e.target.value)}
             />
           </label>
+          <BandControls value={band} onChange={setBand} />
+        </div>
+      )}
+
+      {canCalculate && graph.repairable && (
+        <div className="rbd-asof">
+          <div className="calc-controls rbd-calc-inputs">
+            <label className="calc-t">
+              <span>{asOf ? `Next${unitLabel} — window from now` : `Window${unitLabel}`}</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="auto"
+                value={tMax}
+                onChange={(e) => setTMax(e.target.value)}
+              />
+            </label>
+            <label className="rbd-asof-toggle">
+              <input type="checkbox" checked={asOf} onChange={(e) => setAsOf(e.target.checked)} />
+              <span>As of now</span>
+            </label>
+          </div>
+          {asOf && (
+            <div className="rbd-asof-panel">
+              <p className="hint" style={{ margin: 0 }}>
+                Mark blocks that are down now (with how long they've been in repair) or set how long
+                they've been running since new or their last renewal. Blocks left as New start new.
+              </p>
+              <div className="rbd-avail-imp-scroll">
+                <table className="calc-table rbd-asof-table">
+                  <thead>
+                    <tr>
+                      <th>Block</th>
+                      <th>State now</th>
+                      <th>Time{unitLabel}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stateBlocks.map((b) => {
+                      const st = blockStates[b.id] || { mode: "new", value: "" };
+                      return (
+                        <tr key={b.id} className={st.mode === "down" ? "is-down" : ""}>
+                          <td className="calc-row-label">{b.label}</td>
+                          <td>
+                            <select
+                              value={st.mode}
+                              aria-label={`${b.label} state now`}
+                              onChange={(e) => setBlockState(b.id, { mode: e.target.value })}
+                            >
+                              <option value="new">New</option>
+                              <option value="age">Running</option>
+                              <option value="down">Down</option>
+                            </select>
+                          </td>
+                          <td>
+                            {st.mode === "new" ? (
+                              <span className="muted">—</span>
+                            ) : (
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={st.value}
+                                placeholder={st.mode === "down" ? "in repair for" : "age"}
+                                aria-label={st.mode === "down" ? `${b.label}: time into its repair` : `${b.label}: age`}
+                                onChange={(e) => setBlockState(b.id, { value: e.target.value })}
+                              />
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -693,9 +1072,9 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
 
       {needsPro && !stale && <AvailabilityUpgrade graph={graph} />}
 
-      {result && !stale && result.kind === "repairable" && result.cached && (
+      {result && !stale && result.kind === "repairable" && result.has_simulation !== false && result.cached && (
         <div className="rbd-saved-note" role="status">
-          <span>{savedOn(result.computed_at)}</span>
+          <span>{savedOn(result.computed_at)} (simulation)</span>
           {result.can_recompute && (
             <button
               type="button"
@@ -711,7 +1090,17 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
       )}
 
       {result && !stale && result.kind === "repairable" && (
-        <AvailabilityView result={result} unit={graph.unit} />
+        <AvailabilityView
+          result={result}
+          unit={graph.unit}
+          graph={graph}
+          busy={phase === "calculating" ? busy : null}
+          onSimulate={() => runCalculation(false, { simulate: true })}
+          onCompute={() => runCalculation(false, { exact: true })}
+        />
+      )}
+      {result && !stale && result.kind === "repairable" && (
+        <AvailabilityCompare graph={graph} rbdId={rbdId} result={result} />
       )}
 
       {result && !stale && result.kind !== "repairable" && (

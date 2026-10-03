@@ -148,7 +148,8 @@ def test_instrument_air_availability_matches_app(tmp_path, monkeypatch):
     graph, name = _sample("sample-rbd-instrument-air-availability")
     app = ra.analyze_availability(graph)
     code = rbd_export.to_python(graph, name, exported_at=WHEN)
-    assert 'N_SIMS = int(os.environ.get("RELIAFY_N_SIMS", "2000"))' in code
+    assert 'N_SIMS = int(os.environ.get("RELIAFY_N_SIMS") or 0)' in code
+    assert 'MAX_SIMS = int(os.environ.get("RELIAFY_MAX_SIMS", "20"))' in code  # app's cap
     res, proc = _run(code, tmp_path, n_sims="40")
 
     assert res["steady_state_availability"] == pytest.approx(
@@ -164,6 +165,28 @@ def test_instrument_air_availability_matches_app(tmp_path, monkeypatch):
         assert row["birnbaum"] == pytest.approx(app["importance"][node]["birnbaum"], rel=1e-9)
     assert "vote" not in res["blocks"] and "dvote" not in res["blocks"]
     assert "Steady-state availability: 0.999682" in proc.stdout
+
+
+def test_availability_precision_run_matches_app_exactly(tmp_path):
+    """#104: the script runs to the app's precision target (same tolerance,
+    antithetic pairs, seed and batches). A run that reaches the target doesn't
+    depend on the replication limit, so the app's time-budgeted run and the
+    script's reproduce each other's simulation exactly."""
+    graph, name = _sample("sample-rbd-instrument-air-availability")
+    app = ra.analyze_availability(graph)
+    prec = app["precision"]
+    assert prec["mode"] == "tolerance" and prec["reached"] and prec["antithetic"]
+    code = rbd_export.to_python(graph, name, exported_at=WHEN)
+    res, proc = _run(code, tmp_path, n_sims="")  # no fixed count: run to the target
+
+    assert res["n_simulations"] == app["n_simulations"] == prec["n_simulations"]
+    got = res["precision"]
+    assert got["tolerance"] == pytest.approx(prec["tolerance"], rel=1e-12)
+    for key in ("window_availability", "lower", "upper", "standard_error"):
+        assert got[key] == pytest.approx(prec[key], rel=1e-12), key
+    for key in ("mean_up_time", "mean_down_time", "failure_frequency"):
+        assert res["simulated"][key] == pytest.approx(app["simulated"][key], rel=1e-12), key
+    assert "window mean availability" in proc.stdout
 
 
 def _sub_graph():
@@ -359,16 +382,17 @@ def test_repairable_pins_and_unsupported_blocks(tmp_path):
     code = rbd_export.to_python(graph, "Rep", exported_at=WHEN)
     assert "spare_line = voting_gate()" in code and 'WORKING_NODES = {"pin"}' in code
     res, _ = _run(code, tmp_path, n_sims="20")
-    rbd, _, _, working, broken = ra._build_repairable_rbd(graph)
-    assert working == {"pin"} and not broken
+    rbd, _, gates, working, broken = ra._build_repairable_rbd(graph)
+    assert working == {"pin"} and not broken and gates == {"g"}
+    # Voting gates are pinned working alongside the user's pins, as in the app.
     assert res["steady_state_availability"] == pytest.approx(
-        rbd.mean_availability(working_nodes=working, broken_nodes=broken), rel=1e-12)
+        rbd.mean_availability(working_nodes=working | gates, broken_nodes=broken), rel=1e-12)
 
     # A block type availability mode doesn't support is a placeholder (the
     # app refuses to calculate it).
-    graph["nodes"].append(_node("sb", "standby", "Dryers", model=_w(1, 1)))
+    graph["nodes"].append(_node("sb", "loadshare", "Dryers", model=_w(1, 1)))
     code = rbd_export.to_python(graph, "Rep", exported_at=WHEN)
-    assert "dryers = missing_model(" in code and "'standby' block" in code
+    assert "dryers = missing_model(" in code and "'loadshare' block" in code
 
 
 # ---------------------------------------------------------------------------
@@ -384,8 +408,8 @@ def test_output_is_deterministic_and_self_describing():
     assert head.startswith(name)
     assert "Exported from Reliafy <https://reliafy.com>".lower() in head.lower().replace("\n", " ")
     assert "on 2026-09-26 (UTC)" in head
-    assert "SurPyval.git@v0.21.0" in head and "RePyability.git@v0.11" in head
-    assert "--no-deps" in head and "surpyval==0.21.0" in head
+    assert "SurPyval.git@v0.22" in head and "RePyability.git@v0.11" in head
+    assert "--no-deps" in head and "surpyval==0.22" in head
     assert "python instrument_air_2oo3_compressors_cold_standby_dryer_ccf.py" in head
     # One commented variable per block, with its label.
     assert "# Compressor A: Weibull(alpha=12000 Hours, beta=1.6)" in a
@@ -405,7 +429,7 @@ def test_imports_only_what_is_used():
 
 
 def test_versions_come_from_the_build_pins():
-    assert rbd_export.detect_versions() == {"surpyval": "0.21.0", "repyability": "0.11"}
+    assert rbd_export.detect_versions() == {"surpyval": "0.22", "repyability": "0.11"}
 
 
 def test_names_are_safe_identifiers_and_unique():

@@ -17,6 +17,7 @@ const ARTIFACTS = [
   ["Tracked items", "tracked_items"],
   ["RCM studies", "rcm_studies"],
   ["Fleet forecasts", "fleets"],
+  ["Outage logs", "outage_logs"],
 ];
 
 export default function BillingPage() {

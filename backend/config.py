@@ -105,6 +105,8 @@ FREE_MAX_DEGRADATION_MODELS = _int("FREE_MAX_DEGRADATION_MODELS", 1)
 FREE_MAX_TRACKED_ITEMS = _int("FREE_MAX_TRACKED_ITEMS", 3)
 FREE_MAX_RCM_STUDIES = _int("FREE_MAX_RCM_STUDIES", 1)
 FREE_MAX_FLEETS = _int("FREE_MAX_FLEETS", 1)
+# Outage logs (an RBD's observed up/down history, issue #159).
+FREE_MAX_OUTAGE_LOGS = _int("FREE_MAX_OUTAGE_LOGS", 1)
 
 # Retired Agent plan (US$2/month, MCP only; sold briefly in October 2026, no
 # longer offered — MCP is part of Pro). Existing subscribers keep these caps,
@@ -116,6 +118,7 @@ AGENT_MAX_DEGRADATION_MODELS = _int("AGENT_MAX_DEGRADATION_MODELS", 10)
 AGENT_MAX_TRACKED_ITEMS = _int("AGENT_MAX_TRACKED_ITEMS", 50)
 AGENT_MAX_RCM_STUDIES = _int("AGENT_MAX_RCM_STUDIES", 10)
 AGENT_MAX_FLEETS = _int("AGENT_MAX_FLEETS", 5)
+AGENT_MAX_OUTAGE_LOGS = _int("AGENT_MAX_OUTAGE_LOGS", 10)
 # Availability (Monte-Carlo) simulation is not part of the Agent plan: it stays
 # Pro / purchased credits (billing.premium_compute_allowed) on every surface.
 
@@ -148,6 +151,10 @@ PRO_MONTHLY_CREDIT_CENTS = _int("PRO_MONTHLY_CREDIT_CENTS", 1000)
 # proxy (Firebase Hosting forwards to Cloud Run with the service host). Unset =
 # fall back to the request's own base URL.
 PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/") or None
+# Where MCP upload links point. reliafy.com sits behind Firebase Hosting, whose
+# proxy to Cloud Run may cap request size and time; set this to the Cloud Run
+# service URL so a 30 MB PUT goes straight to the app. Defaults to PUBLIC_BASE_URL.
+UPLOAD_BASE_URL = (os.environ.get("UPLOAD_BASE_URL") or "").strip().rstrip("/") or None
 
 # ---- Stripe -----------------------------------------------------------------
 # The double-underscore names are kept for continuity with older deploy config;

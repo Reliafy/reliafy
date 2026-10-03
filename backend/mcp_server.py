@@ -58,9 +58,10 @@ import functools
 import logging
 import math
 import re
+import shlex
 import time
 from datetime import timedelta
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from typing import Annotated, Any, Callable, Literal, Optional, Union
 
 import anyio
@@ -86,14 +87,18 @@ from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
 from backend.services import oauth as oauth_service
+from backend.services import outage_logs as outage_logs_service
 from backend.services import models as models_service
+from backend.services import public_links as links_service
 from backend.services import rbd_edit
 from backend.services import rbd_graph
+from backend.services import rbd_import
 from backend.services import rbds as rbds_service
 from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
 from backend.services import strategy_store
 from backend.services import tokens as tokens_service
+from backend.services import uploads as uploads_service
 from backend.services import usage as usage_service
 from backend.services import rbd_analysis
 from backend.services import rbd_export
@@ -249,18 +254,43 @@ What you can do:
 - Life data: fit_distribution to failure times (inline data or a saved dataset), fit_and_save_model to keep \
 it as a model, or save_model to save parameters fitted elsewhere; evaluate a saved model with reliability_at. \
 list_models / get_model read what is saved; list_datasets / upload_dataset manage the data.
+- Datasets: get_dataset reads a dataset's columns, row count and rows, a page at a time (offset / limit).
+- Confidence: reliability_at with confidence (e.g. 0.95) adds lower/upper bounds on R(t) and F(t); quote them \
+with the point values. Bounds are null, with bounds_note saying why, where a model has none — never invent them.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
 B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script). Edit, \
 don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/remove/update blocks and \
 edges) rather than re-creating it; clone_rbd copies a sample or makes a variant to edit.
+- Observed history: upload_outage_log saves a real outage log (asset, start, end; blank end = still down) \
+against one of the user's diagrams; system_history then gives the system's actual availability over the \
+window, its outages each attributed to the block that took it down, and the blocks ranked by downtime share.
+- Files: never read a file into your context to paste it. For any file (a BlockSim / Open-PSA / Galileo \
+diagram, an Excel workbook, a CSV of failure times or outages): create_upload, then send the file with the \
+curl PUT it returns, inspect_upload if you need its sheets, columns or diagrams, then import_rbd / \
+import_excel / upload_dataset / upload_outage_log with the upload_id. Paste only small text formats \
+(import_rbd's content, upload_dataset's csv). Relay the import notes: they say what was approximated.
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
+- Test planning: plan_demonstration_test sizes a reliability demonstration test — units, test time per unit \
+and allowed failures to show reliability R over a mission at confidence C (success run / binomial; a longer \
+test per unit with a known Weibull shape; or an MTBF test). It needs no saved data.
 - Housekeeping: delete_model, delete_dataset and delete_rbd permanently delete the user's own artifacts \
 (never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
 Only on the user's explicit \
 request: confirm by name first, and relay anything the response lists as affected.
+- Tidying: update_model / update_dataset rename the user's own models and datasets or set their notes (never \
+the data or the fit; never shared samples).
+- Sharing: share_link publishes a read-only page of one of the user's own items (model, dataset, RBD, \
+strategy analysis, RCM study, fleet) that anyone with the URL can open without a Reliafy account, optionally \
+password-protected (password=true: Reliafy generates a passphrase and returns it once — tell the user to send \
+the link and the passphrase to the recipient separately) and expiring (expires_in_days). An item can have \
+several links, each with a label; list_share_links shows them and revoke_share_link ends one at once. Share \
+only when the user asks to.
 - Plans: upgrade_link gives the user a Stripe payment link for Reliafy Pro, to open themselves.
+- Account: get_account shows the plan, on Free the tool calls used and left this month (and the date they \
+reset; Pro is unlimited), storage used against the limits and whether simulation is included; it's never \
+counted, even past the allowance.
 
 Conventions — follow them exactly:
 - Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension); \
@@ -273,7 +303,14 @@ nearly every row censored almost always means the column is inverted.
 - RBDs: redundancy must be modelled as redundancy (parallel / k-of-n / standby) — never wire A/B, duplex or \
 standby items in series. Never silently invent failure data: ask for MTBFs, or mark guessed values \
 placeholder=true and say so.
-- Availability simulation for repairable RBDs is a paid feature; a saved result is served when one exists.
+- Repairable RBDs: analyze_rbd gives, on every plan, the exact availability over time A(t), the mission \
+availability and the window's expected system failures, outages, downtime and cost (each labelled exact or \
+numerical: deterministic, no simulation), plus the long-run figures — from new, or from now with \
+current_state ({node_id: {"down": true, "since": <time into the repair>} or {"age": <time since new>}}), \
+over t_max (e.g. the next 720 hours). The Monte-Carlo simulation adds only what it alone gives \
+(distributions, P(no outage), percentiles, criticality indices) and is a paid feature; a saved result is \
+served when one exists. When the response says the exact figures are simulation-only for a diagram (e.g. \
+proof tests that take time), say so.
 - Every artifact has a url; share it so the user can open the result in Reliafy.
 
 Plans: using Reliafy from AI agents (these tools) is part of Reliafy Pro, which includes everything with \
@@ -317,8 +354,9 @@ _USER_ERRORS = (
 _FIT_TOOLS = {"fit_distribution", "fit_and_save_model"}
 _FLEET_TOOLS = {"list_fleets", "fleet_forecast", "list_fleet_alerts", "create_fleet_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
-# Never gated or counted: the way to Pro must work when a limit is hit.
-UNGATED_TOOLS = {"upgrade_link"}
+# Never gated or counted: the way to Pro, and seeing where the allowance
+# stands, must work when a limit is hit.
+UNGATED_TOOLS = {"upgrade_link", "get_account"}
 
 
 class Refusal(ToolError):
@@ -457,12 +495,29 @@ def _url(path: str) -> str:
     return f"{config.PUBLIC_BASE_URL or 'https://reliafy.com'}{path}"
 
 
-def _cap(db, user: dict, kind: str, label: str) -> None:
-    """Refuse a save past the caller's plan storage cap (operators have none)."""
-    if billing_service.is_admin_user(user) or not billing_service.would_exceed_cap(db, user["uid"], kind):
+def _cap(db, user: dict, kind: str, label: str, n: int = 1) -> None:
+    """Refuse a save past the caller's plan storage cap (operators have none).
+    ``n`` > 1 checks room for that many new items at once (an import saving
+    several diagrams is all or nothing)."""
+    if billing_service.is_admin_user(user):
+        return
+    if n <= 1:
+        if not billing_service.would_exceed_cap(db, user["uid"], kind):
+            return
+    elif not config.BILLING_ENABLED:
         return
     plan = billing_service.account(db, user["uid"])["active_plan"]
     cap = billing_service.cap_for(kind, plan)
+    if cap is None:
+        return
+    if n > 1:
+        owned = billing_service.owned_count(db, user["uid"], kind)
+        if owned + n <= cap:
+            return
+        raise Refusal(
+            f"This would save {n} {label}, but the {_PLAN_NAMES[plan]} plan allows {cap} and you have {owned} — "
+            f"nothing was saved. Import fewer (pick them by name), or delete {label} you no longer need. "
+            + _upgrade_path(lead="Or, for more storage, upgrade"))
     raise Refusal(
         f"You've reached the {_PLAN_NAMES[plan]} plan's limit of {cap} saved {label}. The limit doesn't "
         f"reset: delete {label} you no longer need in Reliafy to make room. "
@@ -631,6 +686,8 @@ def get_model(
                 out[key] = r[key]
         if (r.get("functions") or {}).get("covariates"):
             out["covariates"] = r["functions"]["covariates"]
+        if (m.spec or {}).get("notes"):
+            out["notes"] = m.spec["notes"]
         if r.get("fit_ok") is False or r.get("fit_warning"):
             # Lead with it, as the fit tools do.
             out = {"fit_ok": False, "warning": _fit_failure_warning(r.get("fit_warning")), **out}
@@ -638,7 +695,10 @@ def get_model(
     doc = recurrent_service.get_model(db, model_id, owners)
     if doc is not None:
         r = doc.results or {}
-        return {**_recurrent_brief(doc), "params": r.get("params"), "gof": r.get("gof"), "trend": r.get("trend")}
+        out = {**_recurrent_brief(doc), "params": r.get("params"), "gof": r.get("gof"), "trend": r.get("trend")}
+        if (doc.spec or {}).get("notes"):
+            out["notes"] = doc.spec["notes"]
+        return out
     raise ToolError("Model not found.")
 
 
@@ -877,7 +937,7 @@ def save_model(
     uid = user["uid"]
     dist_id = fitting.resolve_distribution_id(distribution)  # FitError -> tool error listing the options
     entry = fitting.DISTRIBUTIONS[dist_id]
-    names = list(getattr(entry["dist"], "param_names", []) or [])
+    names = list(getattr(entry["dist"], "parameter_names", []) or [])
 
     given: dict[str, float] = {}
     for p in params:
@@ -931,6 +991,68 @@ def save_model(
     return out
 
 
+# ---- confidence bounds for reliability_at (#134) -------------------------------
+# The app's band (POST /api/models/{id}/confidence) is SurPyval's ``model.cb``
+# on the live fit — Fisher-matrix (Wald / delta-method) bounds. The same call
+# here, but at the requested times themselves rather than on the plot grid, so
+# nothing is interpolated. Where there's no covariance to propagate, no bounds:
+# never invented ones.
+
+def _cb_pairs(cb) -> list:
+    arr = np.asarray(cb, dtype=float).reshape(-1, 2)
+    return [[_finite(lo), _finite(hi)] for lo, hi in arr]
+
+
+def _reliability_bounds(db, m, ts: list[float], owners, ev: dict, confidence: float):
+    """``(reliability_bounds, failure_bounds, note)`` at ``ts`` — both lists of
+    ``[lower, upper]``, or both None with the note saying why."""
+    level = f"{confidence * 100:g}%"
+    results = m.results or {}
+    dist_id = results.get("distribution_id") or m.distribution_id
+    if dist_id == fitting.MIXTURE_ID:
+        return None, None, f"No {level} bounds: a mixture fit has no covariance matrix to base them on."
+    if m.kind == "nonparametric":
+        return None, None, (f"No {level} bounds: this is a non-parametric model, whose values here are "
+                            "interpolated on its stored curve, so bounds at exactly these times wouldn't match "
+                            "them. The app's calculator draws its pointwise band.")
+    if (m.spec or {}).get("params_only"):
+        return None, None, (f"No {level} bounds: this model was saved from parameters alone, without the data "
+                            "they were fitted to, so there's no covariance matrix to base them on. Save it "
+                            "with its data (or fit it in Reliafy) for bounds.")
+    if m.kind not in ("distribution", "discrete", "regression") or ev["method"] != "exact":
+        return None, None, f"No {level} bounds: confidence bounds aren't available for this {m.kind} model."
+    try:
+        entry = fitting._MODEL_STORE.get(models_service._live_cache_id(db, m.id, owners))
+    except (models_service.ModelNotFound, fitting.ModelNotFound, FitError):
+        entry = None
+    live = (entry or {}).get("model")
+    if live is None:
+        return None, None, (f"No {level} bounds: the data this model was fitted to is no longer available, "
+                            "so its covariance can't be recovered.")
+    if not hasattr(live, "cb"):
+        return None, None, (f"No {level} bounds: this model type ({results.get('distribution') or dist_id}) "
+                            "doesn't provide covariance-based confidence bounds.")
+    t = np.asarray(ts, dtype=float)
+    alpha = 1.0 - confidence
+    args = (t,)
+    if m.kind == "regression":
+        args = (t, pd.DataFrame({c["name"]: [c["value"]] for c in ev.get("covariates") or []}))
+    try:
+        with np.errstate(all="ignore"):
+            r = _cb_pairs(live.cb(*args, on="sf", alpha_ci=alpha, bound="two-sided"))
+            f = _cb_pairs(live.cb(*args, on="ff", alpha_ci=alpha, bound="two-sided"))
+    except Exception as exc:  # noqa: BLE001 - e.g. no covariance (singular fit), non-MLE fit
+        reason = str(exc).strip() or type(exc).__name__
+        return None, None, f"No {level} bounds: SurPyval can't compute them for this fit ({reason})."
+    note = (f"reliability_bounds / failure_bounds are two-sided {level} Fisher-matrix (Wald / delta-method) "
+            "confidence bounds from the fit's covariance — the same method as the app's confidence band — "
+            "computed at exactly these times.")
+    if m.kind == "regression":
+        note += (" For this proportional-hazards model they're at the covariate values used; the app's "
+                 "calculator doesn't draw a band for these models.")
+    return r, f, note
+
+
 @_tool("reliability_at", _READ, "Evaluate a model's reliability")
 def reliability_at(
     ctx: Context,
@@ -943,13 +1065,21 @@ def reliability_at(
     covariates: Annotated[Optional[dict[str, Any]], Field(
         description="Proportional-hazards models only: covariate values by name (see get_model). Any not "
                     "given use the fit's default (the training-data mean); the response says which.")] = None,
+    confidence: Annotated[Optional[float], Field(
+        gt=0, lt=1, description="Optional two-sided confidence level, e.g. 0.9 or 0.95. Adds reliability_bounds "
+                                "and failure_bounds [lower, upper] at each time (the app's Fisher-matrix "
+                                "confidence bounds); null, with bounds_note saying why, where the model has "
+                                "none.")] = None,
 ) -> dict[str, Any]:
     """Evaluate a saved life model at given times: reliability R(t) (probability of surviving to t),
     failure probability F(t) = 1 − R(t), hazard rate h(t), cumulative hazard H(t) and density f(t).
     Optionally conditional on a unit already having survived to `conditional_age`. Parametric models are
     evaluated exactly from the distribution (method=exact); non-parametric and mixture models are
     interpolated on their stored curve (method=interpolated). Proportional-hazards models report the
-    covariate values used (the fit's defaults for any not given)."""
+    covariate values used (the fit's defaults for any not given). With `confidence` (e.g. 0.95), each
+    time also gets two-sided confidence bounds on R(t) and F(t) — quote those alongside the point values;
+    models without a covariance (non-parametric, mixtures, parameters saved without data) get null bounds
+    and a bounds_note saying why."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
@@ -1035,6 +1165,14 @@ def reliability_at(
                          "covariate not given (the training-data mean; the most common level for a "
                          "categorical one). Pass `covariates` to evaluate other conditions.")
     out["note"] = " ".join(notes)
+    if confidence is not None:
+        r_bounds, f_bounds, bounds_note = _reliability_bounds(
+            db, m, ts, owners, ev, float(confidence))
+        for i, p in enumerate(points):
+            p["reliability_bounds"] = r_bounds[i] if r_bounds else None
+            p["failure_bounds"] = f_bounds[i] if f_bounds else None
+        out["confidence"] = float(confidence)
+        out["bounds_note"] = bounds_note
     return out
 
 
@@ -1058,16 +1196,93 @@ def list_datasets(ctx: Context) -> dict[str, Any]:
 def upload_dataset(
     ctx: Context,
     name: Annotated[str, Field(min_length=1, description="A short name for the dataset.")],
-    csv: Annotated[str, Field(min_length=1, description="The CSV text, header row first. Tab- or "
-                                                        "semicolon-separated pastes are accepted too.")],
+    csv: Annotated[Optional[str], Field(min_length=1, description=(
+        "The CSV text, header row first. Tab- or semicolon-separated pastes are accepted too. For a file, "
+        "use upload_id instead."))] = None,
+    upload_id: Annotated[Optional[str], Field(description=(
+        "Instead of csv: a file sent through create_upload (CSV/TSV, or an .xlsx workbook with sheet)."))] = None,
+    sheet: Annotated[Optional[str], Field(description=(
+        "With an .xlsx upload_id: the sheet to read (needed when the workbook has several; inspect_upload "
+        "lists them)."))] = None,
 ) -> dict[str, Any]:
-    """Save a dataset (CSV text) to the user's workspace and return its id and columns. A censoring
-    column should use 0 = failed, 1 = still running, -1 = left-censored (or flag c_invert when fitting)."""
+    """Save a dataset to the user's workspace and return its id and columns: CSV text in csv, or a file
+    uploaded with create_upload in upload_id. A censoring column should use 0 = failed, 1 = still running,
+    -1 = left-censored (or flag c_invert when fitting)."""
     user, db = _caller(ctx), _db()
+    if (csv is None) == (upload_id is None):
+        raise ToolError("Give either csv (text) or upload_id (a file sent through create_upload) — exactly one.")
     _cap(db, user, "datasets", "datasets")
-    ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(csv), user["uid"])
+    upload = None
+    if upload_id is not None:
+        upload, text = _upload_table_text(db, user["uid"], upload_id, sheet)
+    else:
+        text = csv
+    ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(text), user["uid"])
+    if upload is not None:
+        uploads_service.delete(db, upload["_id"])
     return {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
             "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
+
+
+# ---- get_dataset (#135): a dataset's rows, a page at a time --------------------
+
+_DATASET_PAGE_MAX = 500
+
+
+def _cell(v):
+    """One dataset value as plain JSON: numbers as numbers, blanks as null."""
+    if v is None or (isinstance(v, float) and not np.isfinite(v)):
+        return None
+    if isinstance(v, (bool, np.bool_)):
+        return bool(v)
+    if isinstance(v, (int, np.integer)):
+        return int(v)
+    if isinstance(v, (float, np.floating)):
+        return _finite(v)
+    try:
+        if pd.isna(v):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return str(v)
+
+
+@_tool("get_dataset", _READ, "Read a dataset")
+def get_dataset(
+    ctx: Context,
+    dataset_id: Annotated[str, Field(description="A dataset id (list_datasets) — the user's own or a shared sample.")],
+    offset: Annotated[int, Field(ge=0, description="First row to return (0-based).")] = 0,
+    limit: Annotated[int, Field(ge=1, le=_DATASET_PAGE_MAX,
+                                description=f"Rows to return, at most {_DATASET_PAGE_MAX}.")] = 50,
+) -> dict[str, Any]:
+    """Read a saved dataset: its name and notes, columns with their types, the total row_count, and a slice
+    of rows (`offset`, `limit` ≤ 500) as lists in column order. Page through a large dataset with
+    next_offset; summarise rather than reading every row when you don't need them all."""
+    user, db = _caller(ctx), _db()
+    ds = datasets_service.get_dataset(db, dataset_id, _owners(user["uid"]))
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    df = datasets_service.load_dataframe(ds)
+    total = int(df.shape[0])
+    page = df.iloc[offset:offset + limit]
+    rows = [[_cell(v) for v in row] for row in page.itertuples(index=False, name=None)]
+    end = offset + len(rows)
+    out = {
+        "id": ds.id,
+        "name": ds.name,
+        "is_sample": samples_service.is_sample(ds.owner_id),
+        "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
+        "row_count": total,
+        "offset": offset,
+        "rows": rows,
+        "next_offset": end if end < total else None,
+        "url": _url(f"/datasets/d/{ds.id}"),
+    }
+    if ds.notes:
+        out["notes"] = ds.notes
+    if offset >= total and total:
+        out["note"] = f"offset {offset} is past the last row (the dataset has {total} rows)."
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1128,20 +1343,96 @@ class BlockModel(BaseModel):
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
 
 
+class CostRange(BaseModel):
+    min: float = Field(ge=0)
+    max: float = Field(ge=0)
+
+
+Cost = Union[float, CostRange]
+
+
+class BlockCosts(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    repair: Optional[Cost] = Field(None, description="Per failure (labour); a number or {min, max} drawn uniformly.")
+    replace: Optional[Cost] = Field(None, description="Per failure (parts); a number or {min, max}.")
+    downtime: Optional[float] = Field(None, ge=0, description="Per unit time THIS block is down.")
+    acquisition: Optional[float] = Field(None, ge=0, description="Purchase price, once.")
+
+
+class Preventive(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    policy: Literal["age", "block", "condition"] = Field("age", description=(
+        "age = replaced at this age (a failure restarts the clock); block = at every multiple of the interval; "
+        "condition = inspected every interval (in no time) and replaced when its chance of failing before the "
+        "next inspection exceeds threshold."))
+    interval: float = Field(gt=0, description="Replacement interval (age/block) or inspection interval (condition).")
+    duration: Optional[float] = Field(None, ge=0, description="Time off-line per replacement; 0/omit = instant.")
+    cost: Optional[Cost] = Field(None, description="Per replacement.")
+    threshold: Optional[float] = Field(None, ge=0, le=1, description=(
+        "condition only (required): the probability of failing before the next inspection above which it's "
+        "replaced, e.g. 0.05."))
+    inspection_cost: Optional[Cost] = Field(None, description="condition only: per condition inspection.")
+    opportunity: Optional[float] = Field(None, ge=0, description=(
+        "age only, with maintenance_group: renewed early at a stop of its group once at least this old "
+        "(0 to interval)."))
+
+
+class ProofTest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    interval: float = Field(gt=0, description="Proof-test interval.")
+    duration: Optional[float] = Field(None, ge=0, description="Time off-line per test; 0/omit = instant (exact "
+                                                              "values need instant tests and instant repair).")
+    cost: Optional[Cost] = Field(None, description="Per test.")
+    offset: Optional[float] = Field(None, ge=0, description=(
+        "Time of the first test, 0 to < interval: stagger redundant channels' tests (e.g. interval/2)."))
+    coverage: Optional[float] = Field(None, ge=0, le=1, description=(
+        "Proof-test coverage: the fraction of failures a test finds (default 1). Below 1 needs full_test."))
+    full_test: Optional[float] = Field(None, gt=0, description=(
+        "With coverage < 1: the interval of the full test that finds every failure (a whole multiple of interval)."))
+
+
+class MaintenanceGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    setup_cost: Optional[float] = Field(None, ge=0, description="Charged once per group stop (shared mobilisation).")
+    system_down: Optional[bool] = Field(None, description="Every system outage is also a stop of the group.")
+
+
 class RbdNode(BaseModel):
     id: str = Field(description="Unique node id. The diagram needs exactly one 'input' and one 'output' node.")
     type: Literal["input", "output", "component", "series", "parallel", "knode", "standby", "subsystem"] = Field(
         description="component = one block; series/parallel = n identical blocks sharing one model; knode = "
                     "k-of-n voting gate (n = required, k = branches feeding it); standby = spare(s) idle until "
-                    "the running unit fails; subsystem = embed a saved RBD.")
+                    "the running unit fails (repairable: identical units, each repaired after it fails); "
+                    "subsystem = embed a saved RBD. Repairable diagrams take component, standby and knode.")
     label: Optional[str] = None
     model: Optional[BlockModel] = Field(None, description="Life model (component, series, parallel, standby).")
-    repair: Optional[BlockModel] = Field(None, description="Repairable diagrams only: time-to-repair distribution.")
+    repair: Optional[BlockModel] = Field(None, description="Repairable diagrams only: time-to-repair distribution "
+                                                           "(component, standby).")
     n: Optional[int] = Field(None, description="series/parallel: number of identical units; knode: number REQUIRED to work.")
     k: Optional[int] = Field(None, description="knode: number of branches feeding the gate.")
     spares: Optional[int] = Field(None, description="standby: number of spares.")
     cold: Optional[bool] = Field(None, description="standby: true = cold (spares don't age while idle).")
+    dormancy: Optional[float] = Field(None, ge=0, le=1, description=(
+        "standby: how fast an idle spare ages relative to a running one — 0 cold, 1 hot, "
+        "in between warm (e.g. 0.2 for a spare kept warm and pressurised). Overrides `cold`."))
     subsystem_rbd_id: Optional[str] = Field(None, description="subsystem: the saved RBD id to embed.")
+    # Repairable diagrams: a block's costs and maintenance (#99, #100, #156, #157).
+    instant_repair: Optional[bool] = Field(None, description="Repairable component: repaired in zero time (still "
+                                                             "fails and costs, never down); no repair model needed.")
+    costs: Optional[BlockCosts] = Field(None, description="Repairable component or standby group: its costs.")
+    preventive: Optional[Preventive] = Field(None, description=(
+        "Repairable component: scheduled (age/block) or condition-based replacement. Not with inspection."))
+    inspection: Optional[ProofTest] = Field(None, description=(
+        "Repairable component: its failures are HIDDEN until a proof test finds them (any life model). "
+        "Not with preventive."))
+    maintenance_group: Optional[str] = Field(None, description=(
+        "Repairable component: a maintenance group name — members share the group's set-up cost (create_rbd/"
+        "set maintenance_groups) and, with preventive.opportunity, are renewed early at its stops."))
+    crew_priority: Optional[float] = Field(None, description=(
+        "Repairable component or standby group: place in the repair-crew queue, higher first (default 0)."))
+    repair_one_at_a_time: Optional[bool] = Field(None, description=(
+        "Repairable standby group: one repairer of its own, so its failed units are repaired one at a time "
+        "(otherwise each failed unit is a job for the diagram's repair crews). No costs on such a group."))
 
 
 class RbdEdge(BaseModel):
@@ -1199,6 +1490,17 @@ def create_rbd(
                     "more components in PARALLEL, with optional k_of_n voting.")] = None,
     include_graph: Annotated[bool, Field(description=(
         "Also return the full compact graph. Default: just the node ids, types and labels."))] = False,
+    repair_crews: Annotated[Optional[int], Field(ge=1, description=(
+        "Repairable only: how many repair crews share ALL the blocks' repairs (omit = as many as needed). With "
+        "fewer crews than repair jobs, a failed block can wait; order by each block's crew_priority."))] = None,
+    maintenance_groups: Annotated[Optional[dict[str, MaintenanceGroup]], Field(description=(
+        "Repairable only: options per maintenance group named by blocks' maintenance_group, e.g. "
+        "{\"north pumps\": {\"setup_cost\": 2000}}."))] = None,
+    safety_function: Annotated[bool, Field(description=(
+        "Repairable only: the diagram is a (low-demand) safety function — analyze_rbd reports its PFDavg, "
+        "with common cause, and its SIL band."))] = False,
+    target_sil: Annotated[Optional[int], Field(ge=1, le=4, description="With safety_function: the SIL it must meet."
+                                               )] = None,
 ) -> dict[str, Any]:
     """Build, validate and save a reliability block diagram to the user's workspace. Layout is automatic.
 
@@ -1219,7 +1521,10 @@ def create_rbd(
     block. Only if the user wants a starting point, use values that differ by block class, set
     placeholder=true on EVERY guessed model, and tell the user the numbers are placeholders.
     Repairable diagrams: every block needs `repair` (graph form) or repair_distribution + repair_params
-    (stages form), e.g. a lognormal time to repair.
+    (stages form), e.g. a lognormal time to repair. Blocks may carry costs, preventive (age/block/condition-
+    based replacement), inspection (hidden failures with proof tests: staggered via offset, imperfect via
+    coverage + full_test), maintenance_group and crew_priority; the diagram repair_crews, maintenance_groups,
+    safety_function and target_sil. Common-cause groups (edit_rbd add_ccf) enter a safety function's PFDavg.
     Returns the node ids (the stages form generates them); change the diagram later with edit_rbd."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
@@ -1229,14 +1534,18 @@ def create_rbd(
     if stages is not None and edges:
         raise ToolError("edges belong to the graph form (nodes + edges); the stages form is wired automatically. "
                         "Give exactly one form.")
+    settings = _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil)
+    if settings and not repairable:
+        raise ToolError(f"{', '.join(settings)} apply to repairable diagrams only — set repairable=true.")
     if stages is not None:
         graph = _stage_graph(db, uid, stages, repairable)
         graph["unit"] = unit
+        graph.update(settings)
     else:
         graph = rbd_graph.normalize_graph(
             {"nodes": [n.model_dump(exclude_none=True) for n in nodes],
              "edges": [e.model_dump() for e in edges or []],
-             "unit": unit, "repairable": repairable},
+             "unit": unit, "repairable": repairable, **settings},
             resolve_saved_model=lambda mid: models_service.get_model(db, mid, owners),
         )
     check = rbds_service.validate_graph(db, graph, owners)
@@ -1245,6 +1554,24 @@ def create_rbd(
     _cap(db, user, "rbds", "RBDs")
     rbd = rbds_service.save_rbd(db, name.strip(), graph, uid)
     return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), **_rbd_outline(graph, check, include_graph)}
+
+
+def _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil) -> dict:
+    """create_rbd's repairable-diagram settings (#156, #157) as graph keys,
+    only those given."""
+    out: dict[str, Any] = {}
+    if repair_crews:
+        out["repair_crews"] = {"crews": int(repair_crews)}
+    if maintenance_groups:
+        out["maintenance_groups"] = {name: g.model_dump(exclude_none=True)
+                                     for name, g in maintenance_groups.items()}
+    if safety_function:
+        out["safety_function"] = True
+    if target_sil:
+        if not safety_function:
+            raise ToolError("target_sil applies to a safety function — set safety_function=true too.")
+        out["target_sil"] = int(target_sil)
+    return out
 
 
 def _rbd_outline(graph: dict, check: dict, include_graph: bool) -> dict:
@@ -1313,6 +1640,16 @@ class UpdateNodeOp(_Op):
     spares: Optional[int] = None
     cold: Optional[bool] = None
     subsystem_rbd_id: Optional[str] = None
+    instant_repair: Optional[bool] = None
+    costs: Optional[BlockCosts] = Field(None, description="Replaces the block's costs.")
+    preventive: Optional[Preventive] = Field(None, description="Replaces the schedule (drops inspection).")
+    inspection: Optional[ProofTest] = Field(None, description="Replaces the proof tests (drops preventive).")
+    maintenance_group: Optional[str] = None
+    crew_priority: Optional[float] = None
+    repair_one_at_a_time: Optional[bool] = None
+    clear: Optional[list[Literal["costs", "preventive", "inspection", "maintenance_group", "crew_priority",
+                                 "instant_repair", "repair_one_at_a_time"]]] = Field(
+        None, description="Remove these block settings.")
 
 
 class EdgeOp(_Op):
@@ -1326,6 +1663,12 @@ class SetOp(_Op):
     name: Optional[str] = None
     unit: Optional[str] = Field(None, description="Relabels the unit; parameters are not rescaled.")
     repairable: Optional[bool] = None
+    repair_crews: Optional[int] = Field(None, ge=0, description="Repair crews shared by all blocks; 0 = as many "
+                                                                 "as needed.")
+    maintenance_groups: Optional[dict[str, MaintenanceGroup]] = Field(None, description=(
+        "Replaces the maintenance groups' options ({} clears them)."))
+    safety_function: Optional[bool] = None
+    target_sil: Optional[int] = Field(None, ge=0, le=4, description="0 clears it.")
 
 
 class AddCcfOp(_Op):
@@ -1352,7 +1695,12 @@ def _op_dict(op: BaseModel) -> dict:
         value = getattr(op, key)
         if value is None:
             continue
-        out[key] = value.model_dump(exclude_none=True) if isinstance(value, BaseModel) else value
+        if isinstance(value, BaseModel):
+            value = value.model_dump(exclude_none=True)
+        elif isinstance(value, dict):
+            value = {k: v.model_dump(exclude_none=True) if isinstance(v, BaseModel) else v
+                     for k, v in value.items()}
+        out[key] = value
     return out
 
 
@@ -1411,11 +1759,15 @@ def edit_rbd(
       none leaves it unconnected for add_edge. node is a compact node as in create_rbd.
     - remove_node {id, reconnect: auto|none} — auto rejoins a series gap; removing one of two parallel
       blocks adds no bypass. Every edge added is reported. Input/output can't be removed.
-    - update_node {id | ids, label?, model?, repair?, n?, k?, spares?, cold?, subsystem_rbd_id?} — merges
-      only the fields given (ids: same change to many nodes). A node's type can't change: remove and re-add.
+    - update_node {id | ids, label?, model?, repair?, n?, k?, spares?, cold?, subsystem_rbd_id?,
+      instant_repair?, costs?, preventive?, inspection?, maintenance_group?, crew_priority?,
+      repair_one_at_a_time?, clear?: [field…]} — merges only the fields given (ids: same change to many
+      nodes); clear removes block settings. A node's type can't change: remove and re-add.
     - add_edge / remove_edge {source, target}
-    - set {name?, unit?, repairable?}
-    - add_ccf {members, beta, id?} / remove_ccf {id} — common-cause (beta-factor) groups, non-repairable only.
+    - set {name?, unit?, repairable?, repair_crews? (0 = as many as needed), maintenance_groups?,
+      safety_function?, target_sil? (0 clears)}
+    - add_ccf {members, beta, id?} / remove_ccf {id} — common-cause (beta-factor) groups; in a repairable
+      diagram they enter a safety function's PFDavg.
     Removing a node drops it from its common-cause group (and the group if under 2 members remain).
     Changing connections re-lays out the diagram automatically. Returns one line per op, the validation
     warnings this edit introduced (warnings_unchanged counts the rest) and the node ids; read the full graph
@@ -1508,11 +1860,53 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None) -
     return out
 
 
+_EXACT_KEYS = ("status", "message", "from", "current_state", "window", "unit", "availability_start",
+               "availability_end", "availability_min", "availability_min_at", "mission_availability",
+               "expected_failures", "planned_outages", "expected_outages", "downtime", "cost", "cost_note",
+               "method", "n_blocks", "cached")
+
+
+def _exact_summary(exact: dict | None) -> dict | None:
+    """The exact block for an agent: the figures and their methods, the A(t)
+    curve at 21 points, the blocks with the most expected downtime, and each
+    analysis's route (exact / numerical / simulated / refused) and why."""
+    if not exact:
+        return None
+    out = {k: exact[k] for k in _EXACT_KEYS if k in exact}
+    curve = exact.get("curve") or {}
+    if curve.get("t"):
+        out["curve"] = [{"t": p["t"], "availability": p["reliability"]}
+                        for p in _downsample(curve["t"], curve.get("availability") or [])]
+    if exact.get("per_node"):
+        out["blocks_by_downtime"] = exact["per_node"][:10]
+    if exact.get("routes"):
+        out["routes"] = {k: {"route": r.get("route"), "reason": r.get("reason")}
+                         for k, r in exact["routes"].items()}
+    return out
+
+
 def _availability_summary(result: dict) -> dict:
     keys = ("unit", "steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
-            "failure_frequency", "figures_basis", "n_simulations", "t_simulation", "per_node", "importance",
-            "criticality", "cached", "computed_at", "can_recompute")
-    return {"kind": "repairable", **{k: result.get(k) for k in keys if k in result}}
+            "failure_frequency", "figures_basis", "has_simulation", "n_simulations", "t_simulation", "precision",
+            "per_node", "importance", "criticality", "cached", "computed_at", "can_recompute", "current_state",
+            # How the long-run values were found, the repair crews, a safety
+            # function's PFDavg and SIL band (#156, #157).
+            "long_run_method", "repair_crews", "safety", "opportunistic_renewals")
+    out = {"kind": "repairable", **{k: result.get(k) for k in keys if k in result}}
+    if not result.get("has_simulation", True):
+        # The simulation's own figures aren't there: don't list empty ones.
+        for k in ("n_simulations", "precision", "per_node", "criticality", "cached", "computed_at"):
+            out.pop(k, None)
+    out["exact"] = _exact_summary(result.get("exact"))
+    return out
+
+
+class BlockState(BaseModel):
+    down: Optional[bool] = Field(None, description="True: the block is down now (in a repair).")
+    since: Optional[float] = Field(None, ge=0, description=(
+        "With down: how long it has been down so far (diagram unit; 0 = just failed)."))
+    age: Optional[float] = Field(None, ge=0, description=(
+        "A running block: time since it was new or last renewed (diagram unit)."))
 
 
 @_tool("analyze_rbd", _READ, "Analyse an RBD")
@@ -1528,13 +1922,30 @@ def analyze_rbd(
         "Non-repairable: condition on the system having already survived to this age."))] = None,
     recompute: Annotated[bool, Field(description=(
         "Repairable: re-run the simulation even when a saved result matches (paid feature)."))] = False,
+    simulate: Annotated[bool, Field(description=(
+        "Repairable: also run the Monte-Carlo simulation (paid: Pro or credits) for distributions, "
+        "P(no outage), percentiles and criticality. False = the exact figures only (faster). Ignored "
+        "without entitlement: the exact figures come anyway."))] = True,
+    current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
+        "Repairable: blocks' states now, keyed by node id — {down: true, since: <time into the repair>} or "
+        "{age: <time since new>}; blocks left out are new. The figures then run from now over t_max "
+        "(e.g. the next 720 hours). Never replaces the saved from-new result."))] = None,
+    compute_exact: Annotated[bool, Field(description=(
+        f"Repairable diagrams over {rbd_analysis.EXACT_AUTO_MAX_BLOCKS} blocks: compute the exact figures "
+        "over time anyway (from several seconds to a minute or so)."))] = False,
 ) -> dict[str, Any]:
     """Analyse a saved RBD. Non-repairable diagrams: system reliability curve, MTTF, B-lives (B10/B50),
     component importance (Birnbaum, Fussell–Vesely, RAW/RRW) and minimal cut/path sets. Repairable
-    diagrams: steady-state availability, mean up/down time, failure frequency and per-block downtime share.
-    Availability simulation is a paid feature (Pro or purchased credits): a saved result is always served;
-    otherwise, without entitlement, this returns available=false with a message instead of results — relay
-    it, and offer export_rbd_python to run the simulation locally."""
+    diagrams, on every plan: the exact long-run availability, mean up/down time and failure frequency, how
+    the long-run values were found (long_run_method: exact / numerical / simulated, e.g. the repair crews'
+    Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety), and (in
+    `exact`) the availability over time A(t), mission availability and the window's expected system
+    failures, outages, downtime and cost — each with its method (exact / numerical; no simulation) — from
+    new or from current_state. The Monte-Carlo simulation (distributions, criticality) is a paid feature
+    (Pro or purchased credits): a saved result is always served; otherwise, without entitlement, the
+    response carries `simulation: {available: false, message}` — relay it, and offer export_rbd_python to
+    run the simulation locally. A diagram whose figures are simulation-only (exact.status
+    'simulation_only', e.g. proof tests that take time) returns available=false without entitlement."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -1553,7 +1964,11 @@ def analyze_rbd(
         raise ToolError(f"conditional_age must be finite and ≥ 0; got {conditional_age:g}.")
     if graph.get("repairable") and (times or conditional_age is not None):
         raise ToolError("times and conditional_age apply to non-repairable diagrams; this one is repairable "
-                        "(analysed for availability). Drop them — t_max sets the simulated horizon.")
+                        "(analysed for availability). Drop them — t_max sets the window (and the simulated "
+                        "horizon); current_state starts it from now.")
+    if current_state and not graph.get("repairable"):
+        raise ToolError("current_state applies to repairable (availability) diagrams; for a non-repairable one "
+                        "use conditional_age.")
     placeholders = rbd_graph.placeholder_labels(graph)
     head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
     if placeholders:
@@ -1569,15 +1984,30 @@ def analyze_rbd(
         if graph.get("repairable"):
             actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
                              read_owners=_owners(uid), list_owners=uid)
-            status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners)
+            state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
+                     if current_state else None)
+            plan = user.get("mcp_plan", "pro")
+            status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners,
+                                                   simulate=simulate or recompute, current_state=state,
+                                                   exact=compute_exact)
             if status != 200:
-                plan = user.get("mcp_plan", "pro")
+                # A simulation-only diagram, without entitlement: nothing to give.
                 if plan != "pro":
                     _soft_refusal("pro_only")
                 message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
                 return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
                         "message": message}
-            return {**head, "available": True, **_availability_summary(payload)}
+            out = {**head, "available": True, **_availability_summary(payload)}
+            sim_state = (payload.get("simulation_status") or {}).get("state")
+            if sim_state == "pro_required" and (simulate or recompute):
+                out["simulation"] = {
+                    "available": False, "code": "pro_required",
+                    "message": (_simulation_message(plan) if plan != "pro"
+                                else (payload.get("simulation_status") or {}).get("message")),
+                }
+            else:
+                out["simulation"] = {"available": bool(payload.get("has_simulation")), "state": sim_state}
+            return out
 
         result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
                                             at_times=times)
@@ -1688,6 +2118,64 @@ def failure_finding_interval(
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
     return strategy_store.compute("failure_finding", {**inputs, "target_availability": target_availability})
+
+
+def _lean_demonstration(out: dict) -> dict:
+    """The demonstration plan without the app's plotting fields: the trade-off
+    table as {row label: values by allowed failures}."""
+    keep = ("method", "solve_for", "summary", "units", "test_time_per_unit", "total_test_time",
+            "test_multiple", "failures", "unit", "consumer_risk", "pass_probability", "assumptions")
+    lean = {k: out[k] for k in keep if out.get(k) is not None}
+    t = out.get("tradeoff") or {}
+    lean["tradeoff"] = {
+        "cells": t.get("value_label"),
+        "columns": f"allowed failures {', '.join(str(f) for f in t.get('failures', []))}",
+        "rows": {row["label"]: [None if v is None else (v if isinstance(v, int) else float(f"{v:.4g}"))
+                                for v in row["values"]] for row in t.get("rows", [])},
+    }
+    return lean
+
+
+@_tool("plan_demonstration_test", _READ, "Plan a demonstration test")
+def plan_demonstration_test(
+    ctx: Context,
+    reliability: Annotated[Optional[float], Field(gt=0, lt=1, description="Reliability to demonstrate over one "
+                                                                         "mission, e.g. 0.95. Needed unless "
+                                                                         "method='mtbf'.")] = None,
+    confidence: Annotated[float, Field(gt=0, lt=1, description="Confidence level, e.g. 0.9 or 0.95.")] = 0.95,
+    mission_time: Annotated[Optional[float], Field(gt=0, description="The mission (time, cycles) the "
+                                                                     "reliability is over, e.g. 1000. Optional: "
+                                                                     "without it the plan is in missions.")] = None,
+    failures: Annotated[int, Field(ge=0, le=100, description="Failures the test may allow and still pass "
+                                                             "(0 = success run).")] = 0,
+    test_multiple: Annotated[float, Field(gt=0, le=100, description="Test each unit for this many missions "
+                                                                     "(needs shape when not 1): test longer, "
+                                                                     "fewer units.")] = 1.0,
+    shape: Annotated[Optional[float], Field(gt=0, le=20, description="Weibull shape (beta) of the lifetime, "
+                                                                     "assumed known — needed for test_multiple "
+                                                                     "!= 1 or units.")] = None,
+    units: Annotated[Optional[int], Field(ge=1, description="Units available: solve for the test time per unit "
+                                                            "instead of the unit count (needs shape).")] = None,
+    method: Annotated[Literal["attribute", "mtbf"], Field(description="'attribute' (binomial pass/fail, the "
+                                                                      "default) or 'mtbf' (constant failure "
+                                                                      "rate, total test time, chi-squared).")]
+    = "attribute",
+    mtbf: Annotated[Optional[float], Field(gt=0, description="MTBF to demonstrate (method='mtbf').")] = None,
+    design_reliability: Annotated[Optional[float], Field(gt=0, lt=1, description="Optional: a design's true "
+                                                                                 "reliability, to report its "
+                                                                                 "chance of passing.")] = None,
+    unit: _UNIT = None,
+) -> dict[str, Any]:
+    """Plan a reliability demonstration test: how many units to test, for how long, with how many failures
+    allowed, to show reliability R over a mission at confidence C (success run / binomial; Weibayes with a
+    known Weibull shape to trade test time for units; or an MTBF chi-squared test). Returns a one-line plan,
+    the assumptions and a units-vs-failures(-vs-test-length) trade-off table."""
+    _caller(ctx)
+    out = strategy_store.compute("demonstration_test", {
+        "method": method, "reliability": reliability, "confidence": confidence, "mission_time": mission_time,
+        "failures": failures, "test_multiple": test_multiple, "shape": shape, "units": units, "mtbf": mtbf,
+        "design_reliability": design_reliability, "unit": unit or ""})
+    return _lean_demonstration(out)
 
 
 @_tool("optimal_overhaul", _READ, "Optimal overhaul interval")
@@ -1945,8 +2433,826 @@ def delete_rbd(
 
 
 # ---------------------------------------------------------------------------
+# Outage history (an RBD's observed up/down record; issue #159)
+# ---------------------------------------------------------------------------
+
+class OutageColumns(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    asset: str = Field(description="Column naming the asset/block of each outage (a block's label or node id).")
+    start: str = Field(description="Column with when the outage started.")
+    end: Optional[str] = Field(default=None, description="Column with when it ended (blank cell = still down).")
+    duration: Optional[str] = Field(default=None, description="Instead of end: a column with how long it lasted "
+                                                              "(in `unit`).")
+    reason: Optional[str] = Field(default=None, description="Optional column with the reason or failure mode.")
+    planned: Optional[str] = Field(default=None, description="Optional column: yes/no (planned/unplanned, 1/0) "
+                                                             "for planned maintenance outages.")
+
+
+def _own_rbd(db, uid: str, rbd_id: str):
+    rbd = _get_rbd(db, uid, rbd_id)
+    if samples_service.is_sample(rbd.owner_id):
+        raise ToolError(f"“{rbd.name}” is a shared sample diagram: outage logs go on the user's own diagrams. "
+                        "Copy it with clone_rbd first, then upload the log to the copy.")
+    return rbd
+
+
+def _outages_url(rbd_id: str) -> str:
+    return _url(f"/rbds/b/{rbd_id}?tab=outages")
+
+
+@_tool("upload_outage_log", _WRITE, "Upload an outage log")
+def upload_outage_log(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="One of the user's own RBD ids (list_rbds) the log belongs to.")],
+    csv: Annotated[Optional[str], Field(min_length=1, description=(
+        "The outage log as CSV text, header row first (tab- or semicolon-separated also accepted): one row per "
+        "outage with the asset, its start and its end (blank = still down). For a file, use upload_id."))] = None,
+    columns: Annotated[Optional[OutageColumns], Field(description=(
+        "Which column holds what. Omit to detect from the headers (asset/equipment, start/down, end/restored, "
+        "duration, reason, planned)."))] = None,
+    unit: Annotated[Optional[str], Field(description=(
+        "The unit numeric times and durations are in (hours, days, …). Default: the diagram's unit. Dates and "
+        "times (ISO or day/month/year) are converted to the diagram's unit."))] = None,
+    window_start: Annotated[Optional[str], Field(description=(
+        "When observation began (a date-time for a dated log, else a number). Default: the first outage start."
+    ))] = None,
+    window_end: Annotated[Optional[str], Field(description=(
+        "When observation ended (e.g. now). Default: the last record. Open outages run to it."))] = None,
+    date_order: Annotated[Literal["auto", "dmy", "mdy"], Field(description=(
+        "How to read numeric dates like 03/04/2024: dmy (day first), mdy, or auto (detected; ambiguous -> dmy)."
+    ))] = "auto",
+    asset_map: Annotated[Optional[dict[str, str]], Field(description=(
+        "Map asset names in the log to node ids where they don't match a block's label or id exactly "
+        "(get_rbd lists the nodes)."))] = None,
+    name: Annotated[Optional[str], Field(description="A name for the log.")] = None,
+    upload_id: Annotated[Optional[str], Field(description=(
+        "Instead of csv: a file sent through create_upload (CSV/TSV, or an .xlsx workbook with sheet)."))] = None,
+    sheet: Annotated[Optional[str], Field(description=(
+        "With an .xlsx upload_id: the sheet holding the log (needed when the workbook has several)."))] = None,
+) -> dict[str, Any]:
+    """Save a real outage log against one of the user's RBDs and return the system's observed history from it.
+    Give the log as CSV text (csv) or as a file uploaded with create_upload (upload_id).
+    Each block's outages become its up/down timeline; RePyability merges them through the diagram's structure
+    into the system's history and attributes every system outage to the block that took it down. Overlapping
+    outages of one asset are merged; assets that match no block are listed and left out. Returns the log id,
+    import notes and the history (as system_history does)."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    if (csv is None) == (upload_id is None):
+        raise ToolError("Give either csv (text) or upload_id (a file sent through create_upload) — exactly one.")
+    rbd = _own_rbd(db, uid, rbd_id)
+    _cap(db, user, "outage_logs", "outage logs")
+    upload = None
+    if upload_id is not None:
+        upload, csv = _upload_table_text(db, uid, upload_id, sheet)
+    mapping = columns.model_dump(exclude_none=True) if columns else None
+    try:
+        parsed = outage_logs_service.parse_log(
+            csv, rbd.graph or {}, mapping, unit=unit, window_start=window_start, window_end=window_end,
+            date_order=date_order, asset_map=asset_map)
+    except outage_logs_service.OutageLogError as exc:
+        raise ToolError(str(exc)) from exc
+    log = outage_logs_service.create_log(db, rbd, parsed, uid, name or "")
+    if upload is not None:
+        uploads_service.delete(db, upload["_id"])
+    out = {
+        "log_id": log["_id"], "name": log["name"], "rbd_id": rbd.id, "n_outages": len(parsed["rows"]),
+        "columns": parsed["columns"], "unit": parsed["unit"],
+        "asset_map": parsed["asset_map"], "unmapped": parsed["unmapped"],
+        "url": _outages_url(rbd.id),
+    }
+    try:
+        out["history"] = outage_logs_service.lean_history(
+            outage_logs_service.system_history(rbd.graph or {}, log))
+    except outage_logs_service.OutageLogError as exc:
+        out["history_error"] = str(exc)
+    return out
+
+
+@_tool("system_history", _READ, "Observed system history")
+def system_history(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="One of the user's own RBD ids (list_rbds).")],
+    log_id: Annotated[Optional[str], Field(description=(
+        "An outage log id (from upload_outage_log). Default: the diagram's latest log."))] = None,
+) -> dict[str, Any]:
+    """A diagram's observed availability history from its outage log: KPIs over the observation window
+    (availability, system outages, failures vs planned, total and mean downtime, observed MTBF), the 10
+    longest system outages each with the block that caused it (the last to go down) and any others down with
+    it, and the blocks ranked by their share of the system's downtime. Times are in the log's unit."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    rbd = _own_rbd(db, uid, rbd_id)
+    if log_id:
+        log = outage_logs_service.get_log(db, log_id, [uid], rbd_id=rbd.id)
+        if log is None:
+            raise ToolError("Outage log not found for this diagram.")
+    else:
+        log = outage_logs_service.latest_log(db, rbd.id, [uid])
+        if log is None:
+            raise ToolError(f"“{rbd.name}” has no outage log yet — upload one with upload_outage_log.")
+    try:
+        result = outage_logs_service.system_history(rbd.graph or {}, log)
+    except outage_logs_service.OutageLogError as exc:
+        raise ToolError(str(exc)) from exc
+    return {"rbd_id": rbd.id, "name": rbd.name, "log_id": log["_id"], "log_name": log.get("name"),
+            **outage_logs_service.lean_history(result), "url": _outages_url(rbd.id)}
+
+
+# ---------------------------------------------------------------------------
+# Files: upload links, inspection and imports (#141)
+# ---------------------------------------------------------------------------
+# A file never passes through the agent's context: create_upload gives a
+# single-use URL the agent PUTs the bytes to (curl), and the import tools take
+# the upload_id. backend/services/uploads.py has the design, the storage and
+# the security review. Small text formats can still be pasted inline
+# (import_rbd's content). Every tool here counts like any other; an upload
+# counts towards no storage cap and is deleted once its import is saved.
+
+_UPLOAD_NOTE = (
+    "Send the file with an HTTP PUT to this URL (it's single-use and expires in 15 minutes). Then call "
+    "import_rbd / import_excel / upload_dataset / upload_outage_log with upload_id. Don't paste the file's "
+    "contents into a tool call.")
+# Inline content (import_rbd): small text formats only — anything larger goes
+# through create_upload rather than the agent's context.
+INLINE_MAX_BYTES = 200 * 1024
+_OUTLINE_NODES = 100    # node list per imported diagram
+_IMPORT_NOTES = 30      # import notes per diagram
+_RCM_VALUES = 20        # unmapped consequence / decision values listed
+
+_Purpose = Literal["rbd_import", "excel", "dataset", "outage_log"]
+_RbdFormat = Literal["blocksim", "openpsa", "galileo", "excel"]
+_UPLOAD_ID = Annotated[str, Field(min_length=1, max_length=64, description="An upload_id from create_upload.")]
+
+
+@contextmanager
+def _untrusted_file():
+    """Parsing an uploaded file: the importers' own errors reach the agent
+    as they are; anything else (a malformed file tripping a parser) is a
+    plain "couldn't read" — never a traceback, never "Error executing tool"."""
+    try:
+        yield
+    except (ToolError, ValueError, TypeError):
+        raise
+    except Exception:  # noqa: BLE001 - untrusted input
+        logger.warning("MCP import: couldn't read an uploaded file", exc_info=True)
+        raise ToolError("Couldn't read this file — it may be damaged or from an unsupported version.") from None
+
+
+def _sheet_list(data: bytes, filename: str, limit: int = 10) -> str:
+    """'Sheets: “Data” (120 rows: Time, Status); …' for an error message."""
+    from backend.services import excel
+
+    sheets = excel.inspect(data, filename)["sheets"]
+    parts = []
+    for s in sheets[:limit]:
+        if not s["rows"]:
+            continue
+        try:
+            cols = excel.read_table(data, s["name"], None, filename, max_rows=1).header
+        except ValueError:
+            cols = []
+        shown = ", ".join(cols[:15]) + (", …" if len(cols) > 15 else "")
+        parts.append(f"“{s['name']}” ({s['rows']} rows: {shown})")
+    more = f"; and {len(sheets) - limit} more" if len(sheets) > limit else ""
+    return "Sheets: " + "; ".join(parts) + more + "."
+
+
+def _workbook_table(data: bytes, filename: str, sheet: Optional[str], header_row: Optional[int] = None):
+    """One sheet as a table. ``sheet`` may be omitted when only one sheet
+    holds data; otherwise the error lists the sheets and their columns."""
+    from backend.services import excel
+
+    if not sheet:
+        filled = [s for s in excel.inspect(data, filename)["sheets"] if s["rows"]]
+        if len(filled) > 1:
+            raise ToolError("This workbook has several sheets — say which one with sheet. "
+                            + _sheet_list(data, filename))
+        sheet = filled[0]["name"] if filled else None
+    return excel.read_table(data, sheet, header_row, filename)
+
+
+def _upload_table_text(db, uid: str, upload_id: str, sheet: Optional[str]) -> tuple[dict, str]:
+    """An upload for upload_dataset / upload_outage_log as CSV text: a CSV /
+    TSV file as it is, a workbook's sheet converted (as the app's Excel
+    import does)."""
+    from backend.services import excel
+
+    doc, data = uploads_service.read(db, upload_id, uid)
+    with _untrusted_file():
+        if uploads_service.is_excel(doc):
+            return doc, excel.to_csv(_workbook_table(data, doc["filename"], sheet)).decode("utf-8")
+    if doc.get("detected_format") not in ("csv", "text"):
+        raise ToolError(f"This upload is a {doc.get('detected_format')} file, not a table: upload CSV / TSV text "
+                        "or an .xlsx workbook. (Diagram files go to import_rbd.)")
+    return doc, uploads_service.as_text(data)
+
+
+@_tool("create_upload", _WRITE, "Get a file upload link")
+def create_upload(
+    ctx: Context,
+    purpose: Annotated[_Purpose, Field(description=(
+        "What the file is for: rbd_import (a BlockSim .rsgz / .rsr, Open-PSA XML or Galileo .dft diagram file, "
+        "then import_rbd); excel (an .xlsx workbook — a data sheet, an RCM/FMEA worksheet or Reliafy's RBD "
+        "template — then import_excel); dataset (CSV or .xlsx life data, then upload_dataset); outage_log (CSV "
+        "or .xlsx, then upload_outage_log)."))],
+    filename: Annotated[str, Field(min_length=1, max_length=255, description=(
+        "The file's name with its extension, e.g. pump-skid.rsgz or fmea.xlsx."))],
+    size_bytes: Annotated[Optional[int], Field(ge=1, description=(
+        "The file's size if known — refused here at once if it's over the limit."))] = None,
+) -> dict[str, Any]:
+    """Get a single-use URL to send a file to Reliafy without pasting it into a tool call. Run the returned
+    curl command (or any HTTP PUT of the raw bytes) from a shell that can read the file, then call the import
+    tool with upload_id: import_rbd (diagram files), import_excel (workbooks), upload_dataset or
+    upload_outage_log. inspect_upload shows a workbook's sheets and columns, or a diagram file's diagrams,
+    before importing. The URL expires in 15 minutes and works once; the file is deleted after its import, or
+    after an hour. Never read a file into your context to paste it: use this."""
+    user, db = _caller(ctx), _db()
+    doc, token = uploads_service.create(
+        db, user["uid"], purpose, filename, size_bytes,
+        plan=_usage_plan(user), client=usage_service.client_of(user))
+    path = f"/api/uploads/{doc['_id']}?t={token}"
+    url = f"{config.UPLOAD_BASE_URL}{path}" if config.UPLOAD_BASE_URL else _url(path)
+    return {
+        "upload_id": doc["_id"],
+        "url": url,
+        "method": "PUT",
+        "headers": {"Content-Type": "application/octet-stream"},
+        "max_bytes": doc["max_bytes"],
+        "expires_at": doc["expires_at"].isoformat(),
+        "curl": (f"curl -sS -X PUT --data-binary @{shlex.quote(doc['filename'])} "
+                 f"-H \"Content-Type: application/octet-stream\" \"{url}\""),
+        "note": _UPLOAD_NOTE + " Replace the @file in curl with the file's path.",
+    }
+
+
+@_tool("inspect_upload", _READ, "Inspect an uploaded file")
+def inspect_upload(ctx: Context, upload_id: _UPLOAD_ID) -> dict[str, Any]:
+    """Look inside a file sent through create_upload before importing it. A workbook: each sheet's header
+    row, columns, row count, a few sample rows and what it looks like (looks_like.rcm / looks_like.rbd_blocks:
+    a guessed column mapping) — use them to pick import_excel's target, sheet and mapping. A diagram file
+    (BlockSim, Open-PSA, Galileo): the diagrams it holds with their block counts. CSV text: its columns and
+    row count. Only the user's own uploads."""
+    user, db = _caller(ctx), _db()
+    doc, data = uploads_service.read(db, upload_id, user["uid"])
+    with _untrusted_file():
+        details = uploads_service.inspect(doc, data)
+    return {**uploads_service.brief(doc), **details}
+
+
+def _lean_outline(graph: dict, check: dict) -> dict:
+    """create_rbd's lean outline, with the node list capped for big imports."""
+    out = _rbd_outline(graph, check, False)
+    if len(out["nodes"]) > _OUTLINE_NODES:
+        out["n_nodes"] = len(out["nodes"])
+        out["nodes"] = out["nodes"][:_OUTLINE_NODES]
+        out["nodes_truncated"] = True
+    return out
+
+
+def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool, only: Optional[list[str]],
+                   upload: Optional[dict], rbd_id: Optional[str] = None) -> dict:
+    """Validate imported diagrams and (``save``) save them — all or nothing
+    against the RBD cap. Returns each diagram's brief, import notes and a
+    concise node list (never the whole graph); deletes the upload once
+    saved."""
+    uid = user["uid"]
+    owners = _owners(uid)
+    if only:
+        wanted = {o.strip().lower() for o in only if o and o.strip()}
+        picked = [d for d in diagrams if d.name.strip().lower() in wanted]
+        if not picked:
+            raise ToolError("None of the diagrams named in only are in this file. It holds: "
+                            + "; ".join(f"“{d.name}”" for d in diagrams[:50]) + ".")
+        diagrams = picked
+    ready, skipped = [], []
+    for d in diagrams:
+        try:
+            graph = rbd_graph.normalize_graph(d.graph)
+        except rbd_graph.GraphError as exc:
+            skipped.append({"name": d.name, "error": str(exc)})
+            continue
+        check = rbds_service.validate_graph(db, graph, owners)
+        if not check.get("valid", False):
+            skipped.append({"name": d.name, "error": "; ".join(check.get("errors") or ["invalid structure"])})
+            continue
+        ready.append((d, graph, check))
+    if not ready:
+        raise ToolError("Nothing in this file could be imported: "
+                        + "; ".join(f"{s['name']}: {s['error']}" for s in skipped[:10]))
+    target = None
+    if rbd_id:
+        if len(ready) != 1:
+            raise ToolError("rbd_id replaces one diagram, but this import holds several.")
+        target = _own_rbd(db, uid, rbd_id)
+
+    def title(d) -> str:
+        if target is not None and not name:
+            return target.name
+        if name and name.strip():
+            return name.strip() if len(ready) == 1 else f"{name.strip()} — {d.name}"
+        return d.name
+
+    saved = []
+    if save:
+        if target is None:
+            _cap(db, user, "rbds", "RBDs", n=len(ready))
+        for d, graph, _ in ready:
+            saved.append(rbds_service.save_rbd(db, title(d)[:200], graph, uid,
+                                               rbd_id=target.id if target is not None else None))
+        if upload is not None:
+            uploads_service.delete(db, upload["_id"])
+    items = []
+    for i, (d, graph, check) in enumerate(ready):
+        item = {"name": title(d), "source_format": d.source_format}
+        if saved:
+            item.update(_rbd_brief(saved[i]))
+        else:
+            item["n_blocks"] = sum(1 for n in graph["nodes"] if n.get("type") not in ("input", "output"))
+        item["analytic"] = check.get("analytic", True)
+        item["import_notes"] = d.warnings[:_IMPORT_NOTES]
+        if len(d.warnings) > _IMPORT_NOTES:
+            item["more_import_notes"] = len(d.warnings) - _IMPORT_NOTES
+        item.update(_lean_outline(graph, check))
+        items.append(item)
+    out: dict[str, Any] = {"saved": bool(saved), "diagrams": items}
+    if target is not None and saved:
+        out["replaced"] = target.id
+    if skipped:
+        out["skipped"] = skipped
+    if not save:
+        out["note"] = ("Preview only — nothing saved. Call again with save=true (only=[names] picks diagrams)"
+                       + ("; the upload is kept for an hour." if upload is not None else "."))
+    return out
+
+
+def _excel_mapping_error(exc: Exception, data: bytes, filename: str) -> ToolError:
+    from backend.services.rbd_import import excel as rbd_excel
+
+    fields = ", ".join(f["id"] for f in rbd_excel.BLOCK_FIELDS)
+    return ToolError(
+        f"{exc} Call import_excel with target=rbd_template and mapping — {{field: column}} plus sheet for the "
+        "blocks sheet, or the full form {\"blocks\": {\"sheet\", \"header_row\", \"mapping\": {field: column}}, "
+        "\"connections\": {\"sheet\", \"mapping\": {\"from\": column, \"to\": column}}}. Block fields: "
+        f"{fields}. " + _sheet_list(data, filename))
+
+
+@_tool("import_rbd", _WRITE, "Import RBDs from a file")
+def import_rbd(
+    ctx: Context,
+    upload_id: Annotated[Optional[str], Field(max_length=64, description=(
+        "A file sent through create_upload (purpose rbd_import): ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA "
+        "XML, Galileo .dft, or an .xlsx in Reliafy's RBD template layout."))] = None,
+    content: Annotated[Optional[str], Field(description=(
+        "Instead of upload_id, for SMALL text files only (Open-PSA XML, Galileo DFT text or JSON), at most "
+        "200 KB. Anything else or larger: create_upload."))] = None,
+    format: Annotated[Optional[_RbdFormat], Field(description=(
+        "Parse as this format. Omit to detect it from the content."))] = None,
+    name: Annotated[Optional[str], Field(max_length=200, description=(
+        "A name for the diagram (a prefix when the file holds several). Default: the file's own names."))] = None,
+    save: Annotated[bool, Field(description="False = preview what would be imported, saving nothing.")] = True,
+    only: Annotated[Optional[list[str]], Field(description=(
+        "Import just these diagrams, by name (a BlockSim project can hold many; preview with save=false or "
+        "inspect_upload)."))] = None,
+) -> dict[str, Any]:
+    """Import reliability block diagrams from another tool's file — BlockSim, Open-PSA, Galileo, or Reliafy's
+    Excel RBD template — and save each as an RBD in the user's workspace (all or nothing against the plan's
+    RBD limit). Send files with create_upload and pass upload_id; paste only small text formats into content.
+    Returns, per diagram, its id and url, the import notes (what was approximated — tell the user), and a
+    concise node list; get_rbd reads the full graph, edit_rbd changes it. save=false previews."""
+    user, db = _caller(ctx), _db()
+    if (upload_id is None) == (content is None):
+        raise ToolError("Give either upload_id (a file sent through create_upload) or content (small text) — "
+                        "exactly one.")
+    upload = None
+    if content is not None:
+        data = content.encode("utf-8")
+        if len(data) > INLINE_MAX_BYTES:
+            raise ToolError(
+                f"content is {len(data) // 1024} KB; inline content is limited to {INLINE_MAX_BYTES // 1024} KB. "
+                "Call create_upload(purpose='rbd_import', filename=…) and send the file with the curl command it "
+                "gives, then import_rbd(upload_id=…).")
+        if format in ("blocksim", "excel"):
+            raise ToolError(f"{format} files are binary — send them with create_upload, not as content.")
+        filename = {"openpsa": "inline.xml", "galileo": "inline.dft"}.get(format or "", "inline.txt")
+    else:
+        upload, data = uploads_service.read(db, upload_id, user["uid"])
+        filename = upload["filename"]
+    with _untrusted_file():
+        try:
+            diagrams = rbd_import.import_file(data, filename, format=format)
+        except rbd_import.RbdImportError as exc:
+            if getattr(exc, "code", None) == "excel_mapping":
+                raise _excel_mapping_error(exc, data, filename) from None
+            raise
+        return _save_imported(db, user, diagrams, name=name, save=save, only=only, upload=upload)
+
+
+def _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row) -> dict:
+    from backend.services import excel
+
+    filename = doc["filename"]
+    table = _workbook_table(data, filename, sheet, header_row)
+    if mapping:
+        missing = [str(src) for src in mapping.values() if not isinstance(src, str) or src not in table.header]
+        if missing:
+            raise ToolError(f"Sheet “{table.sheet}” has no column “{missing[0]}”. Its columns: "
+                            + ", ".join(table.header) + ".")
+        idx = [table.header.index(src) for src in mapping.values()]
+        table = excel.Table(sheet=table.sheet, header=[str(k) for k in mapping],
+                            rows=[[r[i] for i in idx] for r in table.rows], row_numbers=table.row_numbers,
+                            header_row=table.header_row, notes=table.notes)
+    _cap(db, user, "datasets", "datasets")
+    text = excel.to_csv(table).decode("utf-8")
+    default = excel.csv_filename(filename, table.sheet, 2).rsplit(".", 1)[0]
+    ds = datasets_service.create_dataset(db, (name or default).strip()[:200],
+                                         datasets_service.normalize_pasted(text), user["uid"])
+    uploads_service.delete(db, doc["_id"])
+    out = {"target": "dataset", "sheet": table.sheet, "header_row": table.header_row,
+           "id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
+           "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
+    if table.notes:
+        out["notes"] = table.notes
+    return out
+
+
+def _excel_rcm(db, user, doc, data, sheet, mapping, name, header_row, study_id) -> dict:
+    from backend.services import excel, rcm_import
+    from backend.services import rcm as rcm_service
+
+    uid = user["uid"]
+    filename = doc["filename"]
+    table = _workbook_table(data, filename, sheet, header_row)
+    if mapping and isinstance(mapping.get("mapping"), dict):
+        options = dict(mapping)
+    elif mapping:
+        options = {"mapping": dict(mapping)}
+    else:
+        guess = excel.guess_mapping(table.header, rcm_import.FIELDS)
+        if "mode" not in guess:
+            raise ToolError(
+                f"Couldn't tell which column of “{table.sheet}” holds the failure modes. Give mapping: "
+                f"{{field: column}} with fields {', '.join(rcm_import.FIELD_IDS)} (mode is required). Its "
+                "columns: " + ", ".join(table.header) + ".")
+        options = {"mapping": guess}
+    options.setdefault("extra_columns", rcm_import.default_extra_columns(table.header, options["mapping"]))
+    result = rcm_import.build_tree(table.header, table.rows, options, table.row_numbers)
+    imported = result["functions"]
+    if study_id:
+        study = rcm_service.get_study(db, study_id, [uid])
+        if study is None:
+            raise ToolError("RCM study not found (only the user's own studies can be imported into).")
+        study = rcm_service.replace_tree(db, study.id, [*(study.functions or []), *imported], uid)
+    else:
+        _cap(db, user, "rcm_studies", "RCM studies")
+        stem = excel.csv_filename(filename, table.sheet).rsplit(".", 1)[0]
+        study = rcm_service.create_study(db, (name or stem).strip()[:200], "", "", uid)
+        study = rcm_service.replace_tree(db, study.id, imported, uid)
+    uploads_service.delete(db, doc["_id"])
+    unmapped = {k: [v for v in vals if v.get("guess") is None][:_RCM_VALUES]
+                for k, vals in (result.get("values") or {}).items()}
+    out = {
+        "target": "rcm", "study_id": study.id, "name": study.name, "appended": bool(study_id),
+        "sheet": table.sheet, "header_row": table.header_row,
+        "mapping": options["mapping"], "extra_columns": options.get("extra_columns") or [],
+        "counts": result["counts"], "warnings": (result.get("warnings") or [])[:_IMPORT_NOTES],
+        "url": _url(f"/rcm/studies/{study.id}"),
+    }
+    if any(unmapped.values()):
+        out["unmapped_values"] = {k: v for k, v in unmapped.items() if v}
+        out["unmapped_note"] = ("These consequence / decision values weren't recognised and were left unset. To "
+                                "set them, import again with mapping {mapping: {...}, consequence_map: {value: "
+                                "category}, outcome_map: {value: decision}}.")
+    if table.notes:
+        out["notes"] = table.notes
+    return out
+
+
+def _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id) -> dict:
+    filename = doc["filename"]
+    excel_mapping = mapping
+    if mapping and "blocks" not in mapping:
+        if not sheet:
+            raise ToolError("A flat {field: column} mapping needs sheet (the blocks sheet).")
+        excel_mapping = {"blocks": {"sheet": sheet, "header_row": header_row, "mapping": mapping}}
+    try:
+        diagrams = rbd_import.import_file(data, filename, excel_mapping=excel_mapping, format="excel")
+    except rbd_import.RbdImportError as exc:
+        if getattr(exc, "code", None) == "excel_mapping":
+            raise _excel_mapping_error(exc, data, filename) from None
+        raise
+    return {"target": "rbd_template",
+            **_save_imported(db, user, diagrams, name=name, save=True, only=None, upload=doc, rbd_id=rbd_id)}
+
+
+@_tool("import_excel", _WRITE, "Import from an Excel workbook")
+def import_excel(
+    ctx: Context,
+    upload_id: _UPLOAD_ID,
+    target: Annotated[Literal["dataset", "rcm", "rbd_template"], Field(description=(
+        "dataset: one sheet saved as a dataset; rcm: an FMEA / RCM worksheet (one row per failure mode) into an "
+        "RCM study; rbd_template: Reliafy's Excel RBD template (Blocks + Connections sheets) saved as an RBD."))],
+    sheet: Annotated[Optional[str], Field(description=(
+        "The sheet to read. Needed when the workbook has several sheets with data (inspect_upload lists them)."
+    ))] = None,
+    mapping: Annotated[Optional[dict[str, Any]], Field(description=(
+        "dataset: optional {dataset column: sheet column} to keep (and rename) only those columns. rcm: "
+        "{field: column} with fields function, standard, failure, mode (required), effects, consequence, "
+        "outcome, task, interval, interval_unit, notes — omit to use the guess from the headers; or "
+        "{mapping, consequence_map, outcome_map, extra_columns}. rbd_template: omit for the template layout; "
+        "else {field: column} for the blocks sheet (with sheet) or {blocks: {sheet, header_row, mapping}, "
+        "connections: {sheet, mapping: {from, to}}}."))] = None,
+    name: Annotated[Optional[str], Field(max_length=200, description=(
+        "A name for the new dataset, study or diagram. Default: from the file and sheet."))] = None,
+    rbd_id: Annotated[Optional[str], Field(description=(
+        "rbd_template only: replace this existing diagram of the user's (its structure) instead of creating one."
+    ))] = None,
+    study_id: Annotated[Optional[str], Field(description=(
+        "rcm only: append the imported functions to this existing study of the user's instead of creating one."
+    ))] = None,
+    header_row: Annotated[Optional[int], Field(ge=0, description=(
+        "The sheet row holding the column names (1-based; 0 = no header row). Default: guessed."))] = None,
+) -> dict[str, Any]:
+    """Import an .xlsx workbook sent through create_upload: a sheet as a dataset (the same columns
+    upload_dataset returns), an FMEA / RCM worksheet into a new or existing RCM study, or Reliafy's Excel
+    RBD template as an RBD. Call inspect_upload first to see the sheets, their columns and a guessed mapping.
+    Formulas are read as the values Excel last saved; nothing is ever evaluated."""
+    user, db = _caller(ctx), _db()
+    doc, data = uploads_service.read(db, upload_id, user["uid"])
+    if not uploads_service.is_excel(doc):
+        raise ToolError(f"This upload isn't an Excel workbook (it's {doc.get('detected_format')}). CSV goes to "
+                        "upload_dataset / upload_outage_log with upload_id; diagram files to import_rbd.")
+    if rbd_id and target != "rbd_template":
+        raise ToolError("rbd_id applies to target rbd_template.")
+    if study_id and target != "rcm":
+        raise ToolError("study_id applies to target rcm.")
+    with _untrusted_file():
+        if target == "dataset":
+            return _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row)
+        if target == "rcm":
+            return _excel_rcm(db, user, doc, data, sheet, mapping, name, header_row, study_id)
+        return _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id)
+
+
+# ---------------------------------------------------------------------------
+# Share links: a read-only page anyone with the URL can open, no account needed
+# ---------------------------------------------------------------------------
+# The app's public links (backend/services/public_links.py), same rules:
+# owner-only, never a shared sample, only the kinds with a public page. Every
+# plan; on Free each call counts against the monthly allowance like any other.
+
+_SHARE_KINDS = {
+    "model": "models",
+    "dataset": "datasets",
+    "rbd": "rbds",
+    "degradation_model": "degradation_models",
+    "strategy_analysis": "strategy_analyses",
+    "rcm_study": "rcm_studies",
+    "fleet": "fleets",
+}
+_KIND_OF = {collection: kind for kind, collection in _SHARE_KINDS.items()}
+_ShareKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis", "rcm_study", "fleet"]
+
+
+def _share_brief(db, link: dict) -> dict:
+    doc = db[link["collection"]].find_one({"_id": link["artifact_id"]}, {"name": 1}) or {}
+    out = links_service.public(link)
+    return {
+        "url": _url(out["path"]),
+        "token": out["token"],
+        "kind": _KIND_OF.get(link["collection"], link["collection"]),
+        "id": link["artifact_id"],
+        "name": doc.get("name"),
+        "label": out["label"],
+        "protected": out["protected"],
+        "expires_at": out["expires_at"],
+        "created_at": out["created_at"],
+    }
+
+
+@_tool("share_link", _WRITE, "Create a share link")
+def share_link(
+    ctx: Context,
+    kind: Annotated[_ShareKind, Field(description="What to share: model (a fitted life model), dataset, rbd, "
+                                                  "degradation_model, strategy_analysis, rcm_study or fleet.")],
+    id: Annotated[str, Field(description="The id of one of the user's own items of that kind (e.g. from "
+                                         "list_models or list_rbds). Shared samples can't be shared.")],
+    password: Annotated[bool, Field(description="Protect the link with a passphrase Reliafy generates. It is "
+                                                "returned once, in this response only.")] = False,
+    expires_in_days: Annotated[Optional[int], Field(ge=1, le=365, description="Days until the link stops "
+                                                    "working (1–365). Omit for a link that lasts until revoked."
+                                                    )] = None,
+    label: Annotated[Optional[str], Field(max_length=80, description="Who or what the link is for, e.g. "
+                                                                     "'for the client'. Shown only to the "
+                                                                     "user.")] = None,
+) -> dict[str, Any]:
+    """Publish a read-only page of one of the user's own items — anyone with the URL can open it, no Reliafy
+    account needed — and return the URL. Each call makes a new link (an item can have several, e.g. one per
+    recipient, each revocable with revoke_share_link). An RBD's page shows the diagram and its results and
+    offers Download as Python; a repairable RBD shows availability only if a result is saved. Linked
+    analyses an item relies on are included read-only. With password=true the response carries a generated
+    passphrase: this is the only time it's shown (only its hash is stored). Give the user the link and the
+    passphrase, and tell them to send the two to the recipient separately (e.g. the link by email, the
+    passphrase by message or phone). Confirm with the user before sharing anything publicly."""
+    user, db = _caller(ctx), _db()
+    collection = _SHARE_KINDS[kind]
+    doc = db[collection].find_one({"_id": id}, {"owner_id": 1, "name": 1})
+    if doc is not None and samples_service.is_sample(doc.get("owner_id")):
+        hint = " Copy it first with clone_rbd, then share the copy." if kind == "rbd" else ""
+        raise ToolError(f"“{doc.get('name')}” is a shared sample, not one of the user's own items — it can't be "
+                        f"shared with a link.{hint}")
+    try:
+        link = links_service.create_link(db, collection, id, user, label=label, expires_in_days=expires_in_days,
+                                         generate_password=password, via="mcp")
+    except links_service.PublicLinkError as exc:
+        if exc.status == 404:
+            raise ToolError(f"No {kind.replace('_', ' ')} with that id among the user's own items.") from None
+        raise ToolError(str(exc)) from None
+    out = _share_brief(db, link)
+    if link.get("passphrase"):
+        out["passphrase"] = link["passphrase"]
+        out["note"] = ("Shown once: Reliafy keeps only a hash. Give the user the URL and the passphrase and tell "
+                       "them to send the two to the recipient separately (the link one way, the passphrase "
+                       "another). A lost passphrase can't be recovered: revoke the link and share again. The "
+                       "user can rotate it from the Share dialog in the app.")
+    else:
+        out["note"] = "Anyone with this URL can view it, without an account, until it's revoked" + (
+            " or expires." if link.get("expires_at") else ".")
+    return out
+
+
+@_tool("list_share_links", _READ, "List share links")
+def list_share_links(
+    ctx: Context,
+    kind: Annotated[Optional[_ShareKind], Field(description="Only links to items of this kind.")] = None,
+    id: Annotated[Optional[str], Field(description="Only links to this item (give kind too).")] = None,
+) -> dict[str, Any]:
+    """The user's live share links (newest first), optionally for one kind or one item: URL, item, label,
+    whether it's password-protected and when it expires. Expired and revoked links aren't listed. Passphrases
+    are never shown again."""
+    user, db = _caller(ctx), _db()
+    links = links_service.list_links(db, user["uid"], _SHARE_KINDS[kind] if kind else None, id)
+    return {"links": [_share_brief(db, link) for link in links], "count": len(links)}
+
+
+@_tool("revoke_share_link", _WRITE, "Revoke a share link")
+def revoke_share_link(
+    ctx: Context,
+    token: Annotated[str, Field(description="The link's token (list_share_links), or its full URL.")],
+) -> dict[str, Any]:
+    """Revoke one of the user's share links: it stops working at once, for everyone (other links to the same
+    item keep working). Can't be undone — share again for a new link."""
+    user, db = _caller(ctx), _db()
+    token = (token or "").strip().rstrip("/").rsplit("/p/", 1)[-1]
+    link = links_service.resolve(db, token)
+    if not token or not links_service.revoke(db, token, user["uid"]):
+        raise ToolError("Share link not found among the user's links (list_share_links shows them).")
+    return {"revoked": True, "token": token, **({"id": link["artifact_id"],
+                                                  "kind": _KIND_OF.get(link["collection"])} if link else {})}
+
+
+# ---------------------------------------------------------------------------
+# Metadata: rename / annotate (#135)
+# ---------------------------------------------------------------------------
+# Name and notes only — never the data or the fit — and, like the deletes,
+# owner-only and never a shared sample.
+
+_NAME_MAX, _NOTES_MAX = 200, 5000
+_NewName = Annotated[Optional[str], Field(max_length=_NAME_MAX, description="A new name (omit to keep it).")]
+_NewNotes = Annotated[Optional[str], Field(max_length=_NOTES_MAX,
+                                           description="New notes, replacing any there are; \"\" clears them. "
+                                                       "Omit to keep them.")]
+
+
+def _details(name: str | None, notes: str | None) -> tuple[str | None, str | None]:
+    """Validated (name, notes): at least one given, and a name isn't blank."""
+    if name is None and notes is None:
+        raise ToolError("Nothing to change: give a new name, notes, or both.")
+    if name is not None:
+        name = name.strip()
+        if not name:
+            raise ToolError("name can't be blank.")
+    return name, (notes.strip() if notes is not None else None)
+
+
+def _changed(name: str | None, notes: str | None) -> list[str]:
+    return [k for k, v in (("name", name), ("notes", notes)) if v is not None]
+
+
+@_tool("update_model", _WRITE, "Rename or annotate a model")
+def update_model(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="One of the user's own model ids (list_models) — life or recurrent.")],
+    name: _NewName = None,
+    notes: _NewNotes = None,
+) -> dict[str, Any]:
+    """Rename one of the user's own saved models (life or recurrent) and/or set its notes. Only the name and
+    notes change — never the fit, parameters or data. Shared samples can't be changed."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    name, notes = _details(name, notes)
+    m = models_service.get_model(db, model_id, _owners(uid))
+    service, kind = models_service, "life"
+    if m is None:
+        m, service, kind = recurrent_service.get_model(db, model_id, _owners(uid)), recurrent_service, "recurrent"
+    if m is None:
+        raise ToolError("Model not found.")
+    if samples_service.is_sample(m.owner_id):
+        raise ToolError(f"“{m.name}” is a shared sample model, not yours — it can't be renamed or annotated.")
+    if name is not None:
+        m = service.rename_model(db, m.id, name, uid)
+    if notes is not None:
+        m = service.set_notes(db, m.id, notes, uid)
+    return {"updated": _changed(name, notes), "model_id": m.id, "kind": kind, "name": m.name,
+            "notes": (m.spec or {}).get("notes"),
+            "url": _url(f"/modelling/m/{m.id}" if kind == "life" else f"/modelling/recurrent/{m.id}")}
+
+
+@_tool("update_dataset", _WRITE, "Rename or annotate a dataset")
+def update_dataset(
+    ctx: Context,
+    dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list_datasets).")],
+    name: _NewName = None,
+    notes: _NewNotes = None,
+) -> dict[str, Any]:
+    """Rename one of the user's own datasets and/or set its notes. Only the name and notes change — never the
+    data. Shared samples can't be changed."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    name, notes = _details(name, notes)
+    ds = datasets_service.get_dataset(db, dataset_id, _owners(uid))
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    if samples_service.is_sample(ds.owner_id):
+        raise ToolError(f"“{ds.name}” is a shared sample dataset, not yours — it can't be renamed or annotated.")
+    ds = datasets_service.update_details(db, ds.id, uid, name=name, notes=notes)
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    return {"updated": _changed(name, notes), "dataset_id": ds.id, "name": ds.name, "notes": ds.notes,
+            "url": _url(f"/datasets/d/{ds.id}")}
+
+
+# ---------------------------------------------------------------------------
 # Plans
 # ---------------------------------------------------------------------------
+
+# ---- get_account (#133): the caller's plan and what's left on it -------------
+# Ungated like upgrade_link: an agent asks "what's left?" most when nothing is.
+
+@_tool("get_account", _READ, "Your plan and usage")
+def get_account(ctx: Context) -> dict[str, Any]:
+    """The user's Reliafy plan and what's left on it. Free: the tool calls used and left this month (a small
+    allowance to try Reliafy from an agent), with the date they reset (the 1st, 00:00 UTC). Pro: unlimited.
+    A subscriber to the retired Agent plan (grandfathered): the calls used and left today, resetting at
+    00:00 UTC. Also saved items per kind against the plan's storage limits (limit null = unlimited), whether
+    availability simulation is included, and how to upgrade. Never counted against the allowance, and works
+    when it's used up — check it before a long job, or to explain a limit to the user."""
+    user, db = _caller(ctx), _db()
+    admin = billing_service.is_admin_user(user)
+    unlimited = admin or not config.BILLING_ENABLED
+    # The plan governing MCP use: free / pro / agent (grandfathered). Operators
+    # and self-hosted installs have Pro's access.
+    plan = "pro" if unlimited else (user.get("mcp_plan") or billing_service.mcp_plan(db, user))
+    summary = billing_service.usage_summary(db, user["uid"], admin=admin)
+    quota, period = billing_service.mcp_quota(plan)
+    if quota is None:
+        calls = {"unlimited": True, "period": None, "used": None, "limit": None, "left": None,
+                 "resets_at": None, "resets_in": None}
+    else:
+        used = min(billing_service.mcp_calls_used(db, user["uid"], plan), quota)
+        reset = billing_service.mcp_quota_resets_at(plan)
+        calls = {"unlimited": False, "period": period, "used": used, "limit": quota, "left": quota - used,
+                 "resets_at": reset.isoformat(), "resets_in": _in_days(reset).removeprefix("in ")}
+        if period == "month":
+            calls["resets_on"] = f"{reset.day} {reset:%B %Y} (UTC)"
+    caps = None if unlimited or plan == "pro" else summary["plan_caps"]
+    storage = {kind: {"used": n, "limit": None if caps is None else caps[kind]}
+               for kind, n in summary["usage"].items()}
+    if admin:
+        note = "Operator account: no tool-call limit and no storage limits."
+    elif not config.BILLING_ENABLED:
+        note = "Self-hosted install: no plan limits."
+    elif plan == "pro":
+        note = "Reliafy Pro: unlimited tool calls and storage."
+    elif plan == "free":
+        note = (f"Reliafy Free: {quota:,} tool calls a month to try Reliafy from an AI agent (get_account and "
+                "upgrade_link aren't counted), within the storage limits shown. Fitting and fleets are Pro-only.")
+    else:
+        note = (f"Reliafy Agent (a retired plan, kept until the subscription ends): {quota:,} tool calls a day "
+                "(get_account and upgrade_link aren't counted) and the storage limits shown. Fitting and fleets "
+                "are Pro-only.")
+    return {
+        "plan": plan,
+        "plan_name": _PLAN_NAMES[plan],
+        "grandfathered": plan == "agent",
+        "operator": admin,
+        "tool_calls": calls,
+        "storage": storage,
+        "simulation_available": billing_service.premium_compute_allowed(db, user),
+        "upgrade": None if plan == "pro" else _upgrade_path(lead="To lift these limits, upgrade"),
+        "note": note,
+    }
+
 
 @_tool("upgrade_link", _LINK, "Get a link to upgrade")
 def upgrade_link(

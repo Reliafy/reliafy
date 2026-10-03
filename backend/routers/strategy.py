@@ -94,6 +94,41 @@ def failure_finding_endpoint(
         )
 
 
+@router.post("/demonstration-test")
+def demonstration_test_endpoint(
+    method: str = Body(default="attribute"),
+    reliability: float | None = Body(default=None),
+    confidence: float | None = Body(default=0.95),
+    mission_time: float | None = Body(default=None),
+    failures: float | None = Body(default=0),
+    test_multiple: float | None = Body(default=1.0),
+    shape: float | None = Body(default=None),
+    units: float | None = Body(default=None),
+    mtbf: float | None = Body(default=None),
+    design_reliability: float | None = Body(default=None),
+    design_mtbf: float | None = Body(default=None),
+    unit: str | None = Body(default=None),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """Plan a reliability demonstration test: units, test time and allowed failures."""
+    try:
+        return JSONResponse(
+            content=strategy_service.demonstration_test(
+                reliability=reliability, confidence=confidence, mission_time=mission_time,
+                failures=failures, test_multiple=test_multiple, shape=shape, units=units,
+                method=method, mtbf=mtbf, design_reliability=design_reliability,
+                design_mtbf=design_mtbf, unit=unit,
+            )
+        )
+    except StrategyError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Demonstration test planning failed")
+        return JSONResponse(
+            status_code=500, content={"detail": f"Calculation failed: {exc}"}
+        )
+
+
 # ---- Saved analyses ----------------------------------------------------------
 
 def _analysis_summary(doc, ctx: AccessCtx) -> dict:
