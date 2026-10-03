@@ -506,13 +506,15 @@ export function getAssistantInfo() {
   return request("/api/assistant/info");
 }
 
-// Advance the assistant one provider round-trip. Returns the native assistant
-// message, token usage, the metered cost, and the new credit balance.
-export function assistantStep(system, messages, tools) {
+// Advance the assistant one provider round-trip. Only the message history is
+// sent — the server owns the system prompt and the tool definitions. Returns
+// the native assistant message, token usage, the metered cost, and the new
+// credit balance.
+export function assistantStep(messages) {
   return request("/api/assistant/step", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ system, messages, tools }),
+    body: JSON.stringify({ messages }),
   });
 }
 
@@ -521,7 +523,7 @@ export function assistantStep(system, messages, tools) {
 // ({ message, stop_reason, usage, credit_cents, ... }) — identical to what
 // assistantStep returns — so the caller can continue the tool loop. Throws on a
 // non-2xx response (credit/availability errors) or a mid-stream provider error.
-export async function assistantStepStream(system, messages, tools, { onDelta, signal } = {}) {
+export async function assistantStepStream(messages, { onDelta, signal } = {}) {
   const headers = {
     "Content-Type": "application/json",
     ...workspaceHeaders(),
@@ -530,7 +532,7 @@ export async function assistantStepStream(system, messages, tools, { onDelta, si
   const res = await fetch(STREAM_ORIGIN + "/api/assistant/stream", {
     method: "POST",
     headers,
-    body: JSON.stringify({ system, messages, tools }),
+    body: JSON.stringify({ messages }),
     signal,
   });
   if (!res.ok) {
