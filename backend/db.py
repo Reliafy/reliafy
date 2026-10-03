@@ -148,6 +148,11 @@ def init_db() -> None:
     # MCP tool calls per user per UTC day (the retired Agent plan's quota): one
     # document per user per day, keyed by id; TTL drops it after the reset.
     db.mcp_usage.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # MCP file uploads (backend/services/uploads.py): TTL drops every upload
+    # and its chunks an hour after it arrived (or, unused, after its link).
+    from backend.services import uploads as uploads_service
+
+    uploads_service.ensure_indexes(db)
     # Product-usage logging: account-linked events expire after 90 days (the
     # privacy policy's promise); the identifier-free daily totals stay.
     from backend.services import usage as usage_service

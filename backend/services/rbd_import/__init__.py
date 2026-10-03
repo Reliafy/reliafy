@@ -28,12 +28,14 @@ def _module(name: str):
     return importlib.import_module(f"{__name__}.{name}")
 
 
-def import_file(data: bytes, filename: str, excel_mapping: Optional[dict] = None) -> list[ImportedDiagram]:
+def import_file(data: bytes, filename: str, excel_mapping: Optional[dict] = None,
+                format: Optional[str] = None) -> list[ImportedDiagram]:
     """Parse an uploaded file into one or more diagrams.
 
     ``excel_mapping`` (Excel workbooks only) says which sheets and columns
     hold the blocks and connections when the workbook doesn't follow the
-    template (see :func:`.excel.parse`)."""
+    template (see :func:`.excel.parse`). ``format`` (a :data:`FORMATS` key)
+    skips the sniffing and parses the file as that format."""
     if not data:
         raise RbdImportError("The file is empty.")
     if len(data) > MAX_UPLOAD_BYTES:
@@ -41,9 +43,13 @@ def import_file(data: bytes, filename: str, excel_mapping: Optional[dict] = None
             f"The file is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB — "
             "export just the project that holds the diagram."
         )
+    if format and format not in FORMATS:
+        raise RbdImportError(f"Unknown format “{format}” — use one of {', '.join(FORMATS)}.")
     for name, label in FORMATS.items():
+        if format and name != format:
+            continue
         mod = _module(name)
-        if mod.sniff(data, filename or ""):
+        if format or mod.sniff(data, filename or ""):
             if name == "excel":
                 diagrams = mod.parse(data, filename or "", excel_mapping)
             else:
