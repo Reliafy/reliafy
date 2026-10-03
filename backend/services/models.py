@@ -298,6 +298,24 @@ def rename_model(db, model_id: str, name: str, owner_id: str) -> Model:
     return model
 
 
+def set_notes(db, model_id: str, notes: str, owner_id: str) -> Model:
+    """Set (or, with ``""``, clear) an owned model's notes, kept in its spec
+    alongside the ones ``import_model`` stores. Never touches the fit."""
+    model = get_model(db, model_id, owner_id)
+    if model is None or model.owner_id != owner_id:
+        raise ModelNotFound(model_id)
+    model.updated_at = datetime.now(timezone.utc)
+    update = {"$set": {"updated_at": model.updated_at}}
+    if notes:
+        update["$set"]["spec.notes"] = notes
+        model.spec = {**(model.spec or {}), "notes": notes}
+    else:
+        update["$unset"] = {"spec.notes": ""}
+        model.spec = {k: v for k, v in (model.spec or {}).items() if k != "notes"}
+    db.models.update_one({"_id": model_id, "owner_id": owner_id}, update)
+    return model
+
+
 def delete_model(db, model_id: str, owner_id: str) -> None:
     result = db.models.delete_one({"_id": model_id, "owner_id": owner_id})
     if result.deleted_count == 0:

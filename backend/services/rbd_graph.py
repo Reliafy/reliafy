@@ -32,7 +32,9 @@ accepted. ``model.saved_model_id`` references a saved plain life model; it is
 resolved (owner-scoped) into the same shape the builder's model picker stores.
 A repairable diagram may carry ``"costs": {"downtime_rate": 500, "horizon":
 87600}`` (see :mod:`backend.services.rbd_maintenance` for the cost and
-maintenance fields).
+maintenance fields), ``"repair_crews": {"crews": 2}``, ``"maintenance_groups":
+{name: {"setup_cost", "system_down"}}``, ``"safety_function": true`` and
+``"target_sil"`` (see :mod:`backend.services.rbd_policies`).
 """
 
 from __future__ import annotations
@@ -48,7 +50,10 @@ NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "st
 
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
 #: Repairable block fields beyond the models (#99/#100), carried as given.
-MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection", "rcm_source")
+MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection", "rcm_source",
+                    "maintenance_group", "crew_priority", "repair_one_at_a_time")
+#: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
+DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil")
 
 
 class GraphError(ValueError):
@@ -252,9 +257,11 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
         data["standbyModel"] = normalize_model(data["standbyModel"], f"{where} spare", resolve_saved_model)
     if data.get("repair") is not None:
         data["repair"] = normalize_repair(data["repair"], where)
-    for key in MAINTENANCE_KEYS[1:]:
+    for key in ("costs", "preventive", "inspection", "rcm_source"):
         if data.get(key) is not None and not isinstance(data[key], dict):
             raise GraphError(f"{where}: {key} must be an object.")
+    if data.get("maintenance_group") is not None and not isinstance(data["maintenance_group"], str):
+        raise GraphError(f"{where}: maintenance_group must be a group name.")
     for key in ("preventive", "inspection"):
         spec = data.get(key)
         if spec and isinstance(spec.get("duration"), dict):
@@ -313,8 +320,9 @@ def normalize_graph(
         out["repairable"] = True
     if graph.get("ccf_groups"):
         out["ccf_groups"] = graph["ccf_groups"]
-    if graph.get("costs"):
-        out["costs"] = graph["costs"]
+    for key in DIAGRAM_KEYS:
+        if graph.get(key):
+            out[key] = graph[key]
     return out
 
 
@@ -347,8 +355,9 @@ def compact_graph(graph: dict) -> dict:
         out["repairable"] = True
     if graph.get("ccf_groups"):
         out["ccf_groups"] = graph["ccf_groups"]
-    if graph.get("costs"):
-        out["costs"] = graph["costs"]
+    for key in DIAGRAM_KEYS:
+        if graph.get(key):
+            out[key] = graph[key]
     return out
 
 

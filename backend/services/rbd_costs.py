@@ -31,7 +31,7 @@ from backend.services import rbd_maintenance as rm
 from backend.services.rbd_analysis import AnalysisError
 
 #: Cost categories, in display order (RePyability's ``by_category`` keys).
-CATEGORIES = ("repair", "replace", "preventive", "inspection", "component_downtime", "system_downtime")
+CATEGORIES = ("repair", "replace", "preventive", "inspection", "setup", "component_downtime", "system_downtime")
 #: Percentiles of the window's cost reported.
 PERCENTILES = (10, 50, 90)
 #: The most copies of one block the cheapest-design search considers.
@@ -65,30 +65,54 @@ def exact_breakdown(rbd, overrides: dict) -> dict:
     working = set(overrides.get("working_nodes") or ())
     broken = set(overrides.get("broken_nodes") or ())
     forced = working | broken
+    setups = {g: group for g, group in getattr(rbd, "_maintenance", {}).items() if group.setup_cost}
     with np.errstate(all="ignore"):
         total = float(rbd.expected_cost_rate(**overrides))
         availability = {}
-        if rbd.costs:
-            probs = rbd._probabilities_with_overrides(rbd.node_availability(), working, broken)
-            availability = {n: _scalar(v) for n, v in probs.items()}
+        if rbd.costs or setups:
+            if rbd._crews_couple():
+                # Limited repair crews (#156): the components' long-run values
+                # come from the crews' Markov chain, as in expected_cost_rate.
+                probabilities, weights = rbd._chain_probabilities(working, broken)
+                availability = {n: float(weights @ probabilities[n]) for n in rbd.nodes}
+            else:
+                probs = rbd._probabilities_with_overrides(rbd.node_availability(), working, broken)
+                availability = {n: _scalar(v) for n, v in probs.items()}
         system_down = 0.0
         if rbd.downtime_cost_rate:
-            system_down = rbd.downtime_cost_rate * (1.0 - float(rbd.mean_availability(**overrides)))
+            system_down = rbd.downtime_cost_rate * float(rbd.mean_unavailability(**overrides))
+    blank = {k: 0.0 for k in CATEGORIES if k != "system_downtime"}
     by_block: dict[Any, dict] = {}
     for node, costs in rbd.costs.items():
-        row = {k: 0.0 for k in CATEGORIES if k != "system_downtime"}
+        row = dict(blank)
         if node not in forced:
-            failures, maintained, _ = rbd._node_frequencies(node)
+            # Corrective and preventive actions per unit time (a standby
+            # group's units' failures, or from the crews' chain).
+            failures, maintained = rbd._node_actions(node, availability[node])
             for key in ("repair", "replace"):
                 if f"{key}_cost" in costs:
                     row[key] = _mean_cost(costs[f"{key}_cost"]) * failures
             if "preventive_cost" in costs:
                 row["preventive"] = _mean_cost(costs["preventive_cost"]) * maintained
             if "inspection_cost" in costs:
-                row["inspection"] = _mean_cost(costs["inspection_cost"]) / rbd._inspection[node].interval
+                schedule = rbd._preventive.get(node)
+                if schedule is not None and schedule.policy == "condition":
+                    # Condition checks (#96) at each multiple of the interval it is up at.
+                    row["inspection"] = (_mean_cost(costs["inspection_cost"])
+                                         * rbd._block_cycle(node).before / schedule.interval)
+                else:
+                    row["inspection"] = _mean_cost(costs["inspection_cost"]) / rbd._inspection[node].interval
         if costs.get("downtime_cost"):
             row["component_downtime"] = costs["downtime_cost"] * (1.0 - availability[node])
         by_block[node] = row
+    # A maintenance group's set-up (#108), at each failure and each preventive
+    # replacement of a member, put on the member that opened the stop.
+    for group in setups.values():
+        for node in group.members:
+            if node in forced:
+                continue
+            row = by_block.setdefault(node, dict(blank))
+            row["setup"] += group.setup_cost * sum(rbd._node_actions(node, availability[node]))
     by_category = {k: math.fsum(r[k] for r in by_block.values()) for k in CATEGORIES if k != "system_downtime"}
     by_category["system_downtime"] = system_down
     return {"total": total, "by_category": by_category, "by_block": by_block}
@@ -145,7 +169,8 @@ def cost_summary(rbd, graph: dict, labels: dict, gate_ids: set, overrides: dict,
     # simulated mean per unit time) next to its share of the downtime.
     share_sim = {r["id"]: r.get("share") for r in per_node or []}
     blocks = []
-    priced = set(rbd.costs) | set(rbd.acquisition_costs)
+    priced = set(rbd.costs) | set(rbd.acquisition_costs) | {
+        m for g in getattr(rbd, "_maintenance", {}).values() if g.setup_cost for m in g.members}
     for nid in rbd.components:
         if nid in gate_ids or nid not in priced:
             continue

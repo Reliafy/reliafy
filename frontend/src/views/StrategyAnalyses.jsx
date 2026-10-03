@@ -8,6 +8,7 @@ const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
   compare_two: "Two-model comparison",
   failure_finding: "Failure finding",
+  demonstration_test: "Demonstration test",
 };
 
 const OpenIcon = () => (
@@ -67,7 +68,7 @@ export default function StrategyAnalyses() {
       ) : analyses.length === 0 ? (
         <div className="card empty">
           <h2>No saved analyses</h2>
-          <p>Run Optimal replacement, Compare two models, or Failure finding and save the result.</p>
+          <p>Run Optimal replacement, Compare two models, Failure finding or Demonstration test and save the result.</p>
         </div>
       ) : (
         <div className="lib">

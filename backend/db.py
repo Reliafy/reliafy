@@ -121,6 +121,11 @@ def init_db() -> None:
     )
     db.public_links.create_index([("collection", 1), ("artifact_id", 1)])
     db.public_links.create_index([("grantor_uid", 1)])
+    # Expiring share links: an expired link already resolves to nothing; the
+    # TTL index then deletes it (links without an expiry have no date and are
+    # never touched). Unlock-attempt windows drop the same way.
+    db.public_links.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    db.public_link_attempts.create_index([("expires_at", 1)], expireAfterSeconds=0)
     db.api_tokens.create_index([("token_hash", 1)], unique=True)
     db.api_tokens.create_index([("uid", 1)])
     # Product-update emails: the unsubscribe token is the lookup key for the

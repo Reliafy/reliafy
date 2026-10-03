@@ -8,7 +8,7 @@ import { RbdUnitContext } from "./RbdNodes.jsx";
 // Edit a node's life model — and, in a repairable RBD, its repair-time
 // distribution (or instant repair) and its costs and maintenance too — in one
 // place. Pre-filled with the node's current models.
-export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false }) {
+export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false, crews = false, groups = [] }) {
   const [model, setModel] = useState(initial?.model ?? null);
   const [repair, setRepair] = useState(initial?.repair ?? null);
   const [instant, setInstant] = useState(!!initial?.instant_repair);
@@ -65,7 +65,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
               onChange={setRepair}
             />
           )}
-          <BlockCostSection initial={initial} onChange={setExtras} unit={unit} />
+          <BlockCostSection initial={initial} onChange={setExtras} unit={unit} crews={crews} groups={groups} />
         </div>
       )}
     </Modal>

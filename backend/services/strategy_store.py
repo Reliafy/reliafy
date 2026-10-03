@@ -1,8 +1,8 @@
 """Persistence for saved strategy analyses.
 
 A saved analysis is the pair (inputs, results) for one of the strategy
-calculators — optimal replacement, two-model comparison, or failure-finding
-interval. Results are ALWAYS recomputed server-side from the inputs at save
+calculators — optimal replacement, two-model comparison, failure-finding
+interval, or demonstration test plan. Results are ALWAYS recomputed server-side from the inputs at save
 time (never taken from the client): saved analyses serve as evidence for RCM
 decisions, so their integrity matters.
 
@@ -21,7 +21,13 @@ from backend.schema import StrategyAnalysis
 from backend.services import strategy as strategy_service
 from backend.services.strategy import StrategyError
 
-KINDS = ("optimal_replacement", "compare_two", "failure_finding")
+KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration_test")
+
+# The demonstration-test calculator's inputs (the endpoint body shape).
+DEMO_INPUTS = (
+    "method", "reliability", "confidence", "mission_time", "failures", "test_multiple",
+    "shape", "units", "mtbf", "design_reliability", "design_mtbf", "unit",
+)
 
 
 
@@ -60,6 +66,10 @@ def compute(kind: str, inputs: dict) -> dict:
             inputs.get("params") or [],
             inputs.get("target_availability"),
             unit=inputs.get("unit"),
+        )
+    if kind == "demonstration_test":
+        return strategy_service.demonstration_test(
+            **{k: inputs[k] for k in DEMO_INPUTS if k in inputs}
         )
     raise StrategyError(f"Unknown analysis kind '{kind}'.")
 
@@ -133,4 +143,24 @@ def headline(doc: StrategyAnalysis) -> str:
         unit = f" {r['unit']}" if r.get("unit") else ""
         i = r.get("interval")
         return f"Check every ~{strategy_service.fmt_num(i)}{unit}" if i is not None else "Failure-finding interval"
+    if doc.kind == "demonstration_test":
+        return demonstration_headline(r)
     return doc.kind
+
+
+def demonstration_headline(r: dict) -> str:
+    """'59 units × 1,000 hours, 0 failures' — the plan in a few words."""
+    fmt = strategy_service.fmt_num
+    unit = f" {r['unit']}" if r.get("unit") else ""
+    failures = r.get("failures") or 0
+    allowed = f"≤{failures} failure{'s' if failures != 1 else ''}" if failures else "0 failures"
+    if r.get("method") == "mtbf":
+        total = r.get("total_test_time")
+        return f"{fmt(total)}{unit} total test time, {allowed}" if total is not None else "MTBF test"
+    n = r.get("units")
+    if n is None:
+        return "Demonstration test"
+    per_unit = r.get("test_time_per_unit")
+    k = r.get("test_multiple") or 1
+    length = f"{fmt(per_unit)}{unit}" if per_unit is not None else f"{fmt(k)} mission{'s' if k != 1 else ''}"
+    return f"{n:,} units × {length}, {allowed}"

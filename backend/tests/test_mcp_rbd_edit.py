@@ -430,7 +430,8 @@ def test_saved_availability_goes_stale_after_an_edit(env, monkeypatch):
     assert _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))["available"]
     _ok(_edit(env, rid, {"op": "update_node", "id": "p1", "model": _w(500, 1.2)}))
     out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))
-    assert out["available"] is False and out["code"] == "pro_required"
+    assert out["available"] is True and out["has_simulation"] is False
+    assert out["simulation"]["code"] == "pro_required"
 
 
 def test_a_subsystem_reference_follows_the_edit(env):

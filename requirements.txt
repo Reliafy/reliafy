@@ -6,7 +6,7 @@ numpy
 # SurPyval from git: the PyPI releases are stale and miss the proportional-
 # hazards / AFT / PO / AH classes, the discrete distributions, and more. Pinned
 # to a commit SHA so builds are reproducible. (Requires git at build time.)
-git+https://github.com/derrynknife/SurPyval.git@v0.21.0
+git+https://github.com/derrynknife/SurPyval.git@v0.22
 # RePyability is installed --no-deps in the Dockerfile (and CI), pinned to a
 # git tag (v0.11), which keeps the SurPyval pin above authoritative: it
 # declares surpyval>=0.20 (uncapped), but --no-deps also stops pip re-resolving

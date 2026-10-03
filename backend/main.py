@@ -271,7 +271,7 @@ def distributions_endpoint() -> dict:
                 "id": key,
                 "name": entry["name"],
                 "covariates": False,
-                "params": list(getattr(entry["dist"], "param_names", [])),
+                "params": list(getattr(entry["dist"], "parameter_names", [])),
                 # Derived from SurPyval, not hand-listed: which fit methods and
                 # which model adjustments this distribution actually supports.
                 **distribution_capabilities(key),
@@ -281,7 +281,7 @@ def distributions_endpoint() -> dict:
     ]
     discrete = [
         {"id": key, "name": entry["name"], "covariates": False,
-         "discrete": True, "params": list(getattr(entry["dist"], "param_names", []))}
+         "discrete": True, "params": list(getattr(entry["dist"], "parameter_names", []))}
         for key, entry in DISCRETE.items()
     ]
     nonparametric = [

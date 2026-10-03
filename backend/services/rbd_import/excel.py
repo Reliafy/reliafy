@@ -388,7 +388,7 @@ def _model(rec: dict, where: str, prefix: str = "") -> Optional[dict]:
                 f"(the {prefix + 'distribution' if prefix else 'distribution'} column is blank).")
     else:
         dist = _dist_id(raw_dist, where)
-    names = list(getattr(fitting.DISTRIBUTIONS[dist]["dist"], "param_names", []))
+    names = list(getattr(fitting.DISTRIBUTIONS[dist]["dist"], "parameter_names", []))
     params = []
     for name in names:
         v = given.get(name)

@@ -11,19 +11,25 @@ expands to the original text.
 
 from __future__ import annotations
 
+from typing import Optional
+
 from backend.services import rbd_analysis
 from backend.services import rbd_maintenance as rm
 from backend.services.rbd_analysis import AnalysisError
 
 
 def uses_extras(graph: dict) -> bool:
-    """Whether any block (or the diagram) carries costs or maintenance."""
+    """Whether any block (or the diagram) carries costs or maintenance, or
+    the diagram has repair crews, maintenance groups, standby groups or a
+    safety function (#156, #157): anything whose exact values may not exist."""
     if (graph.get("costs") or {}).get("downtime_rate") or (graph.get("costs") or {}).get("horizon"):
         return True
+    if any(graph.get(k) for k in ("repair_crews", "maintenance_groups", "safety_function")):
+        return True
     return any(
-        rm.has_extras(n.get("data") or {})
+        rm.has_extras(n.get("data") or {}) or n.get("type") == "standby"
         for n in graph.get("nodes") or []
-        if n.get("type") == "component"
+        if n.get("type") in ("component", "standby")
     )
 
 
@@ -82,9 +88,34 @@ def component(script, data: dict, label: str, var: str, life: str, repair: str) 
         parts.append(f'"duration": {duration}')
         if spec.get("cost") is not None:
             parts.append(f'"cost": {_cost(script, spec["cost"])}')
+        # Condition-based replacement, opportunistic renewal (#157), staggered
+        # and imperfect proof tests (#136).
+        for extra in ("threshold", "opportunity", "offset", "coverage", "full_test"):
+            if spec.get(extra) is not None:
+                parts.append(f'"{extra}": {_num(spec[extra])}')
+        if spec.get("inspection_cost") is not None:
+            parts.append(f'"inspection_cost": {_cost(script, spec["inspection_cost"])}')
         entries.append(f'"{key}": {{' + ", ".join(parts) + "}")
+    try:
+        group = rm.maintenance_group(data, label)
+        priority = rm.crew_priority(data, label)
+    except AnalysisError as exc:
+        script.missing(var, str(exc), label)
+        return
+    if group is not None:
+        entries.append(f'"group": {_lit(group)}')
+    if priority is not None:
+        entries.append(f'"priority": {_num(priority)}')
     if data.get("inspection"):
         L.append("# Hidden failures: found only at the proof tests below.")
+    if (pm or {}).get("policy") == "condition":
+        L.append("# Replaced on condition: inspected every interval, replaced when more likely")
+        L.append("# than the threshold to fail before the next inspection.")
+    _emit(script, var, entries)
+
+
+def _emit(script, var: str, entries: list[str]) -> None:
+    L = script.lines
     if any("surv.Uniform.from_params(" in e for e in entries):
         L.append("# A cost given as a range is drawn uniformly afresh at each action.")
     L.append(f"{var} = {{")
@@ -92,15 +123,95 @@ def component(script, data: dict, label: str, var: str, life: str, repair: str) 
     L.append("}")
 
 
+def standby(script, nid, data: dict, label: str, var: str, life: str, repair: str) -> None:
+    """Emit a standby group (#156): ``var = {...}`` with a ``"standby"`` spec,
+    or, repaired one unit at a time, a one-node RepairableRBD with one crew."""
+    from backend.services import rbd_policies
+    from backend.services.rbd_export import _lit, _num
+
+    try:
+        spec = rbd_policies.standby_spec(data, label, life, repair)
+    except AnalysisError as exc:
+        script.missing(var, str(exc), label)
+        return
+    group = spec.pop("standby")
+    entries = [f'"reliability": {life}', f'"repairability": {repair}']
+    entries += [f"{_lit(k)}: {_cost(script, v) if k != 'priority' else _num(v)}"
+                for k, v in spec.items() if k not in ("reliability", "repairability")]
+    entries.append('"standby": {' + ", ".join(f'"{k}": {_num(v)}' for k, v in group.items()) + "}")
+    L = script.lines
+    L.append(f"# A standby group: {group['units']} identical units, one operating; each failed unit is")
+    if not data.get("repair_one_at_a_time"):
+        L.append("# repaired on its own (a job for the repair crews).")
+        _emit(script, var, entries)
+        return
+    L.append("# repaired by the group's own repairer, one unit at a time: a sub-diagram")
+    L.append("# with one repair crew.")
+    entries = [e for e in entries if not e.startswith('"priority"')]
+    spec_var = script.names.make(f"{var}_units")
+    _emit(script, spec_var, entries)
+    L.append(f"{var} = RepairableRBD([('in', {_lit(nid)}), ({_lit(nid)}, 'out')], "
+             f"{{{_lit(nid)}: {spec_var}}}, repair_crews=1)")
+
+
 def rbd_kwargs(graph: dict) -> list[str]:
-    """Extra ``RepairableRBD(...)`` arguments: the system downtime cost."""
+    """Extra ``RepairableRBD(...)`` arguments: the system downtime cost, the
+    repair crews and the maintenance groups' options."""
+    from backend.services import rbd_policies
     from backend.services.rbd_export import _num
 
     try:
         rate = rm.downtime_cost_rate(graph)
     except AnalysisError:
         rate = 0.0
-    return [f"downtime_cost_rate={_num(rate)}"] if rate else []
+    out = [f"downtime_cost_rate={_num(rate)}"] if rate else []
+    try:
+        crews = rbd_policies.repair_crews(graph)
+    except AnalysisError:
+        crews = None
+    if crews is not None:
+        out.append(f"repair_crews={crews}")
+    groups = maintenance_groups(graph)
+    if groups:
+        out.append("maintenance_groups=MAINTENANCE_GROUPS")
+    return out
+
+
+def maintenance_groups(graph: dict) -> dict:
+    """The maintenance groups' options for the groups some block is in."""
+    from backend.services import rbd_policies
+
+    members: dict[str, list] = {}
+    for n in graph.get("nodes") or []:
+        if n.get("type") != "component":
+            continue
+        try:
+            group = rm.maintenance_group(n.get("data") or {}, n.get("id"))
+        except AnalysisError:
+            group = None
+        if group is not None:
+            members.setdefault(group, []).append(n.get("id"))
+    try:
+        return rbd_policies.maintenance_groups(graph, members) or {}
+    except AnalysisError:
+        return {}
+
+
+def diagram_lines(graph: dict) -> list[str]:
+    """``MAINTENANCE_GROUPS = {...}`` when the diagram has group options."""
+    from backend.services.rbd_export import _lit, _num
+
+    groups = maintenance_groups(graph)
+    if not groups:
+        return []
+    out = ["# Maintenance groups: a set-up cost charged once per stop of the group, at",
+           "# which members old enough (their opportunity age) are renewed too.",
+           "MAINTENANCE_GROUPS = {"]
+    for name, options in groups.items():
+        out.append(f"    {_lit(name)}: {{\"setup_cost\": {_num(options['setup_cost'])}, "
+                   f"\"system_down\": {options['system_down']!r}}},")
+    out.append("}")
+    return out
 
 
 def constants(graph: dict) -> list[str]:
@@ -212,18 +323,92 @@ def report_costs(sim, overrides):
 '''
 
 
+_SAVE_SAFETY = '''    results["long_run_method"] = long_run_method()
+    results["safety"] = report_safety(sim, overrides)
+'''
+
+_SAFETY_HELPERS = '''
+def long_run_method():
+    """How RePyability finds the long-run values: exact, numerical, simulated
+    or refused (e.g. the repair crews' Markov chain), and why."""
+    route = rbd.analysis_routes()["mean_availability"]
+    print(f"\\nLong-run values: {route.route} - {route.reason}")
+    return {"route": route.route, "reason": route.reason}
+
+
+def sil_band(pfd):
+    """The SIL a low-demand PFDavg falls in (IEC 61508-1), or None."""
+    for sil, low, high in SIL_BANDS:
+        if pfd < high and (pfd >= low or sil == 4):
+            return sil
+    return None
+
+
+def report_safety(sim, overrides):
+    """The safety function's PFDavg: its long-run unavailability, averaged over
+    the proof-test cycle, with its common-cause groups (RBD_CCF) where
+    RePyability's chain covers them; else without them, else simulated."""
+    pfd, basis, ccf = None, None, False
+    if RBD_CCF is not None:
+        try:
+            pfd = float(RBD_CCF.mean_unavailability(**overrides))
+            basis, ccf = RBD_CCF.analysis_routes()["mean_unavailability"].route, True
+        except (NotImplementedError, ValueError) as exc:
+            print(f"(Common cause left out of the PFDavg: {exc})")
+    if pfd is None:
+        try:
+            pfd = float(rbd.mean_unavailability(**overrides))
+            basis = rbd.analysis_routes()["mean_unavailability"].route
+        except NotImplementedError:
+            pfd = 1.0 - sim.system_uptime / (sim.n_simulations * T_SIMULATION)
+            basis = "simulated"
+    sil = sil_band(pfd)
+    print(f"PFDavg ({basis}{', with common cause' if ccf else ''}): {pfd:.4g}"
+          f" -> {'SIL ' + str(sil) if sil else 'no SIL band'}"
+          + (f" (target SIL {TARGET_SIL}: {'met' if sil and sil >= TARGET_SIL else 'NOT met'})"
+             if TARGET_SIL else ""))
+    return {"pfd_avg": pfd, "basis": basis, "common_cause": ccf, "sil": sil, "target_sil": TARGET_SIL}
+'''
+
+
+def safety_constants(graph: dict, ccf_expr: Optional[str]) -> list[str]:
+    """The SIL bands and target, and the twin with common cause, for a safety
+    function's PFDavg (#136)."""
+    from backend.services import rbd_policies
+
+    try:
+        target = rbd_policies.target_sil(graph)
+    except AnalysisError:
+        target = None
+    bands = ", ".join(f"({s}, {lo!r}, {hi!r})" for s, lo, hi in rbd_policies.SIL_BANDS)
+    return [
+        "# A safety function: SIL bands of a low-demand PFDavg (IEC 61508-1), and the",
+        "# SIL it must meet (None: no target).",
+        f"SIL_BANDS = ({bands})",
+        f"TARGET_SIL = {target}",
+        "# The same diagram with its common-cause groups, for the PFDavg (RePyability's",
+        "# simulation doesn't take them in, so the availability figures leave them out).",
+        f"RBD_CCF = {ccf_expr or 'None'}",
+    ]
+
+
 def main_source(template: str, graph: dict) -> str:
     """The repairable ``main()`` (and helpers): unchanged for a diagram without
     costs or maintenance."""
     if not uses_extras(graph):
         return template
     out = template
-    for old, new in ((_EXACT, _EXACT_OR_NOT), (_TOLERANCE, _TOLERANCE_OR_PILOT),
-                     (_NODES, _NODES_OR_NOT), (_SAVE, _SAVE_COSTS), (_RERUN, _RERUN_NAN)):
+    hooks = [(_EXACT, _EXACT_OR_NOT), (_TOLERANCE, _TOLERANCE_OR_PILOT),
+             (_NODES, _NODES_OR_NOT), (_SAVE, _SAVE_COSTS), (_RERUN, _RERUN_NAN)]
+    helpers = _HELPERS
+    if graph.get("safety_function"):
+        hooks.append((_SAVE, _SAVE_SAFETY + _SAVE))
+        helpers += _SAFETY_HELPERS
+    for old, new in hooks:
         assert out.count(old) == 1, old
         out = out.replace(old, new)
     marker = "\ndef main():"
-    return out.replace(marker, _HELPERS.rstrip("\n") + "\n\n" + marker, 1)
+    return out.replace(marker, helpers.rstrip("\n") + "\n\n" + marker, 1)
 
 
 def pilot_constant() -> list[str]:

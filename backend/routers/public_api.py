@@ -280,3 +280,20 @@ def api_failure_finding(
     ``unit``.
     """
     return _strategy("failure_finding", body, user["uid"])
+
+
+@router.post("/strategy/demonstration-test")
+def api_demonstration_test(
+    body: dict = Body(default={}),
+    user: dict = Depends(ingest_user),
+) -> JSONResponse:
+    """Plan a reliability demonstration test (RePyability's test planning).
+
+    Body: ``reliability`` (target over one mission), optional ``confidence``
+    (default 0.95), ``mission_time``, ``failures`` (allowed, default 0),
+    ``test_multiple`` + ``shape`` (Weibull beta) for a longer test per unit,
+    ``units`` (to solve for the test time per unit instead), ``unit``,
+    ``design_reliability``. ``method="mtbf"`` with ``mtbf`` plans a
+    constant-failure-rate (chi-squared) test instead.
+    """
+    return _strategy("demonstration_test", body, user["uid"])

@@ -77,9 +77,10 @@ def test_owner_creates_link_and_public_read_works(client):
     token = r.json()["token"]
     assert len(token) >= 20 and r.json()["path"] == f"/p/{token}"
 
-    # Idempotent: re-creating returns the same token.
+    # An artifact can carry several links: creating again makes a new one.
     again = client.post("/api/public-links", json={"collection": "models", "artifact_id": model_id})
-    assert again.json()["token"] == token
+    assert again.json()["token"] != token
+    assert again.json()["protected"] is False and again.json()["expires_at"] is None
 
     # Unauthenticated fetch works and carries the results.
     client.act_as(None)

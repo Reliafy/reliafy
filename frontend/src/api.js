@@ -90,7 +90,17 @@ async function authedFetch(url, opts = {}) {
 }
 
 async function request(url, opts = {}) {
-  const res = await authedFetch(url, opts);
+  return readJson(await authedFetch(url, opts));
+}
+
+// Share-link endpoints that need no account: a plain fetch, with no auth
+// headers and no refresh-and-retry on a 401 (which there means "password
+// needed", and on an unlock would spend a second attempt).
+async function publicRequest(url, opts = {}) {
+  return readJson(await fetch(url, opts));
+}
+
+async function readJson(res) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(
@@ -630,7 +640,14 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 // the entitlement gets a 402 with ``code: "pro_required"`` unless a saved
 // result matches; results carry ``cached`` and ``computed_at``.
 // `band` ({ level }) adds a confidence band from the fitted blocks' uncertainty.
-export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = null, force = false, band = null } = {}) {
+// Repairable diagrams (#154/#155): ``simulate`` false gets the exact figures
+// (free) without running the paid simulation, true asks for it;
+// ``currentState`` ({nodeId: {down: true, since} | {age}}) starts the figures
+// from now; ``exact`` computes the figures over time of a large diagram.
+export function analyzeRbd(
+  graph, tMax, covariates, conditionalAge,
+  { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false } = {}
+) {
   return request("/api/rbds/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -642,6 +659,9 @@ export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = nu
       rbd_id: rbdId || null,
       force: !!force,
       ...(band ? { band } : {}),
+      ...(simulate != null ? { simulate } : {}),
+      ...(currentState ? { current_state: currentState } : {}),
+      ...(exact ? { exact: true } : {}),
     }),
   });
 }
@@ -977,6 +997,15 @@ export function failureFinding(distributionId, params, targetAvailability, unit,
   });
 }
 
+// Plan a reliability demonstration test (units, test time, allowed failures).
+export function demonstrationTest(body) {
+  return request("/api/strategy/demonstration-test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // Persist a strategy analysis (results recomputed server-side from inputs).
 export function saveStrategyAnalysis(name, kind, inputs) {
   return request("/api/strategy/analyses", {
@@ -1160,25 +1189,61 @@ export function revokeShare(shareId) {
 
 // ---- Public share links -----------------------------------------------------
 
-export function createPublicLink(collection, artifactId) {
+// A new link (an artifact can have several). ``options``: { label,
+// expires_in_days, password, generate_password }. A generated passphrase
+// comes back once, as ``passphrase``.
+export function createPublicLink(collection, artifactId, options = {}) {
   return request("/api/public-links", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ collection, artifact_id: artifactId }),
+    body: JSON.stringify({ collection, artifact_id: artifactId, ...options }),
   });
 }
 
-export function getPublicLink(collection, artifactId) {
-  return request(`/api/public-links?collection=${collection}&artifact_id=${artifactId}`);
+// Every live link to an artifact, newest first: { links: [...] }.
+export function listPublicLinks(collection, artifactId) {
+  const q = new URLSearchParams({ collection, artifact_id: artifactId });
+  return request(`/api/public-links?${q}`);
+}
+
+// Relabel, or set / rotate / remove the password: { label } |
+// { password } | { generate_password: true } | { remove_password: true }.
+export function updatePublicLink(token, changes) {
+  return request(`/api/public-links/${encodeURIComponent(token)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
 }
 
 export function revokePublicLink(token) {
-  return request(`/api/public-links/${token}`, { method: "DELETE" });
+  return request(`/api/public-links/${encodeURIComponent(token)}`, { method: "DELETE" });
 }
 
-// Unauthenticated: resolve a public link to its artifact payload.
-export function getPublicArtifact(token) {
-  return request(`/api/public/${encodeURIComponent(token)}`);
+// The header that carries a password-protected link's unlock token.
+const UNLOCK_HEADER = "X-Share-Unlock";
+const unlockHeaders = (unlock) => (unlock ? { [UNLOCK_HEADER]: unlock } : {});
+
+// Unauthenticated: resolve a public link to its artifact payload. A
+// protected link without a valid unlock token rejects with status 401 and
+// ``passwordRequired`` set.
+export async function getPublicArtifact(token, unlock) {
+  try {
+    return await publicRequest(`/api/public/${encodeURIComponent(token)}`, { headers: unlockHeaders(unlock) });
+  } catch (err) {
+    if (err.status === 401) err.passwordRequired = true;
+    throw err;
+  }
+}
+
+// Trade a protected link's password for an unlock token:
+// { unlock_token, expires_at }.
+export function unlockPublicLink(token, password) {
+  return publicRequest(`/api/public/${encodeURIComponent(token)}/unlock`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
 }
 
 // ---- File downloads -----------------------------------------------------------
@@ -1199,8 +1264,8 @@ function dispositionFilename(header, fallback) {
 }
 
 // Fetch a file with the auth header and hand it to the browser as a download.
-async function downloadFile(url, fallbackName) {
-  const res = await authedFetch(url);
+async function downloadFile(url, fallbackName, opts = {}, fetcher = authedFetch) {
+  const res = await fetcher(url, opts);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     const err = new Error(data.detail || `Download failed (${res.status})`);
@@ -1234,9 +1299,12 @@ export function downloadRbdPython(id) {
   );
 }
 
-// The same download for a publicly linked RBD (no sign-in needed).
-export function downloadPublicRbdPython(token) {
-  return downloadFile(`/api/public/${encodeURIComponent(token)}/export.py`, "rbd.py");
+// The same download for a publicly linked RBD (no sign-in needed; a
+// protected link sends its unlock token).
+export function downloadPublicRbdPython(token, unlock) {
+  return downloadFile(`/api/public/${encodeURIComponent(token)}/export.py`, "rbd.py", {
+    headers: unlockHeaders(unlock),
+  }, (u, o) => fetch(u, o));
 }
 
 // ---- Personal API tokens ------------------------------------------------------

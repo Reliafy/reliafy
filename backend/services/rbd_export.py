@@ -9,10 +9,14 @@ calculation the app does:
   the MTTF (the integral of R(t), exactly as the app computes it), the B10/B50
   lives and the six importance measures at the app's representative time;
 * a **repairable** diagram prints the exact steady-state availability, mean
-  up/down time and failure frequency, then runs the same seeded availability
-  simulation as the app: the same ``t_simulation``, antithetic pairs, run to
-  the same precision target on the window's mean availability (so a run that
-  reaches it reproduces the app's numbers exactly).
+  up/down time and failure frequency, the exact availability over the window
+  (``point_availability`` on the app's grid, the mission availability and the
+  expected failures, outages, downtime and cost from ``expected_events`` /
+  ``expected_cost``, from new or from ``STATE``, as the app's free figures),
+  then runs the same seeded availability simulation as the app: the same
+  ``t_simulation``, antithetic pairs, run to the same precision target on the
+  window's mean availability (so a run that reaches it reproduces the app's
+  numbers exactly).
 
 The translation mirrors ``rbd_analysis`` block by block — one RBD node per
 builder node, series/parallel count blocks and hot standby as a single
@@ -47,7 +51,7 @@ from backend.fitting import DISTRIBUTIONS
 from backend.services import rbd_analysis, rbd_repeats
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.21.0", "repyability": "0.11"}
+_DEFAULT_VERSIONS = {"surpyval": "0.22", "repyability": "0.11"}
 _SURPYVAL_GIT = "https://github.com/derrynknife/SurPyval.git"
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
@@ -56,7 +60,7 @@ _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 _RESERVED = {
     "np", "os", "json", "surv", "plt", "rbd", "rbd_independent", "main",
     "missing_model", "voting_gate", "mean_time_to_failure", "b_life",
-    "save_results", "results",
+    "save_results", "results", "exact_over_window", "node_states",
 }
 
 
@@ -311,7 +315,7 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
     params = model.get("params") or []
     try:
         by_name = {p["name"]: float(p["value"]) for p in params if "name" in p}
-        names = list(getattr(entry["dist"], "param_names", []) or [])
+        names = list(getattr(entry["dist"], "parameter_names", []) or [])
         if names and all(n in by_name for n in names):
             pairs = [(n, by_name[n]) for n in names]
         else:  # the order they were given in, as the app does
@@ -832,8 +836,10 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
     sp, rp = versions["surpyval"], versions["repyability"]
     what = (
         "the same availability calculation as Reliafy: the exact steady-state "
-        "availability, mean up/down time and failure frequency, then the "
-        "same seeded Monte-Carlo availability simulation."
+        "availability, mean up/down time and failure frequency, the exact "
+        "availability over the window with its expected failures, outages, "
+        "downtime and cost, then the same seeded Monte-Carlo availability "
+        "simulation."
         if repairable else
         "the same reliability calculation as Reliafy: the system reliability "
         "R(t), the MTTF, the B10/B50 lives and the component importance "
@@ -921,7 +927,7 @@ def _helpers(script: _Script) -> str:
                 models it."""
                 return NonRepairable(
                     surv.Weibull.from_params([1e12, 1.0]),
-                    surv.LogNormal.from_params([0.1, 0.1]),
+                    surv.Exponential.from_params([1.0]),
                 )
         '''))
     return "\n\n\n".join(h.strip("\n") for h in out)
@@ -1230,7 +1236,7 @@ def _repairable_body(script: _Script, graph) -> str:
              "restored by its")
     L.append("# repair-time model (a NonRepairable component in RePyability).")
     L.append("# " + "-" * 75)
-    script.imports.update({"NonRepairable", "RepairableRBD"})
+    script.imports.update({"NodeState", "NonRepairable", "RepairableRBD"})
     nodes = graph.get("nodes") or []
     node_ids = {n.get("id") for n in nodes}
     edges = [
@@ -1268,12 +1274,12 @@ def _repairable_body(script: _Script, graph) -> str:
                 nodes, {nid: rbd_repeats.repeat_of(node)}), label)
             comps.append((nid, var, label))
             continue
-        if ntype != "component":
+        if ntype not in ("component", "standby"):
             script.missing(var, (
                 f"Block '{label}' is a '{ntype}' block, which Reliafy doesn't "
                 "support in repairable (availability) diagrams - use "
-                "component blocks (each with a life model and a repair time) "
-                "and k-of-n gates."
+                "component and standby blocks (each with a life model and a "
+                "repair time) and k-of-n gates."
             ), label)
             comps.append((nid, var, label))
             continue
@@ -1301,6 +1307,11 @@ def _repairable_body(script: _Script, graph) -> str:
         else:
             repair = script.dist(data.get("repair"), f"{label} (repair time)",
                                  repair_var)
+        if ntype == "standby":
+            # A duty unit plus spares, each repaired on its own (#156).
+            rbd_export_costs.standby(script, nid, data, label, var, life, repair)
+            comps.append((nid, var, label))
+            continue
         if rbd_maintenance.has_extras(data):
             # Costs, instant repair, maintenance (#99/#100): a component spec.
             rbd_export_costs.component(script, data, label, var, life, repair)
@@ -1338,10 +1349,15 @@ def _repairable_body(script: _Script, graph) -> str:
     out.append("")
     out += _pins({"working": working, "broken": broken})
     out.append("")
-    if graph.get("ccf_groups"):
-        out.append("# Common-cause groups are a reliability-only feature and "
-                   "are ignored in an")
-        out.append("# availability diagram (as in Reliafy).")
+    groups = rbd_export_costs.diagram_lines(graph)
+    if groups:
+        out += groups
+        out.append("")
+    ccf = _repairable_ccf(graph, {nid for nid, _, _ in comps})
+    if ccf and not graph.get("safety_function"):
+        out.append("# Common-cause groups enter a repairable diagram only through a "
+                   "safety")
+        out.append("# function's PFDavg, so they are ignored here (as in Reliafy).")
     io = []
     if "input" in node_ids:
         io.append("input_node='input'")
@@ -1350,6 +1366,18 @@ def _repairable_body(script: _Script, graph) -> str:
     io += rbd_export_costs.rbd_kwargs(graph)
     out.append("rbd = RepairableRBD(\n    EDGES,\n    COMPONENTS,\n    k=K,\n"
                + "".join(f"    {a},\n" for a in io) + ")")
+    if graph.get("safety_function"):
+        ccf_expr = None
+        if ccf:
+            script.imports.update({"CCFGroup", "BetaFactor"})
+            groups_src = "".join(
+                f"        CCFGroup(members={members!r}, model=BetaFactor({beta!r})),\n"
+                for members, beta in ccf)
+            ccf_expr = ("RepairableRBD(\n    EDGES,\n    COMPONENTS,\n    k=K,\n"
+                        + "".join(f"    {a},\n" for a in io)
+                        + "    ccf_groups=[\n" + groups_src + "    ],\n)")
+        out.append("")
+        out += rbd_export_costs.safety_constants(graph, ccf_expr)
     out.append("")
     out.append("")
     out.append("# " + "-" * 75)
@@ -1377,12 +1405,47 @@ def _repairable_body(script: _Script, graph) -> str:
                f'"{rbd_analysis._AVAIL_SIMS}"))')
     out.append("# Set RELIAFY_N_SIMS to run exactly that many histories instead.")
     out.append('N_SIMS = int(os.environ.get("RELIAFY_N_SIMS") or 0)')
+    out.append("")
+    out.append("# The exact figures over time (no simulation) cover WINDOW, on "
+               "Reliafy's grid:")
+    out.append("# EXACT_POINTS evenly spaced times plus EXACT_EARLY_POINTS "
+               "log-spaced ones near")
+    out.append("# the start.")
+    out.append("WINDOW = T_SIMULATION")
+    out.append(f"EXACT_POINTS = {rbd_analysis.EXACT_POINTS}")
+    out.append(f"EXACT_EARLY_POINTS = {rbd_analysis.EXACT_EARLY_POINTS}")
+    out.append("# Start them from the blocks' current states instead of new, "
+               "as Reliafy's")
+    out.append('# "As of now": by block id, {"down": True, "since": <time into '
+               'the repair>}')
+    out.append('# or {"age": <time since new>}; blocks left out are new. '
+               'For example')
+    first = next((nid for nid, _, _ in comps if nid not in k and nid not in working and nid not in broken),
+                 None)
+    if first is not None:
+        out.append(f'# STATE = {{{_lit(first)}: {{"down": True, "since": 2.0}}}}')
+    out.append("STATE = {}")
     if rbd_export_costs.uses_extras(graph):
         out += rbd_export_costs.pilot_constant() + rbd_export_costs.constants(graph)
     out.append("")
     out.append("")
     out.append(rbd_export_costs.main_source(_REPAIRABLE_MAIN, graph).strip("\n"))
     return "\n".join(out)
+
+
+def _repairable_ccf(graph: dict, nodes: set) -> list:
+    """``(members, beta)`` of the common-cause groups Reliafy builds for a
+    repairable diagram's PFDavg (as :func:`rbd_analysis._ccf_groups`)."""
+    out = []
+    for g in graph.get("ccf_groups") or []:
+        members = list(dict.fromkeys(m for m in g.get("members") or [] if m in nodes))
+        try:
+            beta = float(g.get("beta"))
+        except (TypeError, ValueError):
+            continue
+        if len(members) >= 2 and 0.0 < beta < 1.0:
+            out.append((members, beta))
+    return out
 
 
 _REPAIRABLE_MAIN = '''
@@ -1421,6 +1484,68 @@ def simulate(availability, tolerance, overrides):
     return sim
 
 
+def node_states():
+    """STATE as RePyability NodeStates (None: every block new)."""
+    return {
+        node: (NodeState(alive=False, down_for=float(s.get("since") or 0.0))
+               if s.get("down") else NodeState(age=float(s.get("age") or 0.0)))
+        for node, s in STATE.items()
+    } or None
+
+
+def exact_over_window(overrides):
+    """The availability over WINDOW, computed exactly with no simulation, as
+    Reliafy's free figures: A(t) on the app's grid, the mission availability,
+    and the expected system failures, outages, downtime and cost. None when
+    RePyability's analysis_routes() has no exact route for this diagram."""
+    unit = f" {UNIT}" if UNIT else ""
+    routes = rbd.analysis_routes()
+    for name in ("point_availability", "expected_events"):
+        if routes[name].route not in ("exact", "numerical"):
+            print(f"\\nNo exact availability over time ({routes[name].route}): "
+                  f"{routes[name].reason}")
+            return None
+    state = node_states()
+    times = np.unique(np.concatenate([
+        np.linspace(0.0, WINDOW, EXACT_POINTS),
+        np.geomspace(WINDOW * 1e-4, WINDOW * 0.05, EXACT_EARLY_POINTS),
+    ]))
+    try:
+        with np.errstate(all="ignore"):
+            curve = rbd.point_availability(times, state=state, **overrides)
+            events = rbd.expected_events(WINDOW, state=state, **overrides)
+            cost = None
+            if rbd.has_costs and routes["expected_cost"].route in ("exact", "numerical"):
+                cost = rbd.expected_cost(WINDOW, state=state, **overrides)
+    except NotImplementedError as exc:
+        print(f"\\nNo exact availability over time: {exc}")
+        return None
+    mission = 1.0 - events.system_downtime / WINDOW
+    outages = events.system_failures + events.system_planned_outages
+    start = "now" if state else "new"
+    print(f"\\nExact over {WINDOW:,.6g}{unit} from {start} "
+          f"({routes['point_availability'].route}, no simulation):")
+    print(f"  mission availability: {mission:.6f}")
+    print(f"  availability at the end: {curve[-1]:.6f} (lowest {curve.min():.6f})")
+    print(f"  expected system failures: {events.system_failures:,.6g}")
+    print(f"  expected outages (failures + planned): {outages:,.6g}")
+    print(f"  expected downtime: {events.system_downtime:,.6g}{unit}")
+    if cost is not None:
+        print(f"  expected running cost: {cost.mean:,.6g}")
+    return {
+        "from": start,
+        "window": WINDOW,
+        "times": times.tolist(),
+        "availability": np.asarray(curve, dtype=float).tolist(),
+        "mission_availability": mission,
+        "expected_failures": events.system_failures,
+        "planned_outages": events.system_planned_outages,
+        "expected_outages": outages,
+        "downtime": events.system_downtime,
+        "cost": None if cost is None else float(cost.mean),
+    }
+
+
 def main():
     # Voting gates (the ids in K) are pinned working so they're exactly perfect.
     overrides = {"working_nodes": WORKING_NODES | set(K), "broken_nodes": BROKEN_NODES}
@@ -1440,6 +1565,9 @@ def main():
     print(f"Mean down time: {mean_down:,.6g}{unit}")
     print(f"Failure frequency: {frequency:.6g} per unit time"
           + (f" ({UNIT})" if UNIT else ""))
+
+    # Exact availability over the window, no simulation (as in Reliafy).
+    exact = exact_over_window(overrides)
 
     # Monte-Carlo availability over time, seeded exactly as in Reliafy.
     tolerance = availability_tolerance(1.0 - availability)
@@ -1496,6 +1624,7 @@ def main():
             "failure_frequency": sim.failure_frequency,
         },
         "blocks": per_block,
+        "exact": exact,
     }
     save_results(results)
 
@@ -1505,7 +1634,9 @@ def main():
         print("(Install matplotlib to plot the availability curve.)")
     else:
         fig, ax = plt.subplots()
-        ax.step(sim.timeline, sim.availability, where="post")
+        ax.step(sim.timeline, sim.availability, where="post", label="simulated")
+        if exact is not None:
+            ax.plot(exact["times"], exact["availability"], label="exact A(t)")
         ax.axhline(availability, linestyle="--", label="steady state")
         ax.set_xlabel(f"Time ({UNIT})" if UNIT else "Time")
         ax.set_ylabel("System availability A(t)")

@@ -289,7 +289,8 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/models/{id}/evaluate", "model_evaluate"),
     ("POST", "/api/models/{id}/confidence", "model_evaluate"),
     ("DELETE", "/api/models/{id}", "model_delete"),
-    # RBDs (a repairable analysis is re-labelled availability_sim by the route)
+    # RBDs (a repairable analysis is re-labelled availability_exact, or
+    # availability_sim when the simulation runs, by the route)
     ("POST", "/api/rbds", "rbd_save"),
     ("POST", "/api/rbds/analyze", "rbd_analyze"),
     ("GET", "/api/rbds/{id}/analyze", "rbd_analyze"),
@@ -312,6 +313,7 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/strategy/optimal-replacement", "strategy_replacement"),
     ("POST", "/api/strategy/compare-two", "strategy_compare"),
     ("POST", "/api/strategy/failure-finding", "strategy_failure_finding"),
+    ("POST", "/api/strategy/demonstration-test", "strategy_demonstration"),
     ("POST", "/api/strategy/analyses", "strategy_save"),
     ("POST", "/api/recurrent/models/{id}/overhaul", "strategy_overhaul"),
     # Recurrent, degradation, ALT
@@ -348,6 +350,8 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     # Sharing, teams, tokens, connected apps
     ("POST", "/api/shares", "share_user"),
     ("POST", "/api/public-links", "share_link"),
+    ("PATCH", "/api/public-links/{id}", "share_link_edit"),  # label, expiry, password (#125)
+    ("DELETE", "/api/public-links/{id}", "share_link_revoke"),
     ("POST", "/api/teams", "team_create"),
     ("POST", "/api/teams/{id}/members", "team_invite"),
     ("POST", "/api/tokens", "api_token_create"),
@@ -373,6 +377,7 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("GET", "/api/v1/fleets/{id}/forecast", "fleet_forecast"),
     ("POST", "/api/v1/strategy/optimal-replacement", "strategy_replacement"),
     ("POST", "/api/v1/strategy/failure-finding", "strategy_failure_finding"),
+    ("POST", "/api/v1/strategy/demonstration-test", "strategy_demonstration"),
 )
 
 # Never logged: operator, telemetry, webhooks, previews and checks the UI
