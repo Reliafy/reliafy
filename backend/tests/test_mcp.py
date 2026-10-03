@@ -377,12 +377,16 @@ def test_repairable_analysis_follows_the_paid_gate_and_cache(env, monkeypatch):
     rid = created["id"]
     assert created["repairable"] is True
 
-    # API access but no premium compute: a clear message, not an error, and no simulation.
+    # API access but no premium compute: the exact figures (#154), and a clear
+    # message for the simulation, not an error.
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: False)
     denied = _call(env.token[A], "analyze_rbd", {"rbd_id": rid})
     out = _ok(denied)
-    assert out["available"] is False and out["code"] == "pro_required"
-    assert "paid feature" in out["message"]
+    assert out["available"] is True and out["has_simulation"] is False
+    assert out["exact"]["status"] == "ok" and 0 < out["exact"]["mission_availability"] <= 1
+    assert out["simulation"]["available"] is False and out["simulation"]["code"] == "pro_required"
+    assert "Pro" in out["simulation"]["message"]
+    assert not env.db.rbds.find_one({"_id": rid}).get("availability_cache")
 
     # Entitled: computes and stores the result on the owner's diagram.
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: True)

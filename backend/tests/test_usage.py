@@ -79,8 +79,16 @@ def test_simulation_refusal_is_logged_pro_only(env):
 
     rid = _ok(_call(env.oauth[FREE], "create_rbd", {
         "name": "Pumps", "repairable": True, "stages": REPAIRABLE_STAGES}))["id"]
+    # The exact figures are an answer (#154)...
+    assert _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid}))["available"] is True
+    assert _events(env.db, feature="analyze_rbd")[0]["outcome"] == "ok"
+    # ...a simulation-only diagram (proof tests that take time) is the refusal.
+    graph = env.db.rbds.find_one({"_id": rid})["graph"]
+    next(n for n in graph["nodes"] if n["type"] == "component")["data"]["inspection"] = {
+        "interval": 500, "duration": 2}
+    env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
     assert _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid}))["available"] is False
-    assert _events(env.db, feature="analyze_rbd")[0]["outcome"] == "pro_only"
+    assert {e["outcome"] for e in _events(env.db, feature="analyze_rbd")} == {"ok", "pro_only"}
 
 
 def test_daily_totals_carry_no_account_ids(env):

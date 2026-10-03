@@ -277,7 +277,14 @@ nearly every row censored almost always means the column is inverted.
 - RBDs: redundancy must be modelled as redundancy (parallel / k-of-n / standby) — never wire A/B, duplex or \
 standby items in series. Never silently invent failure data: ask for MTBFs, or mark guessed values \
 placeholder=true and say so.
-- Availability simulation for repairable RBDs is a paid feature; a saved result is served when one exists.
+- Repairable RBDs: analyze_rbd gives, on every plan, the exact availability over time A(t), the mission \
+availability and the window's expected system failures, outages, downtime and cost (each labelled exact or \
+numerical: deterministic, no simulation), plus the long-run figures — from new, or from now with \
+current_state ({node_id: {"down": true, "since": <time into the repair>} or {"age": <time since new>}}), \
+over t_max (e.g. the next 720 hours). The Monte-Carlo simulation adds only what it alone gives \
+(distributions, P(no outage), percentiles, criticality indices) and is a paid feature; a saved result is \
+served when one exists. When the response says the exact figures are simulation-only for a diagram (e.g. \
+proof tests that take time), say so.
 - Every artifact has a url; share it so the user can open the result in Reliafy.
 
 Plans: using Reliafy from AI agents (these tools) is part of Reliafy Pro, which includes everything with \
@@ -1515,11 +1522,50 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None) -
     return out
 
 
+_EXACT_KEYS = ("status", "message", "from", "current_state", "window", "unit", "availability_start",
+               "availability_end", "availability_min", "availability_min_at", "mission_availability",
+               "expected_failures", "planned_outages", "expected_outages", "downtime", "cost", "cost_note",
+               "method", "n_blocks", "cached")
+
+
+def _exact_summary(exact: dict | None) -> dict | None:
+    """The exact block for an agent: the figures and their methods, the A(t)
+    curve at 21 points, the blocks with the most expected downtime, and each
+    analysis's route (exact / numerical / simulated / refused) and why."""
+    if not exact:
+        return None
+    out = {k: exact[k] for k in _EXACT_KEYS if k in exact}
+    curve = exact.get("curve") or {}
+    if curve.get("t"):
+        out["curve"] = [{"t": p["t"], "availability": p["reliability"]}
+                        for p in _downsample(curve["t"], curve.get("availability") or [])]
+    if exact.get("per_node"):
+        out["blocks_by_downtime"] = exact["per_node"][:10]
+    if exact.get("routes"):
+        out["routes"] = {k: {"route": r.get("route"), "reason": r.get("reason")}
+                         for k, r in exact["routes"].items()}
+    return out
+
+
 def _availability_summary(result: dict) -> dict:
     keys = ("unit", "steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
-            "failure_frequency", "figures_basis", "n_simulations", "t_simulation", "precision", "per_node", "importance",
-            "criticality", "cached", "computed_at", "can_recompute")
-    return {"kind": "repairable", **{k: result.get(k) for k in keys if k in result}}
+            "failure_frequency", "figures_basis", "has_simulation", "n_simulations", "t_simulation", "precision",
+            "per_node", "importance", "criticality", "cached", "computed_at", "can_recompute", "current_state")
+    out = {"kind": "repairable", **{k: result.get(k) for k in keys if k in result}}
+    if not result.get("has_simulation", True):
+        # The simulation's own figures aren't there: don't list empty ones.
+        for k in ("n_simulations", "precision", "per_node", "criticality", "cached", "computed_at"):
+            out.pop(k, None)
+    out["exact"] = _exact_summary(result.get("exact"))
+    return out
+
+
+class BlockState(BaseModel):
+    down: Optional[bool] = Field(None, description="True: the block is down now (in a repair).")
+    since: Optional[float] = Field(None, ge=0, description=(
+        "With down: how long it has been down so far (diagram unit; 0 = just failed)."))
+    age: Optional[float] = Field(None, ge=0, description=(
+        "A running block: time since it was new or last renewed (diagram unit)."))
 
 
 @_tool("analyze_rbd", _READ, "Analyse an RBD")
@@ -1535,13 +1581,28 @@ def analyze_rbd(
         "Non-repairable: condition on the system having already survived to this age."))] = None,
     recompute: Annotated[bool, Field(description=(
         "Repairable: re-run the simulation even when a saved result matches (paid feature)."))] = False,
+    simulate: Annotated[bool, Field(description=(
+        "Repairable: also run the Monte-Carlo simulation (paid: Pro or credits) for distributions, "
+        "P(no outage), percentiles and criticality. False = the exact figures only (faster). Ignored "
+        "without entitlement: the exact figures come anyway."))] = True,
+    current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
+        "Repairable: blocks' states now, keyed by node id — {down: true, since: <time into the repair>} or "
+        "{age: <time since new>}; blocks left out are new. The figures then run from now over t_max "
+        "(e.g. the next 720 hours). Never replaces the saved from-new result."))] = None,
+    compute_exact: Annotated[bool, Field(description=(
+        f"Repairable diagrams over {rbd_analysis.EXACT_AUTO_MAX_BLOCKS} blocks: compute the exact figures "
+        "over time anyway (from several seconds to a minute or so)."))] = False,
 ) -> dict[str, Any]:
     """Analyse a saved RBD. Non-repairable diagrams: system reliability curve, MTTF, B-lives (B10/B50),
     component importance (Birnbaum, Fussell–Vesely, RAW/RRW) and minimal cut/path sets. Repairable
-    diagrams: steady-state availability, mean up/down time, failure frequency and per-block downtime share.
-    Availability simulation is a paid feature (Pro or purchased credits): a saved result is always served;
-    otherwise, without entitlement, this returns available=false with a message instead of results — relay
-    it, and offer export_rbd_python to run the simulation locally."""
+    diagrams, on every plan: the exact long-run availability, mean up/down time and failure frequency, and
+    (in `exact`) the availability over time A(t), mission availability and the window's expected system
+    failures, outages, downtime and cost — each with its method (exact / numerical; no simulation) — from
+    new or from current_state. The Monte-Carlo simulation (distributions, criticality) is a paid feature
+    (Pro or purchased credits): a saved result is always served; otherwise, without entitlement, the
+    response carries `simulation: {available: false, message}` — relay it, and offer export_rbd_python to
+    run the simulation locally. A diagram whose figures are simulation-only (exact.status
+    'simulation_only', e.g. proof tests that take time) returns available=false without entitlement."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -1560,7 +1621,11 @@ def analyze_rbd(
         raise ToolError(f"conditional_age must be finite and ≥ 0; got {conditional_age:g}.")
     if graph.get("repairable") and (times or conditional_age is not None):
         raise ToolError("times and conditional_age apply to non-repairable diagrams; this one is repairable "
-                        "(analysed for availability). Drop them — t_max sets the simulated horizon.")
+                        "(analysed for availability). Drop them — t_max sets the window (and the simulated "
+                        "horizon); current_state starts it from now.")
+    if current_state and not graph.get("repairable"):
+        raise ToolError("current_state applies to repairable (availability) diagrams; for a non-repairable one "
+                        "use conditional_age.")
     placeholders = rbd_graph.placeholder_labels(graph)
     head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
     if placeholders:
@@ -1576,15 +1641,30 @@ def analyze_rbd(
         if graph.get("repairable"):
             actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
                              read_owners=_owners(uid), list_owners=uid)
-            status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners)
+            state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
+                     if current_state else None)
+            plan = user.get("mcp_plan", "pro")
+            status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners,
+                                                   simulate=simulate or recompute, current_state=state,
+                                                   exact=compute_exact)
             if status != 200:
-                plan = user.get("mcp_plan", "pro")
+                # A simulation-only diagram, without entitlement: nothing to give.
                 if plan != "pro":
                     _soft_refusal("pro_only")
                 message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
                 return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
                         "message": message}
-            return {**head, "available": True, **_availability_summary(payload)}
+            out = {**head, "available": True, **_availability_summary(payload)}
+            sim_state = (payload.get("simulation_status") or {}).get("state")
+            if sim_state == "pro_required" and (simulate or recompute):
+                out["simulation"] = {
+                    "available": False, "code": "pro_required",
+                    "message": (_simulation_message(plan) if plan != "pro"
+                                else (payload.get("simulation_status") or {}).get("message")),
+                }
+            else:
+                out["simulation"] = {"available": bool(payload.get("has_simulation")), "state": sim_state}
+            return out
 
         result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
                                             at_times=times)
