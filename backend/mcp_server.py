@@ -2483,7 +2483,12 @@ def upload_outage_log(
     ))] = "auto",
     asset_map: Annotated[Optional[dict[str, str]], Field(description=(
         "Map asset names in the log to node ids where they don't match a block's label or id exactly "
-        "(get_rbd lists the nodes)."))] = None,
+        "(get_rbd lists the nodes). For a standby, parallel or load-sharing block, map each unit's asset to it "
+        "(e.g. {\"P-101A\": \"pumps\", \"P-101B\": \"pumps\"}): each distinct asset is one of its units, and the "
+        "block is down only while more units are down than it can spare (a 1 + 1 standby: both). "
+        "\"<node id>#<n>\" names unit n explicitly — use it when only one unit appears in the log, since a lone "
+        "asset mapped to the block id stands for the whole block. Don't map more assets to a block than it has "
+        "units."))] = None,
     name: Annotated[Optional[str], Field(description="A name for the log.")] = None,
     upload_id: Annotated[Optional[str], Field(description=(
         "Instead of csv: a file sent through create_upload (CSV/TSV, or an .xlsx workbook with sheet)."))] = None,
@@ -2494,8 +2499,10 @@ def upload_outage_log(
     Give the log as CSV text (csv) or as a file uploaded with create_upload (upload_id).
     Each block's outages become its up/down timeline; RePyability merges them through the diagram's structure
     into the system's history and attributes every system outage to the block that took it down. Overlapping
-    outages of one asset are merged; assets that match no block are listed and left out. Returns the log id,
-    import notes and the history (as system_history does)."""
+    outages of one asset are merged; assets that match no block are listed and left out. A standby, parallel or
+    load-sharing block counts outages per unit: map each unit's asset to it (see asset_map) and it is down only
+    while more of its units are down than it can spare. Returns the log id, import notes and the history (as
+    system_history does). Relay any warnings first: they say where the mapping overstates downtime."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     if (csv is None) == (upload_id is None):
@@ -2521,12 +2528,15 @@ def upload_outage_log(
         "asset_map": parsed["asset_map"], "unmapped": parsed["unmapped"],
         "url": _outages_url(rbd.id),
     }
+    warnings = parsed["warnings"]
     try:
         out["history"] = outage_logs_service.lean_history(
             outage_logs_service.system_history(rbd.graph or {}, log))
+        warnings = out["history"].pop("warnings", [])
     except outage_logs_service.OutageLogError as exc:
         out["history_error"] = str(exc)
-    return out
+    # First, so they're seen: where the mapping makes the history overstate downtime.
+    return {"warnings": warnings, **out} if warnings else out
 
 
 @_tool("system_history", _READ, "Observed system history")
@@ -2539,7 +2549,8 @@ def system_history(
     """A diagram's observed availability history from its outage log: KPIs over the observation window
     (availability, system outages, failures vs planned, total and mean downtime, observed MTBF), the 10
     longest system outages each with the block that caused it (the last to go down) and any others down with
-    it, and the blocks ranked by their share of the system's downtime. Times are in the log's unit."""
+    it, and the blocks ranked by their share of the system's downtime. Times are in the log's unit. Relay any
+    warnings first: they say where the log's mapping overstates a block's downtime."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     rbd = _own_rbd(db, uid, rbd_id)
@@ -2555,8 +2566,10 @@ def system_history(
         result = outage_logs_service.system_history(rbd.graph or {}, log)
     except outage_logs_service.OutageLogError as exc:
         raise ToolError(str(exc)) from exc
-    return {"rbd_id": rbd.id, "name": rbd.name, "log_id": log["_id"], "log_name": log.get("name"),
-            **outage_logs_service.lean_history(result), "url": _outages_url(rbd.id)}
+    lean = outage_logs_service.lean_history(result)
+    return {**({"warnings": lean.pop("warnings")} if lean.get("warnings") else {}),
+            "rbd_id": rbd.id, "name": rbd.name, "log_id": log["_id"], "log_name": log.get("name"),
+            **lean, "url": _outages_url(rbd.id)}
 
 
 # ---------------------------------------------------------------------------

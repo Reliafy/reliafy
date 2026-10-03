@@ -35,6 +35,7 @@
 .outage-asset.unmapped .outage-asset-name { color: #a23a3a; }
 .outage-notes { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
 .outage-errors ul { margin: 6px 0 0; padding-left: 18px; }
+.outage-warnings ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
 
 .outage-bar, .outage-window { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .outage-bar > :first-child { min-width: 220px; }

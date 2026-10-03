@@ -68,6 +68,32 @@ def test_mcp_upload_and_history(mcp_env):
     assert "not found" in _err(_call(other, "upload_outage_log", {"rbd_id": rbd.id, "csv": LOG})).lower()
 
 
+def test_mcp_standby_pumps_count_per_unit(mcp_env):
+    """#181: two pumps mapped onto a 1 + 1 standby block take the system down only while both are out."""
+    from backend.services import rbds as rbds_service
+    from backend.tests.test_mcp import _call, _ok
+    from backend.tests.test_outage_logs import PUMP_LOG, PUMPS
+
+    rbd = rbds_service.save_rbd(mcp_env.db, "CW pumps", PUMPS, A)
+    tok = mcp_env.token[A]
+    window = {"window_start": "2025-01-01 00:00", "window_end": "2026-01-01 00:00"}
+    out = _ok(_call(tok, "upload_outage_log", {"rbd_id": rbd.id, "csv": PUMP_LOG, **window,
+                                               "asset_map": {"P-101A": "pumps", "P-101B": "pumps"}}))
+    assert "warnings" not in out and "warnings" not in out["history"]
+    assert out["history"]["kpis"]["availability"] == pytest.approx(0.9962, abs=5e-5)
+    pumps = next(c for c in out["history"]["components"] if c["node_id"] == "pumps")
+    assert pumps["system_downtime"] == pytest.approx(6) and pumps["system_outages"] == 1
+    assert pumps["share"] == pytest.approx(6 / 33, rel=1e-5)
+
+    # One pump mapped onto the block stands for the whole block: warned, at the top.
+    out = _ok(_call(tok, "upload_outage_log", {"rbd_id": rbd.id, "csv": PUMP_LOG, **window,
+                                               "asset_map": {"P-101A": "pumps", "P-101B": ""}}))
+    assert list(out)[0] == "warnings" and "Only P-101A" in out["warnings"][0]
+    assert "warnings" not in out["history"]
+    hist = _ok(_call(tok, "system_history", {"rbd_id": rbd.id}))
+    assert list(hist)[0] == "warnings" and hist["warnings"] == out["warnings"]
+
+
 def test_mcp_refuses_samples(mcp_env):
     from backend import config
     from backend.tests.test_mcp import _call, _err

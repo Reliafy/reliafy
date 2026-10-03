@@ -229,6 +229,138 @@ def test_unmapped_assets_are_listed_and_left_out():
         ol.parse_log(text, GRAPH, asset_map={"Compressor 9": "nope"})
 
 
+# ---- blocks of several units: outages counted per unit (#181) ------------------------------
+
+# CW pump train: MCC -> strainer -> 1 + 1 standby pumps -> check valve.
+PUMPS = {
+    "unit": "hours",
+    "nodes": [_node("input", "input"), _node("mcc", label="MCC"), _node("strainer", label="Strainer"),
+              _node("pumps", "standby", "CW pumps A/B", spares=1, cold=True),
+              _node("cv", label="Check valve"), _node("output", "output")],
+    "edges": [{"source": s, "target": t} for s, t in
+              [("input", "mcc"), ("mcc", "strainer"), ("strainer", "pumps"), ("pumps", "cv"), ("cv", "output")]],
+}
+
+# The issue's 2025 log, plus 27 h of MCC and strainer outages. Over 2025 (8760 h):
+# the pumps take the system down only while both are out — 2025-02-04 02:00-08:00, 6 h —
+# so system downtime is 6 + 12 + 15 = 33 h: availability 1 - 33/8760 ≈ 0.9962, pumps 6/33 ≈ 18%.
+# (Counted as the whole block, the pumps were 30 + 30 + 65 = 125 h: availability 0.9826, 82%.)
+PUMP_LOG = """asset,start,end,reason
+P-101A,2025-02-03 06:00,2025-02-04 12:00,seal leak
+P-101B,2025-02-04 02:00,2025-02-04 08:00,bearing trip
+MCC,2025-04-10 08:00,2025-04-10 20:00,breaker trip
+P-101A,2025-07-11 09:00,2025-07-12 15:00,seal leak
+Strainer,2025-09-05 10:00,2025-09-06 01:00,blocked
+P-101B,2025-12-29 07:00,,awaiting parts
+"""
+
+
+def _pumps(asset_map, graph=PUMPS, text=PUMP_LOG):
+    parsed = ol.parse_log(text, graph, window_start="2025-01-01 00:00", window_end="2026-01-01 00:00",
+                          asset_map=asset_map)
+    return parsed, ol.system_history(graph, {**parsed, "_id": "log"})
+
+
+def test_standby_pumps_are_down_only_while_both_are():
+    parsed, h = _pumps({"P-101A": "pumps", "P-101B": "pumps"})
+    assert parsed["warnings"] == [] and h["warnings"] == []
+    k = h["kpis"]
+    assert k["window"] == 8760
+    assert k["downtime"] == pytest.approx(33)
+    assert k["availability"] == pytest.approx(0.9962, abs=5e-5)
+    assert k["outages"] == 3 and k["ongoing"] is False  # P-101B still out at the end, but A runs
+
+    pump_outages = [o for o in h["outages"] if o["cause"] == "pumps"]
+    assert [(o["start_at"], o["end_at"], o["duration"]) for o in pump_outages] == [
+        ("2025-02-04T02:00", "2025-02-04T08:00", 6)]
+    by = {c["node_id"]: c for c in h["components"]}
+    assert by["pumps"]["system_downtime"] == pytest.approx(6)
+    assert by["pumps"]["share"] == pytest.approx(6 / 33, rel=1e-5)
+    assert by["pumps"]["downtime"] == pytest.approx(6) and by["pumps"]["outages"] == 1
+    assert [c["node_id"] for c in h["components"][:3]] == ["strainer", "mcc", "pumps"]
+    # The chart's bars show the block's own outage: the overlap.
+    assert [(b["start"], b["end"]) for b in h["bars"] if b["node_id"] == "pumps"] == [(818, 824)]
+    assert any("counted per unit" in n and "P-101A, P-101B as 2 of its units: 4 unit outages, the block "
+               "down 1 time" in n for n in h["notes"])
+    assert not any("treated as one unit" in n for n in h["notes"])
+
+    # The block's fitted models are a unit's: the pumps' lives and repairs pooled.
+    data = ol.fit_data(PUMPS, {**parsed, "_id": "log"})
+    assert sorted(data["pumps"]["repair"][0]) == [6, 30, 30, 65]
+    assert sum(1 for c in data["pumps"]["life"][1] if c == 0) == 4
+
+
+def test_a_lone_asset_on_a_standby_block_is_the_whole_block_and_warns():
+    text = "\n".join(line for line in PUMP_LOG.splitlines() if "P-101B" not in line)
+    parsed, h = _pumps({"P-101A": "pumps"}, text=text)
+    assert list(h)[0] == "warnings" and len(h["warnings"]) == 1
+    assert "Only P-101A is mapped to “CW pumps A/B”" in h["warnings"][0] and "pumps#1" in h["warnings"][0]
+    assert parsed["warnings"] == h["warnings"]
+    by = {c["node_id"]: c for c in h["components"]}
+    assert by["pumps"]["system_downtime"] == pytest.approx(60)  # both 30 h outages: the old reading
+    assert list(ol.lean_history(h))[0] == "warnings"
+
+    # Named as unit 1, it's one pump of two: the block never went down.
+    parsed, h = _pumps({"P-101A": "pumps#1"}, text=text)
+    assert h["warnings"] == [] and parsed["asset_map"]["P-101A"] == "pumps#1"
+    assert parsed["assets"][0]["label"] == "CW pumps A/B · unit 1"
+    assert h["kpis"]["downtime"] == pytest.approx(27)
+    assert "pumps" not in {o["cause"] for o in h["outages"]}
+    assert any("Its other unit (not in the log) is taken as up throughout" in n for n in h["notes"])
+    assert "warnings" not in ol.lean_history(h)
+
+
+def test_named_units_and_more_assets_than_units():
+    # Two tags for one pump, both named unit 1, with P-101B as unit 2: still per unit.
+    text = PUMP_LOG + "P-101A motor,2025-02-04 06:00,2025-02-04 10:00,motor\n"
+    amap = {"P-101A": "pumps#1", "P-101A motor": "pumps#1", "P-101B": "pumps#2"}
+    _, h = _pumps(amap, text=text)
+    assert h["warnings"] == []
+    assert {c["node_id"]: c["system_downtime"] for c in h["components"]}["pumps"] == pytest.approx(6)
+
+    # Three distinct assets on a 1 + 1 standby can't each be a unit: whole block, warned.
+    _, h = _pumps({"P-101A": "pumps", "P-101A motor": "pumps", "P-101B": "pumps"}, text=text)
+    assert len(h["warnings"]) == 1 and "more than it has" in h["warnings"][0]
+    assert {c["node_id"]: c["system_downtime"] for c in h["components"]}["pumps"] == pytest.approx(125)
+
+    with pytest.raises(ol.OutageLogError, match="has 2 units"):
+        _pumps({"P-101A": "pumps#3"})
+    with pytest.raises(ol.OutageLogError, match="isn't a block of several units"):
+        _pumps({"P-101A": "mcc#1"})
+
+
+def _one_block(ntype, **data):
+    return {"unit": "hours",
+            "nodes": [_node("input", "input"), _node("x", ntype, "Fans", **data), _node("output", "output")],
+            "edges": [{"source": "input", "target": "x"}, {"source": "x", "target": "output"}]}
+
+
+@pytest.mark.parametrize("ntype, data, downtime", [
+    ("parallel", {"n": 3}, 5),             # down only while all three are: 25-30
+    ("loadshare", {"units": 3, "k": 2}, 30),  # 2 of 3 needed: down while two are out, 10-40
+    ("series", {"n": 3}, 50),              # any unit out takes it down: 0-50
+])
+def test_parallel_load_sharing_and_series_blocks(ntype, data, downtime):
+    text = "asset,start,end\nfan 1,0,30\nfan 2,10,40\nfan 3,25,50\n"
+    graph = _one_block(ntype, **data)
+    amap = {f"fan {i}": "x" for i in (1, 2, 3)}
+    parsed = ol.parse_log(text, graph, window_start=0, window_end=100, asset_map=amap)
+    h = ol.system_history(graph, {**parsed, "_id": "x"})
+    assert h["warnings"] == []
+    assert h["kpis"]["downtime"] == pytest.approx(downtime)
+
+
+def test_several_assets_on_a_sub_system_warn():
+    graph = _one_block("subsystem", rbd={"id": "other"})
+    parsed = ol.parse_log("asset,start,end\nfan 1,0,30\nfan 2,10,40\n", graph, window_start=0, window_end=100,
+                          asset_map={"fan 1": "x", "fan 2": "x"})
+    h = ol.system_history(graph, {**parsed, "_id": "x"})
+    assert h["kpis"]["downtime"] == pytest.approx(40)  # the whole block, as before
+    assert len(h["warnings"]) == 1 and "sub-system “Fans”" in h["warnings"][0]
+    with pytest.raises(ol.OutageLogError, match="isn't a block of several units"):
+        ol.parse_log("asset,start,end\nfan 1,0,30\n", graph, asset_map={"fan 1": "x#1"})
+
+
 # ---- fitting life and repair models from the log -------------------------------------------
 
 def test_fit_data_censors_the_last_up_period_and_planned_stops():
@@ -337,6 +469,24 @@ def test_rest_import_history_edit_and_delete(client):
     assert client.post(base, json={"csv": "asset,start,end\nPump A,5,1\n"}).status_code == 400
     assert client.delete(f"{base}/{log['id']}").status_code == 200
     assert client.get(base).json()["logs"] == []
+
+
+def test_rest_offers_units_and_warns_on_a_lone_standby_asset(client):
+    client.act_as(A)
+    rid = _save_rbd(client, PUMPS)
+    base = f"/api/rbds/{rid}/outage-logs"
+    pre = client.post(f"{base}/preview", json={"csv": PUMP_LOG, "asset_map": {"P-101A": "pumps"}}).json()
+    assert pre["ok"] is True and "Only P-101A" in pre["warnings"][0]
+    ids = [b["id"] for b in pre["blocks"]]
+    assert ids[-2:] == ["pumps#1", "pumps#2"] and "mcc#1" not in ids
+    assert {b["id"]: b["label"] for b in pre["blocks"]}["pumps#2"] == "CW pumps A/B · unit 2"
+
+    log = client.post(base, json={"csv": PUMP_LOG, "window_start": "2025-01-01", "window_end": "2026-01-01",
+                                  "asset_map": {"P-101A": "pumps#1", "P-101B": "pumps#2"}}).json()
+    assert log["history"]["warnings"] == []
+    assert log["history"]["kpis"]["downtime"] == pytest.approx(33)
+    got = client.get(f"{base}/{log['id']}").json()
+    assert {a["name"]: a["label"] for a in got["assets"]}["P-101B"] == "CW pumps A/B · unit 2"
 
 
 def test_rest_is_owner_only(client):

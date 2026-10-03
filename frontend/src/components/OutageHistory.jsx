@@ -146,7 +146,9 @@ function ImportPanel({ rbdId, unit, blocks: initialBlocks, onSaved, onCancel }) 
       <p className="hint">
         One row per outage: the asset, when it went down and when it came back (blank = still down), with an
         optional reason and planned flag. Dates (ISO or day/month/year) are converted to the diagram's unit
-        {unit ? ` (${unit})` : ""}; plain numbers are read as times in it.
+        {unit ? ` (${unit})` : ""}; plain numbers are read as times in it. Map each unit of a standby, parallel or
+        load-sharing block to the block (or to one of its units): the block is then down only while more of its
+        units are down than it can spare.
       </p>
       <div className="outage-import-src">
         <textarea
@@ -242,6 +244,7 @@ function ImportPanel({ rbdId, unit, blocks: initialBlocks, onSaved, onCancel }) 
 
           {preview.ok ? (
             <div className="outage-check">
+              <Warnings items={preview.warnings} />
               <p>
                 <b>{preview.n_outages}</b> outage{preview.n_outages === 1 ? "" : "s"} over a window of{" "}
                 <b>{fmt(preview.window.end - preview.window.start)}</b> {preview.unit}
@@ -593,12 +596,24 @@ function FitPanel({ rbdId, logId, readOnly, onApplyModels }) {
   );
 }
 
+// Where the asset mapping makes the history overstate downtime (e.g. one
+// asset standing for a whole standby pair): shown above everything else.
+function Warnings({ items }) {
+  if (!items?.length) return null;
+  return (
+    <div className="calc-warn outage-warnings" role="alert">
+      <ul>{items.map((w, i) => <li key={i}>⚠ {w}</li>)}</ul>
+    </div>
+  );
+}
+
 function HistoryView({ history, labels }) {
   const k = history.kpis;
   const unit = history.unit || "";
   const u = unit ? ` ${unit}` : "";
   return (
     <div className="rbd-avail">
+      <Warnings items={history.warnings} />
       <div className="rbd-avail-hero">
         <div className="rbd-avail-big">{pct(k.availability, 3)}</div>
         <div className="rbd-avail-cap">

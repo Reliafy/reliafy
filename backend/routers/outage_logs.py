@@ -107,14 +107,18 @@ def preview_log(
         "rows": parsed["rows"][:PREVIEW_ROWS],
         "assets": parsed["assets"],
         "unmapped": parsed["unmapped"],
+        "warnings": parsed["warnings"],
         "notes": parsed["notes"],
         "blocks": _block_options(rbd.graph or {}),
     })
 
 
 def _block_options(graph: dict) -> list[dict]:
-    return [{"id": nid, "label": b["label"]} for nid, b in logs_service.diagram_blocks(graph).items()
-            if b["type"] != "knode"]
+    """What an asset can be mapped to: each block, then each unit of the
+    blocks that ride out a unit's outage (standby, parallel, load-sharing)."""
+    blocks = logs_service.diagram_blocks(graph)
+    return ([{"id": nid, "label": b["label"]} for nid, b in blocks.items() if b["type"] != "knode"]
+            + logs_service.unit_targets(blocks))
 
 
 @router.post("/rbds/{rbd_id}/outage-logs")
@@ -174,7 +178,7 @@ def get_log(rbd_id: str, log_id: str, session=Depends(get_session),
     return JSONResponse(content={
         **logs_service.summary(log),
         "rows": log.get("rows") or [],
-        "assets": [{"name": n, "node_id": amap.get(n), "label": blocks.get(amap.get(n) or "", {}).get("label"),
+        "assets": [{"name": n, "node_id": amap.get(n), "label": logs_service.target_label(blocks, amap.get(n)),
                     "n_outages": sum(1 for r in log.get("rows") or [] if r["asset"] == n)} for n in names],
         "blocks": _block_options(rbd.graph or {}),
     })

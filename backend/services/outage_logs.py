@@ -6,7 +6,10 @@ planned — linked to one of the owner's RBDs. Each asset name maps to a block
 of the diagram. From it, RePyability 0.11's timelines
 (:mod:`repyability.timelines`) give
 
-* each block's up/down history (``Timeline.from_outages``);
+* each block's up/down history (``Timeline.from_outages``) — for a block of
+  several units (standby, parallel, load-sharing) whose assets are its units,
+  built from theirs with ``k_out_of_n``, so it is down only while more of
+  them are down than it can spare (#181);
 * the system's, merged up the diagram's structure (``RBD.system_timeline``),
   each change keeping its *cause* — the block whose change took the system
   down (or brought it back) — and whether it was planned;
@@ -25,7 +28,7 @@ Stored document (collection ``outage_logs``)::
      origin,                    # datetime logs: ISO time of t = 0, else None
      window: {start, end},      # observation window, in log time
      rows: [{asset, start, end, reason, planned}],   # end None = still down
-     asset_map: {source asset name: node id},
+     asset_map: {source asset name: node id, or "<node id>#<n>" for unit n of a block},
      columns: {asset, start, end, duration, reason, planned},   # the mapping
      notes: [...]}              # what the import merged, guessed or dropped
 
@@ -297,21 +300,86 @@ def _norm_name(value) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
 
 
+def _whole(data: dict, key: str, default: int) -> int:
+    try:
+        return int(float(data.get(key)))
+    except (TypeError, ValueError):
+        return default
+
+
+def block_units(ntype, data: dict) -> tuple[Optional[int], Optional[int]]:
+    """``(units, spare)`` of a block: how many units it has and how many of
+    them can be down with the block still up, as the analysis reads the node
+    (a standby is its duty unit plus ``spares``; a parallel count block needs
+    one of its ``n``; a load-sharing group ``k`` of its ``units``). ``(None,
+    None)`` where the diagram doesn't say — a sub-system."""
+    data = data or {}
+    if ntype == "component":
+        return 1, 0
+    if ntype in ("series", "parallel"):
+        n = max(_whole(data, "n", 1), 1)
+        return n, (n - 1 if ntype == "parallel" else 0)
+    if ntype == "standby":
+        spares = max(_whole(data, "spares", 1), 0) or 1
+        return 1 + spares, spares
+    if ntype == "loadshare":
+        units = max(_whole(data, "units", 2), 2)
+        k = min(max(_whole(data, "k", 1), 1), units)
+        return units, units - k
+    return None, None
+
+
 def diagram_blocks(graph: dict) -> dict:
-    """``{node id: {label, type}}`` for the diagram's blocks (no input/output)."""
+    """``{node id: {label, type, units, spare}}`` for the diagram's blocks (no
+    input/output); ``units`` / ``spare`` as :func:`block_units`."""
     out = {}
     for n in (graph or {}).get("nodes") or []:
         if n.get("type") in ("input", "output"):
             continue
         data = n.get("data") or {}
-        out[str(n.get("id"))] = {"label": str(data.get("label") or n.get("id")), "type": n.get("type")}
+        units, spare = block_units(n.get("type"), data)
+        out[str(n.get("id"))] = {"label": str(data.get("label") or n.get("id")), "type": n.get("type"),
+                                 "units": units, "spare": spare}
     return out
+
+
+# An asset-map target is a block's id, or "<id>#<n>" for unit n of a block of
+# several units (a standby, parallel or load-sharing block).
+UNIT_SEP = "#"
+
+
+def split_target(target, blocks: dict) -> tuple[Optional[str], Optional[int]]:
+    """``(node id, unit)`` an asset-map target names (unit None: the block as
+    a whole), or ``(None, None)`` when it names no block of ``blocks``."""
+    target = str(target or "")
+    if target in blocks:
+        return target, None
+    nid, sep, unit = target.rpartition(UNIT_SEP)
+    if sep and nid in blocks and unit.strip().isdigit():
+        return nid, int(unit)
+    return None, None
+
+
+def target_label(blocks: dict, target) -> Optional[str]:
+    """The label of the block (or ``label · unit n``) a target names."""
+    nid, unit = split_target(target, blocks)
+    if nid is None:
+        return None
+    return blocks[nid]["label"] + (f" · unit {unit}" if unit is not None else "")
+
+
+def unit_targets(blocks: dict) -> list[dict]:
+    """``[{id, label}]`` for each unit of the blocks that ride out a unit's
+    outage (standby, parallel, load-sharing), for picking a unit in a map."""
+    return [{"id": f"{nid}{UNIT_SEP}{i}", "label": f"{b['label']} · unit {i}"}
+            for nid, b in blocks.items() if (b["spare"] or 0) > 0 for i in range(1, b["units"] + 1)]
 
 
 def map_assets(names: list[str], graph: dict, overrides: Optional[dict] = None) -> tuple[dict, list[str], list]:
     """``(asset_map, unmapped, notes)``: each source asset name matched to a
-    block — by an explicit override, else its node id, else its label (case
-    and spacing ignored). A k-of-n vote gate takes no outages."""
+    block — by an explicit override (a node id, or ``<id>#<n>`` for one unit
+    of a block of several), else its node id, else its label (case and
+    spacing ignored). A k-of-n vote gate takes no outages."""
     blocks = diagram_blocks(graph)
     by_id = {_norm_name(nid): nid for nid in blocks}
     by_label: dict[str, list[str]] = {}
@@ -327,11 +395,22 @@ def map_assets(names: list[str], graph: dict, overrides: Optional[dict] = None) 
             if not target:
                 unmapped.append(name)
                 continue
-            if target not in blocks:
+            nid, unit = split_target(target, blocks)
+            if nid is None:
                 raise OutageLogError(f"Asset '{name}' is mapped to '{target}', which isn't a block of this diagram.")
-            if blocks[target]["type"] == "knode":
-                raise OutageLogError(f"Asset '{name}' is mapped to the vote gate “{blocks[target]['label']}”: a "
+            block = blocks[nid]
+            if block["type"] == "knode":
+                raise OutageLogError(f"Asset '{name}' is mapped to the vote gate “{block['label']}”: a "
                                      "gate is logic, not equipment, and takes no outages.")
+            if unit is not None:
+                if not block["units"] or block["units"] < 2:
+                    raise OutageLogError(f"Asset '{name}' is mapped to '{target}', but “{block['label']}” isn't a "
+                                         f"block of several units — map it to '{nid}'.")
+                if not 1 <= unit <= block["units"]:
+                    raise OutageLogError(f"Asset '{name}' is mapped to '{target}', but “{block['label']}” has "
+                                         f"{block['units']} units: use {nid}{UNIT_SEP}1 to "
+                                         f"{nid}{UNIT_SEP}{block['units']}.")
+                target = f"{nid}{UNIT_SEP}{unit}"
             out[name] = target
             continue
         key = _norm_name(name)
@@ -346,6 +425,76 @@ def map_assets(names: list[str], graph: dict, overrides: Optional[dict] = None) 
                 notes.append(f"Asset '{name}' matches {len(hits)} blocks with that label — map it by hand.")
             unmapped.append(name)
     return out, unmapped, notes
+
+
+_KINDS = {"standby": "standby", "parallel": "parallel", "loadshare": "load-sharing"}
+
+
+def _names(names: list[str], most: int = 4) -> str:
+    return ", ".join(names[:most]) + (f" and {len(names) - most} more" if len(names) > most else "")
+
+
+def unit_key(asset: str, unit: Optional[int]) -> tuple:
+    """The unit of its block an asset's outages are counted on: unit n when
+    it is mapped to ``<id>#<n>``, else a unit of its own (each distinct asset
+    one unit)."""
+    return ("unit", unit) if unit is not None else ("asset", asset)
+
+
+def unit_plan(blocks: dict, units_by_block: dict) -> tuple[dict, list[str]]:
+    """``(per unit, warnings)``: which blocks count their outages per unit,
+    from ``{node id: {unit key: [asset names]}}`` (the units each block's
+    assets map to). A block that rides out a unit's outage (standby,
+    parallel, load-sharing) counts per unit when it has units to count —
+    two or more, or any named ``<id>#<n>`` — and no more than it has; then
+    it is down only while more of them are down than it can spare. Else
+    every outage mapped to it is the whole block down: right for a component
+    or a series block, and warned about where it overstates the downtime."""
+    per_unit: set = set()
+    warnings: list[str] = []
+    for nid, keys in units_by_block.items():
+        b = blocks.get(nid)
+        if not b or b["type"] == "knode":
+            continue
+        assets = [a for names in keys.values() for a in names]
+        if b["units"] is None:
+            if len(keys) > 1:
+                warnings.append(
+                    f"{len(assets)} assets ({_names(assets)}) are mapped to the sub-system “{b['label']}”: its "
+                    "units can't be told apart here, so any one of their outages counts as the whole sub-system "
+                    "down, which overstates its downtime if they're redundant inside it. Map them to blocks of "
+                    "this diagram, or upload the log to the sub-system's own diagram.")
+            continue
+        if not b["spare"]:
+            continue  # any unit down takes it down: whole-block counting is exact
+        kind, units, spare = _KINDS.get(b["type"], b["type"]), b["units"], b["spare"]
+        named = any(k[0] == "unit" for k in keys)
+        if len(keys) > units:
+            warnings.append(
+                f"{len(keys)} assets ({_names(assets)}) are mapped to “{b['label']}”, a {kind} block of "
+                f"{units} units: more than it has, so they can't each be one of its units and any one of their "
+                "outages counts as the whole block down — its downtime and share are overstated. Map at most "
+                f"{units} assets to it, or name each one's unit ({nid}{UNIT_SEP}1 to {nid}{UNIT_SEP}{units}).")
+        elif len(keys) == 1 and not named:
+            warnings.append(
+                f"Only {assets[0]} is mapped to “{b['label']}”, a {kind} block of {units} units, so it stands "
+                f"for the whole block: each of its outages counts as the block down. If it is one of the units, "
+                f"map it to {nid}{UNIT_SEP}1 (the block is then down only while more than {spare} of its units "
+                f"{'is' if spare == 1 else 'are'} down), or map each unit's asset to the block.")
+        else:
+            per_unit.add(nid)
+    return per_unit, warnings
+
+
+def mapping_warnings(graph: dict, asset_map: dict) -> list[str]:
+    """:func:`unit_plan`'s warnings for an asset map as it stands."""
+    blocks = diagram_blocks(graph)
+    units: dict[str, dict] = {}
+    for asset, target in (asset_map or {}).items():
+        nid, unit = split_target(target, blocks)
+        if nid is not None:
+            units.setdefault(nid, {}).setdefault(unit_key(asset, unit), []).append(asset)
+    return unit_plan(blocks, units)[1]
 
 
 def merge_outages(outages: list[dict]) -> tuple[list[dict], list[tuple]]:
@@ -609,9 +758,10 @@ def parse_log(
                      "out until mapped.")
     blocks = diagram_blocks(graph)
     assets = [{"name": n, "n_outages": sum(1 for r in rows if r["asset"] == n), "node_id": amap.get(n),
-               "label": blocks.get(amap.get(n) or "", {}).get("label")} for n in names]
+               "label": target_label(blocks, amap.get(n))} for n in names]
 
     return {
+        "warnings": mapping_warnings(graph, amap),
         "unit": log_unit,
         "time_kind": time_kind,
         "origin": origin,
@@ -810,21 +960,25 @@ def _structure(graph: dict):
     return rbd, diagram_blocks(graph), gates
 
 
-def node_outages(log: dict) -> tuple[dict, dict]:
+def node_outages(log: dict, blocks: dict) -> tuple[dict, dict]:
     """``(per node, info)``: each mapped block's outages on the window's axis
-    (0 to its length), clipped to the window and merged where two of its
-    assets overlap; ``info`` counts what was dropped or merged."""
+    (0 to its length), clipped to the window, by the unit of the block they
+    count on (:func:`unit_key`): ``{node id: {unit key: [outage, …]}}``;
+    ``info`` counts what was dropped."""
     w0 = float(log["window"]["start"])
     w1 = float(log["window"]["end"])
     length = w1 - w0
     amap = log.get("asset_map") or {}
-    per: dict[str, list] = {}
+    per: dict[str, dict] = {}
     outside = unmapped = 0
     for i, r in enumerate(log.get("rows") or []):
-        nid = amap.get(r["asset"])
-        if not nid:
+        target = amap.get(r["asset"])
+        if not target:
             unmapped += 1
             continue
+        nid, unit = split_target(target, blocks)
+        if nid is None:
+            nid = target  # no longer in the diagram: reported by the caller
         start = r["start"] - w0
         end = None if r["end"] is None else r["end"] - w0
         if start >= length or (end is not None and (end < 0 or (end == 0 and start < 0))):
@@ -833,35 +987,78 @@ def node_outages(log: dict) -> tuple[dict, dict]:
         start = max(start, 0.0)
         if end is not None and end >= length:
             end = None  # runs to the window end
-        per.setdefault(nid, []).append({"start": start, "end": end, "planned": bool(r.get("planned")),
-                                        "reason": r.get("reason") or "", "rows": [i], "asset": r["asset"]})
-    merged_nodes = 0
-    for nid, items in per.items():
-        merged, merges = merge_outages(items)
-        merged_nodes += len(merges)
-        per[nid] = merged
-    return per, {"length": length, "outside": outside, "unmapped": unmapped, "merged": merged_nodes}
+        per.setdefault(nid, {}).setdefault(unit_key(r["asset"], unit), []).append(
+            {"start": start, "end": end, "planned": bool(r.get("planned")), "reason": r.get("reason") or "",
+             "rows": [i], "asset": r["asset"]})
+    return per, {"length": length, "outside": outside, "unmapped": unmapped}
+
+
+def _from_outages(items: list[dict], length: float, name):
+    from repyability import Timeline
+
+    return Timeline.from_outages([(o["start"], o["end"]) for o in items], end=length,
+                                 planned=[o["planned"] for o in items], name=name)
+
+
+def _down_outages(tl) -> list[dict]:
+    """A timeline's outages as ``{start, end, planned}`` (end None: still
+    down at the window's end)."""
+    changes = tl.changes.tolist()
+    planned = tl.planned.tolist()
+    return [{"start": changes[i], "end": changes[i + 1] if i + 1 < len(changes) else None,
+             "planned": bool(planned[i])} for i in range(0, len(changes), 2)]
 
 
 def _timelines(graph: dict, log: dict):
+    """The diagram's system timeline and each block's. A block whose assets
+    are its units (:func:`unit_plan`) is down only while more of them are
+    down than it can spare (``k_out_of_n`` over the units' timelines; a unit
+    the log never names is up throughout); any other block is down while any
+    outage mapped to it is (overlaps merged). ``info`` adds ``merged`` (the
+    overlaps merged), ``units`` (per unit-counted block, its units'
+    timelines and assets) and ``warnings``."""
     from repyability import Timeline
+    from repyability.timelines import k_out_of_n
 
     rbd, blocks, gates = _structure(graph)
-    per, info = node_outages(log)
+    by_unit, info = node_outages(log, blocks)
     length = info["length"]
-    unknown = [nid for nid in per if nid not in blocks]
+    unknown = [nid for nid in by_unit if nid not in blocks]
     if unknown:
         raise OutageLogError(
             f"The log maps assets to block(s) no longer in the diagram ({', '.join(unknown)}). Re-map them.")
-    timelines = {}
+    per_unit, warnings = unit_plan(blocks, {
+        nid: {key: list(dict.fromkeys(o["asset"] for o in items)) for key, items in keys.items()}
+        for nid, keys in by_unit.items()})
+    timelines: dict = {}
+    per: dict[str, list] = {}
+    units: dict[str, dict] = {}
+    merged_count = 0
     for nid in blocks:
-        items = per.get(nid, [])
-        if nid in gates or not items:
+        keys = by_unit.get(nid, {})
+        if nid in gates or not keys:
             timelines[nid] = Timeline([], end=length, name=nid)
             continue
-        timelines[nid] = Timeline.from_outages(
-            [(o["start"], o["end"]) for o in items], end=length,
-            planned=[o["planned"] for o in items], name=nid)
+        if nid in per_unit:
+            unit_tls = {}
+            for key, items in keys.items():
+                merged, merges = merge_outages(items)
+                merged_count += len(merges)
+                unit_tls[key] = _from_outages(merged, length, key)
+            # Up while at least (units - spare) are; of the units the log
+            # names, that is len - spare (the others are up throughout).
+            need = len(unit_tls) - blocks[nid]["spare"]
+            tl = (k_out_of_n(need, unit_tls, name=nid) if need > 0 else Timeline([], end=length, name=nid))
+            timelines[nid] = tl
+            per[nid] = _down_outages(tl)
+            units[nid] = {"timelines": unit_tls,
+                          "assets": list(dict.fromkeys(o["asset"] for items in keys.values() for o in items))}
+            continue
+        merged, merges = merge_outages([o for items in keys.values() for o in items])
+        merged_count += len(merges)
+        timelines[nid] = _from_outages(merged, length, nid)
+        per[nid] = merged
+    info.update(merged=merged_count, units=units, warnings=warnings)
     try:
         system = rbd.system_timeline(timelines)
     except ValueError as exc:
@@ -1005,12 +1202,31 @@ def system_history(graph: dict, log: dict) -> dict:
     if diagram_unit and log.get("unit") and _norm_name(diagram_unit) != _norm_name(log["unit"]):
         notes.append(f"The log's times are in {log['unit']}, but the diagram's unit is now {diagram_unit}: "
                      "re-import the log in the diagram's unit.")
-    unsupported = sorted({b["type"] for nid, b in blocks.items() if b["type"] not in ("component", "knode")})
-    if unsupported:
-        notes.append("Count, standby, load-sharing and sub-system blocks are each treated as one unit: an outage "
-                     "mapped to one means the whole block was down.")
+    for nid, u in info["units"].items():
+        b = blocks[nid]
+        tl = timelines[nid]
+        m = len(u["timelines"])
+        unit_outages = sum(int(t.failures + t.planned_outages) for t in u["timelines"].values())
+        block_outages = int(tl.failures + tl.planned_outages)
+        notes.append(
+            f"“{b['label']}” ({_KINDS.get(b['type'], b['type'])}, {b['units']} units, up while no more than "
+            f"{b['spare']} {'is' if b['spare'] == 1 else 'are'} down) is counted per unit — {_names(u['assets'])} "
+            f"as {m} of its units: {unit_outages} unit outage{'s' if unit_outages != 1 else ''}, the block down "
+            f"{block_outages} time{'s' if block_outages != 1 else ''}."
+            + ((" Its other unit (not in the log) is" if b["units"] - m == 1 else
+                f" Its other {b['units'] - m} units (not in the log) are") + " taken as up throughout."
+               if m < b["units"] else ""))
+    if any((b["spare"] or 0) > 0 or (b["units"] is None and b["type"] != "knode") for b in blocks.values()):
+        notes.append(
+            "Standby, parallel and load-sharing blocks count outages per unit: each distinct asset mapped to one "
+            f"is one of its units (or map an asset to <block id>{UNIT_SEP}2 for unit 2), and the block is down "
+            "only while more of its units are down than it can spare — a 1 + 1 standby only while both are. A "
+            "single asset mapped to the block itself stands for the whole block, as does anything mapped to a "
+            "sub-system: each of its outages means the whole block was down.")
 
     return {
+        # First, so no reader misses them: where the result overstates downtime.
+        "warnings": info["warnings"],
         "log_id": log.get("_id"),
         "unit": log.get("unit") or "",
         "window": {"start": w0, "end": w0 + length},
@@ -1031,6 +1247,7 @@ def lean_history(result: dict, top: int = 10) -> dict:
     keep = ("start", "end", "start_at", "end_at", "duration", "ongoing", "planned", "cause_label",
             "down_with_labels")
     return {
+        **({"warnings": result["warnings"]} if result.get("warnings") else {}),
         "unit": result["unit"],
         "window": result["window"],
         **({"window_dates": result["window_dates"]} if result.get("window_dates") else {}),
@@ -1055,38 +1272,53 @@ def fit_data(graph: dict, log: dict) -> dict:
     {"life": (x, c), "repair": (x, c)}}``. A life is an up period — a failure
     (c = 0) when an unplanned outage ends it, else right-censored (c = 1: cut
     off by the window's end or a planned outage). A repair is an unplanned
-    outage's length, right-censored when still open at the window's end."""
+    outage's length, right-censored when still open at the window's end. A
+    block counted per unit (standby, parallel, load-sharing) pools its
+    units' lives and repairs: its model is a unit's."""
     _, timelines, blocks, gates, per, info = _timelines(graph, log)
     length = info["length"]
     out = {}
     for nid, tl in timelines.items():
         if nid in gates:
             continue
-        changes = tl.changes.tolist()
-        planned = tl.planned.tolist()
-        life_x, life_c = [], []
-        for a, b in tl.up_intervals.tolist():
-            if b - a <= 0:
-                continue
-            # An up period ends at a change down (index of b among the
-            # changes) or at the window's end.
-            ended_by_failure = False
-            if b < length:
-                j = _change_index(changes, b, down=True)
-                ended_by_failure = j is not None and not planned[j]
-            life_x.append(b - a)
-            life_c.append(0 if ended_by_failure else 1)
-        rep_x, rep_c = [], []
-        for idx, (a, b) in enumerate(tl.down_intervals.tolist()):
-            j = 2 * idx  # the change down that opened it
-            if j < len(planned) and planned[j]:
-                continue
-            if b - a <= 0:
-                continue
-            rep_x.append(b - a)
-            rep_c.append(1 if (b >= length and j + 1 >= len(changes)) else 0)
+        life_x, life_c, rep_x, rep_c = [], [], [], []
+        unit_tls = info["units"][nid]["timelines"].values() if nid in info["units"] else [tl]
+        for t in unit_tls:
+            lx, lc, rx, rc = _lives_and_repairs(t, length)
+            life_x += lx
+            life_c += lc
+            rep_x += rx
+            rep_c += rc
         out[nid] = {"label": blocks[nid]["label"], "life": (life_x, life_c), "repair": (rep_x, rep_c)}
     return out
+
+
+def _lives_and_repairs(tl, length: float) -> tuple[list, list, list, list]:
+    """One timeline's lives and repairs, as :func:`fit_data` describes."""
+    changes = tl.changes.tolist()
+    planned = tl.planned.tolist()
+    life_x, life_c = [], []
+    for a, b in tl.up_intervals.tolist():
+        if b - a <= 0:
+            continue
+        # An up period ends at a change down (index of b among the changes)
+        # or at the window's end.
+        ended_by_failure = False
+        if b < length:
+            j = _change_index(changes, b, down=True)
+            ended_by_failure = j is not None and not planned[j]
+        life_x.append(b - a)
+        life_c.append(0 if ended_by_failure else 1)
+    rep_x, rep_c = [], []
+    for idx, (a, b) in enumerate(tl.down_intervals.tolist()):
+        j = 2 * idx  # the change down that opened it
+        if j < len(planned) and planned[j]:
+            continue
+        if b - a <= 0:
+            continue
+        rep_x.append(b - a)
+        rep_c.append(1 if (b >= length and j + 1 >= len(changes)) else 0)
+    return life_x, life_c, rep_x, rep_c
 
 
 def _change_index(changes: list, t: float, down: bool) -> Optional[int]:
