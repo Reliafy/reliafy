@@ -13,7 +13,7 @@ import PreviewTable from "../components/PreviewTable.jsx";
 import RcmTree from "../components/RcmTree.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import PublicRbd from "../components/PublicRbd.jsx";
-import { getPublicArtifact } from "../api.js";
+import { getPublicArtifact, unlockPublicLink } from "../api.js";
 
 // Public, read-only view of a shared artifact (/p/:token) — no account
 // needed. Renders the same payloads as the in-app detail pages through the
@@ -108,7 +108,7 @@ function FleetView({ a }) {
   );
 }
 
-function Body({ collection, a, token }) {
+function Body({ collection, a, token, unlock }) {
   switch (collection) {
     case "models":
       return <div className="card"><ResultView result={a.results} /></div>;
@@ -148,10 +148,79 @@ function Body({ collection, a, token }) {
     case "fleets":
       return <FleetView a={a} />;
     case "rbds":
-      return <PublicRbd a={a} token={token} />;
+      return <PublicRbd a={a} token={token} unlock={unlock} />;
     default:
       return <div className="card empty">This artifact type doesn't have a public view.</div>;
   }
+}
+
+// A protected link's unlock token lives for the tab (sessionStorage), so a
+// reload doesn't ask again; storage can be unavailable (private modes).
+const unlockKey = (token) => `reliafy.unlock.${token}`;
+function readUnlock(token) {
+  try {
+    return sessionStorage.getItem(unlockKey(token)) || null;
+  } catch {
+    return null;
+  }
+}
+function storeUnlock(token, value) {
+  try {
+    if (value) sessionStorage.setItem(unlockKey(token), value);
+    else sessionStorage.removeItem(unlockKey(token));
+  } catch {
+    /* the unlock still works for this page view */
+  }
+}
+
+const LockIcon = () => (
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
+    <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+  </svg>
+);
+
+// The password prompt for a protected link. It knows nothing about what's
+// behind it (the server reveals nothing before unlock), so it names nothing.
+function PasswordGate({ token, onUnlocked }) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    if (!password) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { unlock_token: unlock } = await unlockPublicLink(token, password.trim());
+      onUnlocked(unlock);
+    } catch (err) {
+      setError(err.status === 401 ? "That password isn't right." : err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="card share-gate" onSubmit={onSubmit}>
+      <div className="share-gate-icon"><LockIcon /></div>
+      <h2>This share is password-protected</h2>
+      <p className="muted-line">Enter the password you were sent with the link.</p>
+      <label className="login-field">
+        <span>Password</span>
+        <input
+          type="password"
+          autoFocus
+          autoComplete="off"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </label>
+      {error && <div className="error" role="alert">{error}</div>}
+      <button type="submit" disabled={busy || !password}>{busy ? "Checking…" : "Unlock"}</button>
+    </form>
+  );
 }
 
 export default function PublicArtifact() {
@@ -159,14 +228,38 @@ export default function PublicArtifact() {
   const { user, loading } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [locked, setLocked] = useState(false);
+  const [unlock, setUnlock] = useState(() => readUnlock(token));
 
   useEffect(() => {
+    let live = true;
     setData(null);
     setError(null);
-    getPublicArtifact(token)
-      .then(setData)
-      .catch((e) => setError(e.message));
-  }, [token]);
+    setLocked(false);
+    getPublicArtifact(token, unlock)
+      .then((d) => live && setData(d))
+      .catch((e) => {
+        if (!live) return;
+        if (e.passwordRequired) {
+          // No unlock yet, or it expired / the password was changed.
+          if (unlock) {
+            storeUnlock(token, null);
+            setUnlock(null);
+          }
+          setLocked(true);
+        } else {
+          setError(e.message);
+        }
+      });
+    return () => {
+      live = false;
+    };
+  }, [token, unlock]);
+
+  const onUnlocked = (value) => {
+    storeUnlock(token, value);
+    setUnlock(value);
+  };
 
   // Share links are private to whoever holds them: keep them out of search.
   useEffect(() => {
@@ -206,7 +299,10 @@ export default function PublicArtifact() {
             <p>{error}</p>
           </div>
         )}
-        {!error && !data && <div className="card empty" style={{ margin: "3rem auto", maxWidth: 520 }}>Loading…</div>}
+        {locked && !error && <PasswordGate token={token} onUnlocked={onUnlocked} />}
+        {!error && !locked && !data && (
+          <div className="card empty" style={{ margin: "3rem auto", maxWidth: 520 }}>Loading…</div>
+        )}
         {data && (
           <div className="app" style={{ margin: "0 auto", maxWidth: 1080 }}>
             <header>
@@ -215,10 +311,11 @@ export default function PublicArtifact() {
                 <h1>{data.artifact.name}</h1>
               </div>
             </header>
-            <Body collection={data.collection} a={data.artifact} token={token} />
+            <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} />
           </div>
         )}
       </div>
     </div>
   );
 }
+

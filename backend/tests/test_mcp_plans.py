@@ -38,7 +38,7 @@ USERS = {
 }
 UPGRADE = "upgrade to Reliafy Pro (US$19/month)"
 WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
-N_TOOLS = 29
+N_TOOLS = 32
 
 
 @pytest.fixture()
@@ -197,6 +197,19 @@ def test_free_user_current_state(env):
         "rbd_id": rid, "current_state": {"nope": {"age": 3}}}))
     assert "isn't a component block" in msg
     assert "availability_cache" not in env.db.rbds.find_one({"_id": rid})
+
+
+def test_free_user_shares_a_protected_link_within_the_allowance(env):
+    """Share links (#125) are on every plan and count like any other call."""
+    token = env.oauth[FREE]
+    rbd = _ok(_call(token, "create_rbd", {"name": "Skid", "stages": REPAIRABLE_STAGES}))
+    before = _calls_used(env.db, FREE)
+    out = _ok(_call(token, "share_link", {"kind": "rbd", "id": rbd["id"], "password": True,
+                                          "expires_in_days": 30}))
+    assert out["url"].startswith(f"{BASE}/p/") and out["passphrase"] and out["protected"] is True
+    assert _ok(_call(token, "list_share_links", {}))["count"] == 1
+    _ok(_call(token, "revoke_share_link", {"token": out["token"]}))
+    assert _calls_used(env.db, FREE) == before + 3
 
 
 def test_free_allowance_is_per_calendar_month(env, monkeypatch):

@@ -154,6 +154,8 @@ def test_init_db_creates_the_usage_indexes(monkeypatch):
     ("POST", "/api/datasets/paste", "dataset_upload"),
     ("POST", "/api/assistant/stream", "assistant"),
     ("POST", "/api/public-links", "share_link"),
+    ("PATCH", "/api/public-links/tok1", "share_link_edit"),
+    ("DELETE", "/api/public-links/tok1", "share_link_revoke"),
     ("POST", "/api/billing/subscribe", "billing_subscribe"),
     ("DELETE", "/api/me/oauth-grants/g1", "mcp_disconnect"),
     ("POST", "/api/v1/fit", "fit"),

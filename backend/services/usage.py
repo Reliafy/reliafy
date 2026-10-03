@@ -350,6 +350,8 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     # Sharing, teams, tokens, connected apps
     ("POST", "/api/shares", "share_user"),
     ("POST", "/api/public-links", "share_link"),
+    ("PATCH", "/api/public-links/{id}", "share_link_edit"),  # label, expiry, password (#125)
+    ("DELETE", "/api/public-links/{id}", "share_link_revoke"),
     ("POST", "/api/teams", "team_create"),
     ("POST", "/api/teams/{id}/members", "team_invite"),
     ("POST", "/api/tokens", "api_token_create"),

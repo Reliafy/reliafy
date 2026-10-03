@@ -526,6 +526,7 @@ const MCP_TOOLS = [
   ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items."],
   ["list_fleet_alerts / create_fleet_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API."],
   ["delete_model / delete_dataset / delete_rbd", "Permanently delete your own models, datasets and diagrams (never shared samples; Claude asks first). A dataset still used by a model can’t be deleted, nor a model a fleet forecast runs on."],
+  ["share_link / list_share_links / revoke_share_link", "Publish a read-only page of one of your own items — a model, dataset, diagram, strategy analysis, RCM study or fleet — that anyone with the link can open without an account. Optionally password-protected (Reliafy makes up a passphrase and shows it once, for you to send separately from the link) and expiring; an item can have several links, each revoked on its own."],
   ["upgrade_link", "A Stripe checkout link for Reliafy Pro, for you to open and pay yourself — nothing is charged until you complete it. Works before you have Pro."],
 ];
 

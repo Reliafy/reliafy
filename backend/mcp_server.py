@@ -88,6 +88,7 @@ from backend.services import fleet_alerts as alerts_service
 from backend.services import oauth as oauth_service
 from backend.services import outage_logs as outage_logs_service
 from backend.services import models as models_service
+from backend.services import public_links as links_service
 from backend.services import rbd_edit
 from backend.services import rbd_graph
 from backend.services import rbds as rbds_service
@@ -267,6 +268,12 @@ test per unit with a known Weibull shape; or an MTBF test). It needs no saved da
 (never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
 Only on the user's explicit \
 request: confirm by name first, and relay anything the response lists as affected.
+- Sharing: share_link publishes a read-only page of one of the user's own items (model, dataset, RBD, \
+strategy analysis, RCM study, fleet) that anyone with the URL can open without a Reliafy account, optionally \
+password-protected (password=true: Reliafy generates a passphrase and returns it once — tell the user to send \
+the link and the passphrase to the recipient separately) and expiring (expires_in_days). An item can have \
+several links, each with a label; list_share_links shows them and revoke_share_link ends one at once. Share \
+only when the user asks to.
 - Plans: upgrade_link gives the user a Stripe payment link for Reliafy Pro, to open themselves.
 
 Conventions — follow them exactly:
@@ -2344,6 +2351,123 @@ def system_history(
         raise ToolError(str(exc)) from exc
     return {"rbd_id": rbd.id, "name": rbd.name, "log_id": log["_id"], "log_name": log.get("name"),
             **outage_logs_service.lean_history(result), "url": _outages_url(rbd.id)}
+
+
+# ---------------------------------------------------------------------------
+# Share links: a read-only page anyone with the URL can open, no account needed
+# ---------------------------------------------------------------------------
+# The app's public links (backend/services/public_links.py), same rules:
+# owner-only, never a shared sample, only the kinds with a public page. Every
+# plan; on Free each call counts against the monthly allowance like any other.
+
+_SHARE_KINDS = {
+    "model": "models",
+    "dataset": "datasets",
+    "rbd": "rbds",
+    "degradation_model": "degradation_models",
+    "strategy_analysis": "strategy_analyses",
+    "rcm_study": "rcm_studies",
+    "fleet": "fleets",
+}
+_KIND_OF = {collection: kind for kind, collection in _SHARE_KINDS.items()}
+_ShareKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis", "rcm_study", "fleet"]
+
+
+def _share_brief(db, link: dict) -> dict:
+    doc = db[link["collection"]].find_one({"_id": link["artifact_id"]}, {"name": 1}) or {}
+    out = links_service.public(link)
+    return {
+        "url": _url(out["path"]),
+        "token": out["token"],
+        "kind": _KIND_OF.get(link["collection"], link["collection"]),
+        "id": link["artifact_id"],
+        "name": doc.get("name"),
+        "label": out["label"],
+        "protected": out["protected"],
+        "expires_at": out["expires_at"],
+        "created_at": out["created_at"],
+    }
+
+
+@_tool("share_link", _WRITE, "Create a share link")
+def share_link(
+    ctx: Context,
+    kind: Annotated[_ShareKind, Field(description="What to share: model (a fitted life model), dataset, rbd, "
+                                                  "degradation_model, strategy_analysis, rcm_study or fleet.")],
+    id: Annotated[str, Field(description="The id of one of the user's own items of that kind (e.g. from "
+                                         "list_models or list_rbds). Shared samples can't be shared.")],
+    password: Annotated[bool, Field(description="Protect the link with a passphrase Reliafy generates. It is "
+                                                "returned once, in this response only.")] = False,
+    expires_in_days: Annotated[Optional[int], Field(ge=1, le=365, description="Days until the link stops "
+                                                    "working (1–365). Omit for a link that lasts until revoked."
+                                                    )] = None,
+    label: Annotated[Optional[str], Field(max_length=80, description="Who or what the link is for, e.g. "
+                                                                     "'for the client'. Shown only to the "
+                                                                     "user.")] = None,
+) -> dict[str, Any]:
+    """Publish a read-only page of one of the user's own items — anyone with the URL can open it, no Reliafy
+    account needed — and return the URL. Each call makes a new link (an item can have several, e.g. one per
+    recipient, each revocable with revoke_share_link). An RBD's page shows the diagram and its results and
+    offers Download as Python; a repairable RBD shows availability only if a result is saved. Linked
+    analyses an item relies on are included read-only. With password=true the response carries a generated
+    passphrase: this is the only time it's shown (only its hash is stored). Give the user the link and the
+    passphrase, and tell them to send the two to the recipient separately (e.g. the link by email, the
+    passphrase by message or phone). Confirm with the user before sharing anything publicly."""
+    user, db = _caller(ctx), _db()
+    collection = _SHARE_KINDS[kind]
+    doc = db[collection].find_one({"_id": id}, {"owner_id": 1, "name": 1})
+    if doc is not None and samples_service.is_sample(doc.get("owner_id")):
+        hint = " Copy it first with clone_rbd, then share the copy." if kind == "rbd" else ""
+        raise ToolError(f"“{doc.get('name')}” is a shared sample, not one of the user's own items — it can't be "
+                        f"shared with a link.{hint}")
+    try:
+        link = links_service.create_link(db, collection, id, user, label=label, expires_in_days=expires_in_days,
+                                         generate_password=password, via="mcp")
+    except links_service.PublicLinkError as exc:
+        if exc.status == 404:
+            raise ToolError(f"No {kind.replace('_', ' ')} with that id among the user's own items.") from None
+        raise ToolError(str(exc)) from None
+    out = _share_brief(db, link)
+    if link.get("passphrase"):
+        out["passphrase"] = link["passphrase"]
+        out["note"] = ("Shown once: Reliafy keeps only a hash. Give the user the URL and the passphrase and tell "
+                       "them to send the two to the recipient separately (the link one way, the passphrase "
+                       "another). A lost passphrase can't be recovered: revoke the link and share again. The "
+                       "user can rotate it from the Share dialog in the app.")
+    else:
+        out["note"] = "Anyone with this URL can view it, without an account, until it's revoked" + (
+            " or expires." if link.get("expires_at") else ".")
+    return out
+
+
+@_tool("list_share_links", _READ, "List share links")
+def list_share_links(
+    ctx: Context,
+    kind: Annotated[Optional[_ShareKind], Field(description="Only links to items of this kind.")] = None,
+    id: Annotated[Optional[str], Field(description="Only links to this item (give kind too).")] = None,
+) -> dict[str, Any]:
+    """The user's live share links (newest first), optionally for one kind or one item: URL, item, label,
+    whether it's password-protected and when it expires. Expired and revoked links aren't listed. Passphrases
+    are never shown again."""
+    user, db = _caller(ctx), _db()
+    links = links_service.list_links(db, user["uid"], _SHARE_KINDS[kind] if kind else None, id)
+    return {"links": [_share_brief(db, link) for link in links], "count": len(links)}
+
+
+@_tool("revoke_share_link", _WRITE, "Revoke a share link")
+def revoke_share_link(
+    ctx: Context,
+    token: Annotated[str, Field(description="The link's token (list_share_links), or its full URL.")],
+) -> dict[str, Any]:
+    """Revoke one of the user's share links: it stops working at once, for everyone (other links to the same
+    item keep working). Can't be undone — share again for a new link."""
+    user, db = _caller(ctx), _db()
+    token = (token or "").strip().rstrip("/").rsplit("/p/", 1)[-1]
+    link = links_service.resolve(db, token)
+    if not token or not links_service.revoke(db, token, user["uid"]):
+        raise ToolError("Share link not found among the user's links (list_share_links shows them).")
+    return {"revoked": True, "token": token, **({"id": link["artifact_id"],
+                                                  "kind": _KIND_OF.get(link["collection"])} if link else {})}
 
 
 # ---------------------------------------------------------------------------
