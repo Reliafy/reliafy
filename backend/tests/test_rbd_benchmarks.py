@@ -163,9 +163,14 @@ def test_static_tree_unreliability_matches_published_value(name, model, referenc
     assert value == pytest.approx(reference, rel=1e-7)
 
 
-def test_static_tree_import_refuses_plain_probabilities():
-    with pytest.raises(RbdImportError, match="fixed failure probability"):
-        import_graph(PRESSURE_TANK)
+def test_static_tree_plain_probabilities_import_as_placeholders():
+    # #188: plain prob= events import as placeholder exponentials of rate
+    # -ln(1 - p) — the substitution above — so F(1) is the published value.
+    (d,) = galileo.parse(PRESSURE_TANK.encode(), "model.dft")
+    assert any("fixed failure probability" in w for w in d.warnings)
+    graph = normalize_graph(d.graph)
+    assert all(n["data"]["model"].get("placeholder") for n in graph["nodes"] if n["type"] == "component")
+    assert unreliability_at(graph, 1.0) == pytest.approx(3.5013348120867e-5, rel=1e-7)
 
 
 # ---------------------------------------------------------------------------

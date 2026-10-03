@@ -111,7 +111,6 @@ def test_constant_events_fold_away():
 
 
 @pytest.mark.parametrize("attrs, match", [
-    ("prob=0.3", "fixed failure probability"),
     ("lambda=1e-3 prob=0.5", "only with probability"),
     ("lambda=1e-3 cov=0.9", "coverage"),
     ("lambda=1e-3 repl=2", "replicated"),
@@ -123,6 +122,20 @@ def test_constant_events_fold_away():
 def test_unsupported_event_attributes_are_refused(attrs, match):
     with pytest.raises(RbdImportError, match=match):
         load(f'toplevel "T"; "T" or "A" "B"; "A" {attrs}; "B" lambda=1;')
+
+
+def test_fixed_probability_events_import_as_flagged_placeholders():
+    # #188: the issue's tree, with the MCC a demand failure (prob=, no lambda).
+    d = load('toplevel "System"; "System" or "Pumps" "MCC" "Valve"; "Pumps" and "PA" "PB"; '
+             '"PA" lambda=1e-4; "PB" lambda=1e-4; "MCC" prob=0.01; "Valve" lambda=2e-5;')
+    mcc = by_label(d.graph, "MCC")
+    assert mcc["model"]["distribution_id"] == "exponential" and mcc["model"]["placeholder"] is True
+    assert 1 - math.exp(-mcc["model"]["params"][0]["value"]) == pytest.approx(0.01)
+    assert "placeholder" not in by_label(d.graph, "PA")["model"]
+    (note,) = [w for w in d.warnings if "fixed failure probability" in w]
+    assert "“MCC” (q = 0.01)" in note and "placeholder" in note
+    res = analyse(d, t_max=10)
+    assert res["system"]["sf"][0] == pytest.approx(1.0)
 
 
 def test_restoration_factor_thins_the_rate():
@@ -323,11 +336,12 @@ def test_storm_json_variant():
     assert "Never" not in {n.get("label") for n in g["nodes"]}
 
 
-def test_storm_json_rejects_probability_events_and_dynamic_gates():
+def test_storm_json_probability_events_import_as_placeholders_and_dynamic_gates_are_refused():
     m = _json_model()
     m["nodes"][-1]["data"].update(distribution="probability", prob="0.2")
-    with pytest.raises(RbdImportError, match="fixed failure probability"):
-        load(json.dumps(m), "m.json")
+    d = load(json.dumps(m), "m.json")
+    assert by_label(d.graph, "Never")["model"]["placeholder"] is True
+    assert any("“Never” (q = 0.2)" in w for w in d.warnings)
     m = _json_model()
     m["nodes"][1]["data"]["type"] = "pand"
     with pytest.raises(RbdImportError, match="priority-AND"):

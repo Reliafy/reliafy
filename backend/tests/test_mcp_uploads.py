@@ -330,6 +330,28 @@ def test_inline_content_for_small_text_formats(env):
     assert "Unrecognised file" in _err(_call(env.token[A], "import_rbd", {"content": "hello world"}))
 
 
+# The issue's tree (#187, #188): PA ∥ PB in series with MCC and Valve, the MCC
+# a fixed-probability (demand) failure.
+PUMPS_OPENPSA = f"""<?xml version="1.0"?>
+<opsa-mef>
+  <define-gate name="System"><or><gate name="Pumps"/><basic-event name="MCC"/><basic-event name="Valve"/></or>
+  </define-gate>
+  <define-gate name="Pumps"><and><basic-event name="PA"/><basic-event name="PB"/></and></define-gate>
+  {_event("PA", 1e-4)}{_event("PB", 1e-4)}{_event("Valve", 2e-5)}
+  <define-basic-event name="MCC"><float value="0.01"/></define-basic-event>
+</opsa-mef>
+"""
+
+
+def test_open_psa_fixed_probability_events_import_as_placeholders(env):
+    preview = _ok(_call(env.token[A], "import_rbd", {"content": PUMPS_OPENPSA, "save": False}))
+    (d,) = preview["diagrams"]
+    assert d["placeholders"] == ["MCC"]
+    assert any("“MCC” (q = 0.01)" in n and "placeholder" in n for n in d["import_notes"])
+    out = _ok(_call(env.token[A], "import_rbd", {"content": PUMPS_OPENPSA}))
+    assert out["saved"] and out["diagrams"][0]["placeholders"] == ["MCC"]
+
+
 # ---- Excel targets -------------------------------------------------------------------------
 
 def test_excel_dataset_needs_a_sheet_then_maps_columns(env):

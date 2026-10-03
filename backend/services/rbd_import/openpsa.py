@@ -13,11 +13,16 @@ Supported:
   ``basic-event``, ``house-event`` or untyped ``event``;
 * house events and constants (``constant``, ``bool``, XFTA ``true``/``false``);
 * basic events with ``exponential`` (λ, mission time — ``c × t`` scales the
-  rate by ``c``), ``Weibull`` (α scale, β shape, t0, t — t0 is dropped with a
-  warning; the compact graph carries no location offset), ``GLM`` (γ, λ, μ, t:
+  rate by ``c``; over a fixed time ``T`` the rate λ is imported, which gives
+  the file's probability at T), ``Weibull`` (α scale, β shape, t0, t — t0 is
+  dropped with a warning; the compact graph carries no location offset),
+  ``GLM`` (γ, λ, μ, t:
   failure rate λ, exponential repair at rate μ; γ ≠ 0 dropped with a
   warning) and ``periodic-test`` (imported as its failure rate λ, with a
   warning that the test schedule is not modelled);
+* basic events with a fixed probability and no failure-time model (demand
+  failures, human errors) -> a block with a placeholder exponential life
+  model, listed in the import notes (see :func:`.fault_tree.fixed_probability_leaf`);
 * ``define-parameter`` (with ``unit`` — a rate in ``hours-1`` makes the
   diagram's unit ``hours``) and arithmetic expressions; uncertainty deviates
   (lognormal/normal/uniform/gamma/beta) are replaced by their mean, with a
@@ -30,8 +35,7 @@ block, drawn in each place but analysed as one component (see
 :mod:`.fault_tree`).
 
 Refused: non-coherent logic (``not``, ``xor``, ``nand``, ``nor``, ``iff``,
-``imply``) and basic events with a fixed probability and no failure-time
-model.
+``imply``) and basic events with no data at all.
 
 Parsing uses ``defusedxml`` (no entity expansion, no external entities or DTD
 fetching) and bounds the element depth.
@@ -176,7 +180,7 @@ class _Converter:
         self.warnings: list[str] = []
         self.nodes: dict[str, ft.Node] = {}
         self.units: set[str] = set()
-        self.fixed_prob: list[str] = []
+        self.fixed_prob: dict[str, float] = {}     # event -> its fixed probability
         self.no_data: list[str] = []
         self.ccf_members: dict[str, object] = {}   # event -> CCF group element
         self.anon = 0
@@ -366,7 +370,10 @@ class _Converter:
             lam = self.num(args[0], name)
             factor = self._time_factor(args[1], name)
             if factor is None:
-                return self._fixed(name, 1 - math.exp(-lam * self.num(args[1], name)))
+                # Over a fixed time T: the rate λ reproduces the probability at T.
+                self.num(args[1], name)
+                self.note("fixed_time", name)
+                return self._life(name, ft.exponential_model(lam), label, lam)
             if factor != 1:
                 self.note("time_factor", name)
             return self._life(name, ft.exponential_model(lam * factor), label, lam * factor)
@@ -395,7 +402,7 @@ class _Converter:
             self.note("periodic_test", name)
             return self._life(name, ft.exponential_model(lam), label, lam)
         # Anything else is a plain number: a fixed probability.
-        return self._fixed(name, self.num(expr, name))
+        return self._fixed(name, self.num(expr, name), label)
 
     def _life(self, name, model, label, rate) -> ft.Leaf:
         if rate is not None and rate == 0:
@@ -406,13 +413,15 @@ class _Converter:
                                      "must be positive.")
         return ft.Leaf(name, {"type": "component", "model": model}, label=label)
 
-    def _fixed(self, name, p) -> ft.Leaf:
+    def _fixed(self, name, p, label=None) -> ft.Leaf:
+        if not (math.isfinite(p) and 0 <= p <= 1):
+            raise RbdImportError(f"Basic event “{name}”: probability {p:g} isn't between 0 and 1.")
         if p == 0:
             return ft.Leaf(name, constant=False)
         if p == 1:
             return ft.Leaf(name, constant=True)
-        self.fixed_prob.append(name)
-        return ft.Leaf(name, constant=False)
+        self.fixed_prob[name] = p
+        return ft.fixed_probability_leaf(name, p, label)
 
     # -- expressions ------------------------------------------------------
     def _deref(self, el, depth=0):
@@ -515,6 +524,8 @@ class _Converter:
 
 
 _NOTES = {
+    "fixed_time": "Exponential events over a fixed time rather than the mission time ({names}) were "
+                  "imported with their failure rate λ, which gives the file's probability at that time.",
     "time_factor": "Exponential events over a multiple of the mission time ({names}) were "
                    "imported with their rate scaled by that multiple.",
     "weibull_t0": "The Weibull location t0 of {names} was dropped (an imported diagram can't carry "
@@ -623,11 +634,9 @@ def _convert(model: _Model, top: str) -> ImportedDiagram:
             f"{len(names)} basic event(s) have no data ({_names(names)}), so there's nothing to "
             "build their blocks from.")
     fixed = sorted(set(conv.fixed_prob) & used)
-    if fixed:
-        raise RbdImportError(
-            f"{len(fixed)} basic event(s) have a fixed probability and no failure-time model "
-            f"({_names(fixed)}). Reliafy blocks need a life distribution (e.g. <exponential> "
-            "with a failure rate), so this tree can't be imported as an RBD.")
+    note = ft.fixed_probability_note([(conv.nodes[n].label or n, conv.fixed_prob[n]) for n in fixed])
+    if note:
+        conv.warn(note)
 
     live = [n for n in used if isinstance(conv.nodes.get(n), ft.Leaf) and conv.nodes[n].constant is None]
     with_repair = [n for n in live if (conv.nodes[n].node or {}).get("repair")]

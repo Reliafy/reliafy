@@ -23,13 +23,16 @@ Mapped to Reliafy:
 * ``res=`` (restoration factor, exponential only) thins the failure rate to
   ``lambda * (1 - res)``;
 * ``prob=0`` / ``lambda=0`` events never fail and drop out; ``prob=1`` events
-  have failed from the start;
+  have failed from the start; any other ``prob=`` with no life distribution
+  (a fixed failure probability) -> a block with a placeholder exponential
+  life model, listed in the import notes (as for Open-PSA; see
+  :func:`.fault_tree.fixed_probability_leaf`);
 * a basic event under several gates -> a repeated block in each place (one
   component; see :mod:`.fault_tree`).
 
 Refused (no RBD equivalent): ``pand``/``por``/``seq``/``fdep``/``pdep``/
-``mutex`` and inspection modules, fixed-probability events, ``prob`` combined
-with a life distribution, coverage (``cov`` < 1), replication (``repl``),
+``mutex`` and inspection modules, ``prob`` < 1 combined with a life
+distribution, coverage (``cov`` < 1), replication (``repl``),
 parameterised models, spare modules (a gate as a spare) and spares shared
 between gates.
 """
@@ -284,10 +287,8 @@ def _event(name: str, attrs: dict[str, str], warnings: list[str]) -> tuple[ft.Le
         elif p == 1:
             return ft.Leaf(name, constant=True), None, dorm
         else:
-            raise RbdImportError(
-                f"Basic event “{name}” has a fixed failure probability (prob={p}) and no "
-                "failure-time distribution. Reliafy blocks need a life distribution "
-                "(e.g. lambda=...).")
+            # A fixed probability: a placeholder block, reported in _convert.
+            return ft.fixed_probability_leaf(name, p), None, dorm
 
     if "lambda" in attrs:
         lam = _num(name, "lambda", attrs["lambda"])
@@ -368,6 +369,7 @@ def _convert(top: str, gates, events, stem: str) -> ImportedDiagram:
     nodes: dict[str, ft.Node] = {}
     repair: dict[str, Optional[float]] = {}
     dorm: dict[str, Optional[float]] = {}
+    fixed: list[tuple[str, float]] = []
     for name, attrs in events.items():
         if name not in reach:
             continue
@@ -375,6 +377,11 @@ def _convert(top: str, gates, events, stem: str) -> ImportedDiagram:
         nodes[name] = leaf
         repair[name] = rep
         dorm[name] = d
+        if leaf.node and leaf.node["model"].get("placeholder"):
+            fixed.append((name, float(attrs["prob"])))
+    note = ft.fixed_probability_note(fixed)
+    if note:
+        warnings.append(note)
 
     # Which events feed which gates (to spot spares shared across gates).
     parents: dict[str, list[str]] = {}
