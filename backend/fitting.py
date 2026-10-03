@@ -1345,10 +1345,16 @@ def _fit_distribution(
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             model = dist.fit(**kwargs)
+        # SurPyval 0.22 records whether every likelihood fit reached a verified
+        # maximum (``model.maximum``); its warning's wording is no longer
+        # "... FAILED ...". Older fits only had the warning text.
+        unverified = getattr(model, "maximum", "verified") not in ("verified", None)
         fit_warning = next(
             (str(w.message) for w in caught
-             if "FAILED" in str(w.message).upper()), None
+             if "FAILED" in str(w.message).upper() or "verified maximum" in str(w.message)), None
         )
+        if unverified and not fit_warning:
+            fit_warning = "The maximum-likelihood search did not reach a verified maximum."
         # Backfill the covariance when SurPyval's Hessian came out non-finite
         # (otherwise the confidence band would be all-NaN).
         _ensure_covariance(model)
