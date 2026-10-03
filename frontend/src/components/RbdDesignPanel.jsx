@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import Plot from "react-plotly.js";
+import Plot from "./Plot.jsx";
 import { applyRbdDesign, designRbd } from "../api.js";
 import RbdCheapestDesign from "./RbdCheapestDesign.jsx";
 import LifeModelModal from "./LifeModelModal.jsx";
