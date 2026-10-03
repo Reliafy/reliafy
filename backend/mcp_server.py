@@ -1296,7 +1296,8 @@ def _rbd_brief(rbd) -> dict:
         "name": rbd.name,
         "repairable": bool(g.get("repairable")),
         "unit": g.get("unit") or "",
-        "n_blocks": sum(1 for n in g.get("nodes") or [] if n.get("type") not in ("input", "output")),
+        # The same count as analyze_rbd's exact.n_blocks: voting gates aren't blocks.
+        "n_blocks": rbd_analysis.count_blocks(g),
         "is_sample": samples_service.is_sample(rbd.owner_id),
         "updated_at": rbd.updated_at.isoformat(),
         "url": _url(f"/rbds/b/{rbd.id}"),
@@ -1783,6 +1784,7 @@ def edit_rbd(
         raise ToolError(f"“{rbd.name}” has changed since {if_updated_at} (now updated_at "
                         f"{rbd.updated_at.isoformat()}), e.g. edited in the app. Nothing was saved: re-read it with "
                         "get_rbd and retry with the new updated_at.")
+    saved_doc = db.rbds.find_one({"_id": rbd.id}, {"availability_cache": 1})
     try:
         result = rbd_edit.apply_ops(rbd.graph or {}, [_op_dict(op) for op in ops], rbd.name,
                                     resolve_saved_model=_resolver(db, owners), self_id=rbd.id)
@@ -1818,6 +1820,17 @@ def edit_rbd(
     if unchanged:
         out["warnings"] = [w for w in out["warnings"] if w not in known]
         out["warnings_unchanged"] = len(unchanged)
+    # The saved simulation result (#184): an edit that changes the analysis
+    # leaves it stale, and analyze_rbd no longer serves it.
+    if rbds_service.saved_availability_applies(saved_doc, rbd.graph or {}):
+        if rbds_service.saved_availability_applies(saved_doc, graph):
+            out["saved_simulation"] = {"status": "kept"}
+        else:
+            out["saved_simulation"] = {"status": "discarded", "message": (
+                ("This edit would discard" if dry_run else "This edit discarded")
+                + " the saved simulation result: it was for the diagram before the edit. analyze_rbd gives the "
+                "exact figures only until the simulation runs again (simulate=true)."
+            )}
     return out
 
 
@@ -1866,10 +1879,12 @@ _EXACT_KEYS = ("status", "message", "from", "current_state", "window", "unit", "
                "method", "n_blocks", "cached")
 
 
-def _exact_summary(exact: dict | None) -> dict | None:
+def _exact_summary(exact: dict | None, long_run_reason: Optional[str] = None) -> dict | None:
     """The exact block for an agent: the figures and their methods, the A(t)
     curve at 21 points, the blocks with the most expected downtime, and each
-    analysis's route (exact / numerical / simulated / refused) and why."""
+    analysis's route (exact / numerical / simulated / refused) and why
+    (``long_run_reason``: the reason the response already gives in
+    long_run_method)."""
     if not exact:
         return None
     out = {k: exact[k] for k in _EXACT_KEYS if k in exact}
@@ -1880,25 +1895,181 @@ def _exact_summary(exact: dict | None) -> dict | None:
     if exact.get("per_node"):
         out["blocks_by_downtime"] = exact["per_node"][:10]
     if exact.get("routes"):
-        out["routes"] = {k: {"route": r.get("route"), "reason": r.get("reason")}
-                         for k, r in exact["routes"].items()}
+        # One blocker often refuses every route with the same paragraph: give
+        # each route's method, and each distinct reason once with its routes (#186).
+        out["routes"] = {k: {"route": r.get("route")} for k, r in exact["routes"].items()}
+        reasons: dict[str, list[str]] = {}
+        for k, r in exact["routes"].items():
+            if r.get("reason"):
+                reasons.setdefault(r["reason"], []).append(k)
+        # The top-level long_run_method already carries its reason.
+        out["route_reasons"] = [
+            {"routes": keys, "reason": "As long_run_method.reason." if text == long_run_reason else text}
+            for text, keys in reasons.items()]
+        message = out.get("message") or ""
+        for text in reasons:
+            if message.endswith(text) and len(message) > len(text):
+                where = "long_run_method.reason" if text == long_run_reason else "route_reasons"
+                out["message"] = f"{message[:-len(text)].rstrip()} {where} says why."
+                break
     return out
 
 
-def _availability_summary(result: dict) -> dict:
+# RePyability's advice names its Python API, which an MCP client can't call.
+_PYTHON_API = re.compile(r",?\s+with\s+availability\(\)(?:\s+or\s+cost\(\))?")
+_CREW_JOBS = re.compile(r"(\d+) repair crew\(s\) for (\d+) components")
+
+
+def _mcp_wording(value):
+    """RePyability's text in MCP terms, throughout a result (#186): its
+    "simulate … with availability() or cost()" becomes analyze_rbd
+    simulate=true (or export_rbd_python), and the crews' "N components"
+    (each standby unit counted) the repair jobs repair_crews.jobs counts."""
+    if isinstance(value, str):
+        value = _PYTHON_API.sub(" (analyze_rbd with simulate=true, or locally with export_rbd_python)", value)
+        return _CREW_JOBS.sub(lambda m: f"{m[1]} repair crew(s) for {m[2]} repair jobs", value)
+    if isinstance(value, dict):
+        return {k: _mcp_wording(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_mcp_wording(v) for v in value]
+    return value
+
+
+def _headline_availability(result: dict) -> Optional[dict]:
+    """The one availability figure to quote (#186): the exact long-run value,
+    else the simulated window's mean with its interval, else the exact
+    window's mean availability."""
+    steady = result.get("steady_state_availability")
+    if steady is not None:
+        return {"value": steady, "basis": "exact", "measure": "long-run (steady-state) availability",
+                "interval": None}
+    precision = result.get("precision") or {}
+    if result.get("has_simulation") and precision.get("window_availability") is not None:
+        return {"value": precision["window_availability"], "basis": "simulation",
+                "measure": "mean availability over the simulated window (t_simulation)",
+                "interval": {"lower": precision.get("lower"), "upper": precision.get("upper"),
+                             "confidence": precision.get("confidence")}}
+    exact = result.get("exact") or {}
+    if exact.get("status") == "ok" and exact.get("mission_availability") is not None:
+        return {"value": exact["mission_availability"], "basis": "exact",
+                "measure": "mean availability over the exact window (exact.window)", "interval": None}
+    return None
+
+
+_IMPORTANCE_INFO = ("label", "pinned")
+
+
+def _computed_importance(importance) -> dict:
+    """The blocks' importance measures that were computed: a block whose
+    every measure is null (no exact long-run values to take them from) is
+    left out (#186)."""
+    return {nid: row for nid, row in (importance or {}).items()
+            if isinstance(row, dict) and any(v is not None for k, v in row.items() if k not in _IMPORTANCE_INFO)}
+
+
+def _common_cause(graph: dict, result: dict) -> tuple[Optional[dict], Optional[str]]:
+    """``(common_cause, warning)`` for a repairable diagram with common-cause
+    groups (#185), else ``(None, None)``. RePyability's repairable analysis
+    has no common cause in its long-run, over-time or simulated values
+    (RePyability#158), so the headline figures leave the groups out; only a
+    safety function's PFDavg takes them, where its chain can."""
+    groups = [g for g in graph.get("ccf_groups") or [] if len(g.get("members") or []) >= 2]
+    if not groups:
+        return None, None
+    what = f"{len(groups)} common-cause group" + ("s" if len(groups) != 1 else "")
+    safety = result.get("safety") or {}
+    included = bool((safety.get("common_cause") or {}).get("included"))
+    if included:
+        where = ("safety.pfd_avg includes them, so quote it (not 1 - availability) for the safety function's "
+                 "probability of failure on demand")
+    elif graph.get("safety_function"):
+        why = (safety.get("common_cause") or {}).get("note")
+        where = "safety.pfd_avg leaves them out too" + (f": {why}" if why else "")
+    else:
+        where = ("common cause enters a repairable diagram only through a safety function's PFDavg (edit_rbd "
+                 "set safety_function=true)")
+    note = (f"The availability figures (steady_state_availability, unavailability, the exact figures over time "
+            f"and the simulation) leave out the {what}; {where}.")
+    u, pfd = result.get("unavailability"), safety.get("pfd_avg")
+    if included and u is not None and pfd is not None:
+        warning = (f"The availability figures leave out common cause: unavailability {u:.4g} without it, "
+                   f"safety.pfd_avg {pfd:.4g} with it. Quote safety.pfd_avg for the safety function.")
+    else:
+        warning = (f"The availability figures leave out the diagram's {what}, so they are optimistic "
+                   "(see common_cause.note).")
+    return {"groups": len(groups), "included": False, "note": note}, warning
+
+
+def _availability_summary(result: dict, graph: Optional[dict] = None) -> dict:
     keys = ("unit", "steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
-            "failure_frequency", "figures_basis", "has_simulation", "n_simulations", "t_simulation", "precision",
-            "per_node", "importance", "criticality", "cached", "computed_at", "can_recompute", "current_state",
+            "failure_frequency", "figures_basis", "common_cause", "has_simulation", "n_simulations",
+            "t_simulation", "precision", "per_node", "importance", "criticality", "cached", "computed_at",
+            "can_recompute", "current_state",
             # How the long-run values were found, the repair crews, a safety
             # function's PFDavg and SIL band (#156, #157).
             "long_run_method", "repair_crews", "safety", "opportunistic_renewals")
-    out = {"kind": "repairable", **{k: result.get(k) for k in keys if k in result}}
+    common_cause, _ = _common_cause(graph or {}, result)
+    if common_cause:
+        result = {**result, "common_cause": common_cause}
+    headline = _headline_availability(result)
+    out = {"kind": "repairable", "unit": result.get("unit"), **({"availability": headline} if headline else {}),
+           **{k: result.get(k) for k in keys if k in result}}
     if not result.get("has_simulation", True):
         # The simulation's own figures aren't there: don't list empty ones.
         for k in ("n_simulations", "precision", "per_node", "criticality", "cached", "computed_at"):
             out.pop(k, None)
-    out["exact"] = _exact_summary(result.get("exact"))
+    if "importance" in out:
+        importance = _computed_importance(out["importance"])
+        if importance:
+            out["importance"] = importance
+        else:
+            out.pop("importance")
+            out["importance_note"] = (
+                "No importance measures: they come from the exact long-run values, which this diagram doesn't "
+                "have (long_run_method)." + (" The simulation's criticality indices rank the blocks instead "
+                                             "(criticality)." if out.get("criticality") else ""))
+    out["exact"] = _exact_summary(result.get("exact"), (out.get("long_run_method") or {}).get("reason"))
     return out
+
+
+# The figures a repairable result carries; all null when nothing was computed.
+_FIGURE_KEYS = ("steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
+                "failure_frequency", "figures_basis", "t_simulation", "importance")
+
+
+def _needs_simulation(payload: dict) -> bool:
+    """Whether a repairable result has nothing to report without the
+    simulation (#184): none ran (or was saved), and there is neither an exact
+    long-run availability nor exact figures over time."""
+    if payload.get("has_simulation") or payload.get("steady_state_availability") is not None:
+        return False
+    return (payload.get("exact") or {}).get("status") != "ok"
+
+
+def _simulation_needed(out: dict, payload: dict, saved: Optional[bool], from_now: bool) -> dict:
+    """``out`` as a plain answer that nothing was computed (#184): available
+    false, why and what to call, and none of the null figures. ``saved`` is
+    whether the diagram's saved simulation applies to it (None: there is
+    none)."""
+    why = (" (long_run_method.reason says why)" if (payload.get("long_run_method") or {}).get("reason")
+           else "")
+    reason = ("Nothing was computed: this diagram has no exact availability figures, so they need the "
+              f"simulation{why}.")
+    if from_now:
+        pass  # A run from a current state never reads the saved (from-new) result.
+    elif saved is False:
+        reason += (" The saved simulation result is for the diagram before it was last edited, so it no longer "
+                   "applies.")
+    elif saved:
+        reason += " The saved simulation result ran over a different horizon (t_max), so it isn't served for this one."
+    reason += " Call analyze_rbd with simulate=true, or export_rbd_python to run the simulation locally."
+    if (payload.get("exact") or {}).get("status") == "on_request":
+        reason += " compute_exact=true computes the exact figures over time, where this diagram has them."
+    head = {k: out[k] for k in ("rbd_id", "name", "url", "placeholders", "warning", "warnings") if k in out}
+    rest = {k: v for k, v in out.items()
+            if k not in head and k not in _FIGURE_KEYS and k not in ("available", "importance_note")}
+    return {**head, "kind": "repairable", "available": False, "needs_simulation": True, "reason": reason,
+            **rest}
 
 
 class BlockState(BaseModel):
@@ -1941,11 +2112,14 @@ def analyze_rbd(
     Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety), and (in
     `exact`) the availability over time A(t), mission availability and the window's expected system
     failures, outages, downtime and cost — each with its method (exact / numerical; no simulation) — from
-    new or from current_state. The Monte-Carlo simulation (distributions, criticality) is a paid feature
-    (Pro or purchased credits): a saved result is always served; otherwise, without entitlement, the
-    response carries `simulation: {available: false, message}` — relay it, and offer export_rbd_python to
-    run the simulation locally. A diagram whose figures are simulation-only (exact.status
-    'simulation_only', e.g. proof tests that take time) returns available=false without entitlement."""
+    new or from current_state. Quote `availability` {value, basis: exact | simulation, interval}: the
+    long-run value, else the simulated window's mean. The Monte-Carlo simulation (distributions,
+    criticality) is a paid feature (Pro or purchased credits): a saved result is always served; otherwise,
+    without entitlement, the response carries `simulation: {available: false, message}` — relay it, and
+    offer export_rbd_python to run the simulation locally. A diagram whose figures are simulation-only (exact.status
+    'simulation_only', e.g. proof tests that take time) returns available=false without entitlement, and
+    with simulate=false returns available=false, needs_simulation=true and the reason (no saved result
+    applies)."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -1997,7 +2171,10 @@ def analyze_rbd(
                 message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
                 return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
                         "message": message}
-            out = {**head, "available": True, **_availability_summary(payload)}
+            out = {**head, "available": True, **_availability_summary(payload, graph)}
+            _, cc_warning = _common_cause(graph, payload)
+            if cc_warning:
+                out["warnings"] = [*out.get("warnings", []), cc_warning]
             sim_state = (payload.get("simulation_status") or {}).get("state")
             if sim_state == "pro_required" and (simulate or recompute):
                 out["simulation"] = {
@@ -2007,7 +2184,11 @@ def analyze_rbd(
                 }
             else:
                 out["simulation"] = {"available": bool(payload.get("has_simulation")), "state": sim_state}
-            return out
+            if _needs_simulation(payload):
+                saved = rbds_service.saved_availability_applies(
+                    db.rbds.find_one({"_id": rbd.id}, {"availability_cache": 1}), graph)
+                out = _simulation_needed(out, payload, saved, bool(state))
+            return _mcp_wording(out)
 
         result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
                                             at_times=times)

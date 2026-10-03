@@ -446,6 +446,18 @@ def cached_availability(doc: dict | None, key: str) -> dict | None:
     return {**entry["result"], "cached": True, "computed_at": entry.get("computed_at")}
 
 
+def saved_availability_applies(doc: dict | None, graph: dict) -> bool | None:
+    """Whether the saved simulation on a raw RBD doc is for ``graph`` (over
+    the default horizon or the one it ran over): None when there is none.
+    An edit that changes the analysis leaves the saved result stale; it is
+    kept on the document, but never served again (#184)."""
+    entry = (doc or {}).get("availability_cache") or {}
+    if not entry.get("key") or not isinstance(entry.get("result"), dict):
+        return None
+    t_run = entry["result"].get("t_simulation")
+    return entry["key"] in {availability_cache_key(graph), availability_cache_key(graph, t_run)}
+
+
 def store_availability(db, rbd_id: str, key: str, result: dict, uid: str | None) -> str:
     """Save an availability result on the RBD doc. Returns ``computed_at``."""
     computed_at = datetime.now(timezone.utc).isoformat()
