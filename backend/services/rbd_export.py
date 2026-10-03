@@ -45,7 +45,7 @@ from backend.fitting import DISTRIBUTIONS
 from backend.services import rbd_analysis
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.21.0", "repyability": "0.10.1"}
+_DEFAULT_VERSIONS = {"surpyval": "0.21.0", "repyability": "0.11"}
 _SURPYVAL_GIT = "https://github.com/derrynknife/SurPyval.git"
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
@@ -1314,7 +1314,7 @@ def main():
     # Monte-Carlo availability over time, seeded exactly as in Reliafy.
     print(f"\\nSimulating {N_SIMS} histories of {T_SIMULATION:,.6g}{unit}...")
     sim = rbd.availability(
-        t_simulation=T_SIMULATION, N=N_SIMS, method="c", seed=1, **overrides
+        t_simulation=T_SIMULATION, mc_samples=N_SIMS, method="c", seed=1, **overrides
     )
     print(f"  simulated mean up time: {sim.mean_up_time:,.6g}{unit}")
     print(f"  simulated mean down time: {sim.mean_down_time:,.6g}{unit}")
