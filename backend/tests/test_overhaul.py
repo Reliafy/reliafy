@@ -110,8 +110,8 @@ def test_api_overhaul_owner_share_and_isolation(monkeypatch):
         user["uid"] = B
         assert client.post(url, json={"cost_repair": 100, "cost_overhaul": 1000}).status_code == 404
 
-        # ...but a read-only viewer may compute it (recurrent models aren't in
-        # SHARABLE_COLLECTIONS yet, so use the read-only sample path).
+        # ...but a read-only viewer may compute it (here via the read-only
+        # sample path; test_sharing covers a direct share).
         from backend import config
 
         test_db.recurrent_models.update_one({"_id": mid}, {"$set": {"owner_id": config.SAMPLE_OWNER}})

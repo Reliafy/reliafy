@@ -185,7 +185,7 @@ def rename_model(
     model_id: str, name: str = Body(..., embed=True),
     session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    existing = recurrent_service.get_model(session, model_id, ctx.read_owners)
+    existing, _ = access_service.fetch_readable(session, "recurrent_models", RecurrentModelDoc, model_id, ctx)
     if existing is not None:
         denial = access_service.write_denial(ctx, existing.owner_id)
         if denial:

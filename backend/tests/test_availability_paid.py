@@ -362,6 +362,74 @@ def test_public_link_never_simulates(client, monkeypatch):
     assert client.get(f"/api/public/{token}").json()["artifact"]["analysis"] is None
 
 
+def test_refitting_a_referenced_model_makes_the_saved_result_stale(client, monkeypatch):
+    """#92: a block that references a saved fitted model by id (here a
+    non-parametric one) carries only the id, so the model's fit is part of
+    the key: a refit invalidates the saved result, a rename doesn't."""
+    import io
+
+    import numpy as np
+    import pandas as pd
+
+    from backend.routers import rbds as rbds_routes
+    from backend.services import datasets as ds_service
+    from backend.services import models as models_service
+    from backend.services import rbds as rbds_service
+
+    # The exact figures aren't what this is about (and the saved result is
+    # what free viewers and public links rely on): stub them.
+    monkeypatch.setattr(rbds_routes, "exact_payload", lambda *a, **k: {
+        "steady_state_availability": 0.9, "exact": {"status": "ok"}})
+
+    db = client.db
+    buf = io.StringIO()
+    rng = np.random.default_rng(3)
+    pd.DataFrame({"t": np.round(rng.weibull(1.5, 40) * 900, 2),
+                  "c": (rng.random(40) < 0.2).astype(int)}).to_csv(buf, index=False)
+    dataset = ds_service.create_dataset(db, "pumps.csv", buf.getvalue().encode(), FREE)
+    model = models_service.save_model(db, "Pump KM", dataset, "kaplan_meier", {"x": "t"}, [], None,
+                                      owner_id=FREE)
+
+    graph = _rbd_graph(repairable=True)
+    graph["nodes"][3]["data"]["model"] = {
+        "source": "saved", "kind": "nonparametric", "modelId": model.id, "name": "Pump KM"}
+    # Parametric blocks carry their parameters, so only the resolved model counts.
+    models = rbds_service.model_fingerprints(db, graph, FREE)
+    assert list(models) == [model.id] and models[model.id]
+    assert rbds_service.model_fingerprints(db, _rbd_graph(repairable=True), FREE) == {}
+
+    client.act_as(FREE)
+    rbd_id = _save(client, graph)
+    rbds_service.store_availability(
+        db, rbd_id, rbds_service.availability_cache_key(graph, models=models),
+        {"kind": "repairable", "steady_state_availability": 0.97}, PRO,
+    )
+    token = client.post(
+        "/api/public-links", json={"collection": "rbds", "artifact_id": rbd_id}
+    ).json()["token"]
+
+    def served():
+        state = client.get(f"/api/rbds/{rbd_id}/analyze").json()["simulation_status"]["state"]
+        client.act_as(None)
+        public = client.get(f"/api/public/{token}").json()["artifact"]["analysis"]
+        client.act_as(FREE)
+        return state == "saved", public is not None and public.get("has_simulation") is True
+
+    assert served() == (True, True)
+    models_service.rename_model(db, model.id, "Pump bank KM", FREE)
+    assert served() == (True, True)
+
+    # Refit (censoring now counted): the graph is unchanged, the result isn't valid.
+    models_service.update_fit(db, model.id, FREE, "kaplan_meier", {"x": "t", "c": "c"},
+                              [], None, None, None)
+    assert rbds_service.model_fingerprints(db, graph, FREE) != models
+    assert served() == (False, False)
+    assert not rbds_service.cached_availability(
+        db.rbds.find_one({"_id": rbd_id}),
+        rbds_service.availability_cache_key(graph, models=rbds_service.model_fingerprints(db, graph, FREE)),
+    )
+
+
 def test_public_link_non_repairable_unchanged(client):
     client.act_as(FREE)
     rbd_id = _save(client, _rbd_graph(repairable=False))
