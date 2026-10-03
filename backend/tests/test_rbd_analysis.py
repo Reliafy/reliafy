@@ -170,7 +170,7 @@ def test_validate_repairable_requires_repair_times():
 def test_validate_repairable_rejects_unsupported_blocks():
     graph = {
         "unit": "hours", "repairable": True,
-        "nodes": _io_nodes() + [{"id": "sb", "type": "standby", "data": {"label": "Bank"}}],
+        "nodes": _io_nodes() + [{"id": "sb", "type": "parallel", "data": {"label": "Bank"}}],
         "edges": [_edge("input", "sb"), _edge("sb", "output")],
     }
     v = validate_graph(graph)

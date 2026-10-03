@@ -226,7 +226,7 @@ def test_timed_proof_tests_take_the_channel_offline():
     ({"costs": {"acquisition": "lots"}}, "purchase price must be a number"),
     ({"costs": {"repairs": 5}}, "unknown cost field"),
     ({"preventive": {"policy": "age"}}, "set the preventive-maintenance interval"),
-    ({"preventive": {"policy": "sometimes", "interval": 5}}, "age or block"),
+    ({"preventive": {"policy": "sometimes", "interval": 5}}, "age, block or condition"),
     ({"inspection": {"interval": 0}}, "proof-test interval must be a positive"),
     ({"preventive": {"interval": 5}, "inspection": {"interval": 5}}, "not both"),
 ])

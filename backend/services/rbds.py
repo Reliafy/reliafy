@@ -332,6 +332,11 @@ def canonical_analysis_graph(graph: dict) -> dict:
     # Only present when set, so diagrams without costs keep their saved key.
     if graph.get("costs"):
         out["costs"] = graph["costs"]
+    # Repair crews, maintenance groups and a safety function (#156, #157):
+    # likewise only when set.
+    for key in ("repair_crews", "maintenance_groups", "safety_function", "target_sil"):
+        if graph.get(key):
+            out[key] = graph[key]
     return out
 
 

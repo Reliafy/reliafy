@@ -787,24 +787,27 @@ def validate_graph(
             data = node.get("data") or {}
             if ntype == "knode":
                 continue
-            if ntype != "component":
+            if ntype not in ("component", "standby"):
                 errors.append(
                     f"“{lbl}” isn't supported in a repairable diagram — availability "
-                    "uses component blocks (each with a life model and a repair time) "
-                    "and k-of-n gates. Switch to a non-repairable diagram to use it.")
-            elif (data.get("state") not in ("working", "failed") and not data.get("repair")
-                  and not data.get("instant_repair")):
+                    "uses component and standby blocks (each with a life model and a "
+                    "repair time) and k-of-n gates. Switch to a non-repairable diagram to use it.")
+            elif ntype == "standby" and data.get("state") not in ("working", "failed") and not data.get("repair"):
+                errors.append(
+                    f"“{lbl}” has no repair-time distribution. In a repairable diagram a "
+                    "standby group's units are each repaired after they fail — double-click "
+                    "the block to set the repair time.")
+            elif (ntype == "component" and data.get("state") not in ("working", "failed")
+                  and not data.get("repair") and not data.get("instant_repair")):
                 errors.append(
                     f"“{lbl}” has no repair-time distribution. Repairable diagrams "
                     "analyse availability, so every component needs one (double-click "
                     "the block to set it), or mark it as repaired instantly.")
-        from backend.services import rbd_maintenance
+        from backend.services import rbd_maintenance, rbd_policies
 
         errors.extend(rbd_maintenance.validation_errors(graph))
-        if graph.get("ccf_groups"):
-            warnings.append(
-                "Common-cause groups are a reliability-only feature and are "
-                "ignored in a repairable (availability) diagram.")
+        errors.extend(rbd_policies.validation_errors(graph))
+        warnings.extend(rbd_policies.validation_warnings(graph))
         valid = len(errors) == 0
         # Availability is always estimated by simulation — never "analytic".
         return {
@@ -1518,12 +1521,14 @@ def _always_up():
     """A repairable stand-in that never fails — used for pure logic/voting
     (k-of-n) gates, which carry no failure or repair behaviour of their own but
     must still be a repairable component for RePyability's availability solver.
-    Callers also pin it working (``working_nodes``), so it is exactly perfect."""
+    Callers also pin it working (``working_nodes``), so it is exactly perfect.
+    Its life and repair are exponential so that, with limited repair crews
+    (#156), RePyability's Markov chain covers it as it does the blocks."""
     import surpyval as sp
 
     return NonRepairable(
         sp.Weibull.from_params([1e12, 1.0]),  # effectively never fails
-        sp.LogNormal.from_params([0.1, 0.1]),
+        sp.Exponential.from_params([1.0]),
     )
 
 
@@ -1540,18 +1545,22 @@ def _repair_distribution(data: dict, label: str, resolve_model=None):
     return _build_distribution(spec, f"{label} (repair)", resolve_model, None)
 
 
-def _build_repairable_rbd(graph: dict, resolve_model=None):
+def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf: bool = False):
     """Translate a builder graph into a RepairableRBD (availability).
 
-    v1 supports plain component nodes (each a life model + repair) and k-of-n
-    voting gates; other node types raise a clear error. Nodes pinned
+    Supports component nodes (each a life model + repair, with costs and
+    maintenance), standby groups (#156) and k-of-n voting gates; other node
+    types raise a clear error. The diagram's repair crews and maintenance
+    groups (#156, #157) are passed on; its common-cause groups only with
+    ``with_ccf`` (a safety function's PFDavg, #136), since RePyability 0.11's
+    simulations don't take them in. Nodes pinned
     working/failed (``data.state``) are forced via RePyability's native
     ``working_nodes``/``broken_nodes`` overrides; a pinned node needs no life
     or repair model (validation doesn't ask for one), so a never-failing
     stand-in is used when it has none. Returns
     ``(rbd, labels, gate_ids, working_nodes, broken_nodes)``.
     """
-    from backend.services import rbd_maintenance
+    from backend.services import rbd_maintenance, rbd_policies
 
     nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
@@ -1602,36 +1611,64 @@ def _build_repairable_rbd(graph: dict, resolve_model=None):
             k[nid] = max(int(data.get("n") or 1), 1)
             gate_ids.add(nid)
             continue
-        if ntype != "component":
+        if ntype not in ("component", "standby"):
             raise AnalysisError(
                 f"{label}: “{ntype}” blocks aren't supported in repairable "
-                "diagrams yet — use component blocks (each with a life model and "
-                "a repair time), optionally with a k-of-n voting gate."
+                "diagrams yet — use component and standby blocks (each with a life "
+                "model and a repair time), optionally with a k-of-n voting gate."
             )
         if pinned and not (data.get("model") and (data.get("repair") or data.get("instant_repair"))):
             # The override fixes its state; the stand-in is never consulted.
             components[nid] = _always_up()
             continue
         reliability = _build_distribution(data.get("model"), label, resolve_model, None)
-        # Life + repair; plus costs, instant repair and maintenance (#99/#100).
+        if ntype == "standby":
+            # A duty unit plus spares, each repaired on its own (#156).
+            repair = _repair_distribution(data, label, resolve_model)
+            components[nid] = rbd_policies.standby_component(nid, data, label, reliability, repair)
+            continue
+        # Life + repair; plus costs, instant repair and maintenance (#99/#100,
+        # #157).
         components[nid] = rbd_maintenance.repairable_component(data, label, reliability, resolve_model)
 
     if not components:
         raise AnalysisError("The diagram has no component nodes to analyse.")
 
+    members: dict[str, list] = {}
+    for nid, spec in components.items():
+        if isinstance(spec, dict) and spec.get("group") is not None:
+            members.setdefault(spec["group"], []).append(nid)
+    extra: dict[str, Any] = {
+        "repair_crews": rbd_policies.repair_crews(graph),
+        "maintenance_groups": rbd_policies.maintenance_groups(graph, members),
+    }
+    if with_ccf:
+        extra["ccf_groups"] = _ccf_groups(graph, components) or None
     input_node = "input" if "input" in node_ids else None
     output_node = "output" if "output" in node_ids else None
     try:
         rbd = RepairableRBD(
             edges, components, k=k, input_node=input_node, output_node=output_node,
-            downtime_cost_rate=rbd_maintenance.downtime_cost_rate(graph),
+            downtime_cost_rate=rbd_maintenance.downtime_cost_rate(graph), **extra,
         )
     except ValueError as exc:
+        text = str(exc)
+        if text.startswith(("Component ", "Maintenance group", "maintenance_groups", "The members of a CCF",
+                            "CCF group", "Common-cause")):
+            # A block's settings RePyability refuses (already worded for a user).
+            raise AnalysisError(_component_message(text, labels)) from exc
         raise AnalysisError(
             "The diagram isn't a valid reliability block diagram: "
             f"{_repyability_message(exc)}. Check that every component is wired between the input and output."
         ) from exc
     return rbd, labels, gate_ids, working_nodes, broken_nodes
+
+
+def _component_message(text: str, labels: dict) -> str:
+    """RePyability's message about a component, naming blocks by label."""
+    for nid, label in labels.items():
+        text = text.replace(f"'{nid}'", f"“{label}”")
+    return text
 
 
 def _resample_step(timeline, values, grid) -> np.ndarray:
@@ -1933,7 +1970,7 @@ def analyze_availability(
     budget and by :data:`_AVAIL_SIMS` replications (read at call time so tests
     can shrink it). ``n_simulations`` runs exactly that many instead (rounded
     up to whole antithetic pairs)."""
-    from backend.services import rbd_costs, rbd_maintenance
+    from backend.services import rbd_costs, rbd_maintenance, rbd_policies
 
     fixed_n = bool(n_simulations)
     n_sims = int(n_simulations) + int(n_simulations) % 2 if n_simulations else _AVAIL_SIMS
@@ -2053,6 +2090,15 @@ def analyze_availability(
         import logging
 
         logging.getLogger(__name__).exception("Cost/maintenance summary failed")
+    try:
+        # How the long-run values were found, the repair crews and a safety
+        # function's PFDavg / SIL (#156, #157).
+        extras.update(rbd_policies.result_extras(rbd, graph, resolve_model, labels, gate_ids, overrides,
+                                                 steady, res, float(t_simulation)))
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).exception("Crew/safety summary failed")
 
     return {
         "kind": "repairable",
