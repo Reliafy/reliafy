@@ -153,6 +153,11 @@ def init_db() -> None:
     from backend.services import uploads as uploads_service
 
     uploads_service.ensure_indexes(db)
+    # One import per user at a time (backend/services/import_guard.py): TTL
+    # drops a lease once it has expired.
+    from backend.services import import_guard
+
+    import_guard.ensure_indexes(db)
     # Product-usage logging: account-linked events expire after 90 days (the
     # privacy policy's promise); the identifier-free daily totals stay.
     from backend.services import usage as usage_service
