@@ -54,6 +54,17 @@ def test_build_inputs_truncation_fills_infinities():
     assert kwargs["tr"].tolist() == [np.inf, 30.0]
 
 
+def test_right_truncated_data_fits_and_plots():
+    # SurPyval only takes right truncation with Turnbull plotting positions;
+    # the Nelson-Aalen default used to fail the whole fit.
+    df = _df("x,tr\n" + "".join(f"{t},{3000 if i % 2 else ''}\n" for i, t in
+                                 enumerate([120, 340, 510, 700, 980, 1200, 1500, 1800, 2100, 2600])))
+    result = fit("weibull", df, {"x": "x", "tr": "tr"})
+    assert result["fit_ok"] and result["plot"]["scatter"]["x"]
+    untruncated = fit("weibull", df, {"x": "x"})
+    assert result["params"][0]["value"] != pytest.approx(untruncated["params"][0]["value"])
+
+
 # build_fit_inputs no longer validates — SurPyval does, and fit() surfaces it.
 def test_fit_surfaces_x_and_interval_error():
     df = _df("a,b,c\n1,1,2\n2,2,3\n3,3,4\n")

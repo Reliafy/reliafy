@@ -119,6 +119,7 @@ def test_data_dependent_rules():
     assert fitting.methods_for_data({}) == {}
     assert set(fitting.methods_for_data({"c": "cens"})) == {"MOM"}
     assert set(fitting.methods_for_data({"tl": "entry"})) == {"MOM", "MSE"}
+    assert set(fitting.methods_for_data({"xl": "lo", "xr": "hi"})) == {"MOM", "MPS", "MPP"}
     # And the underlying library really does refuse them.
     x = np.abs(sp.Weibull.random(120, 800, 1.9, random_state=4))
     c = np.zeros(len(x)); c[-20:] = 1
@@ -126,6 +127,12 @@ def test_data_dependent_rules():
         sp.Weibull.fit(x=x, c=c, how="MOM")
     with pytest.raises(Exception):
         sp.Weibull.fit(x=x, tl=0.0, how="MSE")
+    xr = x * 1.2
+    for how in ("MPS", "MPP"):
+        with pytest.raises(Exception):
+            sp.Weibull.fit(xl=x, xr=xr, how=how)
+    # ...while MSE, left allowed, does take intervals.
+    assert np.all(np.isfinite(sp.Weibull.fit(xl=x, xr=xr, how="MSE").params))
 
 
 def test_the_picker_advertises_the_same_capabilities():
