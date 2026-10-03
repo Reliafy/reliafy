@@ -512,14 +512,18 @@ const MCP_TOOLS = [
   ["fit_and_save_model", "The same fit, saved as a model in your workspace (Claude asks before saving)."],
   ["save_model", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval — with an optional dataset reference and notes."],
   ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age, and with confidence bounds (the same as the app’s band) where the model has them."],
-  ["list_datasets / get_dataset / upload_dataset", "Your datasets, reading one’s columns and rows a page at a time, and saving new CSV data."],
+  ["list_datasets / get_dataset / upload_dataset", "Your datasets, reading one’s columns and rows a page at a time, and saving new data — CSV text, or a CSV or Excel file sent with create_upload."],
   ["list_rbds / get_rbd", "Your reliability block diagrams and their structure."],
   ["create_rbd", "Build and save a diagram — series, parallel, k-of-n, standby, sub-systems — which opens in the RBD builder."],
   ["edit_rbd", "Change a saved diagram with a short batch of edits — add a block in series or parallel, remove one, swap a model on several blocks at once — all or nothing, instead of rebuilding it."],
   ["clone_rbd", "Copy a sample or one of your diagrams into your workspace, to edit or to make a variant."],
   ["analyze_rbd", "System reliability, MTTF, B-lives and importance; availability for repairable diagrams (a paid feature, saved results are reused)."],
   ["export_rbd_python", "A diagram as a standalone SurPyval + RePyability script."],
-  ["upload_outage_log / system_history", "Save a real outage log (asset, down, back up) against one of your diagrams, then read the system’s observed availability, its outages each with the block that caused it, and the blocks ranked by downtime share."],
+  ["upload_outage_log / system_history", "Save a real outage log (asset, down, back up) — as CSV text, or a CSV or Excel file sent with create_upload — against one of your diagrams, then read the system’s observed availability, its outages each with the block that caused it, and the blocks ranked by downtime share."],
+  ["create_upload", "A single-use link (15 minutes) to send a file to Reliafy with a plain HTTP PUT — a ready curl command — so the file never passes through the conversation. Up to 30 MB; deleted after its import, or after an hour."],
+  ["inspect_upload", "Look inside an uploaded file before importing it: a workbook’s sheets with their header rows, columns, row counts and a guessed mapping; a diagram file’s diagrams and block counts."],
+  ["import_rbd", "Import diagrams from ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA XML, Galileo DFT or Reliafy’s Excel RBD template, saved as RBDs with notes on anything approximated. Preview first if you like; small text files can be pasted instead of uploaded."],
+  ["import_excel", "Import an Excel workbook: a sheet as a dataset, an FMEA / RCM worksheet into a new or existing RCM study, or the RBD template as a diagram."],
   ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function."],
   ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model."],
   ["plan_demonstration_test", "Plan a reliability demonstration test — units, test time per unit and allowed failures to show a reliability at a confidence — with a units-vs-failures trade-off table. Needs no saved data."],
@@ -596,6 +600,21 @@ export function McpDocs({ tokenNote }) {
     }
   }
 }`}</Code>
+
+        <h3>Sending files</h3>
+        <p className="muted-line">
+          Files never go through the conversation. <code>create_upload</code> returns a single-use
+          upload URL; Claude sends the file there from its shell, then imports it by its{" "}
+          <code>upload_id</code>:
+        </p>
+        <Code>{`curl -X PUT --data-binary @plant.rsgz \\
+  -H "Content-Type: application/octet-stream" \\
+  "${base}/api/uploads/UPLOAD_ID?t=TOKEN"`}</Code>
+        <ul className="api-list">
+          <li><code>PUT /api/uploads/{"{upload_id}"}?t=…</code> (or <code>POST</code> with the raw body) — no sign-in: the link’s token is the credential. It works once and expires after 15 minutes. Answers <code>{`{ upload_id, size, sha256, detected_format }`}</code>.</li>
+          <li>Errors: <code>404</code> (no such upload, or a wrong token), <code>409</code> (already used), <code>410</code> (expired), <code>413</code> (over the size limit — 30 MB at most), <code>429</code> (too many attempts).</li>
+          <li>Uploads are private to you, are never served back, and are deleted once imported or after an hour.</li>
+        </ul>
 
         <h3>Tools</h3>
         <ul className="api-list">
