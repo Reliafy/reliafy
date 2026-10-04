@@ -397,6 +397,22 @@ def get_model(
     return JSONResponse(content=_model_detail(model, ctx))
 
 
+@router.get("/models/{model_id}/validation")
+def model_validation(
+    model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> JSONResponse:
+    """How good is this regression model? Harrell's C, the integrated Brier
+    score against a covariate-free baseline and the time-dependent AUC.
+    Stored at fit time; for a model saved before that, computed now from its
+    dataset and cached (#176)."""
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    if model.kind != "regression":
+        return JSONResponse(status_code=422, content={"detail": "Only regression models have these scores."})
+    return JSONResponse(content=models_service.ensure_validation(session, model))
+
+
 @router.put("/models/{model_id}/fit")
 def update_model_fit(
     model_id: str,

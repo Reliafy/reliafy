@@ -247,6 +247,12 @@ export function getModel(id) {
   return request(`/api/models/${id}`);
 }
 
+// A regression model's "how good is this model?" scores (#176). Stored at fit
+// time; for a model saved before that, computed (and cached) on request.
+export function getModelValidation(id) {
+  return request(`/api/models/${id}/validation`);
+}
+
 // Persist a fit. Same form fields as fitModel, plus a name.
 export function saveModel(
   name,
