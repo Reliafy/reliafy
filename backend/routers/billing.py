@@ -25,6 +25,9 @@ from backend.services import stripe_prices
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
+# Shown when a Stripe call fails; Stripe's own message is logged, not returned.
+_PAYMENT_ERROR = "The payment provider couldn't complete this request. Please try again in a moment."
+
 
 def _public_base(request: Request) -> str:
     """The site origin for Stripe redirect URLs, with a trailing slash.
@@ -114,9 +117,9 @@ def checkout(
             success_url=f"{base}billing?status=success",
             cancel_url=f"{base}billing?status=cancel",
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("Stripe checkout failed")
-        return JSONResponse(status_code=502, content={"detail": f"Stripe error: {exc}"})
+        return JSONResponse(status_code=502, content={"detail": _PAYMENT_ERROR})
     return JSONResponse(content={"url": cs.url})
 
 
@@ -213,9 +216,9 @@ def start_subscription(session, user: dict, plan: str, base: str, *, allow_switc
             success_url=f"{base}billing?status=success",
             cancel_url=f"{base}billing?status=cancel",
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("Stripe subscribe failed")
-        return 502, {"detail": f"Stripe error: {exc}"}
+        return 502, {"detail": _PAYMENT_ERROR}
     return 200, {"url": cs.url}
 
 
@@ -236,9 +239,9 @@ def _switch_plan(stripe, session, user, acct, plan: str, price: str, base: str) 
             proration_behavior="create_prorations",
             metadata={"uid": user["uid"], "kind": plan},
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("Stripe plan switch failed")
-        return JSONResponse(status_code=502, content={"detail": f"Stripe error: {exc}"})
+        return JSONResponse(status_code=502, content={"detail": _PAYMENT_ERROR})
     # The customer.subscription.updated webhook confirms this; set it now so
     # the page the user returns to already shows the new plan.
     billing_service.set_plan(session, user["uid"], plan, until=None, subscription_id=sub_id)
@@ -262,8 +265,9 @@ def portal(
             customer=acct["stripe_customer_id"],
             return_url=f"{_public_base(request)}billing",
         )
-    except Exception as exc:  # noqa: BLE001
-        return JSONResponse(status_code=502, content={"detail": f"Stripe error: {exc}"})
+    except Exception:  # noqa: BLE001
+        logger.exception("Stripe billing portal failed")
+        return JSONResponse(status_code=502, content={"detail": _PAYMENT_ERROR})
     return JSONResponse(content={"url": ps.url})
 
 

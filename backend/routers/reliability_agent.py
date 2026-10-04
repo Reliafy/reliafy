@@ -84,9 +84,10 @@ def agent_session_transcript(
         return JSONResponse(status_code=404, content={"detail": "Session not found."})
     try:
         messages = agent_service.get_transcript(session, session_id)
-    except Exception as exc:  # noqa: BLE001 - platform/SDK error
+    except Exception:  # noqa: BLE001 - platform/SDK error
         logger.exception("Failed to load agent transcript")
-        return JSONResponse(status_code=502, content={"detail": f"Couldn't load the transcript: {exc}"})
+        return JSONResponse(status_code=502, content={
+            "detail": "Couldn't load the transcript. Please try again in a moment."})
     return JSONResponse(content={"session_id": session_id, "messages": messages})
 
 
@@ -257,9 +258,9 @@ def start_run(session, user: dict, message: str, file_id: str | None, session_id
                     stopped.set()
         except agent_service.AgentError as exc:
             emit({"type": "error", "detail": str(exc)})
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception("reliability agent stream failed")
-            emit({"type": "error", "detail": str(exc)})
+            emit({"type": "error", "detail": agent_service.STREAM_ERROR})
         finally:
             settle()
 

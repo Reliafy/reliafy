@@ -219,9 +219,9 @@ def stream_relay(session, user: dict, messages: list) -> ai_relay.Relay | JSONRe
                     })
         except assistant_service.AssistantError as exc:
             emit({"type": "error", "detail": str(exc)})
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception("assistant stream failed")
-            emit({"type": "error", "detail": str(exc)})
+            emit({"type": "error", "detail": "The assistant hit an unexpected error. Please try again in a moment."})
         finally:
             meter.finish()
 

@@ -442,18 +442,45 @@ def test_routers_do_not_echo_unexpected_exception_text():
 
     # Responses built from an f-string "detail" inside a broad handler.
     pattern = re.compile(r'"detail":\s*f"[^"]*\{exc\}')
-    # Provider-error relays (billing, the agent stream) are reviewed separately.
-    skip = {"billing.py", "reliability_agent.py", "assistant.py"}
     offenders = {}
     for p in [*(REPO / "backend" / "routers").glob("*.py"), REPO / "backend" / "main.py"]:
-        if p.name in skip:
-            continue
         text = p.read_text()
         hits = [n for n in _broad_handlers_that_echo(text)
                 if pattern.search(text.splitlines()[n - 1])]
         if hits:
             offenders[p.name] = hits
     assert not offenders
+
+
+def test_payment_and_ai_routes_keep_unexpected_exception_text_in_the_log():
+    # Billing, the assistant and the Reliability Agent (router and the service
+    # that drives its stream) return or stream fixed messages from broad
+    # handlers, whatever the provider raised.
+    paths = [REPO / "backend" / "routers" / f for f in ("billing.py", "assistant.py", "reliability_agent.py")]
+    paths.append(REPO / "backend" / "services" / "reliability_agent.py")
+    offenders = {p.name: hits for p in paths if (hits := _broad_handlers_that_echo(p.read_text()))}
+    assert not offenders
+
+
+def test_billing_portal_failure_returns_a_generic_message(client, monkeypatch):
+    from backend.routers import billing as billing_router
+    from backend.services import billing as billing_service
+
+    class _Portal:
+        @staticmethod
+        def create(**kwargs):
+            raise RuntimeError("provider detail cus_123 /v1/billing_portal")
+
+    class _Stripe:
+        billing_portal = type("bp", (), {"Session": _Portal})
+
+    monkeypatch.setattr(billing_router, "_stripe", lambda: _Stripe)
+    monkeypatch.setattr(billing_service, "account",
+                        lambda session, uid: {"stripe_customer_id": "cus_123"})
+    client.act_as(A)
+    r = client.post("/api/billing/portal")
+    assert r.status_code == 502
+    assert "provider detail" not in r.text and "cus_123" not in r.text
 
 
 def test_unexpected_alt_fit_errors_return_a_generic_message(client, monkeypatch):

@@ -479,6 +479,10 @@ _MAX_TOOL_ROUNDS = 10
 _UPLOAD_MOUNT = "/mnt/session/uploads/data.csv"
 
 
+# What the chat shows when a turn fails unexpectedly (the detail is logged).
+STREAM_ERROR = "The Reliability Agent hit an unexpected error. Please try again in a moment."
+
+
 class AgentError(RuntimeError):
     pass
 
@@ -1016,8 +1020,10 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
         return {"error": str(exc)}
     except ValueError as exc:  # bad RBD spec -> clean message the agent can fix
         return {"error": str(exc)}
-    except Exception as exc:  # noqa: BLE001 - surface a clean tool error to the agent
-        return {"error": f"{type(exc).__name__}: {exc}"}
+    except Exception:  # noqa: BLE001 - a clean tool error for the agent; the detail is logged
+        logger.exception("Reliability Agent tool %s failed", name)
+        return {"error": "This tool hit an unexpected error (it has been logged). "
+                         "Check the inputs, or try another approach."}
 
 
 # ---- Event normalisation ----------------------------------------------------
@@ -1237,8 +1243,9 @@ def stream_run(db, uid: str, message: str, file_id: str | None = None,
                 break
     except AgentError:
         raise
-    except Exception as exc:  # noqa: BLE001 - surface a clean error to the stream
-        yield {"type": "error", "detail": str(exc)}
+    except Exception:  # noqa: BLE001 - a clean error on the stream; the detail is logged
+        logger.exception("Reliability Agent turn failed")
+        yield {"type": "error", "detail": STREAM_ERROR}
     finally:
         tick()
         yield {"type": "_meter", **meter}
