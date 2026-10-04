@@ -646,9 +646,13 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 // (free) without running the paid simulation, true asks for it;
 // ``currentState`` ({nodeId: {down: true, since} | {age}}) starts the figures
 // from now; ``exact`` computes the figures over time of a large diagram.
+// Non-repairable (#173): ``currentState`` ({nodeId: {failed: true} | {age}})
+// analyses the diagram as of now; ``targetReliability`` (e.g. 0.9) adds the
+// design life, the time the system reliability falls to it.
 export function analyzeRbd(
   graph, tMax, covariates, conditionalAge,
-  { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false } = {}
+  { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false,
+    targetReliability = null } = {}
 ) {
   return request("/api/rbds/analyze", {
     method: "POST",
@@ -664,6 +668,7 @@ export function analyzeRbd(
       ...(simulate != null ? { simulate } : {}),
       ...(currentState ? { current_state: currentState } : {}),
       ...(exact ? { exact: true } : {}),
+      ...(targetReliability != null ? { target_reliability: targetReliability } : {}),
     }),
   });
 }

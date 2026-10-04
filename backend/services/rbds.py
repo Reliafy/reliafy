@@ -145,6 +145,8 @@ def analyze_graph(
     at_times=None,
     band: dict | None = None,
     state: dict | None = None,
+    current_state: dict | None = None,
+    target_reliability: float | None = None,
 ) -> dict:
     """Run the RePyability reliability analysis for a graph.
 
@@ -158,7 +160,10 @@ def analyze_graph(
     exactly at those times. ``band`` (``{"level": 0.95}``) adds a confidence band from the fitted blocks'
     parameter uncertainty (non-repairable diagrams only). ``state`` (repairable, canonical: see
     :func:`rbd_analysis.parse_current_state`) starts the availability simulation from the blocks'
-    current states.
+    current states. ``current_state`` (non-repairable, raw: see
+    :func:`rbd_analysis.parse_nonrepairable_state`) analyses the diagram as of
+    now — failed and aged blocks — and ``target_reliability`` adds its design
+    life (#173).
     """
 
     def resolve_subsystem(sub_id: str) -> dict | None:
@@ -185,6 +190,8 @@ def analyze_graph(
         conditional_age=conditional_age,
         at_times=at_times,
         band=band,
+        current_state=current_state,
+        target_reliability=target_reliability,
     )
 
 
