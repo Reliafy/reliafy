@@ -13,6 +13,8 @@ from fastapi.responses import JSONResponse, Response
 from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.routers import excel as excel_router
+from backend.services import import_guard
 from backend.services import rbd_import
 from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
@@ -22,7 +24,7 @@ from backend.services import usage as usage_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import Rbd
 from backend.services.rbd_analysis import AnalysisError
-from backend.services.rbd_graph import GraphError, normalize_graph
+from backend.services.rbd_graph import GraphError, check_limits, normalize_graph
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -68,6 +70,10 @@ def save_rbd(
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
+    try:
+        check_limits(graph)
+    except GraphError as exc:
+        return JSONResponse(status_code=422, content={"detail": f"Can't save: {exc}"})
     # Free-plan cap applies only when creating a new diagram (updating one you
     # own, or forking a sample, is checked by whether you already own it).
     existing = rbds_service.get_rbd(session, id, ctx.read_owners) if id else None
@@ -135,7 +141,9 @@ def import_rbd_file(
         except ValueError:
             return JSONResponse(status_code=422, content={"detail": "The column mapping isn't valid JSON."})
     try:
-        diagrams = rbd_import.import_file(data, file.filename or "", **kwargs)
+        diagrams = excel_router.guarded(ctx.uid, rbd_import.import_file, data, file.filename or "", **kwargs)
+    except (import_guard.ImportBusy, import_guard.ImportBudgetExceeded) as exc:
+        return excel_router.guard_error(exc)
     except rbd_import.RbdImportError as exc:
         logger.info("RBD import refused: ext=%s bytes=%d — %s", ext, len(data), exc)
         content = {"detail": str(exc)}

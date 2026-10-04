@@ -34,8 +34,12 @@ def save_rbd(db, name: str, graph: dict, owner_id: str, rbd_id: str | None = Non
 
     ``expected_updated_at`` (the isoformat the client loaded) makes the update
     optimistic: a mismatch raises :class:`access.EditConflict` instead of
-    overwriting another editor's save.
+    overwriting another editor's save. A graph over the size or unit-count
+    limits raises :class:`backend.services.rbd_graph.GraphError`.
     """
+    from backend.services.rbd_graph import check_limits
+
+    check_limits(graph)
     if rbd_id:
         existing = db.rbds.find_one({"_id": rbd_id, "owner_id": owner_id})
         if existing is not None:

@@ -175,31 +175,43 @@ def compare_availability(
     simulations of each instead of running to the precision target."""
     a = _design(graph_a, resolve_model_a)
     b = _design(graph_b, resolve_model_b)
-    user_horizon = bool(t_simulation and t_simulation > 0)
-    t_sim = float(t_simulation) if user_horizon else max(
+    t_chosen, capped = ra.chosen_horizon(t_simulation, graph_a, graph_b)
+    user_horizon = t_chosen is not None
+    t_sim = t_chosen if user_horizon else max(
         ra._availability_horizon(graph_a), ra._availability_horizon(graph_b))
-    worse = max(_unavailability(a, t_sim), _unavailability(b, t_sim))
-    tolerance = _TOLERANCE_FRACTION * ra._availability_tolerance(worse)
-    expect_downtime = bool(np.isfinite(worse) and worse > 0.0)
-
-    # Pilot: time one paired replication (and learn whether the blocks' draws
-    # can be replayed for common random numbers at all).
+    # Pilot: time paired replications (and learn whether the blocks' draws
+    # can be replayed for common random numbers at all). A chosen window is
+    # probed with a couple first, and the pilot batch skipped when it alone
+    # would overrun the budget.
     paired = True
-    start = time.perf_counter()
-    try:
-        _batch(a, b, t_sim, _PILOT_SIMS, _PILOT_BATCH, True)
-    except NotImplementedError:
-        paired = False
-        start = time.perf_counter()
-        _batch(a, b, t_sim, _PILOT_SIMS, _PILOT_BATCH, False)
-    per_rep = max((time.perf_counter() - start) / _PILOT_SIMS, 1e-9)
 
-    shortened = False
+    def timed(n: int) -> float:
+        nonlocal paired
+        start = time.perf_counter()
+        try:
+            _batch(a, b, t_sim, n, _PILOT_BATCH, paired)
+        except NotImplementedError:
+            if not paired:
+                raise
+            paired = False
+            start = time.perf_counter()
+            _batch(a, b, t_sim, n, _PILOT_BATCH, False)
+        return max((time.perf_counter() - start) / n, 1e-9)
+
+    per_rep = timed(ra._AVAIL_PROBE_SIMS) if user_horizon else None
+    if per_rep is None or per_rep * _PILOT_SIMS <= ra._AVAIL_TIME_BUDGET:
+        per_rep = timed(_PILOT_SIMS)
+
+    shortened = capped
     if n_simulations:
         batch = max_n = max(2, int(n_simulations))
     else:
-        batch, max_n, t_sim, shortened = ra._plan_simulation(
+        batch, max_n, t_sim, short = ra._plan_simulation(
             per_rep, ra._AVAIL_SIMS, t_sim, user_horizon)
+        shortened = shortened or short
+    worse = max(_unavailability(a, t_sim), _unavailability(b, t_sim))
+    tolerance = _TOLERANCE_FRACTION * ra._availability_tolerance(worse)
+    expect_downtime = bool(np.isfinite(worse) and worse > 0.0)
 
     z = ra._z(ra._AVAIL_CONFIDENCE)
     fa: list = []

@@ -214,7 +214,7 @@ def delete_study(
     return JSONResponse(content={"ok": True})
 
 
-def _import_tree(data: bytes, filename: str, sheet, header_row, options: str | None) -> dict:
+def _import_tree(uid: str, data: bytes, filename: str, sheet, header_row, options: str | None) -> dict:
     """Read the uploaded worksheet and map it into a tree (raises the
     user-facing ExcelError / RcmImportError / ValueError)."""
     try:
@@ -223,7 +223,8 @@ def _import_tree(data: bytes, filename: str, sheet, header_row, options: str | N
         raise rcm_import.RcmImportError("The import options aren't valid JSON.") from None
     if not isinstance(opts, dict):
         raise rcm_import.RcmImportError("The import options must be an object.")
-    table = excel.read_table(data, sheet, excel_router.header_row_param(header_row), filename)
+    table = excel_router.guarded(uid, excel.read_table, data, sheet,
+                                 excel_router.header_row_param(header_row), filename)
     result = rcm_import.build_tree(table.header, table.rows, opts, table.row_numbers)
     result["notes"] = table.notes
     return result
@@ -252,7 +253,7 @@ def import_preview(
     """
     data = excel_router.read_upload(file)
     try:
-        return JSONResponse(content=_import_tree(data, file.filename or "", sheet, header_row, options))
+        return JSONResponse(content=_import_tree(ctx.uid, data, file.filename or "", sheet, header_row, options))
     except Exception as exc:
         return _import_error(exc, data, file.filename or "")
 
@@ -306,7 +307,7 @@ def import_worksheet(
 
     data = excel_router.read_upload(file)
     try:
-        result = _import_tree(data, file.filename or "", sheet, header_row, options)
+        result = _import_tree(ctx.uid, data, file.filename or "", sheet, header_row, options)
     except Exception as exc:
         return _import_error(exc, data, file.filename or "")
 

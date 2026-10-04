@@ -86,6 +86,7 @@ from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
+from backend.services import import_guard
 from backend.services import oauth as oauth_service
 from backend.services import outage_logs as outage_logs_service
 from backend.services import models as models_service
@@ -2586,12 +2587,17 @@ _UPLOAD_ID = Annotated[str, Field(min_length=1, max_length=64, description="An u
 
 
 @contextmanager
-def _untrusted_file():
-    """Parsing an uploaded file: the importers' own errors reach the agent
-    as they are; anything else (a malformed file tripping a parser) is a
-    plain "couldn't read" — never a traceback, never "Error executing tool"."""
+def _untrusted_file(uid: str):
+    """Parsing an uploaded file: one at a time per user, within the import
+    budget (:mod:`backend.services.import_guard`). The importers' own errors
+    reach the agent as they are; anything else (a malformed file tripping a
+    parser) is a plain "couldn't read" — never a traceback, never "Error
+    executing tool"."""
     try:
-        yield
+        with import_guard.guard(_db(), uid):
+            yield
+    except (import_guard.ImportBusy, import_guard.ImportBudgetExceeded) as exc:
+        raise ToolError(str(exc)) from None
     except (ToolError, ValueError, TypeError):
         raise
     except Exception:  # noqa: BLE001 - untrusted input
@@ -2639,7 +2645,7 @@ def _upload_table_text(db, uid: str, upload_id: str, sheet: Optional[str]) -> tu
     from backend.services import excel
 
     doc, data = uploads_service.read(db, upload_id, uid)
-    with _untrusted_file():
+    with _untrusted_file(uid):
         if uploads_service.is_excel(doc):
             return doc, excel.to_csv(_workbook_table(data, doc["filename"], sheet)).decode("utf-8")
     if doc.get("detected_format") not in ("csv", "text"):
@@ -2695,7 +2701,7 @@ def inspect_upload(ctx: Context, upload_id: _UPLOAD_ID) -> dict[str, Any]:
     row count. Only the user's own uploads."""
     user, db = _caller(ctx), _db()
     doc, data = uploads_service.read(db, upload_id, user["uid"])
-    with _untrusted_file():
+    with _untrusted_file(user["uid"]):
         details = uploads_service.inspect(doc, data)
     return {**uploads_service.brief(doc), **details}
 
@@ -2838,7 +2844,7 @@ def import_rbd(
     else:
         upload, data = uploads_service.read(db, upload_id, user["uid"])
         filename = upload["filename"]
-    with _untrusted_file():
+    with _untrusted_file(user["uid"]):
         try:
             diagrams = rbd_import.import_file(data, filename, format=format)
         except rbd_import.RbdImportError as exc:
@@ -2986,7 +2992,7 @@ def import_excel(
         raise ToolError("rbd_id applies to target rbd_template.")
     if study_id and target != "rcm":
         raise ToolError("study_id applies to target rcm.")
-    with _untrusted_file():
+    with _untrusted_file(user["uid"]):
         if target == "dataset":
             return _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row)
         if target == "rcm":

@@ -465,6 +465,17 @@ def _koon_checks(nodes: list, edges: list, labels: dict) -> tuple[list[str], lis
     return errors, warnings
 
 
+def _check_limits(graph: dict) -> None:
+    """The diagram's size and unit counts, within :mod:`.rbd_graph`'s limits
+    (graphs reach the analysis unsaved, and from before the limits)."""
+    from backend.services.rbd_graph import GraphError, check_limits
+
+    try:
+        check_limits(graph)
+    except GraphError as exc:
+        raise AnalysisError(str(exc)[:1].upper() + str(exc)[1:]) from None
+
+
 def _build_rbd(
     graph: dict,
     resolve_subsystem: Optional[Callable[[str], dict]] = None,
@@ -480,6 +491,7 @@ def _build_rbd(
     input/output), and the last two are the ids pinned working/failed.
     """
     visited = visited or set()
+    _check_limits(graph)
     nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
     edges = [
@@ -1518,6 +1530,14 @@ _AVAIL_CONFIDENCE = 0.95
 _AVAIL_REL_TOLERANCE = 0.05
 _AVAIL_MAX_TOLERANCE = 1e-3
 _AVAIL_MIN_TOLERANCE = 1e-12  # RePyability wants > 0; a never-down system meets it at once
+# A window the user chooses is kept, within bounds: at most this many times
+# the longer of the default window and the longest mean life among the
+# blocks (see chosen_horizon), and it is shortened too when even the minimum
+# replications would take more than _AVAIL_USER_TIME_LIMIT seconds.
+_AVAIL_MAX_HORIZON_FACTOR = 1000.0
+_AVAIL_USER_TIME_LIMIT = 200.0
+# Replications timed first for a chosen window, before the pilot batch.
+_AVAIL_PROBE_SIMS = 2
 
 
 class _NoSimulation(Exception):
@@ -1570,6 +1590,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf: bool = Fals
     """
     from backend.services import rbd_maintenance, rbd_policies
 
+    _check_limits(graph)
     nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
     edges = [
@@ -1869,14 +1890,18 @@ def _plan_simulation(per_rep: float, n_max: int, t_sim: float,
     doesn't depend on it at all). When even the floor won't fit, a *default*
     horizon is shortened in proportion (simulation cost is proportional to the
     number of failure events, i.e. to the horizon); a horizon the user chose is
-    kept.
+    kept unless the floor would take over :data:`_AVAIL_USER_TIME_LIMIT`
+    seconds, when it is shortened to fit that.
     """
     n_max = _even(n_max)
     n_floor = _even(min(_AVAIL_MIN_SIMS, n_max))
     if per_rep * n_floor > _AVAIL_TIME_BUDGET:
+        budget = _AVAIL_TIME_BUDGET
         if user_horizon:
-            return n_floor, n_floor, t_sim, False
-        return n_floor, n_floor, t_sim * _AVAIL_TIME_BUDGET / (per_rep * n_floor), True
+            budget = max(budget, _AVAIL_USER_TIME_LIMIT)
+            if per_rep * n_floor <= budget:
+                return n_floor, n_floor, t_sim, False
+        return n_floor, n_floor, t_sim * budget / (per_rep * n_floor), True
     max_n = _even(min(n_max, max(n_floor, _AVAIL_TIME_BUDGET / per_rep)))
     batch = _even(min(_AVAIL_BATCH, max_n))
     return batch, batch * (max_n // batch), t_sim, False
@@ -1903,18 +1928,62 @@ def _size_simulation(rbd, t_sim: float, n_max: int, overrides: dict,
                      user_horizon: bool) -> tuple[int, int, float, bool]:
     """``(batch, max_n, horizon, shortened)`` for a run to the precision
     target: a pilot batch times one replication and :func:`_plan_simulation`
-    turns the time budget into a replication limit."""
+    turns the time budget into a replication limit. For a window the user
+    chose, :data:`_AVAIL_PROBE_SIMS` replications are timed first, and the
+    pilot batch is skipped when it alone would overrun the budget."""
     if n_max <= _AVAIL_PILOT_SIMS:
         n = _even(n_max)
         return n, n, t_sim, False
-    start = time.perf_counter()
+
+    def timed(n: int) -> float:
+        start = time.perf_counter()
+        _simulate(rbd, t_sim, overrides, n)
+        return max((time.perf_counter() - start) / n, 1e-9)
+
     try:
-        _simulate(rbd, t_sim, overrides, _AVAIL_PILOT_SIMS)
+        per_rep = timed(_AVAIL_PROBE_SIMS) if user_horizon else None
+        if per_rep is None or per_rep * _AVAIL_PILOT_SIMS <= _AVAIL_TIME_BUDGET:
+            per_rep = timed(_AVAIL_PILOT_SIMS)
     except Exception:  # noqa: BLE001 - the real run reports the problem
         n = _even(min(_AVAIL_BATCH, n_max))
         return n, n, t_sim, False
-    per_rep = max((time.perf_counter() - start) / _AVAIL_PILOT_SIMS, 1e-9)
     return _plan_simulation(per_rep, n_max, t_sim, user_horizon)
+
+
+def _life_scale(graph: dict) -> float:
+    """The longest mean life among the diagram's blocks (0 when none is
+    known without a model resolver)."""
+    best = 0.0
+    for node in graph.get("nodes") or []:
+        model = (node.get("data") or {}).get("model")
+        if isinstance(model, dict):
+            mean = _spec_mean(model)
+            if mean:
+                best = max(best, mean)
+    return best
+
+
+def chosen_horizon(t_simulation, *graphs: dict) -> tuple[Optional[float], bool]:
+    """``(window, capped)`` for a simulation window the user chose.
+
+    ``window`` is None when ``t_simulation`` isn't a finite positive number
+    (the default window applies). Otherwise it is kept up to
+    :data:`_AVAIL_MAX_HORIZON_FACTOR` times the longer of the diagrams'
+    default window (:func:`_availability_horizon`) and their longest mean
+    block life — a thousand lifetimes covers any steady state or ownership
+    period — and capped there (``capped`` true; results report it as a
+    shortened window)."""
+    try:
+        t = float(t_simulation)
+    except (TypeError, ValueError):
+        return None, False
+    if not np.isfinite(t) or t <= 0:
+        return None, False
+    reference = max((max(_availability_horizon(g), _life_scale(g)) for g in graphs), default=0.0)
+    cap = _AVAIL_MAX_HORIZON_FACTOR * reference
+    if cap > 0 and t > cap:
+        return float(cap), True
+    return t, False
 
 
 def _run_to_precision(rbd, t_sim: float, overrides: dict, batch: int, max_n: int,
@@ -2015,14 +2084,14 @@ def analyze_availability(
 
     # A simulation horizon long enough to reach steady state: a few multiples of
     # the slowest component's characteristic life, unless the user set one.
-    user_horizon = bool(t_simulation and t_simulation > 0)
-    if not user_horizon:
-        t_simulation = _availability_horizon(graph)
-    horizon_shortened = False
+    t_chosen, horizon_shortened = chosen_horizon(t_simulation, graph)
+    user_horizon = t_chosen is not None
+    t_simulation = t_chosen if user_horizon else _availability_horizon(graph)
     batch = max_n = n_sims
     if simulate and not fixed_n:
-        batch, max_n, t_simulation, horizon_shortened = _size_simulation(
+        batch, max_n, t_simulation, shortened = _size_simulation(
             rbd, float(t_simulation), n_sims, sim_overrides, user_horizon)
+        horizon_shortened = horizon_shortened or shortened
     if not simulate:
         tolerance = None
     elif steady is not None:
@@ -2462,7 +2531,8 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(graph, resolve_model)
     overrides = {"working_nodes": working_nodes | gate_ids, "broken_nodes": broken_nodes}
     node_states = _node_states(state, labels)
-    window = float(horizon) if horizon and horizon > 0 else float(_availability_horizon(graph))
+    chosen, _ = chosen_horizon(horizon, graph)
+    window = chosen if chosen is not None else float(_availability_horizon(graph))
     routes = rbd.analysis_routes()
     summary = _routes_summary(routes, labels)
     base: dict[str, Any] = {
