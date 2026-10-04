@@ -325,11 +325,13 @@ availability and the window's expected system failures, outages, downtime and co
 numerical: deterministic, no simulation), plus the long-run figures — from new, or from now with \
 current_state ({node_id: {"down": true, "since": <time into the repair>} or {"age": <time since new>}}), \
 over t_max (e.g. the next 720 hours). The Monte-Carlo simulation adds only what it alone gives \
-(distributions, P(no outage), percentiles, criticality indices) and is a paid feature; a saved result is \
+(distributions, P(no outage), percentiles, criticality indices; from current_state, next_failure: the time \
+to the next system failure, its mean residual life and likely cause) and is a paid feature; a saved result is \
 served when one exists. When the response says the exact figures are simulation-only for a diagram (e.g. \
 one repair crew for wear-out lives), say so.
 - Non-repairable RBDs: analyze_rbd's current_state ({node_id: {"failed": true} or {"age": <time run>}}) \
-gives the remaining life from now; target_reliability gives the design life (e.g. R ≥ 90% until t).
+gives the remaining life from now (mean_residual_life, exact); target_reliability gives the design life \
+(e.g. R ≥ 90% until t).
 - Every artifact has a url; share it so the user can open the result in Reliafy.
 
 Plans: using Reliafy from AI agents (these tools) is part of Reliafy Pro, which includes everything with \
@@ -2039,6 +2041,9 @@ def _as_of_now_summary(result: dict, labels: dict) -> dict:
             nid: {**v, "label": labels.get(nid, nid)} for nid, v in result["current_state"].items()}
         out["reliability_now"] = result.get("reliability_now")
         out["from"] = "now"
+        if result.get("mean_residual_life"):
+            # The mean remaining life from now (#221), exact where RePyability gives it.
+            out["mean_residual_life"] = result["mean_residual_life"]
     if result.get("design_life"):
         out["design_life"] = result["design_life"]
     band = result.get("band")
@@ -2092,7 +2097,25 @@ def _availability_summary(result: dict) -> dict:
         for k in ("n_simulations", "precision", "per_node", "criticality", "cached", "computed_at"):
             out.pop(k, None)
     out["exact"] = _exact_summary(result.get("exact"))
+    if result.get("next_failure") and result.get("has_simulation", True):
+        out.update(_next_failure_summary(result["next_failure"]))
     return out
+
+
+def _next_failure_summary(nf: dict) -> dict:
+    """As of now with the simulation (#220, #221): the time to the next
+    system failure from the blocks' states — its mean (the mean residual
+    life), percentiles, P(failure) at 21 times and the blocks that cause it."""
+    curve = nf.get("curve") or {}
+    points = _downsample(curve.get("t") or [], curve.get("cdf") or [])
+    keys = ("window", "n_simulations", "down_now", "failed_share", "mean", "mean_is_lower_bound", "mean_lower",
+            "mean_upper", "confidence", "percentiles", "time_limited")
+    out = {"method": "simulated", **{k: nf.get(k) for k in keys if k in nf},
+           "p_failed_by": [{"t": p["t"], "p": p["reliability"]} for p in points],
+           "causes": [{k: c.get(k) for k in ("label", "count", "share")} for c in nf.get("causes") or []]}
+    mrl = {"value": nf.get("mean"), "method": "simulated", "lower": nf.get("mean_lower"),
+           "upper": nf.get("mean_upper"), "lower_bound": bool(nf.get("mean_is_lower_bound"))}
+    return {"next_failure": out, "mean_residual_life": mrl}
 
 
 class BlockState(BaseModel):
@@ -2126,9 +2149,11 @@ def analyze_rbd(
     current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
         "Blocks' states now, keyed by node id; blocks left out are new. Repairable: {down: true, since: "
         "<time into the repair>} or {age: <time since new>}; the figures then run from now over t_max "
-        "(e.g. the next 720 hours). Never replaces the saved from-new result. Non-repairable: {failed: "
+        "(e.g. the next 720 hours); with the simulation, next_failure gives the time to the next system "
+        "failure from now (its mean is mean_residual_life) and the blocks that cause it. Never replaces the "
+        "saved from-new result. Non-repairable: {failed: "
         "true} or {age: <time it has run>} on component blocks; the reliability curve, MTTF, B-lives and "
-        "design life are then the remaining life from now."))] = None,
+        "design life are then the remaining life from now (mean_residual_life: exact)."))] = None,
     compute_exact: Annotated[bool, Field(description=(
         f"Repairable diagrams over {rbd_analysis.EXACT_AUTO_MAX_BLOCKS} blocks: compute the exact figures "
         "over time anyway (from several seconds to a minute or so)."))] = False,
@@ -2151,7 +2176,8 @@ def analyze_rbd(
     Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety), and (in
     `exact`) the availability over time A(t), mission availability and the window's expected system
     failures, outages, downtime and cost — each with its method (exact / numerical; no simulation) — from
-    new or from current_state. The Monte-Carlo simulation (distributions, criticality) is a paid feature
+    new or from current_state. The Monte-Carlo simulation (distributions, criticality; from current_state,
+    next_failure and mean_residual_life: the time to the next system failure and its cause) is a paid feature
     (Pro or purchased credits): a saved result is always served; otherwise, without entitlement, the
     response carries `simulation: {available: false, message}` — relay it, and offer export_rbd_python to
     run the simulation locally. A diagram whose figures are simulation-only (exact.status
