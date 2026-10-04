@@ -253,8 +253,8 @@ def test_request_is_self_contained_and_runs_without_a_database(monkeypatch):
 def test_job_kinds_are_a_registry():
     from backend.services import compute_core
 
-    assert compute_core.KINDS == ("availability", "sensitivity")
-    assert set(compute_core.RUNNERS) == {"availability", "sensitivity"}
+    assert compute_core.KINDS == ("availability", "sensitivity", "alt_bounds")
+    assert set(compute_core.RUNNERS) == {"availability", "sensitivity", "alt_bounds"}
     with pytest.raises(compute_core.InvalidRequest, match="Unknown kind"):
         compute_core.run("next_failure", {"graph": _graph()})
 
