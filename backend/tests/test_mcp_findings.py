@@ -330,6 +330,21 @@ def test_redundancy_heuristic_keeps_false_positives_low():
     assert not rbd_analysis.series_redundancy_warnings(rbd_graph.normalize_graph(GRAPH))
 
 
+def test_a_standby_nodes_own_label_is_not_a_redundant_pair():
+    """#183: "duty/standby" in a standby (or parallel / load-sharing) node's
+    label describes its own units, not its neighbours in series."""
+    from backend.services import rbd_analysis, rbd_graph
+
+    for ntype in ("standby", "parallel", "loadshare"):
+        graph = rbd_graph.normalize_graph(
+            _chain("Suction strainer", "CW pumps A/B (duty/standby)", "Discharge check valve"))
+        next(n for n in graph["nodes"] if n["id"] == "n1")["type"] = ntype
+        assert not rbd_analysis.series_redundancy_warnings(graph), ntype
+    # A plain component so labelled still warns.
+    graph = _chain("Suction strainer", "CW pump (standby)")
+    assert rbd_analysis.series_redundancy_warnings(rbd_graph.normalize_graph(graph))
+
+
 # ---- P2.8 conflicting inputs are refused, never resolved silently ----------------
 
 def test_conflicting_inputs_are_refused(samples):

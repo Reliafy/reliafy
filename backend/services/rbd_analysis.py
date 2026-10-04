@@ -909,6 +909,9 @@ _UNIT_SUFFIX = re.compile(
     r"^(?P<stem>.*?[a-z0-9])(?:[\s\-_#/.]+(?P<tok>[a-h]|\d+|i{1,3}|iv|left|right|port|starboard|north|"
     r"south|east|west|primary|secondary|upper|lower)|(?P<num>\d+))$")
 _BLOCK_TYPES = ("component", "series", "parallel", "standby", "subsystem", "loadshare")
+#: Blocks that are themselves redundancy: a "duty/standby" in their label
+#: describes their own units, not a partner wired next to them (#183).
+_REDUNDANT_TYPES = ("parallel", "standby", "loadshare")
 
 
 def _label_stem(label: str) -> tuple[str, Optional[str]]:
@@ -928,7 +931,9 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
     left/right…, or that call one of them duty/standby/spare/backup/redundant.
     Redundancy wired in series makes the system look far less reliable than
     it is. Only directly adjacent series blocks (the one's sole output feeding
-    the other's sole input) are compared, to keep false positives low."""
+    the other's sole input) are compared, to keep false positives low; and a
+    standby, parallel or load-sharing block's own "duty/standby" label
+    describes its units, so it doesn't count (#183)."""
     nodes = {n.get("id"): n for n in graph.get("nodes") or []}
     edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
              if e.get("source") in nodes and e.get("target") in nodes]
@@ -952,7 +957,8 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
         (stem_a, tok_a), (stem_b, tok_b) = _label_stem(la), _label_stem(lb)
         if stem_a and stem_a == stem_b and tok_a != tok_b:
             why = "the same item with a different unit suffix"
-        elif _REDUNDANCY_WORDS.search(la) or _REDUNDANCY_WORDS.search(lb):
+        elif any(_REDUNDANCY_WORDS.search(lab) and nodes[nid].get("type") not in _REDUNDANT_TYPES
+                 for nid, lab in ((s, la), (t, lb))):
             why = "one is labelled duty/standby/spare/backup/redundant"
         else:
             continue
