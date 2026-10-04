@@ -11,9 +11,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from backend import config
 from backend.services import access
 from backend.services import email as email_service
+from backend.services import email_trust
 from backend.services import samples as samples_service
 
 
@@ -60,9 +60,12 @@ def create_share(db, collection: str, artifact_id: str, email: str, grantor: dic
     recipient = db.users.find_one({"$or": [{"email_lc": email_lc}, {"email": email_lc}]})
     if recipient is None:
         raise ShareError("No Reliafy account exists for that email address.", 404)
-    if not (config.AUTH_DISABLED or recipient.get("email_verified") is True):
-        # Anyone can sign up claiming any address: share only with an
-        # account that has proven it owns this one.
+    # Anyone can sign up claiming any address: share only with an account
+    # that has proven it owns this one.
+    verification = email_trust.status(db, recipient["_id"], recipient.get("email_verified"))
+    if verification == email_trust.UNKNOWN:
+        raise ShareError(email_trust.UNKNOWN_MSG, 409)
+    if verification != email_trust.VERIFIED:
         raise ShareError(
             "That account hasn't verified its email address yet. Ask them to verify it (Reliafy "
             "shows them how), then share again.", 409)

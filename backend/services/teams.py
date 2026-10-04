@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from backend import config
 from backend.services import access
 from backend.services import email as email_service
+from backend.services import email_trust
 from backend.services import rate_limit
 
 ARTIFACT_COLLECTIONS = (
@@ -68,10 +69,15 @@ def _display_name(name) -> str | None:
     return email_service.clean_text(name, MAX_NAME) or None
 
 
-def _email_trusted(user: dict) -> bool:
-    """Whether an account's email address proves who it is (verified, or a
-    single-user install with sign-in off)."""
-    return config.AUTH_DISABLED or user.get("email_verified") is True
+def _email_trusted(db, user: dict) -> bool:
+    """Whether the signed-in user's address proves who they are: the token's
+    ``email_verified`` when it has one, else a lookup (email_trust)."""
+    if config.AUTH_DISABLED:
+        return True
+    flag = user.get("email_verified")
+    if flag is None:
+        return email_trust.verified(db, user.get("uid"))
+    return flag is True
 
 
 def _member(user: dict, role: str) -> dict:
@@ -146,8 +152,17 @@ def add_member_or_invite(db, team: dict, email: str, inviter: dict | None = None
     _consume_invite(db, team, inviter)
 
     target = db.users.find_one({"$or": [{"email_lc": email_lc}, {"email": email_lc}]})
-    if target is not None and not _email_trusted(target):
-        target = None  # an unproven address: stage the invite instead
+    note = None
+    if target is not None:
+        verification = email_trust.status(db, target["_id"], target.get("email_verified"))
+        if verification != email_trust.VERIFIED:
+            # An unproven address: stage the invite; it activates once an
+            # account with this address signs in verified.
+            target = None
+            note = ("Reliafy couldn't confirm that account's email address just now, so the invite is "
+                    "pending: they'll join when they next sign in with the address verified."
+                    if verification == email_trust.UNKNOWN else
+                    "That account hasn't verified its email address yet — they'll join once they do.")
     if target is not None:
         member = _member(
             {"uid": target["_id"], "email": target.get("email"), "name": target.get("name")},
@@ -174,7 +189,10 @@ def add_member_or_invite(db, team: dict, email: str, inviter: dict | None = None
         (inviter or {}).get("name") or (inviter or {}).get("email") or "A Reliafy user",
         team["name"],
     )
-    return {"status": "invited", "email": email_lc}
+    out = {"status": "invited", "email": email_lc}
+    if note:
+        out["note"] = note
+    return out
 
 
 def _consume_invite(db, team: dict, inviter: dict | None) -> None:
@@ -218,7 +236,7 @@ def activate_invites(db, user: dict) -> None:
     Only for a verified address: anyone can create an account claiming any
     email, so an unverified one keeps its invites pending until verified."""
     email_lc = _norm_email(user.get("email"))
-    if not email_lc or not _email_trusted(user):
+    if not email_lc or not _email_trusted(db, user):
         return
     for team in db.teams.find({"invites.email": email_lc}):
         if role_of(team, user["uid"]) is None:
@@ -252,9 +270,8 @@ def summary(db, team: dict, user: dict, billing_service) -> dict:
 def detail(db, team: dict, user: dict, billing_service) -> dict:
     members = []
     for m in team.get("members", []):
-        profile = db.users.find_one({"_id": m["uid"]}, {"email_verified": 1}) or {}
         member_user = {"uid": m["uid"], "email": m.get("email"),
-                       "email_verified": profile.get("email_verified")}
+                       "email_verified": email_trust.profile_flag(db, m["uid"])}
         members.append({
             **_public_member(m),
             "can_edit": access.member_can_edit(db, member_user, billing_service),

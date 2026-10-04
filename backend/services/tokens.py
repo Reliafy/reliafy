@@ -25,6 +25,8 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 
+from backend.services import email_trust
+
 MAX_TOKENS_PER_USER = 10
 _PREFIX = "rlf_"
 
@@ -130,7 +132,7 @@ def verify(db, raw: str) -> dict | None:
         "uid": record["uid"],
         "email": user.get("email"),
         "name": user.get("name"),
-        "email_verified": user.get("email_verified") is True,
+        "email_verified": email_trust.profile_flag(db, record["uid"], user),
         "via_token": record["_id"],
         "token_scopes": scopes_of(record),
     }

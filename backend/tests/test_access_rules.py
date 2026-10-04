@@ -692,3 +692,166 @@ def test_logged_recipients_are_masked(caplog, monkeypatch):
     assert "derryn@gmail.com" not in caplog.text
     assert "d***@gmail.com" in caplog.text
     assert email_service.mask_address("a@b.co, longer@c.org") == "a***@b.co, l***@c.org"
+
+
+# ---- Verification status looked up when not stored --------------------------------
+
+@pytest.fixture()
+def lookup(monkeypatch):
+    """Stand in for Firebase Admin: ``answers[uid]`` is True / False, or an
+    exception to raise."""
+    from backend.services import email_trust
+
+    answers, calls = {}, []
+
+    def fake(uid):
+        calls.append(uid)
+        answer = answers[uid]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(email_trust, "_firebase_ready", lambda: True)
+    monkeypatch.setattr(email_trust, "_lookup", fake)
+    return answers, calls
+
+
+def _unknown(client, uid):
+    """An account that hasn't signed in since verification was recorded."""
+    client.db.users.update_one({"_id": uid}, {"$unset": {"email_verified": ""}})
+
+
+def test_share_to_unknown_status_uses_verified_lookup(client, lookup):
+    answers, calls = lookup
+    _register_all(client)
+    _unknown(client, C)
+    answers[C] = True
+    client.act_as(A)
+    model = _save_model(client)
+    assert _share(client, "models", model["id"], "c@x.com").status_code == 200
+    assert calls == [C]
+    # The answer is stored on the profile, so later checks needn't ask.
+    assert client.db.users.find_one({"_id": C})["email_verified"] is True
+
+
+def test_share_to_unknown_status_refused_when_lookup_says_unverified(client, lookup):
+    answers, _ = lookup
+    _register_all(client)
+    _unknown(client, C)
+    answers[C] = False
+    client.act_as(A)
+    model = _save_model(client)
+    r = _share(client, "models", model["id"], "c@x.com")
+    assert r.status_code == 409 and "hasn't verified" in r.json()["detail"]
+    assert client.db.shares.count_documents({}) == 0
+    assert client.db.users.find_one({"_id": C})["email_verified"] is False
+
+
+def test_share_to_unknown_status_refused_when_lookup_fails(client, lookup):
+    answers, calls = lookup
+    _register_all(client)
+    _unknown(client, C)
+    answers[C] = RuntimeError("firebase unavailable")
+    client.act_as(A)
+    model = _save_model(client)
+    r = _share(client, "models", model["id"], "c@x.com")
+    assert r.status_code == 409 and "couldn't confirm" in r.json()["detail"]
+    assert client.db.shares.count_documents({}) == 0
+    assert "email_verified" not in client.db.users.find_one({"_id": C})
+    # Cached briefly: an immediate retry doesn't ask again.
+    _share(client, "models", model["id"], "c@x.com")
+    assert calls == [C]
+
+
+def test_invite_to_unknown_status_uses_lookup(client, lookup):
+    answers, _ = lookup
+    _register_all(client)
+    _unknown(client, B)
+    _unknown(client, C)
+    answers[B] = True
+    answers[C] = RuntimeError("firebase unavailable")
+    client.act_as(A)
+    tid = client.post("/api/teams", json={"name": "Crew"}).json()["id"]
+    assert client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"}).json()["status"] == "added"
+    r = client.post(f"/api/teams/{tid}/members", json={"email": "c@x.com"}).json()
+    assert r["status"] == "invited" and "couldn't confirm" in r["note"]
+
+
+def test_invite_activation_with_unknown_status_uses_lookup(lookup, monkeypatch):
+    from backend import config
+    from backend.services import teams
+
+    monkeypatch.setattr(config, "AUTH_DISABLED", False)
+    answers, _ = lookup
+    db = mongomock.MongoClient()["reliafy_invite_lookup"]
+    db.teams.insert_one({"_id": "t1", "name": "Crew", "owner_uid": A, "members": [{"uid": A}],
+                         "invites": [{"email": "c@x.com"}, {"email": "d@x.com"}]})
+    answers[C], answers[D] = True, RuntimeError("down")
+    teams.activate_invites(db, {"uid": C, "email": "c@x.com", "name": "C"})
+    teams.activate_invites(db, {"uid": D, "email": "d@x.com", "name": "D"})
+    team = db.teams.find_one({"_id": "t1"})
+    assert [m["uid"] for m in team["members"]] == [A, C]
+    assert [i["email"] for i in team["invites"]] == ["d@x.com"]
+
+
+def test_token_user_with_unknown_status_uses_lookup(lookup, monkeypatch):
+    from backend import config
+    from backend.services import billing, tokens
+
+    monkeypatch.setattr(config, "AUTH_DISABLED", False)
+    monkeypatch.setattr(config, "ADMIN_EMAILS", {"c@x.com", "d@x.com"})
+    answers, _ = lookup
+    db = mongomock.MongoClient()["reliafy_token_lookup"]
+    db.users.insert_many([{"_id": C, "email": "c@x.com"}, {"_id": D, "email": "d@x.com"}])
+    answers[C], answers[D] = True, RuntimeError("down")
+    c = tokens.verify(db, tokens.create_token(db, C, "t")["token"])
+    d = tokens.verify(db, tokens.create_token(db, D, "t")["token"])
+    assert billing.is_admin_user(c) is True
+    assert billing.is_admin_user(d) is False
+
+
+def test_alert_email_only_to_verified_address(client, lookup, monkeypatch):
+    from backend.schema import Fleet
+    from backend.services import email as email_service
+    from backend.services import fleet_alerts
+
+    answers, _ = lookup
+    sent = []
+    monkeypatch.setattr(email_service, "enabled", lambda: True)
+    monkeypatch.setattr(email_service, "send_now", lambda to, *a, **k: sent.append(to))
+    monkeypatch.setattr(fleet_alerts, "render", lambda *a, **k: {"subject": "s", "text": "t", "html": "h"})
+    fleet = Fleet(id="f1", name="F", owner_id=B, model_id="m1", settings={}, items=[])
+    rule = {"_id": "r1", "owner_uid": B, "kind": "above", "threshold": 1}
+    now = datetime.now(timezone.utc)
+
+    client.act_as(B)  # verified
+    fleet_alerts._fire(client.db, fleet, rule, 0, None, 2.0, now, "test")
+    assert sent == ["b@x.com"]
+
+    client.act_as(D)  # stored unverified, and the lookup agrees
+    answers[D] = False
+    fleet_alerts._fire(client.db, fleet, {**rule, "_id": "r2", "owner_uid": D}, 0, None, 2.0, now, "test")
+    client.act_as(C)
+    _unknown(client, C)  # unknown, and the lookup fails
+    answers[C] = RuntimeError("down")
+    fleet_alerts._fire(client.db, fleet, {**rule, "_id": "r3", "owner_uid": C}, 0, None, 2.0, now, "test")
+    assert sent == ["b@x.com"]
+    errors = {e["alert_id"]: e["error"] for e in client.db.fleet_alert_events.find()}
+    assert errors["r1"] is None
+    assert "isn't verified" in errors["r2"] and "Couldn't confirm" in errors["r3"]
+
+
+def test_no_lookup_without_firebase_or_with_sign_in_off(client, monkeypatch):
+    from backend import config
+    from backend.services import email_trust
+
+    def unexpected(uid):
+        raise AssertionError("no lookup expected")
+
+    monkeypatch.setattr(email_trust, "_lookup", unexpected)
+    monkeypatch.setattr(email_trust, "_firebase_ready", lambda: False)
+    client.act_as(C)
+    _unknown(client, C)
+    assert email_trust.status(client.db, C) == email_trust.UNVERIFIED
+    monkeypatch.setattr(config, "AUTH_DISABLED", True)
+    assert email_trust.status(client.db, C) == email_trust.VERIFIED

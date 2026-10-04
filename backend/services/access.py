@@ -504,7 +504,10 @@ def team_frozen(db, team: dict, billing_service) -> bool:
         return False
     owner_uid = team.get("owner_uid")
     owner_doc = db.users.find_one({"_id": owner_uid}) or {}
-    owner_user = {"email": owner_doc.get("email"), "email_verified": owner_doc.get("email_verified")}
+    from backend.services import email_trust
+
+    owner_user = {"email": owner_doc.get("email"),
+                  "email_verified": email_trust.profile_flag(db, owner_uid, owner_doc)}
     if billing_service.is_admin_user(owner_user):
         return False
     return not billing_service.account(db, owner_uid)["is_pro"]

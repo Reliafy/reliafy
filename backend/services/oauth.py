@@ -41,6 +41,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from backend import config
+from backend.services import email_trust
 
 logger = logging.getLogger(__name__)
 
@@ -762,7 +763,7 @@ def verify_access_token(db, raw: str) -> dict | None:
         "uid": doc["uid"],
         "email": user.get("email"),
         "name": user.get("name"),
-        "email_verified": user.get("email_verified") is True,
+        "email_verified": email_trust.profile_flag(db, doc["uid"], user),
         "via_oauth": doc["family_id"],
         "oauth_client": doc["client_name"],
     }
