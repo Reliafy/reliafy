@@ -275,15 +275,21 @@ def demonstration_test(reliability: float | None = None, *, confidence: float = 
                        mission_time: float | None = None, failures: int = 0,
                        test_multiple: float = 1.0, shape: float | None = None,
                        units: int | None = None, method: str = "attribute",
-                       mtbf: float | None = None, unit: str | None = None) -> dict:
+                       mtbf: float | None = None, design_reliability: float | None = None,
+                       design_mtbf: float | None = None, producer_risk: float | None = None,
+                       unit: str | None = None) -> dict:
     """Plan a reliability demonstration test: the units to test (or, given
     ``units``, the test time per unit) to show ``reliability`` over a mission
     at ``confidence`` with at most ``failures`` failures. ``test_multiple``
     and ``units`` need the lifetime's Weibull ``shape``; ``method="mtbf"``
-    with ``mtbf`` plans a constant-failure-rate test instead."""
+    with ``mtbf`` plans a constant-failure-rate test instead.
+    ``design_reliability`` (or ``design_mtbf``) gives a good design's chance
+    of passing; with ``producer_risk`` too, the plan keeps both risks and
+    chooses the failures allowed itself."""
     body = {"reliability": reliability, "confidence": confidence, "mission_time": mission_time,
             "failures": failures, "test_multiple": test_multiple, "shape": shape,
-            "units": units, "method": method, "mtbf": mtbf, "unit": unit}
+            "units": units, "method": method, "mtbf": mtbf, "design_reliability": design_reliability,
+            "design_mtbf": design_mtbf, "producer_risk": producer_risk, "unit": unit}
     return _request("POST", "/api/v1/strategy/demonstration-test",
                     {k: v for k, v in body.items() if v is not None})
 
