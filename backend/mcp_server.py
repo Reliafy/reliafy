@@ -2122,7 +2122,10 @@ def analyze_rbd(
     (Pro or purchased credits): a saved result is always served; otherwise, without entitlement, the
     response carries `simulation: {available: false, message}` — relay it, and offer export_rbd_python to
     run the simulation locally. A diagram whose figures are simulation-only (exact.status
-    'simulation_only', e.g. proof tests that take time) returns available=false without entitlement."""
+    'simulation_only', e.g. proof tests that take time) returns available=false without entitlement; asked
+    with simulate=false (and no saved result matching the diagram as it is now) it returns available=false,
+    needs_simulation=true, code 'needs_simulation' and a reason naming what needs the simulation, with no
+    figure fields — call again with simulate=true (Pro or credits) or offer export_rbd_python."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
