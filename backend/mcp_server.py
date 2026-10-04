@@ -291,7 +291,8 @@ and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert m
 fleet's expected failures.
 - Test planning: plan_demonstration_test sizes a reliability demonstration test — units, test time per unit \
 and allowed failures to show reliability R over a mission at confidence C (success run / binomial; a longer \
-test per unit with a known Weibull shape; or an MTBF test). It needs no saved data.
+test per unit with a known Weibull shape; or an MTBF test); with producer_risk and a good design it keeps both \
+risks. It needs no saved data.
 - Housekeeping: delete_model, delete_dataset and delete_rbd permanently delete the user's own artifacts \
 (never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
 Only on the user's explicit \
@@ -1534,7 +1535,8 @@ class RbdNode(BaseModel):
         description="component = one block; series/parallel = n identical blocks sharing one model; knode = "
                     "k-of-n voting gate (n = required, k = branches feeding it); standby = spare(s) idle until "
                     "the running unit fails (repairable: identical units, each repaired after it fails); "
-                    "subsystem = embed a saved RBD. Repairable diagrams take component, standby and knode.")
+                    "subsystem = embed a saved RBD. Repairable diagrams take component, standby and knode (a vote "
+                    "can sit anywhere, e.g. two 2-of-3 stages in series).")
     label: Optional[str] = None
     model: Optional[BlockModel] = Field(None, description="Life model (component, series, parallel, standby).")
     repair: Optional[BlockModel] = Field(None, description="Repairable diagrams only: time-to-repair distribution "
@@ -2484,7 +2486,8 @@ def _lean_demonstration(out: dict) -> dict:
     """The demonstration plan without the app's plotting fields: the trade-off
     table as {row label: values by allowed failures}."""
     keep = ("method", "solve_for", "summary", "units", "test_time_per_unit", "total_test_time",
-            "test_multiple", "failures", "unit", "consumer_risk", "pass_probability", "assumptions")
+            "test_multiple", "failures", "unit", "consumer_risk", "pass_probability", "producer_risk",
+            "producer_risk_target", "design_reliability", "design_mtbf", "assumptions")
     lean = {k: out[k] for k in keep if out.get(k) is not None}
     t = out.get("tradeoff") or {}
     lean["tradeoff"] = {
@@ -2521,20 +2524,30 @@ def plan_demonstration_test(
                                                                       "rate, total test time, chi-squared).")]
     = "attribute",
     mtbf: Annotated[Optional[float], Field(gt=0, description="MTBF to demonstrate (method='mtbf').")] = None,
-    design_reliability: Annotated[Optional[float], Field(gt=0, lt=1, description="Optional: a design's true "
-                                                                                 "reliability, to report its "
-                                                                                 "chance of passing.")] = None,
+    design_reliability: Annotated[Optional[float], Field(gt=0, lt=1, description="Optional: a good design's "
+                                                                                 "true reliability, to report "
+                                                                                 "its chance of passing (needed "
+                                                                                 "with producer_risk).")] = None,
     unit: _UNIT = None,
+    design_mtbf: Annotated[Optional[float], Field(gt=0, description="method='mtbf': a good design's true MTBF "
+                                                                    "(needed with producer_risk).")] = None,
+    producer_risk: Annotated[Optional[float], Field(gt=0, lt=1, description=(
+        "Optional, e.g. 0.2: the most chance of FAILING the good design (design_reliability / design_mtbf). "
+        "Plans the smallest test keeping BOTH risks (consumer's <= 1 - confidence, producer's <= this) and "
+        "chooses the failures allowed itself (failures is ignored)."))] = None,
 ) -> dict[str, Any]:
     """Plan a reliability demonstration test: how many units to test, for how long, with how many failures
     allowed, to show reliability R over a mission at confidence C (success run / binomial; Weibayes with a
-    known Weibull shape to trade test time for units; or an MTBF chi-squared test). Returns a one-line plan,
-    the assumptions and a units-vs-failures(-vs-test-length) trade-off table."""
+    known Weibull shape to trade test time for units; or an MTBF chi-squared test). With producer_risk and a
+    good design's reliability (or MTBF), the plan keeps both the consumer's and the producer's risk (a
+    success run alone often fails a good design). Returns a one-line plan, both risks, the assumptions and a
+    units-vs-failures(-vs-test-length) trade-off table."""
     _caller(ctx)
     out = strategy_store.compute("demonstration_test", {
         "method": method, "reliability": reliability, "confidence": confidence, "mission_time": mission_time,
         "failures": failures, "test_multiple": test_multiple, "shape": shape, "units": units, "mtbf": mtbf,
-        "design_reliability": design_reliability, "unit": unit or ""})
+        "design_reliability": design_reliability, "design_mtbf": design_mtbf, "producer_risk": producer_risk,
+        "unit": unit or ""})
     return _lean_demonstration(out)
 
 

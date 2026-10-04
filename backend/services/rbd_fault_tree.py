@@ -253,7 +253,7 @@ def _repairable_tree(graph: dict, resolve_model) -> tuple[FaultTree, dict, float
     availability = rbd.node_availability()
     args = rbd._init_args
     structural = {
-        n: (PerfectReliability if n in gate_ids else _Share(PerfectReliability, 1.0, "Block"))
+        n: (PerfectReliability if n in gate_ids and n not in broken else _Share(PerfectReliability, 1.0, "Block"))
         for n in args["components"]
     }
     structure = NonRepairableRBD(
@@ -271,7 +271,7 @@ def _repairable_tree(graph: dict, resolve_model) -> tuple[FaultTree, dict, float
         else:
             events[e] = min(max(1.0 - float(availability[e]), 0.0), 1.0)
     unavailability = 1.0 - float(
-        rbd.mean_availability(working_nodes=working | gate_ids, broken_nodes=broken)
+        rbd.mean_availability(working_nodes=working, broken_nodes=broken)
     )
     return FaultTree(tree.gates, events, top=tree.top), info, unavailability
 

@@ -26,7 +26,7 @@ KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration
 # The demonstration-test calculator's inputs (the endpoint body shape).
 DEMO_INPUTS = (
     "method", "reliability", "confidence", "mission_time", "failures", "test_multiple",
-    "shape", "units", "mtbf", "design_reliability", "design_mtbf", "unit",
+    "shape", "units", "mtbf", "design_reliability", "design_mtbf", "unit", "producer_risk",
 )
 
 

@@ -59,7 +59,7 @@ def _simulate(graph, horizon, n=2000, state=None):
     extra = {"state": ra._node_states(state)} if state else {}
     return rbd.availability(t_simulation=horizon, mc_samples=n, method="c", seed=1, antithetic=True,
                             control_variate=False, conditional=False,
-                            working_nodes=working | gates, broken_nodes=broken, **extra)
+                            working_nodes=working, broken_nodes=broken, **extra)
 
 
 def _poisson_close(simulated, exact, n):

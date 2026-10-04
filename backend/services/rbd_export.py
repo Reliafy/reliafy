@@ -59,7 +59,7 @@ _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 # (as well as keywords and builtins such as ``filter`` or ``input``).
 _RESERVED = {
     "np", "os", "json", "surv", "plt", "rbd", "rbd_independent", "main",
-    "missing_model", "voting_gate", "mean_time_to_failure", "b_life",
+    "missing_model", "voting_gate", "pinned_stand_in", "mean_time_to_failure", "b_life",
     "save_results", "results", "exact_over_window", "node_states", "window_mean",
 }
 
@@ -359,7 +359,7 @@ class _Script:
         self.imports: set[str] = set()
         self.uses_surv = False
         self.uses_missing = False
-        self.uses_voting_gate = False
+        self.uses_stand_in = False
         self.lines: list[str] = []  # block definitions, in order
         self.subsystems: dict[str, str] = {}  # rbd id -> variable
         self.placeholders: list[str] = []  # labels of raising blocks
@@ -897,7 +897,7 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
 
 def _imports(script: _Script, repairable: bool) -> str:
     out = ["import json", "import os", "", "import numpy as np"]
-    if script.uses_surv or (repairable and script.uses_voting_gate):
+    if script.uses_surv or (repairable and script.uses_stand_in):
         out.append("import surpyval as surv")
     names = sorted(script.imports)
     if names:
@@ -919,13 +919,12 @@ def _helpers(script: _Script) -> str:
                 """Stand-in for a block whose model couldn't be exported."""
                 raise NotImplementedError(message)
         '''))
-    if script.uses_voting_gate:
+    if script.uses_stand_in:
         out.append(textwrap.dedent('''
-            def voting_gate():
-                """A k-of-n voting gate in an availability model: pure logic that
-                never fails (RePyability needs every node to be a repairable
-                component; main() also pins it working), exactly as Reliafy
-                models it."""
+            def pinned_stand_in():
+                """A block pinned working or failed with no life or repair model:
+                the pin fixes its state, so this never-failing stand-in is never
+                consulted (exactly as Reliafy models it)."""
                 return NonRepairable(
                     surv.Weibull.from_params([1e12, 1.0]),
                     surv.Exponential.from_params([1.0]),
@@ -1295,9 +1294,18 @@ def _repairable_body(script: _Script, graph) -> str:
             broken.append(nid)
         pinned = state in ("working", "failed")
         if ntype == "knode":
-            script.uses_voting_gate = True
             k[nid] = max(int(data.get("n") or 1), 1)
-            comps.append((nid, "voting_gate()", label))
+            if state == "failed":
+                # A vote point pinned failed: a stand-in held broken.
+                script.uses_stand_in = True
+                comps.append((nid, "pinned_stand_in()", label))
+                continue
+            # A junction (RePyability 0.12): it never fails, is folded out of
+            # every analysis, and can't be pinned.
+            if state == "working":
+                working.remove(nid)
+            script.imports.add("PerfectReliability")
+            comps.append((nid, "PerfectReliability", label))
             continue
         var = script.names.make(label)
         L.append("")
@@ -1318,13 +1326,13 @@ def _repairable_body(script: _Script, graph) -> str:
             comps.append((nid, var, label))
             continue
         if pinned and not (data.get("model") and (data.get("repair") or data.get("instant_repair"))):
-            script.uses_voting_gate = True
+            script.uses_stand_in = True
             script.comment(
                 f"{label}: pinned {state} in Reliafy with no life/repair "
                 "model - the override fixes its state, so a never-failing "
                 "stand-in is used."
             )
-            L.append(f"{var} = voting_gate()")
+            L.append(f"{var} = pinned_stand_in()")
             comps.append((nid, var, label))
             continue
         life = script.dist(data.get("model"), f"{label} (life)",
@@ -1626,8 +1634,8 @@ def exact_over_window(overrides):
 
 
 def main():
-    # Voting gates (the ids in K) are pinned working so they're exactly perfect.
-    overrides = {"working_nodes": WORKING_NODES | set(K), "broken_nodes": BROKEN_NODES}
+    # Voting gates (the ids in K) are junctions: perfect, and never pinned.
+    overrides = {"working_nodes": WORKING_NODES, "broken_nodes": BROKEN_NODES}
     unit = f" {UNIT}" if UNIT else ""
     blocks = [n for n in LABELS if n not in K]  # voting gates aren't blocks
 
