@@ -29,7 +29,9 @@ import RbdCostsModal from "../components/RbdCostsModal.jsx";
 import RbdCrewsModal from "../components/RbdCrewsModal.jsx";
 import { applyBlockExtras } from "../components/RbdBlockCosts.jsx";
 import ValidationPanel, { graphSignature } from "../components/RbdValidation.jsx";
-import { saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP } from "../api.js";
+import {
+  saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP, downloadRbdJson, JSON_EXPORT_TIP,
+} from "../api.js";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import CopyId from "../components/CopyId.jsx";
 import { registerRbdCanvas } from "../rbdBridge.js";
@@ -357,26 +359,30 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   // RePyability script. Free for every viewer (samples and shared diagrams
   // too). Also triggered by a `reliafy:rbd-export` window event, e.g. from the
   // availability upgrade card.
-  const [exporting, setExporting] = useState(false);
+  // "Download as RePyability JSON" (#174) sits beside it: the same diagram as
+  // RePyability's to_json document, which Reliafy's Import also reads back.
+  const [exporting, setExporting] = useState(null); // "python" | "json" while downloading
   const exportingRef = useRef(false);
-  const exportPython = useCallback(async () => {
+  const exportAs = useCallback(async (kind) => {
+    const python = kind === "python";
     if (!savedRbdId) {
-      setConnectHint("Save the diagram first to download it as Python.");
+      setConnectHint(`Save the diagram first to download it as ${python ? "Python" : "RePyability JSON"}.`);
       return;
     }
     if (exportingRef.current) return;
     exportingRef.current = true;
-    setExporting(true);
+    setExporting(kind);
     try {
-      const file = await downloadRbdPython(savedRbdId);
+      const file = await (python ? downloadRbdPython : downloadRbdJson)(savedRbdId);
       setConnectHint(`Downloaded ${file} (the last saved version).`);
     } catch (e) {
-      setConnectHint(e.message || "Couldn't download the script.");
+      setConnectHint(e.message || `Couldn't download the ${python ? "script" : "file"}.`);
     } finally {
       exportingRef.current = false;
-      setExporting(false);
+      setExporting(null);
     }
   }, [savedRbdId]);
+  const exportPython = useCallback(() => exportAs("python"), [exportAs]);
 
   useEffect(() => {
     const onExport = () => exportPython();
@@ -1069,9 +1075,21 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
             <button
               className="rbd-btn"
               onClick={exportPython}
-              disabled={!savedRbdId || exporting}
+              disabled={!savedRbdId || !!exporting}
             >
-              {exporting ? "Preparing…" : "Download as Python"}
+              {exporting === "python" ? "Preparing…" : "Download as Python"}
+            </button>
+          </span>
+          <span
+            className="rbd-export-wrap"
+            title={savedRbdId ? JSON_EXPORT_TIP : "Save the diagram first"}
+          >
+            <button
+              className="rbd-btn"
+              onClick={() => exportAs("json")}
+              disabled={!savedRbdId || !!exporting}
+            >
+              {exporting === "json" ? "Preparing…" : "Download as RePyability JSON"}
             </button>
           </span>
           <button className="rbd-btn" onClick={autoLayout}>

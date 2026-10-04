@@ -18,6 +18,7 @@ makes the importer raise :class:`RbdImportError` (can't be imported honestly).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable, Optional
 
 # Uploads are untrusted: cap the raw file and anything we decompress from it.
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -34,3 +35,7 @@ class ImportedDiagram:
     graph: dict
     warnings: list[str] = field(default_factory=list)
     source_format: str = ""
+    #: ``links(saved_model, saved_rbd)`` restores links to the importing
+    #: user's saved models / diagrams (see :func:`.link_references`); None
+    #: for formats that carry none.
+    links: Optional[Callable] = field(default=None, repr=False, compare=False)

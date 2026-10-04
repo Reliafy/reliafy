@@ -275,9 +275,10 @@ def detect_format(head: bytes) -> str:
     """What the bytes are, from their first few KB (magic bytes, then text
     shape): ``xlsx``, ``zip``, ``rsgz`` (gzip — a BlockSim pack), ``rsr``
     (an Access/Jet database — a BlockSim project), ``xls`` (an OLE compound
-    file: legacy Excel or an encrypted workbook), ``xml``, ``galileo``,
+    file: legacy Excel or an encrypted workbook), ``xml``, ``repyability``
+    (RePyability JSON), ``galileo``,
     ``csv``, ``text`` or ``binary``."""
-    from backend.services.rbd_import import blocksim, galileo
+    from backend.services.rbd_import import blocksim, galileo, repyability
 
     head = head or b""
     if head.startswith(b"PK\x03\x04"):
@@ -293,6 +294,8 @@ def detect_format(head: bytes) -> str:
     text = head.decode("utf-8", "replace").lstrip("﻿ \t\r\n")
     if text.startswith("<"):
         return "xml"
+    if repyability.sniff(head, ""):
+        return "repyability"
     if galileo.sniff(head, ""):
         return "galileo"
     first = next((ln for ln in text.splitlines() if ln.strip()), "")
@@ -376,7 +379,7 @@ def inspect(doc: dict, data: bytes) -> dict:
     fmt = doc.get("detected_format")
     if is_excel(doc):
         return {"kind": "workbook", **_inspect_workbook(data, doc.get("filename") or "")}
-    if fmt in ("rsgz", "rsr", "xml", "galileo"):
+    if fmt in ("rsgz", "rsr", "xml", "repyability", "galileo"):
         return {"kind": "diagram_file", **preview_diagrams(data, doc.get("filename") or "")}
     if fmt in ("csv", "text"):
         return {"kind": "table", **_inspect_text(data)}

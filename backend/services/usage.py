@@ -295,6 +295,7 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/rbds/analyze", "rbd_analyze"),
     ("GET", "/api/rbds/{id}/analyze", "rbd_analyze"),
     ("GET", "/api/rbds/{id}/export.py", "export_python"),
+    ("GET", "/api/rbds/{id}/export.json", "export_json"),
     ("DELETE", "/api/rbds/{id}", "rbd_delete"),
     ("POST", "/api/rbds/import", "rbd_import"),
     ("POST", "/api/rbds/compare", "availability_compare"),

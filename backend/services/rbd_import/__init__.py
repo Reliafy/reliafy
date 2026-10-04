@@ -2,8 +2,10 @@
 
 Supported: ReliaSoft BlockSim project databases (``.rsgzNN`` / ``.rsrNN`` /
 ``.rsrp``), Open-PSA Model Exchange Format XML, Galileo dynamic-fault-tree
-text (``.dft``) and Excel workbooks of blocks + connections (``.xlsx``, see
-:mod:`.excel`). :func:`import_file` picks the format by content, then filename.
+text (``.dft``), Excel workbooks of blocks + connections (``.xlsx``, see
+:mod:`.excel`) and RePyability's JSON (``RBD.to_json()``, and Reliafy's own
+"Download as RePyability JSON", see :mod:`.repyability`). :func:`import_file`
+picks the format by content, then filename.
 """
 
 from __future__ import annotations
@@ -13,12 +15,14 @@ from typing import Optional
 
 from .types import MAX_UPLOAD_BYTES, ImportedDiagram, RbdImportError
 
-__all__ = ["FORMATS", "ImportedDiagram", "RbdImportError", "UNIT_MISSING", "apply_time_unit", "import_file"]
+__all__ = ["FORMATS", "ImportedDiagram", "RbdImportError", "UNIT_MISSING", "apply_time_unit", "import_file",
+           "link_references"]
 
 # module name -> human label, in sniffing order (binary formats first).
 FORMATS = {
     "excel": "Excel workbook",
     "blocksim": "ReliaSoft BlockSim",
+    "repyability": "RePyability JSON",
     "openpsa": "Open-PSA MEF",
     "galileo": "Galileo DFT",
 }
@@ -93,6 +97,19 @@ def import_file(data: bytes, filename: str, excel_mapping: Optional[dict] = None
             return diagrams
     raise RbdImportError(
         "Unrecognised file. Reliafy imports ReliaSoft BlockSim projects (.rsgz / .rsr — "
-        "use File › Pack and E-mail in BlockSim), Open-PSA XML, Galileo .dft files and "
-        "Excel workbooks (.xlsx — download the template)."
+        "use File › Pack and E-mail in BlockSim), Open-PSA XML, Galileo .dft files, "
+        "RePyability JSON and Excel workbooks (.xlsx — download the template)."
     )
+
+
+def link_references(diagrams: list[ImportedDiagram], saved_model=None, saved_rbd=None) -> None:
+    """Restore the links an imported diagram may carry to the user's saved
+    models and sub-system diagrams (RePyability JSON written by Reliafy).
+
+    ``saved_model`` / ``saved_rbd`` map an id to the saved model / diagram the
+    importing user can open (None otherwise). Without this call a diagram
+    keeps no links: each block keeps its own parameters and each sub-system
+    is drawn in place, so the graph is valid for anyone."""
+    for d in diagrams:
+        if d.links is not None:
+            d.links(saved_model, saved_rbd)

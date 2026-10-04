@@ -31,7 +31,8 @@ FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]  # 0 = failed, 1 = still running
 
 READ_TOOLS = {
     "list_models", "get_model", "reliability_at", "list_datasets", "list_rbds", "get_rbd",
-    "analyze_rbd", "fit_distribution", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
+    "analyze_rbd", "fit_distribution", "export_rbd_python", "export_rbd_json", "optimal_replacement",
+    "failure_finding_interval",
     "optimal_overhaul", "plan_demonstration_test", "list_fleets", "fleet_forecast", "list_fleet_alerts",
     "upgrade_link", "system_history", "list_share_links", "get_account", "get_dataset", "inspect_upload",
     "compare_groups",
