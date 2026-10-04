@@ -408,15 +408,52 @@ def test_fit_validation_errors_keep_their_message(client):
     assert r.status_code == 422 and "missing" in r.json()["detail"]
 
 
+def _broad_handlers_that_echo(source: str) -> list[int]:
+    """Line numbers of ``except Exception`` (or bare/BaseException) handlers
+    whose body formats the caught exception into a string. Handlers for
+    specific error types (FitError, GraphError, ...) carry intentional
+    user-facing messages and are not counted."""
+    import ast
+
+    def broad(t) -> bool:
+        if t is None:
+            return True
+        if isinstance(t, ast.Tuple):
+            return any(broad(e) for e in t.elts)
+        return isinstance(t, ast.Name) and t.id in {"Exception", "BaseException"}
+
+    lines = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.ExceptHandler) or not broad(node.type) or not node.name:
+            continue
+        for sub in ast.walk(ast.Module(body=node.body, type_ignores=[])):
+            if isinstance(sub, ast.FormattedValue) and isinstance(sub.value, ast.Name) \
+                    and sub.value.id == node.name:
+                lines.append(sub.lineno)
+            elif isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) \
+                    and sub.func.id in {"str", "repr"} and sub.args \
+                    and isinstance(sub.args[0], ast.Name) and sub.args[0].id == node.name:
+                lines.append(sub.lineno)
+    return lines
+
+
 def test_routers_do_not_echo_unexpected_exception_text():
     import re
 
+    # Responses built from an f-string "detail" inside a broad handler.
     pattern = re.compile(r'"detail":\s*f"[^"]*\{exc\}')
     # Provider-error relays (billing, the agent stream) are reviewed separately.
     skip = {"billing.py", "reliability_agent.py", "assistant.py"}
-    offenders = [p.name for p in (REPO / "backend" / "routers").glob("*.py")
-                 if p.name not in skip and pattern.search(p.read_text())]
-    assert not offenders and not pattern.search((REPO / "backend" / "main.py").read_text())
+    offenders = {}
+    for p in [*(REPO / "backend" / "routers").glob("*.py"), REPO / "backend" / "main.py"]:
+        if p.name in skip:
+            continue
+        text = p.read_text()
+        hits = [n for n in _broad_handlers_that_echo(text)
+                if pattern.search(text.splitlines()[n - 1])]
+        if hits:
+            offenders[p.name] = hits
+    assert not offenders
 
 
 def test_unexpected_alt_fit_errors_return_a_generic_message(client, monkeypatch):
