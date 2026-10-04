@@ -629,6 +629,11 @@ function SimulationOffer({ canSimulate, onSimulate, simulating, graph, quick = n
         )}
       </p>
       {capMessage && !canSimulate && <p className="rbd-quick-cap">{capMessage}</p>}
+      {!capMessage && !canSimulate && onQuick && quick && quick.remaining_today <= 0 && (
+        <p className="rbd-quick-cap">
+          You've used today's {quick.per_day} free quick simulations. They reset at 00:00 UTC.
+        </p>
+      )}
       {job ? (
         <p className="rbd-job-status" role="status" aria-live="polite">{jobStatusText(job)}</p>
       ) : (
@@ -798,7 +803,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
             {result.quick ? "Quick estimate: availability" : "Availability"} curve estimated by{" "}
             {result.n_simulations?.toLocaleString()} Monte-Carlo
             replications{result.precision?.antithetic ? " (in antithetic pairs)" : ""}
-            {result.quick && result.time_budget_s ? ` (about ${fmt3(result.time_budget_s)} s of simulation)` : ""}{" "}
+            {result.quick && result.time_budget_s ? `, a quick run of at most ${fmt3(result.time_budget_s)} s,` : ""}{" "}
             over {fmt(result.t_simulation)}{u}
             {hasBand ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}
             {sameWindow ? "; the dotted line is the exact A(t)" : ""}.

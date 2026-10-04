@@ -49,10 +49,12 @@ GENERIC_FAILURE = "The calculation failed. Check the diagram and try again."
 
 
 # ---- Execution ----------------------------------------------------------------
-# RePyability seeds numpy's *global* RNG for a run, so two simulations in one
-# process at once would draw from each other's stream. With COMPUTE_WORKERS
-# set, each job runs in a worker process of its own (true parallelism on the
-# service's 2 vCPU too); otherwise jobs run one at a time in the request thread.
+# Since RePyability 0.12 a seeded run draws from streams of its own, but a
+# model whose draws can't be streamed still uses numpy's *global* RNG, so two
+# simulations in one process at once could draw from each other's. With
+# COMPUTE_WORKERS set, each job runs in a worker process of its own (true
+# parallelism on the service's 2 vCPU too); otherwise jobs run one at a time
+# in the request thread.
 
 _lock = threading.Lock()
 _executor = None

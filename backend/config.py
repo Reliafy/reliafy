@@ -375,10 +375,10 @@ MCP_JOB_WAIT_S = _float("MCP_JOB_WAIT_S", 20.0)
 
 # ---- Free quick availability simulations (#147) ----------------------------
 # Users without premium compute (billing.premium_compute_allowed) may run a
-# quick availability simulation in the app: replications in batches until
-# FREE_SIM_SECONDS of simulation time is spent (never more than
-# FREE_SIM_MAX_REPLICATIONS, the full run's count), FREE_SIMS_PER_DAY per user
-# per UTC day.
+# quick availability simulation in the app: a timed pilot block of 50
+# replications, then one run of the whole blocks that fit FREE_SIM_SECONDS
+# (never more than FREE_SIM_MAX_REPLICATIONS; rbd_analysis._quick_simulation),
+# FREE_SIMS_PER_DAY per user per UTC day.
 FREE_SIM_SECONDS = _float("FREE_SIM_SECONDS", 3.0)
 FREE_SIMS_PER_DAY = _int("FREE_SIMS_PER_DAY", 50)
 FREE_SIM_MAX_REPLICATIONS = _int("FREE_SIM_MAX_REPLICATIONS", 2000)

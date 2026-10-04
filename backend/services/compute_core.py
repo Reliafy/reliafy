@@ -23,7 +23,8 @@ regression (``kind: "regression"``) and non-parametric (``kind:
 form, and nested sub-system blocks reference other saved diagrams. A graph
 with any of these is not self-contained: :func:`availability_request` returns
 None and the web app runs it in-process, as before (the repairable analysis
-rejects most of them anyway).
+rejects most of them anyway: a non-parametric, Kaplan–Meier block is refused
+since RePyability 0.12, so the user hears it at once, not from a job).
 
 Same seed, same result. The compute service runs exactly
 :func:`rbd_analysis.analyze_availability`, the in-process path's function, on

@@ -1197,6 +1197,10 @@ body {
   border-radius: 8px;
   padding: 0 6px;
   vertical-align: 1px;
+  /* Not the section heading's mono capitals: a tag, like MethodTag. */
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .rbd-name {

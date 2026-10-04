@@ -235,7 +235,7 @@ def test_free_user_meets_the_paywall_on_a_simulation_only_diagram(client):
     graph = _rbd_graph(repairable=True)
     graph["repair_crews"] = {"crews": 1}
     r = _analyze(client, graph)
-    assert r.status_code == 402 and r.json() == PRO_PAYLOAD
+    assert _paywall(r)  # with the free quick run offered (#147)
     assert client.sims["n"] == 0
 
 
