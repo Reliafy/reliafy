@@ -232,7 +232,7 @@ export default function FleetForecasts() {
               />
             </label>
             <label className="login-field">
-              <span>{modelKind === "recurrent" ? "Recurrent model" : "Life model"}</span>
+              <span>{modelKind === "recurrent" ? "Recurrent model" : "Model"}</span>
               <Select
                 value={modelId}
                 onChange={setModelId}
