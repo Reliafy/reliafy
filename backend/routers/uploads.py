@@ -24,7 +24,7 @@ from anyio import to_thread
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from backend.routers.telemetry import _client_ip
+from backend.request_ip import client_ip as _client_ip
 from backend.services import public_links as links_service
 from backend.services import uploads as uploads_service
 from backend.services import usage as usage_service

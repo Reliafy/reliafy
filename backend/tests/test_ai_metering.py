@@ -31,7 +31,8 @@ def env(monkeypatch):
     from backend.auth import get_current_user
     from backend.main import app
 
-    app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a@example.com", "name": "A"}
+    app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a@example.com", "name": "A",
+                                                           "email_verified": True}
     try:
         yield TestClient(app), test_db
     finally:

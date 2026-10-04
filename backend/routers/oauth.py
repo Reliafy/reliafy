@@ -76,7 +76,7 @@ REGISTER_PER_IP = 20
 
 @router.post("/oauth/register")
 async def register(request: Request, db=Depends(get_session)) -> JSONResponse:
-    from backend.routers.telemetry import _client_ip
+    from backend.request_ip import client_ip as _client_ip
     from backend.services import rate_limit
 
     key = rate_limit.ip_key("oauth-register", _client_ip(request))
