@@ -157,13 +157,85 @@ def test_unknown_group_tau_past_the_data_and_dropped_rows():
     with pytest.raises(CompareGroupsError, match="No rows in group"):
         _run(_aml(), time_column="weeks", group_column="arm", groups=["Maintained", "Other"])
     res = _run(_aml(), time_column="weeks", group_column="arm", censor_column="censored", tau=100)
-    assert any("extrapolated" in n for n in res["notes"])
+    assert res["tau"] == 45.0  # capped at the shorter group's last time (#211)
+    assert any("capped" in n and "extrapolated" in n for n in res["notes"])
     df = _aml()
     df.loc[0, "arm"] = None
     df.loc[1, "weeks"] = None
     res = _run(df, time_column="weeks", group_column="arm", censor_column="censored")
     assert res["rows_dropped"] == 2 and res["rows_used"] == 21
     assert any("2 rows" in n for n in res["notes"])
+
+
+# ---- #211: edge cases ------------------------------------------------------------------
+
+def _inline(x, c, g):
+    return pd.DataFrame({"x": x, "c": c, "g": g})
+
+
+def test_tau_past_the_data_is_capped_and_bounds_stay_in_range():
+    """Two groups of 8, A's last time 1,300 (censored): τ = 100,000 used to
+    give an extrapolated verdict and a negative RMST bound."""
+    x = [200, 450, 600, 800, 950, 1100, 1250, 1300, 150, 300, 500, 700, 900, 1500, 1800, 2400]
+    c = [0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0]
+    g = ["A"] * 8 + ["B"] * 8
+    default = _run(_inline(x, c, g), time_column="x", group_column="g", censor_column="c", unit="hours")
+    far = _run(_inline(x, c, g), time_column="x", group_column="g", censor_column="c", unit="hours", tau=100_000)
+    assert far["tau"] == default["tau"] == 1300.0
+    assert far["verdict"]["text"] == default["verdict"]["text"]
+    for s in far["groups"]:
+        assert 0.0 <= s["rmst_lower"] <= s["rmst"] <= s["rmst_upper"] <= far["tau"]
+
+
+def test_rmst_bounds_are_clipped_to_the_window():
+    # Few units, wide intervals: the normal bounds would leave [0, tau].
+    res = _run(_inline([5, 900, 1000, 10, 20, 1000], [0, 0, 0, 0, 0, 1], ["A"] * 3 + ["B"] * 3),
+               time_column="x", group_column="g", censor_column="c")
+    for s in res["groups"]:
+        assert 0.0 <= s["rmst_lower"] and s["rmst_upper"] <= res["tau"]
+
+
+def test_verdict_judges_the_rmst_by_its_ci_not_the_logrank_p():
+    """Log-rank not significant, but the RMST CI excludes 0: the verdict no
+    longer calls that difference chance."""
+    res = _run(_inline([303, 363, 374, 57, 137, 573], [0] * 6, ["A"] * 3 + ["B"] * 3),
+               time_column="x", group_column="g", censor_column="c", unit="hours")
+    d = res["rmst_differences"][0]
+    assert res["logrank"]["p_value"] > 0.05 and (d["lower"] > 0 or d["upper"] < 0)
+    text = res["verdict"]["text"]
+    assert "could be chance" not in text and "clear difference in average life" in text
+    assert res["verdict"]["significant"] is False and res["verdict"]["better"] is None
+    # Both unclear: still "could be chance".
+    res = _run(_aml(), time_column="weeks", group_column="arm", censor_column="censored", unit="weeks")
+    d = res["rmst_differences"][0]
+    assert d["lower"] < 0 < d["upper"] and "could be chance" in res["verdict"]["text"]
+
+
+def test_groups_with_no_common_window_cant_be_compared():
+    res = _run(_inline([100, 200, 300, 400], [1, 1, 0, 0], ["A", "A", "B", "B"]),
+               time_column="x", group_column="g", censor_column="c")
+    assert res["logrank"]["dof"] == 0 and res["comparable"] is False
+    assert "can't be compared over a common window" in res["verdict"]["text"]
+    assert "No clear difference" not in res["verdict"]["text"]
+    assert res["verdict"]["significant"] is False and res["verdict"]["better"] is None
+    assert any("0 degrees of freedom" in n for n in res["notes"])
+    assert _run(_aml(), time_column="weeks", group_column="arm", censor_column="censored")["comparable"] is True
+
+
+def test_no_unit_reads_time_units():
+    res = _run(_aml(), time_column="weeks", group_column="arm", censor_column="censored")
+    assert "time units" in res["verdict"]["text"]
+
+
+def test_inline_censor_errors_name_the_argument(mcp_env):
+    from backend.tests.test_mcp import _call, _err
+
+    msg = _err(_call(mcp_env.token["user-a"], "compare_groups", {
+        "data": [1, 2, 3, 4], "group": ["A", "A", "B", "B"], "censored": [0, -1, 0, 1]}))
+    assert "`censored` must hold 0 (failed) or 1" in msg and "'c'" not in msg
+    msg = _err(_call(mcp_env.token["user-a"], "compare_groups", {
+        "data": [1, 2, 3, 4], "group": ["A", "A", "B", "B"], "counts": [1, 0, 1, 1]}))
+    assert "`counts` must hold a positive number" in msg
 
 
 def test_lean_drops_curves():

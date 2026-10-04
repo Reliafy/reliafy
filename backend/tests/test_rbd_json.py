@@ -370,7 +370,7 @@ def test_a_file_written_in_code_imports_as_the_rbd_it_describes():
          "pack": StandbyModel([w, w, w], k=1, switching_probability=0.9),
          "spare": RepeatedStandbyNode(sp.Exponential.from_params([1e-3]), 2), "sub": nested, "copy": 1},
         k={"gate": 2},
-        ccf_groups=[CCFGroup([1, 2], BetaFactor(0.1))],
+        ccf_groups=[CCFGroup([1, 2], BetaFactor(0.1, basis="rate"))],
     )
     [d] = _import(rbd.to_json(), "plant.json")
     assert d.source_format == "RePyability JSON" and d.name == "plant"
@@ -386,6 +386,64 @@ def test_a_file_written_in_code_imports_as_the_rbd_it_describes():
         warnings.simplefilter("ignore")
         expected = rbd.sf(np.array(TIMES))
     np.testing.assert_allclose(_r_at(_reliability(norm, None)), expected, rtol=5e-3)
+
+
+def _ccf_pair(model):
+    import surpyval as sp
+    from repyability.rbd.ccf import CCFGroup
+    from repyability.rbd.non_repairable_rbd import NonRepairableRBD
+
+    w = sp.Weibull.from_params([1000, 2.0])
+    return NonRepairableRBD([("in", "a"), ("in", "b"), ("a", "out"), ("b", "out")], {"a": w, "b": w},
+                            input_node="in", output_node="out", ccf_groups=[CCFGroup(["a", "b"], model)])
+
+
+def test_ccf_groups_import_on_either_basis():
+    """#210: a rate-basis group (Reliafy's lifetime default) imports as a
+    plain group; a probability-basis one (RePyability's default) keeps its
+    basis, with a note, and analyses as the library does."""
+    from repyability import BetaFactor
+
+    rate = _ccf_pair(BetaFactor(0.2, basis="rate"))
+    [d] = _import(rate.to_json())
+    assert _notes(d) == []
+    [group] = d.graph["ccf_groups"]
+    assert group["beta"] == 0.2 and "basis" not in group
+    np.testing.assert_allclose(_r_at(_reliability(rbd_graph.normalize_graph(d.graph), None)),
+                               rate.sf(np.array(TIMES)), rtol=1e-9)
+
+    prob = _ccf_pair(BetaFactor(0.2))
+    [d] = _import(prob.to_json())
+    assert d.graph["ccf_groups"][0]["basis"] == "probability"
+    assert any("failure probability" in n and "rate" in n for n in _notes(d))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        expected = prob.sf(np.array(TIMES))
+    np.testing.assert_allclose(_r_at(_reliability(rbd_graph.normalize_graph(d.graph), None)), expected,
+                               rtol=1e-9)
+
+
+def test_export_writes_the_basis_the_app_analyses():
+    """#210/#174: the exported group is the rate-basis one the app uses, so the
+    library gets the app's numbers; an explicit probability basis is kept."""
+    from repyability.rbd.serialisation import rbd_from_json
+
+    graph = {
+        "unit": "Hours",
+        "nodes": [{"id": "input", "type": "input", "data": {"label": "Input"}},
+                  {"id": "a", "type": "component", "data": {"label": "A", "model": _w(1000, 2.0)}},
+                  {"id": "b", "type": "component", "data": {"label": "B", "model": _w(1000, 2.0)}},
+                  {"id": "output", "type": "output", "data": {"label": "Output"}}],
+        "edges": [{"source": "input", "target": "a"}, {"source": "input", "target": "b"},
+                  {"source": "a", "target": "output"}, {"source": "b", "target": "output"}],
+        "ccf_groups": [{"id": "g", "members": ["a", "b"], "beta": 0.1}],
+    }
+    doc = json.loads(_export(graph))
+    assert doc["ccf_groups"][0]["model"] == {"kind": "beta_factor", "beta": 0.1, "basis": "rate"}
+    rbd = rbd_from_json(_export(graph))
+    np.testing.assert_allclose(rbd.sf(np.array(TIMES)), _r_at(_reliability(graph)), rtol=1e-9)
+    graph["ccf_groups"][0]["basis"] = "probability"
+    assert json.loads(_export(graph))["ccf_groups"][0]["model"] == {"kind": "beta_factor", "beta": 0.1}
 
 
 def test_what_reliafy_cant_hold_is_listed_and_left_without_a_model():

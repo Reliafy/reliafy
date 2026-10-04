@@ -93,10 +93,17 @@ def prepare(
     count_column: Optional[str] = None,
     cause_column: Optional[str] = None,
     c_invert: bool = False,
+    names: Optional[dict] = None,
 ) -> dict:
     """Pull times, flags, counts, group labels (and failure modes) out of a
     dataset, dropping rows with no time or no group. Only right-censoring
-    (0 = failed, 1 = still running) is accepted: the log-rank test needs it."""
+    (0 = failed, 1 = still running) is accepted: the log-rank test needs it.
+    ``names`` says how a column reads in an error message (for inline data,
+    the argument that filled it, e.g. ``{"c": "`censored`"}``, #211)."""
+    names = names or {}
+
+    def called(col: str, role: str) -> str:
+        return names.get(col) or f"{role} column '{col}'"
     if not time_column:
         raise CompareGroupsError("Choose the column that holds the times.")
     if not group_column:
@@ -111,7 +118,10 @@ def prepare(
         try:
             df = fitting.invert_censor_column(df, censor_column)
         except fitting.FitError as exc:
-            raise CompareGroupsError(str(exc)) from exc
+            text = str(exc)
+            if censor_column in names:
+                text = text.replace(f"Censor column '{censor_column}'", names[censor_column])
+            raise CompareGroupsError(text) from exc
 
     x = pd.to_numeric(df[time_column], errors="coerce").to_numpy(dtype=float)
     labels = np.array([_label(v) for v in df[group_column]], dtype=object)
@@ -124,7 +134,7 @@ def prepare(
         if bad.any():
             shown = ", ".join(pd.unique(df[censor_column][bad].astype(str))[:5])
             raise CompareGroupsError(
-                f"Censor column '{censor_column}' must hold 0 (failed) or 1 (still running) on every row; "
+                f"{called(censor_column, 'Censor')} must hold 0 (failed) or 1 (still running) on every row; "
                 f"found: {shown}. These tests need right-censored data only.")
     else:
         c = np.zeros_like(x)
@@ -132,7 +142,7 @@ def prepare(
         n = pd.to_numeric(df[count_column], errors="coerce").to_numpy(dtype=float)
         bad = keep & ~(np.isfinite(n) & (n > 0))
         if bad.any():
-            raise CompareGroupsError(f"Count column '{count_column}' must hold a positive number on every row.")
+            raise CompareGroupsError(f"{called(count_column, 'Count')} must hold a positive number on every row.")
     else:
         n = np.ones_like(x)
     cause = None
@@ -181,6 +191,11 @@ def _num(v) -> Optional[float]:
     return v if np.isfinite(v) else None
 
 
+def _bounded(v, tau: float) -> Optional[float]:
+    v = _num(v)
+    return None if v is None else min(max(v, 0.0), float(tau))
+
+
 def compare_groups(
     data: dict,
     *,
@@ -196,7 +211,9 @@ def compare_groups(
     numbers in numeric order); ``reference`` is the group the RMST differences
     are measured from (default: the first); ``tau`` is the RMST horizon
     (default: the shortest group's longest observed time, so every curve is
-    backed by data up to it)."""
+    backed by data up to it). A longer ``tau`` is capped there, with a note
+    (#211): past it a curve would be held flat and the average life — and
+    the verdict on it — extrapolated."""
     x, c, n, lab = data["x"], data["c"], data["n"], data["group"]
     present = _natural_order(set(lab.tolist()))
     if groups:
@@ -248,12 +265,14 @@ def compare_groups(
             short = min(longest, key=longest.get)
             notes.append(
                 f"The horizon {fmt_num(tau)} goes past the last time in group '{short}' "
-                f"({fmt_num(horizon)}); its curve is held flat beyond that, so its average life is "
-                "extrapolated.")
+                f"({fmt_num(horizon)}), so it was capped there: beyond it that group's curve has no data, "
+                "and its average life would be extrapolated.")
+            tau = horizon
     if tau <= 0:
         raise CompareGroupsError("Every time in one group is 0: there is no window to average life over.")
 
-    us = f" {unit.strip()}" if unit and unit.strip() else ""
+    # With no unit, say "time units" rather than leave a bare number (#211).
+    us = f" {unit.strip()}" if unit and unit.strip() else " time units"
     summaries = []
     for g in order:
         m = lab == g
@@ -267,8 +286,10 @@ def compare_groups(
             "censored": units - failures,
             "median": _median(kms[g]),
             "rmst": _num(r["rmst"]),
-            "rmst_lower": _num(r["lower"]),
-            "rmst_upper": _num(r["upper"]),
+            # An average life over [0, tau] lies in [0, tau]: the normal
+            # interval's bounds are clipped to it (#211).
+            "rmst_lower": _bounded(r["lower"], tau),
+            "rmst_upper": _bounded(r["upper"], tau),
             "curve": _curve(kms[g]),
         })
         if failures == 0:
@@ -316,6 +337,13 @@ def compare_groups(
                      "left out.")
     if "cause" in data:
         out["competing_risks"] = _gray(x, c, n, lab, data["cause"][sel], order)
+    # No failure while two groups are both still observed (all of one group
+    # censored before the other's first failure, or no failures at all):
+    # the log-rank test has no degrees of freedom and nothing to compare.
+    out["comparable"] = primary["dof"] > 0
+    if not out["comparable"]:
+        notes.append("No failure happens while the groups are all still under observation, so the log-rank "
+                     "test has nothing to compare (0 degrees of freedom; its p = 1 means nothing).")
     out["verdict"] = _verdict(out, us)
     out["notes"] = notes
     return out
@@ -371,6 +399,13 @@ def _verdict(out: dict, us: str) -> dict:
     significant = p < ALPHA
     tau_s = f"{fmt_num(out['tau'])}{us}"
     groups = out["groups"]
+    if not out.get("comparable", True):
+        who = (f"{name(groups[0]['group'])} and {name(groups[1]['group'])}" if len(groups) == 2
+               else f"The {len(groups)} groups")
+        return {"significant": False, "better": None, "worse": None,
+                "text": (f"{who} can't be compared over a common window: no failure happens while "
+                         f"{'both' if len(groups) == 2 else 'they all'} still have units under observation. "
+                         "Collect data that overlaps in time.")}
     if len(groups) == 2:
         d = out["rmst_differences"][0]
         ref, other = d["reference"], d["group"]
@@ -384,21 +419,24 @@ def _verdict(out: dict, us: str) -> dict:
             best, worst, lo_b, hi_b = ref, other, -hi, -lo
         gain = abs(diff)
         ci = f"(95% CI {fmt_num(lo_b)} to {fmt_num(hi_b)}{us})"
+        # The two halves are judged separately (#211): the curves by the
+        # log-rank p, the average life by whether its CI excludes 0.
+        clear_gain = lo_b > 0
         if significant:
             # Starts with the group's name as written (a column name keeps its case).
             text = (f"{name(best)} lasts longer: log-rank {_p_text(p)}; on average {fmt_num(gain)}{us} more "
                     f"over the first {tau_s} {ci}.")
-            if lo_b <= 0:
+            if not clear_gain:
                 text += (" The average gain over that window isn't clear-cut, though: the curves may cross. "
                          "Check the plot.")
+        elif clear_gain:
+            text = (f"Over the first {tau_s}, {name(best)} averages {fmt_num(gain)}{us} more {ci}, a clear "
+                    f"difference in average life — but the curves as a whole don't differ clearly (log-rank "
+                    f"{_p_text(p)}), which usually means they cross. Check the plot.")
         else:
             text = (f"No clear difference between {name(ref)} and {name(other)}: log-rank {_p_text(p)}. "
                     f"Over the first {tau_s}, {name(best)} averages {fmt_num(gain)}{us} more {ci}, which could "
                     "be chance.")
-            rp = d.get("p_value")
-            if rp is not None and rp < ALPHA:
-                text += (f" The average-life difference on its own is significant ({_p_text(rp)}), which "
-                         "usually means the curves cross. Check the plot.")
         return {"significant": significant, "better": best if significant else None,
                 "worse": worst if significant else None, "text": text}
 
