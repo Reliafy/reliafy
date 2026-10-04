@@ -7582,3 +7582,20 @@ button.danger:hover { background: #fdeeee; }
     display: none;
   }
 }
+
+/* Reliability growth projection panel (#232). */
+.growth-projection .strategy-costs .calc-t { min-width: 0; }
+.growth-projection .strategy-costs .calc-t .sel-trigger { min-width: 180px; }
+.gp-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0.4rem 0 0.8rem; }
+.gp-table { min-width: 680px; }
+.gp-table td, .gp-table th { padding: 6px 10px; }
+.gp-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.gp-table .gp-mode { font-weight: 500; min-width: 140px; overflow-wrap: break-word; }
+.gp-table .gp-kind { min-width: 190px; }
+.gp-table .gp-fef { width: 72px; text-align: right; }
+.gp-actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.gp-mtbfs { margin-bottom: 0.8rem; }
+.gp-mtbfs .gp-projected .value { color: var(--accent, #2f6df6); }
+.fleet-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.fleet-items { min-width: 680px; }
+.fleet-items.repairable { min-width: 940px; }

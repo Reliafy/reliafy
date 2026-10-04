@@ -877,7 +877,8 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name } = {}) {
   form.append("i", mapping.i);
   form.append("x", mapping.x);
   // Optional modifiers, matching the life-data column surface.
-  ["c", "n", "tl", "tr", "t"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
+  // ``mode`` is each failure's mode, for a growth projection (#232).
+  ["c", "n", "tl", "tr", "t", "mode"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
   if (model) form.append("model", model);
   if (unit) form.append("unit", unit);
   return form;
@@ -930,6 +931,22 @@ export function recurrentOverhaul(id, costRepair, costOverhaul) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cost_repair: costRepair, cost_overhaul: costOverhaul }),
+  });
+}
+
+// Reliability growth projection (AMSAA-Crow, #232): the panel's inputs (the
+// dataset's columns and the failure modes in the chosen column, plus the saved
+// settings and result), and a run — saved with the model when you can edit it.
+export function getRecurrentProjection(id, modeColumn) {
+  const q = modeColumn ? `?mode_column=${encodeURIComponent(modeColumn)}` : "";
+  return request(`/api/recurrent/models/${id}/projection${q}`);
+}
+
+export function runRecurrentProjection(id, { fef, bc, testEnd, modeColumn, save = true } = {}) {
+  return request(`/api/recurrent/models/${id}/projection`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fef, bc, test_end: testEnd ?? null, mode_column: modeColumn || null, save }),
   });
 }
 
@@ -1499,11 +1516,13 @@ export function listFleets() {
   return request("/api/fleet/fleets");
 }
 
-export function createFleet(name, modelId) {
+// ``modelKind``: "life" (a life model) or "recurrent" (a recurrent-event model —
+// repairable items, every failure counted; #235).
+export function createFleet(name, modelId, modelKind = "life") {
   return request("/api/fleet/fleets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, model_id: modelId }),
+    body: JSON.stringify({ name, model_id: modelId, model_kind: modelKind }),
   });
 }
 

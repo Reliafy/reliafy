@@ -303,6 +303,8 @@ or ask the user to upload the file in the app. Relay the import notes: they say 
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
+- Repairable systems (recurrent models): next_failure gives a system's chance of failing within a time and \
+the time to its next failure; growth_projection projects a growth test's MTBF once its fixes are in.
 - Test planning: plan_demonstration_test sizes a reliability demonstration test — units, test time per unit \
 and allowed failures to show reliability R over a mission at confidence C (success run / binomial; a longer \
 test per unit with a known Weibull shape; or an MTBF test); with producer_risk and a good design it keeps both \
@@ -819,6 +821,8 @@ def get_model(
     if doc is not None:
         r = doc.results or {}
         out = {**_recurrent_brief(doc), "params": r.get("params"), "gof": r.get("gof"), "trend": r.get("trend")}
+        if r.get("projection"):
+            out["growth_projection"] = _projection_brief(r["projection"])
         if (doc.spec or {}).get("notes"):
             out["notes"] = doc.spec["notes"]
         return out
@@ -3509,6 +3513,149 @@ def _overhaul_shape_uncertainty(db, doc, cost_repair: float, cost_overhaul: floa
     return out
 
 
+# ---------------------------------------------------------------------------
+# Reliability growth projection (#232) and a repairable system's next failure (#235)
+# ---------------------------------------------------------------------------
+
+_PROJECTION_MODES = 50  # growth_projection lists this many modes, most failures first
+
+
+def _projection_brief(p: dict) -> dict:
+    """The headline of a growth projection: the three MTBFs and h(T)."""
+    return {
+        "T": p.get("T"), "systems": p.get("systems"), "failures": p.get("failures"),
+        "demonstrated_mtbf": _sig((p.get("demonstrated") or {}).get("mtbf")),
+        "projected_mtbf": _sig((p.get("projected") or {}).get("mtbf")),
+        "growth_potential_mtbf": _sig((p.get("growth_potential") or {}).get("mtbf")),
+        "new_mode_intensity": _sig(p.get("new_mode_intensity")), "mean_fef": _sig(p.get("mean_fef")),
+        "unit": p.get("unit", ""),
+    }
+
+
+def _projection_out(payload: dict) -> dict:
+    out = dict(payload)
+    modes = out.get("modes") or []
+    if len(modes) > _PROJECTION_MODES:
+        out["modes"] = modes[:_PROJECTION_MODES]
+        out["modes_note"] = f"The {_PROJECTION_MODES} modes with the most failures of {len(modes)}."
+    u = f" {payload['unit']}" if payload.get("unit") else ""
+    d, p, g = (payload.get(k, {}).get("mtbf") for k in ("demonstrated", "projected", "growth_potential"))
+    if d and p:
+        out["summary"] = (f"The test demonstrates an MTBF of {d:.4g}{u}; once the delayed (BD) fixes are in it is "
+                          f"projected to be {p:.4g}{u}" + (f", short of the {g:.4g}{u} growth potential "
+                                                          "(every BD mode found and fixed)." if g else "."))
+    return out
+
+
+@_tool("growth_projection", _READ, "Reliability growth projection")
+def growth_projection(
+    ctx: Context,
+    model_id: Annotated[Optional[str], Field(description=(
+        "A saved RECURRENT model fitted to the growth test's event data (list_models kind=recurrent) whose "
+        "dataset has a failure-mode column. Give this OR inline x + modes."))] = None,
+    fef: Annotated[Optional[dict[str, float]], Field(description=(
+        "The BD modes (fixed after the test) and each one's fix-effectiveness factor, the fraction of its "
+        "failure intensity the fix removes, 0–1: e.g. {\"seal leak\": 0.8, \"connector\": 0.7}."))] = None,
+    bd_modes: Annotated[Optional[list[str]], Field(description=(
+        "BD modes at the default fix-effectiveness factor, 0.7 (MIL-HDBK-189C's typical value); `fef` "
+        "overrides any listed in both."))] = None,
+    bc_modes: Annotated[Optional[list[str]], Field(description=(
+        "Modes fixed DURING the test (Crow's extended model: the demonstrated intensity is then the "
+        "Crow-AMSAA fit's at T). Every mode not in fef/bd_modes/bc_modes is an A mode (not fixed)."))] = None,
+    test_end: Annotated[Optional[float], Field(gt=0, description=(
+        "The time the test stopped, T — every system run from 0 to T (time-terminated). Needed when the "
+        "data has no end-of-test rows (c = 1) or observation window."))] = None,
+    mode_column: Annotated[Optional[str], Field(description=(
+        "With model_id: the dataset column holding each failure's mode, when the model has none mapped."))] = None,
+    x: Annotated[Optional[list[float]], Field(max_length=5000, description=(
+        "Inline (Pro): failure times, one per failure, in system time from the test's start."))] = None,
+    modes: Annotated[Optional[list[str]], Field(max_length=5000, description=(
+        "Inline (Pro): the failure mode of each time in x."))] = None,
+    systems: Annotated[Optional[list[str]], Field(max_length=5000, description=(
+        "Inline (Pro): the system each failure belongs to, when several systems were tested side by side "
+        "(one system by default)."))] = None,
+    unit: Annotated[Optional[str], Field(description="Inline: the time unit (e.g. hours).")] = None,
+) -> dict[str, Any]:
+    """Reliability growth projection (AMSAA-Crow projection model, MIL-HDBK-189C §6.2; Crow's extended model
+    with BC modes): the MTBF a test-analyse-and-fix programme reaches once the fixes found in the test are put
+    in. Returns the demonstrated, projected and growth-potential intensity and MTBF (of one system), each
+    failure mode's failures and intensity before and after its fix, and h(T), the rate new BD modes were
+    still appearing at the end of the test. Time-terminated tests only. From a saved model it uses that
+    model's data (and its saved projection settings when fef/bd_modes/bc_modes are all omitted); inline data
+    fits in Reliafy, so it is Reliafy Pro."""
+    user, db = _caller(ctx), _db()
+    if (model_id is None) == (x is None):
+        raise ToolError("Give either model_id (a saved recurrent model) or inline x + modes, not both.")
+    if fef is None and bd_modes is None and bc_modes is None:
+        settings = None
+    else:
+        settings = {**{m: recurrent_fit.DEFAULT_FEF for m in (bd_modes or [])}, **(fef or {})}
+    if model_id is not None:
+        owners = _owners(user["uid"])
+        doc = recurrent_service.get_model(db, model_id, owners)
+        if doc is None:
+            raise ToolError("Recurrent model not found — growth_projection needs a recurrent model id from "
+                            "list_models kind=recurrent.")
+        saved = (doc.spec or {}).get("projection") or {}
+        if settings is None:
+            if not saved.get("fef") and not saved.get("bc"):
+                view = recurrent_service.projection_view(db, doc, mode_column)
+                raise ToolError("Say which modes are fixed: pass fef (BD modes with their fix-effectiveness "
+                                "factors), bd_modes and/or bc_modes. The modes in this model's data: "
+                                + (", ".join(f"{m['label']} ({m['failures']})" for m in view.get("modes") or [])
+                                   or view.get("reason") or "none found") + ".")
+            settings, bc_modes = saved.get("fef") or {}, saved.get("bc") or []
+            test_end = test_end if test_end is not None else saved.get("test_end")
+        payload = recurrent_service.run_projection(db, doc, fef=settings, bc=bc_modes or [], test_end=test_end,
+                                                   mode_column=mode_column)
+        return {**_projection_out(payload), "model_id": doc.id, "url": _url(f"/modelling/recurrent/{doc.id}")}
+
+    if user.get("mcp_plan", "pro") != "pro":
+        raise Refusal(
+            f"A growth projection from inline data fits a Crow-AMSAA model in Reliafy, part of Reliafy Pro "
+            f"({PRO_PRICE}). Fit the test data in the Reliafy app (Modelling › Recurrent events, mapping the "
+            "failure-mode column) and pass that model's id instead, or upgrade at "
+            f"{_billing_url()} (or call upgrade_link).", "pro_only")
+    if modes is None or len(modes) != len(x):
+        raise ToolError("Give one failure mode per time in x (modes, the same length as x).")
+    if systems is not None and len(systems) != len(x):
+        raise ToolError("systems must give one system per time in x.")
+    if test_end is None:
+        raise ToolError("Give test_end, the time the test stopped (every system run from 0 to it).")
+    df = pd.DataFrame({"i": systems if systems is not None else ["1"] * len(x), "x": x, "mode": modes})
+    payload = recurrent_fit.growth_projection(df, {"i": "i", "x": "x", "mode": "mode"}, settings or {},
+                                              bc=bc_modes or [], test_end=test_end, unit=unit or "")
+    return _projection_out(payload)
+
+
+@_tool("next_failure", _READ, "Next failure of a repairable system")
+def next_failure(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="A saved RECURRENT model id (list_models kind=recurrent).")],
+    age: Annotated[float, Field(ge=0, description=(
+        "The system's current age (time since new, or since the start of the model's time scale), in the "
+        "model's time unit."))],
+    within: Annotated[Optional[list[float]], Field(max_length=50, description=(
+        "Times ahead to give the chance of at least one failure within (e.g. the time to the next service)."))] = None,
+    quantiles: Annotated[Optional[list[float]], Field(max_length=20, description=(
+        "Quantiles of the time to the next failure, each in (0, 1); default 0.1, 0.5, 0.9."))] = None,
+) -> dict[str, Any]:
+    """A repairable system's next failure from a saved recurrent-event model (Crow-AMSAA, Duane or HPP;
+    minimal repair, so its failures are the model's Poisson process): the current failure intensity (ROCOF)
+    and instantaneous MTBF at its age, the mean and quantiles of the time to its next failure, and the chance
+    of at least one failure (and the expected number) within each time ahead. Exact, closed form."""
+    user, db = _caller(ctx), _db()
+    owners = _owners(user["uid"])
+    doc = recurrent_service.get_model(db, model_id, owners)
+    if doc is None:
+        raise ToolError("Recurrent model not found — next_failure needs a recurrent (repairable-system) model id "
+                        "from list_models kind=recurrent.")
+    live = recurrent_service.get_live_model(db, model_id, owners)
+    out = recurrent_fit.next_failure(live, age, within=within, quantiles=quantiles)
+    return {**out, "unit": (doc.results or {}).get("unit", ""), "model": (doc.results or {}).get("model"),
+            "model_id": doc.id, "url": _url(f"/modelling/recurrent/{doc.id}")}
+
+
 @_tool("compare_groups", _READ, "Compare groups of life data")
 def compare_groups(
     ctx: Context,
@@ -3615,11 +3762,13 @@ def compare_groups(
 
 @_tool("list_fleets", _READ, "List fleet forecasts")
 def list_fleets(ctx: Context) -> dict[str, Any]:
-    """List the user's fleet failure forecasts (in-service items run against one saved life model).
-    Reliafy Pro only."""
+    """List the user's fleet failure forecasts (in-service items run against one saved model). model_kind
+    'life' = a life model (first failures or failures with replacement); 'recurrent' = a recurrent-event model,
+    each item a repairable system whose every failure is counted. Reliafy Pro only."""
     user, db = _caller(ctx), _db()
     return {"fleets": [
-        {"id": f.id, "name": f.name, "model_id": f.model_id, "n_items": len(f.items or []),
+        {"id": f.id, "name": f.name, "model_id": f.model_id, "model_kind": f.model_kind or "life",
+         "n_items": len(f.items or []),
          "settings": f.settings, "is_sample": samples_service.is_sample(f.owner_id),
          "url": _url(f"/fleet/forecasts/{f.id}")}
         for f in fleet_service.list_fleets(db, _owners(user["uid"]))
@@ -3638,7 +3787,10 @@ def fleet_forecast(
         "expected failures are listed."))] = False,
 ) -> dict[str, Any]:
     """The live failure forecast for a fleet: expected failures over the horizon with a P10–P90 range,
-    plus per-period and per-item breakdowns (the top items by default)."""
+    plus per-period and per-item breakdowns (the top items by default). For a fleet on a recurrent model
+    (model_kind 'recurrent': repairable systems, minimal repair) every failure is counted — each item's
+    expected repeat failures, its chance of at least one, and, where the item has a next service, its chance
+    of a failure before it; the fleet's and each period's counts have Poisson P10–P90 intervals."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     fleet = fleet_service.get_fleet(db, fleet_id, owners)
@@ -3652,7 +3804,7 @@ def fleet_forecast(
                     "per_item_note": f"Top {_TOP_ITEMS} of {len(items)} items by expected failures; pass "
                                      "include_items=true for all of them."}
     return {"fleet": {"id": fleet.id, "name": fleet.name, "model_id": fleet.model_id,
-                      "url": _url(f"/fleet/forecasts/{fleet.id}")},
+                      "model_kind": fleet.model_kind or "life", "url": _url(f"/fleet/forecasts/{fleet.id}")},
             "headline": fleet_service.headline(fleet, forecast), "forecast": forecast}
 
 
@@ -3778,6 +3930,14 @@ def delete_model(
             raise ToolError("Model not found.")
         if samples_service.is_sample(doc.owner_id):
             raise _sample_refusal("model", doc.name)
+        fleets = [f for f in fleet_service.list_fleets(db, uid)
+                  if f.model_kind == "recurrent" and f.model_id == doc.id]
+        if fleets:
+            names = ", ".join(f"\u201c{f.name}\u201d ({_url(f'/fleet/forecasts/{f.id}')})" for f in fleets)
+            raise ToolError(
+                f"Model \u201c{doc.name}\u201d can't be deleted: {len(fleets)} fleet forecast"
+                f"{'s' if len(fleets) != 1 else ''} run{'' if len(fleets) != 1 else 's'} on it ({names}). "
+                "Relink or delete those fleets in the app first, then delete the model.")
         m, affected, kind = doc, {"rbds": []}, "recurrent"
         recurrent_service.delete_model(db, doc.id, uid)
     out = {"deleted": True, "model_id": m.id, "name": m.name, "kind": kind}

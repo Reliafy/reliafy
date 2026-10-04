@@ -216,11 +216,16 @@ class Fleet(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model_id: str
+    # "life": model_id is a saved life model (first failures / renewals);
+    # "recurrent": a saved recurrent-event model, each item a repairable
+    # system whose every failure is counted (#235).
+    model_kind: str = "life"
     # {periods, period_label, default_rate, method: "renewals"|"single",
     #  rate_source: "manual"|"estimated"}
     settings: dict = Field(default_factory=dict)
-    # [{id, name, current_use, rate|null, notes?, + rate-estimator state from
-    #  API readings: last_reading_use/at, latest_read_at, estimated_rate(_n)}]
+    # [{id, name, current_use, rate|null, notes?, next_service_at? (recurrent),
+    #  + rate-estimator state from API readings: last_reading_use/at,
+    #  latest_read_at, estimated_rate(_n)}]
     items: list = Field(default_factory=list)
 
 

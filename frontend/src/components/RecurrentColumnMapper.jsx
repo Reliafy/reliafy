@@ -10,6 +10,7 @@ const FIELD_INFO = {
   n: { label: "n", help: "Count of events per row" },
   tl: { label: "tl", help: "Left truncation — observation start / left entry" },
   tr: { label: "tr", help: "Right truncation — each system's observation window" },
+  mode: { label: "mode", help: "Failure mode of each event — for a reliability growth projection" },
 };
 
 const COMMON_UNITS = [
@@ -20,6 +21,7 @@ const COMMON_UNITS = [
 const GROUPS = [
   { title: "Event — system and time", fields: ["i", "x"], cols: 2 },
   { title: "Modifiers (optional)", fields: ["c", "n", "tl", "tr"], cols: 4 },
+  { title: "Reliability growth (optional)", fields: ["mode"], cols: 1 },
 ];
 
 export default function RecurrentColumnMapper({ columns, mapping, onChange, unit, onUnitChange }) {

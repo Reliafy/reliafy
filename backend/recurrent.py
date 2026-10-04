@@ -149,6 +149,12 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
         raise FitError(str(exc)) from exc
 
     payload = _build_payload(np_model, para, x, i, model_id, unit)
+    if mapping.get("mode"):
+        # The failure modes a growth projection classifies (#232).
+        try:
+            payload["failure_modes"] = failure_modes(df, mapping)
+        except FitError:
+            payload["failure_modes"] = None
     return payload, store_live(para)
 
 
@@ -362,6 +368,287 @@ def predict(model, horizon: float) -> dict:
     with np.errstate(all="ignore"):
         expected = float(np.asarray(model.mcf(np.array([float(horizon)])), dtype=float).ravel()[0])
     return _json_safe({"horizon": float(horizon), "expected_events": expected})
+
+
+# ---------------------------------------------------------------------------
+# Reliability growth projection (AMSAA-Crow / Crow extended; #232)
+# ---------------------------------------------------------------------------
+#
+# SurPyval 0.23's ``CrowAMSAA.projection``: the MTBF once the fixes found in
+# a growth test are put in. Each failure carries a failure-mode label; BD
+# modes (keys of ``fef``) are fixed after the test with a fix-effectiveness
+# factor, BC modes (``bc``) were fixed during it, every other mode is an A
+# mode (not fixed). Exact, closed form, fast: no simulation, no job.
+
+DEFAULT_FEF = 0.7  # MIL-HDBK-189C's typical fix effectiveness
+_MAX_MODES = 500
+
+
+def _mode_label(value) -> str | None:
+    """A failure-mode cell as a label: trimmed text, or None when blank."""
+    if value is None:
+        return None
+    if isinstance(value, float):
+        if not np.isfinite(value):
+            return None
+        if value.is_integer():
+            value = int(value)  # a numeric mode column reads "3", not "3.0"
+    label = str(value).strip()
+    return label or None
+
+
+def projection_inputs(df: pd.DataFrame, mapping: dict, test_end=None) -> dict:
+    """``{x, i, c, modes}`` for :meth:`CrowAMSAA.projection` from the event
+    data: one row per failure (``n`` expanded), plus each system's
+    end-of-test row (``c = 1``). The end of the test comes from the data's
+    own ``c = 1`` rows, else its observation window (``tr``), else
+    ``test_end`` — the time every system's test stopped."""
+    for key in ("i", "x", "mode"):
+        col = mapping.get(key)
+        if not col:
+            raise FitError("Map the failure-mode column to project growth." if key == "mode"
+                           else f"Column mapping is missing '{key}'.")
+        if col not in df.columns:
+            raise FitError(f"Column '{col}' is not in the dataset.")
+    x = pd.to_numeric(df[mapping["x"]], errors="coerce")
+    keep = x.notna() & df[mapping["i"]].notna()
+    if not keep.any():
+        raise FitError("No usable rows: event time must be numeric.")
+    x = x[keep].to_numpy(dtype=float)
+    i = df[mapping["i"]][keep].astype(str).to_numpy()
+    modes = [_mode_label(v) for v in df[mapping["mode"]][keep].tolist()]
+
+    def _numeric(key, fill):
+        col = mapping.get(key)
+        if not col or col not in df.columns:
+            return None
+        return np.nan_to_num(pd.to_numeric(df[col], errors="coerce")[keep].to_numpy(dtype=float), nan=fill)
+
+    c = _numeric("c", 0.0)
+    c = np.zeros(x.size, dtype=int) if c is None else c.astype(int)
+    if np.any((c != 0) & (c != 1)):
+        raise FitError("A growth projection takes failures (c = 0) and each system's end of test (c = 1) only; "
+                       "left- or interval-censored rows can't be used.")
+    tl = _numeric("tl", 0.0)
+    if tl is not None and np.any(tl != 0):
+        raise FitError("A growth projection needs every system tested from time 0 (no delayed entry).")
+    n = _numeric("n", 1.0)
+    if n is not None:
+        reps = np.maximum(n, 1).astype(int)
+        x, i, c = np.repeat(x, reps), np.repeat(i, reps), np.repeat(c, reps)
+        modes = [m for m, k in zip(modes, reps) for _ in range(k)]
+
+    # Each system's end of test: its own c = 1 row, else its window (tr),
+    # else the test_end given.
+    tr = _numeric("tr", np.nan)
+    if tr is None:
+        tr = _numeric("t", np.nan)
+    ends: dict = {}
+    if tr is not None and not np.all(np.isnan(tr)):
+        tr_full = np.repeat(tr, reps) if n is not None else tr
+        for sys_id, t in zip(i, tr_full):
+            if np.isfinite(t):
+                ends[sys_id] = max(ends.get(sys_id, 0.0), float(t))
+    if test_end is not None:
+        test_end = _positive(test_end, "The end of the test")
+    closed = set(i[c == 1].tolist())
+    extra = []
+    for sys_id in dict.fromkeys(i.tolist()):
+        if sys_id in closed:
+            continue
+        end = ends.get(sys_id, test_end)
+        if end is not None:
+            extra.append((end, sys_id))
+    if extra:
+        x = np.concatenate([x, [e for e, _ in extra]])
+        i = np.concatenate([i, [s for _, s in extra]])
+        c = np.concatenate([c, np.ones(len(extra), dtype=int)])
+        modes = modes + [None] * len(extra)
+    if len(set(m for m, cc in zip(modes, c) if cc == 0 and m is not None)) > _MAX_MODES:
+        raise FitError(f"More than {_MAX_MODES} distinct failure modes; group them first.")
+    return {"x": x, "i": i, "c": c, "modes": modes}
+
+
+def failure_modes(df: pd.DataFrame, mapping: dict) -> list[dict]:
+    """``[{label, failures, first}]``: each failure mode in the data, its
+    number of failures and its first occurrence, most failures first.
+    Failures with no label are counted under ``label: None``."""
+    ins = projection_inputs(df, mapping)
+    events = ins["c"] == 0
+    rows: dict = {}
+    for t, m in zip(ins["x"][events], np.asarray(ins["modes"], dtype=object)[events]):
+        row = rows.setdefault(m, {"label": m, "failures": 0, "first": float(t)})
+        row["failures"] += 1
+        row["first"] = min(row["first"], float(t))
+    return _json_safe(sorted(rows.values(), key=lambda r: (-r["failures"], r["first"])))
+
+
+def clean_projection_settings(fef, bc=None) -> tuple[dict, list]:
+    """``(fef, bc)`` validated: ``fef`` a {mode: factor in [0, 1]} dict,
+    ``bc`` a list of mode labels, no mode in both."""
+    if fef is None:
+        fef = {}
+    if not isinstance(fef, dict):
+        raise FitError("fef must map each BD mode to its fix-effectiveness factor, e.g. {\"seal\": 0.7}.")
+    clean_fef = {}
+    for label, value in fef.items():
+        key = _mode_label(label)
+        if key is None:
+            raise FitError("A BD mode needs a label.")
+        try:
+            d = float(value)
+        except (TypeError, ValueError):
+            raise FitError(f"Mode “{key}”: the fix-effectiveness factor must be a number from 0 to 1.")
+        if not (np.isfinite(d) and 0.0 <= d <= 1.0):
+            raise FitError(f"Mode “{key}”: the fix-effectiveness factor must be from 0 to 1 (got {value}).")
+        clean_fef[key] = d
+    if bc is None:
+        bc = []
+    if isinstance(bc, str) or not isinstance(bc, (list, tuple)):
+        raise FitError("bc must be a list of the modes fixed during the test.")
+    clean_bc = list(dict.fromkeys(k for k in (_mode_label(b) for b in bc) if k is not None))
+    both = sorted(set(clean_fef) & set(clean_bc))
+    if both:
+        raise FitError(f"A mode is either fixed during the test (BC) or after it (BD), not both: {', '.join(both)}.")
+    return clean_fef, clean_bc
+
+
+def growth_projection(df: pd.DataFrame, mapping: dict, fef, bc=None, test_end=None, unit: str = "") -> dict:
+    """The AMSAA-Crow growth projection of a test's event data: the
+    demonstrated, projected and growth-potential intensity and MTBF (of one
+    system), each failure mode's share, and h(T)."""
+    fef, bc = clean_projection_settings(fef, bc)
+    ins = projection_inputs(df, mapping, test_end=test_end)
+    return projection_payload(ins, fef, bc, unit=unit, test_end=test_end)
+
+
+def projection_payload(ins: dict, fef: dict, bc: list, unit: str = "", test_end=None) -> dict:
+    """:func:`growth_projection` from ready inputs ``{x, i, c, modes}``."""
+    events = np.asarray(ins["c"]) == 0
+    missing = int(sum(1 for m, e in zip(ins["modes"], events) if e and m is None))
+    if missing:
+        raise FitError(f"{missing} failure{'s have' if missing != 1 else ' has'} no failure mode. Every failure "
+                       "needs one to project growth.")
+    seen = set(m for m, e in zip(ins["modes"], events) if e)
+    unknown = sorted((set(fef) | set(bc)) - seen)
+    if unknown:
+        raise FitError(f"No failures of {', '.join(map(repr, unknown))} in the data: only modes seen in the test "
+                       "can be classified.")
+    try:
+        with warnings.catch_warnings(), np.errstate(all="ignore"):
+            warnings.simplefilter("ignore", RuntimeWarning)
+            gp = CrowAMSAA.projection(ins["x"], np.asarray(ins["modes"], dtype=object), fef,
+                                      i=ins["i"], c=ins["c"], bc=bc or None)
+    except ValueError as exc:
+        msg = str(exc)
+        if "time-terminated" in msg:
+            msg = ("A growth projection needs a time-terminated test: every system run from 0 to the same end "
+                   "of test T. Give that time (the end of the test), or map each system's observation window "
+                   "(tr) or its end-of-test row (c = 1) — all at the same time.")
+        raise FitError(msg) from exc
+
+    total = gp.systems * gp.T
+    kind_of = {m: ("BD" if m in fef else "BC" if m in bc else "A") for m in seen}
+    counts: dict = {}
+    first: dict = {}
+    for t, m in zip(np.asarray(ins["x"])[events], np.asarray(ins["modes"], dtype=object)[events]):
+        counts[m] = counts.get(m, 0) + 1
+        first[m] = min(first.get(m, np.inf), float(t))
+    table = gp.modes
+    modes = []
+    for m in seen:
+        row = {"label": m, "kind": kind_of[m], "failures": counts[m], "first": first[m],
+               "intensity": counts[m] / total}
+        if m in fef:
+            row["fef"] = float(table.loc[m, "fef"])
+            row["projected"] = float(table.loc[m, "projected"])
+            row["removed"] = row["intensity"] - row["projected"]
+        modes.append(row)
+    modes.sort(key=lambda r: (-r["failures"], r["first"], str(r["label"])))
+
+    bd_total = float(table["intensity"].sum()) if len(table) else 0.0
+    unseen = gp.projected_intensity - gp.growth_potential_intensity
+    return _json_safe({
+        "T": gp.T,
+        "systems": gp.systems,
+        "total_time": total,
+        "unit": (unit or "").strip(),
+        "failures": dict(gp.failures),
+        "n_bd_modes": int(len(table)),
+        "demonstrated": {"intensity": gp.demonstrated_intensity, "mtbf": gp.demonstrated_mtbf},
+        "projected": {"intensity": gp.projected_intensity, "mtbf": gp.projected_mtbf},
+        "growth_potential": {"intensity": gp.growth_potential_intensity, "mtbf": gp.growth_potential_mtbf},
+        "demonstrated_basis": "crow_amsaa" if gp.failures.get("BC") else "average",
+        "mean_fef": gp.mean_fef,
+        "beta_bd": gp.beta,
+        "new_mode_intensity": gp.new_mode_intensity,
+        # The projected intensity's parts: what isn't fixed (A and BC modes, as
+        # demonstrated), what the BD fixes leave, and the new BD modes still
+        # expected (mean FEF × h(T)).
+        "components": {
+            "unfixed": gp.demonstrated_intensity - bd_total,
+            "bd_residual": float(table["projected"].sum()) if len(table) else 0.0,
+            "unseen_bd": unseen,
+        },
+        "modes": modes,
+        "fef": fef,
+        "bc": bc,
+        "test_end": float(test_end) if test_end is not None else None,
+        "model": {"alpha": float(gp.model.params[0]), "beta": float(gp.model.params[1])},
+    })
+
+
+# ---------------------------------------------------------------------------
+# A system's next failure under a Poisson-process model (#235)
+# ---------------------------------------------------------------------------
+
+def next_failure(model, age, within=None, quantiles=None) -> dict:
+    """The next failure of a repairable system at ``age`` under a Poisson-
+    process (minimal repair) model, in closed form: the chance it fails
+    within ``t`` more is ``1 − exp(−(Λ(age + t) − Λ(age)))``, the ``q``
+    quantile of the time to it ``Λ⁻¹(Λ(age) − ln(1 − q)) − age``, and its mean
+    ``∫ exp(−(Λ(age + t) − Λ(age))) dt``."""
+    from scipy.integrate import quad
+
+    age = float(age)
+    if not np.isfinite(age) or age < 0:
+        raise FitError("The age must be zero or a positive time.")
+    within = [float(w) for w in (within or [])]
+    if any(not np.isfinite(w) or w <= 0 for w in within):
+        raise FitError("Each 'within' time must be a positive time ahead.")
+    quantiles = [0.1, 0.5, 0.9] if quantiles is None else [float(q) for q in quantiles]
+    if any(not 0 < q < 1 for q in quantiles):
+        raise FitError("Quantiles must be between 0 and 1 (e.g. 0.5 for the median).")
+    model = _as_cif_model(model)
+    with np.errstate(all="ignore"):
+        lam_a = _cif_at(model, age)
+        rocof = float(np.asarray(model.iif(np.array([age])), dtype=float).ravel()[0]) if age > 0 else None
+
+        def ahead(t):
+            return _cif_at(model, age + t) - lam_a
+
+        rows = []
+        for w in within:
+            mu = ahead(w)
+            rows.append({"time_ahead": w, "prob_failure": float(-np.expm1(-mu)), "expected_failures": mu})
+        qs = []
+        targets = np.array([lam_a - np.log1p(-q) for q in quantiles])
+        times = np.asarray(model.inv_cif(targets), dtype=float) - age
+        for q, t in zip(quantiles, times):
+            qs.append({"q": q, "time_ahead": float(t), "age_at": float(t + age)})
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            mean, _ = quad(lambda t: np.exp(-ahead(t)), 0.0, np.inf, limit=200)
+    return _json_safe({
+        "age": age,
+        "rocof": rocof,
+        "instantaneous_mtbf": (1.0 / rocof) if rocof else None,
+        "mean_time_to_next_failure": float(mean),
+        "quantiles": qs,
+        "within": rows,
+        "assumption": ("Minimal repair: each failure is repaired to the state just before it, so the system's "
+                       "failures follow the model's Poisson process from its current age."),
+    })
 
 
 # ---------------------------------------------------------------------------

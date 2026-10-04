@@ -66,6 +66,8 @@ export default function FleetForecastPage() {
   if (!fleet || !settings) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const readOnly = fleet.read_only;
+  // A fleet on a recurrent model: repairable items, every failure counted (#235).
+  const repairable = fleet.model_kind === "recurrent";
   const forecast = fleet.forecast || {};
   const perItem = Object.fromEntries((forecast.per_item || []).map((r) => [r.id, r]));
   const unit = forecast.unit || "";
@@ -75,7 +77,10 @@ export default function FleetForecastPage() {
     setItems((xs) => xs.map((it, i) => (i === idx ? { ...it, [key]: value } : it)));
     setDirty(true);
   };
-  const addItem = () => { setItems((xs) => [...xs, { name: "", current_use: 0, rate: null }]); setDirty(true); };
+  const addItem = () => {
+    setItems((xs) => [...xs, { name: "", current_use: 0, rate: null, ...(repairable ? { next_service_at: null } : {}) }]);
+    setDirty(true);
+  };
   const removeItem = (idx) => { setItems((xs) => xs.filter((_, i) => i !== idx)); setDirty(true); };
 
   const onSave = async () => {
@@ -108,9 +113,12 @@ export default function FleetForecastPage() {
 
   const exportCsv = () => {
     const header = ["item", "current_use", "rate_per_period", "prob_any_failure", "expected_failures"];
+    if (repairable) header.push("next_service_at", "prob_failure_before_service");
     const rows = [header, ...items.map((it) => {
       const r = perItem[it.id] || {};
-      return [it.name, it.current_use, it.rate ?? settings.default_rate, r.prob_any ?? "", r.expected ?? ""];
+      const row = [it.name, it.current_use, it.rate ?? settings.default_rate, r.prob_any ?? "", r.expected ?? ""];
+      if (repairable) row.push(it.next_service_at ?? "", r.prob_before_service ?? "");
+      return row;
     })];
     rows.push([]);
     rows.push(["fleet_expected", forecast.expected ?? ""]);
@@ -143,7 +151,8 @@ export default function FleetForecastPage() {
           </h1>
           <p>
             Against{" "}
-            <Link to={`/modelling/m/${fleet.model_id}`} className="evidence-link">
+            <Link to={repairable ? `/modelling/recurrent/${fleet.model_id}` : `/modelling/m/${fleet.model_id}`}
+                  className="evidence-link">
               {forecast.model_name || "the linked model"}
             </Link>
             {unit ? ` · time in ${unit}` : ""}
@@ -196,7 +205,9 @@ export default function FleetForecastPage() {
           </div>
           <div className="stat">
             <div className="k">Method</div>
-            <div className="v sm">{forecast.method === "renewals" ? "with replacement" : "first failures"}</div>
+            <div className="v sm">
+              {repairable ? "every failure (repairable)" : forecast.method === "renewals" ? "with replacement" : "first failures"}
+            </div>
           </div>
         </div>
       )}
@@ -218,17 +229,25 @@ export default function FleetForecastPage() {
             <input type="number" min="0" step="any" value={settings.default_rate ?? 0} disabled={readOnly}
                    onChange={(e) => setSetting("default_rate", e.target.value)} />
           </label>
-          <label className="login-field" style={{ minWidth: 230 }}>
-            <span>Counting method</span>
-            <Select value={settings.method || "renewals"} onChange={(v) => setSetting("method", v)}
-                    options={METHOD_OPTIONS} disabled={readOnly} />
-          </label>
+          {!repairable && (
+            <label className="login-field" style={{ minWidth: 230 }}>
+              <span>Counting method</span>
+              <Select value={settings.method || "renewals"} onChange={(v) => setSetting("method", v)}
+                      options={METHOD_OPTIONS} disabled={readOnly} />
+            </label>
+          )}
           <label className="login-field" style={{ minWidth: 250 }}>
             <span>Usage rate</span>
             <Select value={settings.rate_source || "manual"} onChange={(v) => setSetting("rate_source", v)}
                     options={RATE_SOURCE_OPTIONS} disabled={readOnly} />
           </label>
         </div>
+        {repairable && (
+          <p className="muted-line">
+            Repairable items: each failure is repaired and the item runs on, so every repeat failure is counted
+            from the item’s age (time since new) under the recurrent model. Ranges are Poisson P10–P90.
+          </p>
+        )}
         <p className="muted-line" style={{ marginBottom: 0 }}>
           {settings.rate_source === "estimated"
             ? "Each item uses the rate estimated from meter readings sent through the API with a read_at time; items without one fall back to their override, then the usage per period."
@@ -252,14 +271,17 @@ export default function FleetForecastPage() {
         {items.length === 0 ? (
           <p className="muted-line">No items yet — add each in-service unit with its accumulated use.</p>
         ) : (
-          <table className="lib-table">
+          <div className="fleet-table-wrap">
+          <table className={"lib-table fleet-items" + (repairable ? " repairable" : "")}>
             <thead>
               <tr>
-                <th style={{ width: "30%" }}>Item</th>
+                <th style={{ width: repairable ? "22%" : "30%" }}>Item</th>
                 <th style={{ width: 170 }}>Current use{unit ? ` (${unit})` : ""}</th>
                 <th style={{ width: 190 }}>Rate override</th>
-                <th style={{ width: 130 }}>P(failure)</th>
+                {repairable && <th style={{ width: 160 }}>Next service at</th>}
+                <th style={{ width: 130 }}>{repairable ? "P(≥1 failure)" : "P(failure)"}</th>
                 <th style={{ width: 140 }}>Expected failures</th>
+                {repairable && <th style={{ width: 150 }}>P(fail before service)</th>}
                 <th />
               </tr>
             </thead>
@@ -289,8 +311,27 @@ export default function FleetForecastPage() {
                         </div>
                       )}
                     </td>
+                    {repairable && (
+                      <td>
+                        <input className="cell-input" type="number" min="0" step="any"
+                               value={it.next_service_at ?? ""} placeholder="—" disabled={readOnly}
+                               title={`The use${unit ? ` (${unit})` : ""} the item is next serviced at`}
+                               onChange={(e) => setItem(idx, "next_service_at", e.target.value === "" ? null : e.target.value)} />
+                      </td>
+                    )}
                     <td className="lib-n">{r.prob_any === undefined || dirty ? "—" : `${(r.prob_any * 100).toFixed(0)}%`}</td>
                     <td className="lib-n">{r.expected === undefined || dirty ? "—" : fmt(r.expected, 2)}</td>
+                    {repairable && (
+                      <td className="lib-n">
+                        {dirty || it.next_service_at == null || it.next_service_at === ""
+                          ? "—"
+                          : r.service_overdue
+                          ? <span className="fleet-alert-warn" title="The item's use is past its next service">overdue</span>
+                          : r.prob_before_service == null
+                          ? "—"
+                          : `${(r.prob_before_service * 100).toFixed(0)}%`}
+                      </td>
+                    )}
                     <td className="lib-actions">
                       {!readOnly && (
                         <div className="lib-acts">
@@ -305,6 +346,7 @@ export default function FleetForecastPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
         {dirty && items.length > 0 && (
           <p className="muted-line" style={{ marginTop: "0.6rem" }}>
@@ -325,6 +367,14 @@ export default function FleetForecastPage() {
               y: forecast.per_period,
               marker: { color: "rgba(47, 109, 246, 0.75)" },
               hovertemplate: "%{y:.2f} expected<extra></extra>",
+              // Repairable fleets: each period's Poisson P10–P90.
+              ...(forecast.per_period_interval ? {
+                error_y: {
+                  type: "data", symmetric: false, color: "#6c727c", thickness: 1, width: 3,
+                  array: forecast.per_period_interval.map(([, hi], k) => Math.max(0, hi - forecast.per_period[k])),
+                  arrayminus: forecast.per_period_interval.map(([lo], k) => Math.max(0, forecast.per_period[k] - lo)),
+                },
+              } : {}),
             }]}
             layout={{
               height: 260,

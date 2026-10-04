@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import Modal from "../components/Modal.jsx";
 import Select from "../components/Select.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
-import { listFleets, createFleet, deleteFleet, listModels } from "../api.js";
+import { listFleets, createFleet, deleteFleet, listModels, listRecurrentModels } from "../api.js";
 import { relativeTime } from "../instrument.js";
 
 const PlusIcon = () => (
@@ -33,6 +33,10 @@ export default function FleetForecasts() {
   const [name, setName] = useState("");
   const [modelId, setModelId] = useState("");
   const [models, setModels] = useState([]);
+  // "life": first failures / with replacement; "recurrent": repairable items,
+  // every failure counted (#235).
+  const [modelKind, setModelKind] = useState("life");
+  const [recurrentModels, setRecurrentModels] = useState([]);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
 
@@ -53,6 +57,12 @@ export default function FleetForecasts() {
     } catch {
       setModels([]);
     }
+    try {
+      const { models: rec } = await listRecurrentModels();
+      setRecurrentModels(rec || []);
+    } catch {
+      setRecurrentModels([]);
+    }
   };
 
   const onCreate = async () => {
@@ -60,7 +70,7 @@ export default function FleetForecasts() {
     setCreating(true);
     setCreateError(null);
     try {
-      const fleet = await createFleet(name.trim(), modelId);
+      const fleet = await createFleet(name.trim(), modelId, modelKind);
       navigate(`/fleet/forecasts/${fleet.id}`);
     } catch (err) {
       if (err.code === "cap") {
@@ -199,21 +209,35 @@ export default function FleetForecasts() {
               />
             </label>
             <label className="login-field">
-              <span>Life model</span>
+              <span>Equipment</span>
+              <Select
+                value={modelKind}
+                onChange={(v) => { setModelKind(v); setModelId(""); }}
+                options={[
+                  { value: "life", label: "Replaceable — a life model",
+                    hint: "Failures until each item is replaced (first failures, or with replacement)." },
+                  { value: "recurrent", label: "Repairable — a recurrent model",
+                    hint: "Each item is repaired and fails again: every repeat failure counted." },
+                ]}
+              />
+            </label>
+            <label className="login-field">
+              <span>{modelKind === "recurrent" ? "Recurrent model" : "Life model"}</span>
               <Select
                 value={modelId}
                 onChange={setModelId}
                 placeholder="Choose a saved model…"
-                options={models.map((m) => ({
+                options={(modelKind === "recurrent" ? recurrentModels : models).map((m) => ({
                   value: m.id,
                   label: m.name,
-                  hint: m.distribution,
+                  hint: modelKind === "recurrent" ? m.model : m.distribution,
                 }))}
               />
             </label>
             <p className="muted-line">
-              The forecast evaluates this model at each item's age — fit one
-              under Modelling first if you don't have one yet.
+              {modelKind === "recurrent"
+                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Modelling › Recurrent events first if you don't have one yet."
+                : "The forecast evaluates this model at each item's age — fit one under Modelling first if you don't have one yet."}
             </p>
           </div>
         </Modal>
