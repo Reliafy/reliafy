@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
-import { analyzeRbd } from "../api.js";
+import { analyzeRbd, getActiveRbdJob, getRbdJob } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import CovariatesModal from "./CovariatesModal.jsx";
 import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./RbdBand.jsx";
@@ -10,6 +10,7 @@ import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
 import AvailabilityPolicies from "./AvailabilityPolicies.jsx";
 import { precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
+import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -247,6 +248,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
           <div className="name">
             {now ? "Mean remaining life" : cond ? "Mean residual life" : "MTTF"}
             {unit ? ` (${unit})` : ""}
+            {now && result.mean_residual_life && <> <MethodTag method={result.mean_residual_life.method} /></>}
           </div>
           <BandInterval band={band} interval={band?.mttf} />
         </div>
@@ -586,42 +588,96 @@ function ExactSection({ exact, steady, unit, onCompute, computing }) {
   );
 }
 
+// "Queued — 2 ahead of you…" / "Running…" while a simulation job is in flight.
+function jobStatusText(job) {
+  if (!job) return "";
+  if (job.status === "running") return "Running the simulation…";
+  const ahead = job.queue_position;
+  if (ahead == null || ahead <= 0) return "Queued — you're next…";
+  return `Queued — ${ahead} ahead of you…`;
+}
+
+// Poll intervals for a queued job: every 1.5 s, easing off to 6 s.
+const POLL_FIRST_MS = 1500;
+const POLL_MAX_MS = 6000;
+
+// "~3 s" from a quick-run offer's seconds.
+const quickSeconds = (offer) => (offer ? Number(Number(offer.seconds).toPrecision(2)) : 3);
+
 // Shown in place of the simulation's results when none has been run: what it
-// adds over the exact figures, and the way to run it (Pro, or credits).
-function SimulationOffer({ canSimulate, onSimulate, simulating, graph }) {
+// adds over the exact figures, and the way to run it (Pro, or credits) — for a
+// user without Pro, a free quick run (#147) a few times a day. While a
+// simulation is queued or running on the calculation service (#146), its
+// place in the queue.
+function SimulationOffer({ canSimulate, onSimulate, simulating, graph, quick = null, capMessage = null,
+                           onQuick = null, job = null, fromNow = false }) {
   const [upgrade, setUpgrade] = useState(false);
   if (!onSimulate) return null;
+  const canQuick = !canSimulate && !!onQuick && quick && quick.remaining_today > 0 && !capMessage;
+  const seconds = quickSeconds(quick);
   return (
     <div className="card rbd-sim-offer">
       <div className="ds-section-h" style={{ marginTop: 0 }}>Simulation</div>
       <p style={{ margin: "4px 0 0" }}>
         The figures above are exact. A Monte-Carlo simulation adds the spread of outcomes: the chance of no
         outage, percentiles, criticality indices (which block trips the system, which restores it) and a
-        confidence band.
+        confidence band.{fromNow && " From now, it also gives the time to the next system failure, its mean residual life and its likely cause."}
+        {canQuick && (
+          <>
+            {" "}A quick estimate is free: it simulates for about {seconds} s and says how many replications it
+            ran and how precise it is.{" "}
+            <span className="muted">{quick.remaining_today} of {quick.per_day} free runs left today.</span>
+          </>
+        )}
       </p>
-      <div className="rbd-upgrade-actions">
-        <button
-          type="button"
-          className={canSimulate ? "" : "secondary"}
-          disabled={simulating}
-          onClick={() => (canSimulate ? onSimulate() : setUpgrade(true))}
-        >
-          {simulating ? "Simulating…" : canSimulate ? "Run simulation" : "Run simulation (Pro)"}
-        </button>
-      </div>
+      {capMessage && !canSimulate && <p className="rbd-quick-cap">{capMessage}</p>}
+      {!capMessage && !canSimulate && onQuick && quick && quick.remaining_today <= 0 && (
+        <p className="rbd-quick-cap">
+          You've used today's {quick.per_day} free quick simulations. They reset at 00:00 UTC.
+        </p>
+      )}
+      {job ? (
+        <p className="rbd-job-status" role="status" aria-live="polite">{jobStatusText(job)}</p>
+      ) : (
+        <div className="rbd-upgrade-actions">
+          {canQuick && (
+            <button type="button" onClick={onQuick} disabled={simulating}>
+              {simulating ? "Simulating…" : `Run quick simulation (free, ~${seconds} s)`}
+            </button>
+          )}
+          <button
+            type="button"
+            className={canSimulate ? "" : "secondary"}
+            disabled={simulating}
+            onClick={() => (canSimulate ? onSimulate() : setUpgrade(true))}
+          >
+            {simulating && canSimulate ? "Simulating…" : canSimulate ? "Run simulation" : "Run full simulation (Pro)"}
+          </button>
+        </div>
+      )}
       {upgrade && !canSimulate && <AvailabilityUpgrade graph={graph} />}
     </div>
   );
 }
 
-export function AvailabilityView({ result, unit, graph = null, onSimulate = null, onCompute = null, busy = null }) {
+// "Quick estimate": a free, time-capped simulation's result (#147).
+function QuickTag() {
+  return (
+    <span className="rbd-quick-tag" title="A free, time-capped simulation: fewer replications than a full run">
+      Quick estimate
+    </span>
+  );
+}
+
+export function AvailabilityView({ result, unit, graph = null, onSimulate = null, onCompute = null, busy = null,
+                                  onQuick = null, capMessage = null, job = null }) {
   const u = unit ? ` ${unit}` : "";
   const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
   // A result saved before #154 is a simulation result (no has_simulation flag).
   const hasSim = result.has_simulation !== false;
   const exact = result.exact || null;
   const exactOk = exact?.status === "ok";
-  // No exact long-run value (proof tests whose tests or repairs take time — #100):
+  // No exact long-run value (limited repair crews for wear-out lives, say):
   // the headline is the simulated availability over the window.
   const simulatedOnly = result.availability_basis === "simulation";
   const a = simulatedOnly ? result.precision?.window_availability : result.steady_state_availability;
@@ -665,6 +721,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           {simulatedOnly
             ? `Availability over the ${Number(result.t_simulation.toPrecision(5)).toLocaleString()}${u} window (simulated — no exact long-run value with this maintenance)`
             : <>Steady-state availability (uptime) <MethodTag method={exact?.method?.steady_state || (basis.mean_up_time === "exact" ? "exact" : null)} /></>}
+          {simulatedOnly && result.quick && <QuickTag />}
         </div>
       </div>
       <div className="rbd-avail-metrics">
@@ -672,6 +729,9 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         <div className="alt-metric" title={basisNote("mean_up_time")}><span className="k">Mean up time</span><span className="v">{fmt(result.mean_up_time)}{u}</span></div>
         <div className="alt-metric" title={basisNote("mean_down_time")}><span className="k">Mean down time</span><span className="v">{fmt(result.mean_down_time)}{u}</span></div>
         <div className="alt-metric" title={basisNote("failure_frequency")}><span className="k">Failure frequency</span><span className="v">{fmt(result.failure_frequency)}{u ? ` /${unit}` : ""}</span></div>
+        {hasSim && result.next_failure && (
+          <div className="alt-metric" title="Simulated mean time from now to the next system failure (see Next system failure from now)"><span className="k">Mean residual life</span><span className="v">{meanResidualLife(result.next_failure)}{u}</span></div>
+        )}
       </div>
 
       <ExactSection
@@ -728,7 +788,9 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         <div className="rbd-sim">
           <div className="ds-section-h">
             Simulation{result.current_state ? " from now" : ""} <MethodTag method="simulated" />
+            {result.quick && <QuickTag />}
           </div>
+          <RbdNextFailure result={result} unit={unit} />
           {exactOk && <DowntimeBars rows={simPer} title="Simulated share of downtime" />}
           {curve && curve.t?.length > 1 && (
             <Plot
@@ -744,8 +806,11 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
             />
           )}
           <p className="muted-line" style={{ margin: 0 }}>
-            Availability curve estimated by {result.n_simulations?.toLocaleString()} Monte-Carlo
-            replications{result.precision?.antithetic ? " (in antithetic pairs)" : ""} over {fmt(result.t_simulation)}{u}
+            {result.quick ? "Quick estimate: availability" : "Availability"} curve estimated by{" "}
+            {result.n_simulations?.toLocaleString()} Monte-Carlo
+            replications{result.precision?.antithetic ? " (in antithetic pairs)" : ""}
+            {result.quick && result.time_budget_s ? `, a quick run of at most ${fmt3(result.time_budget_s)} s,` : ""}{" "}
+            over {fmt(result.t_simulation)}{u}
             {hasBand ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}
             {sameWindow ? "; the dotted line is the exact A(t)" : ""}.
             {precisionNote(result)}
@@ -759,6 +824,11 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           onSimulate={onSimulate}
           simulating={busy === "simulate"}
           graph={graph}
+          quick={result.simulation_status?.quick || null}
+          capMessage={capMessage}
+          onQuick={onQuick}
+          job={job}
+          fromNow={!!result.current_state}
         />
       )}
     </div>
@@ -777,22 +847,47 @@ export function savedOn(iso) {
   })}`;
 }
 
-// Shown instead of an error when a free user calculates a repairable diagram
-// that has no saved result: availability simulation is a paid feature.
-function AvailabilityUpgrade({ graph }) {
+// The Pro offer: shown when a free user asks for the simulation, and instead
+// of an error for a diagram whose figures need it (no exact ones). The full
+// simulation is a paid feature; a quick, time-capped one is free a few times
+// a day (#147) — offered here when ``offer`` (the 402's) says so.
+function AvailabilityUpgrade({ graph, offer = null, capMessage = null, onQuick = null, running = false }) {
   const exportDiagram = () => {
     // RbdBuilder listens for this event and downloads the saved diagram as a
     // standalone SurPyval + RePyability script (free for every viewer).
     window.dispatchEvent(new CustomEvent("reliafy:rbd-export", { detail: { graph } }));
   };
+  const canQuick = !!onQuick && offer && offer.remaining_today > 0 && !capMessage;
+  const seconds = quickSeconds(offer);
   return (
     <div className="card note rbd-upgrade" role="status">
-      <p>
-        <b>The simulation runs thousands of histories — it's part of Pro.</b>{" "}
-        Subscribe to Pro or buy AI credits to run it here.
-      </p>
+      {canQuick ? (
+        <p>
+          <b>Run a quick availability estimate — free.</b> This diagram's figures need the simulation. A quick
+          one runs for about {seconds} s and reports how many replications it ran and how precise the estimate
+          is.{" "}
+          <span className="muted">
+            {offer.remaining_today} of {offer.per_day} free runs left today.
+          </span>{" "}
+          Pro runs the full simulation for a tighter estimate.
+        </p>
+      ) : capMessage ? (
+        <p>{capMessage}</p>
+      ) : (
+        <p>
+          <b>The simulation runs thousands of histories — it's part of Pro.</b>{" "}
+          Subscribe to Pro or buy AI credits to run it here.
+        </p>
+      )}
       <div className="rbd-upgrade-actions">
-        <Link className="cta cta-solid" to="/billing">Upgrade to Pro</Link>
+        {canQuick && (
+          <button type="button" className="cta cta-solid" onClick={onQuick} disabled={running}>
+            {running ? "Simulating…" : `Run quick simulation (free, ~${seconds} s)`}
+          </button>
+        )}
+        <Link className={canQuick ? "linkish" : "cta cta-solid"} to="/billing">
+          {canQuick ? "Upgrade to Pro for full runs" : "Upgrade to Pro"}
+        </Link>
         <button type="button" className="linkish" onClick={exportDiagram}>
           Download and run it yourself
         </button>
@@ -874,6 +969,10 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
   const [phase, setPhase] = useState("idle"); // idle | calculating | error
   const [error, setError] = useState(null);
   const [needsPro, setNeedsPro] = useState(false); // 402 pro_required (availability)
+  const [quickOffer, setQuickOffer] = useState(null); // free quick runs: {seconds, per_day, remaining_today}
+  const [capMessage, setCapMessage] = useState(null); // 429: today's free runs used
+  const [retryable, setRetryable] = useState(null); // 503: the calculation service couldn't take it
+  const [job, setJob] = useState(null); // {job_id, status, queue_position} while queued/running
   const [tMax, setTMax] = useState(""); // x-axis 'to' limit (blank = auto)
   const [evalT, setEvalT] = useState(""); // time at which R(t)/F(t) is read off
   // Whether "To" / "Evaluate at" hold the values a calculation filled in
@@ -981,11 +1080,15 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
   // ``simulate`` asks for the (paid) simulation; ``exact`` for the exact
   // figures of a diagram above the automatic size cap. A plain Calculate of a
   // repairable diagram gets the exact figures (free) and any saved simulation.
-  const runCalculation = async (force = false, { simulate = false, exact = false } = {}) => {
+  // ``quick`` asks for a free, time-capped simulation (users without Pro, #147).
+  const runCalculation = async (force = false, { simulate = false, exact = false, quick = false } = {}) => {
     setPhase("calculating");
-    setBusy(simulate || force ? "simulate" : exact ? "exact" : null);
+    setBusy(simulate || force || quick ? "simulate" : exact ? "exact" : null);
     setError(null);
+    setRetryable(null);
     setNeedsPro(false);
+    setCapMessage(null);
+    setJob(null);
     try {
       const cov = covPayload();
       // As of now replaces the whole-system "given survived to" age.
@@ -1004,7 +1107,8 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
           band: band.on && !graph.repairable ? { level: band.level } : null,
           ...(graph.repairable
             ? {
-                simulate: simulate || force,
+                simulate: simulate || force || quick,
+                quick,
                 currentState: now,
                 // Keep large diagrams' exact figures once asked for.
                 exact: exact || result?.exact?.status === "ok",
@@ -1013,6 +1117,12 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         }
       );
       setResult(res);
+      if (res.free_sims) setQuickOffer(res.free_sims);
+      if (res.job) {
+        // The exact figures now; the simulation is queued on the calculation
+        // service (#146): poll until it's done.
+        setJob(res.job);
+      }
       // Repairable diagrams return an availability payload (no reliability grid).
       if (res.kind !== "repairable") {
         // Prefill the prompts with the range actually used so the user can see
@@ -1028,21 +1138,99 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         }
       }
       setCalcSig(JSON.stringify({ t: tSent, s: sInput, cov, band: bandSig, now, target }));
-      setPhase("idle");
-      setBusy(null);
+      if (!res.job) {
+        setPhase("idle");
+        setBusy(null);
+      }
     } catch (err) {
       setBusy(null);
       if (err.status === 402 && err.code === "pro_required") {
-        // A simulation-only diagram (no exact figures): the paywall.
+        // A simulation-only diagram (no exact figures): the paywall — with
+        // the free quick run where it's offered.
         setResult(null);
+        setQuickOffer(err.data?.quick || null);
         setNeedsPro(true);
         setPhase("idle");
         return;
       }
+      if (err.status === 429 && err.code === "free_sim_cap") {
+        // Today's free quick runs are used: say so where the offer was.
+        setQuickOffer(err.data?.quick || null);
+        setCapMessage(err.message);
+        if (!result) setNeedsPro(true);
+        setPhase("idle");
+        return;
+      }
+      if (err.status === 503) setRetryable({ force, simulate, exact, quick });
       setError(err.message);
       setPhase("error");
     }
   };
+
+  // Poll the in-flight job until it finishes. Survives transient network
+  // errors (keeps trying, more slowly); gives up after a run of failures.
+  const jobId = job?.job_id;
+  useEffect(() => {
+    if (!jobId) return undefined;
+    let cancelled = false;
+    let timer = null;
+    let delay = POLL_FIRST_MS;
+    let failures = 0;
+    setPhase("calculating");
+    setBusy("simulate");
+    const finish = () => {
+      setJob(null);
+      setBusy(null);
+    };
+    const poll = async () => {
+      try {
+        const view = await getRbdJob(jobId);
+        if (cancelled) return;
+        failures = 0;
+        if (view.status === "done") {
+          finish();
+          // The whole payload: the simulation with the exact figures beside it.
+          setResult(view.result);
+          setPhase("idle");
+          return;
+        }
+        if (view.status === "failed") {
+          finish();
+          setError(view.error || "The calculation failed.");
+          setPhase("error");
+          return;
+        }
+        setJob((prev) => (prev && prev.job_id === jobId ? { ...prev, ...view } : prev));
+      } catch (err) {
+        if (cancelled) return;
+        if (err.status === 404 || ++failures >= 6) {
+          finish();
+          setError(err.status === 404 ? "The calculation was lost — run it again." : err.message);
+          setPhase("error");
+          return;
+        }
+      }
+      delay = Math.min(delay * 1.3, POLL_MAX_MS);
+      timer = setTimeout(poll, delay);
+    };
+    timer = setTimeout(poll, POLL_FIRST_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [jobId]);
+
+  // After a reload, pick up this diagram's simulation if one is still in flight.
+  const resumed = useRef(null);
+  useEffect(() => {
+    if (!rbdId || !graph.repairable || resumed.current === rbdId) return;
+    resumed.current = rbdId;
+    getActiveRbdJob(rbdId)
+      .then(({ job: active }) => {
+        if (active && (active.status === "queued" || active.status === "running")) setJob(active);
+      })
+      .catch(() => {}); // nothing to resume
+  }, [rbdId, graph.repairable]);
 
   const setBlockState = (id, patch) =>
     setBlockStates((prev) => ({ ...prev, [id]: { mode: "new", value: "", ...prev[id], ...patch } }));
@@ -1067,6 +1255,11 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         </button>
         {dirty && (
           <span className="hint">Recalculate to apply your changes.</span>
+        )}
+        {job && (
+          <span className="rbd-job-status" role="status" aria-live="polite">
+            {jobStatusText(job)}
+          </span>
         )}
       </div>
 
@@ -1224,9 +1417,33 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         </p>
       )}
 
-      {error && <div className="card error">{error}</div>}
+      {error && (
+        <div className="card error">
+          {error}
+          {retryable && (
+            <div className="rbd-upgrade-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={phase === "calculating"}
+                onClick={() => runCalculation(retryable.force, retryable)}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-      {needsPro && !stale && <AvailabilityUpgrade graph={graph} />}
+      {needsPro && !stale && (
+        <AvailabilityUpgrade
+          graph={graph}
+          offer={quickOffer}
+          capMessage={capMessage}
+          running={phase === "calculating"}
+          onQuick={() => runCalculation(false, { quick: true })}
+        />
+      )}
 
       {result && !stale && result.kind === "repairable" && result.has_simulation !== false && result.cached && (
         <div className="rbd-saved-note" role="status">
@@ -1253,7 +1470,19 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
           busy={phase === "calculating" ? busy : null}
           onSimulate={() => runCalculation(false, { simulate: true })}
           onCompute={() => runCalculation(false, { exact: true })}
+          onQuick={() => runCalculation(false, { quick: true })}
+          capMessage={capMessage}
+          job={job}
         />
+      )}
+      {result && !stale && result.kind === "repairable" && result.quick && !result.can_recompute && (
+        <div className="rbd-saved-note rbd-quick-note" role="status">
+          <span>
+            A quick estimate
+            {quickOffer ? ` · ${quickOffer.remaining_today} of ${quickOffer.per_day} free runs left today` : ""}.
+          </span>
+          <Link to="/billing">Pro runs the full simulation for a tighter estimate</Link>
+        </div>
       )}
       {result && !stale && result.kind === "repairable" && (
         <AvailabilityCompare graph={graph} rbdId={rbdId} result={result} />

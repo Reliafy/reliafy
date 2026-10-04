@@ -2,8 +2,8 @@
 maintenance (#99, #100): the RePyability component specs, the system downtime
 cost, and the cost report — so the script reproduces the app's cost rate,
 total cost of ownership and simulated window cost, and still runs when the
-exact long-run values don't exist (proof tests whose tests or repairs take
-time).
+exact long-run values don't exist (limited repair crews for wear-out
+lives, say).
 
 A diagram without any of these exports exactly as before: every hook below
 expands to the original text.
@@ -22,7 +22,7 @@ def uses_extras(graph: dict) -> bool:
     """Whether any block (or the diagram) carries costs or maintenance, or
     the diagram has repair crews, maintenance groups, standby groups or a
     safety function (#156, #157): anything whose exact values may not exist."""
-    if (graph.get("costs") or {}).get("downtime_rate") or (graph.get("costs") or {}).get("horizon"):
+    if any((graph.get("costs") or {}).get(k) for k in ("downtime_rate", "horizon", "discount_rate")):
         return True
     if any(graph.get(k) for k in ("repair_crews", "maintenance_groups", "safety_function")):
         return True
@@ -215,17 +215,33 @@ def diagram_lines(graph: dict) -> list[str]:
 
 
 def constants(graph: dict) -> list[str]:
-    """The ownership horizon the total cost is taken over."""
+    """The ownership horizon the total cost is taken over, and the discount
+    rate it is taken at (#219)."""
     from backend.services.rbd_export import _num
 
     try:
         horizon = rm.diagram_costs(graph)["horizon"]
     except AnalysisError:
         horizon = None
-    return [
+    try:
+        disc = rm.discount(graph)
+    except AnalysisError:
+        disc = None
+    out = [
         "# How long the system is owned, for the total cost of ownership (None:",
         "# the simulated window, as in Reliafy).",
         f"HORIZON = {_num(horizon) if horizon else None}",
+    ]
+    if not disc:
+        return out + ["# Undiscounted (a rate per unit time makes the total a present value).",
+                      "DISCOUNT_RATE = 0.0", "DISCOUNT_PERCENT = 0"]
+    per_year = rm.UNITS_PER_YEAR[disc["unit"]]
+    return out + [
+        f"# The total cost of ownership is its present value at {_num(disc['annual'])}% a year.",
+        f"# RePyability's discount_rate is continuous, per {disc['unit']}: log(1 + "
+        f"{_num(disc['annual'] / 100)}) / {_num(per_year)} {disc['unit']}s a year.",
+        f"DISCOUNT_RATE = {disc['per_unit']!r}",
+        f"DISCOUNT_PERCENT = {_num(disc['annual'])}",
     ]
 
 
@@ -239,8 +255,8 @@ _EXACT = '''    # Exact long-run figures (independent blocks; Birnbaum/Vesely fo
         birnbaum = rbd.birnbaum_importance(**overrides)
 '''
 _EXACT_OR_NOT = '''    # Exact long-run figures (independent blocks; Birnbaum/Vesely formula).
-    # Proof tests whose tests or repairs take time have none: the
-    # simulation gives them.
+    # Some diagrams (limited repair crews for wear-out lives, say) have
+    # none: the simulation gives them.
     try:
         with np.errstate(all="ignore"):
             availability = float(rbd.mean_availability(**overrides))
@@ -279,7 +295,7 @@ _HELPERS = '''
 def pilot_unavailability(overrides):
     """A quick simulated unavailability (as Reliafy sets the precision target
     when there is no exact value)."""
-    run = dict(t_simulation=T_SIMULATION, method="c", seed=1)
+    run = dict(t_simulation=T_SIMULATION, method="c", seed=1, control_variate=False, conditional=False)
     try:
         pilot = rbd.availability(mc_samples=PILOT_SIMS, antithetic=True, **run, **overrides)
     except NotImplementedError:
@@ -298,12 +314,19 @@ def report_costs(sim, overrides):
         rate = sim.cost.cost_rate if sim.cost is not None else float("nan")
         basis = "simulation"
     horizon = HORIZON if HORIZON else T_SIMULATION
-    total = rbd.acquisition_cost + rate * horizon
+    # Discounted, the running costs' present value: the horizon counts as
+    # (1 - exp(-r H)) / r, as in RePyability's total_cost(discount_rate=r).
+    present = -np.expm1(-DISCOUNT_RATE * horizon) / DISCOUNT_RATE if DISCOUNT_RATE else horizon
+    total = rbd.acquisition_cost + rate * present
     print(f"\\nLong-run cost rate ({basis}): {rate:,.6g}{unit}")
-    print(f"Total cost of ownership over {horizon:,.6g}: {total:,.6g} "
-          f"(purchase {rbd.acquisition_cost:,.6g} + running {rate * horizon:,.6g})")
+    print(f"Total cost of ownership over {horizon:,.6g}"
+          + (f" (present value at {DISCOUNT_PERCENT:g}% a year)" if DISCOUNT_RATE else "")
+          + f": {total:,.6g} (purchase {rbd.acquisition_cost:,.6g} + running {rate * present:,.6g})")
     out = {"cost_rate": rate, "cost_rate_basis": basis, "horizon": horizon,
-           "acquisition_cost": rbd.acquisition_cost, "total_cost": total}
+           "acquisition_cost": rbd.acquisition_cost, "total_cost": total,
+           "discount_rate": DISCOUNT_PERCENT or None, "discount_rate_per_unit": DISCOUNT_RATE or None}
+    if DISCOUNT_RATE:
+        out["undiscounted_total_cost"] = rbd.acquisition_cost + rate * horizon
     if sim.cost is not None:
         cost = sim.cost
         window = cost.mean_interval(CONFIDENCE)
@@ -314,8 +337,20 @@ def report_costs(sim, overrides):
         for category, value in cost.by_category.items():
             if value:
                 print(f"    {category.replace('_', ' ')}: {value:,.6g}")
+        # The window's mean cost, exact where RePyability works it out (as
+        # in Reliafy); the interval and percentiles stay the simulation's.
+        # Above EXACT_WINDOW_MEAN_MAX_BLOCKS blocks Reliafy reports the
+        # simulated mean (the exact one takes too long), and so does this.
+        mean, mean_basis = (window_mean(overrides, "expected_cost") if rbd.has_costs
+                            else (None, "simulation"))
+        if mean is not None:
+            print(f"  expected cost of the window ({mean_basis}): {mean:,.6g}")
+        elif N_BLOCKS > EXACT_WINDOW_MEAN_MAX_BLOCKS:
+            print(f"  (the simulated mean cost stands, as in Reliafy: {N_BLOCKS} blocks is "
+                  f"more than the {EXACT_WINDOW_MEAN_MAX_BLOCKS} its exact window mean is computed for)")
         out["simulated"] = {
-            "mean": cost.mean, "lower": window.lower, "upper": window.upper,
+            "mean": cost.mean if mean is None else mean, "mean_basis": mean_basis,
+            "simulated_mean": cost.mean, "lower": window.lower, "upper": window.upper,
             "percentiles": {"10": p10, "50": p50, "90": p90},
             "by_category": dict(cost.by_category),
         }

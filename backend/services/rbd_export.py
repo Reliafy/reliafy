@@ -48,10 +48,10 @@ from typing import Any, Callable, Optional
 import numpy as np
 
 from backend.fitting import DISTRIBUTIONS
-from backend.services import rbd_analysis, rbd_repeats
+from backend.services import rbd_analysis, rbd_next_failure, rbd_repeats
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.22", "repyability": "0.11"}
+_DEFAULT_VERSIONS = {"surpyval": "0.23", "repyability": "0.12"}
 _SURPYVAL_GIT = "https://github.com/derrynknife/SurPyval.git"
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
@@ -59,8 +59,8 @@ _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 # (as well as keywords and builtins such as ``filter`` or ``input``).
 _RESERVED = {
     "np", "os", "json", "surv", "plt", "rbd", "rbd_independent", "main",
-    "missing_model", "voting_gate", "mean_time_to_failure", "b_life",
-    "save_results", "results", "exact_over_window", "node_states",
+    "missing_model", "voting_gate", "pinned_stand_in", "mean_time_to_failure", "b_life",
+    "save_results", "results", "exact_over_window", "node_states", "window_mean",
 }
 
 
@@ -108,8 +108,9 @@ def detect_versions() -> dict:
 def install_commands(versions: Optional[dict] = None) -> list[str]:
     """The shell commands that install what an exported script needs, pinned
     to this deployment's versions: SurPyval from git, RePyability's two extra
-    dependencies, then RePyability from git with ``--no-deps`` (its metadata
-    still pins an older SurPyval). The script header and the MCP export's
+    dependencies, then RePyability from git with ``--no-deps`` (so pip can't
+    re-resolve SurPyval from PyPI, whose releases are older). The script
+    header and the MCP export's
     ``run`` field both come from here."""
     v = versions or detect_versions()
     return [
@@ -294,10 +295,10 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
         )
     if kind == "nonparametric":
         raise _Missing(
-            f"Block '{label}' uses a non-parametric model ({what}) fitted to "
-            "a saved dataset, which isn't included in this script. Set a "
-            "parametric life model here, or refit it with e.g. "
-            "surv.KaplanMeier.fit(x, c)."
+            f"Block '{label}' uses a non-parametric model ({what}), which "
+            "an RBD doesn't take (RePyability 0.12 refuses one). Fit a "
+            "parametric distribution to the same data and set it here, "
+            "e.g. surv.Weibull.fit(x, c)."
         )
     if model.get("_unresolved"):
         raise _Missing(
@@ -327,11 +328,18 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
         raise _Missing(
             f"Block '{label}' is missing its {what} parameters. Set them here."
         )
+    # Offset, limited-failure proportion and zero-inflation, by SurPyval's
+    # keywords: the proportion Reliafy stores as "p" is ``lfp_p`` since
+    # SurPyval 0.23 (#608; ``p=`` warns there and fails in 0.24), so the
+    # header then says the script needs 0.23 or later.
     extras = []
-    for key in ("gamma", "p", "f0"):
-        value = (model.get("extras") or {}).get(key)
+    stored = model.get("extras") or {}
+    for key, kw in (("gamma", "gamma"), ("p", "lfp_p"), ("f0", "f0")):
+        value = stored.get(key)
+        if value is None and key == "p":
+            value = stored.get("lfp_p")
         if value is not None:
-            extras.append((key, float(value)))
+            extras.append((kw, float(value)))
     args = ", ".join(_num(v) for _, v in pairs)
     expr = f"surv.{attr}.from_params([{args}]"
     expr += "".join(f", {k}={_num(v)}" for k, v in extras) + ")"
@@ -359,7 +367,8 @@ class _Script:
         self.imports: set[str] = set()
         self.uses_surv = False
         self.uses_missing = False
-        self.uses_voting_gate = False
+        self.uses_lfp = False  # a block written with lfp_p= (SurPyval >= 0.23)
+        self.uses_stand_in = False
         self.lines: list[str] = []  # block definitions, in order
         self.subsystems: dict[str, str] = {}  # rbd id -> variable
         self.placeholders: list[str] = []  # labels of raising blocks
@@ -387,6 +396,7 @@ class _Script:
         except _Missing as exc:
             return self.missing(var, str(exc), label)
         self.uses_surv = True
+        self.uses_lfp = self.uses_lfp or ", lfp_p=" in expr
         head = f"{prefix_comment or label}: {desc}"
         self.comment(head)
         if spec and (spec.get("modelId") or spec.get("model_id")):
@@ -805,7 +815,7 @@ def to_python(
         body = _nonrepairable_body(script, graph, resolve_model,
                                    resolve_subsystem)
     header = _header(name, unit, repairable, versions, exported_at,
-                     script.placeholders, filename(name))
+                     script.placeholders, filename(name), lfp=script.uses_lfp)
     imports = _imports(script, repairable)
     helpers = _helpers(script)
     parts = [helpers] if helpers else []
@@ -831,7 +841,7 @@ def _command_lines(commands: list[str]) -> list[str]:
 
 
 def _header(name, unit, repairable, versions, exported_at, placeholders,
-            file_name):
+            file_name, lfp=False):
     title = _one_line(name or "Untitled RBD").replace("\\", "/")
     title = title.replace('"""', "'''")
     sp, rp = versions["surpyval"], versions["repyability"]
@@ -861,11 +871,15 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
         *_command_lines(install_commands(versions)),
         "",
         *textwrap.wrap(
-            "RePyability's package metadata still pins an older SurPyval, so "
-            "(like Reliafy's own build) it is installed with --no-deps after "
-            "SurPyval and its two extra dependencies. matplotlib (installed "
+            "Like Reliafy's own build, RePyability is installed with "
+            "--no-deps after SurPyval and its two extra dependencies, so pip "
+            "can't swap in an older SurPyval from PyPI. matplotlib (installed "
             "with SurPyval) is only used for the optional plot.", 79),
         "",
+        *(textwrap.wrap(
+            "Needs SurPyval 0.23 or later: a limited-failure block is built "
+            "with lfp_p=, SurPyval's name for the proportion that ever fails "
+            "since 0.23.", 79) + [""] if lfp else []),
         "Run:",
         "",
         f"    python {file_name}",
@@ -896,8 +910,8 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
 
 
 def _imports(script: _Script, repairable: bool) -> str:
-    out = ["import json", "import os", "", "import numpy as np"]
-    if script.uses_surv or (repairable and script.uses_voting_gate):
+    out = ["import json", "import os", *(["import time"] if repairable else []), "", "import numpy as np"]
+    if script.uses_surv or (repairable and script.uses_stand_in):
         out.append("import surpyval as surv")
     names = sorted(script.imports)
     if names:
@@ -919,13 +933,12 @@ def _helpers(script: _Script) -> str:
                 """Stand-in for a block whose model couldn't be exported."""
                 raise NotImplementedError(message)
         '''))
-    if script.uses_voting_gate:
+    if script.uses_stand_in:
         out.append(textwrap.dedent('''
-            def voting_gate():
-                """A k-of-n voting gate in an availability model: pure logic that
-                never fails (RePyability needs every node to be a repairable
-                component; main() also pins it working), exactly as Reliafy
-                models it."""
+            def pinned_stand_in():
+                """A block pinned working or failed with no life or repair model:
+                the pin fixes its state, so this never-failing stand-in is never
+                consulted (exactly as Reliafy models it)."""
                 return NonRepairable(
                     surv.Weibull.from_params([1e12, 1.0]),
                     surv.Exponential.from_params([1.0]),
@@ -1295,9 +1308,18 @@ def _repairable_body(script: _Script, graph) -> str:
             broken.append(nid)
         pinned = state in ("working", "failed")
         if ntype == "knode":
-            script.uses_voting_gate = True
             k[nid] = max(int(data.get("n") or 1), 1)
-            comps.append((nid, "voting_gate()", label))
+            if state == "failed":
+                # A vote point pinned failed: a stand-in held broken.
+                script.uses_stand_in = True
+                comps.append((nid, "pinned_stand_in()", label))
+                continue
+            # A junction (RePyability 0.12): it never fails, is folded out of
+            # every analysis, and can't be pinned.
+            if state == "working":
+                working.remove(nid)
+            script.imports.add("PerfectReliability")
+            comps.append((nid, "PerfectReliability", label))
             continue
         var = script.names.make(label)
         L.append("")
@@ -1318,13 +1340,13 @@ def _repairable_body(script: _Script, graph) -> str:
             comps.append((nid, var, label))
             continue
         if pinned and not (data.get("model") and (data.get("repair") or data.get("instant_repair"))):
-            script.uses_voting_gate = True
+            script.uses_stand_in = True
             script.comment(
                 f"{label}: pinned {state} in Reliafy with no life/repair "
                 "model - the override fixes its state, so a never-failing "
                 "stand-in is used."
             )
-            L.append(f"{var} = voting_gate()")
+            L.append(f"{var} = pinned_stand_in()")
             comps.append((nid, var, label))
             continue
         life = script.dist(data.get("model"), f"{label} (life)",
@@ -1448,6 +1470,15 @@ def _repairable_body(script: _Script, graph) -> str:
     out.append("WINDOW = T_SIMULATION")
     out.append(f"EXACT_POINTS = {rbd_analysis.EXACT_POINTS}")
     out.append(f"EXACT_EARLY_POINTS = {rbd_analysis.EXACT_EARLY_POINTS}")
+    out.append("# The simulated window's mean availability (and cost) is "
+               "reported exactly, as")
+    out.append("# in Reliafy, for a diagram of up to EXACT_WINDOW_MEAN_MAX_BLOCKS "
+               "blocks; above it")
+    out.append("# Reliafy reports the simulated mean, and so does this script "
+               "(see window_mean).")
+    out.append(f"N_BLOCKS = {rbd_analysis.count_blocks(graph)}  "
+               "# components and standby groups, as Reliafy counts them")
+    out.append(f"EXACT_WINDOW_MEAN_MAX_BLOCKS = {rbd_analysis.EXACT_WINDOW_MEAN_MAX_BLOCKS}")
     out.append("# Start them from the blocks' current states instead of new, "
                "as Reliafy's")
     out.append('# "As of now": by block id, {"down": True, "since": <time into '
@@ -1465,8 +1496,37 @@ def _repairable_body(script: _Script, graph) -> str:
         out += rbd_export_costs.pilot_constant() + rbd_export_costs.constants(graph)
     out.append("")
     out.append("")
-    out.append(rbd_export_costs.main_source(_REPAIRABLE_MAIN, graph).strip("\n"))
+    main = rbd_export_costs.main_source(_REPAIRABLE_MAIN, graph).strip("\n")
+    # As of now (#220, #221): the next failure's code, as the app runs it.
+    helpers = rbd_next_failure.export_source() + "\n\n" + _NEXT_FAILURE_REPORT.strip("\n") + "\n\n"
+    out.append(main.replace("\ndef main():", "\n" + helpers + "\ndef main():", 1))
     return "\n".join(out)
+
+
+_NEXT_FAILURE_REPORT = '''
+def report_next_failure(overrides):
+    """The time to the next system failure from STATE (simulated, as in
+    Reliafy): its mean, the mean residual life (a lower bound while some
+    histories haven't failed in the window), percentiles and causes."""
+    unit = f" {UNIT}" if UNIT else ""
+    runs, antithetic, window, _, _ = next_failure_simulation(
+        rbd, T_SIMULATION, {**overrides, "state": node_states()})
+    times, causes, up_now = first_failures(runs)
+    out = next_failure_summary(times, causes, up_now, window, antithetic, LABELS)
+    bound = "at least " if out["mean_is_lower_bound"] else ""
+    print(f"\\nNext system failure from now ({out['n_simulations']} histories over "
+          f"{window:,.6g}{unit}):")
+    if out["down_now"] > 0:
+        print(f"  the system is down now in {out['down_now']:.0%} of them: "
+              "their next failure is after it is restored")
+    print(f"  mean time to it (mean residual life): {bound}{out['mean'] or 0:,.6g}{unit} "
+          f"({out['confidence']:.0%} CI {out['mean_lower'] or 0:,.6g} to {out['mean_upper'] or 0:,.6g})")
+    for key, value in out["percentiles"].items():
+        print(f"  {key}: " + (f"{value:,.6g}{unit}" if value is not None else "after the window"))
+    for row in out["causes"]:
+        print(f"  caused by {row['label']}: {row['share']:.1%}")
+    return {"from": "now", "method": "simulated", **out}
+'''
 
 
 def _beta_factor(beta: float, basis: str) -> str:
@@ -1515,7 +1575,12 @@ def availability_tolerance(unavailability):
 def simulate(availability, tolerance, overrides):
     """The seeded availability simulation, in antithetic pairs: N_SIMS
     histories when set, else run to the tolerance."""
-    run = dict(t_simulation=T_SIMULATION, method="c", seed=1, antithetic=True)
+    # A plain simulation, as in Reliafy: RePyability 0.12's default intervals
+    # are the exact mean's, with no error, so a run to the tolerance would
+    # stop after one batch.
+    # From the blocks' states now when STATE is set, as Reliafy's As of now.
+    run = dict(t_simulation=T_SIMULATION, method="c", seed=1, antithetic=True,
+               control_variate=False, conditional=False, state=node_states())
     if N_SIMS:
         return rbd.availability(mc_samples=N_SIMS + N_SIMS % 2, **run, **overrides)
     max_n = max(2, MAX_SIMS - MAX_SIMS % 2)
@@ -1536,6 +1601,27 @@ def node_states():
                if s.get("down") else NodeState(age=float(s.get("age") or 0.0)))
         for node, s in STATE.items()
     } or None
+
+
+def window_mean(overrides, name):
+    """``(value, basis)``: the simulated window's expected availability
+    (``"mission_availability"``) or cost (``"expected_cost"``), exact where
+    RePyability works it out (basis "exact" or "numerical"), as Reliafy
+    reports it beside the simulation's interval; ``(None, "simulation")``
+    otherwise."""
+    if N_BLOCKS > EXACT_WINDOW_MEAN_MAX_BLOCKS:
+        # Above EXACT_WINDOW_MEAN_MAX_BLOCKS blocks Reliafy doesn't compute
+        # the window's exact mean with every run (it takes too long), so it
+        # reports the simulated mean: this script does too, to match it.
+        return None, "simulation"
+    route = rbd.analysis_routes()[name].route
+    if route not in ("exact", "numerical"):
+        return None, "simulation"
+    with np.errstate(all="ignore"):
+        if name == "expected_cost":
+            return float(rbd.expected_cost(T_SIMULATION, state=node_states(), **overrides).mean), route
+        value = float(rbd.mission_availability(T_SIMULATION, state=node_states(), **overrides))
+    return min(1.0, max(0.0, value)), route
 
 
 def exact_over_window(overrides):
@@ -1592,8 +1678,8 @@ def exact_over_window(overrides):
 
 
 def main():
-    # Voting gates (the ids in K) are pinned working so they're exactly perfect.
-    overrides = {"working_nodes": WORKING_NODES | set(K), "broken_nodes": BROKEN_NODES}
+    # Voting gates (the ids in K) are junctions: perfect, and never pinned.
+    overrides = {"working_nodes": WORKING_NODES, "broken_nodes": BROKEN_NODES}
     unit = f" {UNIT}" if UNIT else ""
     blocks = [n for n in LABELS if n not in K]  # voting gates aren't blocks
 
@@ -1626,6 +1712,14 @@ def main():
     print(f"  window mean availability: {window.estimate:.6f} "
           f"({CONFIDENCE:.0%} CI {window.lower:.6f} to {window.upper:.6f}, "
           f"{sim.n_simulations} histories)")
+    # The window's mean, exact where RePyability works it out (as in
+    # Reliafy); the interval above stays the simulation's.
+    window_exact, window_basis = window_mean(overrides, "mission_availability")
+    if window_exact is not None:
+        print(f"  window mean availability ({window_basis}): {window_exact:.6f}")
+    elif N_BLOCKS > EXACT_WINDOW_MEAN_MAX_BLOCKS:
+        print(f"  (the simulated mean stands, as in Reliafy: {N_BLOCKS} blocks is more "
+              f"than the {EXACT_WINDOW_MEAN_MAX_BLOCKS} its exact window mean is computed for)")
     print(f"  simulated mean up time: {sim.mean_up_time:,.6g}{unit}")
     print(f"  simulated mean down time: {sim.mean_down_time:,.6g}{unit}")
     print(f"  simulated failure frequency: {sim.failure_frequency:.6g}")
@@ -1657,7 +1751,9 @@ def main():
         "t_simulation": T_SIMULATION,
         "n_simulations": int(sim.n_simulations),
         "precision": {
-            "window_availability": window.estimate,
+            "window_availability": window.estimate if window_exact is None else window_exact,
+            "window_availability_basis": window_basis,
+            "simulated_window_availability": window.estimate,
             "lower": window.lower,
             "upper": window.upper,
             "standard_error": window.standard_error,
@@ -1671,6 +1767,10 @@ def main():
         "blocks": per_block,
         "exact": exact,
     }
+    # As of now (STATE): the time to the next system failure from the blocks'
+    # states, its mean (the mean residual life) and the blocks that cause it.
+    if node_states():
+        results["next_failure"] = report_next_failure(overrides)
     save_results(results)
 
     try:

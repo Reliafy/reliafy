@@ -29,8 +29,8 @@ WORKDIR /code
 # (downloaded on every Cloud Run cold start) would still carry them.
 #
 # - RePyability is installed --no-deps, after the rest, so our git-pinned
-#   surpyval stays authoritative (it declares surpyval>=0.16,<0.17 — a ceiling
-#   it has never raised, not a real incompatibility; see requirements.txt).
+#   surpyval stays authoritative (it declares surpyval>=0.22, uncapped, and
+#   --no-deps stops pip re-resolving it from PyPI; see requirements.txt).
 # - firebase-admin is installed --no-deps with only what its auth module needs
 #   (google-auth, cachecontrol, pyjwt, requests, httpx): we only verify ID
 #   tokens, and its Firestore / Cloud Storage / gRPC dependencies (~60 MB) are
@@ -43,7 +43,7 @@ RUN apt-get update \
     && python -m pip install --no-cache-dir --upgrade pip \
     && grep -viE '^firebase-admin' requirements.txt > /tmp/requirements-runtime.txt \
     && pip install --no-cache-dir -r /tmp/requirements-runtime.txt \
-    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.11" \
+    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.12" \
     && pip install --no-cache-dir --no-deps "firebase-admin==7.7.0" \
     && pip install --no-cache-dir google-auth cachecontrol "pyjwt[crypto]" requests httpx \
     && python -c "import firebase_admin, firebase_admin.auth, surpyval, repyability, access_parser, defusedxml, openpyxl" \

@@ -10,7 +10,9 @@ import { fmtMoney } from "./AvailabilityCosts.jsx";
 // and the lost production they save — optionally keeping it at least so
 // available. RePyability's allocate_redundancy scores every design exactly.
 // "Apply to diagram" draws the copies on the canvas, unsaved (as the
-// non-repairable Design panel does).
+// non-repairable Design panel does). A discount rate (% a year, prefilled
+// from the diagram's costs) makes every total a present value, and the design
+// chosen the one with the lowest (#219).
 const fmtT = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(5)).toLocaleString());
 const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(4)}%`);
 
@@ -18,6 +20,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
   const priced = (graph.nodes || []).filter((n) => n.type === "component" && Number(n.data?.costs?.acquisition) > 0);
   const [horizon, setHorizon] = useState(graph.costs?.horizon != null ? String(graph.costs.horizon) : "");
   const [floor, setFloor] = useState("");
+  const [discount, setDiscount] = useState(graph.costs?.discount_rate != null ? String(graph.costs.discount_rate) : "");
   const [phase, setPhase] = useState("idle");
   const [run, setRun] = useState(null); // {result, sig}
   const [error, setError] = useState(null);
@@ -35,6 +38,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
         graph,
         horizon: horizon === "" ? null : Number(horizon),
         minAvailability: floor === "" ? null : Number(floor) / 100,
+        discountRate: discount === "" ? 0 : Number(discount),
       });
       setRun({ result, sig });
     } catch (e) {
@@ -47,6 +51,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
   };
 
   const result = run?.result;
+  const pv = result?.discount_rate > 0 ? ` (present value at ${result.discount_rate}% a year)` : "";
   const appliedCurrent = applied && applied.sig === sig;
   const stale = run != null && run.sig !== sig && !appliedCurrent;
   const apply = () => {
@@ -88,6 +93,12 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
                      onChange={(e) => setFloor(e.target.value)} />
               <small>% (e.g. 99.95)</small>
             </label>
+            <label className="param-field rbd-cost-field" title="Makes the totals present values: copies bought now, running costs and the downtime they save discounted over the horizon. Blank or 0: undiscounted.">
+              <span>Discount rate</span>
+              <input type="number" step="any" min="0" max="100" value={discount} placeholder="optional"
+                     onChange={(e) => setDiscount(e.target.value)} />
+              <small>% a year (e.g. 7)</small>
+            </label>
           </div>
           <div className="rbd-calc-actions">
             <button type="button" onClick={find} disabled={phase === "working" || horizon === ""}>
@@ -113,9 +124,9 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
           {stale && <p className="hint">The diagram changed since this design was found — find it again.</p>}
           <p className={`rbd-compare-verdict ${result.changed ? "b_higher" : ""}`}>
             {!result.changed
-              ? <>The design as drawn is already the cheapest over {fmtT(result.horizon)}{unit}: extra copies cost more than the downtime they save.</>
+              ? <>The design as drawn is already the cheapest over {fmtT(result.horizon)}{unit}{pv}: extra copies cost more than the downtime they save.</>
               : result.saving >= 0
-                ? <>Adding copies saves <b>{fmtMoney(result.saving)}</b> over {fmtT(result.horizon)}{unit}: {fmtMoney(result.current.total_cost)} → <b>{fmtMoney(result.design.total_cost)}</b>.</>
+                ? <>Adding copies saves <b>{fmtMoney(result.saving)}</b> over {fmtT(result.horizon)}{unit}{pv}: {fmtMoney(result.current.total_cost)} → <b>{fmtMoney(result.design.total_cost)}</b>.</>
                 : <>Meeting {pct(result.min_availability)} availability at the lowest cost takes <b>{fmtMoney(-result.saving)}</b> more than the design as drawn (which is {pct(result.current.availability)} available).</>}
           </p>
           <div className="rbd-avail-imp-scroll">
@@ -141,7 +152,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
                 <tr><th></th><th>As drawn</th><th>Cheapest</th></tr>
               </thead>
               <tbody>
-                <tr><td className="calc-row-label">Total cost over {fmtT(result.horizon)}{unit}</td><td>{fmtMoney(result.current.total_cost)}</td><td><b>{fmtMoney(result.design.total_cost)}</b></td></tr>
+                <tr><td className="calc-row-label">Total cost over {fmtT(result.horizon)}{unit}{result.discount_rate > 0 && <><br /><small className="muted">present value, {result.discount_rate}% a year</small></>}</td><td>{fmtMoney(result.current.total_cost)}</td><td><b>{fmtMoney(result.design.total_cost)}</b></td></tr>
                 <tr><td className="calc-row-label">Purchase</td><td>{fmtMoney(result.current.acquisition_cost)}</td><td>{fmtMoney(result.design.acquisition_cost)}</td></tr>
                 <tr><td className="calc-row-label">Running cost{unit ? ` /${graph.unit.replace(/s$/, "")}` : " per unit time"}</td><td>{fmtMoney(result.current.cost_rate)}</td><td>{fmtMoney(result.design.cost_rate)}</td></tr>
                 <tr><td className="calc-row-label">Long-run availability</td><td>{pct(result.current.availability)}</td><td>{pct(result.design.availability)}</td></tr>
@@ -169,7 +180,10 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
           )}
           <p className="muted-line" style={{ margin: 0 }}>
             RePyability {result.repyability_version} · allocate_redundancy ({result.method}), up to {result.max_copies} copies
-            of each priced block. Copies of a proof-tested block are tested together. Costs aren't discounted.
+            of each priced block. Copies of a proof-tested block are tested together.{" "}
+            {result.discount_rate > 0
+              ? `Totals are present values at ${result.discount_rate}% a year: purchases at the start, running costs discounted continuously.`
+              : "Costs aren't discounted."}
           </p>
         </div>
       )}

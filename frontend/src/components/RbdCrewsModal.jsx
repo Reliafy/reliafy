@@ -6,7 +6,7 @@ import Modal from "./Modal.jsx";
 //   repair_crews       = {crews: 2}               (blank: as many as are needed)
 //   maintenance_groups = {name: {setup_cost, system_down}}
 //   safety_function    = true, target_sil = 1..4  (report PFDavg and its SIL band)
-// RePyability 0.11 has one pool of crews per diagram, shared by every block
+// RePyability has one pool of crews per diagram, shared by every block
 // (and each unit of a standby group); a block's crew priority orders the queue.
 const isBlank = (v) => v == null || String(v).trim() === "";
 const SILS = ["", "1", "2", "3", "4"];

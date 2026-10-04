@@ -253,7 +253,7 @@ def _repairable_tree(graph: dict, resolve_model) -> tuple[FaultTree, dict, float
     availability = rbd.node_availability()
     args = rbd._init_args
     structural = {
-        n: (PerfectReliability if n in gate_ids else _Share(PerfectReliability, 1.0, "Block"))
+        n: (PerfectReliability if n in gate_ids and n not in broken else _Share(PerfectReliability, 1.0, "Block"))
         for n in args["components"]
     }
     structure = NonRepairableRBD(
@@ -271,7 +271,7 @@ def _repairable_tree(graph: dict, resolve_model) -> tuple[FaultTree, dict, float
         else:
             events[e] = min(max(1.0 - float(availability[e]), 0.0), 1.0)
     unavailability = 1.0 - float(
-        rbd.mean_availability(working_nodes=working | gate_ids, broken_nodes=broken)
+        rbd.mean_availability(working_nodes=working, broken_nodes=broken)
     )
     return FaultTree(tree.gates, events, top=tree.top), info, unavailability
 
@@ -707,12 +707,13 @@ def fault_tree(
         try:
             tree, event_info, unavailability = _repairable_tree(graph, resolve_model)
         except NotImplementedError:
-            # #100: proof tests whose tests or repairs take time have no
-            # exact long-run values (RePyability 0.11).
+            # No exact long-run values (one repair crew for wear-out lives,
+            # say). Proof tests whose tests or repairs take time have them
+            # since RePyability 0.12 (#159).
             raise AnalysisError(
                 "The fault tree uses the blocks' exact long-run unavailabilities, which "
-                "RePyability doesn't have for proof tests with a test time or a repair "
-                "time — the Calculator tab simulates them."
+                "RePyability doesn't have for this diagram (limited repair crews for "
+                "wear-out lives, say) — the Calculator tab simulates it."
             ) from None
         out = _payload(tree, {tree.top: {"label": None, "role": "top"}}, event_info, 1.0, "availability")
         out["unavailability"] = ra._f(unavailability)

@@ -31,11 +31,11 @@ FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]  # 0 = failed, 1 = still running
 
 READ_TOOLS = {
     "list_models", "get_model", "reliability_at", "list_datasets", "list_rbds", "get_rbd",
-    "analyze_rbd", "fit_distribution", "export_rbd_python", "export_rbd_json", "optimal_replacement",
+    "analyze_rbd", "get_job", "fit_distribution", "export_rbd_python", "export_rbd_json", "optimal_replacement",
     "failure_finding_interval",
     "optimal_overhaul", "plan_demonstration_test", "list_fleets", "fleet_forecast", "list_fleet_alerts",
     "upgrade_link", "system_history", "list_share_links", "get_account", "get_dataset", "inspect_upload",
-    "compare_groups",
+    "compare_groups", "cheapest_design", "fit_per_demand",
 }
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
@@ -471,6 +471,17 @@ def test_optimal_overhaul_uses_a_recurrent_model(env):
 
 
 # ---- scoping -------------------------------------------------------------------------
+
+def test_a_non_parametric_model_is_no_rbd_block(env):
+    """RePyability 0.12 refuses a non-parametric node: create_rbd says to fit a
+    parametric distribution instead."""
+    km = _ok(_call(env.token[A], "fit_and_save_model", {
+        "data": TIMES, "censored": FLAGS, "distribution": "kaplan_meier", "name": "KM bearings"}))
+    graph = {**GRAPH, "nodes": [
+        {**n, "model": {"saved_model_id": km["model_id"]}} if n["id"] == "ctl" else n for n in GRAPH["nodes"]]}
+    msg = _err(_call(env.token[A], "create_rbd", {"name": "Empirical", **graph}))
+    assert "non-parametric" in msg and "Fit a parametric distribution" in msg
+
 
 def test_users_cannot_read_each_others_artifacts(env):
     model = _ok(_call(env.token[A], "fit_and_save_model", {

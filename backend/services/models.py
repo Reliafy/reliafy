@@ -178,12 +178,20 @@ def import_model(
     return model
 
 
-def create_per_demand(db, uid: str, name: str, demands, failures, confidence: float = 0.95) -> Model:
-    """Create a per-demand (Binomial) model from a demands/failures count.
+def create_per_demand(db, uid: str, name: str, demands=None, failures=None, confidence: float = 0.95,
+                      batches=None, source_dataset_id: str | None = None) -> Model:
+    """Create a per-demand (Binomial) model from a demands/failures count, or
+    from several batches (``[{label, demands, failures}]``) pooled with exact
+    bounds (#233).
 
-    With zero failures this is a success-run reliability-demonstration test;
-    ``confidence`` sets the demonstrated lower-bound level (default 95%)."""
-    result = fitting.result_per_demand(demands, failures, confidence)
+    ``confidence`` sets the level of the exact bounds; with zero failures the
+    one-sided bound is the success-run demonstration (default 95%)."""
+    result = fitting.result_per_demand(demands, failures, confidence, batches=batches)
+    pd_ = result["per_demand"]
+    stored = {"demands": int(pd_["demands"]), "failures": int(pd_["failures"]),
+              "confidence": float(confidence)}
+    if pd_.get("batches"):
+        stored["batches"] = [{k: b[k] for k in ("label", "demands", "failures")} for b in pd_["batches"]]
     model = Model(
         id=uuid.uuid4().hex,
         name=name,
@@ -191,9 +199,8 @@ def create_per_demand(db, uid: str, name: str, demands, failures, confidence: fl
         dataset_id="",
         kind="per_demand",
         distribution_id="binomial",
-        spec={"distribution_id": "binomial", "params_only": True,
-              "per_demand": {"demands": int(demands), "failures": int(failures),
-                             "confidence": float(confidence)}},
+        spec={"distribution_id": "binomial", "params_only": True, "per_demand": stored,
+              **({"source_dataset_id": source_dataset_id} if source_dataset_id else {})},
         results=result,
         surpyval_version=getattr(surpyval, "__version__", None),
         status="ready",
@@ -444,9 +451,8 @@ def evaluate_at(db, model: Model, times, owner_id, covariates: dict | None = Non
         dist_id in fitting.DISTRIBUTIONS or dist_id in fitting.DISCRETE
     ):
         entry = fitting.DISTRIBUTIONS.get(dist_id) or fitting.DISCRETE[dist_id]
-        extras = {k: float(v) for k, v in (results.get("extras") or {}).items()
-                  if k in ("gamma", "p", "f0") and v is not None}
-        live = entry["dist"].from_params(fitting.param_values(dist_id, results["params"]), **extras)
+        live = entry["dist"].from_params(fitting.param_values(dist_id, results["params"]),
+                                         **fitting.surpyval_extras(results.get("extras")))
 
     out: dict = {"values": {}}
     if live is not None:

@@ -248,7 +248,7 @@ def test_repairable_diagram_uses_steady_state_unavailability():
     res = fault_tree(graph, t=123.0)
     assert res["kind"] == "availability" and res["t"] is None
     rbd, _, gate_ids, working, broken = ra._build_repairable_rbd(graph)
-    expected = 1.0 - rbd.mean_availability(working_nodes=working | gate_ids, broken_nodes=broken)
+    expected = 1.0 - rbd.mean_availability(working_nodes=working, broken_nodes=broken)
     assert res["top_event_probability"] == pytest.approx(expected, rel=1e-9)
     assert res["unavailability"] == pytest.approx(expected, rel=1e-9)
     assert _gate(res, "G1")["kind"] == "vote"

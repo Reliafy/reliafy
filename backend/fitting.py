@@ -26,6 +26,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import re
 import warnings
 import uuid
 from collections import OrderedDict
@@ -437,8 +438,189 @@ def data_warnings(kwargs: dict) -> list[str]:
     return []
 
 
-def _fit_failure_hint(exc: Exception, kwargs: dict, distribution_name: str) -> str:
+def _rows_phrase(rows: np.ndarray, times: np.ndarray, limit: int = 6) -> str:
+    """'row 3 (time -1)' / 'rows 3, 7 and 9 (times -1, -2 and inf)', data rows
+    counted from 1 under the header, at most ``limit`` named."""
+    shown = [int(r) + 1 for r in rows[:limit]]
+    vals = [f"{float(t):g}" for t in times[:limit]]
+    more = len(rows) - len(shown)
+
+    def join(items):
+        if len(items) == 1:
+            return items[0]
+        return ", ".join(items[:-1]) + " and " + items[-1]
+
+    if len(shown) == 1:
+        text = f"row {shown[0]} (time {vals[0]})"
+    else:
+        text = f"rows {join([str(r) for r in shown])} (times {join(vals)})"
+    if more > 0:
+        text += f" and {more} more"
+    return text
+
+
+def outside_support_message(
+    exc: Exception, times, c, distribution_name: str, support=(0.0, np.inf),
+    offset: bool = False,
+) -> Optional[str]:
+    """A plain sentence naming the rows SurPyval's ``OutsideSupportError``
+    refused, or ``None`` for any other error (or when no row can be named).
+
+    SurPyval 0.23 refuses a time *censored* below the support (e.g. -1 on a
+    Weibull) as it already refused an observed one (#611, #565): those rows
+    used to be fitted and silently ignored. An offset fit also refuses an
+    infinite time (#622). ``times``/``c`` are the fit's ``x`` and censoring,
+    row for row with the data.
+    """
+    if type(exc).__name__ != "OutsideSupportError" or times is None:
+        return None
+    x = np.asarray(times, dtype=float).ravel()
+    flags = np.zeros_like(x) if c is None else np.asarray(c, dtype=float).ravel()
+    if flags.size != x.size:
+        return None
+    infinite = np.isinf(x)  # NaN (a blank cell) is another error's business
+    lower = -np.inf if offset else float(support[0])
+    # A right-censored time AT the lower end is fine ("still running at 0");
+    # an observed or left-censored one there, or anything below, is not.
+    below = np.isfinite(x) & ((x < lower) | ((x == lower) & (flags != 1)))
+    bad = np.flatnonzero(infinite | below)
+    if bad.size == 0:
+        return None
+    rows = _rows_phrase(bad, x[bad])
+    one = bad.size == 1
+    which = f"an offset {distribution_name}" if offset else f"a {distribution_name}"
+    if np.all(infinite[bad]):
+        why = ("it can't take an infinite time (a unit still running goes in "
+               "as censored at the last time it was seen)")
+    else:
+        why = (f"it has no probability at or below {lower:g}, so a unit can't "
+               "fail, or be censored, there")
+    return (f"{rows[0].upper()}{rows[1:]} {'is' if one else 'are'} outside the "
+            f"support of {which}: {why}. Correct or remove "
+            f"{'that row' if one else 'those rows'} (SurPyval 0.23 refuses "
+            f"{'it' if one else 'them'}; older versions silently ignored a "
+            "censored one).")
+
+
+# ---------------------------------------------------------------------------
+# No finite maximum (#230)
+# ---------------------------------------------------------------------------
+# SurPyval 0.23 recognises fits whose likelihood keeps rising as a parameter
+# runs off to infinity -- regression and accelerated-life fits (#628), offset
+# fits running to the first failure or to a limiting family (#616, #622,
+# #599), univariate runaways (#584) -- sets ``model.maximum`` to this and
+# warns once, "No finite maximum: <what>. <consequence>; <advice>.".
+NO_FINITE_MAXIMUM = "no finite maximum"
+_NO_MAXIMUM_PREFIX = "No finite maximum"
+
+
+def _join_names(names: list) -> str:
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _runaway_parameters(text: str, coefficient_names: Optional[list]) -> list:
+    """The parameters SurPyval's warning says run off, by name."""
+    m = re.search(r"coefficient\(s\) \[([\d,\s]+)\]", text)
+    if m:  # regression / accelerated life: numbers into the coefficients
+        out = []
+        for tok in m.group(1).split(","):
+            j = int(tok)
+            names = coefficient_names or []
+            out.append(str(names[j]) if j < len(names) else f"coefficient {j}")
+        return out
+    m = re.search(r"keeps increasing as (.+?) runs? on", text)
+    if m:  # univariate: "alpha (1.2e+05), beta (0.3)" or "gamma (-177)"
+        return re.findall(r"([A-Za-z_]\w*) \(", m.group(1))
+    if "the offset gamma" in text:
+        return ["gamma"]
+    return []
+
+
+def _runaway_suggestion(text: str, kind: str) -> str:
+    """SurPyval's advice, in Reliafy's words."""
+    m = re.search(r"fit surpyval\.(\w+) instead", text)
+    if m:
+        limit = m.group(1)
+        return (f"Fit a {limit} distribution instead: as the offset runs off, the model "
+                f"turns into a {limit}, which fits these data at least as well.")
+    if "how='MPS'" in text:
+        return ("Fit by maximum product of spacings (MPS), the standard remedy for an offset "
+                "fit, or fit without an offset.")
+    if kind == "alt":
+        return ("Spread the failures across more stress levels: with the failures at too few "
+                "of them, the data can't fix how life changes with stress.")
+    if "removing or coarsening the covariate" in text:
+        return ("A covariate separates the failures from the survivors (for example, a level "
+                "with no failures): remove or coarsen it, or collect failures at every level.")
+    if "a fit needs a failure observed exactly" in text:
+        return "A fit needs at least one failure observed exactly, or known to lie in an interval."
+    return "A simpler distribution may describe these data: compare the fits with Best fit."
+
+
+def no_maximum_notice(model, caught=(), coefficient_names: Optional[list] = None,
+                      kind: str = "distribution") -> Optional[dict]:
+    """``{maximum, parameters, message, suggestion, detail}`` when ``model``'s
+    likelihood has no finite maximum, else ``None``.
+
+    ``caught`` are the warnings recorded during the fit (SurPyval names the
+    parameter and the way out there); ``coefficient_names`` name the
+    coefficients a regression or accelerated-life warning numbers.
+    """
+    if getattr(model, "maximum", None) != NO_FINITE_MAXIMUM:
+        return None
+    text = next((str(w.message) for w in caught
+                 if str(w.message).startswith(_NO_MAXIMUM_PREFIX)), "")
+    params = _runaway_parameters(text, coefficient_names)
+    if params:
+        who = _join_names(params)
+        verb = "runs" if len(params) == 1 else "run"
+        lead = f"These data don't pin down the model: {who} {verb} off to infinity."
+    else:
+        lead = "These data don't pin down the model: a parameter runs off to infinity."
+    return {
+        "maximum": NO_FINITE_MAXIMUM,
+        "parameters": params,
+        "message": lead + " The numbers below aren't estimates.",
+        "suggestion": _runaway_suggestion(text, kind),
+        "detail": text or None,
+    }
+
+
+def reissue_deprecations(caught) -> None:
+    """Re-issue the deprecation warnings a ``catch_warnings(record=True)``
+    block swallowed, so a call into SurPyval through a name it has
+    deprecated still reaches the warnings filter (and fails the suite run
+    with ``-W error::DeprecationWarning``)."""
+    for w in caught:
+        if issubclass(w.category, (DeprecationWarning, FutureWarning)):
+            warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
+
+
+def without_intervals(params: list) -> list:
+    """Parameters with their standard errors and intervals dropped: with no
+    finite maximum they are meaningless (SurPyval says so), and a CI would
+    read as an estimate's."""
+    return [{**p, "se": None, "ci": None} if "se" in p else {**p, "ci": None} for p in params]
+
+
+def no_maximum_reason(notice: dict) -> str:
+    """One line for Best fit's "failed" list."""
+    params = notice.get("parameters") or []
+    if params:
+        verb = "runs" if len(params) == 1 else "run"
+        return f"no finite maximum: {_join_names(params)} {verb} off to infinity"
+    return "no finite maximum: a parameter runs off to infinity"
+
+
+def _fit_failure_hint(exc: Exception, kwargs: dict, distribution_name: str,
+                      support=(0.0, np.inf), offset: bool = False) -> str:
     """Turn a fitter blow-up into something a user can act on."""
+    support_msg = outside_support_message(
+        exc, kwargs.get("x"), kwargs.get("c"), distribution_name, support, offset)
+    if support_msg:
+        return support_msg
     failures, total = failure_count(kwargs)
     raw = str(exc) or type(exc).__name__
     if total and failures <= 1:
@@ -480,6 +662,24 @@ def build_fit_inputs(df: pd.DataFrame, mapping: dict) -> dict:
     return kwargs
 
 
+def _covariance_of(model):
+    """A fitted model's parameter covariance as a float array, or ``None``.
+
+    SurPyval 0.23 reads it with ``covariance()``, which raises where there is
+    none (a ``from_params`` model, a singular information); ``cov_matrix``,
+    its name in 0.22, warns until 0.24 (#605)."""
+    method = getattr(model, "covariance", None)
+    if not callable(method):
+        return None
+    try:
+        cov = method()
+    except Exception:  # noqa: BLE001 - no covariance: no bounds
+        return None
+    if cov is None:
+        return None
+    return np.atleast_2d(np.asarray(cov, dtype=float))
+
+
 def _ensure_covariance(model) -> None:
     """Work around a SurPyval numerical issue so confidence bounds are available.
 
@@ -493,21 +693,21 @@ def _ensure_covariance(model) -> None:
     is filled in. On any failure the model is left as-is and the band is simply
     omitted.
     """
-    cov = getattr(model, "cov_matrix", None)
-    if cov is not None and np.all(np.isfinite(np.asarray(cov, dtype=float))):
+    cov = _covariance_of(model)
+    if cov is not None and np.all(np.isfinite(cov)):
         return  # SurPyval already produced a usable covariance.
     # LFP/ZI fits carry the extra parameter inside the covariance (k+1 square);
     # recomputing over the base params alone would swap in a wrong-shaped
     # matrix and break the confidence bands. Leave those as-is.
     if float(getattr(model, "f0", 0.0) or 0.0) != 0.0:
         return
-    if float(getattr(model, "p", 1.0) or 1.0) != 1.0:
+    if float(getattr(model, "lfp_p", 1.0) or 1.0) != 1.0:
         return
     try:
         params = np.asarray(model.params, dtype=float)
         gamma = float(getattr(model, "gamma", 0.0) or 0.0)
         f0 = float(getattr(model, "f0", 0.0) or 0.0)
-        p = float(getattr(model, "p", 1.0) or 1.0)
+        p = float(getattr(model, "lfp_p", 1.0) or 1.0)
         surv_data = model.surv_data
         neg_ll = model.dist._neg_ll_func
 
@@ -531,7 +731,10 @@ def _ensure_covariance(model) -> None:
                 ) / (4 * step[i] * step[j])
         recomputed = np.linalg.inv(hess)
         if np.all(np.isfinite(recomputed)) and np.all(np.diag(recomputed) > 0):
-            model.cov_matrix = recomputed
+            # SurPyval 0.23 keeps the covariance in ``_covariance`` (read by
+            # ``covariance()``, saved by ``to_dict``); assigning the old
+            # ``cov_matrix`` name warns until 0.24 (#605).
+            model._covariance = recomputed
             model.hess_inv = recomputed
     except Exception:  # pragma: no cover - defensive; the band is just omitted
         pass
@@ -1071,7 +1274,7 @@ def result_from_params(
         if k in ("gamma", "p", "f0") and v is not None
     }
     try:
-        model = dist.from_params(values, **kwargs)
+        model = dist.from_params(values, **surpyval_extras(kwargs))
     except Exception as exc:
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
 
@@ -1097,49 +1300,118 @@ def result_from_params(
     return _json_safe(result)
 
 
-def result_per_demand(demands: int, failures: int, confidence: float = 0.95) -> dict:
+PER_DEMAND_MAX_BATCHES = 500
+
+
+def _whole(value, what: str) -> int:
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        raise FitError(f"{what} must be a whole number.") from None
+    if not math.isfinite(f) or f != int(f):
+        raise FitError(f"{what} must be a whole number.")
+    return int(f)
+
+
+def per_demand_batches(batches) -> list[dict]:
+    """Validate ``[{demands, failures, label?}, ...]``: one row per batch of
+    demands (a site, a lot, a test campaign). Raises :class:`FitError`."""
+    if not isinstance(batches, (list, tuple)) or not batches:
+        raise FitError("Give at least one batch of demands and failures.")
+    if len(batches) > PER_DEMAND_MAX_BATCHES:
+        raise FitError(f"At most {PER_DEMAND_MAX_BATCHES} batches.")
+    out = []
+    for i, b in enumerate(batches, start=1):
+        if not isinstance(b, dict):
+            raise FitError(f"Batch {i} must be an object with demands and failures.")
+        where = f"Batch {i}" if len(batches) > 1 else "The count"
+        demands = _whole(b.get("demands"), f"{where}: demands")
+        failures = _whole(b.get("failures"), f"{where}: failures")
+        if demands <= 0:
+            raise FitError(f"{where}: the number of demands must be a positive whole number."
+                           if len(batches) > 1 else "Number of demands must be a positive integer.")
+        if not 0 <= failures <= demands:
+            raise FitError(f"{where}: failures must be between 0 and its number of demands."
+                           if len(batches) > 1 else
+                           "Failures must be between 0 and the number of demands.")
+        label = str(b.get("label") or b.get("batch") or "").strip()[:80]
+        out.append({"label": label or f"Batch {i}", "demands": demands, "failures": failures})
+    return out
+
+
+def per_demand_batches_from_df(df: pd.DataFrame, demands_col: str, failures_col: str,
+                               label_col: Optional[str] = None) -> list[dict]:
+    """Batches from a dataset: one row per batch. Blank rows are skipped."""
+    for col in (demands_col, failures_col, label_col):
+        if col and col not in df.columns:
+            raise FitError(f"The data has no column named '{col}'.")
+    rows = []
+    for i, (_, row) in enumerate(df.iterrows(), start=1):
+        d, f = row[demands_col], row[failures_col]
+        if pd.isna(d) and pd.isna(f):
+            continue
+        rows.append({"demands": d, "failures": f,
+                     "label": str(row[label_col]) if label_col and not pd.isna(row[label_col]) else f"Row {i}"})
+    return per_demand_batches(rows)
+
+
+def result_per_demand(
+    demands: Optional[int] = None,
+    failures: Optional[int] = None,
+    confidence: float = 0.95,
+    batches: Optional[list] = None,
+) -> dict:
     """Per-demand (Binomial) reliability: probability of failure per demand.
 
-    For one-shot / protective equipment where "reliability" is per-demand, not
-    over time. ``p = failures / demands`` with a Wilson-score 95% interval
-    (robust near 0 and 1). Reconstructs downstream via ``Binomial.from_params``.
+    For one-shot / protective equipment where "reliability" is per demand, not
+    over time. From one count (``demands``, ``failures``) or several batches
+    of different sizes (``batches``: proof tests from several sites, lots of
+    different sizes), pooled into one ``p``: SurPyval 0.23's ``Binomial``
+    takes a number of trials per row (#608), and its ``param_cb("p")`` gives
+    the **exact** Clopper-Pearson bounds (#580), which hold for unequal
+    batches -- the failures in all the demands are binomial in their total.
+    Pooling assumes every batch has the same ``p``.
 
-    When ``failures == 0`` this is a reliability-demonstration ("success run")
-    test: SurPyval's ``success_run`` gives the demonstrated one-sided lower bound
-    on per-demand reliability at ``confidence`` — R ≥ (1 − C)**(1/n) — the
-    standard "n trials, zero failures" result (e.g. 59 clean demands demonstrate
-    95% reliability at 95% confidence).
+    Reports at ``confidence``: the two-sided interval on ``p`` and on the
+    per-demand reliability ``1 - p``, and the one-sided upper bound on ``p``
+    (lower bound on reliability). With zero failures that one-sided bound is
+    the success-run demonstration, ``R >= (1 - C)**(1/n)`` (59 clean demands
+    demonstrate 95% reliability at 95% confidence) -- the same number, now
+    from one method. (Before SurPyval 0.23 the interval was Wilson's, at 95%
+    whatever the confidence.)
     """
-    try:
-        demands = int(demands)
-        failures = int(failures)
-    except (TypeError, ValueError):
-        raise FitError("Demands and failures must be whole numbers.")
-    if demands <= 0:
-        raise FitError("Number of demands must be a positive integer.")
-    if not (0 <= failures <= demands):
-        raise FitError("Failures must be between 0 and the number of demands.")
+    if batches is None:
+        batches = [{"demands": demands, "failures": failures}]
+    rows = per_demand_batches(batches)
     try:
         confidence = float(confidence)
     except (TypeError, ValueError):
         raise FitError("Confidence must be a number between 0 and 1.")
     if not (0.0 < confidence < 1.0):
         raise FitError("Confidence must be between 0 and 1 (e.g. 0.95).")
+    alpha = 1.0 - confidence
 
-    p = failures / demands
-    z = 1.959963984540054  # 95%
-    denom = 1 + z * z / demands
-    centre = (p + z * z / (2 * demands)) / denom
-    half = z * math.sqrt(p * (1 - p) / demands + z * z / (4 * demands * demands)) / denom
-    ci = [max(0.0, centre - half), min(1.0, centre + half)]
+    n_demands = int(sum(r["demands"] for r in rows))
+    n_failures = int(sum(r["failures"] for r in rows))
+    model = Binomial.fit([r["failures"] for r in rows], n_trials=[r["demands"] for r in rows])
+    p = float(model.params[1])
+    lo, hi = (float(v) for v in np.ravel(model.param_cb("p", alpha_ci=alpha)))
+    p_upper = float(np.ravel(model.param_cb("p", alpha_ci=alpha, bound="upper"))[0])
+    ci = [max(0.0, lo), min(1.0, hi)]
 
     per_demand = {
-        "demands": demands, "failures": failures,
+        "demands": n_demands, "failures": n_failures,
         "p": p, "ci": ci, "reliability": 1.0 - p,
+        "reliability_ci": [1.0 - ci[1], 1.0 - ci[0]],
+        "p_upper": p_upper, "reliability_lower": 1.0 - p_upper,
+        "confidence": confidence, "method": "exact",
     }
+    if len(rows) > 1:
+        per_demand["batches"] = [
+            {**r, "p": r["failures"] / r["demands"]} for r in rows]
     # Zero-failure demonstration test: the success-run lower bound on reliability.
-    if failures == 0:
-        r_lower = float(_success_run(demands, confidence=confidence))
+    if n_failures == 0:
+        r_lower = float(_success_run(n_demands, alpha_ci=alpha))
         per_demand["success_run"] = {
             "confidence": confidence,
             "reliability_lower": r_lower,
@@ -1150,7 +1422,7 @@ def result_per_demand(demands: int, failures: int, confidence: float = 0.95) -> 
         "distribution_id": "binomial",
         "kind": "per_demand",
         "params": [{"name": "p", "value": p, "se": None, "ci": ci}],
-        "n": demands,
+        "n": n_demands,
         "per_demand": per_demand,
         "functions": None,
         "gof": [],
@@ -1173,6 +1445,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
 
     ranking = []
     failed = []
+    support_msg = None  # rows every candidate refused (SurPyval 0.23)
     for dist_id, entry in DISTRIBUTIONS.items():
         kwargs = dict(base_kwargs)
         for key in ("zi", "lfp"):
@@ -1181,13 +1454,27 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         if options.get("offset") and entry.get("offsetable"):
             kwargs["offset"] = True
         try:
-            model = entry["dist"].fit(**kwargs)
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                model = entry["dist"].fit(**kwargs)
+            reissue_deprecations(caught)
             gof = _goodness_of_fit(model)
             aic = next((g["value"] for g in gof if g["id"] == "aic"), None)
         except Exception as exc:
             # A distribution that won't fit this data is skipped — and listed.
+            refused = outside_support_message(
+                exc, kwargs.get("x"), kwargs.get("c"), entry["name"],
+                getattr(entry["dist"], "support", (0.0, np.inf)), bool(kwargs.get("offset")))
+            support_msg = support_msg or refused
             failed.append({"id": dist_id, "name": entry["name"],
-                           "reason": _short_reason(str(exc).strip().splitlines() or [type(exc).__name__])})
+                           "reason": refused or _short_reason(
+                               str(exc).strip().splitlines() or [type(exc).__name__])})
+            continue
+        no_max = no_maximum_notice(model, caught)
+        if no_max:
+            # Its numbers aren't estimates, so its AIC ranks nothing (#230).
+            failed.append({"id": dist_id, "name": entry["name"],
+                           "reason": no_maximum_reason(no_max)})
             continue
         if aic is None or not math.isfinite(float(aic)):
             failed.append({"id": dist_id, "name": entry["name"], "reason": "no finite AIC"})
@@ -1195,6 +1482,8 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         ranking.append({"id": dist_id, "name": entry["name"], "aic": float(aic)})
 
     if not ranking:
+        if support_msg:
+            raise FitError(support_msg)
         raise FitError("None of the distributions could be fit to this data.")
     ranking.sort(key=lambda r: r["aic"])
 
@@ -1215,6 +1504,24 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
     return result
 
 
+def surpyval_extras(extras: Optional[dict]) -> dict:
+    """Reliafy's stored extras as SurPyval ``from_params`` keywords.
+
+    Reliafy keeps the limited-failure proportion as ``p`` -- in saved models,
+    the API and MCP -- and SurPyval 0.23 calls it ``lfp_p`` (``p`` warns until
+    0.24, then fails; #608). ``lfp_p`` is read too. Offset ``gamma`` and
+    zero-inflation ``f0`` keep their names. ``None`` values are dropped."""
+    out = {}
+    for key, value in (extras or {}).items():
+        if value is None:
+            continue
+        if key in ("p", "lfp_p"):
+            out["lfp_p"] = float(value)
+        elif key in ("gamma", "f0"):
+            out[key] = float(value)
+    return out
+
+
 # Extra fitted quantities from fit options: attribute name -> display label.
 _EXTRA_LABELS = {
     "gamma": "gamma (offset)",
@@ -1229,7 +1536,9 @@ def _extract_extras(model, options: dict) -> dict:
     if options.get("offset"):
         extras["gamma"] = float(getattr(model, "gamma"))
     if options.get("lfp"):
-        extras["p"] = float(getattr(model, "p"))
+        # Stored as "p", Reliafy's name (API, MCP, saved models); SurPyval
+        # 0.23 calls it ``lfp_p`` (#608).
+        extras["p"] = float(getattr(model, "lfp_p"))
     if options.get("zi"):
         extras["f0"] = float(getattr(model, "f0"))
     return extras
@@ -1410,16 +1719,24 @@ def _fit_distribution(
         for key in ("offset", "zi", "lfp", "fixed", "how"):
             if options.get(key):
                 kwargs[key] = options[key]
+        if kwargs.get("fixed") and "p" in kwargs["fixed"]:
+            # Reliafy's "p" is SurPyval 0.23's ``lfp_p`` (#608).
+            kwargs["fixed"] = {("lfp_p" if k == "p" else k): v for k, v in kwargs["fixed"].items()}
         # Some fitters (MPS in particular) warn that the optimisation failed and
         # then return numbers anyway. Silently handing those to a user is worse
         # than the fit being unavailable, so capture and report it.
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             model = dist.fit(**kwargs)
+        reissue_deprecations(caught)
+        # No finite maximum (#230): say which parameter runs off, and why.
+        no_max = no_maximum_notice(model, caught)
         # SurPyval 0.22 records whether every likelihood fit reached a verified
         # maximum (``model.maximum``); its warning's wording is no longer
         # "... FAILED ...". Older fits only had the warning text.
-        unverified = getattr(model, "maximum", "verified") not in ("verified", None)
+        # Only a likelihood fit has a maximum to miss: MPS / MPP / MOM fits
+        # report "not applicable" (they were flagged as failed before #230).
+        unverified = getattr(model, "maximum", "verified") in ("unverified", NO_FINITE_MAXIMUM)
         fit_warning = next(
             (str(w.message) for w in caught
              if "FAILED" in str(w.message).upper() or "verified maximum" in str(w.message)), None
@@ -1440,7 +1757,9 @@ def _fit_distribution(
     except FitError:
         raise
     except Exception as exc:
-        raise FitError(_fit_failure_hint(exc, kwargs, entry["name"])) from exc
+        raise FitError(_fit_failure_hint(
+            exc, kwargs, entry["name"], getattr(dist, "support", (0.0, np.inf)),
+            bool(options.get("offset")))) from exc
 
     param_names = (
         getattr(model, "parameter_names", None)
@@ -1448,6 +1767,8 @@ def _fit_distribution(
         or [f"p{i}" for i in range(len(model.params))]
     )
     params = _params_with_uncertainty(model, param_names)
+    if no_max:
+        params = without_intervals(params)
 
     # Stash the live model so its confidence bounds can be recomputed on demand
     # (configurable level / bound) over the same grid the curves use.
@@ -1476,7 +1797,15 @@ def _fit_distribution(
             k: options[k] for k in ("offset", "zi", "lfp", "fixed", "how")
             if options.get(k)
         }
-    if fit_warning:
+    result["maximum"] = getattr(model, "maximum", None)
+    if no_max:
+        result["no_finite_maximum"] = no_max
+        fit_warning = f"{no_max['message']} {no_max['suggestion']}"
+        result["fit_warning"] = fit_warning
+        if result.get("plot"):
+            # The band comes from the same meaningless covariance.
+            result["plot"] = {**result["plot"], "bounds": None}
+    elif fit_warning:
         result["fit_warning"] = (
             f"{fit_warning.strip()} The parameters below came back from a fit the "
             "optimiser reported as failed — check them against another method "
@@ -1650,9 +1979,8 @@ def _params_with_uncertainty(model, param_names) -> list[dict]:
     """
     values = np.atleast_1d(np.asarray(model.params, dtype=float))
     ses = [None] * len(values)
-    cov = getattr(model, "cov_matrix", None)
+    cov = _covariance_of(model)
     if cov is not None:
-        cov = np.asarray(cov, dtype=float)
         if cov.shape == (len(values), len(values)) and np.all(np.isfinite(cov)):
             diag = np.diag(cov)
             ses = [float(np.sqrt(d)) if d > 0 else None for d in diag]
@@ -1726,10 +2054,22 @@ def _fit_regression(
         fit_kwargs["Z_cols"] = list(covariates)
 
     try:
-        model = fitter.fit_from_df(df, **fit_kwargs)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            model = fitter.fit_from_df(df, **fit_kwargs)
+        reissue_deprecations(caught)
         gof = _goodness_of_fit(model)
     except Exception as exc:
-        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+        x_col, c_col = mapping.get("x"), mapping.get("c")
+        msg = None
+        if x_col in df.columns:
+            base = getattr(fitter, "distribution", None)
+            msg = outside_support_message(
+                exc, pd.to_numeric(df[x_col], errors="coerce").to_numpy(dtype=float),
+                pd.to_numeric(df[c_col], errors="coerce").to_numpy(dtype=float)
+                if c_col in df.columns else None,
+                entry["name"], getattr(base, "support", (0.0, np.inf)))
+        raise FitError(msg or str(exc) or f"{type(exc).__name__}") from exc
 
     params_arr = np.asarray(model.params, dtype=float)
     k_dist = int(getattr(model, "k_dist", 0) or 0)
@@ -1811,7 +2151,24 @@ def _fit_regression(
             "model_id": model_id,
         }
 
+    no_max = no_maximum_notice(model, caught, list(feature_names), kind="regression")
+    extra = {"no_finite_maximum": no_max} if no_max else {}
+    if no_max:
+        baseline, coefficients = without_intervals(baseline), without_intervals(coefficients)
+    if distribution == "cox_ph" and gof:
+        # SurPyval 0.23 gives Cox its maximised *partial* likelihood, with AIC
+        # and BIC on it (R's logLik.coxph; #604). Those compare Cox models on
+        # the same data only, never a Cox model with a parametric one: say so
+        # on every number.
+        partial = {"log_likelihood": "Log partial likelihood"}
+        gof = [{**g, "label": partial.get(g["id"], f"{g['label']} (partial)"), "partial": True}
+               for g in gof]
+        extra["gof_note"] = (
+            "A Cox model's log-likelihood, AIC and BIC are on its partial likelihood: compare them "
+            "only with other Cox models on the same data, never with a parametric model's.")
     return {
+        **extra,
+        "maximum": getattr(model, "maximum", None),
         "distribution": entry["name"],
         "distribution_id": distribution,
         "kind": "regression",
@@ -2025,6 +2382,17 @@ def _function_curves(model, points: int = 300) -> dict:
         hi = float(model.qf(0.99))
     except Exception:
         hi = None
+    lfp = float(getattr(model, "lfp_p", 1.0) or 1.0)
+    if (hi is None or not np.isfinite(hi)) and lfp < 1.0:
+        # A limited failure population never reaches F = 0.99 (only lfp_p
+        # ever fails): span 99% of the failures that do happen. Without
+        # this a params-only LFP model (no data to fall back on) failed.
+        try:
+            hi = float(model.qf(0.99 * lfp))
+        except Exception:
+            hi = None
+    if (hi is None or not np.isfinite(hi) or hi <= 0) and getattr(model, "data", None) is None:
+        hi = 1.0
     if hi is None or not np.isfinite(hi) or hi <= 0:
         # Fall back to the data range if the quantile is unavailable.
         xd = np.asarray(model.data["x"], dtype=float)

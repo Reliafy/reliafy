@@ -2,7 +2,7 @@
 #100, #156, #157): costs, instant repair, scheduled preventive maintenance
 (age, block or condition-based replacement, opportunistic renewal in a
 maintenance group) and proof-tested hidden failures (staggered, imperfect
-tests) — turned into RePyability 0.11 ``RepairableRBD`` component specs.
+tests) — turned into RePyability ``RepairableRBD`` component specs.
 
 Graph format (all optional; a block without any of them is built exactly as
 before, as a plain ``NonRepairable``)::
@@ -39,7 +39,8 @@ before, as a plain ``NonRepairable``)::
                                                     #   analysed, not in the cache key)
     }
     graph["costs"] = {"downtime_rate": 500,    # per unit time the *system* is down
-                      "horizon": 87600}        # ownership horizon for the total cost
+                      "horizon": 87600,        # ownership horizon for the total cost
+                      "discount_rate": 7}      # % a year: the total as a present value (#219)
     graph["maintenance_groups"] = {"north pumps": {"setup_cost": 2000,
                                                    "system_down": false}}
 
@@ -65,6 +66,7 @@ default simulation window so maintenance cycles are covered.
 from __future__ import annotations
 
 import copy
+import math
 from typing import Any, Optional
 
 import numpy as np
@@ -374,16 +376,68 @@ def repairable_component(data: dict, label: str, reliability, resolve_model=None
 
 
 def diagram_costs(graph: dict) -> dict:
-    """``{"downtime_rate", "horizon"}`` of the diagram (either may be None)."""
+    """``{"downtime_rate", "horizon", "discount_rate"}`` of the diagram (any
+    may be None); the discount rate is a percentage a year (#219)."""
     costs = graph.get("costs")
     if costs is None:
-        return {"downtime_rate": None, "horizon": None}
+        return {"downtime_rate": None, "horizon": None, "discount_rate": None}
     if not isinstance(costs, dict):
         raise AnalysisError("The diagram's costs must be an object.")
     return {
         "downtime_rate": _number(costs.get("downtime_rate"), "system downtime cost per unit time", "Diagram"),
         "horizon": _number(costs.get("horizon"), "ownership horizon", "Diagram", positive=True),
+        "discount_rate": annual_discount(costs.get("discount_rate")),
     }
+
+
+# ---------------------------------------------------------------------------
+# Discounting (#219, RePyability 0.12's ``discount_rate``)
+# ---------------------------------------------------------------------------
+#: The diagram's time units in a year: a year of 365 days (8760 hours, as in
+#: RePyability's own example and the app's "87600 h = 10 years"), a month a
+#: twelfth of it.
+UNITS_PER_YEAR = {
+    "second": 365 * 86400.0, "minute": 365 * 1440.0, "hour": 8760.0, "day": 365.0,
+    "week": 365 / 7, "month": 12.0, "year": 1.0,
+}
+#: The highest discount rate taken, % a year.
+MAX_DISCOUNT_RATE = 100.0
+
+
+def annual_discount(value) -> Optional[float]:
+    """A discount rate in % a year (0 to :data:`MAX_DISCOUNT_RATE`), None when
+    blank."""
+    rate = _number(value, "discount rate (% a year)", "Diagram")
+    if rate is not None and rate > MAX_DISCOUNT_RATE:
+        raise AnalysisError(f"“Diagram”: the discount rate is a percentage a year, at most "
+                            f"{MAX_DISCOUNT_RATE:g}%.")
+    return rate
+
+
+def discount(graph: dict, annual=None) -> Optional[dict]:
+    """The discount the total cost of ownership is taken at: ``annual`` (%
+    a year) when given, else the diagram's ``costs.discount_rate``; None when
+    there is none (or it is 0: undiscounted).
+
+    RePyability's ``discount_rate`` is a continuous rate per unit time of the
+    models, so ``annual`` % a year is ``log(1 + annual / 100)`` a year, over
+    the diagram's time units in a year. Returns ``{"annual", "per_unit",
+    "unit"}``. A diagram whose time unit isn't a calendar one (cycles, km, or
+    none) can't be discounted, and the error says so."""
+    from backend.services.rbd_analysis import normalize_unit
+
+    rate = annual_discount(annual) if not _blank(annual) else diagram_costs(graph)["discount_rate"]
+    if not rate:
+        return None
+    unit = normalize_unit(graph.get("unit"))
+    per_year = UNITS_PER_YEAR.get(unit or "")
+    if per_year is None:
+        shown = str(graph.get("unit") or "").strip() or "not set"
+        raise AnalysisError(
+            "A discount rate is a percentage a year, so it needs the diagram in a calendar time unit "
+            f"(hours, days, weeks, months or years); its unit is {shown}. Change the unit, or clear "
+            "the discount rate.")
+    return {"annual": rate, "per_unit": math.log1p(rate / 100.0) / per_year, "unit": unit}
 
 
 def downtime_cost_rate(graph: dict) -> float:
@@ -396,6 +450,7 @@ def validation_errors(graph: dict) -> list[str]:
     errors: list[str] = []
     try:
         diagram_costs(graph)
+        discount(graph)
     except AnalysisError as exc:
         errors.append(str(exc).replace("“Diagram”: the ", "The "))
     for node in graph.get("nodes") or []:
@@ -476,8 +531,8 @@ def without_planned_outages(graph: dict) -> dict:
 
 def estimated_unavailability(rbd, t_sim: float, overrides: dict) -> Optional[float]:
     """A quick simulated unavailability, to set the precision target when the
-    exact long-run availability isn't known (proof tests whose tests or
-    repairs take time)."""
+    exact long-run availability isn't known (limited repair crews for
+    wear-out lives, say)."""
     from backend.services import rbd_analysis as ra
 
     try:

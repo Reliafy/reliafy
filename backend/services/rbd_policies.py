@@ -1,4 +1,4 @@
-"""Diagram-level settings of a repairable RBD on RePyability 0.11 (#156,
+"""Diagram-level settings of a repairable RBD on RePyability (#156,
 #157): repair crews, maintenance groups, standby groups, and the PFDavg and
 SIL band of a safety function.
 
@@ -24,10 +24,14 @@ before)::
 Block fields (preventive, inspection, maintenance group, crew priority) are
 in :mod:`backend.services.rbd_maintenance`.
 
-RePyability 0.11 gives a diagram one pool of crews: every component (and each
+RePyability gives a diagram one pool of crews: every component (and each
 unit of a standby group) is a job for it, in order of ``crew_priority`` and
 then of when it fell due. A standby group repaired one unit at a time is its
 own sub-diagram with one crew, so it doesn't wait for the diagram's crews.
+With the diagram's crews limited, such a diagram's expected events and cost
+over a window are worked out (numerically) since RePyability 0.12 (#222,
+its #162): 0.11 refused them, leaving only the simulation. The group's own
+costs still stay out of the diagram's, so it takes none.
 """
 
 from __future__ import annotations
@@ -319,7 +323,7 @@ def common_cause_note(graph: dict, result: dict) -> Optional[dict]:
 # How the long-run values are found, and the crews' share of the work
 # ---------------------------------------------------------------------------
 def long_run_method(rbd, labels: dict) -> Optional[dict]:
-    """How RePyability 0.11 finds the long-run values (``analysis_routes``):
+    """How RePyability finds the long-run values (``analysis_routes``):
     exactly, numerically, by simulation or not at all, why, and the blocks
     that decide it."""
     try:

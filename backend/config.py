@@ -325,3 +325,63 @@ FIREBASE_PROJECT_ID = (
     or os.environ.get("GOOGLE_CLOUD_PROJECT")
     or None
 )
+
+
+def _float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+# ---- Compute service and its queue (#146) ----------------------------------
+# Heavy analyses (availability simulations) run on a second Cloud Run service,
+# ``reliafy-compute`` (same image, ``uvicorn backend.compute_app:app``), behind
+# a Cloud Tasks queue. The web app records a job (``rbd_jobs``), pushes a task
+# to the queue, and the compute service posts the result back to the web app's
+# callback. With COMPUTE_QUEUE unset (self-hosted, local dev, tests) everything
+# runs in-process, synchronously, exactly as before. See ops/compute-service.md.
+#
+# The compute service's base URL (the task target and the OIDC audience).
+COMPUTE_URL = (os.environ.get("COMPUTE_URL") or "").strip().rstrip("/") or None
+# The Cloud Tasks queue: projects/<project>/locations/<region>/queues/<name>.
+COMPUTE_QUEUE = (os.environ.get("COMPUTE_QUEUE") or "").strip() or None
+# Where the compute service posts results: the web service's
+# /internal/compute/callback, by its run.app URL. Also the audience of the
+# compute service's ID token, which the web verifies.
+COMPUTE_CALLBACK_URL = (os.environ.get("COMPUTE_CALLBACK_URL") or "").strip() or None
+# The service account Cloud Tasks signs the task's OIDC token as (the web
+# service's own account; it needs run.invoker on reliafy-compute).
+COMPUTE_INVOKER_SA = (os.environ.get("COMPUTE_INVOKER_SA") or "").strip() or None
+# The compute service's own service account: the only identity whose callback
+# the web accepts.
+COMPUTE_SA = (os.environ.get("COMPUTE_SA") or "").strip() or None
+# Compute side: simulations run in this many worker processes (each with its
+# own random-number state, so concurrent jobs stay reproducible). 0 runs them
+# in the request thread, one at a time.
+COMPUTE_WORKERS = _int("COMPUTE_WORKERS", 0)
+# How long Cloud Tasks waits for /compute/run (keep under the compute
+# service's --timeout).
+COMPUTE_DISPATCH_DEADLINE_S = _int("COMPUTE_DISPATCH_DEADLINE_S", 290)
+# A job still queued or running after this long has been dropped by the queue
+# (its retries are spent): it is reported failed.
+RBD_JOB_STALE_S = _int("RBD_JOB_STALE_S", 40 * 60)
+# Finished jobs (and their results) are kept this long, then the TTL index
+# drops them.
+RBD_JOB_TTL_DAYS = _int("RBD_JOB_TTL_DAYS", 7)
+# MCP analyze_rbd waits this long for a queued simulation before answering
+# with the job id (the agent then calls get_job).
+MCP_JOB_WAIT_S = _float("MCP_JOB_WAIT_S", 20.0)
+
+# ---- Free quick availability simulations (#147) ----------------------------
+# Users without premium compute (billing.premium_compute_allowed) may run a
+# quick availability simulation in the app: a timed pilot block of 50
+# replications, then one run of the whole blocks that fit FREE_SIM_SECONDS
+# (never more than FREE_SIM_MAX_REPLICATIONS; rbd_analysis._quick_simulation),
+# FREE_SIMS_PER_DAY per user per UTC day.
+FREE_SIM_SECONDS = _float("FREE_SIM_SECONDS", 3.0)
+FREE_SIMS_PER_DAY = _int("FREE_SIMS_PER_DAY", 50)
+FREE_SIM_MAX_REPLICATIONS = _int("FREE_SIM_MAX_REPLICATIONS", 2000)
+# Quick simulations on the Free / Agent MCP plans. Off: those plans get no
+# simulations over MCP (Derryn, 29 Sep / 3 Oct); switch on to extend them.
+MCP_FREE_QUICK_SIMS = _truthy(os.environ.get("MCP_FREE_QUICK_SIMS", "false"))

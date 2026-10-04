@@ -88,6 +88,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
         label="Active unit life model"
         value={model}
         onChange={setModel}
+        rbdBlock
       />
 
       <div className="param-fields" style={{ marginTop: "1.25rem" }}>
@@ -156,6 +157,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
               label="Standby failure model (optional, dormant)"
               value={standbyModel}
               onChange={setStandbyModel}
+              rbdBlock
             />
           )}
         </div>
@@ -167,6 +169,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             label="Repair-time distribution (each failed unit)"
             value={initial?.repair}
             onChange={setRepair}
+            rbdBlock
           />
           <label className="rbd-instant-repair"
                  title="The group has its own repairer, who repairs one failed unit at a time; otherwise each failed unit is a job for the diagram's repair crews.">

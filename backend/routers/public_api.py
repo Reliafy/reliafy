@@ -303,6 +303,9 @@ def api_demonstration_test(
     ``test_multiple`` + ``shape`` (Weibull beta) for a longer test per unit,
     ``units`` (to solve for the test time per unit instead), ``unit``,
     ``design_reliability``. ``method="mtbf"`` with ``mtbf`` plans a
-    constant-failure-rate (chi-squared) test instead.
+    constant-failure-rate (chi-squared) test instead (``design_mtbf``).
+    ``producer_risk`` with the good design's ``design_reliability`` (or
+    ``design_mtbf``) plans the smallest test that keeps both risks, choosing
+    the failures allowed. Every plan has its ``oc_curve``.
     """
     return _strategy("demonstration_test", body, user["uid"])

@@ -1,6 +1,6 @@
 """Exact availability over time (#154) and from the current state (#155).
 
-RePyability 0.11 computes A(t), the mission availability and the window's
+RePyability computes A(t), the mission availability and the window's
 expected failures, outages, downtime and cost with no simulation, wherever
 ``analysis_routes()`` has an exact or numerical route. Every user gets them;
 the simulation stays paid. These tests check the figures against the
@@ -53,10 +53,13 @@ def _voting_graph():
 
 
 def _simulate(graph, horizon, n=2000, state=None):
+    """A plain simulation (RePyability 0.12's default intervals are the exact
+    mean's, so checking the exact figures against them would be circular)."""
     rbd, _, gates, working, broken = ra._build_repairable_rbd(graph)
     extra = {"state": ra._node_states(state)} if state else {}
     return rbd.availability(t_simulation=horizon, mc_samples=n, method="c", seed=1, antithetic=True,
-                            working_nodes=working | gates, broken_nodes=broken, **extra)
+                            control_variate=False, conditional=False,
+                            working_nodes=working, broken_nodes=broken, **extra)
 
 
 def _poisson_close(simulated, exact, n):
@@ -107,9 +110,11 @@ def test_the_window_settles_at_the_long_run_value():
 # Routes: simulation-only diagrams fall back
 # ---------------------------------------------------------------------------
 def _tested_graph():
-    """Proof tests that take time: RePyability has no exact route."""
+    """One repair crew for wear-out lives: RePyability has no exact route (its
+    crews' Markov chain needs exponential lives). Proof tests that take time
+    were the example until RePyability 0.12 made them numerical (#159)."""
     graph = _rbd_graph(repairable=True)
-    graph["nodes"][2]["data"]["inspection"] = {"interval": 500, "duration": 2}
+    graph["repair_crews"] = {"crews": 1}
     return graph
 
 
@@ -118,7 +123,7 @@ def test_simulation_only_diagram_says_so_and_computes_nothing():
     assert exact["status"] == "simulation_only"
     assert "only the simulation gives it" in exact["message"]
     assert exact["routes"]["point_availability"]["route"] == "refused"
-    assert "Controller" in exact["routes"]["point_availability"]["blocks"]
+    assert "Controller" in exact["routes"]["point_availability"]["reason"]
     assert "curve" not in exact and "mission_availability" not in exact
 
 

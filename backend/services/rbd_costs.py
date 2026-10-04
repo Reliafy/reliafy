@@ -7,7 +7,7 @@
   horizon (purchase + running), and the simulated cost of the window with its
   spread, from the same simulation as the availability. Exact figures come from
   ``RepairableRBD.expected_cost_rate`` where RePyability has them (not for
-  proof tests whose tests or repairs take time); otherwise the simulated rate stands in, and every
+  limited repair crews for wear-out lives); otherwise the simulated rate stands in, and every
   figure says which it is (``basis``).
 * :func:`cheapest_design` — ``RepairableRBD.allocate_redundancy``: how many
   active copies of each priced block give the lowest total cost of ownership
@@ -15,7 +15,13 @@
   those copies drawn on it (nothing is saved; the builder puts it on the
   canvas).
 
-Costs are undiscounted, in whatever currency the user entered them.
+Costs are in whatever currency the user entered them. The total cost of
+ownership (and the cheapest design's) is undiscounted unless the diagram (or
+the request) gives a discount rate in % a year (#219, RePyability 0.12's
+``discount_rate``): then it is the present value, the purchases at the start
+and the running costs discounted continuously, the horizon counting as
+``(1 - exp(-r H)) / r``. The window's cost (simulated or exact) is never
+discounted.
 """
 
 from __future__ import annotations
@@ -118,12 +124,39 @@ def exact_breakdown(rbd, overrides: dict) -> dict:
     return {"total": total, "by_category": by_category, "by_block": by_block}
 
 
-def _simulated(cost) -> Optional[dict]:
-    """The window's simulated cost (a ``CostResult``) as plain numbers."""
+def _window_mean(rbd, graph: dict, t_sim: float, overrides: dict,
+                 state: Optional[dict]) -> tuple[Optional[float], str]:
+    """``(value, basis)``: the window's expected cost from RePyability's
+    ``expected_cost`` (from the same start as the simulation) when its route
+    is exact or numerical, its basis that route; otherwise
+    ``(None, "simulation")``. As the window's availability
+    (``rbd_analysis._window_exact``), not above
+    ``EXACT_WINDOW_MEAN_MAX_BLOCKS`` blocks."""
+    if not ra.window_mean_exact_ok(graph):
+        return None, "simulation"
+    route = ra.window_routes(rbd)["expected_cost"]
+    if route not in ra._OVER_TIME_OK:
+        return None, "simulation"
+    state_kw = {"state": state} if state else {}
+    try:
+        with np.errstate(all="ignore"):
+            value = ra._f(rbd.expected_cost(float(t_sim), **overrides, **state_kw).mean)
+    except Exception:  # noqa: BLE001 - the simulated mean stands
+        return None, "simulation"
+    return (value, route) if value is not None else (None, "simulation")
+
+
+def _simulated(cost, exact_mean: Optional[float] = None, mean_basis: str = "simulation") -> Optional[dict]:
+    """The window's simulated cost (a ``CostResult``) as plain numbers. Its
+    ``mean`` is ``exact_mean`` where RePyability works it out
+    (``mean_basis`` exact or numerical), the simulated one otherwise; the
+    interval and percentiles are the simulation's."""
     if cost is None or not len(cost.samples):
         return None
     out: dict[str, Any] = {
-        "mean": ra._f(cost.mean),
+        "mean": exact_mean if exact_mean is not None else ra._f(cost.mean),
+        "mean_basis": mean_basis if exact_mean is not None else "simulation",
+        "simulated_mean": ra._f(cost.mean),
         "std": ra._f(cost.std) if len(cost.samples) > 1 else None,
         "cost_rate": ra._f(cost.cost_rate),
         "t_simulation": ra._f(cost.t_simulation),
@@ -143,9 +176,12 @@ def _simulated(cost) -> Optional[dict]:
 
 
 def cost_summary(rbd, graph: dict, labels: dict, gate_ids: set, overrides: dict,
-                 res, t_sim: float, per_node: list, importance: dict) -> Optional[dict]:
+                 res, t_sim: float, per_node: list, importance: dict,
+                 state: Optional[dict] = None) -> Optional[dict]:
     """The costs part of an availability result, or None when nothing is
-    priced (no running cost and no purchase price)."""
+    priced (no running cost and no purchase price). ``state`` is the
+    simulation's start (RePyability ``NodeState``s), for the window's exact
+    expected cost."""
     acquisition = float(rbd.acquisition_cost)
     if not rbd.has_costs and not acquisition:
         return None
@@ -155,7 +191,11 @@ def cost_summary(rbd, graph: dict, labels: dict, gate_ids: set, overrides: dict,
             exact = exact_breakdown(rbd, overrides)
         except NotImplementedError:
             exact = None
-    simulated = _simulated(getattr(res, "cost", None)) if res is not None else None
+    simulated = None
+    if res is not None and getattr(res, "cost", None) is not None:
+        exact_mean, mean_basis = (_window_mean(rbd, graph, t_sim, overrides, state)
+                                  if rbd.has_costs else (None, "simulation"))
+        simulated = _simulated(res.cost, exact_mean, mean_basis)
     if exact is not None:
         rate, basis = exact["total"], "exact"
     elif simulated is not None:
@@ -211,10 +251,44 @@ def cost_summary(rbd, graph: dict, labels: dict, gate_ids: set, overrides: dict,
         "acquisition_cost": acquisition,
         "horizon": horizon,
         "horizon_basis": "set" if diagram["horizon"] else "window",
-        "running_cost": ra._f(rate * horizon) if rate is not None else None,
-        "total_cost": ra._f(acquisition + rate * horizon) if rate is not None else None,
+        **present_value(acquisition, rate, horizon, rm.discount(graph)),
         "simulated": simulated,
     }
+
+
+def present_value(acquisition: float, rate: Optional[float], horizon: float,
+                  disc: Optional[dict]) -> dict:
+    """The total cost of owning the system for ``horizon``: the purchases plus
+    the running ``rate`` over it, as ``RepairableRBD.total_cost`` gives it —
+    with a discount (:func:`rbd_maintenance.discount`) its present value, the
+    horizon counting as ``(1 - exp(-r H)) / r`` (#219). ``running_cost`` and
+    ``total_cost`` (None without a rate), the discount (% a year, and the
+    continuous rate per unit time RePyability takes; None undiscounted) and,
+    discounted, the undiscounted total beside it."""
+    from repyability.rbd.repairable_rbd import _present_horizon
+
+    r = disc["per_unit"] if disc else 0.0
+    present = _present_horizon(float(horizon), r)
+    has_rate = rate is not None
+    return {
+        "running_cost": ra._f(rate * present) if has_rate else None,
+        "total_cost": ra._f(acquisition + rate * present) if has_rate else None,
+        "discount_rate": disc["annual"] if disc else None,
+        "discount_rate_per_unit": r if disc else None,
+        "undiscounted_total_cost": ra._f(acquisition + rate * horizon) if (disc and has_rate) else None,
+    }
+
+
+def with_discount(costs: Optional[dict], graph: dict, annual) -> Optional[dict]:
+    """An availability result's ``costs`` re-priced at ``annual`` % a year (0:
+    undiscounted) — the same long-run rate, purchases and horizon, so a saved
+    result needn't be run again for another rate (the MCP ``analyze_rbd``'s
+    ``discount_rate``)."""
+    if not costs or annual is None:
+        return costs
+    disc = rm.discount(graph, annual)
+    return {**costs, **present_value(float(costs.get("acquisition_cost") or 0.0), costs.get("cost_rate"),
+                                     float(costs["horizon"]), disc)}
 
 
 # ---------------------------------------------------------------------------
@@ -237,18 +311,22 @@ def _friendly(message: str, labels: dict) -> str:
 
 
 def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availability=None,
-                    blocks: Optional[list] = None) -> dict:
+                    blocks: Optional[list] = None, discount_rate=None) -> dict:
     """The number of active copies of each priced block (every block with a
     purchase price, or ``blocks``) that owns the diagram for ``horizon`` at the
     lowest total cost (``RepairableRBD.allocate_redundancy``), optionally only
     among designs at least ``min_availability`` available; with the design as
-    drawn for comparison, and the diagram with the copies drawn on it."""
+    drawn for comparison, and the diagram with the copies drawn on it.
+    ``discount_rate`` (% a year; default the diagram's, 0 undiscounted) makes
+    the totals present values, and chooses the design with the lowest (#219)."""
     if not (graph or {}).get("repairable"):
         raise AnalysisError("The cheapest design is for repairable (availability) diagrams.")
     diagram = rm.diagram_costs(graph)
     horizon = rm._number(horizon, "ownership horizon", "Diagram", positive=True) or diagram["horizon"]
     if not horizon:
         raise AnalysisError("Set how long the system is owned (the horizon) to price it over.")
+    disc = rm.discount(graph, discount_rate)
+    r = disc["per_unit"] if disc else 0.0
     floor = None
     if not rm._blank(min_availability):
         try:
@@ -283,19 +361,22 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
     try:
         with np.errstate(all="ignore"):
             alloc = rbd.allocate_redundancy(
-                horizon, nodes=chosen, min_availability=floor, max_units=MAX_COPIES,
+                horizon, nodes=chosen, min_availability=floor, max_units=MAX_COPIES, discount_rate=r,
             )
             current = {
-                "total_cost": float(rbd.total_cost(horizon)),
+                "total_cost": float(rbd.total_cost(horizon, discount_rate=r)),
                 "cost_rate": float(rbd.expected_cost_rate()),
                 "acquisition_cost": float(rbd.acquisition_cost),
                 "availability": float(rbd.mean_availability()),
             }
     except NotImplementedError as exc:
+        # Since RePyability 0.12 proof tests that take time have exact long-run
+        # costs too (#159); limited repair crews for wear-out lives don't.
+        reason = ra.plain_reason(_friendly(str(exc), labels))
+        reason = reason.split(": estimate")[0].split(". Estimate")[0].split(". ")[0].rstrip(". ")
         raise AnalysisError(
             "The cheapest design needs exact long-run costs, which RePyability doesn't have "
-            "for this diagram: " + _friendly(str(exc), labels).split(": estimate")[0].split(". Estimate")[0]
-            + ". For proof-tested blocks, use instant tests and instant repair."
+            f"for this diagram: {reason}."
         ) from exc
     except ValueError as exc:
         msg = _friendly(str(exc), labels)
@@ -327,6 +408,9 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
         "unit": (graph.get("unit") or "").strip(),
         "horizon": float(horizon),
         "min_availability": floor,
+        # % a year, and the continuous rate per unit time RePyability took (None: undiscounted).
+        "discount_rate": disc["annual"] if disc else None,
+        "discount_rate_per_unit": r if disc else None,
         "method": alloc.method,
         "max_copies": MAX_COPIES,
         "current": current,

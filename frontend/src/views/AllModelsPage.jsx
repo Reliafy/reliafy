@@ -60,6 +60,7 @@ export default function AllModelsPage() {
           type: "life",
           detail: distLabel(m.distribution) || "—",
           ph: m.kind === "regression",
+          noMax: !!m.no_finite_maximum,
           color: distColor(m.distribution),
           created_at: m.created_at,
           is_sample: m.is_sample,
@@ -85,6 +86,7 @@ export default function AllModelsPage() {
           // e.g. "Weibull · Arrhenius" — the distribution and its life-stress law.
           detail: [distLabel(m.distribution), m.life_model].filter(Boolean).join(" · ") || "—",
           ph: false,
+          noMax: !!m.no_finite_maximum,
           color: "#0f9ab0",
           created_at: m.created_at,
           is_sample: m.is_sample,
@@ -198,6 +200,12 @@ export default function AllModelsPage() {
                         {r.name}
                         {r.is_sample && <span className="sample-tag">Sample</span>}
                         {r.shared_by && <span className="sample-tag shared" title={`Shared by ${r.shared_by}`}>Shared</span>}
+                        {r.noMax && (
+                          <span className="sample-tag nomax"
+                                title="These data don't pin down the model: its numbers aren't estimates.">
+                            No finite maximum
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td>

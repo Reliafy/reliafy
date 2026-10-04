@@ -38,7 +38,7 @@ USERS = {
 }
 UPGRADE = "upgrade to Reliafy Pro (US$19/month)"
 WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
-N_TOOLS = 42
+N_TOOLS = 45
 
 
 @pytest.fixture()
@@ -169,12 +169,11 @@ def test_free_user_gets_the_exact_figures_but_no_simulations(env):
 
 
 def test_free_user_simulation_only_diagram_is_refused_and_not_counted(env):
-    """No exact figures at all (proof tests that take time): as before #154."""
+    """No exact figures at all (one repair crew for wear-out lives): as before #154."""
     rid = _repairable(env, FREE, "Pumps")
     doc = env.db.rbds.find_one({"_id": rid})
     graph = doc["graph"]
-    first = next(n for n in graph["nodes"] if n["type"] == "component")
-    first["data"]["inspection"] = {"interval": 500, "duration": 2}
+    graph["repair_crews"] = {"crews": 1}
     env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
     out = _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid}))
     assert out["available"] is False and out["code"] == "pro_required"

@@ -380,13 +380,13 @@ def test_repairable_pins_and_unsupported_blocks(tmp_path):
                   {"source": "g", "target": "pin"}, {"source": "pin", "target": "output"}],
     }
     code = rbd_export.to_python(graph, "Rep", exported_at=WHEN)
-    assert "spare_line = voting_gate()" in code and 'WORKING_NODES = {"pin"}' in code
+    assert "spare_line = pinned_stand_in()" in code and 'WORKING_NODES = {"pin"}' in code
     res, _ = _run(code, tmp_path, n_sims="20")
     rbd, _, gates, working, broken = ra._build_repairable_rbd(graph)
     assert working == {"pin"} and not broken and gates == {"g"}
-    # Voting gates are pinned working alongside the user's pins, as in the app.
+    # Voting gates are junctions (#224): never pinned, as in the app.
     assert res["steady_state_availability"] == pytest.approx(
-        rbd.mean_availability(working_nodes=working | gates, broken_nodes=broken), rel=1e-12)
+        rbd.mean_availability(working_nodes=working, broken_nodes=broken), rel=1e-12)
 
     # A block type availability mode doesn't support is a placeholder (the
     # app refuses to calculate it).
@@ -408,8 +408,8 @@ def test_output_is_deterministic_and_self_describing():
     assert head.startswith(name)
     assert "Exported from Reliafy <https://reliafy.com>".lower() in head.lower().replace("\n", " ")
     assert "on 2026-09-26 (UTC)" in head
-    assert "SurPyval.git@v0.22" in head and "RePyability.git@v0.11" in head
-    assert "--no-deps" in head and "surpyval==0.22" in head
+    assert "SurPyval.git@v0.23" in head and "RePyability.git@v0.12" in head
+    assert "--no-deps" in head and "surpyval==0.23" in head
     assert "python instrument_air_2oo3_compressors_cold_standby_dryer_ccf.py" in head
     # One commented variable per block, with its label.
     assert "# Compressor A: Weibull(alpha=12000 Hours, beta=1.6)" in a
@@ -429,7 +429,7 @@ def test_imports_only_what_is_used():
 
 
 def test_versions_come_from_the_build_pins():
-    assert rbd_export.detect_versions() == {"surpyval": "0.22", "repyability": "0.11"}
+    assert rbd_export.detect_versions() == {"surpyval": "0.23", "repyability": "0.12"}
 
 
 def test_names_are_safe_identifiers_and_unique():
