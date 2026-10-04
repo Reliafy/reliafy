@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getDataset, deleteDataset } from "../api.js";
 import PreviewTable from "../components/PreviewTable.jsx";
+import CompareGroups from "../components/CompareGroups.jsx";
 import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { distColor, parseTimestamp } from "../instrument.js";
@@ -13,6 +14,17 @@ export default function DatasetPage() {
   const navigate = useNavigate();
   const [ds, setDs] = useState(null);
   const [error, setError] = useState(null);
+  // ?compare=<column> opens "Compare groups" split by that column (the MCP
+  // compare_groups tool links here).
+  const [params, setParams] = useSearchParams();
+  const compareBy = params.get("compare");
+  const comparing = compareBy !== null;
+  const setComparing = (on) => {
+    const next = new URLSearchParams(params);
+    if (on) next.set("compare", "");
+    else next.delete("compare");
+    setParams(next, { replace: true });
+  };
 
   useEffect(() => {
     setDs(null);
@@ -52,6 +64,9 @@ export default function DatasetPage() {
         </div>
         {ds && (
           <div className="head-actions">
+            {ds.n_columns >= 2 && !comparing && (
+              <button className="secondary" onClick={() => setComparing(true)}>Compare groups</button>
+            )}
             <ShareButton
               collection="datasets"
               artifactId={ds.id}
@@ -75,6 +90,10 @@ export default function DatasetPage() {
             <div className="stat"><div className="k">Linked models</div><div className="v">{ds.n_models}</div></div>
             <div className="stat"><div className="k">Checksum</div><div className="v sm mono" title={ds.checksum}>{ds.checksum.slice(0, 10)}</div></div>
           </div>
+
+          {comparing && (
+            <CompareGroups dataset={ds} splitBy={compareBy || null} onClose={() => setComparing(false)} />
+          )}
 
           <div className="ds-grid">
             <div className="ds-main">

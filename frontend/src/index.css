@@ -7045,3 +7045,24 @@ button.danger:hover { background: #fdeeee; }
 }
 .mode-detail b { font-weight: 600; color: var(--faint); margin-right: 4px; }
 .mode-notes { white-space: pre-line; }
+
+/* ---- Compare groups (dataset page, #175) --------------------------------- */
+.cg-card h2 { margin: 0 0 4px; font-size: 1.05rem; }
+.cg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; }
+.cg-head .muted-line { margin: 0; max-width: 62ch; }
+.cg-inputs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.8rem 1rem; }
+.cg-inputs .calc-t input { width: 100%; box-sizing: border-box; }
+.cg-invert { font-size: 0.85rem; }
+.cg-actions { margin-top: 1rem; }
+.cg-h { margin-top: 1.25rem; }
+.cg-table .combo-dot { margin-bottom: 0; }
+.cg-table td { white-space: nowrap; }
+.cg-table { min-width: 340px; }
+.cg-table.cg-wide { min-width: 560px; }
+.cg-table tr.strategy-best td { font-weight: 600; }
+.cg-ci { color: var(--muted); font-size: 0.78rem; }
+.cg-notes { margin: 0.5rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: 0.82rem; }
+@media (max-width: 560px) {
+  .cg-head { flex-direction: column; }
+  .cg-inputs { grid-template-columns: 1fr 1fr; }
+}
