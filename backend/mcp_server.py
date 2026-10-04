@@ -2298,20 +2298,30 @@ def _sig(x: Optional[float]) -> Optional[float]:
     return None if x is None else float(f"{x:.4g}")
 
 
+def _weibull_beta_ci(db, uid: str, model_id: Optional[str], inputs: dict) -> Optional[tuple[float, float, float]]:
+    """``(beta, lower, upper)``: a saved Weibull model's shape and its fit's 95%
+    interval — None for inline params, another distribution, or a fit that
+    gave β no interval."""
+    if not model_id or inputs.get("distribution_id") != "weibull":
+        return None
+    m = models_service.get_model(db, model_id, _owners(uid))
+    beta = next((p for p in ((m.results or {}).get("params") or []) if p.get("name") == "beta"), None) if m else None
+    ci = (beta or {}).get("ci")
+    if not ci or len(ci) != 2 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in ci):
+        return None
+    return float(beta["value"]), float(ci[0]), float(ci[1])
+
+
 def _shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, costs: dict, point: dict) -> dict:
     """How far the replacement answer moves across a fitted Weibull's shape
     interval (#189): the optimum at each end of β's 95% CI, α held at its
     estimate. A point estimate can read as firm wear-out when the data only
     weakly show it — at β ≈ 1 preventive replacement doesn't pay. Only for a
     saved Weibull model whose fit gave β an interval; {} otherwise."""
-    if not model_id or inputs.get("distribution_id") != "weibull":
+    found = _weibull_beta_ci(db, uid, model_id, inputs)
+    if found is None:
         return {}
-    m = models_service.get_model(db, model_id, _owners(uid))
-    beta = next((p for p in ((m.results or {}).get("params") or []) if p.get("name") == "beta"), None) if m else None
-    ci = (beta or {}).get("ci")
-    if not ci or len(ci) != 2 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in ci):
-        return {}
-    lo, hi = float(ci[0]), float(ci[1])
+    beta_hat, lo, hi = found
 
     def at(b: float) -> Optional[dict]:
         if b <= 0:
@@ -2325,7 +2335,7 @@ def _shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, cost
                 "savings": _sig(r["savings"])}
 
     low, high = at(lo), at(hi)
-    block = {"beta": _sig(float(beta["value"])), "beta_ci_95": [_sig(lo), _sig(hi)],
+    block = {"beta": _sig(beta_hat), "beta_ci_95": [_sig(lo), _sig(hi)],
              "held_fixed": "alpha at its estimate", "at_beta_lower": low, "at_beta_upper": high}
     out: dict[str, Any] = {"shape_uncertainty": block}
     if not point.get("beneficial"):
@@ -2378,10 +2388,59 @@ def failure_finding_interval(
     unit: _UNIT = None,
 ) -> dict[str, Any]:
     """Inspection (proof-test) interval that keeps a hidden, protective function — a relief valve,
-    trip, alarm, standby unit — at the target availability."""
+    trip, alarm, standby unit — at the target availability. For a saved Weibull model fitted to data,
+    shape_uncertainty gives the interval at each end of the shape's 95% interval; relay uncertainty_note
+    when present — the interval is then less certain than it reads, and the shorter one is the safe side."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
-    return strategy_store.compute("failure_finding", {**inputs, "target_availability": target_availability})
+    target = {"target_availability": target_availability}
+    out = strategy_store.compute("failure_finding", {**inputs, **target})
+    out.update(_ffi_shape_uncertainty(db, user["uid"], model_id, inputs, target, out))
+    return out
+
+
+#: The failure-finding note: an end of the shape's interval asks for an
+#: interval this much shorter than the estimate's (or more).
+_FFI_SHORTER = 0.8
+
+
+def _ffi_shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, target: dict,
+                           point: dict) -> dict:
+    """``optimal_replacement``'s shape treatment (#189) for the failure-finding
+    interval: the interval at each end of a fitted Weibull's β 95% CI, α held
+    at its estimate, and a note when either end asks for a test interval at
+    least 20% shorter than the estimate's — testing less often than needed is
+    the unsafe side for a hidden protective function. {} for inline params or
+    a fit that gave β no interval."""
+    found = _weibull_beta_ci(db, uid, model_id, inputs)
+    if found is None:
+        return {}
+    beta_hat, lo, hi = found
+
+    def at(b: float) -> Optional[dict]:
+        if b <= 0:
+            return None
+        params = [{**p, "value": b} if p["name"] == "beta" else p for p in inputs["params"]]
+        try:
+            r = strategy_store.compute("failure_finding", {**inputs, "params": params, **target})
+        except (StrategyError, ValueError):
+            return None
+        return {"beta": _sig(b), "interval": _sig(r["interval"]), "mttf": _sig(r["mttf"])}
+
+    low, high = at(lo), at(hi)
+    block = {"beta": _sig(beta_hat), "beta_ci_95": [_sig(lo), _sig(hi)],
+             "held_fixed": "alpha at its estimate", "at_beta_lower": low, "at_beta_upper": high}
+    out: dict[str, Any] = {"shape_uncertainty": block}
+    ends = [e for e in (low, high) if e is not None and e["interval"] is not None]
+    shortest = min(ends, key=lambda e: e["interval"], default=None)
+    if shortest is not None and point.get("interval") and shortest["interval"] < _FFI_SHORTER * point["interval"]:
+        u = f" {point['unit']}" if point.get("unit") else ""
+        out["uncertainty_note"] = (
+            f"Across the shape's 95% interval [{lo:.3g}, {hi:.3g}] the interval could need to be as short as "
+            f"{shortest['interval']:.3g}{u} (β = {shortest['beta']:.3g}) vs {point['interval']:.3g}{u} at the "
+            "estimate. For a protective function, testing too rarely is the unsafe side: say the interval is "
+            "uncertain and consider the shorter one.")
+    return out
 
 
 def _lean_demonstration(out: dict) -> dict:
@@ -2454,16 +2513,73 @@ def optimal_overhaul(
     include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Optimal overhaul interval for a repairable system (minimal repair between overhauls) from a saved
-    recurrent-event model. Only a deteriorating system (growth shape beta > 1) has a finite optimum."""
+    recurrent-event model. Only a deteriorating system (growth shape beta > 1) has a finite optimum. For a
+    Crow-AMSAA model fitted to data, shape_uncertainty gives the answer at each end of beta's 95% interval;
+    relay uncertainty_note when present — the recommendation is then less firm than it reads."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     if t_max is not None and (not np.isfinite(t_max) or t_max <= 0):
         raise ToolError(f"t_max must be a positive time; got {t_max:g}. Omit it to search automatically.")
-    if recurrent_service.get_model(db, model_id, owners) is None:
+    doc = recurrent_service.get_model(db, model_id, owners)
+    if doc is None:
         raise ToolError("Recurrent model not found — optimal_overhaul needs a recurrent (repairable-system) "
                         "model id from list_models kind=recurrent.")
     live = recurrent_service.get_live_model(db, model_id, owners)
-    return _maybe_curve(recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max), include_curve)
+    out = recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max)
+    out.update(_overhaul_shape_uncertainty(db, doc, cost_repair, cost_overhaul, t_max, out))
+    return _maybe_curve(out, include_curve)
+
+
+def _overhaul_shape_uncertainty(db, doc, cost_repair: float, cost_overhaul: float, t_max: Optional[float],
+                                point: dict) -> dict:
+    """``optimal_replacement``'s shape treatment (#189) for the overhaul
+    interval: the optimum at each end of a Crow-AMSAA fit's β 95% interval,
+    α held at its estimate, and a note when the interval includes 1 (the data
+    don't clearly show deterioration, and without it an overhaul never pays)
+    or the saving at the lower end is under half the estimate's. Each end is
+    the tool's own answer for that β — its saving against never overhauling
+    over that end's horizon (``t_max``, else 3× its own interval), as the
+    estimate's is. Never overhauling has no finite long-run cost when β > 1,
+    so one shared horizon would favour whichever β it suits. {} for a model
+    built from parameters or another model family."""
+    found = recurrent_service.shape_interval(db, doc)
+    if found is None:
+        return {}
+    alpha, (lo, hi) = found["alpha"], found["ci"]
+
+    def at(b: float) -> Optional[dict]:
+        if b <= 0:
+            return None
+        try:
+            r = recurrent_fit.optimal_overhaul({"model_id": "crow_amsaa", "params": [alpha, b]}, cost_repair,
+                                               cost_overhaul, t_max=t_max)
+        except (fitting.FitError, ValueError):
+            return None
+        opt = r.get("optimal")
+        return {"beta": _sig(b), "pays": opt is not None,
+                "optimal_interval": _sig(opt["interval"]) if opt else None,
+                "saving_pct": _sig(r.get("saving_pct")) if opt else None,
+                "horizon": _sig((r.get("never_overhaul") or {}).get("horizon")) if opt else None}
+
+    low, high = at(lo), at(hi)
+    block = {"beta": _sig(found["beta"]), "beta_ci_95": [_sig(lo), _sig(hi)],
+             "held_fixed": "alpha at its estimate", "at_beta_lower": low, "at_beta_upper": high}
+    out: dict[str, Any] = {"shape_uncertainty": block}
+    saving = point.get("saving_pct")
+    if not point.get("optimal"):
+        return out
+    if lo <= 1:
+        out["uncertainty_note"] = (
+            f"The growth shape's 95% interval [{lo:.3g}, {hi:.3g}] includes 1: the data don't clearly show the "
+            "system deteriorating. If its failure rate isn't rising, an overhaul doesn't pay — treat this "
+            "interval as tentative and say so.")
+    elif low is not None and saving and (not low["pays"] or (low["saving_pct"] or 0) < 0.5 * saving):
+        what = f"saves {low['saving_pct']:.3g}%" if low["pays"] else "doesn't pay"
+        out["uncertainty_note"] = (
+            f"The growth shape's 95% interval reaches down to {lo:.3g}: the data only weakly show deterioration. "
+            f"At that end overhauling {what} (vs {saving:.3g}% at the estimate), so the recommendation is less "
+            "firm than the point estimate suggests — say so.")
+    return out
 
 
 @_tool("compare_groups", _READ, "Compare groups of life data")

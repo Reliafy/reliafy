@@ -170,6 +170,35 @@ def get_live_model(db, model_id: str, owner_id):
     return live
 
 
+def shape_interval(db, doc: RecurrentModelDoc) -> dict | None:
+    """``{"beta", "alpha", "ci"}``: a data-fitted Crow-AMSAA model's growth
+    shape β, its scale and β's 95% interval — as stored with the fit, or for
+    a model saved before intervals were, from a fresh fit of its dataset
+    (then stored on the model). None for a model built from parameters,
+    another model family, or one whose dataset is gone."""
+    spec = doc.spec or {}
+    if spec.get("params_only") or spec.get("model_id", "crow_amsaa") != "crow_amsaa":
+        return None
+    params = list((doc.results or {}).get("params") or [])
+    by_name = {p.get("name"): p for p in params}
+    if "beta" not in by_name or "alpha" not in by_name:
+        return None
+    ci = by_name["beta"].get("ci")
+    if not ci:
+        try:
+            live = _refit(db, doc)
+        except Exception:  # noqa: BLE001 - dataset gone or no longer fits: no interval
+            return None
+        cis = recurrent_fit.param_intervals("crow_amsaa", live)
+        if "beta" not in cis:
+            return None
+        params = [{**p, "ci": cis[p["name"]]} if p.get("name") in cis else p for p in params]
+        db.recurrent_models.update_one({"_id": doc.id}, {"$set": {"results.params": params}})
+        ci = cis["beta"]
+    return {"beta": float(by_name["beta"]["value"]), "alpha": float(by_name["alpha"]["value"]),
+            "ci": [float(ci[0]), float(ci[1])]}
+
+
 def _refit(db, doc: RecurrentModelDoc):
     spec = doc.spec or {}
     if spec.get("params_only"):
