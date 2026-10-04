@@ -78,12 +78,14 @@ from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 
+from backend import alt as alt_fit
 from backend import config
 from backend import fitting
 from backend import recurrent as recurrent_fit
 from backend import storage
 from backend.fitting import FitError
 from backend.services import access as access_service
+from backend.services import alt as alt_service
 from backend.services import availability_answer
 from backend.services import billing as billing_service
 from backend.services import compare_groups as compare_groups_service
@@ -144,6 +146,13 @@ def _until(when) -> str:
 
 
 def _pro_only_message(tool: str) -> str:
+    if tool == "fit_alt_model":
+        return (f"Fitting in Reliafy is part of Reliafy Pro ({PRO_PRICE}) and isn't included on this plan. "
+                "Fit the accelerated life test locally with SurPyval instead (pip install surpyval; for "
+                "Arrhenius, AcceleratedLife(Weibull, LIFE_MODELS['Exponential']).fit(x=times, Z=stresses, "
+                "c=censored), with LIFE_MODELS from surpyval.univariate.regression.accelerated_life — "
+                "0 = failed, 1 = still running). Or upgrade to Pro at "
+                f"{_billing_url()} (or call upgrade_link for a payment link) to fit and save it here.")
     if tool in _FIT_TOOLS:
         return (f"Fitting in Reliafy is part of Reliafy Pro ({PRO_PRICE}) and isn't included on this plan. "
                 "Fit the data locally with SurPyval instead (pip install surpyval; e.g. "
@@ -267,6 +276,9 @@ What you can do:
 - Life data: fit_distribution to failure times (inline data or a saved dataset), fit_and_save_model to keep \
 it as a model, or save_model to save parameters fitted elsewhere; evaluate a saved model with reliability_at. \
 list_models / get_model read what is saved; list_datasets / upload_dataset manage the data.
+- Accelerated life tests: fit_alt_model fits and saves failure times at several stress levels with a \
+life-stress relationship (inspection data and delayed entry too); alt_use_level extrapolates it to the use \
+stress, with confidence bounds on R(t), B10, B1 and the mission reliability (Wald, likelihood ratio or bootstrap).
 - Datasets: get_dataset reads a dataset's columns, row count and rows, a page at a time (offset / limit).
 - Comparing groups: compare_groups answers "is A better than B?" — it splits life data by a column \
 (supplier, site, design revision) and gives the log-rank test, each group's average life over a common window \
@@ -391,7 +403,7 @@ _USER_ERRORS = (
 # Fitting runs server-side CPU those plans don't pay for (agents fit
 # locally with SurPyval, then save_model); fleets depend on usage arriving
 # through the Pro API.
-_FIT_TOOLS = {"fit_distribution", "fit_and_save_model"}
+_FIT_TOOLS = {"fit_distribution", "fit_and_save_model", "fit_alt_model"}
 _FLEET_TOOLS = {"list_fleets", "fleet_forecast", "list_fleet_alerts", "create_fleet_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
 # Never gated or counted: the way to Pro, and seeing where the allowance
@@ -873,7 +885,8 @@ _FitCensorCol = Annotated[Optional[str], Field(description="Dataset column holdi
 _FitCountCol = Annotated[Optional[str], Field(description="Dataset column holding counts.")]
 _FitTimeRightCol = Annotated[Optional[str], Field(
     description="Interval censoring: the column holding each row's upper bound, with time_column as the lower "
-                "bound. Interval rows take flag 2; other rows repeat their time in both columns.")]
+                "bound. Interval rows take flag 2; other rows repeat their time in both columns. Works for "
+                "plain distributions and for parametric regression models with covariates (not Cox PH).")]
 _FitTruncLeftCol = Annotated[Optional[str], Field(
     description="Column holding each row's left-truncation age (delayed entry: the age it came under "
                 "observation; blank = not truncated).")]
@@ -1054,10 +1067,6 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             if col not in names:
                 raise ToolError(f"Column '{col}' isn't in the dataset. Columns: {', '.join(names)}.")
         df = datasets_service.load_dataframe(dataset)
-    if "xl" in mapping and dist in fitting.REGRESSION_MODELS:
-        raise ToolError("Regression models take one time per row — interval censoring (data_right / "
-                        "time_right_column) needs a plain distribution.")
-
     options: dict[str, Any] = {}
     if c_invert:
         if "c" not in mapping:
@@ -1573,6 +1582,286 @@ def reliability_at(
         out["confidence"] = float(confidence)
         out["bounds_note"] = bounds_note
     return out
+
+
+# ---------------------------------------------------------------------------
+# Accelerated life testing (#231, #237)
+# ---------------------------------------------------------------------------
+
+_AltStresses = Annotated[Optional[list[list[float]]], Field(
+    description="Inline data: each row's stress level(s), one list per time in `data` — [T] for a "
+                "single-stress model, [T, V] for a two-stress one (e.g. temperature in kelvin and voltage).")]
+
+
+def _alt_brief(results: dict) -> dict:
+    """An ALT fit's results for an MCP caller."""
+    def ci(items):
+        return [{"name": p["name"], "value": _finite(p["value"]), "ci_95": p.get("ci")} for p in items or []]
+
+    out = {
+        "distribution": results.get("distribution"),
+        "life_model": results.get("life_model"),
+        "unit": results.get("unit", ""),
+        "n_rows": results.get("n"),
+        "stresses": [s.get("label") for s in results.get("stresses") or []],
+        "shape_params": ci(results.get("params")),
+        "life_stress_coefficients": ci(results.get("coefficients")),
+        "tested_levels": [{"stress": lvl["stress"], "n": lvl["n"],
+                           "characteristic_life": _finite(lvl.get("characteristic_life"))}
+                          for lvl in results.get("levels") or []],
+        "gof": {g["id"]: _finite(g["value"]) for g in results.get("gof") or []},
+        "bounds_methods": results.get("bounds_methods") or list(alt_fit.BOUND_METHODS),
+    }
+    if results.get("interval_censored"):
+        out["interval_censored"] = True
+    if results.get("no_finite_maximum"):
+        out["no_finite_maximum"] = results["no_finite_maximum"]
+    return out
+
+
+@_tool("fit_alt_model", _WRITE, "Fit and save an accelerated life model")
+def fit_alt_model(
+    ctx: Context,
+    name: Annotated[str, Field(min_length=1, description="Name for the saved ALT model.")],
+    life_model: Annotated[Literal[tuple(alt_fit.LIFE_MODEL_CHOICES)], Field(
+        description="The life-stress relationship: " + "; ".join(
+            f"{k} ({v['n_stress']} stress{'es' if v['n_stress'] > 1 else ''}) — {v['desc']}"
+            for k, v in alt_fit.LIFE_MODELS.items()))] = "arrhenius",
+    distribution: Annotated[Literal[alt_fit.ALT_DISTRIBUTIONS], Field(
+        description="The life distribution at each stress (its scale follows the life-stress "
+                    "relationship).")] = "weibull",
+    data: _FitData = None,
+    data_right: _FitDataRight = None,
+    stresses: _AltStresses = None,
+    censored: _FitCensored = None,
+    counts: _FitCounts = None,
+    trunc_left: _FitTruncLeft = None,
+    trunc_right: _FitTruncRight = None,
+    stress_names: Annotated[Optional[list[str]], Field(
+        description="Inline data: a label per stress, e.g. ['Temperature (K)'].")] = None,
+    c_invert: _FitInvert = False,
+    dataset_id: _FitDataset = None,
+    time_column: _FitTimeCol = None,
+    time_right_column: _FitTimeRightCol = None,
+    stress_columns: Annotated[Optional[list[str]], Field(
+        description="With dataset_id: the stress column(s), in the life-stress relationship's order (one, or "
+                    "two for the dual models).")] = None,
+    censor_column: _FitCensorCol = None,
+    count_column: _FitCountCol = None,
+    trunc_left_column: _FitTruncLeftCol = None,
+    trunc_right_column: _FitTruncRightCol = None,
+    unit: _FitUnit = None,
+) -> dict[str, Any]:
+    """Fit an accelerated life test (ALT) model — failure times at several elevated stress levels plus a
+    life-stress relationship (Arrhenius, Eyring, inverse power, …) — and save it, so alt_use_level can
+    extrapolate to the use stress. Data come inline (data + stresses, one row per unit) or from a saved dataset
+    (time_column + stress_columns). Same censoring convention as fit_distribution: 0 = failed, 1 = still
+    running, -1 = left-censored, 2 = interval-censored — inspection data, failed between two read-outs, with the
+    upper bound in data_right / time_right_column; c_invert=true when the data marks failures with 1. Delayed
+    entry goes in trunc_left (trunc_left_column). Use absolute temperature (K) for the thermal models. Reports
+    the shape and life-stress coefficients with 95% CIs, the fitted life at each tested level and which bound
+    methods alt_use_level offers for these data (no bootstrap for interval or left-censored data)."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    entry = alt_fit.LIFE_MODELS[life_model]
+    if (data is None) == (dataset_id is None):
+        raise ToolError("Give either inline `data` (with `stresses`) or a `dataset_id` — exactly one.")
+    stray = ([k for k, v in (("time_column", time_column), ("time_right_column", time_right_column),
+                             ("stress_columns", stress_columns), ("censor_column", censor_column),
+                             ("count_column", count_column), ("trunc_left_column", trunc_left_column),
+                             ("trunc_right_column", trunc_right_column)) if v] if data is not None
+             else [k for k, v in (("stresses", stresses), ("stress_names", stress_names), ("censored", censored),
+                                  ("counts", counts), ("data_right", data_right), ("trunc_left", trunc_left),
+                                  ("trunc_right", trunc_right)) if v is not None])
+    if stray:
+        other = "dataset_id" if data is not None else "inline data"
+        raise ToolError(f"{', '.join(stray)} only appl{'ies' if len(stray) == 1 else 'y'} with {other} — "
+                        "drop it, or switch to that form.")
+
+    created = None
+    if data is not None:
+        if not data:
+            raise ToolError("`data` is empty.")
+        if not stresses or len(stresses) != len(data):
+            raise ToolError(f"`stresses` needs one entry per time in `data` ({len(data)}).")
+        if any(len(row) != entry["n_stress"] for row in stresses):
+            raise ToolError(f"{entry['name']} takes {entry['n_stress']} stress value"
+                            f"{'s' if entry['n_stress'] > 1 else ''} per row.")
+        labels = list(stress_names or [])
+        if labels and len(labels) != entry["n_stress"]:
+            raise ToolError(f"`stress_names` needs {entry['n_stress']} label(s).")
+        stress_cols = [f"stress{j + 1}" for j in range(entry["n_stress"])]
+        cols: dict[str, list] = ({"xl": list(data), "xr": _per_row(data_right, len(data), "data_right")}
+                                 if data_right is not None else {"x": list(data)})
+        for j, col in enumerate(stress_cols):
+            cols[col] = [row[j] for row in stresses]
+        for key, values, label in (("c", censored, "censored"), ("n", counts, "counts"),
+                                   ("tl", trunc_left, "trunc_left"), ("tr", trunc_right, "trunc_right")):
+            if values is not None:
+                cols[key] = _per_row(values, len(data), label)
+        mapping = {k: k for k in cols if k not in stress_cols}
+        df = pd.DataFrame(cols)
+        labels = labels or stress_cols
+    else:
+        dataset = datasets_service.get_dataset(db, dataset_id, uid)
+        if dataset is None:
+            raise ToolError("Dataset not found.")
+        names = [c["name"] for c in dataset.columns]
+        if not time_column:
+            raise ToolError(f"Say which column holds the times (time_column). Columns: {', '.join(names)}.")
+        if not stress_columns or len(stress_columns) != entry["n_stress"]:
+            raise ToolError(f"{entry['name']} needs {entry['n_stress']} stress column"
+                            f"{'s' if entry['n_stress'] > 1 else ''} (stress_columns). Columns: {', '.join(names)}.")
+        times = {"xl": time_column, "xr": time_right_column} if time_right_column else {"x": time_column}
+        mapping = {k: v for k, v in {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
+                                     "tr": trunc_right_column}.items() if v}
+        for col in [*mapping.values(), *stress_columns]:
+            if col not in names:
+                raise ToolError(f"Column '{col}' isn't in the dataset. Columns: {', '.join(names)}.")
+        stress_cols, labels = list(stress_columns), list(stress_columns)
+        df = datasets_service.load_dataframe(dataset)
+
+    checks = _censor_checks(df, mapping, c_invert, censor_column)
+    if c_invert:
+        if "c" not in mapping:
+            raise ToolError("c_invert flips censoring flags — pass `censored` (or censor_column) too.")
+        df = fitting.invert_censor_column(df, mapping["c"])
+    spec = {"mapping": mapping, "stress_cols": stress_cols, "stress_labels": labels,
+            "distribution_id": distribution, "life_model_id": life_model, "unit": (unit or "").strip()}
+    try:
+        # Checked before anything is stored, with the same message the save gives.
+        alt_fit.build_inputs(df, mapping, stress_cols)
+        if data is not None or c_invert:
+            # The dataset holds the data as fitted (flags already flipped), so the
+            # app reopens the model with the same mapping.
+            csv_bytes = df.to_csv(index=False).encode()
+            reused = db.datasets.find_one({"checksum": storage.checksum(csv_bytes), "owner_id": uid})
+            if reused is None:
+                _cap(db, user, "datasets", "datasets")
+            dataset = datasets_service.create_dataset(db, f"{name.strip()} (data)", csv_bytes, uid)
+            created = None if reused is not None else dataset
+        doc = alt_service.save_model(db, name.strip(), dataset, spec, uid)
+    except FitError as exc:
+        if created is not None:
+            datasets_service.delete_dataset(db, created.id, uid)
+        raise _mcp_fit_error(exc, c_invert) from exc
+    return {
+        "saved": True,
+        "model_id": doc.id,
+        "name": doc.name,
+        "dataset_id": dataset.id,
+        "url": _url(f"/modelling/alt/{doc.id}"),
+        **_censoring(checks),
+        **({"warnings": [checks["warning"]]} if checks.get("warning") else {}),
+        **_alt_brief(doc.results or {}),
+    }
+
+
+def _alt_bounds_summary(b: Optional[dict]) -> Optional[dict]:
+    if not b:
+        return None
+    band = b.get("band") or {}
+    xs, lo, hi = band.get("x") or [], band.get("lower") or [], band.get("upper") or []
+    step = max(1, len(xs) // 20)
+    return {
+        "method": b.get("method"),
+        "confidence": b.get("confidence"),
+        **({"n_boot": b["n_boot"], "seed": b["seed"]} if b.get("n_boot") else {}),
+        "b10": b.get("b_lives", {}).get("b10"),
+        "b1": b.get("b_lives", {}).get("b1"),
+        "mission": b.get("mission"),
+        "reliability_band": [{"t": xs[i], "lower": lo[i], "upper": hi[i]} for i in range(0, len(xs), step)],
+        "parameter_intervals": [{"name": c["name"], "value": c["value"], "kind": c["kind"], "ci": c["ci"]}
+                                for c in b.get("coefficients") or []],
+        "warnings": b.get("warnings") or [],
+        "note": b.get("note"),
+    }
+
+
+@_tool("alt_use_level", _READ, "Extrapolate an ALT model to the use stress")
+def alt_use_level(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="A saved ALT model id (fit_alt_model, or the app's Accelerated "
+                                               "life page).")],
+    use_stress: Annotated[list[float], Field(min_length=1, max_length=2, description=(
+        "The use (field) stress level(s), in the same units and order as the fit — e.g. [313.15] for 40 °C "
+        "with an Arrhenius model fitted in kelvin."))],
+    ref_stress: Annotated[Optional[list[float]], Field(max_length=2, description=(
+        "Optional test stress to report the acceleration factor against (life at use / life at this "
+        "stress)."))] = None,
+    mission_time: Annotated[Optional[float], Field(gt=0, description=(
+        "Optional mission length (model's unit): adds the reliability over it with its lower bound."))] = None,
+    confidence: Annotated[float, Field(ge=0.5, lt=1, description=(
+        "Confidence level of the bounds (default 0.95): a two-sided band on R(t), one-sided lower bounds on "
+        "B10, B1 and the mission reliability."))] = 0.95,
+    bounds_method: Annotated[Literal["wald", "lr", "bootstrap"], Field(description=(
+        "wald (Fisher matrix, instant; default), lr (likelihood ratio: needs no large-sample symmetry, a second "
+        "or two) or bootstrap (200 parametric refits, BCa interval; best coverage when extrapolating with "
+        "plenty of failures, but a paid feature that runs on the calculation service, and not available for "
+        "interval- or left-censored data)."))] = "wald",
+    wait_seconds: Annotated[float, Field(ge=0, le=60, description=(
+        "bootstrap only: how long to wait for the job before returning its job_id (poll get_job)."))] = 30,
+) -> dict[str, Any]:
+    """Extrapolate a saved accelerated life (ALT) model to its use (field) stress: characteristic life, mean
+    life, B50/B10/B1 lives, the reliability over a mission, the acceleration factor against a test stress —
+    and confidence bounds on them (SurPyval 0.23): a two-sided band on R(t), lower bounds on B10, B1 and the
+    mission reliability, and intervals on the shape and life-stress coefficients. Quote the bounds with the
+    point values: an ALT's use-level answer is an extrapolation, and with few failures (a warning says so) no
+    bound method holds its stated confidence."""
+    user, db = _caller(ctx), _db()
+    owners = _owners(user["uid"])
+    try:
+        out = alt_service.evaluate(db, model_id, list(use_stress), owners,
+                                   ref_stress=list(ref_stress) if ref_stress else None,
+                                   mission_time=mission_time, confidence=confidence)
+    except alt_service.ModelNotFound:
+        raise ToolError("ALT model not found.") from None
+    doc = alt_service.get_model(db, model_id, owners)
+    results = doc.results or {}
+    m = out.get("metrics") or {}
+    answer: dict[str, Any] = {
+        "model": doc.name,
+        "model_id": doc.id,
+        "url": _url(f"/modelling/alt/{doc.id}"),
+        "unit": results.get("unit", ""),
+        "use_stress": out.get("use_stress"),
+        "metrics": {k: _finite(v) for k, v in m.items()},
+        "acceleration_factor": (out.get("acceleration_factor") or {}).get("value"),
+        "bounds_methods": out.get("bounds_methods"),
+    }
+    if out.get("no_finite_maximum"):
+        answer["no_finite_maximum"] = out["no_finite_maximum"]
+    if bounds_method == "wald":
+        answer["bounds"] = _alt_bounds_summary(out.get("bounds"))
+        if out.get("bounds_note"):
+            answer["bounds_note"] = out["bounds_note"]
+        return answer
+    if bounds_method == "bootstrap":
+        if not billing_service.premium_compute_allowed(db, user):
+            _soft_refusal("pro_only")
+            answer["bounds"] = _alt_bounds_summary(out.get("bounds"))
+            answer["bounds_note"] = (alt_service.BOOTSTRAP_PRO_PAYLOAD["detail"] + " These are the Wald bounds. "
+                                     + _upgrade_path())
+            return answer
+    code, payload = alt_service.bounds(
+        db, model_id, owners, uid=user["uid"], use_stress=list(use_stress), method=bounds_method,
+        confidence=confidence, mission_time=mission_time, t_max=out.get("t_max"))
+    if code == 202:
+        job = _await_job(db, payload["job"]["job_id"], wait_seconds)
+        if job is not None and job.get("status") == "done":
+            payload, code = job.get("result") or {}, 200
+        elif job is not None and job.get("status") == "failed":
+            raise ToolError(job.get("error") or rbd_jobs_service.FAILED_ERROR)
+        else:
+            answer["bounds"] = None
+            answer["job"] = {**_job_pending(db, job or {"_id": payload["job"]["job_id"]}),
+                             "note": "The bootstrap bounds are running on Reliafy's calculation service. Call "
+                                     "get_job with this job_id in a few seconds for them."}
+            return answer
+    if code != 200:
+        raise ToolError(payload.get("detail") or "Couldn't compute the bounds.")
+    answer["bounds"] = _alt_bounds_summary(payload)
+    return answer
 
 
 # ---------------------------------------------------------------------------
@@ -2653,11 +2942,12 @@ def analyze_rbd(
 def get_job(
     ctx: Context,
     job_id: Annotated[str, Field(description=(
-        "A job_id returned by analyze_rbd, rbd_sensitivity or optimise_maintenance_intervals."))],
+        "A job_id returned by analyze_rbd, rbd_sensitivity, optimise_maintenance_intervals or alt_use_level."))],
 ) -> dict[str, Any]:
-    """Check an analysis job that analyze_rbd, rbd_sensitivity or optimise_maintenance_intervals queued (a long
-    availability simulation, a numerical, windowed or simulated what-to-improve, or a large proof-test interval
-    search runs on Reliafy's calculation service). status is queued
+    """Check an analysis job that analyze_rbd, rbd_sensitivity, optimise_maintenance_intervals or alt_use_level
+    queued (a long availability simulation, a numerical, windowed or simulated what-to-improve, a large
+    proof-test interval search, or an ALT model's bootstrap bounds, runs on Reliafy's calculation service).
+    status is queued
     (with queue_position: jobs ahead of it), running, done (with the same results the tool that queued it
     returns; kind says which) or failed (with the reason in message). Call it every few seconds until done;
     jobs and their results are kept for a week."""
@@ -2666,6 +2956,14 @@ def get_job(
     if job is None or job.get("uid") != user["uid"]:
         raise ToolError("Job not found.")
     out: dict[str, Any] = {"job_id": job["_id"], "status": job.get("status"), "kind": job.get("kind")}
+    if job.get("kind") == rbd_jobs_service.KIND_ALT_BOUNDS:
+        # alt_use_level's bootstrap bounds (#231); rbd_id holds the ALT model.
+        out.update(model_id=job.get("rbd_id"), url=_url(f"/modelling/alt/{job.get('rbd_id')}"))
+        if job.get("status") == "done":
+            return {**out, "available": True, "bounds": _alt_bounds_summary(job.get("result") or {})}
+        if job.get("status") == "failed":
+            return {**out, "available": False, "message": job.get("error") or rbd_jobs_service.FAILED_ERROR}
+        return {**out, "available": False, **_job_pending(db, job)}
     if job.get("rbd_id"):
         out["rbd_id"] = job["rbd_id"]
         out["url"] = _url(f"/rbds/b/{job['rbd_id']}")

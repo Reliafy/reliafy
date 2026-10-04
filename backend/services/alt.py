@@ -8,14 +8,19 @@ bounded in-memory map links persistent ids to live fits as a fast path.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from collections import OrderedDict
 from datetime import datetime, timezone
 
+import numpy as np
 import surpyval
 
 from backend import alt as alt_fit
 from backend.services import access
+from backend.services import compute_core
+from backend.services import rbd_jobs as rbd_jobs_service
 from backend.db import from_doc, to_doc
 from backend.fitting import FitError
 from backend.schema import AltModelDoc
@@ -113,20 +118,100 @@ def delete_model(db, model_id: str, owner_id: str) -> None:
     _LIVE.pop(model_id, None)
 
 
-def evaluate(db, model_id: str, use_stress: list, owner_id, ref_stress=None) -> dict:
-    """Reliability at a use-level stress for a saved ALT model."""
+def evaluate(db, model_id: str, use_stress: list, owner_id, ref_stress=None, *,
+             mission_time=None, confidence=alt_fit.DEFAULT_CONFIDENCE) -> dict:
+    """Reliability at a use-level stress for a saved ALT model, with its Wald
+    confidence bounds (#231; :func:`bounds` gives the other methods)."""
     doc = get_model(db, model_id, owner_id)
     if doc is None:
         raise ModelNotFound(model_id)
     live = get_live_model(db, model_id, owner_id)
     life_model_id = (doc.spec or {}).get("life_model_id", "arrhenius")
-    out = alt_fit.evaluate(live, use_stress, life_model_id, ref_stress=ref_stress)
+    out = alt_fit.evaluate(live, use_stress, life_model_id, ref_stress=ref_stress,
+                           mission_time=mission_time, confidence=alt_fit.check_confidence(confidence))
     # A fit with no finite maximum (#230) extrapolates nothing: the use-level
     # numbers travel with the warning, never without it.
     notice = (doc.results or {}).get("no_finite_maximum")
     if notice:
         out["no_finite_maximum"] = notice
+    out["bounds_methods"] = (doc.results or {}).get("bounds_methods") or list(alt_fit.BOUND_METHODS)
     return out
+
+
+BOOTSTRAP_PRO_PAYLOAD = {
+    "detail": ("Bootstrap bounds refit the model hundreds of times, so they're a paid feature: subscribe to "
+               "Pro or buy AI credits. Wald and likelihood-ratio bounds are free."),
+    "code": "pro_required",
+    "upgrade": True,
+}
+
+
+def _fit_inputs(db, doc: AltModelDoc) -> dict:
+    """The saved model's data as :func:`backend.alt.build_inputs` reads it."""
+    dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
+    if dataset is None:
+        raise FitError("The dataset this model was fitted to is no longer available.")
+    spec = doc.spec or {}
+    return alt_fit.build_inputs(datasets_service.load_dataframe(dataset), spec.get("mapping", {}),
+                                spec.get("stress_cols", []))
+
+
+def bounds(db, model_id: str, owner_id, *, uid: str, use_stress: list, method: str = "wald",
+           confidence=alt_fit.DEFAULT_CONFIDENCE, mission_time=None, t_max=None,
+           n_boot=alt_fit.DEFAULT_N_BOOT, entitled: bool = True) -> tuple[int, dict]:
+    """Confidence bounds at a use stress for a saved ALT model (#231), by
+    ``method``: Wald and likelihood ratio run here (free; the likelihood
+    ratio refits the model from its data when the live one was rehydrated
+    without it); the bootstrap is paid (``entitled``) and runs as a compute
+    job when the queue is configured. Returns ``(status, payload)`` — 200
+    with the bounds, 202 with a job to poll, 402 when not entitled."""
+    doc = get_model(db, model_id, owner_id)
+    if doc is None:
+        raise ModelNotFound(model_id)
+    method = alt_fit.check_method(method)
+    confidence = alt_fit.check_confidence(confidence)
+    spec = doc.spec or {}
+    life_model_id = spec.get("life_model_id", "arrhenius")
+    notice = (doc.results or {}).get("no_finite_maximum")
+
+    def _done(payload: dict) -> dict:
+        return {**payload, **({"no_finite_maximum": notice} if notice else {})}
+
+    if method == "bootstrap":
+        if not entitled:
+            return 402, dict(BOOTSTRAP_PRO_PAYLOAD)
+        n_boot = alt_fit.check_n_boot(n_boot)
+        inputs = _fit_inputs(db, doc)
+        if "bootstrap" not in alt_fit.bounds_methods(inputs):
+            raise FitError("Bootstrap bounds aren't available for inspection (interval-censored) or "
+                           "left-censored data. Use the Wald or likelihood-ratio method.")
+        rows = int(np.shape(inputs["x"])[0])
+        if rows > alt_fit.MAX_ROWS_BOOTSTRAP:
+            raise FitError(f"Bootstrap bounds take up to {alt_fit.MAX_ROWS_BOOTSTRAP:,} data rows; this model "
+                           f"has {rows:,}. With this much data the Wald bounds are reliable.")
+        alt_fit._use_row(use_stress, life_model_id)  # checked before anything is queued
+        request = compute_core.alt_bounds_request(
+            inputs, distribution_id=spec.get("distribution_id", "weibull"), life_model_id=life_model_id,
+            use_stress=use_stress, confidence=confidence, mission_time=mission_time, t_max=t_max,
+            n_boot=n_boot, seed=alt_fit.BOOTSTRAP_SEED)
+        key = "alt_bounds|" + model_id + "|" + hashlib.sha256(
+            json.dumps(request, sort_keys=True, default=float).encode()).hexdigest()
+        code, payload = rbd_jobs_service.run_alt_bounds(db, uid=uid, request=request, cache_key=key,
+                                                        model_id=model_id)
+        return code, (_done(payload) if code == 200 else payload)
+
+    if method == "lr":
+        # Checked before any refit: the search's cost grows with the rows.
+        rows = int((doc.results or {}).get("n") or 0)
+        if rows > alt_fit.MAX_ROWS_LR:
+            raise FitError(f"Likelihood-ratio bounds take up to {alt_fit.MAX_ROWS_LR:,} data rows here; this "
+                           f"model has {rows:,}. Use the Wald method, which suits this much data well.")
+    live = get_live_model(db, model_id, owner_id)
+    if method == "lr" and not alt_fit.has_data(live):
+        live = _refit(db, doc)
+    return 200, _done(alt_fit.use_level_bounds(
+        live, use_stress, life_model_id, method=method, confidence=confidence, mission_time=mission_time,
+        t_max=t_max))
 
 
 def _remember_live(model_id: str, cache_id: str) -> None:

@@ -8,6 +8,8 @@ const fmt = (v, d = 4) =>
     ? "—"
     : Number(v).toLocaleString(undefined, { maximumSignificantDigits: d });
 
+const ci = (pair) => (Array.isArray(pair) && pair.length === 2 ? `${fmt(pair[0])} – ${fmt(pair[1])}` : "—");
+
 // Palette for the per-secondary-stress series (two-stress models).
 const SERIES = ["#2f6df6", "#d0762f", "#2faa6a", "#a05ad0", "#d05a5a", "#0f9ab0"];
 
@@ -47,6 +49,32 @@ export default function AltResultView({ results, modelId }) {
     });
   });
 
+  // Inspection data (#237): each unit found failed between two read-outs is a
+  // vertical range at its stress; units seen to fail are points.
+  const obs = plot.observations;
+  if (obs) {
+    const times = obs.ranges.time;
+    // A range from 0 (failed before the first read-out) runs to the foot of a
+    // log axis: half the smallest positive time drawn.
+    const floor = plot.log_y
+      ? Math.min(...[...times, ...obs.failures.time].filter((t) => t > 0)) / 2
+      : 0;
+    if (obs.n_ranges) {
+      traces.push({
+        x: obs.ranges.stress, y: times.map((t) => (t === 0 ? floor : t)), mode: "lines", type: "scatter",
+        line: { color: "rgba(208,118,47,0.55)", width: 3 }, name: "Failed between inspections",
+        hoverinfo: "skip", showlegend: true,
+      });
+    }
+    if (obs.n_failures) {
+      traces.push({
+        x: obs.failures.stress, y: obs.failures.time, mode: "markers", type: "scatter",
+        marker: { color: "rgba(208,118,47,0.9)", size: 6, symbol: "circle" }, name: "Failure",
+        hovertemplate: `${plot.x_label}: %{x}<br>Failed at: %{y:.4g}<extra></extra>`,
+      });
+    }
+  }
+
   const layout = {
     autosize: true, height: 420,
     margin: { l: 70, r: 20, t: 20, b: 55 },
@@ -57,7 +85,7 @@ export default function AltResultView({ results, modelId }) {
       type: plot.log_y ? "log" : "linear", gridcolor: "#eef1f5",
     },
     legend: { orientation: "h", y: -0.18 },
-    showlegend: twoStress,
+    showlegend: twoStress || !!obs,
   };
 
   const prob = r.probability_plot || null;
@@ -86,6 +114,9 @@ export default function AltResultView({ results, modelId }) {
             Each diamond is a tested stress level; the line is the fitted
             life-stress relationship, extended below the lowest test stress toward
             your use level. {plot.log_y ? "The life axis is logarithmic." : ""}
+            {obs ? ` Inspection data: each orange bar is a unit found failed between two read-outs${
+              obs.shown < obs.n_ranges + obs.n_failures ? ` (${obs.shown.toLocaleString()} of ${(obs.n_ranges + obs.n_failures).toLocaleString()} shown)` : ""
+            }; the fit takes the whole interval, not a midpoint.` : ""}
           </p>
         </div>
       )}
@@ -101,17 +132,27 @@ export default function AltResultView({ results, modelId }) {
           <div className="alt-cols">
             <div>
               <div className="ds-section-h">Distribution</div>
-              <p className="muted-line">{r.distribution} · {r.life_model} life-stress model · n = {r.n}</p>
-              <table className="mini-table">
+              <p className="muted-line">
+                {r.distribution} · {r.life_model} life-stress model · n = {r.n}
+                {r.interval_censored ? " · inspection (interval) data" : ""}
+              </p>
+              <table className="mini-table alt-coef-table">
+                <thead><tr><th>Parameter</th><th>Estimate</th><th>95% CI</th></tr></thead>
                 <tbody>
                   {(r.params || []).map((p) => (
-                    <tr key={p.name}><td>{p.name}</td><td>{fmt(p.value)}</td></tr>
+                    <tr key={p.name}><td>{p.name}</td><td>{fmt(p.value)}</td><td>{ci(p.ci)}</td></tr>
                   ))}
                   {(r.coefficients || []).map((c) => (
-                    <tr key={c.name}><td>{c.name} <span className="muted">(life-stress)</span></td><td>{fmt(c.value)}</td></tr>
+                    <tr key={c.name}>
+                      <td>{c.name} <span className="muted">(life-stress)</span></td><td>{fmt(c.value)}</td><td>{ci(c.ci)}</td>
+                    </tr>
                   ))}
                 </tbody>
               </table>
+              <p className="muted-line" style={{ margin: "4px 0 0" }}>
+                Wald intervals (SurPyval's param_cb). The use-level calculator gives likelihood-ratio
+                {(r.bounds_methods || ["bootstrap"]).includes("bootstrap") ? " and bootstrap" : ""} intervals too.
+              </p>
               {(r.gof || []).length > 0 && (
                 <p className="muted-line" style={{ marginBottom: 0 }}>
                   {r.gof.map((g) => `${g.label} ${fmt(g.value, 5)}`).join(" · ")}

@@ -31,7 +31,10 @@ export default function AltNewPage() {
 
   const [distribution, setDistribution] = useState("weibull");
   const [lifeModel, setLifeModel] = useState("arrhenius");
-  const [map, setMap] = useState({ x: "", c: "", n: "" });
+  const [map, setMap] = useState({ x: "", xl: "", xr: "", c: "", n: "" });
+  // Inspection data (#237): each failure known only to lie between two
+  // inspections, mapped as xl (last passed) and xr (found failed) in place of x.
+  const [inspection, setInspection] = useState(false);
   const [stress, setStress] = useState([{ col: "", label: "" }]);
   const [unit, setUnit] = useState("");
 
@@ -63,7 +66,8 @@ export default function AltNewPage() {
 
   const loadColumns = (columns, preview, nRows) => {
     setCsv({ columns, preview: preview || [], n_rows: nRows });
-    setMap({ x: columns[0] || "", c: "", n: "" });
+    setMap({ x: columns[0] || "", xl: "", xr: "", c: "", n: "" });
+    setInspection(false);
     // Default the stress columns to the ones after the failure time.
     setStress(Array.from({ length: nStress }, (_, j) => ({ col: columns[j + 1] || "", label: "" })));
   };
@@ -96,8 +100,13 @@ export default function AltNewPage() {
   const onDrop = (e) => { e.preventDefault(); setDragging(false); pickFile(e.dataTransfer.files?.[0]); };
 
   const stressCols = stress.slice(0, nStress).map((s) => s.col);
-  const allMapped = map.x && stressCols.every(Boolean);
-  const distinct = new Set([map.x, ...stressCols]).size === 1 + nStress;
+  const timeCols = inspection ? [map.xl, map.xr] : [map.x];
+  const allMapped = timeCols.every(Boolean) && stressCols.every(Boolean);
+  const distinct = new Set([...timeCols, ...stressCols]).size === timeCols.length + nStress;
+  // What's posted: the failure time, or the inspection interval — never both.
+  const mapping = inspection
+    ? { xl: map.xl, xr: map.xr, c: map.c, n: map.n }
+    : { x: map.x, c: map.c, n: map.n };
   const mappingValid = allMapped && distinct;
 
   const setStressAt = (j, patch) =>
@@ -108,7 +117,7 @@ export default function AltNewPage() {
     setLoading(true); setError(null);
     try {
       const opts = {
-        datasetId, mapping: map, stress: stress.slice(0, nStress),
+        datasetId, mapping, stress: stress.slice(0, nStress),
         distribution, lifeModel, unit,
       };
       const res = await fitAlt(datasetId ? null : file, opts);
@@ -124,7 +133,7 @@ export default function AltNewPage() {
     setSaving(true); setError(null);
     try {
       const saved = await saveAltModel(name.trim(), null, {
-        datasetId: result.dataset_id, mapping: map, stress: stress.slice(0, nStress),
+        datasetId: result.dataset_id, mapping, stress: stress.slice(0, nStress),
         distribution, lifeModel, unit,
       });
       navigate(`/modelling/alt/${saved.id}`);
@@ -249,10 +258,27 @@ export default function AltNewPage() {
             <p className="muted-line">{sourceName} · {csv.n_rows} rows · {csv.columns.length} columns</p>
             <PreviewTable columns={csv.columns} rows={csv.preview} />
             <div className="alt-map">
-              <div className="alt-map-row">
-                <span className="alt-map-k">Failure time (x)</span>
-                <Select value={map.x} onChange={(v) => setMap((m) => ({ ...m, x: v }))} options={colOpts} placeholder="column…" />
-              </div>
+              <label className="alt-interval-toggle">
+                <input type="checkbox" checked={inspection} onChange={(e) => setInspection(e.target.checked)} />
+                <span>Inspection data — each failure was found at an inspection, between two read-outs</span>
+              </label>
+              {inspection ? (
+                <>
+                  <div className="alt-map-row">
+                    <span className="alt-map-k">Last inspection passed (xl)</span>
+                    <Select value={map.xl} onChange={(v) => setMap((m) => ({ ...m, xl: v }))} options={colOpts} placeholder="column…" />
+                  </div>
+                  <div className="alt-map-row">
+                    <span className="alt-map-k">Found failed at (xr)</span>
+                    <Select value={map.xr} onChange={(v) => setMap((m) => ({ ...m, xr: v }))} options={colOpts} placeholder="column…" />
+                  </div>
+                </>
+              ) : (
+                <div className="alt-map-row">
+                  <span className="alt-map-k">Failure time (x)</span>
+                  <Select value={map.x} onChange={(v) => setMap((m) => ({ ...m, x: v }))} options={colOpts} placeholder="column…" />
+                </div>
+              )}
               {stress.slice(0, nStress).map((s, j) => (
                 <div className="alt-map-row" key={j}>
                   <span className="alt-map-k">Stress {nStress > 1 ? j + 1 : ""}</span>
@@ -277,8 +303,18 @@ export default function AltNewPage() {
                        value={unit} onChange={(e) => setUnit(e.target.value)} />
               </label>
             </div>
+            {inspection && (
+              <p className="muted-line" style={{ margin: 0 }}>
+                A unit found failed lies between the two columns (censor flag 2). One still running repeats its
+                last time in both, or leaves “found failed at” blank (flag 1); one seen to fail repeats its failure
+                time (flag 0). Without a censor column, unequal times read as intervals.
+              </p>
+            )}
             {!mappingValid && (
-              <p className="hint">Map a failure-time column and {nStress} distinct stress column{nStress > 1 ? "s" : ""}.</p>
+              <p className="hint">
+                Map {inspection ? "both inspection columns" : "a failure-time column"} and {nStress} distinct stress
+                column{nStress > 1 ? "s" : ""}.
+              </p>
             )}
           </div>
         )}

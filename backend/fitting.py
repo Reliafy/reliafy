@@ -2245,8 +2245,22 @@ def _fit_regression(
     mapping = {k: v for k, v in mapping.items() if v}
 
     # Only pass columns that were actually mapped — not every fitter (e.g. Cox)
-    # accepts every optional column keyword.
-    fit_kwargs = {"x_col": mapping.get("x")}
+    # accepts every optional column keyword. Inspection (interval-censored)
+    # data maps ``xl``/``xr`` in place of ``x`` (#237): SurPyval 0.23's
+    # ``fit_from_df`` takes them as ``xl_col``/``xr_col`` (#571), the same
+    # model as ``fit`` with a two-column ``x``.
+    interval = bool(mapping.get("xl") or mapping.get("xr"))
+    if interval:
+        if not (mapping.get("xl") and mapping.get("xr")) or mapping.get("x"):
+            raise FitError("Map the failure time to x, or inspection data to both xl (the last inspection "
+                           "it passed) and xr (the one that found it failed), not both.")
+        if distribution == "cox_ph":
+            raise FitError("Cox PH can't fit interval-censored (inspection) data: its partial likelihood "
+                           "needs each failure's exact time. Choose a parametric regression model (e.g. "
+                           "Weibull PH), which takes the intervals as they are.")
+        fit_kwargs = {"xl_col": mapping["xl"], "xr_col": mapping["xr"]}
+    else:
+        fit_kwargs = {"x_col": mapping.get("x")}
     for field, kw in (("c", "c_col"), ("n", "n_col"), ("tl", "tl_col"), ("tr", "tr_col")):
         if mapping.get(field):
             fit_kwargs[kw] = mapping[field]
@@ -2265,7 +2279,7 @@ def _fit_regression(
         reissue_deprecations(caught)
         gof = _goodness_of_fit(model)
     except Exception as exc:
-        x_col, c_col = mapping.get("x"), mapping.get("c")
+        x_col, c_col = mapping.get("x") or mapping.get("xl"), mapping.get("c")
         msg = None
         if x_col in df.columns:
             base = getattr(fitter, "distribution", None)
@@ -2325,13 +2339,17 @@ def _fit_regression(
             coef["hazard_ratio"] = coef["ratio"]  # backward compat
         coefficients.append(coef)
 
-    x_col = mapping.get("x")
+    x_col = mapping.get("x") or mapping.get("xl")
     x_vals = (
         pd.to_numeric(df[x_col], errors="coerce").dropna().to_numpy()
         if x_col
         else np.array([])
     )
     n = int(x_vals.size)
+    if interval:
+        # The calculator's grid reaches the latest finite inspection bound.
+        upper = pd.to_numeric(df[mapping["xr"]], errors="coerce").to_numpy(dtype=float)
+        x_vals = np.concatenate([x_vals[np.isfinite(x_vals)], upper[np.isfinite(upper)]])
 
     # Build the calculator: derive the raw covariate input fields, a time grid,
     # and the function curves at the default covariate values. Stash the model
@@ -2382,6 +2400,7 @@ def _fit_regression(
         "params": baseline,
         "coefficients": coefficients,
         "n": n,
+        **({"interval_censored": True} if interval else {}),
         "gof": gof,
         "functions": functions,
         # How good is this model? Harrell's C, Brier score, AUC (#176).

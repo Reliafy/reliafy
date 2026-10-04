@@ -966,8 +966,8 @@ function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, un
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
-  form.append("x", mapping.x);
-  ["c", "n"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
+  // The failure time x, or inspection data's interval xl / xr (#237).
+  ["x", "xl", "xr", "c", "n", "tl", "tr"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
   // stress = [{col,label}, …]; s1 required, s2 optional.
   if (stress[0]) { form.append("s1", stress[0].col); if (stress[0].label) form.append("s1_label", stress[0].label); }
   if (stress[1]) { form.append("s2", stress[1].col); if (stress[1].label) form.append("s2_label", stress[1].label); }
@@ -1008,11 +1008,35 @@ export function deleteAltModel(id) {
   return request(`/api/alt/models/${id}`, { method: "DELETE" });
 }
 
-export function evaluateAlt(id, useStress, refStress) {
+// Use-level reliability with its Wald confidence bounds (#231). ``opts``:
+// { missionTime, confidence }.
+export function evaluateAlt(id, useStress, refStress, opts = {}) {
   return request(`/api/alt/models/${id}/evaluate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ use_stress: useStress, ...(refStress ? { ref_stress: refStress } : {}) }),
+    body: JSON.stringify({
+      use_stress: useStress,
+      ...(refStress ? { ref_stress: refStress } : {}),
+      ...(opts.missionTime != null ? { mission_time: opts.missionTime } : {}),
+      ...(opts.confidence != null ? { confidence: opts.confidence } : {}),
+    }),
+  });
+}
+
+// Confidence bounds at a use stress by method (wald | lr | bootstrap, #231):
+// the bounds, or (bootstrap with the compute queue) ``{ job }`` to poll at
+// getRbdJob. A 402 (code pro_required) means bootstrap needs Pro or credits.
+export function altBounds(id, { useStress, method, confidence, missionTime, tMax }) {
+  return request(`/api/alt/models/${id}/bounds`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      use_stress: useStress,
+      method,
+      ...(confidence != null ? { confidence } : {}),
+      ...(missionTime != null ? { mission_time: missionTime } : {}),
+      ...(tMax != null ? { t_max: tMax } : {}),
+    }),
   });
 }
 
