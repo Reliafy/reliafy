@@ -153,7 +153,7 @@ export default function RbdHome() {
           <button
             className="secondary"
             disabled={importing}
-            title="Import a diagram from ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA XML, Galileo .dft or an Excel workbook (.xlsx)"
+            title="Import a diagram from ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA XML, Galileo .dft, RePyability JSON or an Excel workbook (.xlsx)"
             onClick={() => fileRef.current?.click()}
           >
             <ImportIcon /> {importing ? "Importing…" : "Import"}

@@ -38,7 +38,7 @@ USERS = {
 }
 UPGRADE = "upgrade to Reliafy Pro (US$19/month)"
 WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
-N_TOOLS = 40
+N_TOOLS = 42
 
 
 @pytest.fixture()

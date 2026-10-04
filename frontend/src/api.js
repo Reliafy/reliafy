@@ -247,6 +247,12 @@ export function getModel(id) {
   return request(`/api/models/${id}`);
 }
 
+// A regression model's "how good is this model?" scores (#176). Stored at fit
+// time; for a model saved before that, computed (and cached) on request.
+export function getModelValidation(id) {
+  return request(`/api/models/${id}/validation`);
+}
+
 // Persist a fit. Same form fields as fitModel, plus a name.
 export function saveModel(
   name,
@@ -333,6 +339,17 @@ export function listDatasets() {
 
 export function getDataset(id) {
   return request(`/api/datasets/${id}`);
+}
+
+// Split a dataset by a column and compare the groups (log-rank, RMST, Gray's).
+// ``body`` = { time_column, group_column, censor_column?, count_column?,
+// cause_column?, c_invert?, groups?, reference?, tau?, unit? }.
+export function compareGroups(datasetId, body) {
+  return request(`/api/datasets/${datasetId}/compare-groups`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 // Upload a CSV as a standalone dataset (deduped by content on the server).
@@ -434,7 +451,7 @@ export function saveRbd(name, graph, id, expectedUpdatedAt) {
   );
 }
 
-// Parse another tool's diagram file (BlockSim, Open-PSA, Galileo, Excel) into
+// Parse another tool's diagram file (BlockSim, Open-PSA, Galileo, RePyability JSON, Excel) into
 // builder graphs. Nothing is saved: the builder opens the chosen one unsaved.
 // ``mapping`` (Excel only) names the sheets/columns when the workbook doesn't
 // follow the template — the server answers code "excel_mapping" when needed.
@@ -646,9 +663,13 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 // (free) without running the paid simulation, true asks for it;
 // ``currentState`` ({nodeId: {down: true, since} | {age}}) starts the figures
 // from now; ``exact`` computes the figures over time of a large diagram.
+// Non-repairable (#173): ``currentState`` ({nodeId: {failed: true} | {age}})
+// analyses the diagram as of now; ``targetReliability`` (e.g. 0.9) adds the
+// design life, the time the system reliability falls to it.
 export function analyzeRbd(
   graph, tMax, covariates, conditionalAge,
-  { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false } = {}
+  { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false,
+    targetReliability = null } = {}
 ) {
   return request("/api/rbds/analyze", {
     method: "POST",
@@ -664,6 +685,7 @@ export function analyzeRbd(
       ...(simulate != null ? { simulate } : {}),
       ...(currentState ? { current_state: currentState } : {}),
       ...(exact ? { exact: true } : {}),
+      ...(targetReliability != null ? { target_reliability: targetReliability } : {}),
     }),
   });
 }
@@ -1298,6 +1320,19 @@ export function downloadRbdPython(id) {
   return withEvent(
     downloadFile(`/api/rbds/${encodeURIComponent(id)}/export.py`, "rbd.py"),
     "rbd_export_python"
+  );
+}
+
+export const JSON_EXPORT_TIP =
+  "The diagram in RePyability's JSON format: load it in Python with rbd_from_json, or import it back into Reliafy.";
+
+// "Download as RePyability JSON" (#174): the saved diagram as RePyability's
+// to_json document (plus Reliafy's labels and layout, which RePyability
+// ignores). Free for every viewer, like the Python download.
+export function downloadRbdJson(id) {
+  return withEvent(
+    downloadFile(`/api/rbds/${encodeURIComponent(id)}/export.json`, "rbd.json"),
+    "rbd_export_json"
   );
 }
 

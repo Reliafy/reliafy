@@ -44,6 +44,7 @@ CLIENT_EVENTS = frozenset({
     "rbd_design",
     "rbd_design_cheapest",
     "rbd_export_python",
+    "rbd_export_json",
     "alt_save",
     "degradation_save",
     "rcm_create",

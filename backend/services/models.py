@@ -518,7 +518,15 @@ def _refit(model: Model) -> str:
     )
     if dataset is None:
         raise ModelNotFound(model.id)
+    functions = _refit_result(model, dataset).get("functions") or {}
+    cache_id = functions.get("model_id")
+    if cache_id is None:
+        raise fitting.FitError("This model has no covariate functions to evaluate.")
+    return cache_id
 
+
+def _refit_result(model: Model, dataset) -> dict:
+    """The full fit payload of the model's spec re-fitted to ``dataset``."""
     df = datasets_service.load_dataframe(dataset)
     spec = _spec(model)
     result = fitting.fit(
@@ -530,8 +538,47 @@ def _refit(model: Model) -> str:
         spec.get("unit"),
         options=spec.get("options"),
     )
-    functions = result.get("functions") or {}
-    cache_id = functions.get("model_id")
-    if cache_id is None:
-        raise fitting.FitError("This model has no covariate functions to evaluate.")
-    return cache_id
+    return result
+
+
+def ensure_validation(db, model: Model) -> dict | None:
+    """A regression model's "how good is this model?" scores (#176).
+
+    Models fitted since #176 carry them in their results. For one saved
+    before, they are computed now by re-fitting the model to its dataset,
+    and cached on the model. If the dataset is gone, the result says the
+    scores are not available (not cached: nothing to compute them from).
+    ``None`` for any other kind of model.
+    """
+    from backend.model_validation import unavailable
+
+    if model.kind != "regression":
+        return None
+    cached = (model.results or {}).get("validation")
+    if cached:
+        return cached
+    dataset = (datasets_service.get_dataset(db, model.dataset_id, owner_id=model.owner_id)
+               if model.dataset_id else None)
+    if dataset is None:
+        return unavailable("Not available: the data this model was fitted to is no longer in Reliafy.")
+    try:
+        result = _refit_result(model, dataset)
+    except fitting.FitError:
+        validation = unavailable("Not available: the model couldn't be re-fitted to its data.")
+    else:
+        validation = result.get("validation") or unavailable(
+            "These scores couldn't be computed for this model.")
+        # The refit is the live model too: keep it for the calculator.
+        cache_id = (result.get("functions") or {}).get("model_id")
+        if cache_id and model.id not in _LIVE:
+            _LIVE[model.id] = cache_id
+            while len(_LIVE) > _LIVE_MAX:
+                _LIVE.popitem(last=False)
+    # Only where no refit has stored scores since (update_fit replaces the
+    # whole results, its own scores included).
+    db.models.update_one(
+        {"_id": model.id, "results.validation": {"$exists": False}},
+        {"$set": {"results.validation": validation}},
+    )
+    model.results = {**(model.results or {}), "validation": validation}
+    return validation

@@ -182,6 +182,30 @@ def test_create_upload_gives_a_single_use_link_and_stores_only_a_hash(env):
     assert _call(env.token[A], "create_upload", {"purpose": "photos", "filename": "x.jpg"}).is_error
 
 
+def test_create_upload_says_what_to_do_when_the_put_cant_get_through(env):
+    """#191: a sandboxed agent's proxy may refuse the PUT. The link, the tool
+    description and the server instructions all point at the existing paths:
+    paste small text, or the user uploads in the app."""
+    from backend import mcp_server
+
+    link = _ok(_call(env.token[A], "create_upload", {"purpose": "dataset", "filename": "lives.csv"}))
+    fallback = link["fallback"]
+    assert "proxy 403" in fallback and "don't retry" in fallback
+    assert "upload_dataset csv" in fallback and "import_rbd content" in fallback and "200 KB" in fallback
+    assert fallback.endswith("(Datasets: https://reliafy.example/datasets/list).")
+    rbd = _ok(_call(env.token[A], "create_upload", {"purpose": "rbd_import", "filename": "plant.rsgz"}))
+    assert "RBDs › Import: https://reliafy.example/rbds/list" in rbd["fallback"]
+
+    async def tools(client):
+        return {t.name: t for t in (await client.list_tools()).tools}
+
+    from backend.tests.test_mcp import _run
+
+    desc = _run(env.token[A], tools)["create_upload"].description
+    assert "can't reach" in desc and "upload_dataset / upload_outage_log csv" in desc
+    assert "create_upload's fallback" in mcp_server.INSTRUCTIONS
+
+
 def test_put_stores_the_file_in_chunks_and_reports_its_format(env, monkeypatch):
     import hashlib
 
@@ -328,6 +352,53 @@ def test_inline_content_for_small_text_formats(env):
     assert "binary" in _err(_call(env.token[A], "import_rbd", {"content": "x", "format": "blocksim"}))
     assert "exactly one" in _err(_call(env.token[A], "import_rbd", {}))
     assert "Unrecognised file" in _err(_call(env.token[A], "import_rbd", {"content": "hello world"}))
+
+
+PUMPS_DFT = """
+toplevel "System";
+"System" or "Pumps" "MCC" "Valve";
+"Pumps" and "PA" "PB";
+"PA" lambda=1e-4; "PB" lambda=1e-4; "MCC" lambda=1e-5; "Valve" lambda=2e-5;
+"""
+
+
+def test_import_preview_shows_the_structure_and_asks_for_the_unit(env):
+    """#187: a preview is enough to check the conversion (structure, edges,
+    minimal cut sets), and a file with no unit is flagged, not left blank."""
+    preview = _ok(_call(env.token[A], "import_rbd", {"content": PUMPS_DFT, "save": False}))
+    (d,) = preview["diagrams"]
+    assert d["structure"] == "(PA ∥ PB) → MCC → Valve"
+    assert d["minimal_cut_sets"] == [["MCC"], ["Valve"], ["PA", "PB"]] and d["n_cut_sets"] == 3
+    assert "input -> PA" in d["edges"] and len(d["edges"]) == 6
+    assert d["unit"] == "" and "Ask the user" in d["unit_warning"] and "time_unit" in d["unit_warning"]
+    assert "doesn't state a time unit" in d["import_notes"][0]
+
+    out = _ok(_call(env.token[A], "import_rbd", {"content": PUMPS_DFT, "time_unit": "Hours"}))
+    (d,) = out["diagrams"]
+    assert d["unit"] == "Hours" and "unit_warning" not in d
+    assert d["structure"] == "(PA ∥ PB) → MCC → Valve"
+    assert "edges" not in d and "minimal_cut_sets" not in d  # the saved answer stays lean
+    assert "read as per Hours" in d["import_notes"][0]
+    assert env.db.rbds.find_one({"_id": d["id"]})["graph"]["unit"] == "Hours"
+
+
+def test_open_psa_fixed_probability_events_import_as_blocks_needing_a_model(env):
+    """#188: a fixed-probability basic event no longer rejects the file. It
+    becomes a block with no life model, listed in needs_model; the rest of
+    the tree imports as usual and nothing is invented."""
+    xml = ('<opsa-mef><define-gate name="Top"><or><gate name="Pumps"/><basic-event name="MCC"/></or>'
+           '</define-gate><define-gate name="Pumps"><and><basic-event name="PA"/><basic-event name="PB"/>'
+           '</and></define-gate><define-basic-event name="MCC"><float value="0.01"/></define-basic-event>'
+           + _event("PA", 1e-4) + _event("PB", 1e-4) + "</opsa-mef>")
+    out = _ok(_call(env.token[A], "import_rbd", {"content": xml, "format": "openpsa", "time_unit": "Hours"}))
+    assert out["saved"] is True
+    (d,) = out["diagrams"]
+    assert d["analysable"] is False and d["needs_model"] == ["MCC"] and "Don't invent" in d["needs_model_note"]
+    assert any("fixed probability" in n and "“MCC” (p = 0.01)" in n for n in d["import_notes"])
+    assert d["structure"] == "(PA ∥ PB) → MCC"
+    saved = env.db.rbds.find_one({"_id": d["id"]})["graph"]
+    (mcc,) = [n for n in saved["nodes"] if n["data"].get("label") == "MCC"]
+    assert "model" not in mcc["data"]
 
 
 # ---- Excel targets -------------------------------------------------------------------------

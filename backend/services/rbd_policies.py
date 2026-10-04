@@ -281,6 +281,40 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
     return out
 
 
+def common_cause_note(graph: dict, result: dict) -> Optional[dict]:
+    """Beside the availability figures, the common-cause groups they leave
+    out (#185): RePyability's availability analysis and simulation can't take
+    the groups yet, while a safety function's PFDavg includes them where the
+    proof-test chain covers them. None for a diagram without groups.
+
+    ``availability_with_common_cause`` (1 − PFDavg) is the long-run value
+    with the groups, when the PFDavg includes them."""
+    groups = [g for g in (graph or {}).get("ccf_groups") or [] if len(g.get("members") or []) >= 2]
+    if not groups:
+        return None
+    n = len(groups)
+    them = f"{n} common-cause group{'s' if n != 1 else ''}"
+    safety = (result or {}).get("safety") or {}
+    ccf = safety.get("common_cause") or {}
+    pfd = safety.get("pfd_avg")
+    out: dict[str, Any] = {"groups": n, "included": False}
+    left_out = (f"The availability figures (steady_state_availability, unavailability, the figures over time "
+                f"and the simulation) leave out the diagram's {them}")
+    if ccf.get("included") and pfd is not None:
+        out["availability_with_common_cause"] = 1.0 - float(pfd)
+        out["note"] = (f"{left_out}; safety.pfd_avg includes them. With them, the long-run availability is "
+                       f"{1.0 - float(pfd):.6g} (1 − PFDavg): quote that one for the safety function.")
+    elif safety:
+        out["note"] = (f"{left_out}, and so does safety.pfd_avg"
+                       + (f": {ccf['note']}" if ccf.get("note") else ".")
+                       + " The figures are optimistic by the groups' contribution.")
+    else:
+        out["note"] = (f"{left_out}: RePyability takes common cause in a repairable diagram only in a safety "
+                       "function's PFDavg (mark the diagram as a safety function). The figures are optimistic by "
+                       "the groups' contribution.")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # How the long-run values are found, and the crews' share of the work
 # ---------------------------------------------------------------------------

@@ -85,13 +85,16 @@ def api_get_model(model_id: str, session=Depends(get_session), user: dict = Depe
     if m is None:
         return _err(404, "Model not found.")
     r = models_service.public_results(m)
-    return JSONResponse(content={
+    out = {
         **_model_brief(m),
         "params": r.get("params", []),
         "coefficients": r.get("coefficients", []),
         "metrics": r.get("metrics"),
         "gof": r.get("gof", []),
-    })
+    }
+    if m.kind == "regression":
+        out["validation"] = models_service.ensure_validation(session, m)
+    return JSONResponse(content=out)
 
 
 @router.post("/models/{model_id}/reliability")
