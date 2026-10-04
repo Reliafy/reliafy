@@ -32,7 +32,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 import pandas as pd
 
-from backend.fitting import DISTRIBUTIONS, FitError, param_values
+from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
 from backend.services import rbd_repeats
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
@@ -229,14 +229,10 @@ def _build_distribution(
     except FitError as exc:
         raise AnalysisError(str(exc)) from None
     # Extra fitted quantities (offset gamma, LFP p, ZI f0) rebuild the model
-    # exactly as fitted; sf/ff are well-defined for all of them.
-    extras = {
-        k: float(v)
-        for k, v in (model.get("extras") or {}).items()
-        if k in ("gamma", "p", "f0") and v is not None
-    }
+    # exactly as fitted; sf/ff are well-defined for all of them. LFP p is
+    # SurPyval's lfp_p (0.23, #608).
     try:
-        return dist.from_params(values, **extras)
+        return dist.from_params(values, **surpyval_extras(model.get("extras")))
     except Exception as exc:  # surpyval validates the parameters
         raise AnalysisError(f"{where}: {exc}") from exc
 

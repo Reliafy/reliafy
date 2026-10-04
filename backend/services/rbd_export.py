@@ -51,7 +51,7 @@ from backend.fitting import DISTRIBUTIONS
 from backend.services import rbd_analysis, rbd_next_failure, rbd_repeats
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.22", "repyability": "0.12"}
+_DEFAULT_VERSIONS = {"surpyval": "0.23", "repyability": "0.12"}
 _SURPYVAL_GIT = "https://github.com/derrynknife/SurPyval.git"
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
@@ -108,8 +108,9 @@ def detect_versions() -> dict:
 def install_commands(versions: Optional[dict] = None) -> list[str]:
     """The shell commands that install what an exported script needs, pinned
     to this deployment's versions: SurPyval from git, RePyability's two extra
-    dependencies, then RePyability from git with ``--no-deps`` (its metadata
-    still pins an older SurPyval). The script header and the MCP export's
+    dependencies, then RePyability from git with ``--no-deps`` (so pip can't
+    re-resolve SurPyval from PyPI, whose releases are older). The script
+    header and the MCP export's
     ``run`` field both come from here."""
     v = versions or detect_versions()
     return [
@@ -327,11 +328,18 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
         raise _Missing(
             f"Block '{label}' is missing its {what} parameters. Set them here."
         )
+    # Offset, limited-failure proportion and zero-inflation, by SurPyval's
+    # keywords: the proportion Reliafy stores as "p" is ``lfp_p`` since
+    # SurPyval 0.23 (#608; ``p=`` warns there and fails in 0.24), so the
+    # header then says the script needs 0.23 or later.
     extras = []
-    for key in ("gamma", "p", "f0"):
-        value = (model.get("extras") or {}).get(key)
+    stored = model.get("extras") or {}
+    for key, kw in (("gamma", "gamma"), ("p", "lfp_p"), ("f0", "f0")):
+        value = stored.get(key)
+        if value is None and key == "p":
+            value = stored.get("lfp_p")
         if value is not None:
-            extras.append((key, float(value)))
+            extras.append((kw, float(value)))
     args = ", ".join(_num(v) for _, v in pairs)
     expr = f"surv.{attr}.from_params([{args}]"
     expr += "".join(f", {k}={_num(v)}" for k, v in extras) + ")"
@@ -359,6 +367,7 @@ class _Script:
         self.imports: set[str] = set()
         self.uses_surv = False
         self.uses_missing = False
+        self.uses_lfp = False  # a block written with lfp_p= (SurPyval >= 0.23)
         self.uses_stand_in = False
         self.lines: list[str] = []  # block definitions, in order
         self.subsystems: dict[str, str] = {}  # rbd id -> variable
@@ -387,6 +396,7 @@ class _Script:
         except _Missing as exc:
             return self.missing(var, str(exc), label)
         self.uses_surv = True
+        self.uses_lfp = self.uses_lfp or ", lfp_p=" in expr
         head = f"{prefix_comment or label}: {desc}"
         self.comment(head)
         if spec and (spec.get("modelId") or spec.get("model_id")):
@@ -805,7 +815,7 @@ def to_python(
         body = _nonrepairable_body(script, graph, resolve_model,
                                    resolve_subsystem)
     header = _header(name, unit, repairable, versions, exported_at,
-                     script.placeholders, filename(name))
+                     script.placeholders, filename(name), lfp=script.uses_lfp)
     imports = _imports(script, repairable)
     helpers = _helpers(script)
     parts = [helpers] if helpers else []
@@ -831,7 +841,7 @@ def _command_lines(commands: list[str]) -> list[str]:
 
 
 def _header(name, unit, repairable, versions, exported_at, placeholders,
-            file_name):
+            file_name, lfp=False):
     title = _one_line(name or "Untitled RBD").replace("\\", "/")
     title = title.replace('"""', "'''")
     sp, rp = versions["surpyval"], versions["repyability"]
@@ -861,11 +871,15 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
         *_command_lines(install_commands(versions)),
         "",
         *textwrap.wrap(
-            "RePyability's package metadata still pins an older SurPyval, so "
-            "(like Reliafy's own build) it is installed with --no-deps after "
-            "SurPyval and its two extra dependencies. matplotlib (installed "
+            "Like Reliafy's own build, RePyability is installed with "
+            "--no-deps after SurPyval and its two extra dependencies, so pip "
+            "can't swap in an older SurPyval from PyPI. matplotlib (installed "
             "with SurPyval) is only used for the optional plot.", 79),
         "",
+        *(textwrap.wrap(
+            "Needs SurPyval 0.23 or later: a limited-failure block is built "
+            "with lfp_p=, SurPyval's name for the proportion that ever fails "
+            "since 0.23.", 79) + [""] if lfp else []),
         "Run:",
         "",
         f"    python {file_name}",

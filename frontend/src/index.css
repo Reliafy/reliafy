@@ -6037,6 +6037,25 @@ button.danger:hover { background: #fdeeee; }
   font-size: 13px;
 }
 .sample-tag.shared { color: #3d5a80; background: #eef3f9; border-color: #cfdeed; }
+/* A fit with no finite maximum (#230): its numbers aren't estimates. */
+.sample-tag.nomax { white-space: nowrap; color: #92620c; background: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.45); }
+.no-max-notice details { margin-top: 6px; }
+.no-max-notice summary { cursor: pointer; font-weight: 600; }
+.no-max-notice details p { margin: 6px 0 0; }
+/* Per-demand batches (#233): label, demands, failures, remove. */
+.pd-batches { display: flex; flex-direction: column; gap: 6px; }
+.pd-batch { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: center; max-width: 460px; }
+.pd-batch.multi { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 34px; max-width: 640px; }
+.pd-batch-head { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+.pd-batch input {
+  width: 100%; min-width: 0; box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px;
+  font-size: 14px; font-family: inherit; color: var(--ink); background: var(--bg);
+}
+.pd-batch input:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-t); }
+.pd-remove { padding: 6px 0; width: 34px; line-height: 1; }
+.pd-add { align-self: flex-start; margin-top: 4px; }
+.pd-batch-table { overflow-x: auto; margin-top: 10px; max-width: 640px; }
 
 /* Blog post images (screenshots) */
 .blog-prose img {
@@ -6601,6 +6620,8 @@ button.danger:hover { background: #fdeeee; }
 
 /* ---- Accelerated Life Testing (ALT) ---- */
 .alt-result { display: flex; flex-direction: column; gap: 14px; }
+/* Four tabs don't fit a phone: wrap them rather than widen the page. */
+.alt-result > .seg { flex-wrap: wrap; max-width: 100%; }
 .alt-plot-wrap { display: flex; flex-direction: column; gap: 8px; }
 .alt-model-pick { display: flex; gap: 16px; flex-wrap: wrap; }
 .alt-detail .alt-cols {

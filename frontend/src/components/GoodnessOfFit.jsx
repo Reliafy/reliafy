@@ -4,7 +4,9 @@
 const fmt = (v) =>
   Math.abs(v) >= 1e-4 || v === 0 ? Number(v).toFixed(2) : Number(v).toExponential(2);
 
-export default function GoodnessOfFit({ gof, n }) {
+// ``note`` qualifies the numbers, e.g. a Cox model's AIC is on its partial
+// likelihood and compares only with other Cox models (SurPyval 0.23, #604).
+export default function GoodnessOfFit({ gof, n, note }) {
   if (!gof || gof.length === 0) {
     return <p className="muted-line">No goodness-of-fit metrics available.</p>;
   }
@@ -23,6 +25,7 @@ export default function GoodnessOfFit({ gof, n }) {
           <span className="gv">{n}</span>
         </div>
       )}
+      {note && <p className="muted-line" style={{ margin: "8px 0 0" }}>{note}</p>}
     </div>
   );
 }

@@ -21,6 +21,7 @@ for persistence and rehydrated without re-fitting.
 from __future__ import annotations
 
 import uuid
+import warnings
 from collections import OrderedDict
 from typing import Optional
 
@@ -33,6 +34,10 @@ from backend.fitting import (
     _eval_functions,
     _json_safe,
     failure_positions_mask,
+    no_maximum_notice,
+    outside_support_message,
+    reissue_deprecations,
+    without_intervals,
 )
 from surpyval import AcceleratedLife
 from surpyval.univariate.regression import accelerated_life as _al
@@ -239,15 +244,35 @@ def fit(
     inputs = build_inputs(df, mapping, stress_cols)
     dist = DISTRIBUTIONS[distribution_id]["dist"]
     try:
-        model = AcceleratedLife(dist, entry["model"]).fit(**inputs)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            model = AcceleratedLife(dist, entry["model"]).fit(**inputs)
+        reissue_deprecations(caught)
     except FitError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
-        raise FitError(str(exc) or f"{type(exc).__name__}") from exc
+        # Named by the dataset's own rows (build_inputs drops unusable ones).
+        c_col = mapping.get("c")
+        msg = outside_support_message(
+            exc, pd.to_numeric(df[mapping["x"]], errors="coerce").to_numpy(float),
+            pd.to_numeric(df[c_col], errors="coerce").fillna(0).to_numpy(float)
+            if c_col in df.columns else None,
+            DISTRIBUTIONS[distribution_id]["name"], getattr(dist, "support", (0.0, np.inf)))
+        raise FitError(msg or str(exc) or f"{type(exc).__name__}") from exc
 
     payload = _build_payload(
         model, inputs, distribution_id, life_model_id, unit, stress_cols, stress_labels
     )
+    # No finite maximum (#230): an ALT fit with the failures at too few stress
+    # levels; the use-level extrapolation of such a fit means nothing.
+    pm = getattr(entry["model"], "phi_param_map", {}) or {}
+    names = [n for n, _ in sorted(pm.items(), key=lambda kv: kv[1])]
+    payload["maximum"] = getattr(model, "maximum", None)
+    notice = no_maximum_notice(model, caught, names, kind="alt")
+    if notice:
+        payload["no_finite_maximum"] = notice
+        payload["params"] = without_intervals(payload["params"])
+        payload["coefficients"] = without_intervals(payload["coefficients"])
     return payload, store_live(model)
 
 

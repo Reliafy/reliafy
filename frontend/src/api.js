@@ -281,13 +281,16 @@ export function deleteModel(id) {
   return request(`/api/models/${id}`, { method: "DELETE" });
 }
 
-// Create a per-demand (Binomial) model from demands + failures counts.
-export function createPerDemandModel(name, demands, failures, confidence = 0.95) {
+// Create a per-demand (Binomial) model. ``source`` is one of
+// { batches: [{label, demands, failures}] } (one row = one count) or
+// { dataset_id, demands_column, failures_column, batch_column? }; the bounds
+// are exact at ``confidence`` (#233).
+export function createPerDemandModel(name, source, confidence = 0.95) {
   return withEvent(
     request("/api/models/per-demand", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, demands: Number(demands), failures: Number(failures), confidence: Number(confidence) }),
+      body: JSON.stringify({ name, ...source, confidence: Number(confidence) }),
     }),
     "model_save"
   );

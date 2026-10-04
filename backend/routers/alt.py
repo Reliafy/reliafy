@@ -51,6 +51,7 @@ def _model_summary(doc, ctx: AccessCtx) -> dict:
         "life_model": r.get("life_model"),
         "n": r.get("n"),
         "n_stresses": len(r.get("stresses") or []),
+        **({"no_finite_maximum": True} if r.get("no_finite_maximum") else {}),  # #230
         "unit": r.get("unit", ""),
         "dataset_id": doc.dataset_id,
         "is_sample": samples_service.is_sample(doc.owner_id),
