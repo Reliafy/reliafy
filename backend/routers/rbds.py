@@ -317,7 +317,10 @@ def exact_payload(session, graph: dict, t_max, state, doc, writable: bool, resol
     deferral = rbd_analysis.exact_deferral(graph, requested)
     if deferral is not None:
         return {**rbds_service.long_run_only(session, graph, resolve_owners, t_max, state), "exact": deferral}
-    key = rbds_service.exact_cache_key(graph, t_max, state)
+    # The referenced saved models' fits are in the key, so a refit makes a
+    # saved result stale (#92).
+    models = rbds_service.model_fingerprints(session, graph, resolve_owners)
+    key = rbds_service.exact_cache_key(graph, t_max, state, models)
     hit = rbds_service.cached_exact(doc, key, resolve_owners)
     if hit is not None:
         return {**hit, "exact": {**(hit.get("exact") or {}), "cached": True}}
@@ -386,7 +389,8 @@ def availability_payload(
     free = exact_payload(session, graph, t_max, state, doc, writable, resolve_owners, exact)
 
     # The simulation: the saved one (from new only), or a run.
-    key = rbds_service.availability_cache_key(graph, t_max)
+    models = rbds_service.model_fingerprints(session, graph, resolve_owners)
+    key = rbds_service.availability_cache_key(graph, t_max, models)
     cached = rbds_service.cached_availability(doc, key) if state is None else None
     wanted = bool(force) or (entitled if simulate is None else bool(simulate))
     run = entitled and wanted and (cached is None or bool(force))

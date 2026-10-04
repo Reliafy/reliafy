@@ -168,8 +168,10 @@ def test_compute_app_health_and_availability():
     from backend.services import compute_core
 
     tc = TestClient(compute_app.app)
-    health = tc.get("/healthz").json()
+    health = tc.get("/health").json()
     assert health["ok"] is True and health["repyability_version"].startswith("0.12")
+    # /healthz (Cloud Run reserves paths ending in "z") stays, for local use.
+    assert tc.get("/healthz").json() == health
 
     request = compute_core.availability_request(_graph(), n_simulations=20)
     r = tc.post("/compute/availability", json=request)
@@ -884,6 +886,49 @@ def test_quick_result_never_replaces_a_full_one(client):
     quick = {"kind": "repairable", "quick": True, "steady_state_availability": 0.8}
     assert rbds_service.save_availability_result(client.db, rbd_id, key, quick, FREE) is None
     assert client.db.rbds.find_one({"_id": rbd_id})["availability_cache"]["result"]["quick"] is False
+
+
+def test_what_if_run_never_replaces_a_saved_result_keyed_on_a_model(client):
+    """#92 + #149: for a diagram whose block references a saved model by id,
+    the saved key includes that model's fit. The store guard rebuilds it in
+    the run's scope, so an unsaved what-if run (in-process or a queued job)
+    can't pass for the diagram as saved and overwrite its current result."""
+    from backend.services import rbd_jobs
+    from backend.services import rbds as rbds_service
+    from backend.tests.test_availability_paid import _graph_with_ph_block
+
+    db = client.db
+    graph, _ = _graph_with_ph_block(db, PRO)
+    client.act_as(PRO)
+    rbd_id = _save(client, graph)
+    owners = [PRO]
+    saved_key = rbds_service.availability_cache_key(
+        graph, models=rbds_service.model_fingerprints(db, graph, owners))
+    saved = {"kind": "repairable", "quick": False, "steady_state_availability": 0.95}
+    assert rbds_service.save_availability_result(db, rbd_id, saved_key, saved, PRO, owners)
+
+    what_if = _with_param(graph, 1700)
+    key = rbds_service.availability_cache_key(
+        what_if, models=rbds_service.model_fingerprints(db, what_if, owners))
+    doc = db.rbds.find_one({"_id": rbd_id})
+    # Without the scope the saved key misses the fingerprints, the current
+    # result looks stale, and the what-if would have replaced it.
+    assert rbds_service.should_store_availability(doc, key)
+    assert not rbds_service.should_store_availability(doc, key, db, owners)
+
+    other = {"kind": "repairable", "quick": False, "steady_state_availability": 0.5}
+    assert rbds_service.save_availability_result(db, rbd_id, key, other, PRO, owners) is None
+    # A queued job carries the scope it was keyed in, for the same guard.
+    job = rbd_jobs.create(db, uid=PRO, kind=rbd_jobs.KIND_AVAILABILITY, request={}, cache_key=key,
+                          rbd_id=rbd_id, quick=False, store=True, owners=owners)
+    assert job["owners"] == owners
+    assert rbd_jobs._store_result(db, job, other) is None
+    entry = db.rbds.find_one({"_id": rbd_id})["availability_cache"]
+    assert entry["key"] == saved_key and entry["result"]["steady_state_availability"] == 0.95
+
+    # A run for the diagram as saved still replaces it.
+    rerun = {**saved, "steady_state_availability": 0.96}
+    assert rbds_service.save_availability_result(db, rbd_id, saved_key, rerun, PRO, owners)
 
 
 @pytest.mark.parametrize("who", [PRO, BUYER, ADMIN])

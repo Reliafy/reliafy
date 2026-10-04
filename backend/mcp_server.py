@@ -318,7 +318,9 @@ counted, even past the allowance.
 
 Conventions — follow them exactly:
 - Censoring: 0 = the unit FAILED at that time, 1 = it was still running (right-censored, a suspension); \
--1 = left-censored (found failed at that time, failed at some unknown earlier time). Spreadsheets are often \
+-1 = left-censored (found failed at that time, failed at some unknown earlier time); 2 = interval-censored \
+(failed between two times: the upper bound goes in data_right / time_right_column). Delayed entry (units in \
+service before records began) is truncation — trunc_left / trunc_left_column — not a flag. Spreadsheets are often \
 the other way round (1 = failed); if so pass c_invert=true rather than rewriting the data. A fit that reports \
 nearly every row censored almost always means the column is inverted.
 - Units: parameters and times are in the model's (or diagram's) time unit. Always state the unit; ask if unsure.
@@ -820,21 +822,50 @@ _FitDistribution = Annotated[str, Field(
                 "expo_weibull, gumbel, logistic, … — or 'best' to fit every plain distribution and keep "
                 "the lowest-AIC one. Regression ids (e.g. weibull_ph) need covariates and a dataset.")]
 _FitData = Annotated[Optional[list[float]], Field(
-    description="Inline failure/suspension times, one per unit. Give this OR dataset_id.")]
+    description="Inline failure/suspension times, one per unit (the interval's lower bound when data_right is "
+                "given). Give this OR dataset_id.")]
 _FitCensored = Annotated[Optional[list[int]], Field(
     description="Censoring flag per time in `data`: 0 = FAILED at that time, 1 = still running "
                 "(right-censored / suspended), -1 = left-censored (found failed at that time, having failed "
-                "at some unknown earlier time). Omit when every time is a failure.")]
+                "at some unknown earlier time), 2 = interval-censored (failed somewhere between data and "
+                "data_right). Omit when every time is a failure.")]
+_FitDataRight = Annotated[Optional[list[float]], Field(
+    description="Interval censoring: each row's upper bound, with `data` as the lower bound — e.g. the "
+                "inspection that found it failed, with `data` the last one it passed. Interval rows take flag "
+                "2; other rows repeat their time here. Without `censored`, equal bounds read as failures and "
+                "unequal ones as intervals.")]
+_FitTruncLeft = Annotated[Optional[Union[float, list[Optional[float]]]], Field(
+    description="Left truncation (delayed entry): the age at which a unit came under observation, e.g. units "
+                "already in service when records began. One number for every row, or one per row (null = not "
+                "truncated). The fit conditions on survival to that age instead of treating the unit as new.")]
+_FitTruncRight = Annotated[Optional[Union[float, list[Optional[float]]]], Field(
+    description="Right truncation: the age beyond which a unit couldn't have been observed (a later failure "
+                "would never have been recorded). One number for every row, or one per row (null = not "
+                "truncated).")]
+_FitMethod = Annotated[Optional[Literal["MLE", "MPS", "MPP", "MSE", "MOM"]], Field(
+    description="Fit method (default MLE, maximum likelihood): MPP = probability-plot (median-rank) "
+                "regression, MPS = maximum product spacing, MSE = least squares against the empirical CDF, "
+                "MOM = method of moments. MOM takes no censoring or truncation, MSE no truncation, and "
+                "interval-censored data needs MLE or MSE.")]
 _FitCounts = Annotated[Optional[list[int]], Field(
     description="Optional count per row of `data` (identical units sharing that time and flag).")]
 _FitInvert = Annotated[bool, Field(
     description="True when the censoring flags use the opposite convention (1 = failed, 0 = running); "
-                "Reliafy flips the 0/1 flags before fitting (-1 is left as is).")]
+                "Reliafy flips the 0/1 flags before fitting (-1 and 2 are left as is).")]
 _FitDataset = Annotated[Optional[str], Field(description="A saved dataset (list_datasets) instead of inline data.")]
 _FitTimeCol = Annotated[Optional[str], Field(description="Dataset column holding the times (required with dataset_id).")]
 _FitCensorCol = Annotated[Optional[str], Field(description="Dataset column holding the censoring flags (0 = failed, "
-                                                             "1 = running, -1 = left-censored).")]
+                                                             "1 = running, -1 = left-censored, 2 = "
+                                                             "interval-censored).")]
 _FitCountCol = Annotated[Optional[str], Field(description="Dataset column holding counts.")]
+_FitTimeRightCol = Annotated[Optional[str], Field(
+    description="Interval censoring: the column holding each row's upper bound, with time_column as the lower "
+                "bound. Interval rows take flag 2; other rows repeat their time in both columns.")]
+_FitTruncLeftCol = Annotated[Optional[str], Field(
+    description="Column holding each row's left-truncation age (delayed entry: the age it came under "
+                "observation; blank = not truncated).")]
+_FitTruncRightCol = Annotated[Optional[str], Field(
+    description="Column holding each row's right-truncation age (blank = not truncated).")]
 _FitCovariates = Annotated[Optional[list[str]], Field(
     description="Dataset covariate columns — regression (proportional-hazards etc.) distributions only.")]
 _FitUnit = Annotated[Optional[str], Field(description="Time unit of the data, e.g. 'hours', 'cycles', 'km'.")]
@@ -842,16 +873,28 @@ _FitUnit = Annotated[Optional[str], Field(description="Time unit of the data, e.
 
 def _mcp_fit_error(exc: FitError, c_invert: bool) -> FitError:
     """A fitting error reworded for an MCP caller: the app's remedy ("tick
-    'My censor column uses 1 = failed'") becomes the c_invert parameter."""
+    'My censor column uses 1 = failed'") becomes the c_invert parameter, and
+    SurPyval's interval-censoring complaints name these tools' inputs."""
     hint = ("You passed c_invert=true, so the flags were flipped before fitting — if the data already uses "
             "0 = failed, drop c_invert." if c_invert else
             "If your flags mark failures with a 1, pass c_invert=true rather than rewriting the data.")
     text = str(exc).replace(fitting.CENSOR_INVERT_HINT, hint)
     text = text.replace("clear the 1 = failed option", "drop c_invert")
     if "Censoring value must only be one of" in text:
-        # SurPyval's wording, for the single-time-column data these tools take.
-        text = ("Censoring flags must each be 0 (failed at that time), 1 (still running: right-censored) or "
-                "-1 (left-censored: failed at some unknown time before it); the data has other values.")
+        text = ("Censoring flags must each be 0 (failed at that time), 1 (still running: right-censored), "
+                "-1 (left-censored: failed at some unknown time before it) or 2 (interval-censored: failed "
+                "between two times — give the upper bound in data_right, or time_right_column with a "
+                "dataset); the data has other values. Units that came under observation late (delayed "
+                "entry) are truncation, not a flag: use trunc_left / trunc_right (or trunc_left_column / "
+                "trunc_right_column).")
+    elif "not interval censored but has interval window" in text:
+        text = ("A row's two times differ (an interval) but its censoring flag isn't 2. Flag interval rows 2; "
+                "failed, right- and left-censored rows repeat their time as the upper bound.")
+    elif "interval censored but only has one failure time" in text:
+        text = ("A row is flagged 2 (interval-censored) but its upper bound equals its lower bound — an "
+                "interval row needs data_right (or time_right_column) above data (or time_column).")
+    elif "only works with Turnbull heuristic" in text:
+        text = "MPP can't fit left- or interval-censored data; use MLE (the default) or MSE."
     return FitError(text)
 
 
@@ -881,8 +924,11 @@ def _censor_counts(df: pd.DataFrame, mapping: dict, invert: bool) -> Optional[di
         n = pd.to_numeric(df[mapping["n"]], errors="coerce") if "n" in mapping else pd.Series(1, index=df.index)
         if invert:
             c = c.map({0: 1, 1: 0}).fillna(c)
-        return {"n_failed": int(n[c == 0].sum()), "n_right_censored": int(n[c == 1].sum()),
-                "n_left_censored": int(n[c == -1].sum())}
+        out = {"n_failed": int(n[c == 0].sum()), "n_right_censored": int(n[c == 1].sum()),
+               "n_left_censored": int(n[c == -1].sum())}
+        if (c == 2).any():
+            out["n_interval_censored"] = int(n[c == 2].sum())
+        return out
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -914,20 +960,28 @@ def _with_censor_checks(summary: dict, checks: dict) -> dict:
     return summary
 
 
-def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, dataset_id, time_column,
-         censor_column, count_column, covariates, unit, save: bool, name: str | None) -> dict[str, Any]:
+def _fit(ctx: Context, **inputs) -> dict[str, Any]:
     """Shared body of fit_distribution (report only) and fit_and_save_model."""
     try:
-        return _fit_body(ctx, distribution=distribution, data=data, censored=censored, counts=counts,
-                         c_invert=c_invert, dataset_id=dataset_id, time_column=time_column,
-                         censor_column=censor_column, count_column=count_column, covariates=covariates,
-                         unit=unit, save=save, name=name)
+        return _fit_body(ctx, **inputs)
     except FitError as exc:
-        raise _mcp_fit_error(exc, c_invert) from exc
+        raise _mcp_fit_error(exc, inputs["c_invert"]) from exc
+
+
+def _per_row(values, n: int, label: str) -> list:
+    """An inline per-row input as a list of ``n``; a single number (allowed
+    for truncation) applies to every row."""
+    if not isinstance(values, list):
+        return [values] * n
+    if len(values) != n:
+        raise ToolError(f"`{label}` must have one entry per time in `data` ({n}).")
+    return list(values)
 
 
 def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, dataset_id, time_column,
-              censor_column, count_column, covariates, unit, save: bool, name: str | None) -> dict[str, Any]:
+              censor_column, count_column, covariates, unit, data_right, trunc_left, trunc_right,
+              time_right_column, trunc_left_column, trunc_right_column, method,
+              save: bool, name: str | None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     known = {fitting.BEST_ID, fitting.MIXTURE_ID, *fitting.DISTRIBUTIONS, *fitting.DISCRETE,
@@ -941,8 +995,11 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
     # Arguments that only apply to the other input form would be ignored:
     # refuse them rather than fit something the caller didn't mean.
     stray = ([k for k, v in (("time_column", time_column), ("censor_column", censor_column),
-                             ("count_column", count_column)) if v] if data is not None
-             else [k for k, v in (("censored", censored), ("counts", counts)) if v is not None])
+                             ("count_column", count_column), ("time_right_column", time_right_column),
+                             ("trunc_left_column", trunc_left_column),
+                             ("trunc_right_column", trunc_right_column)) if v] if data is not None
+             else [k for k, v in (("censored", censored), ("counts", counts), ("data_right", data_right),
+                                  ("trunc_left", trunc_left), ("trunc_right", trunc_right)) if v is not None])
     if stray:
         other = "dataset_id" if data is not None else "inline data"
         raise ToolError(f"{', '.join(stray)} only appl{'ies' if len(stray) == 1 else 'y'} with {other} — "
@@ -952,14 +1009,15 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
     if data is not None:
         if not data:
             raise ToolError("`data` is empty.")
-        cols: dict[str, list] = {"x": list(data)}
-        mapping = {"x": "x"}
-        for key, values, label in (("c", censored, "censored"), ("n", counts, "counts")):
+        # The app's x (or xl + xr) / c / n / tl / tr columns, so a saved
+        # model's dataset reopens in the UI with the same mapping.
+        cols: dict[str, list] = ({"xl": list(data), "xr": _per_row(data_right, len(data), "data_right")}
+                                 if data_right is not None else {"x": list(data)})
+        for key, values, label in (("c", censored, "censored"), ("n", counts, "counts"),
+                                   ("tl", trunc_left, "trunc_left"), ("tr", trunc_right, "trunc_right")):
             if values is not None:
-                if len(values) != len(data):
-                    raise ToolError(f"`{label}` must have one entry per time in `data` ({len(data)}).")
-                cols[key] = list(values)
-                mapping[key] = key
+                cols[key] = _per_row(values, len(data), label)
+        mapping = {k: k for k in cols}
         if covariates:
             raise ToolError("Covariates need a dataset — upload one with upload_dataset and pass dataset_id.")
         df = pd.DataFrame(cols)
@@ -970,18 +1028,30 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         names = [c["name"] for c in dataset.columns]
         if not time_column:
             raise ToolError(f"Say which column holds the times (time_column). Columns: {', '.join(names)}.")
-        mapping = {"x": time_column, "c": censor_column, "n": count_column}
+        times = {"xl": time_column, "xr": time_right_column} if time_right_column else {"x": time_column}
+        mapping = {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
+                   "tr": trunc_right_column}
         mapping = {k: v for k, v in mapping.items() if v}
         for col in [*mapping.values(), *(covariates or [])]:
             if col not in names:
                 raise ToolError(f"Column '{col}' isn't in the dataset. Columns: {', '.join(names)}.")
         df = datasets_service.load_dataframe(dataset)
+    if "xl" in mapping and dist in fitting.REGRESSION_MODELS:
+        raise ToolError("Regression models take one time per row — interval censoring (data_right / "
+                        "time_right_column) needs a plain distribution.")
 
-    options = None
+    options: dict[str, Any] = {}
     if c_invert:
         if "c" not in mapping:
             raise ToolError("c_invert flips censoring flags — pass `censored` (or censor_column) too.")
-        options = {fitting.CENSOR_INVERT_KEY: True}
+        options[fitting.CENSOR_INVERT_KEY] = True
+    if method:
+        # The app greys these out from the mapping alone; say why here.
+        ruled_out = fitting.methods_for_data(mapping)
+        if method in ruled_out:
+            raise ToolError(f"{ruled_out[method]} Use MLE (the default) or another method.")
+        options["how"] = method
+    options = options or None
 
     checks = _censor_checks(df, mapping, c_invert, censor_column)
     if not save:
@@ -1030,28 +1100,40 @@ def fit_distribution(
     ctx: Context,
     distribution: _FitDistribution = "weibull",
     data: _FitData = None,
+    data_right: _FitDataRight = None,
     censored: _FitCensored = None,
     counts: _FitCounts = None,
+    trunc_left: _FitTruncLeft = None,
+    trunc_right: _FitTruncRight = None,
     c_invert: _FitInvert = False,
     dataset_id: _FitDataset = None,
     time_column: _FitTimeCol = None,
+    time_right_column: _FitTimeRightCol = None,
     censor_column: _FitCensorCol = None,
     count_column: _FitCountCol = None,
+    trunc_left_column: _FitTruncLeftCol = None,
+    trunc_right_column: _FitTruncRightCol = None,
     covariates: _FitCovariates = None,
+    method: _FitMethod = None,
     unit: _FitUnit = None,
 ) -> dict[str, Any]:
     """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
     goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Saves nothing — use
     fit_and_save_model to keep the model. Reliafy's censoring convention: 0 = the unit failed, 1 = still
-    running (suspended), -1 = left-censored (found failed, at some unknown earlier time); if the data marks
-    failures with 1, pass c_invert=true. A fit that says every (or
-    all but one) row is censored almost always means the flags are inverted; censoring gives the failures
+    running (suspended), -1 = left-censored (found failed, at some unknown earlier time), 2 = interval-censored
+    (failed between two inspections: the upper bound goes in data_right / time_right_column); if the data marks
+    failures with 1, pass c_invert=true. Units already in service when records began are left-truncated:
+    give their entry age in trunc_left (trunc_left_column) rather than fitting them as new. A fit that says
+    every (or all but one) row is censored almost always means the flags are inverted; censoring gives the failures
     and censored units the fit used — check them against what the user said. Weibull beta < 1 = infant
     mortality, ≈ 1 = random failures, > 1 = wear-out. Regression fits also report `validation`: how good
     the model is (Harrell's C, Brier score against no covariates, time-dependent AUC; see get_model)."""
-    return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
-                dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
-                count_column=count_column, covariates=covariates, unit=unit, save=False, name=None)
+    return _fit(ctx, distribution=distribution, data=data, data_right=data_right, censored=censored,
+                counts=counts, trunc_left=trunc_left, trunc_right=trunc_right, c_invert=c_invert,
+                dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
+                censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
+                trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
+                save=False, name=None)
 
 
 @_tool("fit_and_save_model", _WRITE, "Fit and save a model")
@@ -1060,14 +1142,21 @@ def fit_and_save_model(
     name: Annotated[str, Field(min_length=1, description="Name for the saved model.")],
     distribution: _FitDistribution = "weibull",
     data: _FitData = None,
+    data_right: _FitDataRight = None,
     censored: _FitCensored = None,
     counts: _FitCounts = None,
+    trunc_left: _FitTruncLeft = None,
+    trunc_right: _FitTruncRight = None,
     c_invert: _FitInvert = False,
     dataset_id: _FitDataset = None,
     time_column: _FitTimeCol = None,
+    time_right_column: _FitTimeRightCol = None,
     censor_column: _FitCensorCol = None,
     count_column: _FitCountCol = None,
+    trunc_left_column: _FitTruncLeftCol = None,
+    trunc_right_column: _FitTruncRightCol = None,
     covariates: _FitCovariates = None,
+    method: _FitMethod = None,
     unit: _FitUnit = None,
     demand_batches: Annotated[Optional[list[DemandBatch]], Field(
         min_length=1, description=(
@@ -1080,20 +1169,27 @@ def fit_and_save_model(
     """Fit a life distribution exactly as fit_distribution does, then save it as a model in the user's
     Reliafy workspace (inline data is saved as a dataset too) and return its id and url. Use it when the
     user wants to keep the model — for reliability_at, the calculators, or an RBD block. Same censoring
-    convention: 0 = failed, 1 = still running, -1 = left-censored; c_invert=true when the data marks failures
-    with 1. With demand_batches it saves a per-demand (one-shot) model instead, as fit_per_demand reports
+    convention: 0 = failed, 1 = still running, -1 = left-censored, 2 = interval-censored (with data_right /
+    time_right_column); c_invert=true when the data marks failures with 1. Delayed entry goes in trunc_left
+    (trunc_left_column). With demand_batches it saves a per-demand (one-shot) model instead, as fit_per_demand reports
     it."""
     if demand_batches is not None:
-        stray = [k for k, v in (("data", data), ("censored", censored), ("counts", counts),
+        stray = [k for k, v in (("data", data), ("data_right", data_right), ("censored", censored),
+                                ("counts", counts), ("trunc_left", trunc_left), ("trunc_right", trunc_right),
                                 ("dataset_id", dataset_id), ("time_column", time_column),
-                                ("censor_column", censor_column), ("count_column", count_column),
-                                ("covariates", covariates)) if v is not None]
+                                ("time_right_column", time_right_column), ("censor_column", censor_column),
+                                ("count_column", count_column), ("trunc_left_column", trunc_left_column),
+                                ("trunc_right_column", trunc_right_column), ("covariates", covariates),
+                                ("method", method)) if v is not None]
         if stray:
             raise ToolError(f"{', '.join(stray)} don't apply to a per-demand model — drop them.")
         return _save_per_demand(ctx, name, demand_batches, demand_confidence)
-    return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
-                dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
-                count_column=count_column, covariates=covariates, unit=unit, save=True, name=name)
+    return _fit(ctx, distribution=distribution, data=data, data_right=data_right, censored=censored,
+                counts=counts, trunc_left=trunc_left, trunc_right=trunc_right, c_invert=c_invert,
+                dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
+                censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
+                trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
+                save=True, name=name)
 
 
 def _per_demand_summary(result: dict) -> dict:
@@ -2132,7 +2228,7 @@ def edit_rbd(
     # A saved availability simulation that matched the diagram before this
     # edit no longer does: say so once, briefly.
     saved_sim = db.rbds.find_one({"_id": rbd.id}, {"availability_cache": 1})
-    if rbds_service.availability_outdated_by(saved_sim, rbd.graph or {}, graph):
+    if rbds_service.availability_outdated_by(saved_sim, rbd.graph or {}, graph, db, owners):
         out["simulation_note"] = (
             ("Saving this edit would put" if dry_run else "This edit puts")
             + " the saved availability simulation out of date; analyze_rbd gives the exact figures, "
@@ -2650,7 +2746,7 @@ def cheapest_design(
 
 def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None,
                  params: list[Param] | None, unit: str | None) -> dict:
-    """distribution_id + params, given inline or taken from a saved plain life model."""
+    """distribution_id + params (+ the fit's extras), given inline or taken from a saved plain life model."""
     if model_id and (distribution_id or params):
         raise ToolError("Give exactly one of model_id or distribution_id + params, not both.")
     if model_id:
@@ -2660,8 +2756,10 @@ def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None
         if m.kind != "distribution":
             raise ToolError(f"“{m.name}” is a {m.kind} model — the calculators need a plain life distribution.")
         r = m.results or {}
+        # The fit's offset / LFP fraction / zero inflation, as the app's
+        # calculators pass them: without them the answer is for another model.
         return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": _plain_params(r),
-                "unit": unit or r.get("unit") or ""}
+                "extras": r.get("extras") or None, "unit": unit or r.get("unit") or ""}
     if not distribution_id or not params:
         raise ToolError("Give a model_id, or distribution_id + params.")
     # Params are checked by SurPyval name in the strategy service (an
@@ -4024,9 +4122,11 @@ _SHARE_KINDS = {
     "strategy_analysis": "strategy_analyses",
     "rcm_study": "rcm_studies",
     "fleet": "fleets",
+    "recurrent_model": "recurrent_models",
 }
 _KIND_OF = {collection: kind for kind, collection in _SHARE_KINDS.items()}
-_ShareKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis", "rcm_study", "fleet"]
+_ShareKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis", "rcm_study", "fleet",
+                     "recurrent_model"]
 
 
 def _share_brief(db, link: dict) -> dict:
@@ -4049,7 +4149,8 @@ def _share_brief(db, link: dict) -> dict:
 def share_link(
     ctx: Context,
     kind: Annotated[_ShareKind, Field(description="What to share: model (a fitted life model), dataset, rbd, "
-                                                  "degradation_model, strategy_analysis, rcm_study or fleet.")],
+                                                  "degradation_model, strategy_analysis, rcm_study, fleet "
+                                                  "or recurrent_model (a repairable-system model).")],
     id: Annotated[str, Field(description="The id of one of the user's own items of that kind (e.g. from "
                                          "list_models or list_rbds). Shared samples can't be shared.")],
     password: Annotated[bool, Field(description="Protect the link with a passphrase Reliafy generates. It is "

@@ -19,7 +19,8 @@ Supported:
   warning) and ``periodic-test`` (imported as its failure rate λ, with a
   warning that the test schedule is not modelled);
 * ``define-parameter`` (with ``unit`` — a rate in ``hours-1`` makes the
-  diagram's unit ``hours``) and arithmetic expressions; uncertainty deviates
+  diagram's unit ``hours``; one in ``fit``, failures per 10⁹ hours, is
+  converted to a rate per hour) and arithmetic expressions; uncertainty deviates
   (lognormal/normal/uniform/gamma/beta) are replaced by their mean, with a
   warning;
 * ``define-CCF-group model="beta-factor"`` -> ``ccf_groups`` (other CCF
@@ -60,6 +61,8 @@ MAX_ROOTS = 20
 # Expression nodes evaluated across the whole file: parameters are evaluated
 # where they are used, so a parameter built from others is counted each time.
 MAX_EXPRESSION_STEPS = 1_000_000
+# A rate in FIT (failures in time) is failures per 10⁹ hours.
+_FIT = 1e-9
 _ROOT_TAGS = ("opsa-mef", "open-psa")
 _NON_COHERENT = {"not": "NOT", "xor": "XOR", "nand": "NAND", "nor": "NOR",
                  "iff": "IFF", "imply": "IMPLY"}
@@ -432,6 +435,13 @@ class _Converter:
     # -- expressions ------------------------------------------------------
     def _deref(self, el, depth=0):
         """Follow ``<parameter>`` references to the defining expression."""
+        return self._deref_scaled(el, depth)[0]
+
+    def _deref_scaled(self, el, depth=0) -> tuple:
+        """``(expression, scale)``: :meth:`_deref`, and the factor its value
+        takes to be per hour — 1e-9 when a parameter on the way is in FIT
+        (failures per 10⁹ hours), else 1."""
+        scale = 1.0
         while _tag(el) == "parameter":
             depth += 1
             if depth > 50:
@@ -440,19 +450,27 @@ class _Converter:
             if name is None:
                 raise RbdImportError(f"Parameter “{el.get('name')}” isn't defined.")
             pel = self.m.params[name]
-            self._note_unit(pel)
+            if self._note_unit(pel) == "fit":
+                scale *= _FIT
             kids = _children(pel)
             if len(kids) != 1:
                 raise RbdImportError(f"Parameter “{name}” should hold one expression.")
             el = kids[0]
-        return el
+        return el, scale
 
-    def _note_unit(self, pel):
+    def _note_unit(self, pel) -> str:
+        """Record the time unit a parameter's ``unit`` implies; return it."""
         unit = (pel.get("unit") or "").strip()
+        if unit.lower() == "fit":
+            # Failures per 10⁹ hours: read as a rate per hour (scaled in num).
+            self.units.add("hours")
+            self.note("fit", pel.get("name") or "")
+            return "fit"
         if unit.endswith("-1"):
             self.units.add(unit[:-2])
         elif unit and unit not in ("bool", "int", "float", "fraction", "probability"):
             self.units.add(unit)
+        return unit
 
     def _step(self, name: str) -> None:
         self.steps += 1
@@ -483,7 +501,9 @@ class _Converter:
         if depth > 100:
             raise RbdImportError(f"“{name}”: the expression is nested too deeply.")
         self._step(name)
-        el = self._deref(el)
+        el, scale = self._deref_scaled(el)
+        if scale != 1.0:
+            return scale * self.num(el, name, depth + 1)
         t = _tag(el)
         args = _children(el)
         try:
@@ -552,6 +572,7 @@ _NOTES = {
                      "only; the test interval, test duration and repair aren't modelled.",
     "deviate_mean": "Uncertainty distributions on the parameters of {names} were replaced by their "
                     "mean value.",
+    "fit": "Parameters in FIT ({names}) were converted from failures per 10⁹ hours to a rate per hour.",
 }
 
 

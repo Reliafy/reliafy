@@ -34,8 +34,10 @@ def save_rbd(db, name: str, graph: dict, owner_id: str, rbd_id: str | None = Non
 
     ``expected_updated_at`` (the isoformat the client loaded) makes the update
     optimistic: a mismatch raises :class:`access.EditConflict` instead of
-    overwriting another editor's save. A graph over the size or unit-count
-    limits raises :class:`backend.services.rbd_graph.GraphError`.
+    overwriting another editor's save. The write is conditional on the stamp
+    it checked, so a save racing in between conflicts too. A graph over the
+    size or unit-count limits raises
+    :class:`backend.services.rbd_graph.GraphError`.
     """
     from backend.services.rbd_graph import check_limits
 
@@ -43,17 +45,20 @@ def save_rbd(db, name: str, graph: dict, owner_id: str, rbd_id: str | None = Non
     if rbd_id:
         existing = db.rbds.find_one({"_id": rbd_id, "owner_id": owner_id})
         if existing is not None:
+            query = {"_id": rbd_id, "owner_id": owner_id}
             if expected_updated_at and existing.get("updated_at") is not None:
                 if not access.timestamps_match(existing["updated_at"], expected_updated_at):
                     raise access.EditConflict()
+                query["updated_at"] = existing["updated_at"]
             rbd = from_doc(Rbd, existing)
             rbd.name = name
             rbd.graph = graph
-            rbd.updated_at = datetime.now(timezone.utc)
-            db.rbds.update_one(
-                {"_id": rbd_id, "owner_id": owner_id},
-                {"$set": {"name": name, "graph": graph, "updated_at": rbd.updated_at}},
+            rbd.updated_at = access.next_updated_at(existing.get("updated_at"))
+            result = db.rbds.update_one(
+                query, {"$set": {"name": name, "graph": graph, "updated_at": rbd.updated_at}},
             )
+            if result.matched_count == 0:
+                raise access.EditConflict()
             return rbd
 
     rbd = Rbd(id=uuid.uuid4().hex, name=name, owner_id=owner_id, graph=graph)
@@ -85,7 +90,7 @@ def rename_rbd(db, rbd_id: str, name: str, owner_id: str) -> Rbd:
     if rbd is None or rbd.owner_id != owner_id:
         raise RbdNotFound(rbd_id)
     rbd.name = name
-    rbd.updated_at = datetime.now(timezone.utc)
+    rbd.updated_at = access.next_updated_at(rbd.updated_at)
     db.rbds.update_one(
         {"_id": rbd_id, "owner_id": owner_id},
         {"$set": {"name": name, "updated_at": rbd.updated_at}},
@@ -391,14 +396,85 @@ def _t_sim(t_simulation) -> float | None:
     return t if t > 0 else None
 
 
-def availability_cache_key(graph: dict, t_simulation: float | None = None) -> str:
+# Saved-model kinds the analysis resolves by id, from the live fit, rather
+# than from the parameters stored on the block (rbd_analysis._build_distribution):
+# proportional-hazards / regression models. (Non-parametric blocks are refused,
+# so never analysed.) A load-sharing block's load-life model is resolved too.
+_RESOLVED_KINDS = frozenset({"regression"})
+
+
+def _ref_id(model) -> str | None:
+    if not isinstance(model, dict):
+        return None
+    ref = model.get("modelId") or model.get("model_id")
+    return ref if isinstance(ref, str) and ref else None
+
+
+def _resolved_refs(value, out: set) -> set:
+    """The ids of the regression models referenced anywhere in ``value``
+    (node data: life, spare, repair and maintenance models)."""
+    if isinstance(value, dict):
+        if value.get("kind") in _RESOLVED_KINDS and _ref_id(value):
+            out.add(_ref_id(value))
+        for v in value.values():
+            _resolved_refs(v, out)
+    elif isinstance(value, list):
+        for v in value:
+            _resolved_refs(v, out)
+    return out
+
+
+def _fit_fingerprint(doc: dict) -> str:
+    """A hash of a saved model's fit (what the analysis resolves), so a
+    refit changes it but a rename or a note doesn't; ``updated_at`` for a
+    model with no stored fit."""
+    spec = {k: v for k, v in (doc.get("spec") or {}).items() if k != "notes"}
+    fit = {k: doc.get(k) for k in ("kind", "distribution_id", "results", "serialized")}
+    if not any(fit.values()):
+        return f"updated:{doc.get('updated_at')}"
+    blob = json.dumps({**fit, "spec": spec}, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def model_fingerprints(db, graph: dict, owner_id) -> dict:
+    """``{model_id: fit fingerprint}`` for every saved fitted model the graph
+    resolves by id (proportional-hazards models, wherever they're used, and a
+    load-sharing block's load-life model), in ``owner_id``'s scope as the
+    analysis resolves them; None for one that doesn't resolve (#92). Those
+    blocks carry only the id, so without these a refit wouldn't change a
+    saved result's key. Parametric blocks carry their parameters, already in
+    the key, so a diagram with none of these gets ``{}`` and keeps its key."""
+    refs: set = set()
+    for n in (graph or {}).get("nodes") or []:
+        if not isinstance(n, dict):
+            continue
+        data = n.get("data") or {}
+        _resolved_refs(data, refs)
+        if n.get("type") == "loadshare" and _ref_id(data.get("model")):
+            refs.add(_ref_id(data["model"]))
+    if not refs or db is None:
+        return {}
+    owners = list(owner_id) if isinstance(owner_id, (tuple, set, frozenset)) else owner_id
+    docs = {
+        d["_id"]: d
+        for d in db.models.find({"_id": {"$in": sorted(refs)}, "owner_id": {"$in": access.owner_in(owners)}})
+    }
+    return {mid: (_fit_fingerprint(docs[mid]) if mid in docs else None) for mid in sorted(refs)}
+
+
+def availability_cache_key(graph: dict, t_simulation: float | None = None,
+                           models: dict | None = None) -> str:
     """Deterministic key for an availability result: sha256 of the canonical
-    JSON of the analysis graph plus the simulation settings."""
+    JSON of the analysis graph plus the simulation settings, and the fits of
+    the saved models it references (``models``: :func:`model_fingerprints`)."""
     payload = {
         "v": AVAILABILITY_CACHE_VERSION,
         "graph": canonical_analysis_graph(graph),
         "t_simulation": _t_sim(t_simulation),
     }
+    # Only when the graph references saved models, so other keys are unchanged.
+    if models:
+        payload["models"] = models
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -412,20 +488,25 @@ def cached_availability(doc: dict | None, key: str) -> dict | None:
     return {**entry["result"], "cached": True, "computed_at": entry.get("computed_at")}
 
 
-def availability_outdated_by(doc: dict | None, old_graph: dict, new_graph: dict) -> bool:
+def availability_outdated_by(doc: dict | None, old_graph: dict, new_graph: dict,
+                             db=None, owner_id=None) -> bool:
     """Whether changing a diagram from ``old_graph`` to ``new_graph`` puts its
     saved availability simulation out of date: the saved result matched the
     old diagram (over the default window, or the window it was run over) and
     doesn't match the new one. A result already out of date, or a change the
-    analysis doesn't see (a block moved on the canvas), gives False."""
+    analysis doesn't see (a block moved on the canvas), gives False. With
+    ``db``, the keys include the referenced saved models' fits (#92), resolved
+    in ``owner_id``'s scope, as the saved key does."""
     entry = (doc or {}).get("availability_cache") or {}
     key = entry.get("key")
     if not key:
         return False
+    old_models = model_fingerprints(db, old_graph or {}, owner_id)
+    new_models = model_fingerprints(db, new_graph or {}, owner_id)
     windows = [None, ((entry.get("result") or {}).get("t_simulation"))]
     for t in windows:
-        if availability_cache_key(old_graph or {}, t) == key:
-            return availability_cache_key(new_graph or {}, t) != key
+        if availability_cache_key(old_graph or {}, t, old_models) == key:
+            return availability_cache_key(new_graph or {}, t, new_models) != key
     return False
 
 
@@ -447,11 +528,12 @@ def store_availability(db, rbd_id: str, key: str, result: dict, uid: str | None)
     return computed_at
 
 
-def availability_state_key(graph: dict, t_simulation: float | None, state: dict | None) -> str:
+def availability_state_key(graph: dict, t_simulation: float | None, state: dict | None,
+                           models: dict | None = None) -> str:
     """The key of a simulation from a current state (#155): never the saved
     from-new key, so such a run can't be served as, or replace, the saved
     result."""
-    payload = {"base": availability_cache_key(graph, t_simulation), "state": state or {}}
+    payload = {"base": availability_cache_key(graph, t_simulation, models), "state": state or {}}
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -473,15 +555,19 @@ _exact_lru: "OrderedDict[tuple, dict]" = OrderedDict()
 _exact_lock = threading.Lock()
 
 
-def exact_cache_key(graph: dict, horizon: float | None, state: dict | None) -> str:
+def exact_cache_key(graph: dict, horizon: float | None, state: dict | None,
+                    models: dict | None = None) -> str:
     """sha256 of the canonical analysis graph, the window (None: the default
-    horizon) and the canonical current state."""
+    horizon), the canonical current state and the referenced models' fits
+    (``models``, as for :func:`availability_cache_key`)."""
     payload = {
         "v": EXACT_CACHE_VERSION,
         "graph": canonical_analysis_graph(graph),
         "horizon": _t_sim(horizon),
         "state": state or {},
     }
+    if models:
+        payload["models"] = models
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -561,27 +647,37 @@ def long_run_only(db, graph: dict, owner_id, horizon: float | None = None,
         graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False, state=state)
 
 
-def should_store_availability(doc: dict | None, key: str) -> bool:
+def should_store_availability(doc: dict | None, key: str, db=None, owner_id=None) -> bool:
     """Whether a freshly computed result for ``key`` should replace the saved
     one. Always when it's for the diagram as saved; for an unsaved what-if
     variation only when the saved entry is already stale (so exploring edits
-    never clobbers the result public links and free viewers rely on)."""
+    never clobbers the result public links and free viewers rely on). With
+    ``db``, the saved diagram's key includes its referenced models' fits
+    (resolved in ``owner_id``'s scope), as ``key`` should (#92)."""
     if doc is None:
         return False
-    saved_key = availability_cache_key(doc.get("graph") or {})
+    graph = doc.get("graph") or {}
+    saved_key = availability_cache_key(graph, models=model_fingerprints(db, graph, owner_id))
     if key == saved_key:
         return True
     entry = doc.get("availability_cache") or {}
     return entry.get("key") != saved_key
 
 
-def save_availability_result(db, rbd_id: str, key: str, result: dict, uid: str | None) -> str | None:
+def save_availability_result(db, rbd_id: str, key: str, result: dict, uid: str | None,
+                             resolve_owners=None) -> str | None:
     """Store a freshly computed result on the diagram when it should be
     (:func:`should_store_availability`), but never let a quick (time-capped)
     run replace a full result for the same inputs. Returns ``computed_at``
-    when stored, else None."""
+    when stored, else None.
+
+    ``resolve_owners`` is the scope ``key`` was built in (the analysis's): the
+    saved diagram's key is rebuilt with its referenced models' fits in that
+    scope (#92), so an unsaved what-if run is told apart from the diagram as
+    saved and never replaces its result. None falls back to ``uid``."""
     doc = db.rbds.find_one({"_id": rbd_id})
-    if not should_store_availability(doc, key):
+    scope = resolve_owners if resolve_owners is not None else uid
+    if not should_store_availability(doc, key, db, scope):
         return None
     entry = (doc or {}).get("availability_cache") or {}
     if (

@@ -254,6 +254,52 @@ def test_shared_degradation_model_with_items(client):
     assert r.status_code == 404
 
 
+def test_shared_recurrent_model(client, monkeypatch):
+    """#89: a recurrent-event model shares like the other model types — the
+    recipient sees it read-only (and its dataset), can predict and compute
+    the overhaul interval, can't change it, and can hide it."""
+    from backend.services import email as email_service
+    from backend.tests.test_recurrent import _events_csv
+
+    sent = []
+    monkeypatch.setattr(email_service, "artifact_shared", lambda *a: sent.append(a))
+    client.act_as(B)
+    client.act_as(A)
+    r = client.post("/api/recurrent/models", data={
+        "name": "Fleet X", "i": "system", "x": "time", "t": "obs_end", "model": "crow_amsaa", "unit": "hours",
+    }, files={"file": ("events.csv", _events_csv(), "text/csv")})
+    assert r.status_code == 200, r.text
+    rm = r.json()
+    r = _share(client, "recurrent_models", rm["id"], "b@x.com")
+    assert r.status_code == 200, r.text
+    assert sent and sent[0][-1] == f"/modelling/recurrent/{rm['id']}"
+
+    client.act_as(B)
+    rows = client.get("/api/recurrent/models").json()["models"]
+    row = next(m for m in rows if m["id"] == rm["id"])
+    assert row["read_only"] is True and row["shared_by"] == "a@x.com"
+    detail = client.get(f"/api/recurrent/models/{rm['id']}").json()
+    assert detail["read_only"] is True and detail["results"]["model"]["id"] == "crow_amsaa"
+    # The referenced dataset comes along (as for life models).
+    assert client.get(f"/api/datasets/{rm['dataset_id']}").status_code == 200
+    r = client.post(f"/api/recurrent/models/{rm['id']}/predict", json={"horizon": 400})
+    assert r.status_code == 200 and r.json()["expected_events"] > 0
+    r = client.post(f"/api/recurrent/models/{rm['id']}/overhaul",
+                    json={"cost_repair": 100, "cost_overhaul": 1000})
+    assert r.status_code == 200, r.text
+    assert client.patch(f"/api/recurrent/models/{rm['id']}", json={"name": "x"}).status_code == 403
+
+    # Hiding removes it from B's view only.
+    assert client.delete(f"/api/recurrent/models/{rm['id']}").json()["ok"] is True
+    assert rm["id"] not in [m["id"] for m in client.get("/api/recurrent/models").json()["models"]]
+    client.act_as(A)
+    assert client.get(f"/api/recurrent/models/{rm['id']}").json()["name"] == "Fleet X"
+
+    # A third user sees nothing.
+    client.act_as(C)
+    assert client.get(f"/api/recurrent/models/{rm['id']}").status_code == 404
+
+
 def test_shares_do_not_count_against_caps(client, monkeypatch):
     from backend import config
 

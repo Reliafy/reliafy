@@ -57,7 +57,9 @@ def candidates(db) -> list[dict]:
         owner_id = doc.get("owner_id")
         if not owner_id or owner_id == SAMPLE_OWNER:
             continue
-        key = rbds_service.availability_cache_key(doc.get("graph") or {})
+        graph = doc.get("graph") or {}
+        models = rbds_service.model_fingerprints(db, graph, owner_id)
+        key = rbds_service.availability_cache_key(graph, models=models)
         if rbds_service.cached_availability(doc, key) is not None:
             continue
         if owner_id not in entitled:
@@ -99,7 +101,8 @@ def backfill(db, rows: list[dict], log=print) -> dict:
             tally["failed"] += 1
             log(f"  FAIL {row['id']}: {exc}")
             continue
-        key = rbds_service.availability_cache_key(graph)
+        models = rbds_service.model_fingerprints(db, graph, doc["owner_id"])
+        key = rbds_service.availability_cache_key(graph, models=models)
         rbds_service.store_availability(db, row["id"], key, result, COMPUTED_BY)
         tally["computed"] += 1
         log(f"  saved {row['id']} ({time.monotonic() - started:.1f}s)")

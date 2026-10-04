@@ -47,7 +47,9 @@ def _now():
 
 
 def compute(kind: str, inputs: dict) -> dict:
-    """Run the calculator for ``kind`` on ``inputs`` (the endpoint body shape)."""
+    """Run the calculator for ``kind`` on ``inputs`` (the endpoint body shape,
+    including a fitted model's ``extras`` — offset, LFP fraction, zero
+    inflation — so a saved analysis matches what the calculator showed)."""
     if kind == "optimal_replacement":
         return strategy_service.optimal_replacement(
             inputs.get("distribution_id"),
@@ -55,6 +57,7 @@ def compute(kind: str, inputs: dict) -> dict:
             inputs.get("planned_cost"),
             inputs.get("unplanned_cost"),
             unit=inputs.get("unit"),
+            extras=inputs.get("extras"),
         )
     if kind == "compare_two":
         return strategy_service.compare_two(
@@ -66,6 +69,7 @@ def compute(kind: str, inputs: dict) -> dict:
             inputs.get("params") or [],
             inputs.get("target_availability"),
             unit=inputs.get("unit"),
+            extras=inputs.get("extras"),
         )
     if kind == "demonstration_test":
         return strategy_service.demonstration_test(

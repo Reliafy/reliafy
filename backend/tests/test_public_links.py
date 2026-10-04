@@ -161,3 +161,42 @@ def test_sample_artifacts_rejected(client):
     )
     assert r.status_code == 400
     assert "Samples" in r.json()["detail"]
+
+
+def test_recurrent_model_public_link(client):
+    """#89: a recurrent-event model gets a public page like the other model
+    types: the same payload as in the app, without identities."""
+    from backend.tests.test_recurrent import _events_csv
+
+    client.act_as(A)
+    r = client.post("/api/recurrent/models", data={
+        "name": "Compressor fleet", "i": "system", "x": "time", "t": "obs_end",
+        "model": "crow_amsaa", "unit": "hours",
+    }, files={"file": ("events.csv", _events_csv(), "text/csv")})
+    assert r.status_code == 200, r.text
+    rm_id = r.json()["id"]
+    r = client.post("/api/public-links", json={"collection": "recurrent_models", "artifact_id": rm_id})
+    assert r.status_code == 200, r.text
+    token = r.json()["token"]
+
+    # Only the owner may link it.
+    client.act_as(B)
+    assert client.post(
+        "/api/public-links", json={"collection": "recurrent_models", "artifact_id": rm_id}
+    ).status_code == 404
+
+    client.act_as(None)
+    pub = client.get(f"/api/public/{token}")
+    assert pub.status_code == 200, pub.text
+    data = pub.json()
+    assert data["collection"] == "recurrent_models" and data["shared_by"] == "Alice"
+    a = data["artifact"]
+    assert a["name"] == "Compressor fleet" and a["kind"] == "recurrent"
+    assert a["results"]["model"]["id"] == "crow_amsaa" and a["results"]["mcf"]["observed"]
+    assert "owner_id" not in pub.text and "read_only" not in a and A not in pub.text
+
+    # The link dies with the model.
+    client.act_as(A)
+    client.delete(f"/api/recurrent/models/{rm_id}")
+    client.act_as(None)
+    assert client.get(f"/api/public/{token}").status_code == 404

@@ -32,6 +32,7 @@ import {
   getStrategyAnalysis,
   listFleets,
   getFleet,
+  getRecurrentModel,
   createFleet,
   putFleetItems,
 } from "./api.js";
@@ -132,6 +133,7 @@ const ARTIFACTS = {
   strategy_analyses: ["strategy analysis", getStrategyAnalysis],
   rcm_studies: ["RCM study", getRcmStudy],
   fleets: ["failure forecast", getFleet],
+  recurrent_models: ["recurrent-event model", getRecurrentModel],
 };
 
 async function artifactName(collection, id) {

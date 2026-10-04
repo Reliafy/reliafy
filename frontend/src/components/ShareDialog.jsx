@@ -9,6 +9,7 @@ import {
 // Collections with a public read-only renderer at /p/:token.
 const PUBLIC_LINKABLE = new Set([
   "models", "datasets", "degradation_models", "strategy_analyses", "rcm_studies", "fleets", "rbds",
+  "recurrent_models",
 ]);
 
 // Expiry choices for a new public link ("" = until revoked).
