@@ -515,8 +515,9 @@ function HttpDocs({ base }) {
 // What each MCP tool does, in plain English (mirrors backend/mcp_server.py).
 const MCP_TOOLS = [
   ["list_models / get_model", "Your saved life and recurrent models — distribution, parameters with confidence intervals, goodness of fit, MTTF and B10. Regression models add how good the model is: Harrell’s C, the integrated Brier score against no covariates, and the time-dependent AUC."],
-  ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset, and report the result — nothing is saved. A regression fit reports the same validation scores as get_model."],
-  ["fit_and_save_model", "The same fit, saved as a model in your workspace (Claude asks before saving)."],
+  ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset, and report the result — nothing is saved. A regression fit reports the same validation scores as get_model. A fit whose data don’t pin the model down (say, every failure at one stress) says so — fit_ok: false, maximum: “no finite maximum” and the parameter that runs off — so its numbers aren’t quoted as estimates."],
+  ["fit_and_save_model", "The same fit, saved as a model in your workspace (Claude asks before saving). With demand_batches it saves a per-demand model instead."],
+  ["fit_per_demand", "Per-demand (one-shot) reliability — a valve that must open, a standby start — from one or several batches of demands and failures (sites, lots of different sizes), inline or from a dataset: the failure probability per demand and the reliability per demand with exact (Clopper-Pearson) bounds at your confidence. With zero failures, the success-run demonstration. Nothing is saved."],
   ["save_model", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval — with an optional dataset reference and notes."],
   ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age, and with confidence bounds (the same as the app’s band) where the model has them."],
   ["list_datasets / get_dataset / upload_dataset", "Your datasets, reading one’s columns and rows a page at a time, and saving new data — CSV text, or a CSV or Excel file sent with create_upload."],

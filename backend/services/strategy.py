@@ -16,7 +16,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from backend.fitting import DISTRIBUTIONS, FitError, param_values
+from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
 from repyability.non_repairable import NonRepairable
 from surpyval import KaplanMeier, logrank
 
@@ -92,14 +92,9 @@ def _model_from_params(distribution_id: str, params: list, extras: dict | None =
     except FitError as exc:
         raise StrategyError(str(exc)) from None
     # Extra fitted quantities from fit options (offset gamma, LFP p, ZI f0)
-    # rebuild the model exactly as it was fitted.
-    kwargs = {
-        k: float(v)
-        for k, v in (extras or {}).items()
-        if k in ("gamma", "p", "f0") and v is not None
-    }
+    # rebuild the model exactly as it was fitted (LFP p is SurPyval's lfp_p).
     try:
-        return dist.from_params(values, **kwargs), entry["name"]
+        return dist.from_params(values, **surpyval_extras(extras)), entry["name"]
     except Exception as exc:
         raise StrategyError(str(exc)) from exc
 

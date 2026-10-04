@@ -29,8 +29,8 @@ WORKDIR /code
 # (downloaded on every Cloud Run cold start) would still carry them.
 #
 # - RePyability is installed --no-deps, after the rest, so our git-pinned
-#   surpyval stays authoritative (it declares surpyval>=0.16,<0.17 — a ceiling
-#   it has never raised, not a real incompatibility; see requirements.txt).
+#   surpyval stays authoritative (it declares surpyval>=0.22, uncapped, and
+#   --no-deps stops pip re-resolving it from PyPI; see requirements.txt).
 # - firebase-admin is installed --no-deps with only what its auth module needs
 #   (google-auth, cachecontrol, pyjwt, requests, httpx): we only verify ID
 #   tokens, and its Firestore / Cloud Storage / gRPC dependencies (~60 MB) are
