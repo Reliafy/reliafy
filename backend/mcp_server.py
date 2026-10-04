@@ -63,6 +63,7 @@ import time
 from datetime import timedelta
 from contextlib import asynccontextmanager, contextmanager
 from typing import Annotated, Any, Callable, Literal, Optional, Union
+from urllib.parse import quote
 
 import anyio
 import numpy as np
@@ -84,6 +85,7 @@ from backend.fitting import FitError
 from backend.services import access as access_service
 from backend.services import availability_answer
 from backend.services import billing as billing_service
+from backend.services import compare_groups as compare_groups_service
 from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
@@ -263,6 +265,9 @@ What you can do:
 it as a model, or save_model to save parameters fitted elsewhere; evaluate a saved model with reliability_at. \
 list_models / get_model read what is saved; list_datasets / upload_dataset manage the data.
 - Datasets: get_dataset reads a dataset's columns, row count and rows, a page at a time (offset / limit).
+- Comparing groups: compare_groups answers "is A better than B?" — it splits life data by a column \
+(supplier, site, design revision) and gives the log-rank test, each group's average life over a common window \
+(RMST) with the difference and its CI, Gray's test per failure mode, and a verdict sentence. Nothing is fitted.
 - Confidence: reliability_at with confidence (e.g. 0.95) adds lower/upper bounds on R(t) and F(t); quote them \
 with the point values. Bounds are null, with bounds_note saying why, where a model has none — never invent them.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
@@ -2414,6 +2419,100 @@ def optimal_overhaul(
                         "model id from list_models kind=recurrent.")
     live = recurrent_service.get_live_model(db, model_id, owners)
     return _maybe_curve(recurrent_fit.optimal_overhaul(live, cost_repair, cost_overhaul, t_max=t_max), include_curve)
+
+
+@_tool("compare_groups", _READ, "Compare groups of life data")
+def compare_groups(
+    ctx: Context,
+    dataset_id: _FitDataset = None,
+    time_column: _FitTimeCol = None,
+    group_column: Annotated[Optional[str], Field(description="Dataset column to split by (supplier, site, design "
+                                                            "revision…); required with dataset_id.")] = None,
+    censor_column: Annotated[Optional[str], Field(description="Dataset column of censoring flags: 0 = failed, "
+                                                              "1 = still running.")] = None,
+    count_column: _FitCountCol = None,
+    cause_column: Annotated[Optional[str], Field(description="Optional dataset column naming each failure's "
+                                                             "mode: adds Gray's test per mode (competing "
+                                                             "risks).")] = None,
+    data: _FitData = None,
+    group: Annotated[Optional[list[str]], Field(description="Inline: the group label of each time in `data`.")] = None,
+    censored: Annotated[Optional[list[int]], Field(description="Inline: 0 = failed, 1 = still running, per time "
+                                                               "in `data`.")] = None,
+    counts: _FitCounts = None,
+    cause: Annotated[Optional[list[Optional[str]]], Field(description="Inline: each failure's mode (null for a "
+                                                                      "unit still running), for Gray's "
+                                                                      "test.")] = None,
+    c_invert: _FitInvert = False,
+    groups: Annotated[Optional[list[str]], Field(description="Only these groups, in this order (default: "
+                                                             "all, at most 12).")] = None,
+    reference: Annotated[Optional[str], Field(description="Group the RMST differences are measured from "
+                                                          "(default: the first).")] = None,
+    tau: Annotated[Optional[float], Field(gt=0, description="Horizon for the restricted mean survival time "
+                                                            "(default: the shortest group's longest "
+                                                            "time).")] = None,
+    unit: _FitUnit = None,
+    include_curves: Annotated[bool, Field(description="Return each group's Kaplan–Meier curve too.")] = False,
+) -> dict[str, Any]:
+    """Is A better than B? Split life data by a column (or give a group per time) and compare the groups
+    without fitting anything: the k-sample log-rank test (Gehan–Wilcoxon and Tarone–Ware alongside), each
+    group's restricted mean survival time (average life over the first `tau`) with its 95% CI and the
+    difference from the reference group, Gray's test per failure mode when cause_column (or `cause`) is
+    given, and a one-sentence verdict to relay. Right-censored data only: 0 = failed, 1 = still running;
+    c_invert=true when the data marks failures with 1. A small log-rank p (< 0.05) means the groups' lives
+    differ."""
+    user, db = _caller(ctx), _db()
+    if (data is None) == (dataset_id is None):
+        raise ToolError("Give either inline `data` (with `group`) or a `dataset_id` — exactly one.")
+    url = None
+    if data is not None:
+        stray = [k for k, v in (("time_column", time_column), ("group_column", group_column),
+                                ("censor_column", censor_column), ("count_column", count_column),
+                                ("cause_column", cause_column)) if v]
+        if stray:
+            raise ToolError(f"{', '.join(stray)} only appl{'ies' if len(stray) == 1 else 'y'} with dataset_id.")
+        if not data:
+            raise ToolError("`data` is empty.")
+        cols: dict[str, list] = {"x": list(data)}
+        for key, values, label in (("g", group, "group"), ("c", censored, "censored"), ("n", counts, "counts"),
+                                   ("e", cause, "cause")):
+            if values is not None:
+                if len(values) != len(data):
+                    raise ToolError(f"`{label}` must have one entry per time in `data` ({len(data)}).")
+                cols[key] = list(values)
+        if "g" not in cols:
+            raise ToolError("Give `group`: the group label of each time in `data`.")
+        df = pd.DataFrame(cols)
+        time_column, group_column = "x", "g"
+        censor_column = "c" if censored is not None else None
+        count_column = "n" if counts is not None else None
+        cause_column = "e" if cause is not None else None
+        label = None
+    else:
+        stray = [k for k, v in (("group", group), ("censored", censored), ("counts", counts), ("cause", cause))
+                 if v is not None]
+        if stray:
+            raise ToolError(f"{', '.join(stray)} only appl{'ies' if len(stray) == 1 else 'y'} with inline data.")
+        dataset = datasets_service.get_dataset(db, dataset_id, _owners(user["uid"]))
+        if dataset is None:
+            raise ToolError("Dataset not found.")
+        names = [c["name"] for c in dataset.columns]
+        if not time_column or not group_column:
+            raise ToolError("Say which column holds the times (time_column) and which to split by "
+                            f"(group_column). Columns: {', '.join(names)}.")
+        df = datasets_service.load_dataframe(dataset)
+        label = group_column
+        url = _url(f"/datasets/d/{dataset.id}?compare={quote(group_column)}")
+    prepared = compare_groups_service.prepare(
+        df, time_column=time_column, group_column=group_column, censor_column=censor_column,
+        count_column=count_column, cause_column=cause_column, c_invert=c_invert)
+    result = compare_groups_service.compare_groups(
+        prepared, groups=groups, reference=reference, tau=tau, unit=unit, group_column=label)
+    verdict = result["verdict"]
+    out = {"verdict": verdict["text"], "significant": verdict["significant"], "longest_lasting": verdict["better"],
+           **{k: v for k, v in compare_groups_service.lean(result, include_curves).items() if k != "verdict"}}
+    if url:
+        out["url"] = url
+    return out
 
 
 # ---------------------------------------------------------------------------

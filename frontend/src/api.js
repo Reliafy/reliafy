@@ -335,6 +335,17 @@ export function getDataset(id) {
   return request(`/api/datasets/${id}`);
 }
 
+// Split a dataset by a column and compare the groups (log-rank, RMST, Gray's).
+// ``body`` = { time_column, group_column, censor_column?, count_column?,
+// cause_column?, c_invert?, groups?, reference?, tau?, unit? }.
+export function compareGroups(datasetId, body) {
+  return request(`/api/datasets/${datasetId}/compare-groups`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // Upload a CSV as a standalone dataset (deduped by content on the server).
 // An Excel workbook works too: ``excel`` = { sheet, headerRow } picks the
 // sheet and header row (headerRow 0 = none), converted to CSV server-side.

@@ -68,6 +68,7 @@ from backend.routers import feeds as feeds_router
 from backend.routers import oauth as oauth_router
 from backend.routers import outage_logs as outage_logs_router
 from backend.routers import uploads as uploads_router
+from backend.routers import compare_groups as compare_groups_router
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
@@ -188,6 +189,7 @@ app.include_router(rbd_fault_tree_router.router)
 app.include_router(rbd_design_router.router)
 app.include_router(rbd_costs_router.router)
 app.include_router(strategy_router.router)
+app.include_router(compare_groups_router.router)
 app.include_router(billing_router.router)
 app.include_router(assistant_router.router)
 app.include_router(reliability_agent_router.router)
