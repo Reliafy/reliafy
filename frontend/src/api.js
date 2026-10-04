@@ -760,12 +760,14 @@ export function compareRbds(graph, otherId, { name = null, otherName = null, tMa
 // priced block own it for ``horizon`` at the lowest total cost, optionally at
 // least ``minAvailability`` available. Returns { current, design, graph, ... };
 // ``graph`` has the copies drawn on it (nothing is saved). Paid (402).
-export function cheapestRbdDesign({ graph, horizon = null, minAvailability = null, discountRate = null }) {
+// trains: [{name, blocks: [ids]}] copied whole (#227); blocks: [] with them
+// copies the trains alone.
+export function cheapestRbdDesign({ graph, horizon = null, minAvailability = null, discountRate = null, trains = null, blocks = null }) {
   return withEvent(
     request("/api/rbds/design/cheapest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ graph, horizon, min_availability: minAvailability, discount_rate: discountRate }),
+      body: JSON.stringify({ graph, horizon, min_availability: minAvailability, discount_rate: discountRate, trains, blocks }),
     }),
     "rbd_design_cheapest"
   );

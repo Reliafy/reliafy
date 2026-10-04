@@ -12,12 +12,30 @@ import { fmtMoney } from "./AvailabilityCosts.jsx";
 // "Apply to diagram" draws the copies on the canvas, unsaved (as the
 // non-repairable Design panel does). A discount rate (% a year, prefilled
 // from the diagram's costs) makes every total a present value, and the design
-// chosen the one with the lowest (#219).
+// chosen the one with the lowest (#219). Trains (#227, RePyability 0.12): pick
+// the blocks of a chain in series — a pump with its valve and motor — and the
+// search weighs whole copies of it, each another path into the node the train
+// feeds (a vote there gains a branch: 2-out-of-3 becomes 2-out-of-4).
 const fmtT = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(5)).toLocaleString());
 const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(4)}%`);
 
 export default function RbdCheapestDesign({ graph, onApply, onView }) {
   const priced = (graph.nodes || []).filter((n) => n.type === "component" && Number(n.data?.costs?.acquisition) > 0);
+  const components = (graph.nodes || []).filter((n) => n.type === "component");
+  const componentIds = new Set(components.map((n) => n.id));
+  const [trainsDraft, setTrains] = useState([]); // [{name, blocks: [ids]}]
+  const [singles, setSingles] = useState(true); // also copy priced blocks outside the trains
+  // Blocks deleted from the canvas leave their trains.
+  const trains = trainsDraft.map((t) => ({ ...t, blocks: t.blocks.filter((b) => componentIds.has(b)) }));
+  const ownerOf = {};
+  trains.forEach((t, i) => t.blocks.forEach((b) => { ownerOf[b] = i; }));
+  const usedTrains = trains.filter((t) => t.blocks.length > 0);
+  const addTrain = () => setTrains([...trains, { name: `Train ${trains.length + 1}`, blocks: [] }]);
+  const updateTrain = (i, patch) => setTrains(trains.map((t, j) => (j === i ? { ...t, ...patch } : t)));
+  const toggleBlock = (i, id) => {
+    const t = trains[i];
+    updateTrain(i, { blocks: t.blocks.includes(id) ? t.blocks.filter((b) => b !== id) : [...t.blocks, id] });
+  };
   const [horizon, setHorizon] = useState(graph.costs?.horizon != null ? String(graph.costs.horizon) : "");
   const [floor, setFloor] = useState("");
   const [discount, setDiscount] = useState(graph.costs?.discount_rate != null ? String(graph.costs.discount_rate) : "");
@@ -39,6 +57,8 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
         horizon: horizon === "" ? null : Number(horizon),
         minAvailability: floor === "" ? null : Number(floor) / 100,
         discountRate: discount === "" ? 0 : Number(discount),
+        trains: usedTrains.length ? usedTrains.map((t) => ({ name: t.name, blocks: t.blocks })) : null,
+        blocks: usedTrains.length && !singles ? [] : null,
       });
       setRun({ result, sig });
     } catch (e) {
@@ -100,13 +120,60 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
               <small>% a year (e.g. 7)</small>
             </label>
           </div>
+          <div className="rbd-trains">
+            <div className="rbd-trains-head">
+              <b>Trains</b>
+              <span className="hint">
+                Optional: copy a whole chain of blocks in series — a pump with its valve and motor. A copy is another
+                path alongside it into the node it feeds, so copies of a train into a 2-out-of-3 vote make it
+                2-out-of-4. Pick one of identical trains.
+              </span>
+            </div>
+            {trains.map((t, i) => (
+              <div className="rbd-train" key={i}>
+                <div className="rbd-train-row">
+                  <input type="text" value={t.name} maxLength={80} aria-label={`Train ${i + 1} name`}
+                         onChange={(e) => updateTrain(i, { name: e.target.value })} />
+                  <button type="button" className="secondary" onClick={() => setTrains(trains.filter((_, j) => j !== i))}>
+                    Remove
+                  </button>
+                </div>
+                <div className="cov-chips" role="group" aria-label={`Blocks in ${t.name || `train ${i + 1}`}`}>
+                  {components.map((n) => {
+                    const on = t.blocks.includes(n.id);
+                    const elsewhere = ownerOf[n.id] != null && ownerOf[n.id] !== i;
+                    return (
+                      <label key={n.id} className={"cov-chip" + (on ? " on" : "") + (elsewhere ? " disabled" : "")}
+                             title={elsewhere ? `In ${trains[ownerOf[n.id]].name}` : undefined}>
+                        <input type="checkbox" checked={on} disabled={elsewhere} onChange={() => toggleBlock(i, n.id)} />
+                        {n.data?.label || n.id}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            <div className="rbd-train-row">
+              <button type="button" className="secondary" onClick={addTrain} disabled={trains.length >= 6}>
+                + Add a train
+              </button>
+              {usedTrains.length > 0 && (
+                <label className="rbd-train-singles">
+                  <input type="checkbox" checked={singles} onChange={(e) => setSingles(e.target.checked)} />
+                  Also copy single priced blocks outside the trains
+                </label>
+              )}
+            </div>
+          </div>
           <div className="rbd-calc-actions">
             <button type="button" onClick={find} disabled={phase === "working" || horizon === ""}>
               {phase === "working" ? "Finding…" : "Find the cheapest design"}
             </button>
             <span className="hint">
               Copies are active and repaired independently; {priced.length} priced block{priced.length === 1 ? "" : "s"}
-              {" "}({priced.map((n) => n.data?.label || n.id).join(", ")}).
+              {" "}({priced.map((n) => n.data?.label || n.id).join(", ")}){usedTrains.length > 0 && (
+                <>; {usedTrains.length} train{usedTrains.length === 1 ? "" : "s"} copied whole</>
+              )}.
             </span>
           </div>
         </>
@@ -135,6 +202,16 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
                 <tr><th>Block</th><th>Copies now</th><th>Cheapest</th><th>Price each</th></tr>
               </thead>
               <tbody>
+                {(result.design.trains || []).map((t) => (
+                  <tr key={`train-${t.name}`} className={t.copies !== 1 ? "changed" : ""}>
+                    <td className="calc-row-label">
+                      {t.name} <small className="muted">(train: {t.blocks.map((b) => b.label).join(" → ")})</small>
+                    </td>
+                    <td>1</td>
+                    <td>{t.copies}</td>
+                    <td>{fmtMoney(t.price)}</td>
+                  </tr>
+                ))}
                 {result.design.blocks.map((b) => (
                   <tr key={b.id} className={b.copies !== 1 ? "changed" : ""}>
                     <td className="calc-row-label">{b.label}</td>
@@ -180,7 +257,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
           )}
           <p className="muted-line" style={{ margin: 0 }}>
             RePyability {result.repyability_version} · allocate_redundancy ({result.method}), up to {result.max_copies} copies
-            of each priced block. Copies of a proof-tested block are tested together.{" "}
+            of each priced block{result.design.trains?.length ? " and train" : ""}. Copies of a proof-tested block are tested together.{" "}
             {result.discount_rate > 0
               ? `Totals are present values at ${result.discount_rate}% a year: purchases at the start, running costs discounted continuously.`
               : "Costs aren't discounted."}
