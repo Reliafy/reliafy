@@ -2088,6 +2088,60 @@ button.secondary:hover:not(:disabled) {
   margin-top: 0;
 }
 
+/* "How good is this model?" (regression validation, #176). */
+.validation-card {
+  max-width: 600px;
+}
+.validation-card .vrow {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line2);
+}
+.validation-card .vrow-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.validation-card .vterm {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  margin-left: 6px;
+}
+.validation-card .vsub,
+.validation-card .vauc {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.validation-card .vauc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.validation-card .vauc b {
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--ink, inherit);
+}
+.validation-card .vread {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.validation-card .vrow-head + .vread,
+.validation-card .vrow > .vread:first-child {
+  margin-top: 4px;
+}
+.validation-card .vfoot {
+  padding: 10px 16px 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
 .detail-note {
   background: var(--acc-t);
   border: 1px solid rgba(47, 109, 246, 0.18);
@@ -6436,6 +6490,22 @@ button.danger:hover { background: #fdeeee; }
 .rbd-asof-table input { width: 110px; }
 .rbd-asof-table tr.is-down .calc-row-label { color: #b42318; font-weight: 600; }
 
+/* Non-repairable "As of now" and the design life (#173). */
+.rbd-asof-note {
+  margin-top: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel); font-size: 13px; color: var(--text);
+}
+.rbd-asof-note.is-failed { border-color: rgba(180, 35, 24, 0.45); background: rgba(180, 35, 24, 0.06); }
+.rbd-design-life {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; margin-top: 12px; border: 1px solid rgba(47, 109, 246, 0.35);
+  background: rgba(47, 109, 246, 0.06); border-radius: 12px; font-size: 14px; margin-bottom: 10px;
+}
+.rbd-design-life-name {
+  font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+}
+.rbd-design-life-value { font-size: 20px; font-variant-numeric: tabular-nums; color: var(--accent-strong); }
+
 /* Repeated blocks (#102): a linked copy of a component, drawn again */
 .rbd-comp.repeat:not(.state-working):not(.state-failed) {
   background: repeating-linear-gradient(135deg, var(--panel) 0 9px, rgba(47, 109, 246, 0.05) 9px 18px);
@@ -7045,3 +7115,24 @@ button.danger:hover { background: #fdeeee; }
 }
 .mode-detail b { font-weight: 600; color: var(--faint); margin-right: 4px; }
 .mode-notes { white-space: pre-line; }
+
+/* ---- Compare groups (dataset page, #175) --------------------------------- */
+.cg-card h2 { margin: 0 0 4px; font-size: 1.05rem; }
+.cg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; }
+.cg-head .muted-line { margin: 0; max-width: 62ch; }
+.cg-inputs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.8rem 1rem; }
+.cg-inputs .calc-t input { width: 100%; box-sizing: border-box; }
+.cg-invert { font-size: 0.85rem; }
+.cg-actions { margin-top: 1rem; }
+.cg-h { margin-top: 1.25rem; }
+.cg-table .combo-dot { margin-bottom: 0; }
+.cg-table td { white-space: nowrap; }
+.cg-table { min-width: 340px; }
+.cg-table.cg-wide { min-width: 560px; }
+.cg-table tr.strategy-best td { font-weight: 600; }
+.cg-ci { color: var(--muted); font-size: 0.78rem; }
+.cg-notes { margin: 0.5rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: 0.82rem; }
+@media (max-width: 560px) {
+  .cg-head { flex-direction: column; }
+  .cg-inputs { grid-template-columns: 1fr 1fr; }
+}

@@ -330,6 +330,21 @@ def test_redundancy_heuristic_keeps_false_positives_low():
     assert not rbd_analysis.series_redundancy_warnings(rbd_graph.normalize_graph(GRAPH))
 
 
+def test_a_standby_nodes_own_label_is_not_a_redundant_pair():
+    """#183: "duty/standby" in a standby (or parallel / load-sharing) node's
+    label describes its own units, not its neighbours in series."""
+    from backend.services import rbd_analysis, rbd_graph
+
+    for ntype in ("standby", "parallel", "loadshare"):
+        graph = rbd_graph.normalize_graph(
+            _chain("Suction strainer", "CW pumps A/B (duty/standby)", "Discharge check valve"))
+        next(n for n in graph["nodes"] if n["id"] == "n1")["type"] = ntype
+        assert not rbd_analysis.series_redundancy_warnings(graph), ntype
+    # A plain component so labelled still warns.
+    graph = _chain("Suction strainer", "CW pump (standby)")
+    assert rbd_analysis.series_redundancy_warnings(rbd_graph.normalize_graph(graph))
+
+
 # ---- P2.8 conflicting inputs are refused, never resolved silently ----------------
 
 def test_conflicting_inputs_are_refused(samples):
@@ -492,6 +507,78 @@ def test_notes_never_round_small_numbers_to_zero(env):
     assert "about every 0.002" in ff["note"]
     assert [fmt_num(v) for v in (0, 2e-5, 0.0123, 1.5, 999.6, 12345.6, 3.2e9)] == [
         "0", "2e-05", "0.0123", "1.5", "1,000", "12,346", "3.2e+09"]
+
+
+# ---- #189 optimal_replacement flags a shape interval that reaches 1 -----------------------
+
+def _fitted_weibull(env, name, seed, beta, n=30, cutoff=7000.0):
+    """A saved Weibull fitted to n units of Weibull(7746, beta) life, still running at cutoff."""
+    rng = np.random.default_rng(seed)
+    t = 7746 * rng.weibull(beta, n)
+    flags = [int(x > cutoff) for x in t]
+    out = _ok(_call(env.token[A], "fit_and_save_model", {
+        "name": name, "data": [round(min(x, cutoff), 1) for x in t], "censored": flags, "unit": "hours"}))
+    (b,) = [p for p in out["params"] if p["name"] == "beta"]
+    return out["model_id"], b
+
+
+def test_optimal_replacement_flags_weak_wear_out_evidence(env):
+    costs = {"planned_cost": 4000, "unplanned_cost": 25000}
+    weak, b = _fitted_weibull(env, "Weak", seed=1, beta=1.77)  # β ≈ 1.97, 95% CI ≈ [1.09, 2.84]
+    assert 1 < b["ci"][0] < 1.2
+    out = _ok(_call(env.token[A], "optimal_replacement", {"model_id": weak, **costs}))
+    assert out["beneficial"] is True
+    su = out["shape_uncertainty"]
+    assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
+    assert su["at_beta_lower"]["savings"] < 0.5 * out["savings"] < su["at_beta_upper"]["savings"]
+    assert "reaches down to 1.09" in out["uncertainty_note"] and "weakly" in out["uncertainty_note"]
+
+    random_ish, b = _fitted_weibull(env, "Random-ish", seed=3, beta=1.77)  # CI ≈ [0.91, 2.23]
+    assert b["ci"][0] < 1 < b["ci"][1]
+    out = _ok(_call(env.token[A], "optimal_replacement", {"model_id": random_ish, **costs}))
+    assert "includes 1" in out["uncertainty_note"]
+    assert out["shape_uncertainty"]["at_beta_lower"]["beneficial"] is False
+
+    clear, b = _fitted_weibull(env, "Clear", seed=7, beta=4.0, n=60, cutoff=1e9)
+    out = _ok(_call(env.token[A], "optimal_replacement", {"model_id": clear, **costs}))
+    assert b["ci"][0] > 3 and out["shape_uncertainty"]["at_beta_lower"]["beneficial"]
+    assert "uncertainty_note" not in out
+
+    inline = _ok(_call(env.token[A], "optimal_replacement", {
+        "distribution_id": "weibull", "params": [{"name": "alpha", "value": 7746}, {"name": "beta", "value": 1.77}],
+        **costs}))
+    assert "shape_uncertainty" not in inline and "uncertainty_note" not in inline  # no fit, no interval
+
+
+# ---- #190 a censor column named like a failure flag -----------------------------------
+
+def test_fit_warns_when_the_censor_column_sounds_like_1_means_failed(env):
+    from backend import mcp_server
+
+    failed = [1 - f for f in FLAGS]  # the spreadsheet way: 1 = failed
+    ds = _ok(_call(env.token[A], "upload_dataset", {
+        "name": "Pumps", "csv": "hours,failed,censored\n"
+        + "\n".join(f"{t},{a},{b}" for t, a, b in zip(TIMES, failed, FLAGS))}))
+    base = {"dataset_id": ds["id"], "time_column": "hours"}
+
+    out = _ok(_call(env.token[A], "fit_distribution", {**base, "censor_column": "failed"}))
+    (warning,) = [w for w in out["warnings"] if "c_invert" in w]
+    assert "“failed” sounds like 1 = failed" in warning and "3 failures and 7 still running" in warning
+    assert list(out)[0] == "warnings"  # ahead of the numbers
+    assert out["censoring"] == {"n_failed": 3, "n_right_censored": 7, "n_left_censored": 0}
+
+    fixed = _ok(_call(env.token[A], "fit_distribution", {**base, "censor_column": "failed", "c_invert": True}))
+    assert "warnings" not in fixed and fixed["censoring"]["n_failed"] == 7
+    plain = _ok(_call(env.token[A], "fit_distribution", {**base, "censor_column": "censored"}))
+    assert "warnings" not in plain and plain["censoring"]["n_failed"] == 7
+    assert [p["value"] for p in plain["params"]] == pytest.approx([p["value"] for p in fixed["params"]])
+
+    saved = _ok(_call(env.token[A], "fit_and_save_model", {**base, "censor_column": "failed", "name": "Pumps"}))
+    assert any("c_invert=true" in w for w in saved["warnings"]) and saved["censoring"]["n_failed"] == 3
+
+    names = {"failed": True, "Failed?": True, "is_failure": True, "FailFlag": True, "Status": True,
+             "event": True, "censored": False, "suspended": False, "fail_or_censor": False, "c": False}
+    assert {n: mcp_server._sounds_like_failure_flag(n) for n in names} == names
 
 
 # ---- P3.15 large payloads are opt-in --------------------------------------------------

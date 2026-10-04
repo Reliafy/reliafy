@@ -123,10 +123,27 @@ def rbd_import_template(user: dict = Depends(get_current_user)) -> Response:
     )
 
 
+def import_links(session, ctx: AccessCtx):
+    """``(saved_model, saved_rbd)``: id -> the saved model / diagram the
+    importing user can open, else None (see
+    :func:`backend.services.rbd_import.link_references`)."""
+    from backend.services import models as models_service
+
+    def saved_model(model_id: str):
+        return models_service.get_model(session, model_id, ctx.read_owners)
+
+    def saved_rbd(rbd_id: str):
+        rbd = rbds_service.get_rbd(session, rbd_id, ctx.read_owners)
+        return rbd if rbd is not None and rbd.id not in ctx.hidden else None
+
+    return saved_model, saved_rbd
+
+
 @router.post("/rbds/import")
 def import_rbd_file(
     file: UploadFile = File(...),
     mapping: str | None = Form(default=None),
+    session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Parse another tool's diagram file into builder graphs — nothing is saved.
@@ -147,8 +164,16 @@ def import_rbd_file(
             kwargs["excel_mapping"] = json.loads(mapping)
         except ValueError:
             return JSONResponse(status_code=422, content={"detail": "The column mapping isn't valid JSON."})
+    saved_model, saved_rbd = import_links(session, ctx)
+
+    def parse():
+        found = rbd_import.import_file(data, file.filename or "", **kwargs)
+        # RePyability JSON from Reliafy: links back to what this user can open.
+        rbd_import.link_references(found, saved_model, saved_rbd)
+        return found
+
     try:
-        diagrams = excel_router.guarded(ctx.uid, rbd_import.import_file, data, file.filename or "", **kwargs)
+        diagrams = excel_router.guarded(ctx.uid, parse)
     except (import_guard.ImportBusy, import_guard.ImportBudgetExceeded) as exc:
         return excel_router.guard_error(exc)
     except rbd_import.RbdImportError as exc:
@@ -167,7 +192,7 @@ def import_rbd_file(
     out = []
     for d in diagrams:
         try:
-            graph = normalize_graph(d.graph)
+            graph = normalize_graph(d.graph, resolve_saved_model=saved_model)
         except GraphError as exc:
             out.append({"name": d.name, "source_format": d.source_format, "error": str(exc), "warnings": d.warnings})
             continue
@@ -326,7 +351,7 @@ def availability_payload(
     endpoints below and the MCP server, so both apply the same paid gate.
     Raises :class:`AnalysisError` for an invalid current state.
     """
-    from backend.services import rbd_analysis
+    from backend.services import rbd_analysis, rbd_policies
 
     state = rbd_analysis.parse_current_state(graph, current_state)
     doc = session.rbds.find_one({"_id": rbd.id}) if rbd is not None else None
@@ -371,7 +396,12 @@ def availability_payload(
         can_simulate=entitled,
         can_recompute=entitled,
     )
-    return 200, out
+    # Common-cause groups the availability figures leave out (#185), said
+    # beside them; RePyability's reasons in Reliafy's words, saved ones too (#186).
+    common_cause = rbd_policies.common_cause_note(graph, out)
+    if common_cause is not None:
+        out["common_cause"] = common_cause
+    return 200, rbd_analysis.plain_reasons(out)
 
 
 def _availability(
@@ -400,6 +430,7 @@ def analyze_graph(
     simulate: bool | None = Body(default=None),
     current_state: dict | None = Body(default=None),
     exact: bool = Body(default=False),
+    target_reliability: float | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -420,6 +451,12 @@ def analyze_graph(
     for it; ``current_state`` (``{node_id: {"down": true, "since": …} |
     {"age": …}}``) starts the figures from now, over ``t_max``; ``exact``
     computes the figures over time of a diagram above the automatic size cap.
+
+    Non-repairable graphs (#173): ``current_state`` (``{node_id: {"failed":
+    true} | {"age": …}}``) analyses the diagram as of now — the curves, MTTF
+    and B-lives run from now — and ``target_reliability`` (e.g. 0.9) adds the
+    design life, the time the system reliability falls to it (with an
+    interval when ``band`` is asked for). Both are exact, free for everyone.
     """
     try:
         if graph.get("repairable"):
@@ -437,6 +474,8 @@ def analyze_graph(
                 covariates=covariates,
                 conditional_age=conditional_age,
                 band=band,
+                current_state=current_state,
+                target_reliability=target_reliability,
             )
         )
     except AnalysisError as exc:
@@ -518,6 +557,42 @@ def export_rbd_python(
             status_code=500, content={"detail": "Failed to export RBD. The error has been logged."}
         )
     return python_download(filename, source)
+
+
+@router.get("/rbds/{rbd_id}/export.json")
+def export_rbd_json(
+    rbd_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> Response:
+    """Download a saved RBD as RePyability JSON (#174): ``rbd_from_json``
+    loads it as the RBD the app analyses, and Reliafy's RBD import restores
+    the diagram from it. Free for anyone who can view the diagram, like
+    Download as Python; resolution in the same scope. A block whose model
+    lives only in the workspace (a fitted proportional-hazards,
+    non-parametric or load-sharing model) is refused by name (422)."""
+    from backend.services import rbd_json
+
+    rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
+    if rbd is None or rbd.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "RBD not found."})
+    try:
+        filename, text = rbds_service.export_json(
+            session, rbd.name, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id]
+        )
+    except rbd_json.ExportError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to export RBD %s as RePyability JSON", rbd_id)
+        return JSONResponse(
+            status_code=500, content={"detail": "Failed to export RBD. The error has been logged."}
+        )
+    return Response(
+        content=text,
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.post("/rbds/validate")

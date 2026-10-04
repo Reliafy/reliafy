@@ -213,12 +213,40 @@ def test_cardinality_up_to_n_is_atleast():
     assert (v["n"], v["k"]) == (2, 3)
 
 
-def test_fixed_probabilities_and_missing_data_are_refused():
-    fixed = ('<opsa-mef><define-gate name="T"><or><basic-event name="A"/><basic-event name="B"/></or>'
-             '</define-gate><define-basic-event name="A"><float value="0.01"/></define-basic-event>'
+def test_fixed_probability_events_import_without_a_life_model():
+    """#188: a fixed-probability event (human error, failure on demand) no
+    longer rejects the file. Reliafy has no fixed-probability block, so the
+    event becomes a block with NO life model, named in the notes with its
+    probability; nothing is invented for it."""
+    xml = ('<opsa-mef><define-gate name="T"><or><gate name="Pumps"/><basic-event name="MCC"/>'
+           '<basic-event name="Valve"/></or></define-gate>'
+           '<define-gate name="Pumps"><and><basic-event name="PA"/><basic-event name="PB"/></and></define-gate>'
+           '<define-basic-event name="MCC"><label>Motor control centre</label><float value="0.01"/>'
+           '</define-basic-event>'
+           '<define-basic-event name="Valve"><exponential><float value="1e-3"/><float value="24"/>'
+           '</exponential></define-basic-event>'
+           + exp_event("PA", 1e-4) + exp_event("PB", 1e-4) + "</opsa-mef>")
+    d = one(xml)
+    mcc = by_label(d.graph, "Motor control centre")
+    valve = by_label(d.graph, "Valve")  # exponential over a fixed 24 h: a probability too
+    assert mcc["type"] == valve["type"] == "component"
+    assert "model" not in mcc and "model" not in valve
+    assert by_label(d.graph, "PA")["model"]["distribution_id"] == "exponential"
+    (note,) = [w for w in d.warnings if "fixed probability" in w]
+    assert "2 basic event(s)" in note and "“Motor control centre” (p = 0.01)" in note
+    assert "“Valve” (p = 0.0237)" in note and "WITHOUT a life model" in note
+    # The structure is intact; only the missing models stop the analysis.
+    check = rbd_analysis.validate_graph(normalize_graph(d.graph))
+    assert not check["valid"]
+    assert all("has no life model" in e for e in check["errors"]) and len(check["errors"]) == 2
+
+    with pytest.raises(RbdImportError, match="isn't between 0 and 1"):
+        load('<opsa-mef><define-gate name="T"><or><basic-event name="A"/><basic-event name="B"/></or>'
+             '</define-gate><define-basic-event name="A"><float value="1.5"/></define-basic-event>'
              + exp_event("B", 1) + "</opsa-mef>")
-    with pytest.raises(RbdImportError, match="fixed probability.*“A”"):
-        load(fixed)
+
+
+def test_missing_data_is_refused():
     with pytest.raises(RbdImportError, match="no data"):
         load('<opsa-mef><define-gate name="T"><or><basic-event name="A"/>'
              '<basic-event name="B"/></or></define-gate>' + exp_event("B", 1) + "</opsa-mef>")

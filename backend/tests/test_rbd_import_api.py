@@ -111,3 +111,34 @@ def test_empty_file_is_rejected(client):
     r = _post(client, b"", "empty.dft")
     assert r.status_code == 422
     assert "empty" in r.json()["detail"]
+
+
+def test_a_file_without_a_time_unit_says_so_and_one_that_states_it_keeps_it(client):
+    """#187: the web import and import_rbd settle the unit the same way
+    (rbd_import.apply_time_unit) — never a silent blank."""
+    dft = b'toplevel "S"; "S" or "A" "B"; "A" lambda=1e-4; "B" lambda=2e-4;'
+    (d,) = _post(client, dft, "plant.dft").json()["diagrams"]
+    assert d["graph"]["unit"] == ""
+    assert d["warnings"][0] == rbd_import.UNIT_MISSING
+
+    xml = (b'<opsa-mef><define-gate name="T"><or><basic-event name="A"/><basic-event name="B"/></or>'
+           b'</define-gate><define-parameter name="lam" unit="hours-1"><float value="1e-4"/></define-parameter>'
+           + b"".join(f'<define-basic-event name="{n}"><exponential><parameter name="lam"/>'
+                      f'<system-mission-time/></exponential></define-basic-event>'.encode() for n in "AB")
+           + b"</opsa-mef>")
+    (d,) = _post(client, xml, "plant.xml").json()["diagrams"]
+    assert d["graph"]["unit"] == "hours"
+    assert not any("time unit" in w for w in d["warnings"])
+
+
+def test_apply_time_unit_prefers_the_file_then_the_caller():
+    def diagram(unit):
+        return ImportedDiagram("D", {"nodes": [], "edges": [], "unit": unit})
+
+    stated, given, neither = diagram("Cycles"), diagram(""), diagram("")
+    rbd_import.apply_time_unit([stated], "Hours")
+    rbd_import.apply_time_unit([given], " Hours ")
+    rbd_import.apply_time_unit([neither], None)
+    assert stated.graph["unit"] == "Cycles" and "“Hours” was ignored" in stated.warnings[0]
+    assert given.graph["unit"] == "Hours" and "read as per Hours" in given.warnings[0]
+    assert neither.graph["unit"] == "" and neither.warnings == [rbd_import.UNIT_MISSING]

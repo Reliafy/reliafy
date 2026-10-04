@@ -113,6 +113,109 @@ def test_vote_gate_needs_two_of_three():
     assert "k" not in {c["node_id"] for c in h["components"]}
 
 
+# ---- multi-unit blocks: an asset is one unit, not the whole block (#181) -----------------
+
+def _pump_train(pumps):
+    """MCC -> strainer -> ``pumps`` -> check valve."""
+    return {
+        "unit": "Hours",
+        "nodes": [_node("input", "input"), _node("mcc", label="MCC"), _node("str", label="Strainer"), pumps,
+                  _node("cv", label="Check valve"), _node("output", "output")],
+        "edges": [{"source": s, "target": t} for s, t in
+                  [("input", "mcc"), ("mcc", "str"), ("str", "pumps"), ("pumps", "cv"), ("cv", "output")]],
+    }
+
+
+STANDBY = _pump_train(_node("pumps", "standby", "CW pumps A/B", spares=1))
+# The issue's 2025 CMMS log: only the 6 h A/B overlap takes the 1+1 standby pair down.
+PUMP_LOG = """asset,start,end,reason
+P-101A,2025-02-03 06:00,2025-02-04 12:00,seal leak
+P-101B,2025-02-04 02:00,2025-02-04 08:00,bearing trip
+P-101A,2025-07-11 09:00,2025-07-12 15:00,seal leak
+P-101B,2025-12-29 07:00,,awaiting parts
+"""
+
+
+def _pumps(graph=STANDBY, text=PUMP_LOG, **kw):
+    parsed = ol.parse_log(text, graph, window_start="2025-01-01 00:00", window_end="2026-01-01 00:00", **kw)
+    return parsed, ol.system_history(graph, {**parsed, "_id": "x"})
+
+
+def test_standby_block_is_down_only_while_both_units_are():
+    parsed, h = _pumps(asset_map={"P-101A": "pumps", "P-101B": "pumps"})
+    assert [(a["name"], a["unit"]) for a in parsed["assets"]] == [("P-101A", 1), ("P-101B", 2)]
+    k = h["kpis"]
+    assert k["downtime"] == pytest.approx(6) and k["outages"] == 1
+    assert k["availability"] == pytest.approx(1 - 6 / 8760, rel=1e-6)
+    pumps = next(c for c in h["components"] if c["node_id"] == "pumps")
+    assert pumps["downtime"] == pytest.approx(6) and pumps["share"] == pytest.approx(1)
+    assert [(u["unit"], u["assets"], u["downtime"]) for u in pumps["units"]] == [
+        (1, ["P-101A"], pytest.approx(60)), (2, ["P-101B"], pytest.approx(71))]
+    # The chart draws when the block itself was down, and the notes say how it was read.
+    assert [(b["start"], b["end"]) for b in h["bars"]] == [(818, 824)]
+    assert any("down only while both units are: P-101A is unit 1; P-101B is unit 2" in n for n in h["notes"])
+    assert not any("treated as one unit" in n for n in h["notes"])
+    # A fitted model is the units' (their lives pooled), not the block's.
+    life_x, life_c = ol.fit_data(STANDBY, {**parsed, "_id": "x"})["pumps"]["life"]
+    assert sorted(life_x) == [798, 818, 3765, 4137, 7871] and sum(1 for c in life_c if c == 0) == 4
+
+
+def test_units_can_be_chosen_or_the_whole_block_taken():
+    # An asset standing for the whole block takes it down on its own.
+    parsed, h = _pumps(asset_map={"P-101A": "pumps#all", "P-101B": "pumps#2"})
+    assert parsed["asset_units"] == {"P-101A": "all", "P-101B": 2}
+    assert h["kpis"]["downtime"] == pytest.approx(60)
+    # A replacement shares its predecessor's unit; a third asset with no unit is refused.
+    text = PUMP_LOG + "P-101C,2025-09-01 00:00,2025-09-01 10:00,new pump\n"
+    _, h = _pumps(text=text, asset_map={"P-101A": "pumps#1", "P-101B": "pumps#2", "P-101C": "pumps#1"})
+    assert h["kpis"]["downtime"] == pytest.approx(6)
+    parsed = ol.parse_log(text, STANDBY, window_start="2025-01-01 00:00", window_end="2026-01-01 00:00",
+                          asset_map={"P-101A": "pumps", "P-101B": "pumps", "P-101C": "pumps"})
+    assert any("which has 2" in n for n in parsed["notes"])
+    with pytest.raises(ol.OutageLogError, match="3 assets are mapped to units of “CW pumps A/B”, which has 2"):
+        ol.system_history(STANDBY, {**parsed, "_id": "x"})
+    with pytest.raises(ol.OutageLogError, match="which has 2 units"):
+        _pumps(asset_map={"P-101A": "pumps#3"})
+    with pytest.raises(ol.OutageLogError, match="which is one unit"):
+        _pumps(asset_map={"P-101A": "cv#2"})
+
+
+def test_one_asset_on_a_redundant_block_is_one_unit():
+    _, h = _pumps(text="asset,start,end\nP-101A,2025-03-01 00:00,2025-03-02 00:00\n",
+                  asset_map={"P-101A": "pumps"})
+    assert h["kpis"]["downtime"] == 0
+    assert any("map it to 'pumps#all'" in n for n in h["notes"])
+
+
+def test_count_and_load_sharing_blocks_by_their_units():
+    text = "asset,start,end\nU1,10,50\nU2,20,30\nU3,40,60\n"
+    m = {"U1": "pumps", "U2": "pumps", "U3": "pumps"}
+    # 2 of 3 needed: down while two are out (20-30 and 40-50).
+    share = _pump_train(_node("pumps", "loadshare", "Fans", units=3, k=2, load=1))
+    parsed = ol.parse_log(text, share, window_start=0, window_end=100, asset_map=m)
+    assert ol.system_history(share, {**parsed, "_id": "x"})["kpis"]["downtime"] == pytest.approx(20)
+    # A parallel count of 3: down only while all three are (none here); a series count: while any is.
+    par = _pump_train(_node("pumps", "parallel", "Fans", n=3))
+    parsed = ol.parse_log(text, par, window_start=0, window_end=100, asset_map=m)
+    assert ol.system_history(par, {**parsed, "_id": "x"})["kpis"]["downtime"] == 0
+    ser = _pump_train(_node("pumps", "series", "Fans", n=3))
+    parsed = ol.parse_log(text, ser, window_start=0, window_end=100, asset_map=m)
+    assert ol.system_history(ser, {**parsed, "_id": "x"})["kpis"]["downtime"] == pytest.approx(50)
+
+
+def test_remapping_keeps_an_assets_unit():
+    db = mongomock.MongoClient()["outage_units"]
+    parsed = ol.parse_log(PUMP_LOG, STANDBY, window_start="2025-01-01 00:00", window_end="2026-01-01 00:00",
+                          asset_map={"P-101A": "pumps#2", "P-101B": "pumps#1"})
+    log = {"_id": "x", "owner_id": A, **{k: parsed[k] for k in ("rows", "asset_map", "asset_units")}}
+    db.outage_logs.insert_one(log)
+    # The builder sends plain node ids: an asset left on its block keeps its unit.
+    log = ol.update_log(db, log, STANDBY, asset_map={"P-101A": "pumps", "P-101B": "pumps"})
+    assert log["asset_units"] == {"P-101A": 2, "P-101B": 1}
+    log = ol.update_log(db, log, STANDBY, asset_map={"P-101A": "mcc"})
+    assert log["asset_units"] == {"P-101B": 1} and log["asset_map"]["P-101A"] == "mcc"
+
+
 def test_the_window_clips_and_drops():
     parsed = ol.parse_log("asset,start,end\nPump A,50,150\nPump A,1500,1600\n", GRAPH, window_start=100,
                           window_end=1000)

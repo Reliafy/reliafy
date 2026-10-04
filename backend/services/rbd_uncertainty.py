@@ -44,6 +44,7 @@ from backend.services import rbd_analysis as ra
 from repyability import UncertaintyResult
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.uncertainty import draw_models
+from repyability.utils.wrappers import conditional_survival
 
 DEFAULT_LEVEL = 0.95
 # Draws of every uncertain model. Cold/warm standby blocks are rebuilt per draw
@@ -183,11 +184,20 @@ class _DrawnRbd:
     other node keeps its own reliability.
     """
 
-    def __init__(self, rbd, drawn: dict, working=frozenset(), broken=frozenset()):
+    def __init__(self, rbd, drawn: dict, working=frozenset(), broken=frozenset(), ages=None):
         self.rbd = rbd
         self.drawn = drawn
         self.working = set(working)
         self.broken = set(broken)
+        # As of now (#173): blocks that have run some time, conditioned on it.
+        self.ages = dict(ages or {})
+
+    def _node_sf(self, node, model, times: np.ndarray) -> np.ndarray:
+        age = self.ages.get(node)
+        if age:
+            out = np.asarray(conditional_survival(model, times, age), dtype=float)
+            return np.clip(np.nan_to_num(out), 0.0, 1.0)
+        return np.asarray(model.sf(times), dtype=float)
 
     def sf(self, times: np.ndarray, lo: int, hi: int) -> np.ndarray:
         """System reliability of draws ``lo:hi`` at ``times``: ``(hi-lo, T)``."""
@@ -202,12 +212,12 @@ class _DrawnRbd:
                 probs[node] = model.sf(times, lo, hi).reshape(-1)
             elif isinstance(model, list):
                 probs[node] = np.concatenate([
-                    np.broadcast_to(np.asarray(m.sf(times), dtype=float), (T,))
+                    np.broadcast_to(self._node_sf(node, m, times), (T,))
                     for m in model[lo:hi]
                 ])
             else:
                 probs[node] = np.tile(
-                    np.broadcast_to(np.asarray(model.sf(times), dtype=float), (T,)), n
+                    np.broadcast_to(self._node_sf(node, model, times), (T,)), n
                 )
         if self.rbd.ccf_groups:
             out = self.rbd._ccf_system_probability(probs, self.working, self.broken, "p")
@@ -228,6 +238,7 @@ def _draw_graph(
     working=frozenset(),
     broken=frozenset(),
     visited=frozenset(),
+    ages=None,
 ) -> Optional[_DrawnRbd]:
     """Rebuild each uncertain node of ``graph`` once per draw. Returns None
     when no node in it (or its sub-systems) carries uncertainty."""
@@ -302,7 +313,7 @@ def _draw_graph(
         collector.uncertain.append(entry)
     if not drawn:
         return None
-    return _DrawnRbd(rbd, drawn, working, broken)
+    return _DrawnRbd(rbd, drawn, working, broken, ages)
 
 
 def _count_slow_standby(graph: dict, resolve_subsystem, visited=frozenset()) -> int:
@@ -403,13 +414,19 @@ def system_band(
     covariates: Optional[dict] = None,
     level: Optional[float] = None,
     seed: int = SEED,
+    target: Optional[float] = None,
+    ages: Optional[dict] = None,
 ) -> dict:
     """The confidence band on a built RBD's reliability over ``grid`` (and
     intervals on its MTTF and B10/B50), from its fitted blocks' uncertainty.
 
     ``rbd`` is the analysis' own built RBD of ``graph``; ``s`` the conditional
     age (the band is then on ``R(t | s)`` and the MTTF interval on the mean
-    residual life).
+    residual life). ``ages`` (as of now, #173) conditions those blocks on the
+    time they have run — the failed ones come in ``broken_nodes`` — so the
+    band runs from now. ``target`` adds ``design_life``: the interval on the
+    time the system reliability falls to it, found per draw as RePyability's
+    ``time_to_reliability_uncertainty`` finds it.
     """
     try:
         level = float(level) if level is not None else DEFAULT_LEVEL
@@ -421,7 +438,7 @@ def system_band(
     collector = _Collector(resolve_model, n, seed)
     drawn = _draw_graph(
         graph, rbd, collector, n, resolve_subsystem, resolve_model, covariates,
-        working=working_nodes, broken=broken_nodes,
+        working=working_nodes, broken=broken_nodes, ages=ages,
     )
     out: dict = {
         "level": level,
@@ -433,6 +450,7 @@ def system_band(
         "sf_upper": None,
         "mttf": None,
         "blife": None,
+        **({"design_life": None} if target is not None else {}),
     }
     if drawn is None:
         return out
@@ -453,4 +471,6 @@ def system_band(
         "b10": _interval(_b_lives(life, life_sf, 0.10), level),
         "b50": _interval(_b_lives(life, life_sf, 0.50), level),
     }
+    if target is not None:
+        out["design_life"] = _interval(_b_lives(life, life_sf, 1.0 - target), level)
     return out

@@ -909,6 +909,9 @@ _UNIT_SUFFIX = re.compile(
     r"^(?P<stem>.*?[a-z0-9])(?:[\s\-_#/.]+(?P<tok>[a-h]|\d+|i{1,3}|iv|left|right|port|starboard|north|"
     r"south|east|west|primary|secondary|upper|lower)|(?P<num>\d+))$")
 _BLOCK_TYPES = ("component", "series", "parallel", "standby", "subsystem", "loadshare")
+#: Blocks that are themselves redundancy: a "duty/standby" in their label
+#: describes their own units, not a partner wired next to them (#183).
+_REDUNDANT_TYPES = ("parallel", "standby", "loadshare")
 
 
 def _label_stem(label: str) -> tuple[str, Optional[str]]:
@@ -928,7 +931,9 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
     left/right…, or that call one of them duty/standby/spare/backup/redundant.
     Redundancy wired in series makes the system look far less reliable than
     it is. Only directly adjacent series blocks (the one's sole output feeding
-    the other's sole input) are compared, to keep false positives low."""
+    the other's sole input) are compared, to keep false positives low; and a
+    standby, parallel or load-sharing block's own "duty/standby" label
+    describes its units, so it doesn't count (#183)."""
     nodes = {n.get("id"): n for n in graph.get("nodes") or []}
     edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
              if e.get("source") in nodes and e.get("target") in nodes]
@@ -952,7 +957,8 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
         (stem_a, tok_a), (stem_b, tok_b) = _label_stem(la), _label_stem(lb)
         if stem_a and stem_a == stem_b and tok_a != tok_b:
             why = "the same item with a different unit suffix"
-        elif _REDUNDANCY_WORDS.search(la) or _REDUNDANCY_WORDS.search(lb):
+        elif any(_REDUNDANCY_WORDS.search(lab) and nodes[nid].get("type") not in _REDUNDANT_TYPES
+                 for nid, lab in ((s, la), (t, lb))):
             why = "one is labelled duty/standby/spare/backup/redundant"
         else:
             continue
@@ -1269,6 +1275,172 @@ def _clean(arr) -> list:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Non-repairable diagrams "as of now" and their design life (#173)
+# ---------------------------------------------------------------------------
+# RePyability 0.11's condition-based evaluation: each block conditions on its
+# own state now (``NodeState``) — a failed block contributes 0, one that has
+# run ``age`` contributes ``R(age + x) / R(age)`` — and the system reliability
+# over the next ``x`` follows exactly (``sf_given_state``). The design life is
+# the time at which the system reliability falls to a target
+# (``time_to_reliability``; from now, ``remaining_life``).
+
+_NOW_FIELDS = {"failed", "down", "age"}
+
+
+def parse_nonrepairable_state(graph: dict, raw) -> Optional[dict]:
+    """Validate a non-repairable diagram's current state and return it
+    canonical — ``{block id: {"failed": True} | {"age": <time run>}}`` — or
+    None for none (every block new).
+
+    A block is ``{"failed": true}`` (``{"down": true}``, the repairable form,
+    is taken as the same) or ``{"age": <time it has run since new>}``. Only
+    component blocks take a state (not a count, standby, load-sharing or
+    sub-system block, whose units each have their own age), and not one
+    pinned working or failed, nor a linked copy (state the original). A block
+    at age 0 is new and left out. Raises :class:`AnalysisError`."""
+    if raw is None or raw == {}:
+        return None
+    if not isinstance(raw, dict):
+        raise AnalysisError(
+            'current_state must be an object keyed by block id, each {"failed": true} or '
+            '{"age": <time it has run>}.')
+    nodes_list = [n for n in (graph or {}).get("nodes") or [] if isinstance(n, dict)]
+    nodes = {n.get("id"): n for n in nodes_list}
+    repeats, _ = rbd_repeats.find_repeats(nodes_list)
+    out: dict[str, dict] = {}
+    for nid, spec in raw.items():
+        node = nodes.get(nid)
+        if node is None or node.get("type") in (None, "input", "output"):
+            raise AnalysisError(f"current_state names {nid!r}, which isn't a block of this diagram.")
+        data = node.get("data") or {}
+        label = data.get("label") or nid
+        if node.get("type") != "component":
+            raise AnalysisError(
+                f"{label} is a {node.get('type')} block: only single component blocks take a state now "
+                "(its units would each have their own age). Model the units as separate blocks to set them.")
+        if nid in repeats:
+            original = nodes.get(repeats[nid]) or {}
+            name = (original.get("data") or {}).get("label") or repeats[nid]
+            raise AnalysisError(f"{label} is a linked copy of {name}: set the state on {name}.")
+        if data.get("state") in ("working", "failed"):
+            raise AnalysisError(f"{label} is pinned {data['state']}, so it takes no current state.")
+        if not isinstance(spec, dict):
+            raise AnalysisError(f'{label}: give {{"failed": true}} or {{"age": …}}; got {spec!r}.')
+        unknown = sorted(set(spec) - _NOW_FIELDS)
+        if unknown:
+            hint = (" (a non-repairable block isn't repaired: give failed: true)"
+                    if "since" in unknown else " (use failed, or age)")
+            raise AnalysisError(f"{label}: unknown current-state field(s) {', '.join(unknown)}{hint}.")
+        flags = [spec.get(k) for k in ("failed", "down") if spec.get(k) is not None]
+        for v in flags:
+            if not isinstance(v, bool):
+                raise AnalysisError(f"{label}: failed must be true or false; got {v!r}.")
+        if any(flags):
+            if spec.get("age") not in (None, 0):
+                raise AnalysisError(f"{label} has failed, so it has no age: give failed: true alone.")
+            out[str(nid)] = {"failed": True}
+            continue
+        age = spec.get("age")
+        age = 0.0 if age is None else _number(age, f"{label}: age")
+        if age > 0:
+            out[str(nid)] = {"age": age}
+    return dict(sorted(out.items())) or None
+
+
+class _GivenState:
+    """A built non-repairable RBD as it is now: each aged block conditioned on
+    its age (RePyability's condition-based node probabilities), failed blocks
+    at 0 and the what-if pins applied. Exposes the ``sf`` / ``cs`` surface the
+    analysis evaluates (``_conditional_sf``, ``_system_horizon``, ``_mttf``),
+    measured from now. With no pins it is ``rbd.sf_given_state``."""
+
+    def __init__(self, rbd, ages: dict, working: set, broken: set, labels: dict):
+        from repyability import NodeState
+
+        self.rbd = rbd
+        self.working = set(working)
+        self.broken = set(broken)
+        self.labels = labels
+        self.states = {nid: NodeState(age=float(age)) for nid, age in ages.items()
+                       if nid not in self.broken and nid not in self.working}
+        # RePyability's own checks (common-cause groups, an unknown node, a
+        # composite model) up front, as a message for the user.
+        self.node_probabilities(np.array([0.0]))
+
+    def node_probabilities(self, x) -> dict:
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        try:
+            probs = self.rbd._state_node_probabilities(x, self.states)
+        except NotImplementedError as exc:  # common-cause groups
+            raise AnalysisError(
+                "As of now isn't available for a diagram with common-cause groups yet: the blocks "
+                "of a group can't each be conditioned on their own age.") from exc
+        except (TypeError, ValueError) as exc:
+            raise AnalysisError(_with_labels(str(exc), self.labels)) from exc
+        for n in self.working:
+            probs[n] = np.ones_like(x)
+        for n in self.broken:
+            probs[n] = np.zeros_like(x)
+        return probs
+
+    def sf(self, x, **_):
+        scalar = np.ndim(x) == 0
+        out = np.asarray(self.rbd.system_probability(self.node_probabilities(x)), dtype=float)
+        return float(out.reshape(-1)[0]) if scalar else out
+
+    def cs(self, x, X):
+        return conditional_survival(self, x, X)
+
+
+def parse_target(value) -> Optional[float]:
+    """A target reliability in (0, 1), or None. Raises :class:`AnalysisError`."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise AnalysisError(f"The target reliability must be a number between 0 and 1; got {value!r}.")
+    v = float(value)
+    if not (np.isfinite(v) and 0.0 < v < 1.0):
+        raise AnalysisError(
+            f"The target reliability must be between 0 and 1 (e.g. 0.9 for 90%); got {value!r}.")
+    return v
+
+
+def _pct(v: float) -> str:
+    return f"{v * 100:.4g}%"
+
+
+def _design_life(rbd, system, target: float, s: float, overrides: dict, now: bool) -> dict:
+    """The time at which the system reliability falls to ``target``: from
+    new (RePyability's ``time_to_reliability``), from the survived age ``s``,
+    or from now given the blocks' states (``now``: the remaining life, as
+    ``remaining_life`` inverts ``sf_given_state``)."""
+    out: dict = {"target": target, "time": None, "from": "now" if now else ("age" if s > 0 else "new")}
+
+    def sf_func(t):
+        return float(_conditional_sf(system, np.array([float(t)]), s, **overrides)[0])
+
+    try:
+        r0 = sf_func(0.0)
+    except Exception:  # noqa: BLE001 - the main result still stands
+        return {**out, "message": "The design life couldn't be found for this diagram."}
+    if r0 < target:
+        where = "now" if now else ("at that age" if s > 0 else "from new")
+        out["message"] = f"System reliability is already below {_pct(target)} {where} ({_pct(r0)})."
+        return out
+    try:
+        with np.errstate(all="ignore"):
+            if system is rbd and s <= 0:
+                t = rbd.time_to_reliability(target, **overrides)
+            else:
+                t = rbd._invert_reliability(sf_func, target)
+    except ValueError:
+        out["message"] = f"System reliability never falls to {_pct(target)}."
+        return out
+    out["time"] = float(t) if np.isfinite(t) else None
+    return out
+
+
 def analyze(
     graph: dict,
     resolve_subsystem: Optional[Callable[[str], dict]] = None,
@@ -1278,6 +1450,8 @@ def analyze(
     conditional_age: Optional[float] = None,
     at_times=None,
     band: Optional[dict] = None,
+    current_state=None,
+    target_reliability: Optional[float] = None,
 ) -> dict:
     """Analyse a builder graph and return a JSON-serialisable result payload.
 
@@ -1293,9 +1467,20 @@ def analyze(
     axis end are still right). ``band`` (``{"level": 0.95}``) adds a
     confidence band on the reliability, MTTF and B-lives from the fitted
     blocks' parameter uncertainty (see :mod:`backend.services.rbd_uncertainty`);
-    it isn't computed unless asked for. Raises :class:`AnalysisError` with a
-    user-facing message if the graph can't be turned into a valid RBD.
+    it isn't computed unless asked for. ``current_state`` (#173; see
+    :func:`parse_nonrepairable_state`) analyses the diagram as of now: the
+    blocks that have failed or run some time, the time axis then running
+    from now and the MTTF and B-lives being the remaining life.
+    ``target_reliability`` adds ``design_life``: the time the system
+    reliability falls to it (from new, the survived age or now), with an
+    interval in the band when one is asked for. Raises :class:`AnalysisError`
+    with a user-facing message if the graph can't be turned into a valid RBD.
     """
+    state = parse_nonrepairable_state(graph, current_state)
+    target = parse_target(target_reliability)
+    s = float(conditional_age) if conditional_age and conditional_age > 0 else 0.0
+    if state and s > 0:
+        raise AnalysisError("Give either a survived-to age or the blocks' states now (As of now), not both.")
     rbd, labels, node_types, reliabilities, working_nodes, broken_nodes, baseline = _build_rbd(
         graph, resolve_subsystem, None, resolve_model, covariates
     )
@@ -1303,12 +1488,28 @@ def analyze(
     overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
     sets = _structure_sets(rbd)
 
-    s = float(conditional_age) if conditional_age and conditional_age > 0 else 0.0
+    # As of now (#173): failed blocks join the broken ones; the system is
+    # evaluated from now, each aged block conditioned on its age.
+    system = rbd
+    ages: dict = {}
+    if state:
+        broken_nodes = broken_nodes | {nid for nid, v in state.items() if v.get("failed")}
+        ages = {nid: v["age"] for nid, v in state.items() if "age" in v}
+        system = _GivenState(rbd, ages, working_nodes, broken_nodes, labels)
+        overrides = {}
+        baseline = None  # no common-cause groups as of now
+
+    def _node_sf(nid, times):
+        if nid in ages:
+            return np.clip(np.nan_to_num(
+                np.asarray(conditional_survival(reliabilities[nid], times, ages[nid]), dtype=float)), 0.0, 1.0)
+        return _conditional_sf(reliabilities[nid], times, s)
+
     grid = _time_grid(reliabilities, t_max)
     if not (t_max is not None and np.isfinite(t_max) and t_max > 0):
         # Auto axis: size it to the system, not the longest-lived block.
-        grid = np.linspace(0.0, _system_horizon(rbd, float(grid[-1]), s, **overrides), _GRID_POINTS)
-    system_sf = _conditional_sf(rbd, grid, s, **overrides)
+        grid = np.linspace(0.0, _system_horizon(system, float(grid[-1]), s, **overrides), _GRID_POINTS)
+    system_sf = _conditional_sf(system, grid, s, **overrides)
 
     # Per-node reliability over the same grid (skip pure voting gates, which
     # are perfectly reliable and not informative to plot). A pinned node shows
@@ -1322,7 +1523,7 @@ def analyze(
         elif nid in broken_nodes:
             node_sf = np.zeros_like(grid)
         else:
-            node_sf = _conditional_sf(reliabilities[nid], grid, s)
+            node_sf = _node_sf(nid, grid)
         node_payloads.append(
             {
                 "id": nid,
@@ -1348,7 +1549,7 @@ def analyze(
                 return np.array([1.0])
             if n in broken_nodes:
                 return np.array([0.0])
-            return _conditional_sf(reliabilities[n], np.array([t_rep]), s)
+            return _node_sf(n, np.array([t_rep]))
 
         node_probs = {n: _node_prob(n) for n in rbd.nodes}
 
@@ -1401,7 +1602,7 @@ def analyze(
     # Mean time to failure (or mean residual life at s), integrated from the
     # system reliability curve.
     try:
-        mttf = _mttf(rbd, float(grid[-1]), s, **overrides)
+        mttf = _mttf(system, float(grid[-1]), s, **overrides)
     except Exception:
         mttf = None
 
@@ -1467,7 +1668,7 @@ def analyze(
     at = None
     if at_times is not None and len(at_times):
         at_t = np.asarray([float(v) for v in at_times], dtype=float)
-        at = {"t": at_t.tolist(), "sf": _clean(_conditional_sf(rbd, at_t, s, **overrides))}
+        at = {"t": at_t.tolist(), "sf": _clean(_conditional_sf(system, at_t, s, **overrides))}
 
     result = {
         "unit": (graph.get("unit") or "").strip(),
@@ -1483,13 +1684,20 @@ def analyze(
         "ccf": ccf,
         "repyability_version": _repyability_version(),
     }
+    if state:
+        # As of now (#173): the state used, and the system reliability now
+        # (0 when the failed blocks cut every path).
+        result["current_state"] = state
+        result["reliability_now"] = float(np.clip(system.sf(0.0), 0.0, 1.0))
+    if target is not None:
+        result["design_life"] = _design_life(rbd, system, target, s, overrides, now=bool(state))
     if band is not None:
         from backend.services import rbd_uncertainty
 
         result["band"] = rbd_uncertainty.system_band(
             graph, rbd, grid, s, working_nodes, broken_nodes,
             resolve_subsystem=resolve_subsystem, resolve_model=resolve_model,
-            covariates=covariates, level=(band or {}).get("level"),
+            covariates=covariates, level=(band or {}).get("level"), target=target, ages=ages,
         )
     return result
 
@@ -1697,7 +1905,47 @@ def _component_message(text: str, labels: dict) -> str:
     """RePyability's message about a component, naming blocks by label."""
     for nid, label in labels.items():
         text = text.replace(f"'{nid}'", f"“{label}”")
-    return text
+    return plain_reason(text)
+
+
+# RePyability's reasons end with the Python call that would simulate the
+# system ("… Simulate the system with availability() or cost().") — calls a
+# Reliafy user can't make (#186) — and count a crew's jobs as "components"
+# (each unit of a standby group is one). Relayed without the call, and
+# naming what the count is.
+_PY_CALL = re.compile(r",?\s+with\s+availability\((?:demand=\.\.\.)?\)(?:\s+or\s+cost\(\))?")
+_CREW_JOBS = re.compile(r"(\d+) repair crew\(s\) for (\d+) components\b")
+
+
+def plain_reason(text):
+    """A RePyability reason in Reliafy's words (see ``_PY_CALL``); anything
+    but a string is returned as is. Idempotent, so saved results can be
+    cleaned again."""
+    if not isinstance(text, str):
+        return text
+    text = _PY_CALL.sub("", text)
+    return _CREW_JOBS.sub(lambda m: f"{m.group(1)} repair crew{'s' if m.group(1) != '1' else ''} for "
+                                    f"{m.group(2)} repair jobs (each unit of a standby group is one)", text)
+
+
+def plain_reasons(payload: dict) -> dict:
+    """An availability payload with RePyability's reasons in Reliafy's words
+    (:func:`plain_reason`), also those of a result saved before (#186)."""
+    if not isinstance(payload, dict):
+        return payload
+    out = dict(payload)
+    for key in ("long_run_method", "safety"):
+        if isinstance(out.get(key), dict):
+            out[key] = {k: plain_reason(v) if k in ("reason", "note") else v for k, v in out[key].items()}
+    exact = out.get("exact")
+    if isinstance(exact, dict):
+        exact = {**exact, "message": plain_reason(exact.get("message")),
+                 **({"cost_note": plain_reason(exact["cost_note"])} if "cost_note" in exact else {})}
+        if isinstance(exact.get("routes"), dict):
+            exact["routes"] = {k: ({**r, "reason": plain_reason(r.get("reason"))} if isinstance(r, dict) else r)
+                               for k, r in exact["routes"].items()}
+        out["exact"] = exact
+    return out
 
 
 def _resample_step(timeline, values, grid) -> np.ndarray:
@@ -2353,9 +2601,11 @@ _OVER_TIME_OK = ("exact", "numerical")
 
 
 def count_blocks(graph: dict) -> int:
-    """The component blocks of a diagram (voting gates, input and output
-    aren't blocks): what the exact figures' cost scales with."""
-    return sum(1 for n in (graph or {}).get("nodes") or [] if n.get("type") == "component")
+    """The blocks of a diagram — components and standby groups; voting gates,
+    input and output aren't blocks: what the exact figures' cost scales with,
+    and the count the rest of a result uses (#186)."""
+    return sum(1 for n in (graph or {}).get("nodes") or []
+               if n.get("type") not in ("input", "output", "knode"))
 
 
 def exact_deferral(graph: dict, requested: bool) -> Optional[dict]:
@@ -2462,10 +2712,10 @@ def _node_states(state: Optional[dict], labels: Optional[dict] = None) -> Option
 
 def _with_labels(text: str, labels: dict) -> str:
     """RePyability's message with the node ids it quotes replaced by the
-    blocks' labels."""
+    blocks' labels (and its Python calls left out: :func:`plain_reason`)."""
     for nid, label in sorted(labels.items(), key=lambda kv: -len(str(kv[0]))):
         text = text.replace(repr(nid), f"“{label}”")
-    return text
+    return plain_reason(text)
 
 
 def _routes_summary(routes: dict, labels: dict) -> dict:

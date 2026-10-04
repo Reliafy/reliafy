@@ -42,6 +42,65 @@ const FUNCS = [
 const NODE_COLORS = ["#0284c7", "#16a34a", "#db2777", "#d97706", "#7c3aed", "#0891b2"];
 
 
+// "4,200" — a life to four significant figures, with thousands separators.
+const fmtLife = (v) =>
+  v == null || !Number.isFinite(v)
+    ? "—"
+    : Math.abs(v) >= 1e-3 || v === 0
+    ? Number(v.toPrecision(4)).toLocaleString()
+    : v.toExponential(2);
+const fmtPctLevel = (v) => `${Number((v * 100).toPrecision(4))}%`;
+
+// The design life (#173): "R ≥ 90% until 4,200 h (95% CI 3,800–4,600)" —
+// from new, for a further time past a survived age, or from now.
+export function DesignLife({ result }) {
+  const dl = result.design_life;
+  if (!dl) return null;
+  const unit = result.unit ? ` ${result.unit}` : "";
+  const iv = result.band?.design_life;
+  const level = result.band?.level;
+  const lead = dl.from === "now" ? "for the next" : dl.from === "age" ? "for a further" : "until";
+  return (
+    <div className="rbd-design-life" role="status">
+      <span className="rbd-design-life-name">Design life</span>
+      {dl.time != null ? (
+        <>
+          <span>
+            R ≥ {fmtPctLevel(dl.target)} {lead}{" "}
+            <b className="rbd-design-life-value">{fmtLife(dl.time)}</b>
+            {unit}
+          </span>
+          {iv && level && (iv.lower != null || iv.upper != null) && (
+            <span className="muted" title="Confidence interval from the fitted blocks' parameter uncertainty">
+              ({Math.round(level * 100)}% CI {fmtLife(iv.lower)}–{iv.upper == null ? "beyond" : fmtLife(iv.upper)})
+            </span>
+          )}
+        </>
+      ) : (
+        <span>{dl.message}</span>
+      )}
+    </div>
+  );
+}
+
+// What "as of now" assumed (#173): the failed and running blocks, and the
+// system's reliability now.
+function AsOfNote({ result, idToLabel }) {
+  const unit = result.unit ? ` ${result.unit}` : "";
+  const parts = Object.entries(result.current_state || {}).map(([id, st]) =>
+    st.failed ? `${idToLabel[id] || id} failed` : `${idToLabel[id] || id} running ${fmtLife(st.age)}${unit}`
+  );
+  const failed = result.reliability_now === 0;
+  return (
+    <div className={"rbd-asof-note" + (failed ? " is-failed" : "")} role="status">
+      <b>As of now:</b> {parts.join(" · ")}.{" "}
+      {failed
+        ? "The system has failed: the failed blocks leave no working path."
+        : `Curves, lives and importance run from now (system reliability now ${fmtPctLevel(result.reliability_now ?? 1)}).`}
+    </div>
+  );
+}
+
 // Reliability results (non-repairable RBD): headline MTTF / B-lives, the
 // system + per-node R(t)/F(t) curves, importance measures, and the structural
 // path/cut sets. Also used by the public read-only view.
@@ -50,9 +109,13 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
   const [active, setActive] = useState("sf");
   const unit = result.unit;
   const cond = conditionalAge > 0;
+  // As of now (#173): the curves, MTTF and B-lives run from now.
+  const now = !!result.current_state;
   const sLabel = `${conditionalAge}${unit ? ` ${unit}` : ""}`;
   // When conditioning, the x-axis is additional time beyond the survived age s.
-  const tLabel = cond
+  const tLabel = now
+    ? `time from now${unit ? ` (${unit})` : ""}`
+    : cond
     ? `additional time${unit ? ` (${unit})` : ""}`
     : unit
     ? `t (${unit})`
@@ -173,11 +236,13 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
           </span>
         </div>
       )}
+      {now && <AsOfNote result={result} idToLabel={idToLabel} />}
+      <DesignLife result={result} />
       <div className="params">
         <div className="stat">
           <div className="value">{fmt(result.mttf)}</div>
           <div className="name">
-            {cond ? "Mean residual life" : "MTTF"}
+            {now ? "Mean remaining life" : cond ? "Mean residual life" : "MTTF"}
             {unit ? ` (${unit})` : ""}
           </div>
           <BandInterval band={band} interval={band?.mttf} />
@@ -186,15 +251,15 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
           <>
             <div className="stat">
               <div className="value">{fmt(result.blife.b10)}</div>
-              <div className="name" title="Time by which 10% of systems have failed">
-                B10 life{unit ? ` (${unit})` : ""}
+              <div className="name" title={`Time${now ? " from now" : ""} by which 10% of systems have failed`}>
+                B10 life{now ? " from now" : ""}{unit ? ` (${unit})` : ""}
               </div>
               <BandInterval band={band} interval={band?.blife?.b10} />
             </div>
             <div className="stat">
               <div className="value">{fmt(result.blife.b50)}</div>
-              <div className="name" title="Median system life (50% failed)">
-                B50 life{unit ? ` (${unit})` : ""}
+              <div className="name" title={`Median system life${now ? " from now" : ""} (50% failed)`}>
+                B50 life{now ? " from now" : ""}{unit ? ` (${unit})` : ""}
               </div>
               <BandInterval band={band} interval={band?.blife?.b50} />
             </div>
@@ -733,6 +798,74 @@ function AvailabilityUpgrade({ graph }) {
   );
 }
 
+// "As of now": each block's state now. A repairable block can be down (with
+// how long it has been in repair, #155); a non-repairable one has failed for
+// good (#173). Either can have run some time since new.
+function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
+  const outMode = repairable ? "down" : "failed";
+  return (
+    <div className="rbd-asof-panel">
+      <p className="hint" style={{ margin: 0 }}>
+        {repairable
+          ? "Mark blocks that are down now (with how long they've been in repair) or set how long " +
+            "they've been running since new or their last renewal. Blocks left as New start new."
+          : "Mark blocks that have failed, or set how long they've been running. Results then run " +
+            "from now: the remaining life. Blocks left as New start new."}
+      </p>
+      <div className="rbd-avail-imp-scroll">
+        <table className="calc-table rbd-asof-table">
+          <thead>
+            <tr>
+              <th>Block</th>
+              <th>State now</th>
+              <th>{repairable ? "Time" : "Running for"}{unitLabel}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {blocks.map((b) => {
+              const st = states[b.id] || { mode: "new", value: "" };
+              // A state set before the diagram changed kind reads as this kind's.
+              const mode = st.mode === "down" || st.mode === "failed" ? outMode : st.mode;
+              const timed = mode === "age" || (repairable && mode === "down");
+              return (
+                <tr key={b.id} className={mode === outMode ? "is-down" : ""}>
+                  <td className="calc-row-label">{b.label}</td>
+                  <td>
+                    <select
+                      value={mode}
+                      aria-label={`${b.label} state now`}
+                      onChange={(e) => onChange(b.id, { mode: e.target.value })}
+                    >
+                      <option value="new">New</option>
+                      <option value="age">Running</option>
+                      <option value={outMode}>{repairable ? "Down" : "Failed"}</option>
+                    </select>
+                  </td>
+                  <td>
+                    {!timed ? (
+                      <span className="muted">—</span>
+                    ) : (
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={st.value}
+                        placeholder={mode === "down" ? "in repair for" : "age"}
+                        aria-label={mode === "down" ? `${b.label}: time into its repair` : `${b.label}: age`}
+                        onChange={(e) => onChange(b.id, { value: e.target.value })}
+                      />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function RbdCalculator({ graph, validation, stale, rbdId = null }) {
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | calculating | error
@@ -745,9 +878,12 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
   const [calcSig, setCalcSig] = useState(null); // inputs used for the last calc
   const [showCov, setShowCov] = useState(false);
   const [band, setBand] = useState({ on: false, level: 0.95 }); // confidence band (#103)
-  // Repairable (#155): "As of now" — the blocks' current states.
+  // "As of now" — the blocks' current states: repairable (#155) and
+  // non-repairable (#173, where a failed block stays failed).
   const [asOf, setAsOf] = useState(false);
-  const [blockStates, setBlockStates] = useState({}); // {nodeId: {mode: "new"|"age"|"down", value}}
+  const [blockStates, setBlockStates] = useState({}); // {nodeId: {mode: "new"|"age"|"down"|"failed", value}}
+  // Non-repairable (#173): the design life, the time R(t) falls to this (%).
+  const [targetPct, setTargetPct] = useState("90");
   const [busy, setBusy] = useState(null); // null | "exact" | "simulate": what the running request adds
 
   const unitLabel = graph.unit ? ` (${graph.unit})` : "";
@@ -799,24 +935,37 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
     [graph.nodes]
   );
 
-  // The current state sent to the backend: {id: {down: true, since} | {age}}.
+  // The current state sent to the backend: {id: {down: true, since} | {age}}
+  // for a repairable diagram, {id: {failed: true} | {age}} for a non-repairable one.
   const statePayload = () => {
-    if (!graph.repairable || !asOf) return null;
+    if (!asOf) return null;
     const out = {};
     for (const b of stateBlocks) {
       const st = blockStates[b.id];
       if (!st || st.mode === "new") continue;
       const v = st.value === "" || st.value == null ? 0 : Number(st.value);
-      if (st.mode === "down") out[b.id] = { down: true, since: v };
-      else if (v > 0) out[b.id] = { age: v };
+      const isOut = st.mode === "down" || st.mode === "failed"; // down (repairable) or failed
+      if (isOut && graph.repairable) out[b.id] = { down: true, since: v };
+      else if (isOut) out[b.id] = { failed: true };
+      else if (st.mode === "age" && v > 0) out[b.id] = { age: v };
     }
     return Object.keys(out).length ? out : null;
   };
 
+  // The design life's target reliability (0–1), or null when blank or invalid.
+  const target = (() => {
+    if (graph.repairable || targetPct === "") return null;
+    const v = Number(targetPct);
+    return v > 0 && v < 100 ? v / 100 : null;
+  })();
+
   // Signature of the calculation inputs, so we can tell when the shown result
   // is out of date with the current "To" / covariate / conditional selections.
   const bandSig = band.on ? band.level : null;
-  const inputSig = JSON.stringify({ t: tMax, s: condAge, cov: covPayload(), band: bandSig, now: statePayload() });
+  const inputSig = JSON.stringify({
+    t: tMax, s: asOf && !graph.repairable ? "" : condAge, cov: covPayload(), band: bandSig,
+    now: statePayload(), target,
+  });
   const dirty = result != null && calcSig != null && inputSig !== calcSig;
 
   // ``simulate`` asks for the (paid) simulation; ``exact`` for the exact
@@ -829,7 +978,9 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
     setNeedsPro(false);
     try {
       const cov = covPayload();
-      const s = condAge === "" ? null : Number(condAge);
+      // As of now replaces the whole-system "given survived to" age.
+      const sInput = asOf && !graph.repairable ? "" : condAge;
+      const s = sInput === "" ? null : Number(sInput);
       const now = statePayload();
       const res = await analyzeRbd(
         graph,
@@ -848,7 +999,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
                 // Keep large diagrams' exact figures once asked for.
                 exact: exact || result?.exact?.status === "ok",
               }
-            : {}),
+            : { currentState: now, targetReliability: target }),
         }
       );
       setResult(res);
@@ -864,7 +1015,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         }
         if (evalT === "") setEvalT(Number((limit / 2).toPrecision(4)));
       }
-      setCalcSig(JSON.stringify({ t: usedTMax, s: condAge, cov, band: bandSig, now }));
+      setCalcSig(JSON.stringify({ t: usedTMax, s: sInput, cov, band: bandSig, now, target }));
       setPhase("idle");
       setBusy(null);
     } catch (err) {
@@ -961,18 +1112,48 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
               onChange={(e) => setEvalT(e.target.value)}
             />
           </label>
-          <label className="calc-t">
-            <span>Given survived to{unitLabel}</span>
+          {!asOf && (
+            <label className="calc-t">
+              <span>Given survived to{unitLabel}</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="0"
+                value={condAge}
+                onChange={(e) => setCondAge(e.target.value)}
+              />
+            </label>
+          )}
+          <label className="calc-t" title="The design life: how long system reliability stays at or above this">
+            <span>Design life at R (%)</span>
             <input
               type="number"
-              min="0"
+              min="1"
+              max="99.9"
               step="any"
-              placeholder="0"
-              value={condAge}
-              onChange={(e) => setCondAge(e.target.value)}
+              placeholder="90"
+              value={targetPct}
+              onChange={(e) => setTargetPct(e.target.value)}
             />
           </label>
           <BandControls value={band} onChange={setBand} />
+          <label className="rbd-asof-toggle">
+            <input type="checkbox" checked={asOf} onChange={(e) => setAsOf(e.target.checked)} />
+            <span>As of now</span>
+          </label>
+        </div>
+      )}
+
+      {canCalculate && !graph.repairable && asOf && (
+        <div className="rbd-asof">
+          <AsOfPanel
+            blocks={stateBlocks}
+            states={blockStates}
+            onChange={setBlockState}
+            unitLabel={unitLabel}
+            repairable={false}
+          />
         </div>
       )}
 
@@ -996,59 +1177,13 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
             </label>
           </div>
           {asOf && (
-            <div className="rbd-asof-panel">
-              <p className="hint" style={{ margin: 0 }}>
-                Mark blocks that are down now (with how long they've been in repair) or set how long
-                they've been running since new or their last renewal. Blocks left as New start new.
-              </p>
-              <div className="rbd-avail-imp-scroll">
-                <table className="calc-table rbd-asof-table">
-                  <thead>
-                    <tr>
-                      <th>Block</th>
-                      <th>State now</th>
-                      <th>Time{unitLabel}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stateBlocks.map((b) => {
-                      const st = blockStates[b.id] || { mode: "new", value: "" };
-                      return (
-                        <tr key={b.id} className={st.mode === "down" ? "is-down" : ""}>
-                          <td className="calc-row-label">{b.label}</td>
-                          <td>
-                            <select
-                              value={st.mode}
-                              aria-label={`${b.label} state now`}
-                              onChange={(e) => setBlockState(b.id, { mode: e.target.value })}
-                            >
-                              <option value="new">New</option>
-                              <option value="age">Running</option>
-                              <option value="down">Down</option>
-                            </select>
-                          </td>
-                          <td>
-                            {st.mode === "new" ? (
-                              <span className="muted">—</span>
-                            ) : (
-                              <input
-                                type="number"
-                                min="0"
-                                step="any"
-                                value={st.value}
-                                placeholder={st.mode === "down" ? "in repair for" : "age"}
-                                aria-label={st.mode === "down" ? `${b.label}: time into its repair` : `${b.label}: age`}
-                                onChange={(e) => setBlockState(b.id, { value: e.target.value })}
-                              />
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <AsOfPanel
+              blocks={stateBlocks}
+              states={blockStates}
+              onChange={setBlockState}
+              unitLabel={unitLabel}
+              repairable
+            />
           )}
         </div>
       )}
