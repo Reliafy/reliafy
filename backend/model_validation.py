@@ -134,12 +134,12 @@ def _validate(model, df: pd.DataFrame, mapping: dict, covariates: list) -> dict:
     from surpyval.metrics import auc_td, concordance_index, integrated_brier_score, survival_probability
 
     mapping = {k: v for k, v in (mapping or {}).items() if v}
-    if not mapping.get("x"):
-        return unavailable("The model has no time column to score against.")
     for key in ("xl", "xr"):
         if mapping.get(key):
             return unavailable("Not available for interval data: the scores need each unit's failure or "
                                "suspension time.")
+    if not mapping.get("x"):
+        return unavailable("The model has no time column to score against.")
     for key in ("tl", "tr"):
         if mapping.get(key) and np.isfinite(_column(df, mapping[key], np.nan)).any():
             return unavailable("Not available for truncated data: the scores assume every unit was "

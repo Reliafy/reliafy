@@ -99,8 +99,8 @@ def test_two_train_structure_units_ccf_and_approximations():
 
 
 def test_two_train_reliability_matches_closed_form_without_ccf():
-    d = one(TWO_TRAIN.replace('model="beta-factor"', 'model="MGL"'))
-    assert any("MGL" in w for w in d.warnings) and "ccf_groups" not in d.graph
+    d = one(TWO_TRAIN.replace('model="beta-factor"', 'model="alpha-factor"'))
+    assert any("alpha-factor" in w for w in d.warnings) and "ccf_groups" not in d.graph
     res = rbd_analysis.analyze(normalize_graph(d.graph), t_max=20000)
     t = np.asarray(res["time"])
     train = np.exp(-(3e-4 + 1e-4) * t)

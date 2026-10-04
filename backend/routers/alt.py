@@ -13,6 +13,7 @@ from backend.http_limits import read_upload
 from backend.fitting import FitError
 from backend.services import datasets as datasets_service
 from backend.services import alt as alt_service
+from backend.services import billing as billing_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
 from backend.services import shares as shares_service
@@ -24,9 +25,11 @@ router = APIRouter(prefix="/api")
 
 
 def _spec_from_form(x, s1, s2, distribution, life_model, unit, *, c=None, n=None,
-                    s1_label=None, s2_label=None) -> dict:
-    mapping = {"x": x}
-    for key, val in (("c", c), ("n", n)):
+                    xl=None, xr=None, tl=None, tr=None, s1_label=None, s2_label=None) -> dict:
+    # The failure time ``x``, or inspection data's interval ``xl``/``xr``
+    # (#237); build_inputs checks it's one or the other.
+    mapping = {"x": x} if x else {}
+    for key, val in (("xl", xl), ("xr", xr), ("c", c), ("n", n), ("tl", tl), ("tr", tr)):
         if val:
             mapping[key] = val
     stress_cols = [s1] + ([s2] if s2 else [])
@@ -95,13 +98,17 @@ def alt_options(ctx: AccessCtx = Depends(get_access)) -> dict:
 def fit_preview(
     file: UploadFile | None = File(default=None),
     dataset_id: str | None = Form(default=None),
-    x: str = Form(...),
+    x: str | None = Form(default=None),
     s1: str = Form(...),
     s2: str | None = Form(default=None),
     s1_label: str | None = Form(default=None),
     s2_label: str | None = Form(default=None),
     c: str | None = Form(default=None),
     n: str | None = Form(default=None),
+    xl: str | None = Form(default=None),
+    xr: str | None = Form(default=None),
+    tl: str | None = Form(default=None),
+    tr: str | None = Form(default=None),
     distribution: str = Form(default="weibull"),
     life_model: str = Form(default="arrhenius"),
     unit: str | None = Form(default=None),
@@ -112,7 +119,8 @@ def fit_preview(
     try:
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(x, s1, s2, distribution, life_model, unit,
-                               c=c, n=n, s1_label=s1_label, s2_label=s2_label)
+                               c=c, n=n, xl=xl, xr=xr, tl=tl, tr=tr,
+                               s1_label=s1_label, s2_label=s2_label)
         df = datasets_service.load_dataframe(dataset)
         payload, _ = alt_fit.fit(
             df, spec["mapping"], spec["stress_cols"],
@@ -134,13 +142,17 @@ def save_model(
     name: str = Form(...),
     file: UploadFile | None = File(default=None),
     dataset_id: str | None = Form(default=None),
-    x: str = Form(...),
+    x: str | None = Form(default=None),
     s1: str = Form(...),
     s2: str | None = Form(default=None),
     s1_label: str | None = Form(default=None),
     s2_label: str | None = Form(default=None),
     c: str | None = Form(default=None),
     n: str | None = Form(default=None),
+    xl: str | None = Form(default=None),
+    xr: str | None = Form(default=None),
+    tl: str | None = Form(default=None),
+    tr: str | None = Form(default=None),
     distribution: str = Form(default="weibull"),
     life_model: str = Form(default="arrhenius"),
     unit: str | None = Form(default=None),
@@ -154,7 +166,8 @@ def save_model(
     try:
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(x, s1, s2, distribution, life_model, unit,
-                               c=c, n=n, s1_label=s1_label, s2_label=s2_label)
+                               c=c, n=n, xl=xl, xr=xr, tl=tl, tr=tr,
+                               s1_label=s1_label, s2_label=s2_label)
         doc = alt_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "alt_models", doc.id, ctx)
     except FitError as exc:
@@ -227,10 +240,13 @@ def evaluate(
     model_id: str,
     use_stress: list[float] = Body(..., embed=True),
     ref_stress: list[float] | None = Body(default=None, embed=True),
+    mission_time: float | None = Body(default=None, embed=True),
+    confidence: float = Body(default=alt_fit.DEFAULT_CONFIDENCE, embed=True),
     session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Reliability at a use-level stress (with optional acceleration factor vs a
-    reference/test stress) for the saved ALT model."""
+    reference/test stress, and the reliability over a mission) for the saved
+    ALT model, with its Wald confidence bounds (#231)."""
     doc, _ = access_service.fetch_readable(session, "alt_models", AltModelDoc, model_id, ctx)
     if doc is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
@@ -238,8 +254,41 @@ def evaluate(
         result = alt_service.evaluate(
             session, model_id, list(use_stress), [*ctx.read_owners, doc.owner_id],
             ref_stress=list(ref_stress) if ref_stress else None,
+            mission_time=mission_time, confidence=confidence,
         )
         return JSONResponse(content=result)
+    except alt_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@router.post("/alt/models/{model_id}/bounds")
+def bounds(
+    model_id: str,
+    use_stress: list[float] = Body(..., embed=True),
+    method: str = Body(default="wald", embed=True),
+    confidence: float = Body(default=alt_fit.DEFAULT_CONFIDENCE, embed=True),
+    mission_time: float | None = Body(default=None, embed=True),
+    t_max: float | None = Body(default=None, embed=True),
+    session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Confidence bounds at a use stress (#231): a band on the reliability,
+    lower bounds on B10, B1 and the mission reliability, and intervals on the
+    coefficients, by ``method`` — ``wald`` and ``lr`` (likelihood ratio,
+    a second or two) answer at once and are free; ``bootstrap`` (200 refits)
+    is a paid feature that runs as a job (202 with ``job`` to poll at
+    ``/api/rbd-jobs/{id}``) when the compute queue is configured."""
+    doc, _ = access_service.fetch_readable(session, "alt_models", AltModelDoc, model_id, ctx)
+    if doc is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        code, payload = alt_service.bounds(
+            session, model_id, [*ctx.read_owners, doc.owner_id], uid=ctx.uid, use_stress=list(use_stress),
+            method=method, confidence=confidence, mission_time=mission_time, t_max=t_max,
+            entitled=billing_service.premium_compute_allowed(session, ctx.user),
+        )
+        return JSONResponse(status_code=code, content=payload)
     except alt_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:

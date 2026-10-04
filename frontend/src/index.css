@@ -1989,6 +1989,10 @@ button.secondary:hover:not(:disabled) {
   font-size: 13px;
   font-weight: 500;
   color: var(--ink);
+  /* A long file name wraps rather than pushing the row past a phone's edge. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .recent-meta {
@@ -3197,6 +3201,17 @@ button.secondary:hover:not(:disabled) {
   margin-bottom: 0.9rem;
 }
 
+/* A two-mode mixture picked by Best fit, in words (#236). */
+.mixture-summary {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: rgba(47, 109, 246, 0.07);
+  border-radius: 0 8px 8px 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
 .result-dist {
   display: inline-block;
   font-weight: 600;
@@ -4244,6 +4259,9 @@ select:disabled {
   cursor: pointer;
 }
 .fitopts-row input { accent-color: var(--acc); }
+/* Best fit's "Consider two-mode mixtures" (#236): a sentence, so it wraps. */
+.fitopts-mixtures { align-items: flex-start; margin: 4px 0 2px; line-height: 1.45; }
+.fitopts-mixtures input { margin-top: 3px; flex: none; }
 .fitopts-fixed { margin-top: 6px; }
 .fitopts-fixed-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
 
@@ -5687,6 +5705,18 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
   margin-top: 1.25rem;
   padding-top: 1rem;
   border-top: 1px solid var(--line2);
+  /* A phone can't fit the stepper and the buttons on one line. */
+  flex-wrap: wrap;
+}
+.fit-flow-foot .row { flex-wrap: wrap; }
+.fit-flow-foot .steps { flex-wrap: wrap; row-gap: 6px; min-width: 0; }
+/* A phone: the stepper and the buttons wrap instead of scrolling the page. */
+@media (max-width: 560px) {
+  .fit-flow-foot { flex-wrap: wrap; }
+  .fit-flow-foot .steps { flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .fit-flow-foot .steps .step-wrap { gap: 6px; }
+  .fit-flow-foot .steps .sep { width: 10px; }
+  .fit-flow-foot .row { flex-wrap: wrap; }
 }
 
 /* ---- Settings page ---------------------------------------------------- */
@@ -6684,6 +6714,21 @@ button.danger:hover { background: #fdeeee; }
 .alt-metric .v { font-size: 15px; font-weight: 600; }
 .alt-metric.accent { border-color: var(--acc); }
 .alt-metric.accent .v { color: var(--acc); }
+/* Confidence bounds on the use-level figures (#231) */
+.alt-metric .alt-lower { font-size: 11px; color: var(--muted); }
+.alt-bounds-pick { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.alt-bounds-k { font-size: 13px; color: var(--text); }
+.alt-bounds-pick .seg { flex-wrap: wrap; max-width: 100%; }
+.alt-method-hint { font-size: 12px; }
+.alt-calc-out .table-scroll { max-width: 100%; overflow-x: auto; }
+.alt-ci-table td:nth-child(2), .alt-ci-table th:nth-child(2),
+.alt-coef-table td:nth-child(2), .alt-coef-table th:nth-child(2) { text-align: right; }
+/* Inspection-data toggle on the new-model Data step (#237) */
+.alt-interval-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
+@media (max-width: 560px) {
+  .alt-map-row { flex-wrap: wrap; }
+  .alt-map-k { flex: 1 0 100%; }
+}
 
 .empty-note { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .empty-note button { margin-top: 6px; }
@@ -7177,6 +7222,19 @@ button.danger:hover { background: #fdeeee; }
 .fleet-alert-row .lib-acts { opacity: 1; }
 .fleet-alert-kinds { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; }
 .fleet-rate-est { margin-top: 0.25rem; font-size: 0.78rem; }
+/* #234: warranty limits, per-item conditions, the at-risk list. */
+.fleet-warranty { gap: 0.8rem; align-items: flex-end; flex-wrap: wrap; margin-top: 0.6rem; }
+.fleet-warranty .muted-line { margin: 0; flex: 1 1 220px; }
+.fleet-items-scroll { overflow-x: auto; max-width: 100%; }
+.fleet-items-scroll .lib-table { min-width: 860px; }
+.fleet-items-scroll .lib-table input.cell-input { min-width: 72px; }
+.fleet-items-scroll .sel-trigger { min-width: 0; }
+.fleet-risk-list { margin: 0.2rem 0 0; padding-left: 1.3rem; }
+.fleet-risk-list li { padding: 0.3rem 0; border-bottom: 1px solid var(--line2); }
+.fleet-risk-list li:last-child { border-bottom: 0; }
+.fleet-risk-name { font-weight: 600; }
+.fleet-risk-p { margin-left: 0.6rem; font-family: var(--mono); }
+.fleet-risk-cond { display: block; margin-top: 0.1rem; }
 @media (max-width: 560px) {
   .fleet-alert-row { flex-wrap: wrap; }
   .fleet-alert-main { flex-basis: 100%; }
@@ -7321,6 +7379,26 @@ button.danger:hover { background: #fdeeee; }
 .rbd-cheapest-inputs { margin-top: 0; }
 .rbd-cheapest-result { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .rbd-cheapest-result.stale { opacity: 0.6; }
+/* Trains copied whole (#227). */
+.rbd-trains { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
+.rbd-trains-head { display: flex; flex-direction: column; gap: 2px; }
+.rbd-train { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.rbd-train-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rbd-train-row input[type="text"] {
+  flex: 1 1 160px; min-width: 0; max-width: 320px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+  padding: 0.45rem 0.6rem; font-size: 0.9rem; font-family: inherit;
+}
+.rbd-train-row input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(47, 109, 246, 0.18); }
+.rbd-train-singles { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; }
+.rbd-intervals { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border, #e3e7ed); display: flex; flex-direction: column; gap: 10px; }
+.rbd-intervals > .seg { align-self: flex-start; flex-wrap: wrap; }
+.rbd-intervals .param-fields { margin: 0; }
+.rbd-intervals .rbd-intervals-allowed { flex: 1 1 240px; max-width: 420px; }
+.rbd-intervals .rbd-intervals-allowed input { width: 100%; box-sizing: border-box; }
+.rbd-intervals-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; max-width: 760px; }
+.rbd-intervals-check input { margin-top: 3px; flex: none; }
+.rbd-intervals .rbd-costs-table td .muted { font-size: 11.5px; font-weight: 400; }
 
 /* One toolbar across the top of the canvas: the diagram's settings on the
    left, its actions on the right — which wrap onto a second row rather than
@@ -7562,3 +7640,20 @@ button.danger:hover { background: #fdeeee; }
     display: none;
   }
 }
+
+/* Reliability growth projection panel (#232). */
+.growth-projection .strategy-costs .calc-t { min-width: 0; }
+.growth-projection .strategy-costs .calc-t .sel-trigger { min-width: 180px; }
+.gp-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0.4rem 0 0.8rem; }
+.gp-table { min-width: 680px; }
+.gp-table td, .gp-table th { padding: 6px 10px; }
+.gp-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.gp-table .gp-mode { font-weight: 500; min-width: 140px; overflow-wrap: break-word; }
+.gp-table .gp-kind { min-width: 190px; }
+.gp-table .gp-fef { width: 72px; text-align: right; }
+.gp-actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.gp-mtbfs { margin-bottom: 0.8rem; }
+.gp-mtbfs .gp-projected .value { color: var(--accent, #2f6df6); }
+.fleet-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.fleet-items { min-width: 680px; }
+.fleet-items.repairable { min-width: 940px; }

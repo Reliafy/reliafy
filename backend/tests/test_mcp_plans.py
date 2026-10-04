@@ -38,7 +38,7 @@ USERS = {
 }
 UPGRADE = "upgrade to Reliafy Pro (US$19/month)"
 WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
-N_TOOLS = 46
+N_TOOLS = 52
 
 
 @pytest.fixture()
@@ -141,6 +141,7 @@ def test_free_user_tries_every_tool_but_the_pro_only_ones_within_the_allowance(e
     # Fitting and fleets are Pro-only: refused, and refusals aren't counted.
     for name, args in [("fit_distribution", FIT_ARGS),
                        ("fit_and_save_model", {"name": "x", **FIT_ARGS}),
+                       ("fit_alt_model", {"name": "x", "data": [120, 340], "stresses": [[350], [400]]}),
                        ("list_fleets", {}),
                        ("create_fleet_alert", {"fleet_id": "nope", "kind": "above", "threshold": 1})]:
         msg = _err(_call(token, name, args))

@@ -23,10 +23,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
-def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=None) -> dict:
+def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=None, mode=None) -> dict:
     mapping = {"i": i, "x": x}
     # Optional modifiers (c/n/tl/tr); ``t`` is the legacy alias for ``tr``.
-    for key, val in (("c", c), ("n", n), ("tl", tl), ("tr", tr or t)):
+    # ``mode`` is each failure's mode, for a growth projection (#232).
+    for key, val in (("c", c), ("n", n), ("tl", tl), ("tr", tr or t), ("mode", mode)):
         if val:
             mapping[key] = val
     return {"mapping": mapping, "model_id": (model or "crow_amsaa"), "unit": (unit or "").strip()}
@@ -82,6 +83,7 @@ def fit_preview(
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
     t: str | None = Form(default=None),
+    mode: str | None = Form(default=None),
     model: str = Form(default="crow_amsaa"),
     unit: str | None = Form(default=None),
     session=Depends(get_session),
@@ -90,7 +92,7 @@ def fit_preview(
     """Fit a recurrent model for preview (only the uploaded dataset is stored)."""
     try:
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
-        spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t)
+        spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode)
         df = datasets_service.load_dataframe(dataset)
         payload, _ = recurrent_fit.fit(df, spec["mapping"], spec["model_id"], spec["unit"])
     except FitError as exc:
@@ -115,6 +117,7 @@ def save_model(
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
     t: str | None = Form(default=None),
+    mode: str | None = Form(default=None),
     model: str = Form(default="crow_amsaa"),
     unit: str | None = Form(default=None),
     session=Depends(get_session),
@@ -126,7 +129,7 @@ def save_model(
         return JSONResponse(status_code=status, content=payload)
     try:
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
-        spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t)
+        spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode)
         doc = recurrent_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
     except FitError as exc:
@@ -240,6 +243,48 @@ def predict(
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@router.get("/recurrent/models/{model_id}/projection")
+def projection_view(
+    model_id: str, mode_column: str | None = None,
+    session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The growth-projection panel's inputs: the dataset's columns, the
+    failure modes in the chosen column, and the saved settings and result."""
+    doc, _ = access_service.fetch_readable(session, "recurrent_models", RecurrentModelDoc, model_id, ctx)
+    if doc is None or doc.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    view = recurrent_service.projection_view(session, doc, mode_column)
+    return JSONResponse(content={**view, "can_save": access_service.can_write(ctx, doc.owner_id)})
+
+
+@router.post("/recurrent/models/{model_id}/projection")
+def projection(
+    model_id: str, body: dict = Body(...),
+    session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Reliability growth projection (AMSAA-Crow; SurPyval's
+    ``CrowAMSAA.projection``) from the model's event data. JSON
+    ``{fef: {mode: factor}, bc?: [mode], test_end?, mode_column?, save?}``.
+    Exact and quick, not metered. Saved with the model (settings and result)
+    when the caller can edit it and ``save`` isn't false; a viewer gets the
+    numbers without saving."""
+    doc, _ = access_service.fetch_readable(session, "recurrent_models", RecurrentModelDoc, model_id, ctx)
+    if doc is None or doc.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        payload = recurrent_service.run_projection(
+            session, doc, fef=body.get("fef"), bc=body.get("bc"), test_end=body.get("test_end"),
+            mode_column=body.get("mode_column"))
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    saved = False
+    if body.get("save", True) and access_service.can_write(ctx, doc.owner_id):
+        recurrent_service.save_projection(session, doc, payload, body.get("mode_column"), doc.owner_id)
+        access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
+        saved = True
+    return JSONResponse(content={"result": payload, "saved": saved})
 
 
 @router.post("/recurrent/models/{model_id}/overhaul")

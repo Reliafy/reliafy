@@ -410,6 +410,7 @@ function CutSetTable({ result }) {
                     {c.events.map((id, j) => (
                       <span key={id}>
                         {j > 0 && <span className="ft-and"> + </span>}
+                        {events[id]?.node_type === "ccf" && <span className="ft-cc-badge" title="A common-cause group's shared cause">CC</span>}
                         {fullLabel(events[id] || { label: id })}
                       </span>
                     ))}
@@ -439,6 +440,35 @@ function CutSetTable({ result }) {
         A cut set's probability is the product of its events' — shares can add to more than 100%
         because cut sets overlap.
         {cuts.basis === "all" && ` Their sum (${fmtP(cuts.probability_sum)}) is the rare-event approximation of the exact top event probability.`}
+      </p>
+    </div>
+  );
+}
+
+// Each common-cause group's shared cause (#229): what it fails, how likely it
+// is, and the share of the top event its cut sets carry.
+function CommonCause({ result }) {
+  const groups = result.common_cause || [];
+  if (!groups.length) return null;
+  return (
+    <div className="ft-section ft-ccf">
+      <div className="rbd-section-head">Common cause</div>
+      <ul className="ft-ccf-list">
+        {groups.map((g) => (
+          <li key={g.event}>
+            <span className="ft-cc-badge">CC</span>
+            <span>
+              <b>{g.members.join(", ")}</b>
+              {g.path?.length ? <span className="muted"> (in {g.path.join(" › ")})</span> : null} fail together by
+              their shared cause with P = {fmtP(g.probability)} (β = {g.beta}, {g.basis} basis). Cut sets holding it
+              carry <b>{fmtPct(g.share)}</b> of the top event.
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="muted-line ft-note">
+        Each member fails on its own or by its group's shared cause, drawn as one event (CC) under every member, so the
+        shared cause alone is a cut set, as PRA codes list it.
       </p>
     </div>
   );
@@ -639,6 +669,7 @@ export default function RbdFaultTree({ graph, validation, stale, active, name })
             <TreeCanvas key={fetchedSig} result={result} name={name} active={active} />
           </ReactFlowProvider>
 
+          <CommonCause result={result} />
           <CutSetTable result={result} />
           <ImportanceTable result={result} />
         </>

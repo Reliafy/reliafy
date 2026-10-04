@@ -49,6 +49,7 @@ from surpyval import (
 from surpyval import ExpoWeibull, Gumbel, Logistic, LogLogistic
 from surpyval import GumbelLEV, Rayleigh
 from surpyval import MixtureModel
+from surpyval.univariate.information_criteria import corrected_aic, ic_sample_size
 from surpyval import Binomial, FlemingHarrington, KaplanMeier, NelsonAalen, Turnbull
 from surpyval import success_run as _success_run
 from surpyval import BetaGeometric, DiscreteWeibull, Geometric, NegativeBinomial, Poisson
@@ -855,6 +856,7 @@ def options_from_form(
     mixture_distribution: Optional[str] = None,
     how: Optional[str] = None,
     c_invert: Optional[str] = None,
+    include_mixtures: Optional[str] = None,
 ) -> Optional[dict]:
     """Build an options dict from HTML-form string fields (both fit routers)."""
 
@@ -878,6 +880,8 @@ def options_from_form(
         opts["mixture_distribution"] = str(mixture_distribution).strip()
     if how and str(how).strip():
         opts["how"] = str(how).strip()
+    if truthy(include_mixtures):
+        opts["include_mixtures"] = True
     return opts if any(opts.values()) else None
 
 
@@ -988,7 +992,14 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
         "fixed": opts.get("fixed") or None,
         "mixture": _normalize_mixture(opts.get("mixture")),
         "how": (opts.get("how") or "").strip().upper() or None,
+        # Best fit only: let two-component mixtures compete (#236).
+        "include_mixtures": bool(opts.get("include_mixtures")),
     }
+    if out["include_mixtures"] and distribution != BEST_ID:
+        raise FitError(
+            "Two-mode mixtures compete only in Best fit — choose Best fit, or the Mixture "
+            "model to fit one on purpose."
+        )
     if out["how"] == DEFAULT_FIT_METHOD:
         out["how"] = None  # the default carries no information; keep specs clean
     if out["how"] and out["how"] not in FIT_METHOD_IDS:
@@ -1023,8 +1034,23 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
             "Mixture settings only apply to the Mixture model — select it in the "
             "model list first."
         )
-    if not any([out["offset"], out["zi"], out["lfp"], out["fixed"], out["how"]]):
+    if not any([out["offset"], out["zi"], out["lfp"], out["fixed"], out["how"],
+                out["include_mixtures"]]):
         return {}
+    if out["include_mixtures"]:
+        # A mixture is fitted by maximum likelihood (EM) with none of these:
+        # ranked beside fits that have them, it wouldn't be the same contest.
+        clashes = [label for key, label in (
+            ("offset", "an offset"), ("zi", "zero-inflation"), ("lfp", "a limited failure population"),
+        ) if out[key]]
+        if out["how"] and out["how"] != "MLE":
+            clashes.append(f"the {out['how']} fit method")
+        if clashes:
+            raise FitError(
+                "Two-mode mixtures are fitted by maximum likelihood with no offset, cure fraction or "
+                f"zero-inflation, so they can't compete with {' or '.join(clashes)} — turn "
+                f"{'that' if len(clashes) == 1 else 'those'} off, or the mixtures."
+            )
 
     # SurPyval's cross-option rules, enforced here so the message is ours.
     if out["how"] and out["how"] != "MLE" and (out["lfp"] or out["zi"]):
@@ -1135,6 +1161,8 @@ def fit(
             f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
         )
     result["unit"] = (unit or "").strip()
+    if result.get("mixture_summary") and result["unit"]:
+        result["mixture_summary"] = mixture_summary(result, result["unit"]) or result["mixture_summary"]
     if c_invert:
         # Persist alongside the other fit options so a saved model's spec
         # re-fits the data the same way round (see models_service._refit).
@@ -1434,6 +1462,18 @@ def result_per_demand(
     })
 
 
+# Best fit's mixture candidates (#236): two components of each, opt-in.
+BEST_MIXTURE_BASES = ("weibull", "lognormal")
+BEST_MIXTURE_COMPONENTS = 2
+MIXTURE_CRITERION = "bic"  # decides only whether the best mixture beats the best single
+
+
+def _criteria(gof: list) -> dict:
+    """``{aic, aic_c, bic}`` from a goodness-of-fit list (finite ones only)."""
+    return {g["id"]: float(g["value"]) for g in gof
+            if g["id"] in ("aic", "aic_c", "bic") and math.isfinite(float(g["value"]))}
+
+
 def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -> dict:
     """Fit every plain distribution and return the full result for the
     lowest-AIC winner, with the ranking attached as ``selection``.
@@ -1441,8 +1481,20 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
     The scoring pass is fits-only (no plots); the winner is then refit through
     the normal path so its payload is identical to a direct fit. Options apply
     per candidate where valid (offset only on offsetable distributions).
+
+    With ``include_mixtures`` (#236), two-component Weibull and LogNormal
+    mixtures compete too. The single distributions are ranked exactly as
+    without them (by AIC); BIC decides only whether the best mixture beats
+    the best single distribution — a mixture has more than twice the
+    parameters, and AIC's penalty is too light to stop one fitting noise.
+    A mixture that wins is listed first; otherwise the singles' ranking
+    stands and the mixtures follow it. ``selection.decision`` says which
+    criterion decided, in plain words too. A winning mixture's payload is
+    the Mixture model's, built from the candidate fit itself.
     """
-    options = options or {}
+    options = dict(options or {})
+    with_mixtures = bool(options.pop("include_mixtures", False))
+    criterion = "aic"  # the single distributions' ranking, mixtures or not
     try:
         base_kwargs = build_fit_inputs(df, mapping)
     except Exception as exc:
@@ -1463,8 +1515,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
                 warnings.simplefilter("always")
                 model = entry["dist"].fit(**kwargs)
             reissue_deprecations(caught)
-            gof = _goodness_of_fit(model)
-            aic = next((g["value"] for g in gof if g["id"] == "aic"), None)
+            scores = _criteria(_goodness_of_fit(model))
         except Exception as exc:
             # A distribution that won't fit this data is skipped — and listed.
             refused = outside_support_message(
@@ -1481,32 +1532,173 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
             failed.append({"id": dist_id, "name": entry["name"],
                            "reason": no_maximum_reason(no_max)})
             continue
-        if aic is None or not math.isfinite(float(aic)):
-            failed.append({"id": dist_id, "name": entry["name"], "reason": "no finite AIC"})
+        if criterion not in scores:
+            failed.append({"id": dist_id, "name": entry["name"],
+                           "reason": f"no finite {criterion.upper()}"})
             continue
-        ranking.append({"id": dist_id, "name": entry["name"], "aic": float(aic)})
+        ranking.append({"id": dist_id, "name": entry["name"], **scores})
 
-    if not ranking:
+    mixtures = {}  # candidate id -> (base id, fitted SurPyval mixture)
+    mixture_ranking = []
+    bases = BEST_MIXTURE_BASES if with_mixtures else ()
+    for base in bases:
+        entry = DISTRIBUTIONS[base]
+        cid = f"{MIXTURE_ID}:{base}"
+        label = f"{entry['name']} mixture ({BEST_MIXTURE_COMPONENTS} components)"
+        try:
+            check_fittable(dict(base_kwargs), f"a {entry['name']} mixture")
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                raw = _fit_raw_mixture(entry["dist"], BEST_MIXTURE_COMPONENTS, dict(base_kwargs))
+        except Exception as exc:  # noqa: BLE001 - skipped, and listed
+            failed.append({"id": cid, "name": label, "reason": _short_reason(
+                str(exc).strip().splitlines() or [type(exc).__name__])})
+            continue
+        if getattr(raw, "maximum", "verified") != "verified":
+            # As SurPyval's fit_best sets it aside: a likelihood with no
+            # maximum, or a search that stopped short, ranks nothing.
+            failed.append({"id": cid, "name": label,
+                           "reason": "no finite maximum: a component collapsed onto a point"
+                           if raw.maximum == NO_FINITE_MAXIMUM else
+                           "its fit is not a verified maximum"})
+            continue
+        c = np.asarray(raw.data.c, dtype=float)
+        nn = np.asarray(raw.data.n, dtype=float)
+        fit = _MixtureFit(raw, n_obs=int(nn.sum()), log_likelihood=_mixture_log_likelihood(raw),
+                          ic_n=ic_sample_size(c, nn))
+        scores = _criteria(_goodness_of_fit(fit))
+        if MIXTURE_CRITERION not in scores:
+            failed.append({"id": cid, "name": label, "reason": f"no finite {MIXTURE_CRITERION.upper()}"})
+            continue
+        mixtures[cid] = (base, raw)
+        mixture_ranking.append({"id": cid, "name": label, "mixture": BEST_MIXTURE_COMPONENTS,
+                                "base_distribution_id": base, **scores})
+
+    if not ranking and not mixture_ranking:
         if support_msg:
             raise FitError(support_msg)
         raise FitError("None of the distributions could be fit to this data.")
-    ranking.sort(key=lambda r: r["aic"])
+    ranking.sort(key=lambda r: r[criterion])
+    mixture_ranking.sort(key=lambda r: r[MIXTURE_CRITERION])
+    decision = mixture_decision(ranking, mixture_ranking) if with_mixtures else None
+    if decision and decision["mixture_wins"]:
+        ranking = [mixture_ranking[0], *ranking, *mixture_ranking[1:]]
+    else:
+        ranking = [*ranking, *mixture_ranking]
 
     winner = ranking[0]["id"]
-    win_options = dict(options)
-    if win_options.get("offset") and not DISTRIBUTIONS[winner].get("offsetable"):
-        win_options.pop("offset")
-    result = _fit_distribution(winner, df, mapping, win_options)
-    result["selection"] = {"criterion": "aic", "candidates": ranking}
+    if winner in mixtures:
+        base, raw = mixtures[winner]
+        result = _fit_mixture(base, df, mapping, BEST_MIXTURE_COMPONENTS, raw=raw)
+        summary = mixture_summary(result)
+        if summary:
+            result["mixture_summary"] = summary
+    else:
+        win_options = dict(options)
+        if win_options.get("offset") and not DISTRIBUTIONS[winner].get("offsetable"):
+            win_options.pop("offset")
+        result = _fit_distribution(winner, df, mapping, win_options)
+    result["selection"] = {"criterion": criterion, "candidates": ranking}
+    if with_mixtures:
+        result["selection"].update({"include_mixtures": True, "mixture_criterion": MIXTURE_CRITERION,
+                                    "decision": decision, "summary": decision["summary"]})
     if failed:
         result["selection"]["failed"] = failed
         result["warnings"] = [
             *(result.get("warnings") or []),
-            f"Only {len(ranking)} of the {len(DISTRIBUTIONS)} candidate distributions could be fitted "
-            f"(failed: {', '.join(f['name'] for f in failed)}), so the lowest-AIC choice is among those "
-            "only.",
+            f"Only {len(ranking)} of the {len(DISTRIBUTIONS) + len(bases)} candidates could be fitted "
+            f"(failed: {', '.join(f['name'] for f in failed)}), so the choice is among those only.",
         ]
     return result
+
+
+def _ic(value: float) -> str:
+    return f"{float(value):,.1f}"
+
+
+def mixture_decision(singles: list, mixtures: list) -> dict:
+    """Whether Best fit's best two-mode mixture beats its best single
+    distribution (#236), on BIC only: ``{criterion, mixture_wins, mixture,
+    single, margin, summary}``, ``margin`` the single's BIC less the
+    mixture's (positive when the mixture wins). ``singles`` are ranked by
+    AIC, ``mixtures`` by BIC, best first."""
+    single = singles[0] if singles else None
+    mix = mixtures[0] if mixtures else None
+    out = {"criterion": MIXTURE_CRITERION, "mixture_wins": False,
+           "mixture": mix["id"] if mix else None, "single": single["id"] if single else None, "margin": None}
+    rule = ("The single distributions are ranked by AIC, as without mixtures; BIC decides only whether "
+            "a mixture beats the best of them.")
+    if mix is None:
+        out["summary"] = ("No two-mode mixture could be fitted, so the single distributions are ranked by AIC "
+                          "as usual.")
+    elif single is None:
+        out["mixture_wins"] = True
+        out["summary"] = (f"No single distribution could be fitted, so the best two-mode mixture by BIC, "
+                          f"the {mix['name']}, is kept.")
+    elif MIXTURE_CRITERION not in single:
+        out["summary"] = (f"The best single distribution, {single['name']}, has no finite BIC to compare a "
+                          f"mixture with, so it is kept. {rule}")
+    else:
+        margin = float(single[MIXTURE_CRITERION]) - float(mix[MIXTURE_CRITERION])
+        out["margin"] = margin
+        out["mixture_wins"] = margin > 0
+        if margin > 0:
+            out["summary"] = (f"A two-mode mixture beats the best single distribution by {_ic(margin)} on BIC: "
+                              f"the {mix['name']}, BIC {_ic(mix['bic'])}, against {single['name']}, "
+                              f"BIC {_ic(single['bic'])}. {rule}")
+        else:
+            out["summary"] = (f"No two-mode mixture beats the best single distribution on BIC: "
+                              f"{single['name']}, BIC {_ic(single['bic'])}, is ahead of the {mix['name']}, "
+                              f"BIC {_ic(mix['bic'])}, by {_ic(-margin)}, so it is kept. {rule}")
+    return out
+
+
+def _num(value: float) -> str:
+    """A number for a sentence: two or three significant figures."""
+    v = float(value)
+    if abs(v) >= 100:
+        return f"{v:,.0f}"
+    return f"{v:.2g}" if abs(v) < 1 else f"{v:.3g}"
+
+
+def mixture_summary(result: dict, unit: Optional[str] = None) -> Optional[str]:
+    """A two-component mixture in plain words (#236): what share fails early
+    and how, and how the rest fail. For a Weibull mixture the shapes say
+    whether each mode is early failures, random or wear-out; for any mixture
+    each mode's median life is given."""
+    if result.get("mixture") != 2:
+        return None
+    by = {p["name"]: float(p["value"]) for p in result.get("params") or []}
+    base = result.get("base_distribution_id")
+    unit = f" {unit}" if unit else ""
+    try:
+        dist = DISTRIBUTIONS[base]["dist"]
+        names = list(getattr(dist, "parameter_names", []) or [])
+        comps = []
+        for j in (1, 2):
+            values = [by[f"{name}{j}"] for name in names]
+            median = float(np.ravel(dist.qf(0.5, *values))[0])
+            comps.append({"w": by[f"weight{j}"], "values": dict(zip(names, values)), "median": median})
+    except (KeyError, TypeError, ValueError, IndexError):
+        return None
+    early, late = sorted(comps, key=lambda comp: comp["median"])
+    share = round(100 * early["w"])
+    if base == "weibull":
+        def mode(beta: float) -> str:
+            if beta < 0.95:
+                return "early failures"
+            if beta <= 1.05:
+                return "random failures"
+            return "wear-out"
+        b_early, b_late = early["values"]["beta"], late["values"]["beta"]
+        text = (f"Two failure modes: about {share}% {mode(b_early)} with β ≈ {_num(b_early)} "
+                f"(median life {_num(early['median'])}{unit}), the rest {mode(b_late)} with "
+                f"β ≈ {_num(b_late)} (median {_num(late['median'])}{unit}).")
+    else:
+        text = (f"Two failure modes: about {share}% fail early (median life {_num(early['median'])}{unit}), "
+                f"the rest later (median {_num(late['median'])}{unit}).")
+    return (f"{text} If your records say which mode each failure was, split the data by failure mode "
+            "and fit each mode on its own.")
 
 
 def surpyval_extras(extras: Optional[dict]) -> dict:
@@ -1567,35 +1759,74 @@ def mixture_base(options: Optional[dict]) -> str:
     return (options or {}).get("mixture_distribution") or MIXTURE_DEFAULT_DISTRIBUTION
 
 
-def _mixture_log_likelihood(model, x, c=None, n=None) -> float:
+def _mixture_log_likelihood(model, x=None, c=None, n=None) -> float:
     """Observed-data log-likelihood of a fitted mixture.
 
-    SurPyval's ``MixtureModel.loglike`` is the **EM objective**, not this — it is
-    not comparable with a single distribution's log-likelihood, and using it for
-    AIC makes a mixture look better than a single fit even on single-mode data.
-    So we compute the real thing: each observation contributes the mixed density
-    (exact), the mixed survival (right-censored) or the mixed CDF (left-censored).
+    SurPyval's ``MixtureModel.loglike`` was the **EM objective**, not this — it
+    is not comparable with a single distribution's log-likelihood, and using it
+    for AIC makes a mixture look better than a single fit even on single-mode
+    data. So we compute the real thing: each observation contributes the mixed
+    density (exact), the mixed survival (right-censored), the mixed CDF
+    (left-censored) or the mixed probability of its interval
+    (interval-censored), and a truncated observation is conditioned on the
+    mixed probability of its truncation window.
+
+    SurPyval 0.23's ``MixtureModel.log_likelihood`` is this same quantity
+    (#572); a test holds the two together on every kind of data, so Best fit
+    can rank a mixture beside single distributions (#236). With ``x`` omitted
+    the data are the ones the mixture was fitted to (with their truncation);
+    given ``x`` (``c``, ``n``), the rows are exact / right / left-censored.
     """
-    x = np.asarray(x, dtype=float)
-    c = np.zeros_like(x) if c is None else np.asarray(c, dtype=float)
-    n = np.ones_like(x) if n is None else np.asarray(n, dtype=float)
+    if x is None:
+        data = model.data
+        x = np.asarray(data.x, dtype=float)
+        c = np.asarray(data.c, dtype=float)
+        n = np.asarray(data.n, dtype=float)
+        t = np.asarray(data.t, dtype=float)
+    else:
+        x = np.asarray(x, dtype=float)
+        c = np.zeros(x.shape[0]) if c is None else np.asarray(c, dtype=float)
+        n = np.ones(x.shape[0]) if n is None else np.asarray(n, dtype=float)
+        t = None
+    rows = x.shape[0]
+    lead = x[:, 0] if x.ndim == 2 else x
+    trail = x[:, -1] if x.ndim == 2 else x
+    tl = np.full(rows, -np.inf) if t is None else t[:, 0]
+    tr = np.full(rows, np.inf) if t is None else t[:, 1]
+    # As SurPyval reads the rows (#310): a censored row with a finite
+    # truncation bound on its censored side is the interval up to that bound.
+    left_iv = (c == -1) & np.isfinite(tl)
+    right_iv = (c == 1) & np.isfinite(tr)
+    interval = (c == 2) | left_iv | right_iv
+    lo = np.where(left_iv, tl, lead)
+    hi = np.where(right_iv, tr, np.where(c == 2, trail, lead))
+    truncated = np.isfinite(tl) | np.isfinite(tr)
+
     params = np.asarray(model.params, dtype=float).reshape(model.m, -1)
     weights = np.ravel(np.asarray(model.w, dtype=float))
+    dist = model.dist
 
-    dens = np.zeros_like(x)
-    surv = np.zeros_like(x)
-    cdf = np.zeros_like(x)
+    def cdf_at(v, pj):  # F(v), with F(-inf) = 0 and F(inf) = 1
+        finite = np.isfinite(v)
+        inner = np.ravel(dist.ff(np.where(finite, v, 0.0), *pj))
+        return np.where(finite, inner, np.where(v > 0, 1.0, 0.0))
+
+    dens, surv, cdf, window, kept = (np.zeros(rows) for _ in range(5))
     with np.errstate(all="ignore"):
         for wj, pj in zip(weights, params):
-            dens += wj * np.ravel(model.dist.df(x, *pj))
-            surv += wj * np.ravel(model.dist.sf(x, *pj))
-            cdf += wj * np.ravel(model.dist.ff(x, *pj))
+            dens += wj * np.ravel(dist.df(lead, *pj))
+            surv += wj * np.ravel(dist.sf(lead, *pj))
+            cdf += wj * np.ravel(dist.ff(lead, *pj))
+            if interval.any():
+                window += wj * (cdf_at(hi, pj) - cdf_at(lo, pj))
+            if truncated.any():
+                kept += wj * (cdf_at(tr, pj) - cdf_at(tl, pj))
         floor = 1e-300
-        ll = np.where(
-            c == 0, np.log(np.clip(dens, floor, None)),
-            np.where(c == 1, np.log(np.clip(surv, floor, None)),
-                     np.log(np.clip(cdf, floor, None))),
-        )
+        like = np.where(interval, window,
+                        np.where(c == 0, dens, np.where(c == 1, surv, cdf)))
+        ll = np.log(np.clip(like, floor, None))
+        if truncated.any():
+            ll = ll - np.where(truncated, np.log(np.clip(kept, floor, None)), 0.0)
     total = float(np.sum(n * ll))
     return total if math.isfinite(total) else float("nan")
 
@@ -1610,10 +1841,14 @@ class _MixtureFit:
     honest: the fit doesn't produce them.
     """
 
-    def __init__(self, model, n_obs: int, log_likelihood: float):
+    def __init__(self, model, n_obs: int, log_likelihood: float, ic_n: float | None = None):
         self._model = model
         self.log_likelihood = log_likelihood
         self._n_obs = int(n_obs)
+        # BIC's and AICc's sample size: the observed failures, as SurPyval
+        # counts it for every model (ic_sample_size), so a mixture's BIC sits
+        # on the same scale as a single distribution's in Best fit (#236).
+        self._ic_n = float(n_obs) if ic_n is None else float(ic_n)
         # m components x per-component params, plus m-1 free weights.
         self._k = int(model.m) * int(np.asarray(model.params).reshape(model.m, -1).shape[1]) \
             + int(model.m) - 1
@@ -1647,32 +1882,46 @@ class _MixtureFit:
     def aic(self) -> float:
         return 2 * self._k - 2 * self.log_likelihood
 
+    def aic_c(self) -> float:
+        return corrected_aic(self.aic(), self._k, self._ic_n)
+
     def bic(self) -> float:
-        return self._k * math.log(max(self._n_obs, 1)) - 2 * self.log_likelihood
+        return self._k * math.log(max(self._ic_n, 1)) - 2 * self.log_likelihood
 
 
-def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> dict:
+def _fit_raw_mixture(dist, m: int, kwargs: dict):
+    """A SurPyval mixture of ``m`` copies of ``dist`` fitted to ``kwargs``."""
+    raw = MixtureModel(dist=dist, m=int(m))
+    raw.fit(**kwargs)
+    return raw
+
+
+def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int, raw=None) -> dict:
     """Fit a mixture of ``m`` copies of a plain distribution — two or more
     failure modes muddled into one dataset, which on probability paper is the
     classic S-curve that no single distribution can follow.
 
     ``distribution`` is the base distribution id whose copies form the mixture.
+    ``raw``, a SurPyval mixture already fitted to these data (Best fit's
+    candidate), is used as it is rather than fitted again.
     """
     base = distribution
     entry = DISTRIBUTIONS[base]
     dist = entry["dist"]
+    kwargs = {}
     try:
         kwargs = build_fit_inputs(df, mapping)
         check_fittable(kwargs, f"a {entry['name']} mixture")
-        raw = MixtureModel(dist=dist, m=int(m))
-        raw.fit(**kwargs)
+        if raw is None:
+            raw = _fit_raw_mixture(dist, m, kwargs)
         # MixtureModel exposes a SurpyvalData object (attribute access), unlike a
         # plain Parametric whose .data is a dict.
         x = np.asarray(raw.data.x, dtype=float)
-        c = np.asarray(raw.data.c, dtype=float) if getattr(raw.data, "c", None) is not None else None
         nn = np.asarray(raw.data.n, dtype=float) if getattr(raw.data, "n", None) is not None else None
-        model = _MixtureFit(raw, n_obs=int(np.sum(nn)) if nn is not None else x.size,
-                            log_likelihood=_mixture_log_likelihood(raw, x, c, nn))
+        c = np.asarray(raw.data.c, dtype=float)
+        model = _MixtureFit(raw, n_obs=int(np.sum(nn)) if nn is not None else x.shape[0],
+                            log_likelihood=_mixture_log_likelihood(raw),
+                            ic_n=ic_sample_size(c, nn if nn is not None else np.ones(c.shape[0])))
         # Draw on the paper of the first component — see _shape_plot.
         paper = np.asarray(raw.params, dtype=float).reshape(raw.m, -1)[0]
         plot = _shape_plot(model, dist, heuristic="Nelson-Aalen", paper_params=paper)
@@ -1700,7 +1949,7 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> 
         "kind": "distribution",
         "mixture": int(raw.m),
         "params": params,
-        "n": int(np.sum(nn)) if nn is not None else int(x.size),
+        "n": int(np.sum(nn)) if nn is not None else int(x.shape[0]),
         "plot": plot,
         "functions": {"meta": FUNCTIONS, "curves": curves, "model_id": cache_id},
         "gof": gof,
@@ -2048,8 +2297,22 @@ def _fit_regression(
     mapping = {k: v for k, v in mapping.items() if v}
 
     # Only pass columns that were actually mapped — not every fitter (e.g. Cox)
-    # accepts every optional column keyword.
-    fit_kwargs = {"x_col": mapping.get("x")}
+    # accepts every optional column keyword. Inspection (interval-censored)
+    # data maps ``xl``/``xr`` in place of ``x`` (#237): SurPyval 0.23's
+    # ``fit_from_df`` takes them as ``xl_col``/``xr_col`` (#571), the same
+    # model as ``fit`` with a two-column ``x``.
+    interval = bool(mapping.get("xl") or mapping.get("xr"))
+    if interval:
+        if not (mapping.get("xl") and mapping.get("xr")) or mapping.get("x"):
+            raise FitError("Map the failure time to x, or inspection data to both xl (the last inspection "
+                           "it passed) and xr (the one that found it failed), not both.")
+        if distribution == "cox_ph":
+            raise FitError("Cox PH can't fit interval-censored (inspection) data: its partial likelihood "
+                           "needs each failure's exact time. Choose a parametric regression model (e.g. "
+                           "Weibull PH), which takes the intervals as they are.")
+        fit_kwargs = {"xl_col": mapping["xl"], "xr_col": mapping["xr"]}
+    else:
+        fit_kwargs = {"x_col": mapping.get("x")}
     for field, kw in (("c", "c_col"), ("n", "n_col"), ("tl", "tl_col"), ("tr", "tr_col")):
         if mapping.get(field):
             fit_kwargs[kw] = mapping[field]
@@ -2068,7 +2331,7 @@ def _fit_regression(
         reissue_deprecations(caught)
         gof = _goodness_of_fit(model)
     except Exception as exc:
-        x_col, c_col = mapping.get("x"), mapping.get("c")
+        x_col, c_col = mapping.get("x") or mapping.get("xl"), mapping.get("c")
         msg = None
         if x_col in df.columns:
             base = getattr(fitter, "distribution", None)
@@ -2128,13 +2391,17 @@ def _fit_regression(
             coef["hazard_ratio"] = coef["ratio"]  # backward compat
         coefficients.append(coef)
 
-    x_col = mapping.get("x")
+    x_col = mapping.get("x") or mapping.get("xl")
     x_vals = (
         pd.to_numeric(df[x_col], errors="coerce").dropna().to_numpy()
         if x_col
         else np.array([])
     )
     n = int(x_vals.size)
+    if interval:
+        # The calculator's grid reaches the latest finite inspection bound.
+        upper = pd.to_numeric(df[mapping["xr"]], errors="coerce").to_numpy(dtype=float)
+        x_vals = np.concatenate([x_vals[np.isfinite(x_vals)], upper[np.isfinite(upper)]])
 
     # Build the calculator: derive the raw covariate input fields, a time grid,
     # and the function curves at the default covariate values. Stash the model
@@ -2185,6 +2452,7 @@ def _fit_regression(
         "params": baseline,
         "coefficients": coefficients,
         "n": n,
+        **({"interval_censored": True} if interval else {}),
         "gof": gof,
         "functions": functions,
         # How good is this model? Harrell's C, Brier score, AUC (#176).
