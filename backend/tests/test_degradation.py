@@ -191,7 +191,7 @@ def test_api_flow_and_caps(monkeypatch):
     form = {"name": "Wear", "i": "item", "x": "hours", "y": "wear",
             "threshold": "8.0", "path": "linear"}
     try:
-        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True}
 
         # Preview fit.
         r = client.post("/api/degradation/fit", data={k: v for k, v in form.items() if k != "name"},
@@ -253,7 +253,7 @@ def test_api_flow_and_caps(monkeypatch):
         assert bill["usage"]["tracked_items"] == 4
 
         # Other user sees nothing.
-        app.dependency_overrides[get_current_user] = lambda: {"uid": B, "email": "b@x.com", "name": "B"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True}
         assert client.get(f"/api/degradation/models/{model_id}").status_code == 404
         assert client.get("/api/degradation/models").json()["models"] == []
     finally:
@@ -280,7 +280,7 @@ def test_degradation_samples_seed_and_are_read_only(session, monkeypatch):
     monkeypatch.setattr(config, "AUTH_DISABLED", False)
     client = TestClient(app)
     try:
-        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True}
         models = client.get("/api/degradation/models").json()["models"]
         assert any(m["id"] == "sample-deg-brake-wear" and m["is_sample"] for m in models)
 
@@ -299,7 +299,7 @@ def test_degradation_samples_seed_and_are_read_only(session, monkeypatch):
         # "Deleting" the sample model hides it for this user only.
         assert client.delete("/api/degradation/models/sample-deg-brake-wear").json()["ok"] is True
         assert client.get("/api/degradation/models/sample-deg-brake-wear").status_code == 404
-        app.dependency_overrides[get_current_user] = lambda: {"uid": B, "email": "b@x.com", "name": "B"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True}
         assert client.get("/api/degradation/models/sample-deg-brake-wear").status_code == 200
     finally:
         app.dependency_overrides.clear()

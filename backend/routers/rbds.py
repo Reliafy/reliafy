@@ -88,6 +88,13 @@ def save_rbd(
             status_code=402,
             content={"detail": billing_service.cap_message(session, ctx.uid, "rbds"), "code": "cap", "upgrade": True},
         )
+    # Saved models and sub-system diagrams on the blocks must be ones the
+    # writer can open (links the diagram already had are kept as they are).
+    kept = access_service.graph_refs(existing.graph) if not creating else ()
+    try:
+        access_service.check_references(session, ctx, access_service.graph_refs(graph), keep=kept)
+    except access_service.UnreadableReference as exc:
+        return JSONResponse(status_code=exc.status, content={"detail": str(exc), "code": "unreadable_reference"})
     try:
         rbd = rbds_service.save_rbd(
             session, name, graph, ctx.write_owner, rbd_id=id,

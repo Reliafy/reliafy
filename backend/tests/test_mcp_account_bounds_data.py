@@ -29,9 +29,9 @@ WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
 
 FREE, AGENT, PRO = "free-user", "agent-user", "pro-user"
 PLAN_USERS = {
-    FREE: {"_id": FREE, "email": "free@example.org", "name": "Free"},
-    AGENT: {"_id": AGENT, "email": "agent@example.org", "name": "Agent", "plan": "agent"},
-    PRO: {"_id": PRO, "email": "pro@example.org", "name": "Pro", "plan": "pro"},
+    FREE: {"_id": FREE, "email": "free@example.org", "name": "Free", "email_verified": True},
+    AGENT: {"_id": AGENT, "email": "agent@example.org", "name": "Agent", "plan": "agent", "email_verified": True},
+    PRO: {"_id": PRO, "email": "pro@example.org", "name": "Pro", "plan": "pro", "email_verified": True},
 }
 
 

@@ -34,6 +34,7 @@ from backend.config import SAMPLE_OWNER
 from backend.db import from_doc
 from backend.schema import Fleet
 from backend.services import email as email_service
+from backend.services import email_trust
 from backend.services import fleet as fleet_service
 
 logger = logging.getLogger(__name__)
@@ -377,6 +378,11 @@ def _fire(db, fleet: Fleet, rule: dict, previous, baseline, new_value: float, wh
         to = user.get("email")
         if not to:
             raise RuntimeError("The alert owner's account has no email address.")
+        verification = email_trust.status(db, rule.get("owner_uid"), user.get("email_verified"))
+        if verification == email_trust.UNKNOWN:
+            raise RuntimeError("Couldn't confirm the alert owner's email address is verified; not sent.")
+        if verification != email_trust.VERIFIED:
+            raise RuntimeError("The alert owner's email address isn't verified; alerts are sent once it is.")
         if not email_service.enabled():
             raise RuntimeError("Email isn't configured on this server (SMTP).")
         msg = render(fleet, rule, previous, baseline, new_value, when, reason)

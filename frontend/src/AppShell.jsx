@@ -4,6 +4,7 @@ import NavBar from "./components/NavBar.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
+import VerifyEmailBanner from "./components/VerifyEmailBanner.jsx";
 const BillingPage = lazy(() => import("./views/BillingPage.jsx"));
 const ModellingDashboard = lazy(() => import("./views/ModellingDashboard.jsx"));
 const ModellingHome = lazy(() => import("./views/ModellingHome.jsx"));
@@ -81,6 +82,7 @@ export default function AppShell() {
   return (
     <>
       <NavBar />
+      <VerifyEmailBanner />
       <div className="layout">
         <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
         <main className="content" key={workspace}>

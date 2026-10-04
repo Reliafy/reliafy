@@ -15,8 +15,8 @@ A = "user-a"
 B = "user-b"
 
 USERS = {
-    A: {"uid": A, "email": "a@x.com", "name": "A"},
-    B: {"uid": B, "email": "b@x.com", "name": "B"},
+    A: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True},
+    B: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True},
 }
 
 
@@ -41,7 +41,7 @@ def client(monkeypatch):
         email = USERS[uid]["email"]
         test_db.users.update_one(
             {"_id": uid},
-            {"$set": {"email": email, "email_lc": email, "name": USERS[uid]["name"]}},
+            {"$set": {"email": email, "email_lc": email, "email_verified": True, "name": USERS[uid]["name"]}},
             upsert=True,
         )
 

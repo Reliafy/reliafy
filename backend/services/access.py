@@ -114,6 +114,10 @@ class AccessCtx:
     hidden: set[str] = field(default_factory=set)
     frozen: bool = False            # team workspace whose owner's Pro lapsed
     member_view_only: bool = False  # team workspace, but this member isn't Pro
+    # Whether get-by-id may fall back to artifacts shared with ``uid``. Off for
+    # contexts that act for someone else's view (public links) or that are
+    # owner-scoped by design (MCP tools).
+    share_fallback: bool = True
 
     @property
     def is_personal(self) -> bool:
@@ -250,34 +254,99 @@ def shared_ids(db, uid: str, collection: str) -> set[str]:
     }
 
 
+# Keys on an RBD node's data that hold a life/repair model, and the keys a
+# model object uses for a saved model's id.
+_GRAPH_MODEL_KEYS = ("model", "standbyModel", "repair")
+_SAVED_MODEL_ID_KEYS = ("modelId", "model_id", "saved_model_id")
+
+_EVIDENCE_COLLECTIONS = {
+    "model": "models",
+    "strategy_analysis": "strategy_analyses",
+    "degradation_model": "degradation_models",
+}
+
+
+def _str_id(value) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def graph_refs(graph) -> list[tuple[str, str]]:
+    """(collection, id) pairs an RBD graph references: saved models on its
+    blocks (life, spare and repair models) and nested sub-system diagrams."""
+    refs: list[tuple[str, str]] = []
+    if not isinstance(graph, dict):
+        return refs
+    for node in graph.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        data = node.get("data") or {}
+        if not isinstance(data, dict):
+            continue
+        for key in _GRAPH_MODEL_KEYS:
+            model = data.get(key)
+            if isinstance(model, dict):
+                for id_key in _SAVED_MODEL_ID_KEYS:
+                    if mid := _str_id(model.get(id_key)):
+                        refs.append(("models", mid))
+        if mid := _str_id(data.get("model_id")):
+            refs.append(("models", mid))
+        if rid := _str_id(data.get("rbd_id")):
+            refs.append(("rbds", rid))
+        sub = data.get("rbd")
+        if isinstance(sub, dict) and (rid := _str_id(sub.get("id"))):
+            refs.append(("rbds", rid))
+    return refs
+
+
+def evidence_refs(functions) -> list[tuple[str, str]]:
+    """(collection, id) pairs an RCM worksheet's decisions link as evidence."""
+    refs: list[tuple[str, str]] = []
+    for fn in functions or []:
+        if not isinstance(fn, dict):
+            continue
+        for failure in fn.get("failures") or []:
+            if not isinstance(failure, dict):
+                continue
+            for mode in failure.get("modes") or []:
+                if not isinstance(mode, dict):
+                    continue
+                evidence = (mode.get("decision") or {}).get("evidence") or {}
+                if not isinstance(evidence, dict):
+                    continue
+                coll = _EVIDENCE_COLLECTIONS.get(evidence.get("type"))
+                if coll and (eid := _str_id(evidence.get("id"))):
+                    refs.append((coll, eid))
+    return refs
+
+
 def refs_of(collection: str, doc: dict) -> list[tuple[str, str]]:
     """(collection, id) pairs this artifact references, from its raw doc."""
     refs: list[tuple[str, str]] = []
-    if collection in ("models", "degradation_models") and doc.get("dataset_id"):
+    if collection in ("models", "degradation_models") and _str_id(doc.get("dataset_id")):
         refs.append(("datasets", doc["dataset_id"]))
-    elif collection == "fleets" and doc.get("model_id"):
+    elif collection == "fleets" and _str_id(doc.get("model_id")):
         refs.append(("models", doc["model_id"]))
     elif collection == "rcm_studies":
-        type_to_coll = {
-            "model": "models",
-            "strategy_analysis": "strategy_analyses",
-            "degradation_model": "degradation_models",
-        }
-        for fn in doc.get("functions") or []:
-            for failure in fn.get("failures") or []:
-                for mode in failure.get("modes") or []:
-                    evidence = (mode.get("decision") or {}).get("evidence") or {}
-                    coll = type_to_coll.get(evidence.get("type"))
-                    if coll and evidence.get("id"):
-                        refs.append((coll, evidence["id"]))
+        refs.extend(evidence_refs(doc.get("functions")))
     elif collection == "rbds":
-        for node in (doc.get("graph") or {}).get("nodes") or []:
-            data = node.get("data") or {}
-            if data.get("model_id"):
-                refs.append(("models", data["model_id"]))
-            if data.get("rbd_id"):
-                refs.append(("rbds", data["rbd_id"]))
+        refs.extend(graph_refs(doc.get("graph")))
     return refs
+
+
+def _share_owners(grantor_uid: str | None) -> list[str]:
+    """Whose artifacts a share from ``grantor_uid`` can open: the grantor's own
+    (and the samples everyone sees). A reference into anyone else's data —
+    a team's, or something shared *to* the grantor — is not followed."""
+    return [grantor_uid, SAMPLE_OWNER] if grantor_uid else [SAMPLE_OWNER]
+
+
+def _share_root(db, share: dict) -> dict | None:
+    """The shared artifact itself, while the grantor still owns it."""
+    if share.get("collection") not in SHARABLE_COLLECTIONS:
+        return None
+    return db[share["collection"]].find_one(
+        {"_id": share["artifact_id"], "owner_id": {"$in": _share_owners(share.get("grantor_uid"))}}
+    )
 
 
 def reachable_via_shares(db, uid: str, collection: str) -> set[str]:
@@ -285,28 +354,50 @@ def reachable_via_shares(db, uid: str, collection: str) -> set[str]:
 
     Walks the reference graph from every artifact shared with the user
     (depth-capped), so e.g. a shared RCM study's evidence models and their
-    datasets open for the recipient. Computed fresh per request: revoking the
+    datasets open for the recipient. Every step stays inside the grantor's
+    own artifacts (plus samples): a reference to anything the grantor
+    doesn't own is not followed. Computed fresh per request: revoking the
     root share instantly revokes the whole chain.
     """
     reachable: dict[str, set[str]] = {c: set() for c in SHARABLE_COLLECTIONS}
-    frontier: list[tuple[str, str]] = [
-        (s["collection"], s["artifact_id"]) for s in db.shares.find({"recipient_uid": uid})
-    ]
-    seen: set[tuple[str, str]] = set()
-    for _ in range(_REF_DEPTH + 1):
-        next_frontier: list[tuple[str, str]] = []
-        for coll, aid in frontier:
-            if (coll, aid) in seen or coll not in reachable:
-                continue
-            seen.add((coll, aid))
-            reachable[coll].add(aid)
-            doc = db[coll].find_one({"_id": aid})
-            if doc is not None:
-                next_frontier.extend(refs_of(coll, doc))
-        if not next_frontier:
+    frontier: list[tuple[str, str, str]] = []
+    for share in db.shares.find({"recipient_uid": uid}):
+        root = _share_root(db, share)
+        if root is None:
+            continue
+        reachable[share["collection"]].add(root["_id"])
+        frontier.extend((c, i, share["grantor_uid"]) for c, i in refs_of(share["collection"], root))
+    seen: set[tuple[str, str, str]] = set()
+    for _ in range(_REF_DEPTH):
+        if not frontier:
             break
+        next_frontier: list[tuple[str, str, str]] = []
+        for coll, aid, grantor in frontier:
+            if (coll, aid, grantor) in seen or coll not in reachable:
+                continue
+            seen.add((coll, aid, grantor))
+            doc = db[coll].find_one({"_id": aid, "owner_id": {"$in": _share_owners(grantor)}})
+            if doc is None:
+                continue
+            reachable[coll].add(aid)
+            next_frontier.extend((c, i, grantor) for c, i in refs_of(coll, doc))
         frontier = next_frontier
     return reachable.get(collection, set())
+
+
+def _shared_raw(db, collection: str, artifact_id: str, uid: str) -> dict | None:
+    """The raw artifact when it's readable through a share, else None."""
+    if collection not in SHARABLE_COLLECTIONS:
+        return None
+    direct = db.shares.find_one({"recipient_uid": uid, "collection": collection,
+                                 "artifact_id": artifact_id})
+    if direct is not None:
+        root = _share_root(db, direct)
+        if root is not None:
+            return root
+    if artifact_id not in reachable_via_shares(db, uid, collection):
+        return None
+    return db[collection].find_one({"_id": artifact_id})
 
 
 def shared_doc(db, collection: str, cls, artifact_id: str, ctx: AccessCtx):
@@ -317,13 +408,21 @@ def shared_doc(db, collection: str, cls, artifact_id: str, ctx: AccessCtx):
     """
     from backend.db import from_doc
 
-    if collection not in SHARABLE_COLLECTIONS:
-        return None
-    direct = db.shares.find_one({"recipient_uid": ctx.uid, "collection": collection,
-                                 "artifact_id": artifact_id})
-    if direct is None and artifact_id not in reachable_via_shares(db, ctx.uid, collection):
-        return None
-    return from_doc(cls, db[collection].find_one({"_id": artifact_id}))
+    return from_doc(cls, _shared_raw(db, collection, artifact_id, ctx.uid))
+
+
+def readable_raw(db, collection: str, artifact_id: str, ctx: AccessCtx) -> tuple[dict | None, bool]:
+    """``(raw doc, via_share)`` for get-by-id across everything the user may
+    read; ``(None, False)`` when they can't read it."""
+    if not isinstance(artifact_id, str) or not artifact_id:
+        return None, False
+    doc = db[collection].find_one({"_id": artifact_id, "owner_id": {"$in": ctx.read_owners}})
+    if doc is not None:
+        return doc, False
+    if not ctx.is_personal or not ctx.share_fallback:
+        return None, False
+    doc = _shared_raw(db, collection, artifact_id, ctx.uid)
+    return doc, doc is not None
 
 
 def fetch_readable(db, collection: str, cls, artifact_id: str, ctx: AccessCtx):
@@ -335,15 +434,58 @@ def fetch_readable(db, collection: str, cls, artifact_id: str, ctx: AccessCtx):
     """
     from backend.db import from_doc
 
-    doc = from_doc(cls, db[collection].find_one(
-        {"_id": artifact_id, "owner_id": {"$in": ctx.read_owners}}
-    ))
-    if doc is not None:
-        return doc, False
-    if not ctx.is_personal:
-        return None, False
-    doc = shared_doc(db, collection, cls, artifact_id, ctx)
-    return doc, doc is not None
+    doc, via_share = readable_raw(db, collection, artifact_id, ctx)
+    return from_doc(cls, doc), via_share
+
+
+# ---- References saved on an artifact -------------------------------------------
+
+_REF_LABELS = {
+    "models": "saved model",
+    "datasets": "dataset",
+    "rbds": "diagram",
+    "strategy_analyses": "strategy analysis",
+    "degradation_models": "degradation model",
+}
+
+
+class UnreadableReference(ValueError):
+    """A save would link an artifact the writer can't open."""
+
+    status = 422
+
+    def __init__(self, collection: str, artifact_id: str):
+        self.collection = collection
+        self.artifact_id = artifact_id
+        label = _REF_LABELS.get(collection, "item")
+        super().__init__(
+            f"This links a {label} you can't open (id {artifact_id}). Remove that link or pick "
+            f"a {label} you have access to, then save again."
+        )
+
+
+def check_references(db, ctx: AccessCtx, refs, keep=()) -> None:
+    """Refuse a save whose references point at artifacts the writer can't read.
+
+    ``refs`` are ``(collection, id)`` pairs (:func:`graph_refs`,
+    :func:`evidence_refs`, …), checked with :func:`readable_raw` — the same
+    rule as opening the artifact. ``keep`` are the pairs the artifact already
+    held before this save: they are left alone, so a document saved before
+    this check stays editable (and the share walk never follows a reference
+    outside its owner's data anyway). A reference to an id that no longer
+    exists anywhere (a deleted model, say) is a stale link rather than
+    someone else's data, and is allowed. Raises :class:`UnreadableReference`.
+    """
+    kept = set(keep)
+    for coll, aid in dict.fromkeys(refs):
+        if (coll, aid) in kept or not isinstance(aid, str):
+            continue
+        doc, _ = readable_raw(db, coll, aid, ctx)
+        if doc is not None:
+            continue
+        if db[coll].find_one({"_id": aid}, {"_id": 1}) is None:
+            continue
+        raise UnreadableReference(coll, aid)
 
 
 def is_shared_with(db, uid: str, artifact_id: str) -> bool:
@@ -362,7 +504,10 @@ def team_frozen(db, team: dict, billing_service) -> bool:
         return False
     owner_uid = team.get("owner_uid")
     owner_doc = db.users.find_one({"_id": owner_uid}) or {}
-    owner_user = {"email": owner_doc.get("email")}
+    from backend.services import email_trust
+
+    owner_user = {"email": owner_doc.get("email"),
+                  "email_verified": email_trust.profile_flag(db, owner_uid, owner_doc)}
     if billing_service.is_admin_user(owner_user):
         return False
     return not billing_service.account(db, owner_uid)["is_pro"]

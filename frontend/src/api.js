@@ -1313,11 +1313,12 @@ export function listApiTokens() {
   return request("/api/tokens");
 }
 
-export function createApiToken(name) {
+// ``scopes``: any of "ingest", "read", "write".
+export function createApiToken(name, scopes) {
   return request("/api/tokens", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, scopes }),
   });
 }
 

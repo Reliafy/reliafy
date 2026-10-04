@@ -16,9 +16,9 @@ B = "user-b"
 C = "user-c"
 
 USERS = {
-    A: {"uid": A, "email": "a@x.com", "name": "A"},
-    B: {"uid": B, "email": "b@x.com", "name": "B"},
-    C: {"uid": C, "email": "c@x.com", "name": "C"},
+    A: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True},
+    B: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True},
+    C: {"uid": C, "email": "c@x.com", "name": "C", "email_verified": True},
 }
 
 
@@ -52,7 +52,7 @@ def client(monkeypatch):
         email = USERS[uid]["email"]
         test_db.users.update_one(
             {"_id": uid},
-            {"$set": {"email": email, "email_lc": email, "name": USERS[uid]["name"]}},
+            {"$set": {"email": email, "email_lc": email, "email_verified": True, "name": USERS[uid]["name"]}},
             upsert=True,
         )
 
@@ -204,12 +204,18 @@ def test_shared_rcm_study_resolves_and_links_open(client):
     # No leak: embedding someone's artifact id in your OWN study doesn't grant access.
     client.act_as(C)
     sid_c = client.post("/api/rcm/studies", json={"name": "steal"}).json()["id"]
-    client.put(f"/api/rcm/studies/{sid_c}/tree", json={"functions": [
+    foreign = [
         {"text": "Fn", "failures": [{"text": "FF", "modes": [
             {"text": "M", "consequence": "operational",
              "decision": {"outcome": "rtf", "rtf_basis": "random",
                           "evidence": {"type": "model", "id": model["id"]}}}]}]},
-    ]})
+    ]
+    # Saving the link is refused; a study saved before that check resolves
+    # it as stale.
+    assert client.put(f"/api/rcm/studies/{sid_c}/tree", json={"functions": foreign}).status_code == 422
+    from backend.services import rcm as rcm_service
+
+    client.db.rcm_studies.update_one({"_id": sid_c}, {"$set": {"functions": rcm_service.clean_tree(foreign)}})
     study_c = client.get(f"/api/rcm/studies/{sid_c}").json()
     assert study_c["functions"][0]["failures"][0]["modes"][0]["decision"]["status"] == "stale"
     assert client.get(f"/api/models/{model['id']}").status_code == 404

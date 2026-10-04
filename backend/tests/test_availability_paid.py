@@ -20,10 +20,10 @@ ADMIN = "user-admin"
 BUYER = "user-buyer"
 
 USERS = {
-    FREE: {"uid": FREE, "email": "free@example.org", "name": "Free"},
-    PRO: {"uid": PRO, "email": "pro@example.org", "name": "Pro"},
-    ADMIN: {"uid": ADMIN, "email": "admin@example.org", "name": "Admin"},
-    BUYER: {"uid": BUYER, "email": "buyer@example.org", "name": "Buyer"},
+    FREE: {"uid": FREE, "email": "free@example.org", "name": "Free", "email_verified": True},
+    PRO: {"uid": PRO, "email": "pro@example.org", "name": "Pro", "email_verified": True},
+    ADMIN: {"uid": ADMIN, "email": "admin@example.org", "name": "Admin", "email_verified": True},
+    BUYER: {"uid": BUYER, "email": "buyer@example.org", "name": "Buyer", "email_verified": True},
 }
 
 PRO_PAYLOAD = {
@@ -58,7 +58,7 @@ def client(monkeypatch):
     for uid, user in USERS.items():
         test_db.users.update_one(
             {"_id": uid},
-            {"$set": {"email": user["email"], "email_lc": user["email"], "name": user["name"]}},
+            {"$set": {"email": user["email"], "email_lc": user["email"], "email_verified": True, "name": user["name"]}},
             upsert=True,
         )
     billing.set_plan(test_db, PRO, "pro")

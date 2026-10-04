@@ -70,11 +70,19 @@ def _ensure_millicents(db, uid: str) -> None:
 def is_admin_user(user: dict) -> bool:
     """Operator accounts (ADMIN_EMAILS env): full access regardless of payment.
 
-    ``user`` is the authenticated ``{uid, email, name}`` dict, so this works on
-    every request without a DB lookup.
+    ``user`` is the authenticated ``{uid, email, name, email_verified}`` dict,
+    so this works on every request without a DB lookup. The address must be
+    verified: anyone can create an email/password account with any address.
     """
     email = (user.get("email") or "").strip().lower()
-    return bool(email) and email in config.ADMIN_EMAILS
+    return bool(email) and email in config.ADMIN_EMAILS and email_trusted(user)
+
+
+def email_trusted(user: dict) -> bool:
+    """Whether this account's email address may be trusted as its identity
+    (invites, shares to an address, operator access): verified, or a
+    single-user install with sign-in turned off."""
+    return config.AUTH_DISABLED or user.get("email_verified") is True
 
 
 PLANS = ("free", "agent", "pro")

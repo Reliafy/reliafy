@@ -315,17 +315,19 @@ def import_worksheet(
     try:
         if existing is None:
             study = rcm_service.create_study(session, name, system, description, ctx.write_owner)
-            study = rcm_service.replace_tree(session, study.id, imported, ctx.write_owner)
+            study = rcm_service.replace_tree(session, study.id, imported, ctx.write_owner, reader=ctx)
         else:
             functions = imported if mode == "replace" else [*(existing.functions or []), *imported]
             study = rcm_service.replace_tree(
                 session, existing.id, functions, ctx.write_owner,
-                expected_updated_at=expected_updated_at,
+                expected_updated_at=expected_updated_at, reader=ctx,
             )
     except rcm_service.StudyNotFound:
         return JSONResponse(status_code=404, content={"detail": "Study not found."})
     except rcm_service.RcmValidationError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except access_service.UnreadableReference as exc:
+        return JSONResponse(status_code=exc.status, content={"detail": str(exc), "code": "unreadable_reference"})
     except access_service.EditConflict:
         return JSONResponse(status_code=409, content={"detail": access_service.CONFLICT_MSG, "code": "conflict"})
     access_service.stamp_editor(session, "rcm_studies", study.id, ctx)
@@ -360,12 +362,14 @@ def put_tree(
     try:
         study = rcm_service.replace_tree(
             session, study_id, functions, ctx.write_owner,
-            expected_updated_at=expected_updated_at,
+            expected_updated_at=expected_updated_at, reader=ctx,
         )
     except rcm_service.StudyNotFound:
         return JSONResponse(status_code=404, content={"detail": "Study not found."})
     except rcm_service.RcmValidationError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except access_service.UnreadableReference as exc:
+        return JSONResponse(status_code=exc.status, content={"detail": str(exc), "code": "unreadable_reference"})
     except access_service.EditConflict:
         return JSONResponse(status_code=409, content={"detail": access_service.CONFLICT_MSG, "code": "conflict"})
     access_service.stamp_editor(session, "rcm_studies", study_id, ctx)
