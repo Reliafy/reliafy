@@ -32,9 +32,9 @@ from backend.tests.test_mcp import REPAIRABLE_STAGES, _err, _ok, _run
 BASE = "https://reliafy.com"
 FREE, AGENT, PRO = "free-user", "agent-user", "pro-user"
 USERS = {
-    FREE: {"_id": FREE, "email": "free@example.org", "name": "Free"},
-    AGENT: {"_id": AGENT, "email": "agent@example.org", "name": "Agent", "plan": "agent"},
-    PRO: {"_id": PRO, "email": "pro@example.org", "name": "Pro", "plan": "pro"},
+    FREE: {"_id": FREE, "email": "free@example.org", "name": "Free", "email_verified": True},
+    AGENT: {"_id": AGENT, "email": "agent@example.org", "name": "Agent", "plan": "agent", "email_verified": True},
+    PRO: {"_id": PRO, "email": "pro@example.org", "name": "Pro", "plan": "pro", "email_verified": True},
 }
 UPGRADE = "upgrade to Reliafy Pro (US$19/month)"
 WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
@@ -270,8 +270,8 @@ def test_api_tokens_stay_pro_only(env, uid):
 def test_rest_api_stays_pro_only_for_agent(env):
     from backend.services import billing
 
-    assert billing.api_access_allowed(env.db, {"uid": AGENT, "email": "agent@example.org"}) is False
-    assert billing.api_access_allowed(env.db, {"uid": PRO, "email": "pro@example.org"}) is True
+    assert billing.api_access_allowed(env.db, {"uid": AGENT, "email": "agent@example.org", "email_verified": True}) is False
+    assert billing.api_access_allowed(env.db, {"uid": PRO, "email": "pro@example.org", "email_verified": True}) is True
 
 
 def test_mcp_plan_follows_the_api_entitlement(env, monkeypatch):
@@ -279,7 +279,7 @@ def test_mcp_plan_follows_the_api_entitlement(env, monkeypatch):
     from backend.services import billing
 
     def plan(uid):
-        return billing.mcp_plan(env.db, {"uid": uid, "email": USERS[uid]["email"]})
+        return billing.mcp_plan(env.db, {"uid": uid, "email": USERS[uid]["email"], "email_verified": True})
 
     assert (plan(FREE), plan(AGENT), plan(PRO)) == ("free", "agent", "pro")
     monkeypatch.setattr(config, "ADMIN_EMAILS", {"free@example.org"})

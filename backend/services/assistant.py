@@ -2,9 +2,10 @@
 
 The assistant runs on the operator's provider key (never the user's), so usage
 can be metered and billed as credits. This module advances the conversation by
-exactly one provider round-trip: the client sends the system prompt, the native
-message history, and the neutral tool list; we call the configured provider once
-and return its assistant message plus the token usage. The client keeps running
+exactly one provider round-trip: the client sends the native message history;
+the system prompt and the tool list are the server's own
+(``backend.services.assistant_spec``). We call the configured provider once and
+return its assistant message plus the token usage. The client keeps running
 the tool loop (tools execute in the browser), calling here again for each step.
 """
 
@@ -31,6 +32,55 @@ def info() -> dict:
 
 def _api_key():
     return config.ANTHROPIC_API_KEY if config.AI_PROVIDER == "anthropic" else config.OPENAI_API_KEY
+
+
+def spec() -> tuple[str, list]:
+    """The system prompt and tool definitions every step is sent with. The
+    server owns both; whatever a client sends for them is ignored."""
+    from backend.services import assistant_spec
+
+    return assistant_spec.SYSTEM_PROMPT, assistant_spec.TOOLS
+
+
+# Roles a client-kept history may contain. Instructions come only from the
+# server's system prompt, so history items can't carry system/developer turns.
+_HISTORY_ROLES = frozenset({"user", "assistant"})
+
+
+def check_messages(messages) -> str | None:
+    """Why ``messages`` can't be sent (a message for the client), or None."""
+    if not isinstance(messages, list) or not messages:
+        return "messages must be a non-empty list."
+    if len(messages) > config.AI_MAX_MESSAGES:
+        return (f"This conversation is too long ({len(messages)} items; the limit is "
+                f"{config.AI_MAX_MESSAGES}). Start a new chat to continue.")
+    for item in messages:
+        if not isinstance(item, dict):
+            return "Each message must be an object."
+        role = item.get("role")
+        if role is not None and role not in _HISTORY_ROLES:
+            return "Messages may only have the user or assistant role."
+    return None
+
+
+_SPEC_BYTES: int | None = None
+
+
+def hold_millicents(messages: list) -> int:
+    """The most a step on ``messages`` can cost, in millicents: input priced
+    at the full rate from a generous token estimate (a token per 3 bytes of
+    the prompt, tools and history), plus the output ceiling."""
+    import math
+
+    from backend.services import billing as billing_service
+
+    global _SPEC_BYTES
+    if _SPEC_BYTES is None:
+        system, tools = spec()
+        _SPEC_BYTES = len(system.encode()) + len(json.dumps(tools).encode())
+    size = _SPEC_BYTES + len(json.dumps(messages).encode())
+    return billing_service.ai_cost_millicents(
+        config.AI_MODEL, math.ceil(size / 3), config.AI_MAX_OUTPUT_TOKENS)
 
 
 def _anthropic_tools(tools):
@@ -71,7 +121,7 @@ def _anthropic(system, messages, tools):
             },
             json={
                 "model": config.AI_MODEL,
-                "max_tokens": 1500,
+                "max_tokens": config.AI_MAX_OUTPUT_TOKENS,
                 "system": system,
                 "tools": _anthropic_tools(tools),
                 "messages": messages,
@@ -115,6 +165,9 @@ def _openai_body(system, messages, tools, *, stream: bool):
         "tool_choice": "auto",
         "store": config.AI_STORE,
         "stream": stream,
+        # A ceiling on output (reasoning included), so a step's cost has a
+        # known maximum that the credit hold covers.
+        "max_output_tokens": config.AI_MAX_OUTPUT_TOKENS,
     }
     if system:
         body["instructions"] = system

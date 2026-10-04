@@ -368,16 +368,25 @@ def append_dataset_rows(db, dataset_id: str, uid: str, rows_df: pd.DataFrame, re
 
 # ---- request-body parsing -------------------------------------------------------
 
+def _read_csv_body(body: bytes) -> pd.DataFrame:
+    """A text/csv body as a DataFrame, within the CSV shape limits."""
+    from backend.fitting import FitError, read_csv_capped
+
+    try:
+        return read_csv_capped(io.BytesIO(body),
+                               width_text=bytes(body[:1024 * 1024]).decode("utf-8", "replace"))
+    except FitError as exc:
+        raise IngestError(str(exc))
+    except Exception as exc:
+        raise IngestError(f"Couldn't parse the CSV body: {exc}")
+
+
 def rows_from_request(content_type: str, body: bytes, json_keys: tuple[str, ...]) -> list[dict]:
     """Rows from either a JSON body ({<key>: [...]}) or a raw text/csv body."""
     import json as _json
 
     if "csv" in (content_type or ""):
-        try:
-            df = pd.read_csv(io.BytesIO(body))
-        except Exception as exc:
-            raise IngestError(f"Couldn't parse the CSV body: {exc}")
-        return df.to_dict(orient="records")
+        return _read_csv_body(body).to_dict(orient="records")
     try:
         payload = _json.loads(body or b"{}")
     except _json.JSONDecodeError:
@@ -394,10 +403,7 @@ def rows_from_request(content_type: str, body: bytes, json_keys: tuple[str, ...]
 
 def dataframe_from_request(content_type: str, body: bytes) -> pd.DataFrame:
     if "csv" in (content_type or ""):
-        try:
-            return pd.read_csv(io.BytesIO(body))
-        except Exception as exc:
-            raise IngestError(f"Couldn't parse the CSV body: {exc}")
+        return _read_csv_body(body)
     rows = rows_from_request(content_type, body, ("rows", "lives", "data"))
     if not rows:
         raise IngestError("No rows to append.")

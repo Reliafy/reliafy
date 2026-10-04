@@ -3,6 +3,15 @@ import { Link } from "react-router-dom";
 import { createApiToken, listApiTokens, revokeApiToken } from "../api.js";
 import { relativeTime } from "../instrument.js";
 
+// What a token may do. Each token carries a subset; a token created before
+// scopes existed carries all three.
+const SCOPES = [
+  { id: "ingest", label: "Push data", hint: "the /api/ingest endpoints and model import: meter readings, measurements, failure data" },
+  { id: "read", label: "Read", hint: "read your models, datasets, diagrams and forecasts; run calculations" },
+  { id: "write", label: "Write", hint: "create, change and delete items, and create share links (API and MCP)" },
+];
+const SCOPE_LABEL = Object.fromEntries(SCOPES.map((s) => [s.id, s.label]));
+
 // Personal API tokens for the ingestion API, plus the endpoint reference.
 // Rendered as a section of the Settings page (no page chrome of its own). The
 // raw token is shown exactly once at creation; only a hash is stored
@@ -11,6 +20,7 @@ export default function ApiAccessPanel() {
   const [tokens, setTokens] = useState(null);
   const [allowed, setAllowed] = useState(true);
   const [name, setName] = useState("");
+  const [scopes, setScopes] = useState(["ingest"]);
   const [minted, setMinted] = useState(null); // {name, token} — show-once
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -30,7 +40,7 @@ export default function ApiAccessPanel() {
     setBusy(true);
     setError(null);
     try {
-      const t = await createApiToken(name.trim() || "API token");
+      const t = await createApiToken(name.trim() || "API token", scopes);
       setMinted(t);
       setName("");
       refresh();
@@ -63,10 +73,10 @@ export default function ApiAccessPanel() {
   return (
     <div className="set-section">
       <p className="muted-line" style={{ marginTop: 0 }}>
-        Personal tokens for pushing data into Reliafy from scripts and cron
-        jobs — meter readings, degradation measurements, new failure data.
-        Tokens are write-only: they work on the ingestion endpoints and nothing
-        else.
+        Personal tokens for scripts, cron jobs and AI agents — pushing meter
+        readings, degradation measurements and new failure data, or reading and
+        changing your work through the API and MCP. Give each token only what
+        it needs: a token that only pushes data can't read your analyses.
       </p>
 
       {!allowed && (
@@ -93,10 +103,28 @@ export default function ApiAccessPanel() {
               onKeyDown={(e) => e.key === "Enter" && allowed && onCreate()}
             />
           </label>
-          <button onClick={onCreate} disabled={busy || !allowed}>
+          <button onClick={onCreate} disabled={busy || !allowed || scopes.length === 0}>
             {busy ? "Creating…" : "Create token"}
           </button>
         </div>
+        <fieldset className="token-scopes" disabled={!allowed}>
+          <legend>This token can</legend>
+          {SCOPES.map((s) => (
+            <label key={s.id} className="token-scope">
+              <input
+                type="checkbox"
+                checked={scopes.includes(s.id)}
+                onChange={(e) =>
+                  setScopes((cur) =>
+                    e.target.checked ? [...cur, s.id] : cur.filter((x) => x !== s.id)
+                  )
+                }
+              />
+              <span><b>{s.label}</b> — {s.hint}</span>
+            </label>
+          ))}
+          {scopes.length === 0 && <p className="muted-line">Pick at least one.</p>}
+        </fieldset>
         {error && <div className="error" style={{ marginTop: "0.6rem" }}>{error}</div>}
 
         {minted && (
@@ -132,6 +160,7 @@ export default function ApiAccessPanel() {
               <tr>
                 <th>Name</th>
                 <th style={{ width: 130 }}>Token</th>
+                <th style={{ width: 170 }}>Can</th>
                 <th style={{ width: 150 }}>Created</th>
                 <th style={{ width: 150 }}>Last used</th>
                 <th style={{ width: 90 }} />
@@ -142,6 +171,9 @@ export default function ApiAccessPanel() {
                 <tr key={t.id} className="lib-row">
                   <td>{t.name}</td>
                   <td className="lib-date"><code>{t.prefix}…</code></td>
+                  <td className="lib-date">
+                    {(t.scopes || []).map((s) => SCOPE_LABEL[s] || s).join(", ")}
+                  </td>
                   <td className="lib-date">{relativeTime(t.created_at)}</td>
                   <td className="lib-date">{t.last_used_at ? relativeTime(t.last_used_at) : "never"}</td>
                   <td className="lib-actions">

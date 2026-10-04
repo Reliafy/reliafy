@@ -7,8 +7,8 @@ A = "user-a"
 B = "user-b"
 
 USERS = {
-    A: {"uid": A, "email": "a@x.com", "name": "A"},
-    B: {"uid": B, "email": "b@x.com", "name": "B"},
+    A: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True},
+    B: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True},
 }
 
 
@@ -100,7 +100,7 @@ def test_traffic_endpoint_gated_and_aggregates(client):
     _post_event(client, {"path": "/", "referrer": "https://news.ycombinator.com/"})
     _post_event(client, {"path": "/", "utm_source": "linkedin"})
     _post_event(client, {"path": "/login"}, ip="198.51.100.9")
-    _post_event(client, {"name": "signup", "path": "/login"})
+    _post_event(client, {"name": "activated", "path": "/modelling"})
 
     client.act_as(B)
     assert client.get("/api/admin/traffic").status_code == 403
@@ -114,7 +114,7 @@ def test_traffic_endpoint_gated_and_aggregates(client):
     assert {"key": "/", "count": 2} in data["top_pages"]
     assert data["top_referrers"] == [{"key": "news.ycombinator.com", "count": 1}]
     assert data["top_sources"] == [{"key": "linkedin", "count": 1}]
-    assert data["events"] == [{"key": "signup", "count": 1}]
+    assert data["events"] == [{"key": "activated", "count": 1}]
 
 
 def test_signup_event_once_per_account(client):

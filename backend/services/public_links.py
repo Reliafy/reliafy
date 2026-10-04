@@ -373,19 +373,23 @@ def retry_after_seconds() -> int:
 # ---- viewing -------------------------------------------------------------------
 
 def guest_ctx(owner_id: str, grantor_uid: str) -> access.AccessCtx:
-    """A read-only access context impersonating the grantor's *view* (their
-    own artifacts, samples, and anything shared to them — the same set a
-    logged-in share recipient resolves transitively) with a write principal
-    that can never match, so every mutation path is denied."""
+    """A read-only access context for a public link: the grantor's own
+    artifacts plus the samples — nothing shared *to* the grantor, and nothing
+    the grantor doesn't own — with a write principal that can never match, so
+    every mutation path is denied. ``owner_id`` must be the grantor (links are
+    only made on artifacts their creator owns); anything else reads nothing
+    but samples."""
+    readers = [grantor_uid, SAMPLE_OWNER] if owner_id == grantor_uid else [SAMPLE_OWNER]
     return access.AccessCtx(
         user={"uid": grantor_uid, "email": None, "name": "Public link"},
         uid=grantor_uid,
         workspace="personal",
         write_owner="__public-link__",
-        read_owners=[owner_id, SAMPLE_OWNER],
-        list_owners=[owner_id, SAMPLE_OWNER],
+        read_owners=readers,
+        list_owners=list(readers),
         hidden=set(),
         member_view_only=True,
+        share_fallback=False,
     )
 
 

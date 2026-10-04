@@ -70,11 +70,19 @@ def _ensure_millicents(db, uid: str) -> None:
 def is_admin_user(user: dict) -> bool:
     """Operator accounts (ADMIN_EMAILS env): full access regardless of payment.
 
-    ``user`` is the authenticated ``{uid, email, name}`` dict, so this works on
-    every request without a DB lookup.
+    ``user`` is the authenticated ``{uid, email, name, email_verified}`` dict,
+    so this works on every request without a DB lookup. The address must be
+    verified: anyone can create an email/password account with any address.
     """
     email = (user.get("email") or "").strip().lower()
-    return bool(email) and email in config.ADMIN_EMAILS
+    return bool(email) and email in config.ADMIN_EMAILS and email_trusted(user)
+
+
+def email_trusted(user: dict) -> bool:
+    """Whether this account's email address may be trusted as its identity
+    (invites, shares to an address, operator access): verified, or a
+    single-user install with sign-in turned off."""
+    return config.AUTH_DISABLED or user.get("email_verified") is True
 
 
 PLANS = ("free", "agent", "pro")
@@ -161,30 +169,183 @@ def ensure_starter_grant(db, uid: str) -> None:
         _ledger(db, uid, "grant", config.FREE_GRANT_CENTS * 1000, "starter")
 
 
+def _grant_key(reason: str, ref: str) -> str:
+    return f"grant:{reason}:{ref}"
+
+
+def grant_credits_once(db, uid: str, cents: int, reason: str, ref: str) -> bool:
+    """Add credit for an external event (a Stripe checkout session, a paid
+    invoice) at most once per ``(reason, ref)``. True if credit was added.
+
+    The ledger row is written first, under an ``_id`` derived from the reason
+    and the reference, and the balance is only incremented when that insert
+    succeeds — so a repeated delivery of the same event (a webhook retry or a
+    replay, even two arriving at once) fails on the unique ``_id`` and adds
+    nothing. Rows written before these keys existed are matched by
+    ``(kind, reason, ref)``.
+    """
+    from pymongo.errors import DuplicateKeyError
+
+    if not ref:
+        raise ValueError("an idempotent grant needs a reference")
+    mc = int(cents) * 1000
+    if db.credit_ledger.find_one({"kind": "grant", "reason": reason, "ref": ref}) is not None:
+        return False
+    _ensure_millicents(db, uid)
+    try:
+        db.credit_ledger.insert_one({
+            "_id": _grant_key(reason, ref), "uid": uid, "kind": "grant", "millicents": mc,
+            "cents": round(mc / 1000, 3), "reason": reason, "ref": ref, "ts": _now(),
+        })
+    except DuplicateKeyError:
+        return False
+    db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": mc}}, upsert=True)
+    return True
+
+
 def grant_credits(db, uid: str, cents: int, reason: str, ref: str = "") -> int:
     """Add credit to a user (purchase/grant, always whole cents). Returns the
-    new balance in cents."""
+    new balance in cents. With a ``ref`` the grant happens at most once per
+    ``(reason, ref)`` (see :func:`grant_credits_once`)."""
+    if ref:
+        grant_credits_once(db, uid, cents, reason, ref)
+        return account(db, uid)["credit_cents"]
     _ensure_millicents(db, uid)
-    db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": int(cents) * 1000}}, upsert=True)
     _ledger(db, uid, "grant", int(cents) * 1000, reason, ref)
+    db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": int(cents) * 1000}}, upsert=True)
     return account(db, uid)["credit_cents"]
 
 
+def _floor_at_zero(db, uid: str) -> None:
+    db.users.update_one({"_id": uid, "credit_millicents": {"$lt": 0}}, {"$set": {"credit_millicents": 0}})
+
+
 def charge_millicents(db, uid: str, millicents: int, reason: str, ref: str = "") -> int:
-    """Deduct metered AI usage at millicent precision. Floors at zero (a single
-    call can't push below 0 by more than its own cost, since a positive balance
-    is required to start). Returns the new balance in cents (floored)."""
+    """Deduct usage at millicent precision. Floors at zero. Returns the new
+    balance in cents (floored). Metered AI calls don't use this directly: they
+    reserve a hold first (:func:`reserve_millicents`) and settle it
+    (:func:`settle_hold`)."""
     millicents = int(millicents)
     if millicents <= 0:
         return account(db, uid)["credit_cents"]
     _ensure_millicents(db, uid)
     db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": -millicents}})
-    acct = account(db, uid)
-    if acct["credit_millicents"] < 0:
-        db.users.update_one({"_id": uid}, {"$set": {"credit_millicents": 0}})
-        acct = account(db, uid)
+    _floor_at_zero(db, uid)
     _ledger(db, uid, "charge", millicents, reason, ref)
-    return acct["credit_cents"]
+    return account(db, uid)["credit_cents"]
+
+
+# ---- Credit holds for metered AI calls ------------------------------------
+#
+# A metered AI call reserves its maximum cost before it starts: one
+# conditional update takes the hold from the balance only while the balance
+# covers it, so concurrent calls can never together spend more than the user
+# has. When the call ends — normally, with an error, or after the client went
+# away — the hold is settled: the actual cost is charged and the rest is
+# returned. Holds live in ``credit_holds`` (one document each, settled once)
+# and every step is in the ledger: ``hold``, then ``charge`` (actual cost) and
+# ``release`` (the unused part returned).
+
+def reserve_millicents(db, uid: str, hold_mc: int, reason: str) -> str | None:
+    """Take ``hold_mc`` from the balance if it's covered; the hold's id, or
+    None when the balance is short."""
+    import uuid
+
+    hold_mc = max(1, int(hold_mc))
+    _ensure_millicents(db, uid)
+    res = db.users.update_one(
+        {"_id": uid, "credit_millicents": {"$gte": hold_mc}},
+        {"$inc": {"credit_millicents": -hold_mc}},
+    )
+    if not getattr(res, "modified_count", 0):
+        return None
+    hold_id = uuid.uuid4().hex
+    db.credit_holds.insert_one({
+        "_id": hold_id, "uid": uid, "millicents": hold_mc, "reason": reason,
+        "settled": False, "created_at": _now(),
+    })
+    _ledger(db, uid, "hold", hold_mc, reason, hold_id)
+    return hold_id
+
+
+def reserve_up_to(db, uid: str, max_mc: int, min_mc: int, reason: str) -> tuple[str, int] | None:
+    """Hold ``max_mc``, or the whole balance when that is smaller but still at
+    least ``min_mc``. ``(hold_id, held)`` or None. For calls whose spend is
+    capped by the caller at whatever was held (a Reliability Agent turn)."""
+    for _ in range(3):  # a concurrent change between the read and the take: retry
+        bal = account(db, uid)["credit_millicents"]
+        want = min(int(max_mc), bal)
+        if want < max(1, int(min_mc)):
+            return None
+        hold_id = reserve_millicents(db, uid, want, reason)
+        if hold_id:
+            return hold_id, want
+    return None
+
+
+def settle_hold(db, hold_id: str, cost_mc: int | None) -> int:
+    """Settle a hold once: charge ``cost_mc`` and return the rest of the hold
+    to the balance. ``None`` (the call produced no usage — a provider error)
+    returns the whole hold. A cost above the hold takes the difference from
+    the balance, floored at zero. Later calls for the same hold change
+    nothing. Returns the balance in cents."""
+    doc = db.credit_holds.find_one_and_update(
+        {"_id": hold_id, "settled": False},
+        {"$set": {"settled": True, "settled_at": _now(),
+                  "cost_millicents": None if cost_mc is None else int(cost_mc)}},
+    )
+    if doc is None:
+        held = db.credit_holds.find_one({"_id": hold_id}) or {}
+        return account(db, held.get("uid", ""))["credit_cents"] if held else 0
+    uid, held, reason = doc["uid"], int(doc["millicents"]), doc.get("reason", "")
+    cost = max(0, int(cost_mc or 0))
+    back = held - cost
+    if back:
+        db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": back}})
+        if back < 0:
+            _floor_at_zero(db, uid)
+    if cost:
+        _ledger(db, uid, "charge", cost, reason, hold_id)
+    if back > 0:
+        _ledger(db, uid, "release", back, reason, hold_id)
+    return account(db, uid)["credit_cents"]
+
+
+# ---- Concurrent AI requests per user --------------------------------------
+
+AI_SLOT_SECONDS = {"assistant": 5 * 60, "reliability_agent": 60 * 60}
+
+
+def acquire_ai_slot(db, uid: str, kind: str = "assistant") -> tuple[str, str] | None:
+    """Take one of the user's :data:`config.AI_MAX_CONCURRENT` AI request
+    slots; ``(slot_id, token)`` to release it with, or None when all are in
+    use. A slot whose holder never released it (a crashed instance) frees
+    itself after its expiry."""
+    import time
+    import uuid
+
+    from pymongo.errors import DuplicateKeyError
+
+    token = uuid.uuid4().hex
+    now = time.time()
+    ttl = AI_SLOT_SECONDS.get(kind, AI_SLOT_SECONDS["assistant"])
+    fields = {"uid": uid, "token": token, "kind": kind, "expires_ts": now + ttl,
+              "expires_at": datetime.fromtimestamp(now + ttl, timezone.utc)}
+    for i in range(config.AI_MAX_CONCURRENT):
+        slot_id = f"{uid}:{i}"
+        try:
+            db.ai_slots.insert_one({"_id": slot_id, **fields})
+            return slot_id, token
+        except DuplicateKeyError:
+            res = db.ai_slots.update_one({"_id": slot_id, "expires_ts": {"$lt": now}}, {"$set": fields})
+            if getattr(res, "modified_count", 0):
+                return slot_id, token
+    return None
+
+
+def release_ai_slot(db, slot: tuple[str, str] | None) -> None:
+    if slot:
+        db.ai_slots.delete_one({"_id": slot[0], "token": slot[1]})
 
 
 def charge_credits(db, uid: str, cents: int, reason: str, ref: str = "") -> int:
@@ -215,8 +376,9 @@ def grant_monthly_pro_credits(
         return False
     if db.credit_ledger.find_one({"ref": invoice_id, "kind": "grant"}) is not None:
         return False  # already granted for this invoice
-    grant_credits(db, doc["_id"], config.PRO_MONTHLY_CREDIT_CENTS, "pro-monthly", invoice_id)
-    return True
+    # Ledger row first, keyed by the invoice: a concurrent duplicate fails the
+    # insert instead of adding the credit twice.
+    return grant_credits_once(db, doc["_id"], config.PRO_MONTHLY_CREDIT_CENTS, "pro-monthly", invoice_id)
 
 
 def set_plan(

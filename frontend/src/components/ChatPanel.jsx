@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { SYSTEM_PROMPT, TOOLS, makeExecutor } from "../agent.js";
+import { makeExecutor } from "../agent.js";
 import { runTurn } from "../llm.js";
 import { getAssistantInfo } from "../api.js";
 import { renderAgentMarkdown } from "../agentMarkdown.js";
@@ -52,8 +52,28 @@ export default function ChatPanel() {
   const scroller = useRef(null);
   const stopRef = useRef(false);
   const streamKey = useRef(null); // key of the assistant bubble currently streaming
+  // A tool waiting on the user's say-so: { title, body, confirmLabel, resolve }.
+  const [pending, setPending] = useState(null);
+  const pendingRef = useRef(null);
 
-  const execute = useMemo(() => makeExecutor({ navigate }), [navigate]);
+  // Settle the open confirmation (true only from the user's click).
+  const answer = useCallback((yes) => {
+    const p = pendingRef.current;
+    pendingRef.current = null;
+    setPending(null);
+    p?.resolve(yes === true);
+  }, []);
+
+  // The executor calls this before sharing or replacing saved content; it
+  // resolves when the user clicks one of the dialog's buttons.
+  const confirm = useCallback((req) => new Promise((resolve) => {
+    pendingRef.current?.resolve(false); // never two open at once
+    const p = { ...req, resolve };
+    pendingRef.current = p;
+    setPending(p);
+  }), []);
+
+  const execute = useMemo(() => makeExecutor({ navigate, confirm }), [navigate, confirm]);
 
   useEffect(() => localStorage.setItem(OPEN_KEY, open ? "1" : "0"), [open]);
   useEffect(() => localStorage.setItem(WIDTH_KEY, String(width)), [width]);
@@ -89,7 +109,7 @@ export default function ChatPanel() {
 
   useEffect(() => {
     if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
-  }, [messages, busy, open]);
+  }, [messages, busy, open, pending]);
 
   const push = useCallback((m) => setMessages((xs) => [...xs, { key: `${Date.now()}-${Math.random()}`, ...m }]), []);
 
@@ -155,9 +175,7 @@ export default function ChatPanel() {
     try {
       history.current = await runTurn({
         provider: conf.provider || "anthropic",
-        system: SYSTEM_PROMPT,
         messages: history.current,
-        tools: TOOLS,
         executeTool: execute,
         onText: (t) => push({ role: "assistant", text: t }),
         onDelta,
@@ -168,7 +186,7 @@ export default function ChatPanel() {
       });
     } catch (err) {
       if (err?.code === "no_credits" || err?.status === 402) {
-        push({ role: "error", text: "You're out of AI credits.", action: "billing" });
+        push({ role: "error", text: err?.message || "You're out of AI credits.", action: "billing" });
       } else {
         push({ role: "error", text: String(err?.message || err) });
       }
@@ -181,7 +199,7 @@ export default function ChatPanel() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  const newChat = () => { stopRef.current = true; streamKey.current = null; history.current = []; setMessages([]); setBusy(false); };
+  const newChat = () => { answer(false); stopRef.current = true; streamKey.current = null; history.current = []; setMessages([]); setBusy(false); };
 
   if (!open) {
     // The Reliability Agent page has its own composer; the floating launcher
@@ -258,7 +276,19 @@ export default function ChatPanel() {
             </div>
           );
         })}
-        {busy && <div className="chat-typing"><span /><span /><span /></div>}
+        {pending && (
+          <div className="chat-confirm" role="alertdialog" aria-label={pending.title}>
+            <div className="chat-confirm-title">{pending.title}</div>
+            <p>{pending.body}</p>
+            <div className="chat-confirm-actions">
+              <button type="button" className="chat-confirm-go" onClick={() => answer(true)}>
+                {pending.confirmLabel || "Continue"}
+              </button>
+              <button type="button" className="chat-confirm-cancel" onClick={() => answer(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+        {busy && !pending && <div className="chat-typing"><span /><span /><span /></div>}
       </div>
 
       <div className="chat-input">
@@ -270,7 +300,7 @@ export default function ChatPanel() {
           onKeyDown={onKeyDown}
         />
         {busy ? (
-          <button className="chat-send" onClick={() => { stopRef.current = true; }} title="Stop">■</button>
+          <button className="chat-send" onClick={() => { stopRef.current = true; answer(false); }} title="Stop">■</button>
         ) : (
           <button className="chat-send" onClick={send} disabled={!input.trim()} title="Send"><SendIcon /></button>
         )}

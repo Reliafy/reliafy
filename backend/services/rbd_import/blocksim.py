@@ -55,6 +55,8 @@ import zlib
 from collections import Counter
 from typing import Any, Optional
 
+from backend.services import import_guard
+
 from .nrbf import NrbfError, parse_streams
 from .types import MAX_DECOMPRESSED_BYTES, ImportedDiagram, RbdImportError
 
@@ -555,6 +557,7 @@ class _Converter:
         return nid
 
     def add_node(self, base: str, node: dict) -> str:
+        import_guard.check()
         nid = self._new_id(base)
         node["id"] = nid
         self.nodes[nid] = node
@@ -1224,7 +1227,7 @@ def parse(data: bytes, filename: str) -> list[ImportedDiagram]:
             raise RbdImportError("This ReliaSoft project has no BlockSim diagrams in it.")
         project = extract_project(tables, inflater)
         return convert_project(project)
-    except RbdImportError:
+    except (RbdImportError, import_guard.ImportBudgetExceeded):
         raise
     except MemoryError:
         raise RbdImportError("This BlockSim project is too large to import.") from None

@@ -7,6 +7,8 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 export {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  reload,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,

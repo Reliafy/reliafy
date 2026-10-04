@@ -38,7 +38,10 @@ def _owner_user(db, owner_id: str) -> dict | None:
         if not uid:
             return None
     doc = db.users.find_one({"_id": uid}) or {}
-    return {"uid": uid, "email": doc.get("email")}
+    from backend.services import email_trust
+
+    return {"uid": uid, "email": doc.get("email"),
+            "email_verified": email_trust.profile_flag(db, uid, doc)}
 
 
 def candidates(db) -> list[dict]:

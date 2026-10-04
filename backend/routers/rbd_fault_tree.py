@@ -40,8 +40,8 @@ def fault_tree(
         )
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to build the fault tree of an RBD graph")
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to build the fault tree: {exc}"}
+            status_code=500, content={"detail": "Failed to build the fault tree. The error has been logged."}
         )

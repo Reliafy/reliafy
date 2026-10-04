@@ -16,11 +16,37 @@ from __future__ import annotations
 import logging
 import smtplib
 import threading
+import unicodedata
 from email.message import EmailMessage
 
 from backend import config
 
 logger = logging.getLogger(__name__)
+
+
+def mask_address(address: str | None) -> str:
+    """A recipient for the logs: ``derryn@gmail.com`` -> ``d***@gmail.com``
+    (each address in a comma-separated list)."""
+    out = []
+    for part in str(address or "").split(","):
+        part = part.strip()
+        if "@" not in part:
+            out.append("***" if part else "")
+            continue
+        local, domain = part.rsplit("@", 1)
+        out.append(f"{local[:1]}***@{domain}")
+    return ", ".join(p for p in out if p)
+
+
+def clean_text(value, limit: int = 80) -> str:
+    """User-supplied text (a team or display name) made safe for a subject
+    line or body: control characters become spaces, whitespace collapses,
+    and anything past ``limit`` characters is cut with an ellipsis."""
+    text = "".join(" " if unicodedata.category(ch)[0] == "C" else ch for ch in str(value or ""))
+    text = " ".join(text.split())
+    if len(text) > limit:
+        text = text[: limit - 1].rstrip() + "…"
+    return text
 
 
 def enabled() -> bool:
@@ -40,9 +66,9 @@ def _deliver(msg: EmailMessage, *, raise_errors: bool = False) -> None:
             if config.SMTP_USER:
                 smtp.login(config.SMTP_USER, config.SMTP_PASS or "")
             smtp.send_message(msg)
-        logger.info("email sent to=%s subject=%r", msg["To"], msg["Subject"])
+        logger.info("email sent to=%s subject=%r", mask_address(msg["To"]), msg["Subject"])
     except Exception:
-        logger.exception("email delivery failed to=%s subject=%r", msg["To"], msg["Subject"])
+        logger.exception("email delivery failed to=%s subject=%r", mask_address(msg["To"]), msg["Subject"])
         if raise_errors:
             raise
 
@@ -59,7 +85,8 @@ def build_message(
     msg = EmailMessage()
     msg["From"] = config.EMAIL_FROM
     msg["To"] = to
-    msg["Subject"] = subject
+    # A subject is one header line: user-supplied names inside it never break it.
+    msg["Subject"] = clean_text(subject, 200)
     if reply_to:
         msg["Reply-To"] = reply_to
     for name, value in (headers or {}).items():
@@ -88,7 +115,7 @@ def send(
     if not to:
         return
     if not enabled():
-        logger.info("email skipped (SMTP not configured) to=%s subject=%r", to, subject)
+        logger.info("email skipped (SMTP not configured) to=%s subject=%r", mask_address(to), subject)
         return
     msg = build_message(to, subject, body, html=html, reply_to=reply_to, headers=headers)
     threading.Thread(target=_deliver, args=(msg,), daemon=True).start()
@@ -120,6 +147,7 @@ def _app_url(path: str = "/") -> str:
 # ---- Notifications -------------------------------------------------------------
 
 def team_member_added(to: str, inviter_name: str, team_name: str) -> None:
+    inviter_name, team_name = clean_text(inviter_name), clean_text(team_name)
     send(
         to,
         f"You've been added to {team_name} on Reliafy",
@@ -131,6 +159,7 @@ def team_member_added(to: str, inviter_name: str, team_name: str) -> None:
 
 
 def team_invite_pending(to: str, inviter_name: str, team_name: str) -> None:
+    inviter_name, team_name = clean_text(inviter_name), clean_text(team_name)
     send(
         to,
         f"{inviter_name} invited you to {team_name} on Reliafy",
@@ -163,7 +192,7 @@ def new_signup(new_email: str | None, new_name: str | None) -> None:
     admins = sorted(config.ADMIN_EMAILS)
     if not admins:
         logger.info("new-signup notify skipped (no push, no ADMIN_EMAILS) email=%s",
-                    new_email)
+                    mask_address(new_email))
         return
     subject = f"New Reliafy signup: {who}"
     body = (
@@ -178,6 +207,7 @@ def new_signup(new_email: str | None, new_name: str | None) -> None:
 
 
 def artifact_shared(to: str, sharer: str, artifact_name: str, link_path: str) -> None:
+    sharer, artifact_name = clean_text(sharer), clean_text(artifact_name, 120)
     send(
         to,
         f"{sharer} shared \"{artifact_name}\" with you on Reliafy",

@@ -225,7 +225,7 @@ def test_api_token_requests_are_the_api_channel(app_env):
     from backend.services import tokens
 
     client, test_db = app_env
-    test_db.users.insert_one({"_id": "pro-1", "email": "p@example.org", "plan": "pro"})
+    test_db.users.insert_one({"_id": "pro-1", "email": "p@example.org", "plan": "pro", "email_verified": True})
     token = tokens.create_token(test_db, "pro-1", "script")["token"]
     r = client.get("/api/v1/models", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
@@ -417,9 +417,9 @@ def test_admin_usage_endpoint_is_operator_only(monkeypatch):
     monkeypatch.setattr(db_module, "_db", test_db)
     tc = TestClient(app)
     try:
-        app.dependency_overrides[get_current_user] = lambda: {"uid": "u", "email": "u@example.org"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": "u", "email": "u@example.org", "email_verified": True}
         assert tc.get("/api/admin/usage").status_code == 403
-        app.dependency_overrides[get_current_user] = lambda: {"uid": "ops", "email": "ops@example.org"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": "ops", "email": "ops@example.org", "email_verified": True}
         for days, expect in [(7, 7), (90, 90), (365, 365), (12, 30)]:
             body = tc.get(f"/api/admin/usage?days={days}").json()
             assert body["days"] == expect and len(body["daily"]) == expect

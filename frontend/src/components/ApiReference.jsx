@@ -259,13 +259,15 @@ function HttpDocs({ base }) {
       <h3>Authentication</h3>
       <p className="muted-line">
         A personal token (<code>rlf_…</code>) from <b>Settings → API access</b>.
-        Tokens read and write <b>your own</b> data — never the account, billing,
-        tokens, or team artifacts.
+        Tokens reach <b>your own</b> data — never the account, billing,
+        tokens, or team artifacts — and only what their scopes allow: <b>Push data</b> for the
+        ingest endpoints, <b>Read</b> for reads and calculations, <b>Write</b> for creating datasets
+        and fitting models.
       </p>
       <Code>{`-H "Authorization: Bearer rlf_your_token_here"`}</Code>
       <ul className="api-list">
         <li>Bodies are JSON; the ingest endpoints also accept raw CSV (<code>Content-Type: text/csv</code>).</li>
-        <li>Errors: <code>422</code> (bad input, with a message), <code>404</code> (unknown/foreign id), <code>401</code> (bad token), <code>429</code> (over 120 req/min).</li>
+        <li>Errors: <code>422</code> (bad input, with a message), <code>404</code> (unknown/foreign id), <code>401</code> (bad token), <code>403</code> (the token lacks the scope), <code>429</code> (over 120 req/min).</li>
       </ul>
 
       <h3>Models &amp; reliability</h3>
@@ -581,7 +583,8 @@ export function McpDocs({ tokenNote }) {
         </p>
         <p className="muted-line">
           Prefer a token (scripts, CI, headless machines)? A personal API token (<code>rlf_…</code>)
-          still works — {tokenNote}
+          still works — {tokenNote} Give it the <b>Read</b> scope for the reading and
+          calculating tools, and <b>Write</b> too for the ones that save, change or delete.
         </p>
         <Code>{`claude mcp add --transport http reliafy ${url} --header "Authorization: Bearer rlf_YOUR_TOKEN"`}</Code>
 

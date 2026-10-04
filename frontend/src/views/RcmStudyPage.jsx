@@ -7,11 +7,7 @@ import RcmImportModal from "../components/RcmImportModal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getRcmStudy, getRcmOptions, putRcmTree, renameRcmStudy } from "../api.js";
-
-const csvCell = (v) => {
-  const s = String(v ?? "");
-  return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
-};
+import { toCsv } from "../csv.js";
 
 function exportCsv(study, functions) {
   const header = [
@@ -33,7 +29,7 @@ function exportCsv(study, functions) {
       }
     }
   }
-  const csv = rows.map((r) => r.map(csvCell).join(",")).join("\n");
+  const csv = toCsv(rows);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

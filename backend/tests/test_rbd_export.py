@@ -551,7 +551,11 @@ def test_subsystem_resolves_in_the_viewers_scope(client):
                   _node("s2", "subsystem", "Theirs", rbd={"id": other, "name": "Theirs"})],
         "edges": _chain("s1", "s2"),
     }
-    outer = _save(client, name="Outer", graph=graph)
+    # Saving a link to another user's diagram is refused, so the "Theirs"
+    # block stands for a document saved before that check existed.
+    mine_only = {**graph, "nodes": graph["nodes"][:-1], "edges": _chain("s1")}
+    outer = _save(client, name="Outer", graph=mine_only)
+    client.db.rbds.update_one({"_id": outer}, {"$set": {"graph": graph}})
     code = _assert_script(client.get(f"/api/rbds/{outer}/export.py"), "outer.py")
     assert "--- Sub-system 'Inner'" in code
     assert "Block 'Theirs' is a nested sub-system ('Theirs') that" in _flat(code)

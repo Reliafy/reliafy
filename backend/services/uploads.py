@@ -86,8 +86,11 @@ HARD_MAX_BYTES = 30 * 1024 * 1024
 TOKEN_TTL = timedelta(minutes=15)       # the URL works this long
 KEEP_AFTER_UPLOAD = timedelta(hours=1)  # the received bytes are kept this long
 CHUNK_BYTES = 1024 * 1024
-# A slot stuck "receiving" this long (an instance died mid-PUT) can be claimed again.
-STALE_RECEIVING = timedelta(minutes=5)
+# A slot stuck "receiving" this long (an instance died mid-PUT) can be claimed
+# again: longer than Cloud Run's request timeout (600 s), so a PUT still
+# streaming is never taken over. Each claim also tags its chunks, so even a
+# takeover can't mix two PUTs' bytes.
+STALE_RECEIVING = timedelta(minutes=11)
 
 # PUT attempts allowed per fixed window (see public_links.ATTEMPT_WINDOW_SECONDS),
 # counted before the token is checked.
@@ -212,42 +215,48 @@ def check_token(db, upload_id: str, token: str) -> Optional[dict]:
 
 def claim(db, upload_id: str) -> Optional[dict]:
     """Atomically move a pending (or stale receiving) slot whose token hasn't
-    expired to ``receiving``: only one PUT can hold it."""
+    expired to ``receiving``: only one PUT can hold it. The returned slot's
+    ``claim`` (a fresh random id) tags that PUT's chunks and guards the
+    release and finish only it may do."""
     now = _now()
     return db.uploads.find_one_and_update(
         {"_id": upload_id, "expires_at": {"$gt": now},
          "$or": [{"status": "pending"},
                  {"status": "receiving", "receiving_since": {"$lt": now - STALE_RECEIVING}}]},
-        {"$set": {"status": "receiving", "receiving_since": now}},
+        {"$set": {"status": "receiving", "receiving_since": now, "claim": secrets.token_hex(16)}},
         return_document=ReturnDocument.AFTER,
     )
 
 
-def release(db, upload_id: str) -> None:
-    """A PUT that failed (too large, empty, cut off): drop what arrived and
-    let the URL be used again until it expires."""
-    db.upload_chunks.delete_many({"upload_id": upload_id})
-    db.uploads.update_one({"_id": upload_id, "status": "receiving"},
-                          {"$set": {"status": "pending"}, "$unset": {"receiving_since": ""}})
+def release(db, upload_id: str, claim_id: str) -> None:
+    """A PUT that failed (too large, empty, cut off): drop what it sent and,
+    if it still holds the slot, let the URL be used again until it expires."""
+    db.upload_chunks.delete_many({"upload_id": upload_id, "claim": claim_id})
+    db.uploads.update_one({"_id": upload_id, "status": "receiving", "claim": claim_id},
+                          {"$set": {"status": "pending"}, "$unset": {"receiving_since": "", "claim": ""}})
 
 
-def write_chunk(db, upload_id: str, n: int, data: bytes) -> None:
+def write_chunk(db, upload_id: str, n: int, data: bytes, claim_id: str) -> None:
     db.upload_chunks.insert_one({
-        "_id": f"{upload_id}:{n:05d}", "upload_id": upload_id, "n": n, "data": bytes(data),
-        "delete_at": _now() + KEEP_AFTER_UPLOAD,
+        "_id": f"{upload_id}:{claim_id}:{n:05d}", "upload_id": upload_id, "claim": claim_id, "n": n,
+        "data": bytes(data), "delete_at": _now() + KEEP_AFTER_UPLOAD,
     })
 
 
-def finish(db, upload_id: str, size: int, sha256: str, head: bytes) -> dict:
-    """Mark the upload received (the token is now spent)."""
+def finish(db, upload_id: str, claim_id: str, size: int, sha256: str, head: bytes) -> Optional[dict]:
+    """Mark the upload received (the token is now spent) — or, when this PUT
+    no longer holds the slot, drop its chunks and return None."""
     detected = detect_format(head)
     now = _now()
-    db.uploads.update_one(
-        {"_id": upload_id, "status": "receiving"},
+    done = db.uploads.update_one(
+        {"_id": upload_id, "status": "receiving", "claim": claim_id},
         {"$set": {"status": "ready", "size": size, "sha256": sha256, "detected_format": detected,
                   "received_at": now, "delete_at": now + KEEP_AFTER_UPLOAD},
          "$unset": {"receiving_since": ""}},
     )
+    if not done.modified_count:
+        db.upload_chunks.delete_many({"upload_id": upload_id, "claim": claim_id})
+        return None
     return {"upload_id": upload_id, "size": size, "sha256": sha256, "detected_format": detected}
 
 
@@ -312,7 +321,8 @@ def get(db, upload_id: str, uid: str) -> dict:
 def read(db, upload_id: str, uid: str) -> tuple[dict, bytes]:
     """The caller's upload and its bytes (integrity-checked)."""
     doc = get(db, upload_id, uid)
-    parts = sorted(db.upload_chunks.find({"upload_id": doc["_id"]}), key=lambda c: c["n"])
+    parts = sorted(db.upload_chunks.find({"upload_id": doc["_id"], "claim": doc.get("claim")}),
+                   key=lambda c: c["n"])
     data = b"".join(bytes(c["data"]) for c in parts)
     if len(data) != doc.get("size") or hashlib.sha256(data).hexdigest() != doc.get("sha256"):
         logger.warning("upload %s failed its integrity check", doc["_id"])

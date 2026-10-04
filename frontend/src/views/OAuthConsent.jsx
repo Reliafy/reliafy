@@ -100,16 +100,10 @@ export default function OAuthConsent() {
         <h1 className="login-h1">
           {name} wants to access your Reliafy account
         </h1>
-        <p className="login-sub">
-          {info.client_kind === "cimd" && info.client_host ? (
-            <>App identity published by <b>{info.client_host}</b>.</>
-          ) : (
-            <>“{name}” is the name this app gave itself — Reliafy can't verify it.
-              Check where you'll be sent back to below.</>
-          )}
-        </p>
 
-        <div className={"consent-redirect" + (info.loopback ? " warn" : "")}>
+        {/* Where the browser goes next is the one thing Reliafy can vouch
+            for, so it comes first — before the app's self-chosen name. */}
+        <div className={"consent-redirect consent-redirect-top" + (info.loopback ? " warn" : "")}>
           {info.loopback ? (
             <>
               <div className="consent-redirect-label">You'll be sent back to an app on this computer</div>
@@ -124,20 +118,33 @@ export default function OAuthConsent() {
             <>
               <div className="consent-redirect-label">After you decide, you'll be sent back to</div>
               <div className="consent-redirect-host">{hostLabel}</div>
+              {info.hosted_claude && info.redirect_host && info.redirect_host !== hostLabel && (
+                <p>Address: <code>{info.redirect_host}</code></p>
+              )}
             </>
           )}
         </div>
+
+        <p className="login-sub">
+          {info.client_kind === "cimd" && info.client_host ? (
+            <>App identity published by <b>{info.client_host}</b>.</>
+          ) : (
+            <>“{name}” is the name this app gave itself — Reliafy can't verify it.
+              Only approve if you recognise <b>{info.loopback ? info.redirect_host : hostLabel}</b> above.</>
+          )}
+        </p>
 
         <div className="consent-scope">
           <b>If you approve, {name} can, on your behalf:</b>
           <ul>
             <li>read your models, datasets, RBDs and fleet forecasts (and the shared samples)</li>
             <li>fit models and run reliability, RBD and maintenance calculations</li>
-            <li>create models, datasets and RBDs in your workspace</li>
+            <li>create, edit and delete models, datasets and RBDs in your workspace</li>
+            <li>create read-only share links to your items</li>
           </ul>
           <p className="muted-line">
-            It can't delete anything, see your password, or change your plan or
-            billing. Disconnect it any time in Settings → Connected apps.
+            It can't see your password or change your plan or billing.
+            Disconnect it any time in Settings → Connected apps.
           </p>
         </div>
 
@@ -151,6 +158,9 @@ export default function OAuthConsent() {
               </button>
             </p>
             {error && <div className="error" style={{ marginTop: 0 }}>{error}</div>}
+            <p className="consent-who">
+              Approving sends you to <b className="consent-host-inline">{info.loopback ? info.redirect_host : hostLabel}</b>.
+            </p>
             <div className="consent-actions">
               <button type="button" className="secondary" disabled={busy} onClick={() => decide(false)}>
                 Deny

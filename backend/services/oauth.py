@@ -41,6 +41,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from backend import config
+from backend.services import email_trust
 
 logger = logging.getLogger(__name__)
 
@@ -660,24 +661,71 @@ def refresh(db, client: dict, form: dict) -> dict:
     # rotated token means it leaked — revoke the grant (OAuth 2.1 §4.3.1) —
     # EXCEPT within a short grace window: Claude refreshes both proactively and
     # on a 401, and a retried or concurrent refresh (a lost response, two
-    # requests in flight) must not disconnect the user. Inside the window we
-    # issue another pair in the same grant instead of revoking it.
+    # requests in flight) must not disconnect the user. Inside the window the
+    # replay gets back the SAME pair the rotation issued (idempotent), never a
+    # new one. The successor pair is minted first and recorded on the rotated
+    # token, sealed under a key only the presented refresh token derives, in
+    # the same atomic update that claims the rotation — so a concurrent replay
+    # always finds it, and the database never holds a usable token in clear.
+    issue = dict(family_id=doc["family_id"], uid=doc["uid"], client_id=doc["client_id"],
+                 client_name=doc["client_name"], scopes=doc["scopes"], res=doc["resource"],
+                 grant_created_at=_aware(doc.get("grant_created_at")) or _aware(doc["created_at"]))
+    pair = _issue(db, **issue)
     claimed = db.oauth_tokens.find_one_and_update(
         {"_id": doc["_id"], "rotated": False, "revoked": False},
-        {"$set": {"rotated": True, "rotated_at": _now()}})
-    if claimed is None:
-        rotated_at = _aware(doc.get("rotated_at"))
-        if rotated_at is not None and _now() - rotated_at <= REFRESH_REUSE_GRACE:
+        {"$set": {"rotated": True, "rotated_at": _now(), "successor": _seal(raw, pair)}})
+    if claimed is not None:
+        return pair
+    # Someone else rotated this token (or the grant was revoked meanwhile):
+    # the pair just minted is never handed out.
+    db.oauth_tokens.delete_one({"access_hash": _hash(pair["access_token"])})
+    current = db.oauth_tokens.find_one({"_id": doc["_id"]}) or {}
+    rotated_at = _aware(current.get("rotated_at"))
+    if (not current.get("revoked") and rotated_at is not None
+            and _now() - rotated_at <= REFRESH_REUSE_GRACE):
+        previous = _unseal(raw, current.get("successor"))
+        if previous is not None:
+            logger.info("OAuth refresh-token reuse for grant %s within grace window — same pair returned",
+                        doc["family_id"])
+            return previous
+        if not current.get("successor"):
+            # Rotated before successor pairs were recorded: the earlier reissue.
             logger.info("OAuth refresh-token reuse for grant %s within grace window — reissuing",
                         doc["family_id"])
-        else:
-            _revoke_family(db, doc["family_id"])
-            logger.warning("OAuth refresh-token reuse for grant %s — grant revoked", doc["family_id"])
-            raise OAuthError("invalid_grant",
-                             "The refresh token was already used; the grant has been revoked.")
-    return _issue(db, family_id=doc["family_id"], uid=doc["uid"], client_id=doc["client_id"],
-                  client_name=doc["client_name"], scopes=doc["scopes"], res=doc["resource"],
-                  grant_created_at=_aware(doc.get("grant_created_at")) or _aware(doc["created_at"]))
+            return _issue(db, **issue)
+    _revoke_family(db, doc["family_id"])
+    logger.warning("OAuth refresh-token reuse for grant %s — grant revoked", doc["family_id"])
+    raise OAuthError("invalid_grant",
+                     "The refresh token was already used; the grant has been revoked.")
+
+
+def _successor_key(raw_refresh: str) -> bytes:
+    """The key sealing a rotation's successor pair: derived from the rotated
+    refresh token itself (distinct from its stored hash), so only a caller
+    presenting that token can open it."""
+    return hashlib.sha256(b"reliafy-oauth-successor|" + raw_refresh.encode()).digest()
+
+
+def _seal(raw_refresh: str, pair: dict) -> str:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    nonce = secrets.token_bytes(12)
+    sealed = AESGCM(_successor_key(raw_refresh)).encrypt(nonce, json.dumps(pair).encode(), b"successor")
+    return base64.urlsafe_b64encode(nonce + sealed).decode()
+
+
+def _unseal(raw_refresh: str, blob) -> dict | None:
+    if not isinstance(blob, str) or not blob:
+        return None
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    try:
+        data = base64.urlsafe_b64decode(blob.encode())
+        plain = AESGCM(_successor_key(raw_refresh)).decrypt(data[:12], data[12:], b"successor")
+        return json.loads(plain)
+    except (InvalidTag, ValueError):
+        return None
 
 
 def revoke_token(db, client: dict, raw: str) -> None:
@@ -715,6 +763,7 @@ def verify_access_token(db, raw: str) -> dict | None:
         "uid": doc["uid"],
         "email": user.get("email"),
         "name": user.get("name"),
+        "email_verified": email_trust.profile_flag(db, doc["uid"], user),
         "via_oauth": doc["family_id"],
         "oauth_client": doc["client_name"],
     }

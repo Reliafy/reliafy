@@ -17,9 +17,9 @@ B = "user-b"
 C = "user-c"
 
 USERS = {
-    A: {"uid": A, "email": "a@x.com", "name": "A"},
-    B: {"uid": B, "email": "b@x.com", "name": "B"},
-    C: {"uid": C, "email": "c@x.com", "name": "C"},
+    A: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True},
+    B: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True},
+    C: {"uid": C, "email": "c@x.com", "name": "C", "email_verified": True},
 }
 
 
@@ -61,7 +61,7 @@ def client(monkeypatch):
 
 
 def _make_pro(db, uid):
-    db.users.update_one({"_id": uid}, {"$set": {"plan": "pro", "email": USERS[uid]["email"], "email_lc": USERS[uid]["email"]}}, upsert=True)
+    db.users.update_one({"_id": uid}, {"$set": {"plan": "pro", "email": USERS[uid]["email"], "email_lc": USERS[uid]["email"], "email_verified": True}}, upsert=True)
 
 
 def _register(db, uid):
@@ -69,7 +69,7 @@ def _register(db, uid):
     email = USERS[uid]["email"]
     db.users.update_one(
         {"_id": uid},
-        {"$set": {"email": email, "email_lc": email, "name": USERS[uid]["name"]}},
+        {"$set": {"email": email, "email_lc": email, "email_verified": True, "name": USERS[uid]["name"]}},
         upsert=True,
     )
 

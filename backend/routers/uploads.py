@@ -24,7 +24,7 @@ from anyio import to_thread
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from backend.routers.telemetry import _client_ip
+from backend.request_ip import client_ip as _client_ip
 from backend.services import public_links as links_service
 from backend.services import uploads as uploads_service
 from backend.services import usage as usage_service
@@ -93,6 +93,7 @@ async def receive_upload(upload_id: str, request: Request) -> JSONResponse:
         current = await to_thread.run_sync(lambda: db.uploads.find_one({"_id": doc["_id"]})) or doc
         status, detail = uploads_service.status_refusal(current)
         return _json(status, detail)
+    claim_id = claimed["claim"]
 
     cap = doc["max_bytes"]
     digest = hashlib.sha256()
@@ -105,7 +106,7 @@ async def receive_upload(upload_id: str, request: Request) -> JSONResponse:
                 continue
             size += len(piece)
             if size > cap:
-                await to_thread.run_sync(uploads_service.release, db, doc["_id"])
+                await to_thread.run_sync(uploads_service.release, db, doc["_id"], claim_id)
                 await to_thread.run_sync(_record, doc, "error", started)
                 return _too_large(doc)
             digest.update(piece)
@@ -115,22 +116,27 @@ async def receive_upload(upload_id: str, request: Request) -> JSONResponse:
             while len(buf) >= uploads_service.CHUNK_BYTES:
                 part = bytes(buf[: uploads_service.CHUNK_BYTES])
                 del buf[: uploads_service.CHUNK_BYTES]
-                await to_thread.run_sync(uploads_service.write_chunk, db, doc["_id"], n, part)
+                await to_thread.run_sync(uploads_service.write_chunk, db, doc["_id"], n, part, claim_id)
                 n += 1
         if size == 0:
-            await to_thread.run_sync(uploads_service.release, db, doc["_id"])
+            await to_thread.run_sync(uploads_service.release, db, doc["_id"], claim_id)
             await to_thread.run_sync(_record, doc, "error", started)
             return _json(400, "The request had no body. Send the file's bytes, e.g. curl --data-binary @file.")
         if buf:
-            await to_thread.run_sync(uploads_service.write_chunk, db, doc["_id"], n, bytes(buf))
-        out = await to_thread.run_sync(uploads_service.finish, db, doc["_id"], size, digest.hexdigest(), bytes(head))
+            await to_thread.run_sync(uploads_service.write_chunk, db, doc["_id"], n, bytes(buf), claim_id)
+        out = await to_thread.run_sync(uploads_service.finish, db, doc["_id"], claim_id, size,
+                                       digest.hexdigest(), bytes(head))
+        if out is None:
+            # Another PUT took the slot over: its file is the one kept.
+            await to_thread.run_sync(_record, doc, "error", started)
+            return _json(409, "Another upload to this link took its place. Create a new upload to send this file.")
     except BaseException:
         # Cut off mid-stream (or a storage error): drop the partial file so
         # the link can be retried, then let the error take its course. Run
         # inline — a cancelled task can't await a worker thread.
         logger.warning("upload %s: receive failed", doc["_id"], exc_info=True)
         try:
-            uploads_service.release(db, doc["_id"])
+            uploads_service.release(db, doc["_id"], claim_id)
         except Exception:  # noqa: BLE001
             logger.warning("upload %s: could not release", doc["_id"], exc_info=True)
         raise

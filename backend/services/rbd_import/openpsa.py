@@ -46,11 +46,16 @@ from typing import Optional
 from defusedxml import ElementTree as SafeET
 from defusedxml.common import DefusedXmlException
 
+from backend.services import import_guard
+
 from . import fault_tree as ft
 from .types import ImportedDiagram, RbdImportError
 
 MAX_XML_DEPTH = 400
 MAX_ROOTS = 20
+# Expression nodes evaluated across the whole file: parameters are evaluated
+# where they are used, so a parameter built from others is counted each time.
+MAX_EXPRESSION_STEPS = 1_000_000
 _ROOT_TAGS = ("opsa-mef", "open-psa")
 _NON_COHERENT = {"not": "NOT", "xor": "XOR", "nand": "NAND", "nor": "NOR",
                  "iff": "IFF", "imply": "IMPLY"}
@@ -181,6 +186,7 @@ class _Converter:
         self.ccf_members: dict[str, object] = {}   # event -> CCF group element
         self.anon = 0
         self.depth = 0
+        self.steps = 0
         self.scope: list[str] = [""]
         self._warned: set[str] = set()
         self._notes: dict[str, list[str]] = {}
@@ -210,6 +216,7 @@ class _Converter:
     def gate(self, name: str):
         if name in self.nodes:
             return name
+        import_guard.check()
         self.depth += 1
         if self.depth > ft.MAX_DEPTH:
             raise RbdImportError(
@@ -439,9 +446,18 @@ class _Converter:
         elif unit and unit not in ("bool", "int", "float", "fraction", "probability"):
             self.units.add(unit)
 
+    def _step(self, name: str) -> None:
+        self.steps += 1
+        if self.steps > MAX_EXPRESSION_STEPS:
+            raise RbdImportError(
+                f"“{name}”: the model's parameter expressions are too large to evaluate.")
+        if not self.steps % 1000:
+            import_guard.check()
+
     def _time_factor(self, el, name) -> Optional[float]:
         """``c`` when ``el`` is ``c × mission time`` (c = 1 for the bare
         mission time); ``None`` for a constant time."""
+        self._step(name)
         el = self._deref(el)
         t = _tag(el)
         if t in ("system-mission-time", "mission-time"):
@@ -458,6 +474,7 @@ class _Converter:
     def num(self, el, name: str, depth: int = 0) -> float:
         if depth > 100:
             raise RbdImportError(f"“{name}”: the expression is nested too deeply.")
+        self._step(name)
         el = self._deref(el)
         t = _tag(el)
         args = _children(el)
@@ -502,6 +519,8 @@ class _Converter:
             if t == "beta-deviate":
                 self._mean_warning(name)
                 return vals[0] / (vals[0] + vals[1])
+        except (RbdImportError, import_guard.ImportBudgetExceeded):
+            raise
         except (TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError):
             raise RbdImportError(f"“{name}”: couldn't evaluate the <{t}> expression.") from None
         if t in ("system-mission-time", "mission-time"):

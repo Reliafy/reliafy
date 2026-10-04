@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 
 from backend.auth import get_current_user
 from backend.db import get_session
-from backend.routers.telemetry import _client_ip
+from backend.request_ip import client_ip as _client_ip
 from backend.services import public_links as links_service
 from backend.services import rbds as rbds_service
 from backend.services.rbd_analysis import AnalysisError
@@ -247,7 +247,7 @@ def export_public_rbd(token: str, request: Request, session=Depends(get_session)
     if link["collection"] != "rbds":
         return JSONResponse(status_code=404, content={"detail": _GONE})
     doc = session.rbds.find_one({"_id": link["artifact_id"]})
-    if doc is None:
+    if doc is None or doc.get("owner_id") != link.get("grantor_uid"):
         return JSONResponse(status_code=404, content={"detail": "The shared analysis no longer exists."})
     ctx = links_service.guest_ctx(doc["owner_id"], link["grantor_uid"])
     response = _detail_handler("rbds")(link["artifact_id"], session, ctx)
@@ -278,7 +278,7 @@ def view_public(token: str, request: Request, session=Depends(get_session)) -> J
         return refusal
 
     doc = session[link["collection"]].find_one({"_id": link["artifact_id"]})
-    if doc is None:
+    if doc is None or doc.get("owner_id") != link.get("grantor_uid"):
         return JSONResponse(status_code=404, content={"detail": "The shared analysis no longer exists."})
 
     ctx = links_service.guest_ctx(doc["owner_id"], link["grantor_uid"])
