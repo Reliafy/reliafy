@@ -53,6 +53,7 @@ PUBLIC_COLLECTIONS = {
     "rcm_studies",
     "fleets",
     "rbds",
+    "recurrent_models",
 }
 
 # Fields stripped (recursively) from public payloads: identities and

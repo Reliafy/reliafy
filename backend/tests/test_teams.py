@@ -300,11 +300,13 @@ def test_team_delete_cascades(client):
     _save_model(client, tid)
     client.post("/api/rcm/studies", json={"name": "S"}, headers=h)
     principal = f"team:{tid}"
+    # A team's recurrent-event models go with it too (#89).
+    client.db.recurrent_models.insert_one({"_id": "rm-team", "owner_id": principal, "name": "R"})
     assert client.db.models.count_documents({"owner_id": principal}) == 1
     assert client.db.datasets.count_documents({"owner_id": principal}) == 1
 
     assert client.delete(f"/api/teams/{tid}").status_code == 200
-    for coll in ("models", "datasets", "rcm_studies"):
+    for coll in ("models", "datasets", "rcm_studies", "recurrent_models"):
         assert client.db[coll].count_documents({"owner_id": principal}) == 0
     assert client.get("/api/teams").json()["teams"] == []
     # The workspace header is now invalid.

@@ -5,6 +5,7 @@ import Logo from "../components/Logo.jsx";
 import { useAuth } from "../AuthProvider.jsx";
 import ResultView from "../components/ResultView.jsx";
 import DegradationResultView from "../components/DegradationResultView.jsx";
+import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
@@ -32,6 +33,7 @@ const KIND_LABEL = {
   rcm_studies: "RCM study",
   fleets: "Fleet failure forecast",
   rbds: "Reliability block diagram",
+  recurrent_models: "Recurrent-event model",
 };
 
 const fmt = (v, dp = 1) =>
@@ -114,6 +116,8 @@ function Body({ collection, a, token, unlock }) {
       return <div className="card"><ResultView result={a.results} /></div>;
     case "degradation_models":
       return <div className="card"><DegradationResultView results={a.results} /></div>;
+    case "recurrent_models":
+      return <div className="card"><RecurrentResultView results={a.results} /></div>;
     case "strategy_analyses":
       return (
         <div className="card">

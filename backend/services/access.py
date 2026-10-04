@@ -264,7 +264,7 @@ def get_access(
 
 SHARABLE_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models",
-    "strategy_analyses", "rcm_studies", "fleets",
+    "strategy_analyses", "rcm_studies", "fleets", "recurrent_models",
 )
 
 # How much of the reference graph a share can pull in: an RCM study links
@@ -348,7 +348,7 @@ def evidence_refs(functions) -> list[tuple[str, str]]:
 def refs_of(collection: str, doc: dict) -> list[tuple[str, str]]:
     """(collection, id) pairs this artifact references, from its raw doc."""
     refs: list[tuple[str, str]] = []
-    if collection in ("models", "degradation_models") and _str_id(doc.get("dataset_id")):
+    if collection in ("models", "degradation_models", "recurrent_models") and _str_id(doc.get("dataset_id")):
         refs.append(("datasets", doc["dataset_id"]))
     elif collection == "fleets" and _str_id(doc.get("model_id")):
         refs.append(("models", doc["model_id"]))

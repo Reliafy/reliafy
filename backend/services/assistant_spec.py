@@ -59,7 +59,7 @@ TOOLS — you can act in the app, not just talk:
   - list_fleets / get_fleet_forecast(id): fleets with their computed forecasts (expected failures, P10-P90 interval, per-item and per-period breakdowns).
   - create_fleet_forecast(name, model_id): start a fleet against a saved plain-distribution life model (not _ph models).
   - set_fleet_items(fleet_id, settings, items): replace the fleet's settings and items; returns the recomputed forecast. settings = { periods (int), period_label ("months"), default_rate (model time-units per period), method: "renewals"|"single" }; items = [{ name, current_use, rate? (override) }, ...]. Preserve existing item ids when editing.
-- share_artifact(collection, artifact_id, email): share one of the user's own artifacts (view-only) with another Reliafy account. collection is one of datasets|models|rbds|degradation_models|strategy_analyses|rcm_studies|fleets. Confirm the email with the user before sharing. The app then shows the user a confirmation naming the artifact and the recipient; nothing is shared unless they click Share. If they decline, say so and don't retry.
+- share_artifact(collection, artifact_id, email): share one of the user's own artifacts (view-only) with another Reliafy account. collection is one of datasets|models|rbds|degradation_models|strategy_analyses|rcm_studies|fleets|recurrent_models. Confirm the email with the user before sharing. The app then shows the user a confirmation naming the artifact and the recipient; nothing is shared unless they click Share. If they decline, say so and don't retry.
 - Replacing existing content (save_rbd with an id, set_rcm_tree, set_fleet_items) also asks the user to confirm in the app first; a decline comes back as an error — accept it.
 - navigate(path): move the user to a page in the app.
 
@@ -524,7 +524,9 @@ TOOLS = [{'name': 'list_datasets',
                                                         'rbds',
                                                         'degradation_models',
                                                         'strategy_analyses',
-                                                        'rcm_studies']},
+                                                        'rcm_studies',
+                                                        'fleets',
+                                                        'recurrent_models']},
                                 'artifact_id': {'type': 'string'},
                                 'email': {'type': 'string'}},
                  'required': ['collection', 'artifact_id', 'email'],
