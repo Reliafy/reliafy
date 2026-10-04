@@ -24,6 +24,12 @@ from backend.tests.test_rbd_import_api import USER, client  # noqa: F401 - fixtu
 TIMES = [50.0, 200.0, 500.0, 1000.0, 2500.0]
 
 
+
+def _notes(d):
+    """Import notes other than #187's "no time unit" note, which a file
+    without a unit (RePyability's JSON has none) rightly carries."""
+    return [w for w in d.warnings if w != rbd_import.UNIT_MISSING]
+
 def _w(alpha, beta, **extra):
     return {"source": "params", "distribution": "Weibull", "distribution_id": "weibull",
             "params": [{"name": "alpha", "value": alpha}, {"name": "beta", "value": beta}], **extra}
@@ -275,7 +281,7 @@ def test_a_subsystem_the_importer_cant_open_is_drawn_in_place():
 def test_samples_round_trip(sample):
     s = next(s for s in samples.SAMPLE_RBDS if s["id"] == sample)
     [d] = _import(_export(s["graph"], s["name"]))
-    assert d.warnings == [] and d.name == s["name"]
+    assert _notes(d) == [] and d.name == s["name"]
     assert rbd_graph.normalize_graph(d.graph) == rbd_graph.normalize_graph(copy.deepcopy(s["graph"]))
 
 
@@ -337,7 +343,7 @@ def test_an_edited_core_is_rebuilt_from_repyability_and_keeps_labels():
     a = next(r for r in doc["reliabilities"] if r["node"] == "a")
     a["model"]["model"]["params"] = [1200.0, 1.4]
     [d] = _import(json.dumps(doc))
-    assert "changed after Reliafy wrote it" in d.warnings[0]
+    assert "changed after Reliafy wrote it" in _notes(d)[0]
     node = next(n for n in d.graph["nodes"] if n["id"] == "a")
     assert node["data"]["label"] == "Pump A" and node["data"]["model"]["params"][0]["value"] == 1200.0
     assert d.graph["unit"] == "Hours" and d.name == "Plant"
@@ -368,7 +374,7 @@ def test_a_file_written_in_code_imports_as_the_rbd_it_describes():
     )
     [d] = _import(rbd.to_json(), "plant.json")
     assert d.source_format == "RePyability JSON" and d.name == "plant"
-    assert d.warnings == []
+    assert _notes(d) == []
     norm = rbd_graph.normalize_graph(d.graph)
     by_label = {n["data"]["label"]: n for n in norm["nodes"]}
     assert by_label["gate"]["type"] == "knode" and by_label["gate"]["data"]["n"] == 2
@@ -484,13 +490,13 @@ def test_a_tampered_reliafy_part_is_not_trusted():
     doc = json.loads(_export(_plant()))
     doc["reliafy"]["graph"]["nodes"][1]["data"]["model"] = _w(1, 1)  # disagrees with the RePyability part
     [d] = _import(json.dumps(doc))
-    assert "changed after Reliafy wrote it" in d.warnings[0]
+    assert "changed after Reliafy wrote it" in _notes(d)[0]
     a = next(n for n in d.graph["nodes"] if n["id"] == "a")
     assert a["data"]["model"]["params"][0]["value"] == 900.0  # the RePyability part wins
 
     doc["reliafy"]["graph"] = {"nodes": "nope"}
     [d] = _import(json.dumps(doc))
-    assert "changed after Reliafy wrote it" in d.warnings[0]
+    assert "changed after Reliafy wrote it" in _notes(d)[0]
 
 
 # ---------------------------------------------------------------------------
