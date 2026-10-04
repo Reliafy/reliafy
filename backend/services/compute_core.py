@@ -224,7 +224,7 @@ def sensitivity_request(graph: dict, **options) -> Optional[dict]:
     return {"graph": inline_graph(graph), "options": rbd_sensitivity.options(**options)}
 
 
-_SENSITIVITY_OPTIONS = frozenset({"window", "step", "rank_by", "costs", "n_simulations", "seed"})
+_SENSITIVITY_OPTIONS = frozenset({"window", "step", "rank_by", "order", "costs", "n_simulations", "seed"})
 
 
 def run_sensitivity(request: dict) -> dict:

@@ -48,7 +48,7 @@ NEEDS_SIMULATION_MESSAGE = (
 
 
 def sensitivity_payload(session, ctx: AccessCtx, graph: dict, rbd: Optional[Rbd], resolve_owners, *,
-                        window=None, step=None, rank_by=None, costs=None, simulate: bool = False
+                        window=None, step=None, rank_by=None, costs=None, order=None, simulate: bool = False
                         ) -> tuple[int, dict]:
     """What to improve, as ``(status, payload)``: 200 with the ranked levers
     (or a ``status`` saying why there are none yet: ``too_large``,
@@ -60,7 +60,7 @@ def sensitivity_payload(session, ctx: AccessCtx, graph: dict, rbd: Optional[Rbd]
     if not (graph or {}).get("repairable"):
         raise AnalysisError("What to improve is for repairable (availability) diagrams — give the blocks "
                             "repair times and mark the diagram repairable.")
-    options = rbd_sensitivity.options(window=window, step=step, rank_by=rank_by, costs=costs)
+    options = rbd_sensitivity.options(window=window, step=step, rank_by=rank_by, costs=costs, order=order)
 
     def resolve_model(model_id: str):
         return models_service.get_live_model(session, model_id, resolve_owners)
@@ -102,6 +102,7 @@ def rbd_sensitivity_endpoint(
     step: float | None = Body(default=None),
     rank_by: str | None = Body(default=None),
     costs: dict | None = Body(default=None),
+    order: str | None = Body(default=None),
     simulate: bool = Body(default=False),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
@@ -111,9 +112,11 @@ def rbd_sensitivity_endpoint(
     model parameters, its maintenance intervals, durations and coverage, its
     standby group's, one more repair crew — with RePyability's derivative of
     the availability (and cost rate) and the effect of a ``step`` (0.1: 10%)
-    in the direction that improves ``rank_by`` ("availability" or "cost"),
-    ranked by that benefit or, with ``costs`` ({lever id: cost to make that
-    change}), by benefit per unit of cost. ``window`` takes the mean over
+    in the direction that improves ``rank_by`` ("availability" or "cost").
+    ``costs`` ({lever id: cost to make that change}) gives each its benefit
+    per unit of cost; ``order`` "benefit" (the default) ranks by benefit
+    alone, costs or not, and "benefit_per_cost" puts the costed levers first
+    by benefit per unit spent, then the rest by benefit. ``window`` takes the mean over
     ``[0, window)`` from new instead of the long run. ``simulate`` runs the
     simulated route where the diagram needs it (Pro or credits)."""
     owners = ctx.read_owners
@@ -124,7 +127,7 @@ def rbd_sensitivity_endpoint(
             owners = [*ctx.read_owners, rbd.owner_id]
     try:
         status, payload = sensitivity_payload(session, ctx, graph, rbd, owners, window=window, step=step,
-                                              rank_by=rank_by, costs=costs, simulate=simulate)
+                                              rank_by=rank_by, costs=costs, order=order, simulate=simulate)
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except Exception:  # pragma: no cover - defensive

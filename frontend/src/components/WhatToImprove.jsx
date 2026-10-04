@@ -63,6 +63,8 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
   const [over, setOver] = useState("long_run"); // long_run | window
   const [costs, setCosts] = useState({}); // {lever id: "cost"} as typed
   const [sentCosts, setSentCosts] = useState({});
+  // "benefit": by the step's gain alone; "benefit_per_cost": costed levers first.
+  const [order, setOrder] = useState("benefit");
   const [editCosts, setEditCosts] = useState(false);
   const [data, setData] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | running
@@ -92,6 +94,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
         rbdId,
         step,
         rankBy,
+        order,
         window: over === "window" ? windowLen : null,
         costs: Object.keys(numeric).length ? numeric : null,
         simulate,
@@ -116,7 +119,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
   useEffect(() => {
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availability, step, rankBy, over]);
+  }, [availability, step, rankBy, over, order, sentCosts]);
 
   // Poll a queued job until it's done.
   const jobId = job?.job_id;
@@ -172,6 +175,9 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
     () => JSON.stringify(costs) !== JSON.stringify(sentCosts),
     [costs, sentCosts]
   );
+  const positive = (m) => Object.values(m).some((v) => Number(v) > 0);
+  const hasSentCosts = positive(sentCosts);
+  const hasTypedCosts = positive(costs);
   const basis = data?.basis;
   const sim = basis === "simulation" && data?.status === "ok";
   const tag = BASIS_TAG[basis];
@@ -213,6 +219,22 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
                     onClick={() => setRankBy("availability")}>Availability</button>
             <button type="button" className={"seg-btn" + (rankBy === "cost" ? " active" : "")}
                     onClick={() => setRankBy("cost")} title="Rank by the running cost saved per unit time">Cost</button>
+          </div>
+        )}
+        {(editCosts || hasSentCosts) && rows.length > 0 && (
+          <div className="seg" role="group" aria-label="Order">
+            <button type="button" className={"seg-btn" + (order === "benefit" ? " active" : "")}
+                    onClick={() => setOrder("benefit")}
+                    title="Rank by the step's benefit alone, whether or not a lever has a cost">Benefit</button>
+            <button type="button" className={"seg-btn" + (order === "benefit_per_cost" ? " active" : "")}
+                    disabled={!hasSentCosts && !hasTypedCosts}
+                    onClick={() => {
+                      if (costChanged) setSentCosts(costs);
+                      setOrder("benefit_per_cost");
+                    }}
+                    title="The levers with a cost to change first, by benefit per unit spent; then the rest by benefit">
+              Benefit per cost
+            </button>
           </div>
         )}
         {rows.length > 0 && (
@@ -356,15 +378,13 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
           <button
             type="button"
             disabled={phase === "running" || !costChanged}
-            onClick={() => {
-              setSentCosts(costs);
-              run({ withCosts: costs });
-            }}
+            onClick={() => setSentCosts(costs)}
           >
-            Rank by benefit per cost
+            Apply costs
           </button>
           <span className="hint">
-            Enter what each change would cost; levers with a cost rank by gain per unit spent, ahead of the rest.
+            Enter what each change would cost: each lever then shows its gain per 1,000 spent. Order by
+            “Benefit per cost” to put the costed levers first, by gain per unit spent.
           </span>
         </div>
       )}

@@ -714,12 +714,13 @@ export function getActiveRbdJob(rbdId, kind = null) {
 
 // What to improve (#225): a repairable diagram's levers ranked by what a step
 // of each gains. ``costs`` maps lever ids to the cost of making that change;
-// ``window`` ranks by the mean over [0, window) instead of the long run;
-// ``simulate`` runs the simulated route where the diagram needs it (Pro).
-// 200 with the ranked levers (or a ``status`` saying why not yet), or 202 with
-// ``job`` to poll at getRbdJob.
+// ``order`` "benefit" ranks by gain alone, "benefit_per_cost" puts the costed
+// levers first by gain per unit spent; ``window`` ranks by the mean over
+// [0, window) instead of the long run; ``simulate`` runs the simulated route
+// where the diagram needs it (Pro). 200 with the ranked levers (or a
+// ``status`` saying why not yet), or 202 with ``job`` to poll at getRbdJob.
 export function rbdSensitivity({ graph, rbdId = null, window = null, step = null, rankBy = null, costs = null,
-                                 simulate = false }) {
+                                 order = null, simulate = false }) {
   return request("/api/rbds/sensitivity", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -730,6 +731,7 @@ export function rbdSensitivity({ graph, rbdId = null, window = null, step = null
       step,
       rank_by: rankBy,
       costs,
+      order,
       simulate,
     }),
   });

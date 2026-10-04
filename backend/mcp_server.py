@@ -284,7 +284,7 @@ finds a repairable diagram's redundancy with the lowest total cost of ownership;
 year: 7 = 7%) makes its totals, and analyze_rbd's, present values. "What should we fix first?" on a \
 repairable diagram is rbd_sensitivity: every lever (mean life, mean repair time, intervals, coverage, one \
 more crew) ranked by what a 10% step gains in availability (or cost), in plain words with its basis (exact, \
-numerical or simulation); costs_to_change ranks by benefit per unit of cost.
+numerical or simulation); with costs_to_change, order='benefit_per_cost' ranks by benefit per unit of cost.
 - Observed history: upload_outage_log saves a real outage log (asset, start, end; blank end = still down) \
 against one of the user's diagrams; system_history then gives the system's actual availability over the \
 window, its outages each attributed to the block that took it down, and the blocks ranked by downtime share.
@@ -2770,7 +2770,7 @@ def _sensitivity_summary(payload: dict, limit: int) -> dict:
         d = row.get("derivative") or {}
         r["derivative"] = {k: v for k, v in d.items() if v is not None}
         rows.append(r)
-    keep = ("of", "window", "step", "rank_by", "availability", "cost_rate", "priced", "derivative_basis",
+    keep = ("of", "window", "step", "rank_by", "order", "availability", "cost_rate", "priced", "derivative_basis",
             "t_simulation", "n_simulations", "common_random_numbers", "pinned", "notes", "top")
     out.update({k: payload[k] for k in keep if payload.get(k) not in (None, [], {})})
     out["available"] = True
@@ -2798,7 +2798,11 @@ def rbd_sensitivity(
         "cost per unit time (priced diagrams)."))] = "availability",
     costs_to_change: Annotated[Optional[dict[str, float]], Field(description=(
         "The cost of making each lever's stated change, by lever id (from a previous answer's levers[].id): "
-        "the ranking is then benefit per unit of cost for those levers."))] = None,
+        "each gets its benefit per unit of cost; order='benefit_per_cost' ranks by it."))] = None,
+    order: Annotated[Literal["benefit", "benefit_per_cost"], Field(description=(
+        "benefit (default): rank by the step's benefit alone, whether or not a lever has a cost. "
+        "benefit_per_cost: the levers in costs_to_change first, by benefit per unit spent, then the rest by "
+        "benefit."))] = "benefit",
     simulate: Annotated[bool, Field(description=(
         "Where RePyability has no exact route (e.g. limited repair crews for wear-out lives), simulate the "
         "effects (Pro or credits; a minute or two). False: say so instead."))] = True,
@@ -2808,8 +2812,9 @@ def rbd_sensitivity(
     and mean repair time (and its other model parameters), its scheduled-replacement and proof-test intervals,
     durations and coverage, its standby group's, one more repair crew — with the effect of moving it one step
     (default 10%) in the direction that helps: the change in availability (percentage points) and in running
-    cost, in plain words, and RePyability's derivative. Ranked by that benefit, or by benefit per unit of cost
-    for the levers given costs_to_change. `top` is the recommendation in a sentence; quote it with its basis:
+    cost, in plain words, and RePyability's derivative. Ranked by that benefit (order='benefit'), or — with
+    costs_to_change and order='benefit_per_cost' — the costed levers first by benefit per unit of cost, then
+    the rest by benefit. `top` is the recommendation, following the ranking; quote it with its basis:
     exact or numerical (free, deterministic: the derivatives are central differences of the exact long-run
     values, a step's effect an exact difference — 'linear' when it is the derivative times the step) or
     simulation (Pro or credits: each step simulated against the diagram with common random numbers, with a 95%
@@ -2831,7 +2836,8 @@ def rbd_sensitivity(
     actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid, read_owners=_owners(uid),
                      list_owners=uid, share_fallback=False)
     status, payload = sensitivity_payload(db, actx, graph, rbd, owners, window=window, step=step,
-                                          rank_by=rank_by, costs=costs_to_change, simulate=simulate)
+                                          rank_by=rank_by, costs=costs_to_change, order=order,
+                                          simulate=simulate)
     if status == 503:
         raise ToolError(payload.get("detail") or rbd_jobs_service.QUEUE_UNAVAILABLE)
     if status == 202:

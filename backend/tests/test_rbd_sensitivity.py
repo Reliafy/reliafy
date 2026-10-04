@@ -135,7 +135,7 @@ def test_unit_costs_rank_as_repyabilitys():
     ranking, to the last bit, and the ranking is by benefit per cost."""
     graph = _priced()
     costs = {"pump|repairability.mu": 2000.0, "valve|reliability.failure_rate": 50.0}
-    out = rs.analyze_sensitivity(graph, costs=costs)
+    out = rs.analyze_sensitivity(graph, costs=costs, order="benefit_per_cost")
     rows = _rows(out)
     rbd, working, broken = _built(graph)
     unit = {}
@@ -151,8 +151,41 @@ def test_unit_costs_rank_as_repyabilitys():
     assert [r["id"] for r in out["levers"][:2]] == ["valve|reliability.failure_rate", "pump|repairability.mu"]
     assert all(r["cost_to_change"] is None for r in out["levers"][2:])
     assert "for every 1,000 spent" in out["levers"][0]["plain"]
+    assert out["order"] == "benefit_per_cost" and out["top"].startswith("A 10% longer mean life for Valve")
     with pytest.raises(AnalysisError, match="not levers"):
         rs.analyze_sensitivity(graph, costs={"nope|x": 1})
+    with pytest.raises(AnalysisError, match="order must be"):
+        rs.analyze_sensitivity(graph, order="cheapest")
+
+
+@pytest.mark.parametrize("rank_by", ["availability", "cost"])
+def test_a_costed_lever_never_outranks_a_better_one_when_ranking_by_benefit(rank_by):
+    """Ranking by benefit (the default) ignores the costs: a costed lever with
+    a smaller benefit stays below an uncosted one with a larger benefit, and
+    the top sentence follows the ranking shown. Ranking by benefit per cost
+    puts the costed levers first."""
+    graph = _priced()
+    plain = rs.analyze_sensitivity(graph, rank_by=rank_by)
+    best, small = plain["levers"][0], plain["levers"][-1]
+    assert best["benefit"] > small["benefit"] and best["cost_to_change"] is None
+    costs = {small["id"]: 1.0, plain["levers"][1]["id"]: 5.0}
+    by_benefit = rs.analyze_sensitivity(graph, rank_by=rank_by, costs=costs)
+    assert by_benefit["order"] == "benefit"
+    # The same order as with no costs at all, and the benefits descending.
+    assert [r["id"] for r in by_benefit["levers"]] == [r["id"] for r in plain["levers"]]
+    benefits = [r["benefit"] for r in by_benefit["levers"]]
+    assert benefits == sorted(benefits, reverse=True)
+    ids = [r["id"] for r in by_benefit["levers"]]
+    assert ids.index(best["id"]) < ids.index(small["id"])
+    assert by_benefit["top"] == plain["top"]
+    # Each costed row still carries its benefit per cost.
+    assert _rows(by_benefit)[small["id"]]["benefit_per_cost"] == pytest.approx(small["benefit"] / 1.0)
+    per_cost = rs.analyze_sensitivity(graph, rank_by=rank_by, costs=costs, order="benefit_per_cost")
+    assert {r["id"] for r in per_cost["levers"][:2]} == set(costs)
+    rest = [r["benefit"] for r in per_cost["levers"][2:]]
+    assert rest == sorted(rest, reverse=True)
+    first = per_cost["levers"][0]
+    assert per_cost["top"].startswith(first["change"][0].upper() + first["change"][1:] + " for " + first["block"])
 
 
 def test_ranked_by_benefit_with_plain_words():
@@ -289,8 +322,12 @@ def test_app_exact_is_free_and_answers_at_once(client):
     body = r.json()
     assert body["status"] == "ok" and body["basis"] == "exact" and body["levers"] and body["top"]
     assert body["can_simulate"] is False
-    r = _post(client, _priced(), costs={"pump|repairability.mu": 1000}, rank_by="cost", step=0.25)
-    assert r.status_code == 200 and r.json()["levers"][0]["id"] == "pump|repairability.mu"
+    r = _post(client, _priced(), costs={"valve|repairability.mu": 1000}, rank_by="cost", step=0.25,
+              order="benefit_per_cost")
+    assert r.status_code == 200 and r.json()["levers"][0]["id"] == "valve|repairability.mu"
+    r = _post(client, _priced(), costs={"valve|repairability.mu": 1000}, rank_by="cost", step=0.25)
+    assert r.status_code == 200 and r.json()["levers"][0]["id"] != "valve|repairability.mu"
+    assert _post(client, _priced(), order="cheapest").status_code == 422
     assert _post(client, _priced(), step=0).status_code == 422
     nr = _priced()
     nr["repairable"] = False
@@ -383,10 +420,19 @@ def test_mcp_rbd_sensitivity(monkeypatch):
     assert first["id"] == "pump|repairability.mu" and first["availability_points"] == pytest.approx(0.0928, rel=1e-2)
     assert first["derivative"]["availability"] < 0  # per unit of the lognormal μ: a longer repair is worse
     assert "points" in first["plain"] and out["units_note"]
-    priced = _ok(_call(token, "rbd_sensitivity", {"rbd_id": rbd.id, "rank_by": "cost",
-                                                  "costs_to_change": {"valve|reliability.failure_rate": 10}}))
+    costed = {"valve|reliability.failure_rate": 10}
+    priced = _ok(_call(token, "rbd_sensitivity", {"rbd_id": rbd.id, "rank_by": "cost", "costs_to_change": costed,
+                                                  "order": "benefit_per_cost"}))
+    assert priced["order"] == "benefit_per_cost"
     assert priced["levers"][0]["id"] == "valve|reliability.failure_rate"
     assert priced["levers"][0]["benefit_per_cost"] is not None
+    # Ranked by benefit (the default) the costed valve stays below the pump.
+    by_benefit = _ok(_call(token, "rbd_sensitivity", {"rbd_id": rbd.id, "rank_by": "cost",
+                                                      "costs_to_change": costed, "limit": 7}))
+    ids = [r["id"] for r in by_benefit["levers"]]
+    assert by_benefit["order"] == "benefit" and ids[0].startswith("pump|")
+    assert ids.index("pump|reliability.alpha") < ids.index("valve|reliability.failure_rate")
+    assert by_benefit["top"].startswith("A 10% longer mean life for Pump")
     nr = rbds_service.save_rbd(test_db, "Plain", {**_priced(), "repairable": False}, A)
     err = _call(token, "rbd_sensitivity", {"rbd_id": nr.id})
     assert err.is_error and "non-repairable" in err.content[0].text

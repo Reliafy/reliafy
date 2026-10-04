@@ -93,6 +93,9 @@ NUMERICAL_MAX_BLOCKS = 20
 WINDOW_MAX_BLOCKS = ra.EXACT_WINDOW_MEAN_MAX_BLOCKS
 #: What to rank by.
 RANK_BY = ("availability", "cost")
+#: How the levers are ordered: by benefit alone (costs or not), or the levers
+#: given a cost to change first, by benefit per unit spent.
+ORDERS = ("benefit", "benefit_per_cost")
 #: The simulation's time budget for all its levers, and the replications of
 #: each paired run it may take.
 SIM_TIME_BUDGET_S = 90.0
@@ -384,7 +387,15 @@ def parse_window(value) -> Optional[float]:
     return w
 
 
-def options(window=None, step=None, rank_by=None, costs=None, n_simulations=None, seed=None) -> dict:
+def parse_order(value) -> str:
+    order = value or "benefit"
+    if order not in ORDERS:
+        raise AnalysisError("order must be 'benefit' or 'benefit_per_cost'.")
+    return order
+
+
+def options(window=None, step=None, rank_by=None, costs=None, n_simulations=None, seed=None,
+            order=None) -> dict:
     """The validated options of a sensitivity request (plain JSON)."""
     rank = rank_by or "availability"
     if rank not in RANK_BY:
@@ -393,6 +404,7 @@ def options(window=None, step=None, rank_by=None, costs=None, n_simulations=None
         "window": parse_window(window),
         "step": parse_step(step),
         "rank_by": rank,
+        "order": parse_order(order),
         "costs": parse_costs(costs),
     }
     if n_simulations is not None:
@@ -538,6 +550,7 @@ def analyze_sensitivity(
     step: float = DEFAULT_STEP,
     rank_by: str = "availability",
     costs: Optional[dict] = None,
+    order: str = "benefit",
     simulate: bool = True,
     n_simulations: Optional[int] = None,
     seed: Optional[int] = None,
@@ -545,7 +558,10 @@ def analyze_sensitivity(
     """The levers of a repairable diagram ranked by what a step of each
     gains (see the module docstring). ``window`` takes the mean over
     ``[0, window)`` from new instead of the long run; ``costs`` maps lever
-    ids to the cost of making that lever's stated change; ``simulate=False``
+    ids to the cost of making that lever's stated change (each row's
+    benefit per cost); ``order`` "benefit" ranks by benefit alone, costs or
+    not, "benefit_per_cost" puts the costed levers first, by benefit per
+    unit spent, then the rest by benefit; ``simulate=False``
     refuses rather than simulating where there is no exact or numerical
     route (the caller's paid gate). ``n_simulations`` / ``seed`` fix a
     simulation's size and streams (else a time budget sizes it)."""
@@ -555,6 +571,7 @@ def analyze_sensitivity(
     step = parse_step(step)
     if rank_by not in RANK_BY:
         raise AnalysisError("rank_by must be 'availability' or 'cost'.")
+    order = parse_order(order)
     costs = parse_costs(costs)
     n_blocks = ra.count_blocks(graph)
     if n_blocks > MAX_BLOCKS:
@@ -588,6 +605,7 @@ def analyze_sensitivity(
         "of": "window" if window is not None else "long_run",
         "window": window,
         "step": step,
+        "order": order,
         "rank_by": rank_by,
         "priced": "cost_rate" in quantities,
         "n_blocks": n_blocks,
@@ -612,7 +630,7 @@ def analyze_sensitivity(
                             n_simulations, seed)
         result["basis_reason"] = why
         notes += result.pop("notes", [])
-    rows = _rank(result.pop("rows"), rank_by, costs)
+    rows = _rank(result.pop("rows"), rank_by, costs, order)
     out = finish_rows({
         **head,
         "status": "ok",
@@ -750,9 +768,10 @@ def _with_step(lv: _Lever, step: float, up: bool, effect: dict, basis: str, quan
     }
 
 
-def _rank(rows: list, rank_by: str, costs: dict) -> list:
-    """Ranked: by benefit per cost where a cost is given, then by benefit;
-    rows without an effect last."""
+def _rank(rows: list, rank_by: str, costs: dict, order: str = "benefit") -> list:
+    """Ranked by ``order``: "benefit" — by benefit alone, costs or not;
+    "benefit_per_cost" — the levers given a cost first, by benefit per unit
+    spent, then the rest by benefit. Rows without an effect last."""
     for row in rows:
         effect = row.get("effect") or {}
         benefit = _benefit(effect, rank_by) if effect else None
@@ -766,11 +785,13 @@ def _rank(rows: list, rank_by: str, costs: dict) -> list:
         d = (row.get("derivative") or {}).get("cost_rate" if rank_by == "cost" else "availability")
         row["per_unit_cost"] = (d / (cost / delta)) if (cost and delta and d is not None) else None
 
+    per_cost = order == "benefit_per_cost"
+
     def key(row):
         b, bpc = row.get("benefit"), row.get("benefit_per_cost")
         if b is None:
             return (3, 0.0)
-        if bpc is not None:
+        if per_cost and bpc is not None:
             return (0, -bpc)
         if b > 0:
             return (1, -b)
