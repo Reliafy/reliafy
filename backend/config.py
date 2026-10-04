@@ -296,6 +296,27 @@ try:
     MANAGED_AGENT_USD_PER_HOUR = float(os.environ.get("MANAGED_AGENT_USD_PER_HOUR", "0.08"))
 except ValueError:
     MANAGED_AGENT_USD_PER_HOUR = 0.08
+
+# ---- AI request limits and credit holds -------------------------------------
+# Every metered AI call first reserves (holds) its maximum cost from the
+# user's balance, then settles to the actual cost and returns the rest.
+# Request size limits for /api/assistant/step|stream: the whole JSON body, and
+# the number of items in the message history.
+AI_MAX_REQUEST_BYTES = _int("AI_MAX_REQUEST_BYTES", 1024 * 1024)
+AI_MAX_MESSAGES = _int("AI_MAX_MESSAGES", 400)
+# Output-token ceiling per assistant step: the Anthropic request's
+# ``max_tokens`` and the OpenAI request's ``max_output_tokens`` (reasoning
+# tokens count towards it). The hold covers this many output tokens.
+AI_MAX_OUTPUT_TOKENS = _int(
+    "AI_MAX_OUTPUT_TOKENS", 1500 if AI_PROVIDER == "anthropic" else 8000)
+# AI requests one user may have running at once (assistant steps and
+# Reliability Agent turns together).
+AI_MAX_CONCURRENT = max(1, _int("AI_MAX_CONCURRENT", 2))
+# A Reliability Agent turn holds up to this many credits (or the whole balance,
+# if smaller) and is stopped once its metered cost reaches the hold. A turn
+# needs at least the minimum to start.
+RELIABILITY_AGENT_TURN_MAX_CENTS = _int("RELIABILITY_AGENT_TURN_MAX_CENTS", 500)
+RELIABILITY_AGENT_TURN_MIN_CENTS = max(1, _int("RELIABILITY_AGENT_TURN_MIN_CENTS", 5))
 # Firebase/GCP project whose ID tokens we accept. Cloud Run usually injects
 # GOOGLE_CLOUD_PROJECT; FIREBASE_PROJECT_ID overrides it if the Firebase project
 # differs from the GCP project.

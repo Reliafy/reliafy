@@ -252,7 +252,7 @@ def test_admin_emails_bypass_caps_and_ai_credits(monkeypatch):
                 "usage": {"input_tokens": 1000, "output_tokens": 1000},
             },
         )
-        r = client.post("/api/assistant/step", json={"system": "s", "messages": [], "tools": []})
+        r = client.post("/api/assistant/step", json={"messages": [{"role": "user", "content": "hi"}]})
         assert r.status_code == 200
         assert billing.account(test_db, "admin-1")["credit_cents"] >= 0  # never negative
         # No charge was recorded for the admin.

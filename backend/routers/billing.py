@@ -269,8 +269,14 @@ def portal(
 
 @router.post("/stripe/webhook")
 async def stripe_webhook(request: Request, session=Depends(get_session)) -> JSONResponse:
-    """Fulfil completed purchases. Public, but the payload is verified against the
-    Stripe signature when a webhook secret is configured."""
+    """Fulfil completed purchases. Public, so every payload is verified against
+    the Stripe signature. With billing enabled a webhook secret is required:
+    without one the endpoint answers 503 and acts on nothing (Stripe retries
+    once it's configured). Only a self-hosted install with billing off, where
+    plans and credits change nothing, accepts unsigned events."""
+    if config.BILLING_ENABLED and not config.STRIPE_WEBHOOK_SECRET:
+        logger.error("Stripe webhook received but STRIPE_WEBHOOK_SECRET is not set; refusing it.")
+        return JSONResponse(status_code=503, content={"detail": "Webhook not configured."})
     payload = await request.body()
     event = None
     if config.STRIPE_WEBHOOK_SECRET:
@@ -311,8 +317,13 @@ def _handle_event(session, event) -> None:
             return
         if meta.get("kind") == "pack":
             grant = int(meta.get("grant_cents") or 0)
-            if grant:
-                billing_service.grant_credits(session, uid, grant, "purchase", obj.get("id", ""))
+            # Once per checkout session: a retried or replayed event finds the
+            # session's ledger row already there and grants nothing.
+            ref = obj.get("id") or event.get("id")
+            if grant and ref:
+                billing_service.grant_credits_once(session, uid, grant, "purchase", ref)
+            elif grant:
+                logger.error("Credit-pack checkout event without an id; not granted: %s", event.get("type"))
         elif meta.get("kind") in _PLAN_NAMES:
             # kind=agent still lands: an Agent checkout opened before the plan
             # was retired can complete for up to 24 h, and that user paid.
