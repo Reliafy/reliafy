@@ -758,6 +758,9 @@ def _fit_summary(result: dict) -> dict:
             out[key] = result[key]
     if result.get("selection"):
         out["selection"] = result["selection"]
+        if result["selection"].get("summary"):
+            # #236: which criterion decided between a mixture and the singles, in words.
+            out["selection_summary"] = result["selection"]["summary"]
     return out
 
 
@@ -835,7 +838,8 @@ def get_model(
         r = doc.results or {}
         out = {**_recurrent_brief(doc), "params": r.get("params"), "gof": r.get("gof"), "trend": r.get("trend")}
         if r.get("projection"):
-            out["growth_projection"] = _projection_brief(r["projection"])
+            out["growth_projection"] = _projection_brief(r["projection"],
+                                                         recurrent_service.saved_model_kind(doc))
         if (doc.spec or {}).get("notes"):
             out["notes"] = doc.spec["notes"]
         return out
@@ -898,8 +902,10 @@ _FitUnit = Annotated[Optional[str], Field(description="Time unit of the data, e.
 _FitIncludeMixtures = Annotated[bool, Field(
     description="With distribution='best' only: let two-component Weibull and LogNormal mixtures compete "
                 "with the single distributions (two failure modes in one dataset, an S-curve on probability "
-                "paper). Everything is then ranked by BIC; a winning mixture comes with mixture_summary, the "
-                "two modes in plain words. Slower, so off by default.")]
+                "paper). The single distributions keep their usual AIC ranking; BIC decides only whether the "
+                "best mixture beats the best single distribution (then it is listed first, else the mixtures "
+                "follow the singles), and selection_summary says so in plain words. A winning mixture comes "
+                "with mixture_summary, the two modes in plain words. Slower, so off by default.")]
 
 
 def _mcp_fit_error(exc: FitError, c_invert: bool) -> FitError:
@@ -3831,9 +3837,15 @@ def _overhaul_shape_uncertainty(db, doc, cost_repair: float, cost_overhaul: floa
 _PROJECTION_MODES = 50  # growth_projection lists this many modes, most failures first
 
 
-def _projection_brief(p: dict) -> dict:
-    """The headline of a growth projection: the three MTBFs and h(T)."""
+def _projection_brief(p: dict, saved_model: str | None = None) -> dict:
+    """The headline of a growth projection: the three MTBFs and h(T), and
+    (#232) what it was projected with — a Crow-AMSAA fit, said plainly when
+    the saved model is Duane or HPP."""
+    basis = recurrent_fit.projection_basis(saved_model or p.get("saved_model"))
+    lead = {"note": basis["basis_note"]} if basis["basis_note"] else {}
     return {
+        **lead,
+        "projected_with": basis["projected_with"], "saved_model": basis["saved_model"],
         "T": p.get("T"), "systems": p.get("systems"), "failures": p.get("failures"),
         "demonstrated_mtbf": _sig((p.get("demonstrated") or {}).get("mtbf")),
         "projected_mtbf": _sig((p.get("projected") or {}).get("mtbf")),
@@ -3851,8 +3863,13 @@ def _projection_out(payload: dict) -> dict:
         out["modes_note"] = f"The {_PROJECTION_MODES} modes with the most failures of {len(modes)}."
     u = f" {payload['unit']}" if payload.get("unit") else ""
     d, p, g = (payload.get(k, {}).get("mtbf") for k in ("demonstrated", "projected", "growth_potential"))
+    note = payload.get("basis_note")
+    if note:
+        # #232: lead with it, so it isn't missed under the numbers.
+        out = {"note": note, **out}
     if d and p:
-        out["summary"] = (f"The test demonstrates an MTBF of {d:.4g}{u}; once the delayed (BD) fixes are in it is "
+        out["summary"] = ((f"{note} " if note else "")
+                          + f"The test demonstrates an MTBF of {d:.4g}{u}; once the delayed (BD) fixes are in it is "
                           f"projected to be {p:.4g}{u}" + (f", short of the {g:.4g}{u} growth potential "
                                                           "(every BD mode found and fixed)." if g else "."))
     return out
@@ -3863,7 +3880,9 @@ def growth_projection(
     ctx: Context,
     model_id: Annotated[Optional[str], Field(description=(
         "A saved RECURRENT model fitted to the growth test's event data (list_models kind=recurrent) whose "
-        "dataset has a failure-mode column. Give this OR inline x + modes."))] = None,
+        "dataset has a failure-mode column — Crow-AMSAA, Duane or HPP. The projection is always a "
+        "Crow-AMSAA fit to that data; for a Duane or HPP model the result's note says so "
+        "(projected_with, saved_model). Give this OR inline x + modes."))] = None,
     fef: Annotated[Optional[dict[str, float]], Field(description=(
         "The BD modes (fixed after the test) and each one's fix-effectiveness factor, the fraction of its "
         "failure intensity the fix removes, 0–1: e.g. {\"seal leak\": 0.8, \"connector\": 0.7}."))] = None,

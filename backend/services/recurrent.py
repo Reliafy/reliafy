@@ -232,7 +232,7 @@ def projection_view(db, doc: RecurrentModelDoc, mode_column: str | None = None) 
     saved = spec.get("projection")
     out = {"available": False, "columns": [], "mode_column": None, "modes": [],
            "settings": saved, "result": (doc.results or {}).get("projection"),
-           "default_fef": recurrent_fit.DEFAULT_FEF}
+           "default_fef": recurrent_fit.DEFAULT_FEF, **recurrent_fit.projection_basis(saved_model_kind(doc))}
     try:
         df = _dataset_frame(db, doc)
     except FitError as exc:
@@ -254,7 +254,13 @@ def run_projection(db, doc: RecurrentModelDoc, *, fef, bc=None, test_end=None,
     df = _dataset_frame(db, doc)
     mapping = _projection_mapping(doc, mode_column)
     unit = (doc.results or {}).get("unit") or (doc.spec or {}).get("unit", "")
-    return recurrent_fit.growth_projection(df, mapping, fef, bc=bc, test_end=test_end, unit=unit)
+    return recurrent_fit.growth_projection(df, mapping, fef, bc=bc, test_end=test_end, unit=unit,
+                                           saved_model=saved_model_kind(doc))
+
+
+def saved_model_kind(doc: RecurrentModelDoc) -> str:
+    """The saved model's kind: crow_amsaa, duane or hpp."""
+    return (doc.spec or {}).get("model_id") or ((doc.results or {}).get("model") or {}).get("id") or "crow_amsaa"
 
 
 def save_projection(db, doc: RecurrentModelDoc, payload: dict, mode_column: str | None, owner_id: str) -> None:

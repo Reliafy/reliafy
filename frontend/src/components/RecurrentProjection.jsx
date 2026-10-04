@@ -195,6 +195,9 @@ export default function RecurrentProjection({ modelId, unit }) {
 
       {result && (
         <>
+          {(result.basis_note || view.basis_note) && (
+            <p className="hint fleet-alert-warn gp-basis">{result.basis_note || view.basis_note}</p>
+          )}
           <div className="params gp-mtbfs">
             <div className="stat">
               <div className="value">{fmt(result.demonstrated?.mtbf)}</div>

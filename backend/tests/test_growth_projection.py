@@ -218,12 +218,12 @@ def test_api_projection_needs_data(monkeypatch):
 
 # ---- MCP -----------------------------------------------------------------------------
 
-def _saved(env, df, mapping, name="Prototype"):
+def _saved(env, df, mapping, name="Prototype", model_id="crow_amsaa"):
     from backend.services import datasets as datasets_service
     from backend.services import recurrent as recurrent_service
 
     ds = datasets_service.create_dataset(env.db, f"{name}.csv", _csv(df), A)
-    return recurrent_service.save_model(env.db, name, ds, {"mapping": mapping, "model_id": "crow_amsaa",
+    return recurrent_service.save_model(env.db, name, ds, {"mapping": mapping, "model_id": model_id,
                                                            "unit": "hours"}, A)
 
 
@@ -262,6 +262,39 @@ def test_mcp_growth_projection_inline(env):
     assert "same length" in _err(_call(env.token[A], "growth_projection", {"x": X, "modes": MODES[:3],
                                                                            "fef": FEF, "test_end": 400}))
     assert "not both" in _err(_call(env.token[A], "growth_projection", {"fef": FEF}))
+    # Inline data is a Crow-AMSAA fit, with no saved model to flag.
+    assert out["projected_with"] == "crow_amsaa" and out["saved_model"] is None and "note" not in out
+
+
+@pytest.mark.parametrize("kind, name", [("duane", "Duane"), ("hpp", "HPP")])
+def test_projection_from_a_non_crow_amsaa_model_says_so(env, kind, name):
+    """#232: a Duane or HPP model's data projects with a Crow-AMSAA fit — the
+    same numbers — and every surface says so; a Crow-AMSAA model's doesn't."""
+    from backend.services import recurrent as recurrent_service
+
+    note = f"Projected with a Crow-AMSAA fit to the same data (your saved model is {name})."
+    doc = _saved(env, _one_system(), MAP, name=f"Proto {kind}", model_id=kind)
+    out = _ok(_call(env.token[A], "growth_projection", {"model_id": doc.id, "fef": FEF, "test_end": 400}))
+    assert out["projected"]["mtbf"] == pytest.approx(62.8, abs=0.01)  # the same Crow-AMSAA projection
+    assert out["projected_with"] == "crow_amsaa" and out["saved_model"] == kind
+    assert out["note"] == note and out["basis_note"] == note and out["summary"].startswith(note)
+    assert next(iter(out)) == "note"  # leads the output
+
+    # The app's result and panel view carry it; get_model's headline leads with it.
+    payload = recurrent_service.run_projection(env.db, doc, fef=FEF, test_end=400)
+    assert payload["saved_model"] == kind and payload["basis_note"] == note
+    assert recurrent_service.projection_view(env.db, doc)["basis_note"] == note
+    recurrent_service.save_projection(env.db, doc, payload, None, A)
+    brief = _ok(_call(env.token[A], "get_model", {"model_id": doc.id}))["growth_projection"]
+    assert brief["note"] == note and brief["projected_with"] == "crow_amsaa" and brief["saved_model"] == kind
+    assert brief["projected_mtbf"] == pytest.approx(62.8, abs=0.01)
+
+    # A Crow-AMSAA model's projection carries the fields but no note.
+    ca = _saved(env, _one_system(), MAP, name="Proto CA")
+    out = _ok(_call(env.token[A], "growth_projection", {"model_id": ca.id, "fef": FEF, "test_end": 400}))
+    assert out["projected_with"] == "crow_amsaa" and out["saved_model"] == "crow_amsaa"
+    assert out["basis_note"] is None and "note" not in out and not out["summary"].startswith("Projected")
+    assert recurrent_service.projection_view(env.db, ca)["basis_note"] is None
 
 
 # ---- next_failure ---------------------------------------------------------------------

@@ -62,8 +62,9 @@ const OPTION_HELP = {
   mixture: "Fit two or more copies of this distribution at once — for data holding "
     + "several failure modes, which curves on the probability plot because no single "
     + "distribution can follow it.",
-  include_mixtures: "Two-component Weibull and LogNormal mixtures join the ranking. With them on, "
-    + "every candidate is ranked by BIC, which charges a mixture properly for its extra parameters.",
+  include_mixtures: "Two-component Weibull and LogNormal mixtures join the ranking. The single "
+    + "distributions keep their usual AIC ranking; BIC, which charges a mixture properly for its extra "
+    + "parameters, decides only whether the best mixture beats the best single distribution.",
 };
 
 // Distribution picker plus advanced fit options (offset / LFP / zero
@@ -189,7 +190,7 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
       {!isMixture && DESCRIPTIONS[value] && (
         <p className="dist-blurb">
           {value === "best" && opts.include_mixtures
-            ? "Fits every distribution and two-mode Weibull and LogNormal mixtures, and keeps the lowest-BIC winner."
+            ? "Fits every distribution and two-mode Weibull and LogNormal mixtures. The best mixture wins only if its BIC beats the best single distribution’s."
             : DESCRIPTIONS[value]}
           <RefLink entryId={value} />
         </p>
@@ -204,8 +205,9 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
           />
           <span>
             <b>Consider two-mode mixtures</b> — for data holding two failure modes
-            (an S-bend on the probability plot). Slower, and ranked by BIC so a
-            mixture has to earn its extra parameters.
+            (an S-bend on the probability plot). Slower. A mixture wins only if it
+            beats the best single distribution on BIC, so it has to earn its extra
+            parameters; the single distributions keep their usual ranking.
             {mixturesBlocked && <span className="muted-line"> {mixturesBlocked}</span>}
           </span>
         </label>

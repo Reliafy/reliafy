@@ -232,6 +232,15 @@ export default function ResultView({ result, hideHead = false, modelId = null })
         const key = result.selection.criterion || "aic";
         const label = key === "bic" ? "BIC" : key === "aic_c" ? "AICc" : "AIC";
         const [first, second] = result.selection.candidates;
+        // Mixtures on (#236): say which criterion decided — BIC between the
+        // best mixture and the best single, AIC among the singles.
+        if (result.selection.summary) {
+          return (
+            <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+              {result.selection.summary}
+            </p>
+          );
+        }
         return (
           <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
             Selected by lowest {label} over {result.selection.candidates.length}{" "}

@@ -1465,6 +1465,7 @@ def result_per_demand(
 # Best fit's mixture candidates (#236): two components of each, opt-in.
 BEST_MIXTURE_BASES = ("weibull", "lognormal")
 BEST_MIXTURE_COMPONENTS = 2
+MIXTURE_CRITERION = "bic"  # decides only whether the best mixture beats the best single
 
 
 def _criteria(gof: list) -> dict:
@@ -1482,15 +1483,18 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
     per candidate where valid (offset only on offsetable distributions).
 
     With ``include_mixtures`` (#236), two-component Weibull and LogNormal
-    mixtures compete too, as SurPyval 0.23's ``fit_best(include=[...,
-    MixtureModel(Weibull, 2)])`` lets them, and every candidate is ranked by
-    BIC: a mixture has more than twice the parameters, and AIC's penalty is
-    too light to stop one fitting noise. A winning mixture's payload is the
-    Mixture model's, built from the candidate fit itself.
+    mixtures compete too. The single distributions are ranked exactly as
+    without them (by AIC); BIC decides only whether the best mixture beats
+    the best single distribution — a mixture has more than twice the
+    parameters, and AIC's penalty is too light to stop one fitting noise.
+    A mixture that wins is listed first; otherwise the singles' ranking
+    stands and the mixtures follow it. ``selection.decision`` says which
+    criterion decided, in plain words too. A winning mixture's payload is
+    the Mixture model's, built from the candidate fit itself.
     """
     options = dict(options or {})
     with_mixtures = bool(options.pop("include_mixtures", False))
-    criterion = "bic" if with_mixtures else "aic"
+    criterion = "aic"  # the single distributions' ranking, mixtures or not
     try:
         base_kwargs = build_fit_inputs(df, mapping)
     except Exception as exc:
@@ -1535,6 +1539,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         ranking.append({"id": dist_id, "name": entry["name"], **scores})
 
     mixtures = {}  # candidate id -> (base id, fitted SurPyval mixture)
+    mixture_ranking = []
     bases = BEST_MIXTURE_BASES if with_mixtures else ()
     for base in bases:
         entry = DISTRIBUTIONS[base]
@@ -1562,18 +1567,24 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         fit = _MixtureFit(raw, n_obs=int(nn.sum()), log_likelihood=_mixture_log_likelihood(raw),
                           ic_n=ic_sample_size(c, nn))
         scores = _criteria(_goodness_of_fit(fit))
-        if criterion not in scores:
-            failed.append({"id": cid, "name": label, "reason": f"no finite {criterion.upper()}"})
+        if MIXTURE_CRITERION not in scores:
+            failed.append({"id": cid, "name": label, "reason": f"no finite {MIXTURE_CRITERION.upper()}"})
             continue
         mixtures[cid] = (base, raw)
-        ranking.append({"id": cid, "name": label, "mixture": BEST_MIXTURE_COMPONENTS,
-                        "base_distribution_id": base, **scores})
+        mixture_ranking.append({"id": cid, "name": label, "mixture": BEST_MIXTURE_COMPONENTS,
+                                "base_distribution_id": base, **scores})
 
-    if not ranking:
+    if not ranking and not mixture_ranking:
         if support_msg:
             raise FitError(support_msg)
         raise FitError("None of the distributions could be fit to this data.")
     ranking.sort(key=lambda r: r[criterion])
+    mixture_ranking.sort(key=lambda r: r[MIXTURE_CRITERION])
+    decision = mixture_decision(ranking, mixture_ranking) if with_mixtures else None
+    if decision and decision["mixture_wins"]:
+        ranking = [mixture_ranking[0], *ranking, *mixture_ranking[1:]]
+    else:
+        ranking = [*ranking, *mixture_ranking]
 
     winner = ranking[0]["id"]
     if winner in mixtures:
@@ -1589,16 +1600,57 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         result = _fit_distribution(winner, df, mapping, win_options)
     result["selection"] = {"criterion": criterion, "candidates": ranking}
     if with_mixtures:
-        result["selection"]["include_mixtures"] = True
+        result["selection"].update({"include_mixtures": True, "mixture_criterion": MIXTURE_CRITERION,
+                                    "decision": decision, "summary": decision["summary"]})
     if failed:
         result["selection"]["failed"] = failed
         result["warnings"] = [
             *(result.get("warnings") or []),
             f"Only {len(ranking)} of the {len(DISTRIBUTIONS) + len(bases)} candidates could be fitted "
-            f"(failed: {', '.join(f['name'] for f in failed)}), so the lowest-{criterion.upper()} choice "
-            "is among those only.",
+            f"(failed: {', '.join(f['name'] for f in failed)}), so the choice is among those only.",
         ]
     return result
+
+
+def _ic(value: float) -> str:
+    return f"{float(value):,.1f}"
+
+
+def mixture_decision(singles: list, mixtures: list) -> dict:
+    """Whether Best fit's best two-mode mixture beats its best single
+    distribution (#236), on BIC only: ``{criterion, mixture_wins, mixture,
+    single, margin, summary}``, ``margin`` the single's BIC less the
+    mixture's (positive when the mixture wins). ``singles`` are ranked by
+    AIC, ``mixtures`` by BIC, best first."""
+    single = singles[0] if singles else None
+    mix = mixtures[0] if mixtures else None
+    out = {"criterion": MIXTURE_CRITERION, "mixture_wins": False,
+           "mixture": mix["id"] if mix else None, "single": single["id"] if single else None, "margin": None}
+    rule = ("The single distributions are ranked by AIC, as without mixtures; BIC decides only whether "
+            "a mixture beats the best of them.")
+    if mix is None:
+        out["summary"] = ("No two-mode mixture could be fitted, so the single distributions are ranked by AIC "
+                          "as usual.")
+    elif single is None:
+        out["mixture_wins"] = True
+        out["summary"] = (f"No single distribution could be fitted, so the best two-mode mixture by BIC, "
+                          f"the {mix['name']}, is kept.")
+    elif MIXTURE_CRITERION not in single:
+        out["summary"] = (f"The best single distribution, {single['name']}, has no finite BIC to compare a "
+                          f"mixture with, so it is kept. {rule}")
+    else:
+        margin = float(single[MIXTURE_CRITERION]) - float(mix[MIXTURE_CRITERION])
+        out["margin"] = margin
+        out["mixture_wins"] = margin > 0
+        if margin > 0:
+            out["summary"] = (f"A two-mode mixture beats the best single distribution by {_ic(margin)} on BIC: "
+                              f"the {mix['name']}, BIC {_ic(mix['bic'])}, against {single['name']}, "
+                              f"BIC {_ic(single['bic'])}. {rule}")
+        else:
+            out["summary"] = (f"No two-mode mixture beats the best single distribution on BIC: "
+                              f"{single['name']}, BIC {_ic(single['bic'])}, is ahead of the {mix['name']}, "
+                              f"BIC {_ic(mix['bic'])}, by {_ic(-margin)}, so it is kept. {rule}")
+    return out
 
 
 def _num(value: float) -> str:

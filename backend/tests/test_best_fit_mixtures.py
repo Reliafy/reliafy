@@ -80,12 +80,21 @@ def test_best_fit_picks_a_mixture_for_two_modes_as_surpyval_does():
     df = _two_mode()
     r = fitting.fit("best", df, {"x": "h"}, unit="hours", options={"include_mixtures": True})
     sel = r["selection"]
-    assert sel["criterion"] == "bic" and sel["include_mixtures"] is True
+    assert sel["criterion"] == "aic" and sel["mixture_criterion"] == "bic" and sel["include_mixtures"] is True
     assert r["distribution_id"] == "mixture" and r["mixture"] == 2
     assert r["base_distribution_id"] == "weibull"
     ids = [c["id"] for c in sel["candidates"]]
     assert ids[0] == "mixture:weibull" and "mixture:lognormal" in ids and "weibull" in ids
-    assert [c["bic"] for c in sel["candidates"]] == sorted(c["bic"] for c in sel["candidates"])
+    # The winning mixture leads; the singles follow in their own (AIC) order, unchanged; then the
+    # other mixture.
+    off = [c["id"] for c in fitting.fit("best", df, {"x": "h"})["selection"]["candidates"]]
+    assert ids == ["mixture:weibull", *off, "mixture:lognormal"]
+    # BIC decided it: the mixture's beats the best single's.
+    d = sel["decision"]
+    best_single = sel["candidates"][1]
+    assert d["mixture_wins"] is True and d["criterion"] == "bic"
+    assert d["mixture"] == "mixture:weibull" and d["single"] == best_single["id"] == off[0]
+    assert d["margin"] == pytest.approx(best_single["bic"] - sel["candidates"][0]["bic"]) and d["margin"] > 0
     # SurPyval's own fit_best, given the same candidates, agrees.
     theirs = sp.fit_best(df["h"].to_numpy(), metric="bic",
                          include=["Weibull", "LogNormal", sp.MixtureModel(sp.Weibull, 2)])
@@ -105,8 +114,66 @@ def test_best_fit_picks_a_mixture_for_two_modes_as_surpyval_does():
 def test_best_fit_keeps_a_single_distribution_for_one_mode():
     r = fitting.fit("best", _one_mode(), {"x": "h"}, options={"include_mixtures": True})
     assert r["distribution_id"] != "mixture" and "mixture_summary" not in r
-    assert r["selection"]["criterion"] == "bic"
+    assert r["selection"]["criterion"] == "aic" and r["selection"]["decision"]["mixture_wins"] is False
     assert any(c["id"] == "mixture:weibull" for c in r["selection"]["candidates"])
+
+
+def _weibull_shape_two(seed=5):
+    """One mode, Weibull with β = 2: AIC puts Weibull first, BIC would put
+    Rayleigh (Weibull with β fixed at 2) first."""
+    rng = np.random.default_rng(seed)
+    return pd.DataFrame({"h": np.round(sp.Weibull.random(40, 800, 2.0, random_state=rng), 3)})
+
+
+def test_mixtures_on_leave_the_single_ranking_as_it_is_off():
+    """#236: turning mixtures on no longer re-ranks the singles by BIC (the
+    Rayleigh-over-Weibull flip): their order is the toggle-off order, and
+    the mixtures follow it, each with its BIC."""
+    df = _weibull_shape_two()
+    off = fitting.fit("best", df, {"x": "h"})
+    on = fitting.fit("best", df, {"x": "h"}, options={"include_mixtures": True})
+    off_ids = [c["id"] for c in off["selection"]["candidates"]]
+    singles = [c for c in on["selection"]["candidates"] if not c.get("mixture")]
+    mixes = [c for c in on["selection"]["candidates"] if c.get("mixture")]
+    assert off_ids[0] == "weibull"
+    # BIC alone would have flipped it: the case this guards against.
+    assert min(off["selection"]["candidates"], key=lambda c: c["bic"])["id"] == "rayleigh"
+    assert [c["id"] for c in singles] == off_ids
+    assert [c["aic"] for c in singles] == pytest.approx([c["aic"] for c in off["selection"]["candidates"]])
+    assert on["distribution_id"] == off["distribution_id"] == "weibull"
+    # Mixtures come after every single, by BIC, each with its BIC shown.
+    assert [c["id"] for c in on["selection"]["candidates"]] == off_ids + [c["id"] for c in mixes]
+    assert mixes and all(np.isfinite(c["bic"]) for c in mixes)
+    assert [c["bic"] for c in mixes] == sorted(c["bic"] for c in mixes)
+    assert on["selection"]["decision"]["mixture_wins"] is False
+    assert on["selection"]["decision"]["single"] == "weibull"
+
+
+def test_the_plain_words_name_the_criterion():
+    two = fitting.fit("best", _two_mode(), {"x": "h"}, options={"include_mixtures": True})
+    words = two["selection"]["summary"]
+    margin = two["selection"]["decision"]["margin"]
+    assert words.startswith(f"A two-mode mixture beats the best single distribution by {margin:,.1f} on BIC")
+    assert "ranked by AIC" in words
+    one = fitting.fit("best", _weibull_shape_two(), {"x": "h"}, options={"include_mixtures": True})
+    words = one["selection"]["summary"]
+    assert words.startswith("No two-mode mixture beats the best single distribution on BIC: Weibull, BIC ")
+    assert "ranked by AIC, as without mixtures" in words
+    # Without mixtures there's no decision to explain.
+    assert "summary" not in fitting.fit("best", _one_mode(), {"x": "h"})["selection"]
+
+
+def test_the_decision_on_its_own():
+    singles = [{"id": "weibull", "name": "Weibull", "aic": 10.0, "bic": 14.0},
+               {"id": "rayleigh", "name": "Rayleigh", "aic": 11.0, "bic": 12.0}]
+    mixes = [{"id": "mixture:weibull", "name": "Weibull mixture (2 components)", "aic": 5.0, "bic": 13.0}]
+    # Compared with the best single by AIC (Weibull), not the lowest single BIC.
+    d = fitting.mixture_decision(singles, mixes)
+    assert d["mixture_wins"] is True and d["margin"] == pytest.approx(1.0) and d["single"] == "weibull"
+    assert fitting.mixture_decision(singles, [])["mixture_wins"] is False
+    assert "No two-mode mixture could be fitted" in fitting.mixture_decision(singles, [])["summary"]
+    d = fitting.mixture_decision([], mixes)
+    assert d["mixture_wins"] is True and "No single distribution could be fitted" in d["summary"]
 
 
 def test_mixtures_are_opt_in_and_off_by_default():
@@ -174,8 +241,18 @@ def test_mcp_fit_distribution_takes_include_mixtures(env):
     data = _two_mode()["h"].tolist()
     out = _ok(_call(env.token[A], "fit_distribution", {"distribution": "best", "data": data,
                                                        "include_mixtures": True, "unit": "hours"}))
-    assert out["distribution_id"] == "mixture" and out["selection"]["criterion"] == "bic"
+    assert out["distribution_id"] == "mixture" and out["selection"]["mixture_criterion"] == "bic"
     assert out["mixture_summary"].startswith("Two failure modes")
+    assert out["selection_summary"].startswith("A two-mode mixture beats the best single distribution by ")
+    # One mode: the same rule — the singles' ranking as without mixtures.
+    one = _weibull_shape_two()["h"].tolist()
+    on = _ok(_call(env.token[A], "fit_distribution", {"distribution": "best", "data": one,
+                                                      "include_mixtures": True}))
+    off = _ok(_call(env.token[A], "fit_distribution", {"distribution": "best", "data": one}))
+    assert on["distribution_id"] == off["distribution_id"] == "weibull"
+    ids = [c["id"] for c in on["selection"]["candidates"] if not c.get("mixture")]
+    assert ids == [c["id"] for c in off["selection"]["candidates"]]
+    assert "on BIC" in on["selection_summary"] and "selection_summary" not in off
     assert "only" in _err(_call(env.token[A], "fit_distribution", {"distribution": "weibull", "data": data,
                                                                   "include_mixtures": True}))
 

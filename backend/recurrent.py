@@ -513,13 +513,31 @@ def clean_projection_settings(fef, bc=None) -> tuple[dict, list]:
     return clean_fef, clean_bc
 
 
-def growth_projection(df: pd.DataFrame, mapping: dict, fef, bc=None, test_end=None, unit: str = "") -> dict:
+_SHORT_NAMES = {"crow_amsaa": "Crow-AMSAA", "duane": "Duane", "hpp": "HPP"}
+
+
+def projection_basis(saved_model: str | None = None) -> dict:
+    """What a growth projection was computed with (#232). The projection is
+    always a Crow-AMSAA fit to the event data; when it comes from a saved
+    model of another kind (Duane, HPP) it says so, plainly:
+    ``{projected_with, saved_model, basis_note}``."""
+    out = {"projected_with": "crow_amsaa", "saved_model": saved_model or None, "basis_note": None}
+    if saved_model and saved_model != "crow_amsaa":
+        name = _SHORT_NAMES.get(saved_model) or MODELS.get(saved_model, {}).get("name") or str(saved_model)
+        out["basis_note"] = f"Projected with a Crow-AMSAA fit to the same data (your saved model is {name})."
+    return out
+
+
+def growth_projection(df: pd.DataFrame, mapping: dict, fef, bc=None, test_end=None, unit: str = "",
+                      saved_model: str | None = None) -> dict:
     """The AMSAA-Crow growth projection of a test's event data: the
     demonstrated, projected and growth-potential intensity and MTBF (of one
-    system), each failure mode's share, and h(T)."""
+    system), each failure mode's share, and h(T). ``saved_model`` is the
+    kind of the saved model the data came from, if any: a projection from a
+    Duane or HPP model is still a Crow-AMSAA fit, and says so."""
     fef, bc = clean_projection_settings(fef, bc)
     ins = projection_inputs(df, mapping, test_end=test_end)
-    return projection_payload(ins, fef, bc, unit=unit, test_end=test_end)
+    return {**projection_payload(ins, fef, bc, unit=unit, test_end=test_end), **projection_basis(saved_model)}
 
 
 def projection_payload(ins: dict, fef: dict, bc: list, unit: str = "", test_end=None) -> dict:
