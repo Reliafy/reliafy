@@ -6,6 +6,7 @@ import Select from "../components/Select.jsx";
 import FleetAlertsCard from "../components/FleetAlertsCard.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getFleet, putFleetItems, renameFleet } from "../api.js";
+import { toCsv } from "../csv.js";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -33,11 +34,6 @@ const TrashIcon = () => (
 
 const fmt = (v, d = 1) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: d });
-
-function csvCell(v) {
-  const s = String(v ?? "");
-  return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
-}
 
 // One fleet forecast: settings + items in local state; Save PUTs the whole
 // set and returns a freshly computed forecast (never stored server-side).
@@ -119,7 +115,7 @@ export default function FleetForecastPage() {
     rows.push([]);
     rows.push(["fleet_expected", forecast.expected ?? ""]);
     rows.push(["interval_p10", forecast.interval?.[0] ?? "", "interval_p90", forecast.interval?.[1] ?? ""]);
-    const blob = new Blob([rows.map((r) => r.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

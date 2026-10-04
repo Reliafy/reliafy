@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 
 from backend.auth import get_current_user
 from backend.db import get_session
-from backend.routers.telemetry import _client_ip
+from backend.request_ip import client_ip as _client_ip
 from backend.services import public_links as links_service
 from backend.services import rbds as rbds_service
 from backend.services.rbd_analysis import AnalysisError

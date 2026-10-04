@@ -20,6 +20,15 @@ MONGODB_TIMEOUT_MS = int(os.environ.get("MONGODB_TIMEOUT_MS", "3000"))
 # Upload ceiling for CSV datasets. Raw bytes are stored inside the Mongo
 # document, whose hard limit is 16MB — stay well under it.
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
+# Shape limits for a CSV read into a DataFrame (uploads and stored datasets).
+# Life data is long and narrow; these sit far above any real dataset while
+# keeping one parse's memory bounded.
+MAX_CSV_ROWS = int(os.environ.get("MAX_CSV_ROWS", "500000"))
+MAX_CSV_COLS = int(os.environ.get("MAX_CSV_COLS", "500"))
+# Default ceiling on a request body. Routes that take larger files (Excel
+# workbooks, diagram imports, upload links) have their own higher caps and
+# CSV routes a lower one; see backend/http_limits.py.
+MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", str(10 * 1024 * 1024)))
 
 # Outbound transactional email (team invites, share notifications). Optional:
 # unset -> sends are logged no-ops. Works with any SMTP provider (Gmail app
@@ -52,6 +61,38 @@ def _truthy(value: str | None) -> bool:
 # external dependencies. Never enable it on a multi-user/cloud deployment.
 AUTH_DISABLED = _truthy(os.environ.get("AUTH_DISABLED"))
 DEV_USER_ID = os.environ.get("DEV_USER_ID", "dev-user")
+# Cloud Run sets K_SERVICE in every container it runs. Single-user mode there
+# would serve one shared account to the whole internet, so refuse to start.
+if AUTH_DISABLED and os.environ.get("K_SERVICE"):
+    raise RuntimeError(
+        "AUTH_DISABLED is set on a Cloud Run service (K_SERVICE is present). "
+        "Single-user mode is for local and self-hosted installs only; unset "
+        "AUTH_DISABLED for this deployment."
+    )
+
+# ---- Client address ----------------------------------------------------------
+# Rate limits and the visitor hash key on the client IP taken from
+# X-Forwarded-For (see backend/request_ip.py). Set TRUST_X_FORWARDED_FOR=false
+# when the app is reachable without a proxy in front, so the peer address is
+# used instead. TRUSTED_PROXY_CIDRS lists further proxy ranges (comma-separated)
+# whose entries are skipped when reading the header from the right.
+TRUST_X_FORWARDED_FOR = _truthy(os.environ.get("TRUST_X_FORWARDED_FOR", "true"))
+TRUSTED_PROXY_CIDRS = [
+    c.strip() for c in os.environ.get("TRUSTED_PROXY_CIDRS", "").split(",") if c.strip()
+]
+# Treat Google's own front-end addresses (goog.json minus Google Cloud
+# customer ranges; snapshot in backend/google_ip_ranges.json) as proxy
+# hops: requests through Firebase Hosting reach Cloud Run from them.
+TRUST_GOOGLE_FRONTENDS = _truthy(os.environ.get("TRUST_GOOGLE_FRONTENDS", "true"))
+
+# ---- Response security headers ------------------------------------------------
+# Extra sources for the Content-Security-Policy connect-src (space-separated):
+# the cross-origin SSE stream host (VITE_STREAM_ORIGIN) in production.
+CSP_CONNECT_EXTRA = os.environ.get("CSP_CONNECT_EXTRA", "https://*.run.app").split()
+# Extra frame-src sources: the Firebase auth domain's sign-in iframe.
+CSP_FRAME_EXTRA = os.environ.get(
+    "CSP_FRAME_EXTRA", "https://reliafy-app.firebaseapp.com https://*.firebaseapp.com"
+).split()
 
 # ---- Sample (starter) content ---------------------------------------------
 # Seeded sample datasets/models are stored once under this synthetic owner and

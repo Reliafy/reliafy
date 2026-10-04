@@ -42,10 +42,10 @@ def optimal_replacement_endpoint(
         )
     except StrategyError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Optimal replacement failed")
         return JSONResponse(
-            status_code=500, content={"detail": f"Calculation failed: {exc}"}
+            status_code=500, content={"detail": "Calculation failed. The error has been logged."}
         )
 
 
@@ -61,10 +61,10 @@ def compare_two_endpoint(
         return JSONResponse(content=strategy_service.compare_two(a, b, unit=unit))
     except StrategyError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Two-model comparison failed")
         return JSONResponse(
-            status_code=500, content={"detail": f"Comparison failed: {exc}"}
+            status_code=500, content={"detail": "Comparison failed. The error has been logged."}
         )
 
 
@@ -87,10 +87,10 @@ def failure_finding_endpoint(
         )
     except StrategyError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failure-finding calculation failed")
         return JSONResponse(
-            status_code=500, content={"detail": f"Calculation failed: {exc}"}
+            status_code=500, content={"detail": "Calculation failed. The error has been logged."}
         )
 
 
@@ -122,10 +122,10 @@ def demonstration_test_endpoint(
         )
     except StrategyError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Demonstration test planning failed")
         return JSONResponse(
-            status_code=500, content={"detail": f"Calculation failed: {exc}"}
+            status_code=500, content={"detail": "Calculation failed. The error has been logged."}
         )
 
 

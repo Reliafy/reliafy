@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
+from fastapi import APIRouter, HTTPException, Body, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
 from backend import recurrent as recurrent_fit
 from backend.db import get_session
+from backend.http_limits import read_upload
 from backend.fitting import FitError
 from backend.services import datasets as datasets_service
 from backend.services import recurrent as recurrent_service
@@ -52,7 +53,7 @@ def _model_summary(doc, ctx: AccessCtx) -> dict:
     }
 
 
-async def _resolve_dataset(session, ctx: AccessCtx, dataset_id, file):
+def _resolve_dataset(session, ctx: AccessCtx, dataset_id, file):
     if dataset_id:
         dataset = datasets_service.get_dataset(session, dataset_id, owner_id=ctx.write_owner)
         if dataset is None:
@@ -60,7 +61,7 @@ async def _resolve_dataset(session, ctx: AccessCtx, dataset_id, file):
         return dataset
     if file is not None:
         return datasets_service.create_dataset(
-            session, file.filename or "dataset.csv", await file.read(), ctx.write_owner
+            session, file.filename or "dataset.csv", read_upload(file), ctx.write_owner
         )
     raise FitError("Provide a CSV file or a dataset_id.")
 
@@ -71,7 +72,7 @@ def recurrent_options(ctx: AccessCtx = Depends(get_access)) -> dict:
 
 
 @router.post("/recurrent/fit")
-async def fit_preview(
+def fit_preview(
     file: UploadFile | None = File(default=None),
     dataset_id: str | None = Form(default=None),
     i: str = Form(...),
@@ -88,20 +89,22 @@ async def fit_preview(
 ) -> JSONResponse:
     """Fit a recurrent model for preview (only the uploaded dataset is stored)."""
     try:
-        dataset = await _resolve_dataset(session, ctx, dataset_id, file)
+        dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t)
         df = datasets_service.load_dataframe(dataset)
         payload, _ = recurrent_fit.fit(df, spec["mapping"], spec["model_id"], spec["unit"])
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except HTTPException:
+        raise
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Recurrent fit failed")
-        return JSONResponse(status_code=500, content={"detail": f"Fit failed: {exc}"})
+        return JSONResponse(status_code=500, content={"detail": "Fit failed. The error has been logged."})
     return JSONResponse(content={"dataset_id": dataset.id, "spec": spec, "results": payload})
 
 
 @router.post("/recurrent/models")
-async def save_model(
+def save_model(
     name: str = Form(...),
     file: UploadFile | None = File(default=None),
     dataset_id: str | None = Form(default=None),
@@ -122,15 +125,17 @@ async def save_model(
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
     try:
-        dataset = await _resolve_dataset(session, ctx, dataset_id, file)
+        dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t)
         doc = recurrent_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except HTTPException:
+        raise
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to save recurrent model")
-        return JSONResponse(status_code=500, content={"detail": f"Failed to save: {exc}"})
+        return JSONResponse(status_code=500, content={"detail": "Failed to save. The error has been logged."})
     return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": doc.results})
 
 
@@ -156,9 +161,11 @@ def save_from_params(
         access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except HTTPException:
+        raise
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to save recurrent model from params")
-        return JSONResponse(status_code=500, content={"detail": f"Failed to save: {exc}"})
+        return JSONResponse(status_code=500, content={"detail": "Failed to save. The error has been logged."})
     return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": doc.results})
 
 

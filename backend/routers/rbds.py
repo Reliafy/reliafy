@@ -434,10 +434,10 @@ def analyze_graph(
         )
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse RBD graph")
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to analyse RBD: {exc}"}
+            status_code=500, content={"detail": "Failed to analyse RBD. The error has been logged."}
         )
 
 
@@ -469,10 +469,10 @@ def analyze_rbd(
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse RBD %s", rbd_id)
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to analyse RBD: {exc}"}
+            status_code=500, content={"detail": "Failed to analyse RBD. The error has been logged."}
         )
 
 
@@ -505,10 +505,10 @@ def export_rbd_python(
         filename, source = rbds_service.export_python(
             session, rbd.name, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id]
         )
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to export RBD %s as Python", rbd_id)
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to export RBD: {exc}"}
+            status_code=500, content={"detail": "Failed to export RBD. The error has been logged."}
         )
     return python_download(filename, source)
 

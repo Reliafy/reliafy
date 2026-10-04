@@ -205,7 +205,9 @@ async def import_model(
         return JSONResponse(status_code=422, content={"detail": "Provide 'data' arrays or 'params'."})
 
     try:
-        model = models_service.import_model(
+        # A data import refits server-side: off the event loop.
+        model = await run_in_threadpool(
+            models_service.import_model,
             session, user["uid"], name,
             distribution=payload.get("distribution", ""),
             unit=payload.get("unit"),
@@ -216,9 +218,13 @@ async def import_model(
         )
     except ingest_service.IngestError as exc:  # pragma: no cover - defensive
         return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
-    except Exception as exc:
-        # fitting.FitError and friends carry a user-facing message.
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except (ValueError, TypeError, KeyError, models_service.ModelNotFound) as exc:
+        # fitting.FitError (a ValueError) and friends carry a user-facing message.
+        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid model."})
+    except Exception:
+        logger.exception("Model import failed")
+        return JSONResponse(status_code=500,
+                            content={"detail": "The model couldn't be imported. The error has been logged."})
 
     metrics_service.record_event(session, name="import_model", path="/api/import/models")
     return JSONResponse(content={

@@ -57,9 +57,9 @@ def compare_rbds(
         )
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to compare RBDs")
-        return JSONResponse(status_code=500, content={"detail": f"Failed to compare the diagrams: {exc}"})
+        return JSONResponse(status_code=500, content={"detail": "Failed to compare the diagrams. The error has been logged."})
     result["designs"]["a"]["name"] = name or "This diagram"
     result["designs"]["b"]["name"] = other_name or "The other diagram"
     return JSONResponse(content=result)

@@ -14,6 +14,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Body, Depends, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from backend import config
@@ -168,14 +169,19 @@ async def api_create_dataset(
     name = str(payload.get("name") or "").strip()
     if not name:
         return _err(422, "A 'name' is required.")
-    try:
+    if not payload.get("csv") and not payload.get("data"):
+        return _err(422, "Provide 'csv' text or 'data' arrays.")
+
+    def create():
+        # Parsing and storing run off the event loop.
         if payload.get("csv"):
-            csv_bytes = datasets_service.normalize_pasted(payload["csv"])
-        elif payload.get("data"):
-            csv_bytes = pd.DataFrame(payload["data"]).to_csv(index=False).encode()
+            csv_bytes = datasets_service.normalize_pasted(str(payload["csv"]))
         else:
-            return _err(422, "Provide 'csv' text or 'data' arrays.")
-        ds = datasets_service.create_dataset(session, name, csv_bytes, user["uid"])
+            csv_bytes = pd.DataFrame(payload["data"]).to_csv(index=False).encode()
+        return datasets_service.create_dataset(session, name, csv_bytes, user["uid"])
+
+    try:
+        ds = await run_in_threadpool(create)
     except (FitError, ValueError) as exc:
         return _err(422, str(exc))
     metrics_service.record_event(session, name="api_dataset", path="/api/v1/datasets")
