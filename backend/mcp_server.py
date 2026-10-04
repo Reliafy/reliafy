@@ -3098,7 +3098,7 @@ _UNIT_ASK = ("The file doesn't state a time unit, so the diagram's unit is blank
 
 def _modelless_blocks(graph: dict) -> list[dict]:
     """Imported blocks with no life model (a BlockSim block Reliafy can't
-    represent, an Open-PSA fixed-probability event): the user sets one."""
+    represent, an Open-PSA or Galileo fixed-probability event): the user sets one."""
     return [n for n in graph.get("nodes") or []
             if n.get("type") not in _MODEL_FREE_TYPES and not (n.get("data") or {}).get("model")
             and rbd_repeats.repeat_of(n) is None]

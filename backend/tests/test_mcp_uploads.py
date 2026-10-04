@@ -401,6 +401,23 @@ def test_open_psa_fixed_probability_events_import_as_blocks_needing_a_model(env)
     assert "model" not in mcc["data"]
 
 
+def test_galileo_prob_events_import_as_blocks_needing_a_model(env):
+    """Galileo ``prob=`` events get the same treatment as Open-PSA's: saved as
+    a block with no life model, listed in needs_model; nothing invented."""
+    dft = PUMPS_DFT.replace('"MCC" lambda=1e-5;', '"MCC" prob=0.01;')
+    out = _ok(_call(env.token[A], "import_rbd", {"content": dft, "format": "galileo", "time_unit": "Hours"}))
+    assert out["saved"] is True
+    (d,) = out["diagrams"]
+    assert d["analysable"] is False and d["needs_model"] == ["MCC"] and "Don't invent" in d["needs_model_note"]
+    assert any("fixed probability" in n and "“MCC” (p = 0.01)" in n for n in d["import_notes"])
+    assert d["structure"] == "(PA ∥ PB) → MCC → Valve"
+    saved = env.db.rbds.find_one({"_id": d["id"]})["graph"]
+    (mcc,) = [n for n in saved["nodes"] if n["data"].get("label") == "MCC"]
+    assert "model" not in mcc["data"]
+    assert "isn't between 0 and 1" in _err(_call(env.token[A], "import_rbd", {
+        "content": dft.replace("prob=0.01", "prob=1.01"), "format": "galileo"}))
+
+
 # ---- Excel targets -------------------------------------------------------------------------
 
 def test_excel_dataset_needs_a_sheet_then_maps_columns(env):
