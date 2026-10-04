@@ -80,7 +80,7 @@ def _stale_before() -> datetime:
 
 def create(db, *, uid: str, kind: str, request: dict, cache_key: str, rbd_id: Optional[str],
            quick: bool, store: bool, free_sim_day: Optional[str] = None,
-           context: Optional[dict] = None) -> dict:
+           context: Optional[dict] = None, owners=None) -> dict:
     now = _now()
     job = {
         "_id": uuid.uuid4().hex,
@@ -99,6 +99,8 @@ def create(db, *, uid: str, kind: str, request: dict, cache_key: str, rbd_id: Op
         # Dropped by the TTL index unless it finishes (which moves this on).
         "expires_at": now + timedelta(days=int(config.RBD_JOB_TTL_DAYS)),
         "free_sim_day": free_sim_day,
+        # The read scope cache_key was built in, for the store guard (#92).
+        "owners": list(owners) if isinstance(owners, (list, tuple, set, frozenset)) else owners,
     }
     db.rbd_jobs.insert_one(job)
     return job
@@ -158,7 +160,7 @@ def _store_result(db, job: dict, result: dict) -> Optional[str]:
     if not (job.get("store") and job.get("rbd_id")):
         return None
     return rbds_service.save_availability_result(
-        db, job["rbd_id"], job["cache_key"], result, job.get("uid")
+        db, job["rbd_id"], job["cache_key"], result, job.get("uid"), job.get("owners")
     )
 
 
@@ -358,14 +360,16 @@ def run_availability(
             raise
         computed_at = None
         if store and rbd_id:
-            computed_at = rbds_service.save_availability_result(db, rbd_id, cache_key, result, uid)
+            computed_at = rbds_service.save_availability_result(db, rbd_id, cache_key, result, uid,
+                                                                resolve_owners)
         payload = _result_payload(result, computed_at, entitled)
         if quick:
             payload["free_sims"] = free_sims.summary(db, uid)
         return 200, payload
 
     job = create(db, uid=uid, kind=KIND_AVAILABILITY, request=request, cache_key=cache_key,
-                 rbd_id=rbd_id, quick=quick, store=store, free_sim_day=free_day, context=context)
+                 rbd_id=rbd_id, quick=quick, store=store, free_sim_day=free_day, context=context,
+                 owners=resolve_owners)
     try:
         compute_queue.enqueue(job["_id"], KIND_AVAILABILITY, request)
     except compute_queue.QueueError as exc:

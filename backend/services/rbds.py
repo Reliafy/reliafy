@@ -664,13 +664,20 @@ def should_store_availability(doc: dict | None, key: str, db=None, owner_id=None
     return entry.get("key") != saved_key
 
 
-def save_availability_result(db, rbd_id: str, key: str, result: dict, uid: str | None) -> str | None:
+def save_availability_result(db, rbd_id: str, key: str, result: dict, uid: str | None,
+                             resolve_owners=None) -> str | None:
     """Store a freshly computed result on the diagram when it should be
     (:func:`should_store_availability`), but never let a quick (time-capped)
     run replace a full result for the same inputs. Returns ``computed_at``
-    when stored, else None."""
+    when stored, else None.
+
+    ``resolve_owners`` is the scope ``key`` was built in (the analysis's): the
+    saved diagram's key is rebuilt with its referenced models' fits in that
+    scope (#92), so an unsaved what-if run is told apart from the diagram as
+    saved and never replaces its result. None falls back to ``uid``."""
     doc = db.rbds.find_one({"_id": rbd_id})
-    if not should_store_availability(doc, key):
+    scope = resolve_owners if resolve_owners is not None else uid
+    if not should_store_availability(doc, key, db, scope):
         return None
     entry = (doc or {}).get("availability_cache") or {}
     if (

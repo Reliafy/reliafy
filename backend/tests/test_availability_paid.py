@@ -371,18 +371,42 @@ def test_public_link_never_simulates(client, monkeypatch):
     assert client.get(f"/api/public/{token}").json()["artifact"]["analysis"] is None
 
 
-def test_refitting_a_referenced_model_makes_the_saved_result_stale(client, monkeypatch):
-    """#92: a block that references a saved fitted model by id (here a
-    proportional-hazards one) carries only the id, so the model's fit is part
-    of the availability and exact keys (with the window and state as before):
-    a refit invalidates the saved results, a rename doesn't."""
+def _graph_with_ph_block(db, owner):
+    """``(graph, model)``: the repairable test diagram with Pump A on a saved
+    proportional-hazards model of ``owner``'s, referenced by id (#92)."""
     import io
 
     import numpy as np
     import pandas as pd
 
-    from backend.routers import rbds as rbds_routes
     from backend.services import datasets as ds_service
+    from backend.services import models as models_service
+
+    buf = io.StringIO()
+    rng = np.random.default_rng(3)
+    age = rng.normal(50, 10, 80)
+    pd.DataFrame({"t": np.round(rng.weibull(1.5, 80) * 900 * np.exp(-0.02 * (age - 50)), 2),
+                  "c": (rng.random(80) < 0.2).astype(int),
+                  "age": np.round(age, 1)}).to_csv(buf, index=False)
+    dataset = ds_service.create_dataset(db, "pumps.csv", buf.getvalue().encode(), owner)
+    model = models_service.save_model(db, "Pump PH", dataset, "weibull_ph", {"x": "t"}, ["age"], None,
+                                      owner_id=owner)
+    assert model.kind == "regression"
+
+    graph = _rbd_graph(repairable=True)
+    graph["nodes"][3]["data"]["model"] = {
+        "source": "saved", "kind": "regression", "modelId": model.id, "name": "Pump PH",
+        "distribution": "Weibull PH", "distribution_id": "weibull_ph",
+        "covariates": [{"name": "age", "type": "number", "default": 50.0}]}
+    return graph, model
+
+
+def test_refitting_a_referenced_model_makes_the_saved_result_stale(client, monkeypatch):
+    """#92: a block that references a saved fitted model by id (here a
+    proportional-hazards one) carries only the id, so the model's fit is part
+    of the availability and exact keys (with the window and state as before):
+    a refit invalidates the saved results, a rename doesn't."""
+    from backend.routers import rbds as rbds_routes
     from backend.services import models as models_service
     from backend.services import rbds as rbds_service
 
@@ -392,22 +416,7 @@ def test_refitting_a_referenced_model_makes_the_saved_result_stale(client, monke
         "steady_state_availability": 0.9, "exact": {"status": "ok"}})
 
     db = client.db
-    buf = io.StringIO()
-    rng = np.random.default_rng(3)
-    age = rng.normal(50, 10, 80)
-    pd.DataFrame({"t": np.round(rng.weibull(1.5, 80) * 900 * np.exp(-0.02 * (age - 50)), 2),
-                  "c": (rng.random(80) < 0.2).astype(int),
-                  "age": np.round(age, 1)}).to_csv(buf, index=False)
-    dataset = ds_service.create_dataset(db, "pumps.csv", buf.getvalue().encode(), FREE)
-    model = models_service.save_model(db, "Pump PH", dataset, "weibull_ph", {"x": "t"}, ["age"], None,
-                                      owner_id=FREE)
-    assert model.kind == "regression"
-
-    graph = _rbd_graph(repairable=True)
-    graph["nodes"][3]["data"]["model"] = {
-        "source": "saved", "kind": "regression", "modelId": model.id, "name": "Pump PH",
-        "distribution": "Weibull PH", "distribution_id": "weibull_ph",
-        "covariates": [{"name": "age", "type": "number", "default": 50.0}]}
+    graph, model = _graph_with_ph_block(db, FREE)
     # Parametric blocks carry their parameters, so only the resolved model
     # counts, and a diagram without one keeps its key (saved results and the
     # samples' precomputed ones still serve).
