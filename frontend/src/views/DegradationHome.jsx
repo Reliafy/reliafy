@@ -5,6 +5,8 @@ import DegradationResultView from "../components/DegradationResultView.jsx";
 import { listDegradationModels, saveDegradationModel, deleteDegradationModel } from "../api.js";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
+import { FirstRunStrip } from "../components/FirstRun.jsx";
+import { useFirstRun } from "../firstRun.js";
 
 const PlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -27,6 +29,8 @@ const TrashIcon = () => (
 export default function DegradationHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
+  // No models, datasets or diagrams of their own yet (samples don't count).
+  const firstRun = useFirstRun(models ? models.some((m) => !m.is_sample) : undefined);
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [pending, setPending] = useState(null); // { result, fit }
@@ -89,6 +93,8 @@ export default function DegradationHome() {
           <PlusIcon /> New degradation model
         </button>
       </header>
+
+      <FirstRunStrip info={firstRun} />
 
       {error && <div className="card error">{error}</div>}
 

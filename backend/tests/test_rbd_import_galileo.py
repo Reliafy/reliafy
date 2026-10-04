@@ -111,7 +111,8 @@ def test_constant_events_fold_away():
 
 
 @pytest.mark.parametrize("attrs, match", [
-    ("prob=0.3", "fixed failure probability"),
+    ("prob=1.5", "isn't between 0 and 1"),
+    ("prob=-0.1", "isn't between 0 and 1"),
     ("lambda=1e-3 prob=0.5", "only with probability"),
     ("lambda=1e-3 cov=0.9", "coverage"),
     ("lambda=1e-3 repl=2", "replicated"),
@@ -123,6 +124,32 @@ def test_constant_events_fold_away():
 def test_unsupported_event_attributes_are_refused(attrs, match):
     with pytest.raises(RbdImportError, match=match):
         load(f'toplevel "T"; "T" or "A" "B"; "A" {attrs}; "B" lambda=1;')
+
+
+def test_fixed_probability_events_import_without_a_life_model():
+    """Galileo ``prob=`` events get Open-PSA's #188 treatment: a block with NO
+    life model, named in the notes with its probability; nothing invented."""
+    d = load("""toplevel "T";
+        "T" or "Pumps" "MCC" "Op";
+        "Pumps" and "PA" "PB";
+        "PA" lambda=1e-4; "PB" lambda=1e-4;
+        "MCC" prob=0.01; "Op" prob = 0.003;""")
+    mcc, op = by_label(d.graph, "MCC"), by_label(d.graph, "Op")
+    assert mcc["type"] == op["type"] == "component"
+    assert "model" not in mcc and "model" not in op
+    assert by_label(d.graph, "PA")["model"]["distribution_id"] == "exponential"
+    (note,) = [w for w in d.warnings if "fixed probability" in w]
+    assert "2 basic event(s)" in note and "“MCC” (p = 0.01)" in note
+    assert "“Op” (p = 0.003)" in note and "WITHOUT a life model" in note
+    # The structure is intact; only the missing models stop the analysis.
+    check = rbd_analysis.validate_graph(normalize_graph(d.graph))
+    assert not check["valid"]
+    assert all("has no life model" in e for e in check["errors"]) and len(check["errors"]) == 2
+
+
+def test_fixed_probability_unit_in_a_spare_gate_is_refused():
+    with pytest.raises(RbdImportError, match="fixed failure probability"):
+        load('toplevel "S"; "S" csp "P" "Q"; "P" lambda=1e-3; "Q" prob=0.1;')
 
 
 def test_restoration_factor_thins_the_rate():
@@ -323,10 +350,13 @@ def test_storm_json_variant():
     assert "Never" not in {n.get("label") for n in g["nodes"]}
 
 
-def test_storm_json_rejects_probability_events_and_dynamic_gates():
+def test_storm_json_probability_events_import_without_a_model_and_dynamic_gates_are_refused():
     m = _json_model()
     m["nodes"][-1]["data"].update(distribution="probability", prob="0.2")
-    with pytest.raises(RbdImportError, match="fixed failure probability"):
+    d = load(json.dumps(m), "m.json")
+    assert any("fixed probability" in w and "(p = 0.2)" in w for w in d.warnings)
+    m["nodes"][-1]["data"].update(distribution="probability", prob="1.2")
+    with pytest.raises(RbdImportError, match="isn't between 0 and 1"):
         load(json.dumps(m), "m.json")
     m = _json_model()
     m["nodes"][1]["data"]["type"] = "pand"

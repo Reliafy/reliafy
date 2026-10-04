@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import ApiReference, { McpDocs } from "../components/ApiReference.jsx";
 
@@ -5,6 +6,12 @@ import ApiReference, { McpDocs } from "../components/ApiReference.jsx";
 // Settings (/settings?tab=api); this page is the endpoint documentation.
 export default function ApiDocsPage() {
   const navigate = useNavigate();
+  // Links such as /api-docs#mcp land on the section: the page renders after the
+  // browser's own fragment scroll, so do it once mounted.
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (id) document.getElementById(id)?.scrollIntoView();
+  }, []);
   return (
     <div className="app">
       <header>

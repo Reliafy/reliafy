@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from "react";
-import { Navigate, Route, Routes, useParams } from "react-router-dom";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import NavBar from "./components/NavBar.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Sidebar from "./components/Sidebar.jsx";
@@ -62,8 +62,57 @@ function TrackingRedirect() {
   return <Navigate to="/fleet/tracking" replace />;
 }
 
+// The desktop rail's collapsed/expanded choice is remembered per device.
+// Storage can throw (private mode, blocked site data), so access is guarded.
+const COLLAPSED_KEY = "reliafy.sidebarCollapsed";
+function readCollapsed() {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+// Below this width the sidebar leaves the layout and becomes an off-canvas
+// drawer, opened from the menu button in the top bar. Keep in step with the
+// `max-width: 720px` sidebar rules in index.css.
+const PHONE_QUERY = "(max-width: 720px)";
+function usePhone() {
+  const [phone, setPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(PHONE_QUERY);
+    const onChange = () => setPhone(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return phone;
+}
+
 export default function AppShell() {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const phone = usePhone();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef(null);
+  const { pathname } = useLocation();
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    try {
+      localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
+    } catch {
+      // Not remembered on this device; the toggle still applies.
+    }
+  };
+  // The drawer closes on navigation, and whenever the window grows wide
+  // enough for the rail.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname, phone]);
+  // Backdrop tap, Escape or the close button: focus returns to the menu button.
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+    menuButtonRef.current?.focus();
+  }, []);
   // Deployment capabilities: hide the assistant and billing entirely when this
   // deployment can't offer them (e.g. an open-source self-hosted instance).
   const { ai, billing, reliability_agent: agentEnabled } = useAppConfig();
@@ -81,10 +130,20 @@ export default function AppShell() {
   }, []);
   return (
     <>
-      <NavBar />
+      <NavBar
+        menuOpen={phone && menuOpen}
+        onMenu={() => setMenuOpen((o) => !o)}
+        menuButtonRef={menuButtonRef}
+      />
       <VerifyEmailBanner />
       <div className="layout">
-        <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
+        <Sidebar
+          collapsed={!phone && collapsed}
+          onToggle={toggleCollapsed}
+          phone={phone}
+          open={phone && menuOpen}
+          onClose={closeMenu}
+        />
         <main className="content" key={workspace}>
           <ErrorBoundary>
           <Suspense fallback={<div className="card empty view-loading">Loading…</div>}>

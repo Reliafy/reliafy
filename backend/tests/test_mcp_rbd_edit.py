@@ -425,13 +425,37 @@ def test_saved_availability_goes_stale_after_an_edit(env, monkeypatch):
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: False)
     assert _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))["cached"] is True
 
-    # A dry run changes nothing; a real edit makes the saved result stale.
-    _ok(_edit(env, rid, {"op": "update_node", "id": "p1", "model": _w(500, 1.2)}, dry_run=True))
+    # A dry run changes nothing; a real edit makes the saved result stale —
+    # and both say so in one short note.
+    dry = _ok(_edit(env, rid, {"op": "update_node", "id": "p1", "model": _w(500, 1.2)}, dry_run=True))
+    assert dry["simulation_note"].startswith("Saving this edit would put the saved availability simulation")
     assert _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))["available"]
-    _ok(_edit(env, rid, {"op": "update_node", "id": "p1", "model": _w(500, 1.2)}))
+    edited = _ok(_edit(env, rid, {"op": "update_node", "id": "p1", "model": _w(500, 1.2)}))
+    note = edited["simulation_note"]
+    assert note.startswith("This edit puts the saved availability simulation out of date")
+    assert "simulate=true" in note and len(note) < 160
     out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))
     assert out["available"] is True and out["has_simulation"] is False
     assert out["simulation"]["code"] == "pro_required"
+    # Already out of date: the next edit doesn't repeat it.
+    assert "simulation_note" not in _ok(_edit(env, rid, {"op": "update_node", "id": "p2", "model": _w(800, 1.5)}))
+
+
+def test_simulation_note_only_when_the_edit_outdates_a_matching_result(env):
+    from backend.services import rbds as rbds_service
+
+    rid = _create(env, _chain("a", "b"))["id"]
+    assert "simulation_note" not in _ok(_edit(env, rid, {"op": "update_node", "id": "a", "label": "Pump A"}))
+
+    # A result saved over a chosen window is recognised too.
+    graph = _doc(env, rid)["graph"]
+    key = rbds_service.availability_cache_key(graph, 5000.0)
+    rbds_service.store_availability(env.db, rid, key, {"kind": "repairable", "t_simulation": 5000.0}, A)
+    # Moving nothing the analysis sees (a rename of the diagram) keeps it current.
+    assert "simulation_note" not in _ok(_edit(env, rid, {"op": "set", "name": "Renamed skid"}))
+    out = _ok(_edit(env, rid, {"op": "add_node", "after": "b",
+                               "node": {"id": "c", "type": "component", "label": "Valve", "model": _w()}}))
+    assert "simulation_note" in out
 
 
 def test_a_subsystem_reference_follows_the_edit(env):

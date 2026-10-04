@@ -350,6 +350,87 @@ body {
   min-width: 0;
 }
 
+/* Phone: the sidebar leaves the layout and becomes an off-canvas drawer,
+   opened from the menu button in the top bar (AppShell's PHONE_QUERY). */
+.nav-menu-btn {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .navbar-inner {
+    padding: 0 16px;
+  }
+  .nav-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    margin: 0 8px 0 -6px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: none;
+    box-shadow: none;
+    color: var(--muted);
+  }
+  .nav-menu-btn svg {
+    width: 21px;
+    height: 21px;
+    flex: none;
+  }
+  .nav-menu-btn:hover:not(:disabled) {
+    background: var(--panel-2);
+    color: var(--text);
+  }
+  .nav-menu-btn + .brand {
+    margin-right: auto;
+  }
+  .sidebar.drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 70;
+    width: min(280px, 85vw);
+    height: auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    transform: translateX(-100%);
+    /* Hidden, not just off-screen, so its links leave the tab order. */
+    visibility: hidden;
+    transition: transform 0.2s ease, visibility 0s linear 0.2s;
+  }
+  .sidebar.drawer.open {
+    transform: none;
+    visibility: visible;
+    box-shadow: 12px 0 40px rgba(15, 23, 42, 0.16);
+    transition: transform 0.2s ease;
+  }
+  /* The collapse toggle's slot holds the drawer's close button. */
+  .sidebar.drawer .sidebar-toggle {
+    width: 32px;
+    height: 32px;
+    font-size: 1.15rem;
+  }
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 69;
+    background: rgba(15, 23, 42, 0.28);
+  }
+}
+
+@media (max-width: 720px) and (prefers-reduced-motion: reduce) {
+  .sidebar.drawer,
+  .sidebar.drawer.open {
+    transition: none;
+  }
+}
+
 .app {
   max-width: none;
   margin: 0;
@@ -4506,6 +4587,172 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
   color: var(--acc);
 }
 
+/* ---- First-run starts (#194) --------------------------------------------- */
+.first-run {
+  margin-top: 22px;
+  background: var(--surf);
+  border: 1px solid rgba(47, 109, 246, 0.28);
+  border-radius: 14px;
+  padding: 22px;
+  box-shadow: var(--shadow);
+}
+
+.first-run h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.first-run-sub {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.first-run-starts {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 14px;
+}
+
+
+.first-run-start {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.first-run-start:hover,
+.first-run-start:focus-visible {
+  border-color: var(--acc);
+  background: var(--surf);
+  box-shadow: var(--shadow);
+}
+
+.first-run-start-body {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.first-run-start-body b {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.first-run-start-body span {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.first-run-agent {
+  margin: 16px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.first-run-agent a {
+  color: var(--acc);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.first-run-agent a:hover {
+  color: var(--acc-d);
+  text-decoration: underline;
+}
+
+/* The per-type pages' compact version. */
+.first-run.first-run-lite {
+  margin-top: 1.5rem;
+  padding: 14px 16px;
+  box-shadow: none;
+}
+
+.first-run-lite-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.first-run-lite-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.first-run-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surf);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.first-run-chip svg {
+  width: 15px;
+  height: 15px;
+  color: var(--acc);
+  flex: none;
+}
+
+.first-run-chip:hover,
+.first-run-chip:focus-visible {
+  border-color: var(--acc);
+  color: var(--acc-d);
+}
+
+.first-run-lite .first-run-agent {
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+
+/* Phones: each start becomes a compact row (icon, then text); the whole row
+   is the link, so the CTA line is dropped. */
+@media (max-width: 600px) {
+  .first-run {
+    padding: 16px;
+  }
+  .first-run-starts {
+    gap: 10px;
+  }
+  .first-run-start {
+    flex-direction: row;
+    gap: 12px;
+    padding: 14px;
+  }
+  .first-run-start .dash-card-ic {
+    flex: none;
+    width: 34px;
+    height: 34px;
+  }
+  .first-run-start .dash-card-cta {
+    display: none;
+  }
+}
+
 /* ---- Blog (public) ------------------------------------------------------- */
 .blog-list {
   max-width: 760px;
@@ -7135,4 +7382,110 @@ button.danger:hover { background: #fdeeee; }
 @media (max-width: 560px) {
   .cg-head { flex-direction: column; }
   .cg-inputs { grid-template-columns: 1fr 1fr; }
+}
+
+/* ---- Phone layout (#199) ---------------------------------------------------
+   With the sidebar off-canvas the page has the full width; these keep the
+   main pages inside it. Last in the file so they win over the desktop rules. */
+@media (max-width: 720px) {
+  .app {
+    padding: 22px 16px 48px;
+  }
+  /* Tab strips scroll sideways instead of pushing the page wider. The rule
+     under the tabs is drawn inside the strip so scrolling can't clip the
+     active tab's underline. */
+  .tabs {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    border-bottom: none;
+    box-shadow: inset 0 -1px 0 var(--border);
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .tabs .tab {
+    flex: none;
+    margin-bottom: 0;
+    white-space: nowrap;
+  }
+  /* Stat strips (Saved models, a dataset, model parameters, RBD results):
+     two to a row, divided by the strip's own background showing through the
+     1px gaps. */
+  .stats,
+  .params {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line2);
+  }
+  .stats .stat,
+  .params .stat {
+    min-width: 0;
+    background: var(--surf);
+    border-right: none;
+  }
+  .stats .stat:last-child:nth-child(odd),
+  .params .stat:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  /* Dataset page: the models list goes under the preview. */
+  .ds-grid {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ds-aside {
+    width: auto;
+  }
+  /* Saved-item tables scroll inside their own container. */
+  .lib {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Model page: the parameters card goes under the plot, not beside it. */
+  .detail-panel {
+    flex-direction: column;
+  }
+  .detail-panel .aside {
+    width: auto;
+  }
+  /* RBD builder: a tighter frame, and a compact toolbar so the diagram keeps
+     most of the canvas. */
+  .rbd-app {
+    height: calc(100vh - 58px);
+    height: calc(100dvh - 58px);
+    padding: 16px;
+  }
+  .card.rbd-wrap {
+    padding: 0.5rem 0 0;
+  }
+  .rbd-tabs {
+    padding: 0 0.5rem;
+  }
+  .rbd-toolbar .rbd-btn,
+  .rbd-toolbar .rbd-name {
+    padding: 0.3rem 0.55rem;
+    font-size: 0.78rem;
+  }
+  .rbd-toolbar .rbd-name {
+    max-width: 140px;
+  }
+  .rbd-toolbar .rbd-unit-input {
+    width: 84px;
+  }
+  /* The minimap would cover a third of the canvas, and the standing hint
+     (right-click, shift-click, keys) is for a mouse and keyboard: on a phone,
+     show the diagram. A flashed hint (connect feedback) still shows. */
+  .rbd-canvas .react-flow__minimap {
+    display: none;
+  }
+  .rbd-hint {
+    white-space: normal;
+    width: max-content;
+    max-width: calc(100% - 28px);
+    text-align: center;
+  }
+  .rbd-hint:not(:has(.rbd-hint-flash)) {
+    display: none;
+  }
 }

@@ -152,6 +152,31 @@ def test_design_life_from_new_and_from_an_age():
     assert "design_life" not in analyze(_pumps())
 
 
+def test_as_of_now_axis_is_sized_to_the_remaining_life():
+    """As of now, the auto time axis ends where the reliability *from now*
+    falls to 1% — not the from-new range — in both directions: shorter for a
+    worn block, longer for one whose hazard falls with age. A typed t_max wins."""
+    one = lambda m: _graph([_node("a", m)], _edges(("input", "a"), ("a", "output")))  # noqa: E731
+    worn = one(_weibull(1000, 3))
+    new_end = analyze(worn)["time"][-1]
+    res = analyze(worn, current_state={"a": {"age": 900}})
+    end = res["time"][-1]
+    assert end < 0.6 * new_end
+    w = W([1000, 3])
+    assert float(w.sf(900 + end)) / float(w.sf(900)) == pytest.approx(0.01, rel=1e-3)
+    assert res["system"]["sf"][-1] == pytest.approx(0.01, rel=1e-3)
+
+    # Decreasing hazard (β < 1): an old block has a LONGER remaining life than
+    # a new one's 1% life, and the axis now reaches it instead of stopping short.
+    dfr = one(_weibull(1000, 0.5))
+    res = analyze(dfr, current_state={"a": {"age": 20000}})
+    assert res["time"][-1] > 2 * analyze(dfr)["time"][-1]
+    assert res["system"]["sf"][-1] == pytest.approx(0.01, rel=1e-3)
+
+    # A value the user typed still wins.
+    assert analyze(worn, t_max=1500, current_state={"a": {"age": 900}})["time"][-1] == pytest.approx(1500)
+
+
 def test_a_failed_system_and_an_unreachable_target():
     res = analyze(_pumps(), current_state={"a": {"failed": True}, "b": {"failed": True}}, target_reliability=0.9)
     assert res["reliability_now"] == 0.0 and res["mttf"] is None

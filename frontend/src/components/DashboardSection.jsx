@@ -28,7 +28,8 @@ function DashCard({ to, state, onClick, icon, title, body, cta }) {
 
 // Section overview page: breadcrumb + title + (optional) stat strip + a grid of
 // cards linking to the section's pages/tools. Used by every section's landing.
-export default function DashboardSection({ crumb, title, subtitle, headerAction, stats = [], cards = [] }) {
+// ``intro`` renders between the header and the stats (e.g. the first-run starts).
+export default function DashboardSection({ crumb, title, subtitle, headerAction, intro, stats = [], cards = [] }) {
   return (
     <div className="app">
       <header>
@@ -39,6 +40,8 @@ export default function DashboardSection({ crumb, title, subtitle, headerAction,
         </div>
         {headerAction}
       </header>
+
+      {intro}
 
       {stats.length > 0 && (
         <div className="stats">

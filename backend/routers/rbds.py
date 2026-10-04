@@ -304,7 +304,7 @@ def exact_payload(session, graph: dict, t_max, state, doc, writable: bool, resol
 
     deferral = rbd_analysis.exact_deferral(graph, requested)
     if deferral is not None:
-        return {**rbds_service.long_run_only(session, graph, resolve_owners, t_max), "exact": deferral}
+        return {**rbds_service.long_run_only(session, graph, resolve_owners, t_max, state), "exact": deferral}
     key = rbds_service.exact_cache_key(graph, t_max, state)
     hit = rbds_service.cached_exact(doc, key, resolve_owners)
     if hit is not None:

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import RecurrentLibrary from "./RecurrentLibrary.jsx";
 import { listRecurrentModels, deleteRecurrentModel } from "../api.js";
+import { FirstRunStrip } from "../components/FirstRun.jsx";
+import { useFirstRun } from "../firstRun.js";
 
 // Recurrent-event (repairable-system) models — mirrors the life-data models
 // home: header + "New model" button, then the saved-model library. The fit
@@ -9,6 +11,8 @@ import { listRecurrentModels, deleteRecurrentModel } from "../api.js";
 export default function RecurrentHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
+  // No models, datasets or diagrams of their own yet (samples don't count).
+  const firstRun = useFirstRun(models ? models.some((m) => !m.is_sample) : undefined);
 
   const refresh = () => listRecurrentModels().then((r) => setModels(r.models)).catch(() => setModels([]));
   useEffect(() => { refresh(); }, []);
@@ -45,6 +49,8 @@ export default function RecurrentHome() {
           </button>
         </div>
       </header>
+
+      <FirstRunStrip info={firstRun} />
 
       <RecurrentLibrary
         models={models || []}

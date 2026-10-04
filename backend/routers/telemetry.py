@@ -49,6 +49,11 @@ CLIENT_EVENTS = frozenset({
     "degradation_save",
     "rcm_create",
     "rcm_import",
+    # First-run starts on an empty workspace (#194): frontend/src/components/FirstRun.jsx.
+    "first_run_sample",
+    "first_run_paste",
+    "first_run_rbd",
+    "first_run_agent",
 })
 
 # Re-exported for modules that import it from here.

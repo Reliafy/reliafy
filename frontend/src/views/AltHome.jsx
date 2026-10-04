@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AltLibrary from "./AltLibrary.jsx";
 import { listAltModels, deleteAltModel } from "../api.js";
+import { FirstRunStrip } from "../components/FirstRun.jsx";
+import { useFirstRun } from "../firstRun.js";
 
 // Accelerated life (ALT) models — mirrors the life-data and recurrent homes:
 // header + "New model" button, then the saved-model library. The fit flow lives
@@ -9,6 +11,8 @@ import { listAltModels, deleteAltModel } from "../api.js";
 export default function AltHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
+  // No models, datasets or diagrams of their own yet (samples don't count).
+  const firstRun = useFirstRun(models ? models.some((m) => !m.is_sample) : undefined);
 
   const refresh = () => listAltModels().then((r) => setModels(r.models)).catch(() => setModels([]));
   useEffect(() => { refresh(); }, []);
@@ -45,6 +49,8 @@ export default function AltHome() {
           </button>
         </div>
       </header>
+
+      <FirstRunStrip info={firstRun} />
 
       <AltLibrary
         models={models || []}

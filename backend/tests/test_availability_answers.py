@@ -74,6 +74,18 @@ def test_simulation_only_diagram_without_the_simulation_is_not_available(env):
     assert out["exact"]["status"] == "simulation_only"
 
 
+def test_analyze_rbd_description_documents_the_needs_simulation_answer(env):
+    """The tool description tells an agent what the #184 answer looks like
+    and what to do with it."""
+    from backend.tests.test_mcp import _run
+
+    tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
+    text = " ".join(tools["analyze_rbd"].description.split())
+    assert "simulate=false" in text and "available=false" in text
+    assert "needs_simulation=true, code 'needs_simulation'" in text
+    assert "call again with simulate=true" in text and "export_rbd_python" in text
+
+
 def test_a_diagram_with_exact_figures_stays_available_with_a_headline(env):
     graph = _cw_train()
     graph.pop("repair_crews")
