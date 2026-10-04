@@ -16,9 +16,12 @@ unreliability ``1 - R(t)``. On top of ``from_rbd``:
 * a **sub-system** block is developed into its own gates (under a gate named
   after the block), rather than left as one opaque event;
 * a **common-cause** (beta-factor) group becomes the textbook construction —
-  each member fails independently (``(1 - beta) Q``) OR by the group's shared
-  cause (``beta Q``), one event feeding every member's gate — which is exactly
-  how RePyability evaluates the group in the diagram;
+  each member fails independently OR by the group's shared cause, one event
+  feeding every member's gate — which is exactly how RePyability evaluates the
+  group in the diagram: on the rate basis (Reliafy's lifetime default, #210)
+  the events have not occurred by ``t`` with ``R(t) ** (1 - beta)`` and
+  ``R(t) ** beta``; on the probability basis they occur with ``(1 - beta) Q``
+  and ``beta Q``;
 * blocks **pinned** working/failed become events that never / always occur;
 * a **repairable** diagram gets the same tree over the blocks' steady-state
   unavailabilities, so its top event is the long-run unavailability.
@@ -47,23 +50,35 @@ _MAX_GATES = 3000
 
 
 class _Share:
-    """A fixed share of a model's failure probability: ``Q(t) * fraction``.
+    """A fixed share of a model's failure: the two halves of a beta-factor
+    group member — its independent part and the shared cause — as FaultTree
+    events (anything with ``sf``/``ff``).
 
-    The two halves of a beta-factor group member — the independent part
-    ``(1 - beta) Q`` and the shared cause ``beta Q`` — as FaultTree events
-    (anything with ``sf``/``ff``)."""
+    On the rate basis (#210, Reliafy's lifetime default) the share is of the
+    model's failure *rate*: the event has not occurred by ``t`` with
+    ``R(t) ** fraction``, so the independent part (``1 - beta``) and the
+    shared cause (``beta``) are independent events whose OR is the member's
+    own ``1 - R(t)``. On the probability basis it is of the probability,
+    ``fraction * Q(t)``."""
 
-    def __init__(self, model, fraction: float, name: str):
+    def __init__(self, model, fraction: float, name: str, basis: str = "probability"):
         self.model = model
         self.fraction = float(fraction)
+        self.basis = basis
         self.dist = ra._DistName(name)
+
+    def _q(self, x) -> np.ndarray:
+        if hasattr(self.model, "ff"):
+            return np.asarray(self.model.ff(x), dtype=float)
+        return 1.0 - np.asarray(self.model.sf(x), dtype=float)
 
     def ff(self, x) -> np.ndarray:
         x = np.asarray(x, dtype=float)
-        if hasattr(self.model, "ff"):
-            q = np.asarray(self.model.ff(x), dtype=float)
-        else:
-            q = 1.0 - np.asarray(self.model.sf(x), dtype=float)
+        q = self._q(x)
+        if self.basis == "rate":
+            # 1 - R ** fraction, from log1p(-Q) so a small Q keeps its precision.
+            with np.errstate(divide="ignore", invalid="ignore"):
+                return -np.expm1(self.fraction * np.log1p(-np.clip(q, 0.0, 1.0)))
         return self.fraction * q
 
     def sf(self, x) -> np.ndarray:
@@ -202,16 +217,16 @@ def _develop(
         members = [m for m in group.members if m in tree.events]
         if not members:
             continue
-        beta = group.model.beta
+        beta, basis = group.model.beta, group.model.basis
         shared = f"{prefix}ccf:{i}"
-        b.events[shared] = _Share(reliabilities[members[0]], beta, "CommonCause")
+        b.events[shared] = _Share(reliabilities[members[0]], beta, "CommonCause", basis)
         b.event_info[shared] = {
             "label": "Common cause: " + ", ".join(labels.get(m, str(m)) for m in members),
-            "path": list(path), "node_type": "ccf", "beta": beta,
+            "path": list(path), "node_type": "ccf", "beta": beta, "basis": basis,
         }
         for m in members:
             independent = f"{prefix}{m}:independent"
-            b.events[independent] = _Share(reliabilities[m], 1.0 - beta, "Independent")
+            b.events[independent] = _Share(reliabilities[m], 1.0 - beta, "Independent", basis)
             b.event_info[independent] = {
                 **info[m], "label": f"{info[m]['label']} (independent)",
                 "node_type": "ccf_independent",
@@ -219,7 +234,7 @@ def _develop(
             events[m] = ("or", [independent, shared])
             b.gate_info[f"{prefix}{m}"] = {
                 "label": info[m]["label"], "path": list(path), "role": "ccf_member",
-                "beta": beta,
+                "beta": beta, "basis": basis,
             }
 
     top = b.add(tree, prefix, events, info)
@@ -616,7 +631,7 @@ def _payload(
             "probability": ra._f(gate_p[g]),
             "repeated": uses.get(g, 0) > 1,
         }
-        for key in ("label", "role", "path", "beta"):
+        for key in ("label", "role", "path", "beta", "basis"):
             if key in info:
                 row[key] = info[key]
         return row
@@ -630,6 +645,7 @@ def _payload(
             "node_type": info.get("node_type"),
             "pinned": info.get("pinned"),
             "beta": info.get("beta"),
+            "basis": info.get("basis"),
             "probability": ra._f(q[e]),
             "repeated": uses.get(e, 0) > 1,
             "importance": importance[e],

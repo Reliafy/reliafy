@@ -890,16 +890,24 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     setCcfCtx({ members: selectedComponentIds, beta: 0.1 });
     setModal("ccf");
   };
-  const submitCcf = ({ beta }) => {
+  // A group keeps a basis only when it isn't the rate (the default, #210).
+  const withBasis = (g, beta, basis) => {
+    const { basis: _old, ...rest } = g;
+    return basis === "probability" ? { ...rest, beta, basis } : { ...rest, beta };
+  };
+  const submitCcf = ({ beta, basis }) => {
     setCcfGroups((prev) => {
-      if (ccfCtx?.groupId) return prev.map((g) => (g.id === ccfCtx.groupId ? { ...g, beta } : g));
+      if (ccfCtx?.groupId) return prev.map((g) => (g.id === ccfCtx.groupId ? withBasis(g, beta, basis) : g));
       const id = `ccf-${Date.now().toString(36)}-${Math.round(Math.random() * 1e4)}`;
-      return [...prev, { id, members: ccfCtx.members, beta }];
+      return [...prev, withBasis({ id, members: ccfCtx.members }, beta, basis)];
     });
     setModal(null);
     setCcfCtx(null);
   };
-  const editCcf = (g) => { setCcfCtx({ members: g.members, beta: g.beta, groupId: g.id }); setModal("ccf"); };
+  const editCcf = (g) => {
+    setCcfCtx({ members: g.members, beta: g.beta, basis: g.basis, groupId: g.id });
+    setModal("ccf");
+  };
   const removeCcf = (gid) => setCcfGroups((prev) => prev.filter((g) => g.id !== gid));
 
   return (
@@ -1047,7 +1055,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
                       <span className="rbd-ccf-row-members" title={(g.members || []).map(labelFor).join(", ")}>
                         {(g.members || []).map(labelFor).join(" · ")}
                       </span>
-                      <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β={g.beta}</button>
+                      <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β={g.beta}{g.basis === "probability" ? " (prob.)" : ""}</button>
                       <button className="rbd-ccf-row-x" onClick={() => removeCcf(g.id)} title="Ungroup" aria-label="Ungroup">×</button>
                     </div>
                   ))}
@@ -1401,6 +1409,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         <CcfModal
           initial={ccfCtx}
           memberLabels={(ccfCtx.members || []).map(labelFor)}
+          repairable={repairable}
           onClose={() => { setModal(null); setCcfCtx(null); }}
           onSubmit={submitCcf}
         />
