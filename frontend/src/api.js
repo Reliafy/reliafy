@@ -737,6 +737,36 @@ export function rbdSensitivity({ graph, rbdId = null, window = null, step = null
   });
 }
 
+// Maintenance and proof-test intervals chosen together (#172, #228):
+// ``schedule`` "replacement" (age-replacement intervals) or "proof_test";
+// one target at most — ``minAvailability``, ``maxPfd``, ``targetSil`` or
+// ``maxCostRate`` (none: the lowest cost); ``allowed`` the proof-test
+// intervals to choose from (null: a monthly-to-four-yearly calendar);
+// ``stagger`` chooses the first tests' times too; ``assumeUnlimitedCrews``
+// chooses as if no repair waits for a crew (needed with limited crews).
+// Free (exact). 200 with the plan, or 202 with ``job`` to poll at getRbdJob.
+export function optimiseIntervals({ graph, rbdId = null, schedule = null, blocks = null, minAvailability = null,
+                                    maxPfd = null, targetSil = null, maxCostRate = null, allowed = null,
+                                    stagger = false, assumeUnlimitedCrews = false }) {
+  return request("/api/rbds/intervals", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      graph,
+      rbd_id: rbdId,
+      schedule,
+      blocks,
+      min_availability: minAvailability,
+      max_pfd: maxPfd,
+      target_sil: targetSil,
+      max_cost_rate: maxCostRate,
+      allowed,
+      stagger,
+      assume_unlimited_crews: assumeUnlimitedCrews,
+    }),
+  });
+}
+
 // Compare two repairable designs (#104): ``graph`` (A, the diagram in the
 // builder) against the saved diagram ``otherId`` (B). Returns the simulated
 // difference in the window's mean availability (B − A) with its interval, from

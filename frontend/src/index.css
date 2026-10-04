@@ -7333,6 +7333,14 @@ button.danger:hover { background: #fdeeee; }
 }
 .rbd-train-row input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(47, 109, 246, 0.18); }
 .rbd-train-singles { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; }
+.rbd-intervals { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border, #e3e7ed); display: flex; flex-direction: column; gap: 10px; }
+.rbd-intervals > .seg { align-self: flex-start; flex-wrap: wrap; }
+.rbd-intervals .param-fields { margin: 0; }
+.rbd-intervals .rbd-intervals-allowed { flex: 1 1 240px; max-width: 420px; }
+.rbd-intervals .rbd-intervals-allowed input { width: 100%; box-sizing: border-box; }
+.rbd-intervals-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; max-width: 760px; }
+.rbd-intervals-check input { margin-top: 3px; flex: none; }
+.rbd-intervals .rbd-costs-table td .muted { font-size: 11.5px; font-weight: 400; }
 
 /* One toolbar across the top of the canvas: the diagram's settings on the
    left, its actions on the right — which wrap onto a second row rather than

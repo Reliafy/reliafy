@@ -46,6 +46,9 @@ KIND_AVAILABILITY = "availability"
 # What to improve (#225): the levers ranked, when numerical, over a window,
 # simulated or large (see rbd_sensitivity). Never stored on the diagram.
 KIND_SENSITIVITY = "sensitivity"
+# Maintenance and proof-test intervals (#228): a large proof-test search (see
+# rbd_intervals). Never stored on the diagram.
+KIND_INTERVALS = "intervals"
 ACTIVE = ("queued", "running")
 FINISHED = ("done", "failed")
 
@@ -287,7 +290,7 @@ def view(db, job: dict, entitled: bool) -> dict:
         "queue_position": queue_position(db, job),
     }
     if job.get("status") == "done":
-        if job.get("kind") == KIND_SENSITIVITY:
+        if job.get("kind") in (KIND_SENSITIVITY, KIND_INTERVALS):
             out["result"] = {**(job.get("result") or {}), "job_id": job["_id"]}
         else:
             out["result"] = job_payload(job, entitled)
@@ -427,4 +430,43 @@ def _sensitivity_accepted(db, job: dict) -> dict:
         "status": job.get("status"),
         "job": {"job_id": job["_id"], "status": job["status"], "queue_position": queue_position(db, job),
                 "kind": KIND_SENSITIVITY},
+    }
+
+
+# ---- Maintenance and proof-test intervals (#228) --------------------------------
+
+def run_intervals(db, *, uid: str, graph: dict, options: dict, cache_key: str, rbd_id: Optional[str],
+                  resolve_model, resolve_owners=None) -> tuple[int, dict]:
+    """Run (or queue) an interval optimisation (``options`` as
+    :func:`rbd_intervals.options` gives them). Returns ``(status,
+    payload)``: 200 with the result (in-process, or a finished identical
+    job), 202 with ``job`` to poll, 503 when the queue can't take it. Never
+    stored on the diagram."""
+    from backend.services import rbd_intervals
+
+    request = (compute_core.intervals_request(graph, **options)
+               if compute_queue.configured() else None)
+    if request is None:
+        return 200, rbd_intervals.optimise(graph, resolve_model, **options)
+    existing = find_reusable(db, uid, cache_key, False, include_done=True)
+    if existing is not None:
+        if existing["status"] == "done":
+            return 200, {**(existing.get("result") or {}), "job_id": existing["_id"]}
+        return 202, _intervals_accepted(db, existing)
+    job = create(db, uid=uid, kind=KIND_INTERVALS, request=request, cache_key=cache_key, rbd_id=rbd_id,
+                 quick=False, store=False, owners=resolve_owners)
+    try:
+        compute_queue.enqueue(job["_id"], KIND_INTERVALS, request)
+    except compute_queue.QueueError as exc:
+        finish(db, job["_id"], "failed", error=str(exc) or QUEUE_UNAVAILABLE)
+        return 503, {"detail": QUEUE_UNAVAILABLE, "code": "compute_unavailable"}
+    return 202, _intervals_accepted(db, job)
+
+
+def _intervals_accepted(db, job: dict) -> dict:
+    return {
+        "kind": "maintenance_intervals",
+        "status": "pending",
+        "job": {"job_id": job["_id"], "status": job["status"], "queue_position": queue_position(db, job),
+                "kind": KIND_INTERVALS},
     }
