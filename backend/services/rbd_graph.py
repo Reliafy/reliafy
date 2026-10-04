@@ -11,7 +11,8 @@ Compact node (what an assistant writes and reads)::
     {"id": "p1", "type": "component", "label": "Pump A",
      "model": {"distribution_id": "weibull",
                "params": [{"name": "alpha", "value": 900}, {"name": "beta", "value": 1.4}],
-               "placeholder": true},          # optional: a guessed value
+               "placeholder": true,           # optional: a guessed value
+               "extras": {"gamma": 100}},     # optional: offset gamma, LFP p, ZI f0
      "repair": {...},                         # repairable diagrams only
      "instant_repair": true,                  # repairable: repaired in zero time
      "costs": {"repair": 200, "replace": 1500, "downtime": 50, "acquisition": 20000},
@@ -228,8 +229,51 @@ def _inline_model(model: dict, where: str) -> dict:
         "distribution_id": dist_id,
         "params": params,
     }
+    extras = _extras(model.get("extras"), where)
+    if extras:
+        out["extras"] = extras
     if model.get("placeholder"):
         out["placeholder"] = True
+    return out
+
+
+def _extras(raw, where: str) -> dict:
+    """A model's fitted extras the analysis rebuilds it with: an offset
+    ``gamma``, an LFP ``p`` and a zero-inflation ``f0`` (finite numbers)."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise GraphError(f"{where}: extras must be an object of gamma, p and f0.")
+    out = {}
+    for key in ("gamma", "p", "f0"):
+        value = raw.get(key)
+        if value is None:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise GraphError(f"{where}: {key} must be a number.") from None
+        if isinstance(value, bool) or not math.isfinite(number):
+            raise GraphError(f"{where}: {key} must be a finite number.")
+        out[key] = number
+    return out
+
+
+def _positions(nodes: list) -> Optional[dict]:
+    """``{id: position}`` when every node already has a finite ``{x, y}``
+    (a diagram drawn elsewhere keeps its layout), else None."""
+    out = {}
+    for n in nodes:
+        pos = n.get("position") if isinstance(n, dict) else None
+        if not isinstance(pos, dict):
+            return None
+        try:
+            x, y = float(pos.get("x")), float(pos.get("y"))
+        except (TypeError, ValueError):
+            return None
+        if not (math.isfinite(x) and math.isfinite(y)):
+            return None
+        out[str(n.get("id") or "").strip()] = {"x": x, "y": y}
     return out
 
 
@@ -373,7 +417,10 @@ def normalize_graph(
     resolve_saved_model: Optional[Callable[[str], object]] = None,
 ) -> dict:
     """Turn a compact ``{nodes, edges, unit, repairable?}`` into the persisted
-    builder shape. Raises :class:`GraphError` with a fixable message."""
+    builder shape, laid out left to right — unless every node already has a
+    ``position`` (a diagram drawn elsewhere, e.g. a RePyability JSON file
+    Reliafy wrote), which is kept. Raises :class:`GraphError` with a fixable
+    message."""
     raw_nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
     check_size(raw_nodes, raw_edges)
@@ -400,7 +447,12 @@ def normalize_graph(
                 raise GraphError(f"edge {src} -> {tgt} references unknown node '{end}'.")
         edges.append(make_edge(src, tgt, e.get("id") or f"e-{src}-{tgt}-{i}"))
 
-    out = {"nodes": layout_graph(nodes, edges), "edges": edges, "unit": str(graph.get("unit") or "")}
+    positions = _positions(raw_nodes) if raw_nodes else None
+    if positions is not None:
+        placed = [{**n, "position": positions[n["id"]]} for n in nodes]
+    else:
+        placed = layout_graph(nodes, edges)
+    out = {"nodes": placed, "edges": edges, "unit": str(graph.get("unit") or "")}
     if graph.get("repairable"):
         out["repairable"] = True
     if graph.get("ccf_groups"):
@@ -427,6 +479,8 @@ def compact_graph(graph: dict) -> dict:
                     cm["saved_model_id"] = m["modelId"]
                 if m.get("placeholder"):
                     cm["placeholder"] = True
+                if m.get("extras") and not m.get("modelId"):
+                    cm["extras"] = m["extras"]
                 node[key] = cm
         for key in ("n", "k", "spares", "cold", "dormancy", "startProb", "repeat_of") + MAINTENANCE_KEYS:
             if d.get(key) is not None:

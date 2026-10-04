@@ -434,7 +434,7 @@ export function saveRbd(name, graph, id, expectedUpdatedAt) {
   );
 }
 
-// Parse another tool's diagram file (BlockSim, Open-PSA, Galileo, Excel) into
+// Parse another tool's diagram file (BlockSim, Open-PSA, Galileo, RePyability JSON, Excel) into
 // builder graphs. Nothing is saved: the builder opens the chosen one unsaved.
 // ``mapping`` (Excel only) names the sheets/columns when the workbook doesn't
 // follow the template — the server answers code "excel_mapping" when needed.
@@ -1298,6 +1298,19 @@ export function downloadRbdPython(id) {
   return withEvent(
     downloadFile(`/api/rbds/${encodeURIComponent(id)}/export.py`, "rbd.py"),
     "rbd_export_python"
+  );
+}
+
+export const JSON_EXPORT_TIP =
+  "The diagram in RePyability's JSON format: load it in Python with rbd_from_json, or import it back into Reliafy.";
+
+// "Download as RePyability JSON" (#174): the saved diagram as RePyability's
+// to_json document (plus Reliafy's labels and layout, which RePyability
+// ignores). Free for every viewer, like the Python download.
+export function downloadRbdJson(id) {
+  return withEvent(
+    downloadFile(`/api/rbds/${encodeURIComponent(id)}/export.json`, "rbd.json"),
+    "rbd_export_json"
   );
 }
 

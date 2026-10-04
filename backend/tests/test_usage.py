@@ -141,6 +141,7 @@ def test_init_db_creates_the_usage_indexes(monkeypatch):
     ("GET", "/api/rbds/abc/analyze", "rbd_analyze"),
     ("POST", "/api/rbds", "rbd_save"),
     ("GET", "/api/rbds/abc/export.py", "export_python"),
+    ("GET", "/api/rbds/abc/export.json", "export_json"),
     ("POST", "/api/strategy/optimal-replacement", "strategy_replacement"),
     ("POST", "/api/strategy/failure-finding", "strategy_failure_finding"),
     ("POST", "/api/recurrent/models/m1/overhaul", "strategy_overhaul"),

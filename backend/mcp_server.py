@@ -55,6 +55,7 @@ API token refused at the transport as ``connect`` / ``locked``.
 import contextvars
 import copy
 import functools
+import json
 import logging
 import math
 import re
@@ -263,13 +264,14 @@ list_models / get_model read what is saved; list_datasets / upload_dataset manag
 - Confidence: reliability_at with confidence (e.g. 0.95) adds lower/upper bounds on R(t) and F(t); quote them \
 with the point values. Bounds are null, with bounds_note saying why, where a model has none — never invent them.
 - Reliability block diagrams: list_rbds / get_rbd, create_rbd, analyze_rbd (system reliability, MTTF, \
-B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script). Edit, \
+B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script), \
+export_rbd_json (RePyability's JSON: rbd_from_json loads it; import_rbd takes it back). Edit, \
 don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/remove/update blocks and \
 edges) rather than re-creating it; clone_rbd copies a sample or makes a variant to edit.
 - Observed history: upload_outage_log saves a real outage log (asset, start, end; blank end = still down) \
 against one of the user's diagrams; system_history then gives the system's actual availability over the \
 window, its outages each attributed to the block that took it down, and the blocks ranked by downtime share.
-- Files: never read a file into your context to paste it. For any file (a BlockSim / Open-PSA / Galileo \
+- Files: never read a file into your context to paste it. For any file (a BlockSim / Open-PSA / Galileo / RePyability \
 diagram, an Excel workbook, a CSV of failure times or outages): create_upload, then send the file with the \
 curl PUT it returns, inspect_upload if you need its sheets, columns or diagrams, then import_rbd / \
 import_excel / upload_dataset / upload_outage_log with the upload_id. Paste only small text formats \
@@ -2086,6 +2088,30 @@ def export_rbd_python(
     return {"filename": filename, "script": source, "run": rbd_export.run_command(filename)}
 
 
+@_tool("export_rbd_json", _READ, "Export an RBD as RePyability JSON")
+def export_rbd_json(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="An RBD id from list_rbds.")],
+) -> dict[str, Any]:
+    """Export a saved RBD in RePyability's JSON format: repyability.rbd.serialisation.rbd_from_json (or
+    rbd_from_dict on the parsed JSON) rebuilds the RBD Reliafy analyses, to run or change in code, and
+    import_rbd takes the file back without loss. Returns the filename, the JSON text (`json`) and what the
+    RePyability part doesn't hold (`notes`: it rides in the file's "reliafy" part). Blocks on a fitted
+    proportional-hazards, non-parametric or load-sharing model can't be exported — use export_rbd_python."""
+    from backend.services import rbd_json
+
+    user, db = _caller(ctx), _db()
+    rbd = _get_rbd(db, user["uid"], rbd_id)
+    try:
+        filename, text = rbds_service.export_json(db, rbd.name, rbd.graph or {},
+                                                  [*_owners(user["uid"]), rbd.owner_id])
+    except rbd_json.ExportError as exc:
+        raise ToolError(str(exc)) from None
+    return {"filename": filename, "json": text, "notes": list(rbd_json.EXPORT_NOTES),
+            "load": ("from repyability.rbd.serialisation import rbd_from_json; "
+                     f"rbd = rbd_from_json(open({filename!r}).read())")}
+
+
 # ---------------------------------------------------------------------------
 # Strategy calculators
 # ---------------------------------------------------------------------------
@@ -2628,7 +2654,7 @@ _IMPORT_NOTES = 30      # import notes per diagram
 _RCM_VALUES = 20        # unmapped consequence / decision values listed
 
 _Purpose = Literal["rbd_import", "excel", "dataset", "outage_log"]
-_RbdFormat = Literal["blocksim", "openpsa", "galileo", "excel"]
+_RbdFormat = Literal["blocksim", "openpsa", "galileo", "excel", "repyability"]
 _UPLOAD_ID = Annotated[str, Field(min_length=1, max_length=64, description="An upload_id from create_upload.")]
 
 
@@ -2704,7 +2730,8 @@ def _upload_table_text(db, uid: str, upload_id: str, sheet: Optional[str]) -> tu
 def create_upload(
     ctx: Context,
     purpose: Annotated[_Purpose, Field(description=(
-        "What the file is for: rbd_import (a BlockSim .rsgz / .rsr, Open-PSA XML or Galileo .dft diagram file, "
+        "What the file is for: rbd_import (a BlockSim .rsgz / .rsr, Open-PSA XML, Galileo .dft or RePyability "
+        ".json diagram file, "
         "then import_rbd); excel (an .xlsx workbook — a data sheet, an RCM/FMEA worksheet or Reliafy's RBD "
         "template — then import_excel); dataset (CSV or .xlsx life data, then upload_dataset); outage_log (CSV "
         "or .xlsx, then upload_outage_log)."))],
@@ -2743,7 +2770,7 @@ def inspect_upload(ctx: Context, upload_id: _UPLOAD_ID) -> dict[str, Any]:
     """Look inside a file sent through create_upload before importing it. A workbook: each sheet's header
     row, columns, row count, a few sample rows and what it looks like (looks_like.rcm / looks_like.rbd_blocks:
     a guessed column mapping) — use them to pick import_excel's target, sheet and mapping. A diagram file
-    (BlockSim, Open-PSA, Galileo): the diagrams it holds with their block counts. CSV text: its columns and
+    (BlockSim, Open-PSA, Galileo, RePyability JSON): the diagrams it holds with their block counts. CSV text: its columns and
     row count. Only the user's own uploads."""
     user, db = _caller(ctx), _db()
     doc, data = uploads_service.read(db, upload_id, user["uid"])
@@ -2780,7 +2807,7 @@ def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool,
     ready, skipped = [], []
     for d in diagrams:
         try:
-            graph = rbd_graph.normalize_graph(d.graph)
+            graph = rbd_graph.normalize_graph(d.graph, resolve_saved_model=_resolver(db, owners))
         except rbd_graph.GraphError as exc:
             skipped.append({"name": d.name, "error": str(exc)})
             continue
@@ -2856,10 +2883,12 @@ def import_rbd(
     ctx: Context,
     upload_id: Annotated[Optional[str], Field(max_length=64, description=(
         "A file sent through create_upload (purpose rbd_import): ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA "
-        "XML, Galileo .dft, or an .xlsx in Reliafy's RBD template layout."))] = None,
-    content: Annotated[Optional[str], Field(description=(
-        "Instead of upload_id, for SMALL text files only (Open-PSA XML, Galileo DFT text or JSON), at most "
-        "200 KB. Anything else or larger: create_upload."))] = None,
+        "XML, Galileo .dft, RePyability JSON (rbd.to_json(), or export_rbd_json), or an .xlsx in Reliafy's RBD "
+        "template layout."))] = None,
+    # A JSON file's text arrives parsed (the MCP layer pre-parses JSON strings), so an object is accepted too.
+    content: Annotated[Optional[Union[str, dict[str, Any]]], Field(description=(
+        "Instead of upload_id, for SMALL text files only (Open-PSA XML, Galileo DFT text or JSON, RePyability "
+        "JSON), at most 200 KB. Anything else or larger: create_upload."))] = None,
     format: Annotated[Optional[_RbdFormat], Field(description=(
         "Parse as this format. Omit to detect it from the content."))] = None,
     name: Annotated[Optional[str], Field(max_length=200, description=(
@@ -2869,8 +2898,8 @@ def import_rbd(
         "Import just these diagrams, by name (a BlockSim project can hold many; preview with save=false or "
         "inspect_upload)."))] = None,
 ) -> dict[str, Any]:
-    """Import reliability block diagrams from another tool's file — BlockSim, Open-PSA, Galileo, or Reliafy's
-    Excel RBD template — and save each as an RBD in the user's workspace (all or nothing against the plan's
+    """Import reliability block diagrams from another tool's file — BlockSim, Open-PSA, Galileo, RePyability
+    JSON, or Reliafy's Excel RBD template — and save each as an RBD in the user's workspace (all or nothing against the plan's
     RBD limit). Send files with create_upload and pass upload_id; paste only small text formats into content.
     Returns, per diagram, its id and url, the import notes (what was approximated — tell the user), and a
     concise node list; get_rbd reads the full graph, edit_rbd changes it. save=false previews."""
@@ -2880,7 +2909,7 @@ def import_rbd(
                         "exactly one.")
     upload = None
     if content is not None:
-        data = content.encode("utf-8")
+        data = (json.dumps(content) if isinstance(content, dict) else content).encode("utf-8")
         if len(data) > INLINE_MAX_BYTES:
             raise ToolError(
                 f"content is {len(data) // 1024} KB; inline content is limited to {INLINE_MAX_BYTES // 1024} KB. "
@@ -2888,7 +2917,8 @@ def import_rbd(
                 "gives, then import_rbd(upload_id=…).")
         if format in ("blocksim", "excel"):
             raise ToolError(f"{format} files are binary — send them with create_upload, not as content.")
-        filename = {"openpsa": "inline.xml", "galileo": "inline.dft"}.get(format or "", "inline.txt")
+        filename = {"openpsa": "inline.xml", "galileo": "inline.dft",
+                    "repyability": "inline.json"}.get(format or "", "inline.txt")
     else:
         upload, data = uploads_service.read(db, upload_id, user["uid"])
         filename = upload["filename"]
@@ -2899,6 +2929,10 @@ def import_rbd(
             if getattr(exc, "code", None) == "excel_mapping":
                 raise _excel_mapping_error(exc, data, filename) from None
             raise
+        # RePyability JSON from Reliafy: links back to the saved models and diagrams this user can open.
+        owners = _owners(user["uid"])
+        rbd_import.link_references(diagrams, _resolver(db, owners),
+                                   lambda rid: rbds_service.get_rbd(db, rid, owners))
         return _save_imported(db, user, diagrams, name=name, save=save, only=only, upload=upload)
 
 

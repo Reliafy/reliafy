@@ -210,17 +210,10 @@ def analyze_rbd(
     )
 
 
-def export_python(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
-    """Render a diagram as a standalone SurPyval + RePyability script.
-
-    Returns ``(filename, source)``. Sub-systems and saved-model references
-    resolve exactly as :func:`analyze_graph` resolves them — scoped to
-    ``owner_id`` — so the script rebuilds what the viewer's analysis uses.
-    Saved models are read from their stored fit summary (no re-fit): the
-    block's own stored parameters are what the analysis uses, and the summary
-    only fills in what a block lacks.
-    """
-    from backend.services import rbd_export
+def _export_resolvers(db, owner_id):
+    """``(resolve_model, resolve_subsystem)`` for the exports, scoped to
+    ``owner_id``: a saved model as its stored fit summary (no re-fit), a
+    sub-system as its graph."""
 
     def resolve_subsystem(sub_id: str) -> dict | None:
         sub = get_rbd(db, sub_id, owner_id)
@@ -241,6 +234,35 @@ def export_python(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
             "unit": results.get("unit"),
         }
 
+    return resolve_model, resolve_subsystem
+
+
+def export_json(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
+    """Render a diagram as RePyability JSON (``rbd_from_json`` loads it; a
+    Reliafy import restores it). Returns ``(filename, text)``; raises
+    :class:`backend.services.rbd_json.ExportError` (user-facing) for blocks
+    the format can't hold. Resolution as in :func:`export_python`."""
+    from backend.services import rbd_json
+
+    resolve_model, resolve_subsystem = _export_resolvers(db, owner_id)
+    doc = rbd_json.to_document(graph or {}, name, resolve_model=resolve_model,
+                               resolve_subsystem=resolve_subsystem)
+    return rbd_json.filename(name), rbd_json.to_json(doc)
+
+
+def export_python(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
+    """Render a diagram as a standalone SurPyval + RePyability script.
+
+    Returns ``(filename, source)``. Sub-systems and saved-model references
+    resolve exactly as :func:`analyze_graph` resolves them — scoped to
+    ``owner_id`` — so the script rebuilds what the viewer's analysis uses.
+    Saved models are read from their stored fit summary (no re-fit): the
+    block's own stored parameters are what the analysis uses, and the summary
+    only fills in what a block lacks.
+    """
+    from backend.services import rbd_export
+
+    resolve_model, resolve_subsystem = _export_resolvers(db, owner_id)
     source = rbd_export.to_python(
         graph or {},
         name,
