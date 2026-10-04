@@ -2863,10 +2863,10 @@ def _repyability_version() -> Optional[str]:
 
 EXACT_POINTS = 200        # evenly spaced points of the A(t) curve over the window
 EXACT_EARLY_POINTS = 40   # plus log-spaced points near the start, for the early transient
-# Cost grows with the blocks (and roughly with their square for the window
-# figures). Timed on RePyability 0.11 (Apple M-series, one process) over the
-# default horizon: 10 blocks ~1.1 s, 20 ~2.7 s, 30 ~5.2 s, 40 ~7.7 s, 60 ~16 s,
-# 80 ~30 s for the curve + window figures. Up to EXACT_AUTO_MAX_BLOCKS they are
+# Cost grows with the blocks. Timed on RePyability 0.12 on this service's
+# Cloud Run hardware (1 CPU, 2 GiB) over a 20,000 h horizon, series-parallel and
+# meshed alike: 10 blocks ~2.2 s, 20 ~4.4 s, 30 ~6.0 s, 40 ~9 s, 60 ~13 s,
+# 120 ~26 s for the curve + window figures. Up to EXACT_AUTO_MAX_BLOCKS they are
 # computed with every Calculate; above it only on request, and above
 # EXACT_MAX_BLOCKS not on this service at all.
 EXACT_AUTO_MAX_BLOCKS = 30
@@ -2875,8 +2875,9 @@ EXACT_MAX_BLOCKS = 120
 # is RePyability's exact or numerical value, the simulated interval beside it;
 # above it the simulated mean stands, so a large diagram's run isn't held up.
 # "Download as Python" applies the same limit, so the script reports the same
-# numbers. For now the same as EXACT_AUTO_MAX_BLOCKS; a Cloud Run benchmark sets it.
-EXACT_WINDOW_MEAN_MAX_BLOCKS = 30
+# numbers. The window mean alone costs less than the curve: on the same
+# Cloud Run benchmark 30 blocks ~2.9 s, 40 ~3.9 s, 60 ~5.7 s, 80 ~7.5 s, 120 ~11.6 s.
+EXACT_WINDOW_MEAN_MAX_BLOCKS = 60
 
 # The routes shown with the figures, in this order.
 _EXACT_ROUTE_KEYS = (
