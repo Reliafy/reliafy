@@ -300,6 +300,7 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/rbds/import", "rbd_import"),
     ("POST", "/api/rbds/compare", "availability_compare"),
     ("POST", "/api/rbds/design/cheapest", "rbd_cheapest_design"),
+    ("POST", "/api/rbds/sensitivity", "rbd_sensitivity"),
     ("POST", "/api/rbds/design/apply", "rbd_design_apply"),
     ("POST", "/api/rbds/design", "rbd_design"),
     ("POST", "/api/rbds/fault-tree", "rbd_fault_tree"),

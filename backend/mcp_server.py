@@ -281,7 +281,10 @@ seconds until it is done. Edit, \
 don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/remove/update blocks and \
 edges) rather than re-creating it; clone_rbd copies a sample or makes a variant to edit. cheapest_design \
 finds a repairable diagram's redundancy with the lowest total cost of ownership; a discount_rate (percent a \
-year: 7 = 7%) makes its totals, and analyze_rbd's, present values.
+year: 7 = 7%) makes its totals, and analyze_rbd's, present values. "What should we fix first?" on a \
+repairable diagram is rbd_sensitivity: every lever (mean life, mean repair time, intervals, coverage, one \
+more crew) ranked by what a 10% step gains in availability (or cost), in plain words with its basis (exact, \
+numerical or simulation); with costs_to_change, order='benefit_per_cost' ranks by benefit per unit of cost.
 - Observed history: upload_outage_log saves a real outage log (asset, start, end; blank end = still down) \
 against one of the user's diagrams; system_history then gives the system's actual availability over the \
 window, its outages each attributed to the block that took it down, and the blocks ranked by downtime share.
@@ -2627,12 +2630,13 @@ def analyze_rbd(
 @_tool("get_job", _READ, "Check an analysis job")
 def get_job(
     ctx: Context,
-    job_id: Annotated[str, Field(description="A job_id returned by analyze_rbd.")],
+    job_id: Annotated[str, Field(description="A job_id returned by analyze_rbd or rbd_sensitivity.")],
 ) -> dict[str, Any]:
-    """Check an analysis job that analyze_rbd queued (a long availability simulation runs on Reliafy's
-    calculation service). status is queued (with queue_position: jobs ahead of it), running, done (with the
-    same availability results analyze_rbd returns) or failed (with the reason in message). Call it every few
-    seconds until done; jobs and their results are kept for a week."""
+    """Check an analysis job that analyze_rbd or rbd_sensitivity queued (a long availability simulation, or a
+    numerical, windowed or simulated what-to-improve, runs on Reliafy's calculation service). status is queued
+    (with queue_position: jobs ahead of it), running, done (with the same results the tool that queued it
+    returns; kind says which) or failed (with the reason in message). Call it every few seconds until done;
+    jobs and their results are kept for a week."""
     user, db = _caller(ctx), _db()
     job = rbd_jobs_service.get(db, job_id)
     if job is None or job.get("uid") != user["uid"]:
@@ -2641,6 +2645,8 @@ def get_job(
     if job.get("rbd_id"):
         out["rbd_id"] = job["rbd_id"]
         out["url"] = _url(f"/rbds/b/{job['rbd_id']}")
+    if job.get("status") == "done" and job.get("kind") == rbd_jobs_service.KIND_SENSITIVITY:
+        return {**out, **_sensitivity_summary(job.get("result") or {}, 15)}
     if job.get("status") == "done":
         view = rbd_jobs_service.view(db, job, billing_service.premium_compute_allowed(db, user))
         payload = view["result"]
@@ -2738,6 +2744,116 @@ def cheapest_design(
     out["present_value"] = result["discount_rate"] is not None
     out["design"] = {k: v for k, v in result["design"].items() if k != "units"}
     return out
+
+
+# What a lever row carries in rbd_sensitivity's answer (the app's row has more).
+_SENSITIVITY_ROW_KEYS = ("rank", "id", "block", "name", "lever", "change", "value", "shown_value", "shown_to",
+                         "effect_basis", "cost_to_change", "benefit_per_cost", "per_unit_cost", "plain",
+                         "interval", "distinguishable", "unranked")
+
+
+def _sensitivity_summary(payload: dict, limit: int) -> dict:
+    """rbd_sensitivity's answer: the ranked levers with plain-words effects,
+    availability effects in percentage points, and the basis."""
+    status = payload.get("status")
+    out: dict[str, Any] = {k: payload.get(k) for k in ("basis", "basis_reason", "unit") if k in payload}
+    if status != "ok":
+        return {**out, "available": False, "code": status, "message": payload.get("message")}
+    rows = []
+    for row in (payload.get("levers") or [])[:limit]:
+        r = {k: row.get(k) for k in _SENSITIVITY_ROW_KEYS if row.get(k) is not None}
+        effect = row.get("effect") or {}
+        if effect.get("availability") is not None:
+            r["availability_points"] = effect["availability"] * 100.0
+        if effect.get("cost_rate") is not None:
+            r["cost_rate_change"] = effect["cost_rate"]
+        d = row.get("derivative") or {}
+        r["derivative"] = {k: v for k, v in d.items() if v is not None}
+        rows.append(r)
+    keep = ("of", "window", "step", "rank_by", "order", "availability", "cost_rate", "priced", "derivative_basis",
+            "t_simulation", "n_simulations", "common_random_numbers", "pinned", "notes", "top")
+    out.update({k: payload[k] for k in keep if payload.get(k) not in (None, [], {})})
+    out["available"] = True
+    out["levers"] = rows
+    out["n_levers"] = len(payload.get("levers") or [])
+    out["units_note"] = ("availability_points is the change in availability in percentage points; cost_rate_change "
+                         "the change in running cost per unit of the diagram's time unit; derivative is "
+                         "RePyability's, per unit of the raw parameter `lever` (for a mean lever, the "
+                         "distribution's scale parameter).")
+    return out
+
+
+@_tool("rbd_sensitivity", _READ, "What to improve in a repairable RBD")
+def rbd_sensitivity(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="A repairable RBD id from list_rbds.")],
+    window: Annotated[Optional[float], Field(gt=0, description=(
+        "Rank by the mean availability over [0, window) from new (diagram unit) instead of the long run "
+        "(availability only; up to 60 blocks). Slower: it runs as a job."))] = None,
+    step: Annotated[Optional[float], Field(ge=0.01, le=0.9, description=(
+        "How far each lever moves, as a fraction: 0.1 (default) = a 10% longer mean life, a 10% shorter "
+        "mean repair time or test interval; counts (repair crews, standby units) always move by one."))] = None,
+    rank_by: Annotated[Literal["availability", "cost"], Field(description=(
+        "What the step should improve and the levers are ranked by: availability (default), or the running "
+        "cost per unit time (priced diagrams)."))] = "availability",
+    costs_to_change: Annotated[Optional[dict[str, float]], Field(description=(
+        "The cost of making each lever's stated change, by lever id (from a previous answer's levers[].id): "
+        "each gets its benefit per unit of cost; order='benefit_per_cost' ranks by it."))] = None,
+    order: Annotated[Literal["benefit", "benefit_per_cost"], Field(description=(
+        "benefit (default): rank by the step's benefit alone, whether or not a lever has a cost. "
+        "benefit_per_cost: the levers in costs_to_change first, by benefit per unit spent, then the rest by "
+        "benefit."))] = "benefit",
+    simulate: Annotated[bool, Field(description=(
+        "Where RePyability has no exact route (e.g. limited repair crews for wear-out lives), simulate the "
+        "effects (Pro or credits; a minute or two). False: say so instead."))] = True,
+    limit: Annotated[int, Field(ge=1, le=200, description="How many ranked levers to return.")] = 15,
+) -> dict[str, Any]:
+    """What to improve first in a repairable diagram: every lever RePyability exposes — each block's mean life
+    and mean repair time (and its other model parameters), its scheduled-replacement and proof-test intervals,
+    durations and coverage, its standby group's, one more repair crew — with the effect of moving it one step
+    (default 10%) in the direction that helps: the change in availability (percentage points) and in running
+    cost, in plain words, and RePyability's derivative. Ranked by that benefit (order='benefit'), or — with
+    costs_to_change and order='benefit_per_cost' — the costed levers first by benefit per unit of cost, then
+    the rest by benefit. `top` is the recommendation, following the ranking; quote it with its basis:
+    exact or numerical (free, deterministic: the derivatives are central differences of the exact long-run
+    values, a step's effect an exact difference — 'linear' when it is the derivative times the step) or
+    simulation (Pro or credits: each step simulated against the diagram with common random numbers, with a 95%
+    interval; say when an interval spans zero). Common-cause groups are left out, as in analyze_rbd's
+    availability. A long calculation may come back as a job_id: call get_job with it until done."""
+    from backend.routers.rbd_sensitivity import sensitivity_payload
+    from backend.services.access import PERSONAL, AccessCtx
+
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    rbd = _get_rbd(db, uid, rbd_id)
+    graph = rbd.graph or {}
+    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
+    if not graph.get("repairable"):
+        raise ToolError(f"“{rbd.name}” is non-repairable (analysed for reliability). What to improve ranks a "
+                        "repairable diagram's levers; analyze_rbd's importance measures rank a non-repairable "
+                        "one's blocks.")
+    owners = [*_owners(uid), rbd.owner_id]
+    actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid, read_owners=_owners(uid),
+                     list_owners=uid, share_fallback=False)
+    status, payload = sensitivity_payload(db, actx, graph, rbd, owners, window=window, step=step,
+                                          rank_by=rank_by, costs=costs_to_change, order=order,
+                                          simulate=simulate)
+    if status == 503:
+        raise ToolError(payload.get("detail") or rbd_jobs_service.QUEUE_UNAVAILABLE)
+    if status == 202:
+        job = _await_job(db, payload["job"]["job_id"], config.MCP_JOB_WAIT_S)
+        if job is None:
+            raise ToolError("The calculation was lost. Run rbd_sensitivity again.")
+        if job.get("status") == "failed":
+            raise ToolError(job.get("error") or rbd_jobs_service.FAILED_ERROR)
+        if job.get("status") != "done":
+            return {**head, "available": False, "basis": payload.get("basis"), **_job_pending(db, job),
+                    "note": "What to improve is running on Reliafy's calculation service. Call get_job with this "
+                            "job_id in a few seconds for the ranked levers."}
+        payload = job.get("result") or {}
+    if payload.get("status") == "pro_required" and user.get("mcp_plan", "pro") != "pro":
+        _soft_refusal("pro_only")
+    return {**head, **_sensitivity_summary(payload, limit)}
 
 
 # ---------------------------------------------------------------------------

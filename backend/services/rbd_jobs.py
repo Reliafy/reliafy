@@ -43,6 +43,9 @@ from backend.services import rbds as rbds_service
 logger = logging.getLogger(__name__)
 
 KIND_AVAILABILITY = "availability"
+# What to improve (#225): the levers ranked, when numerical, over a window,
+# simulated or large (see rbd_sensitivity). Never stored on the diagram.
+KIND_SENSITIVITY = "sensitivity"
 ACTIVE = ("queued", "running")
 FINISHED = ("done", "failed")
 
@@ -134,10 +137,11 @@ def find_reusable(db, uid: str, cache_key: str, quick: bool, include_done: bool)
     return None
 
 
-def latest_active(db, uid: str, rbd_id: str) -> Optional[dict]:
-    """The caller's newest in-flight job for a diagram (to resume polling)."""
+def latest_active(db, uid: str, rbd_id: str, kind: str = KIND_AVAILABILITY) -> Optional[dict]:
+    """The caller's newest in-flight job of ``kind`` for a diagram (to resume
+    polling)."""
     for job in db.rbd_jobs.find(
-        {"uid": uid, "rbd_id": rbd_id, "status": {"$in": list(ACTIVE)}}
+        {"uid": uid, "rbd_id": rbd_id, "kind": kind, "status": {"$in": list(ACTIVE)}}
     ).sort("created_at", -1).limit(3):
         job = _expire_if_stale(db, job)
         if job and job.get("status") in ACTIVE:
@@ -283,7 +287,10 @@ def view(db, job: dict, entitled: bool) -> dict:
         "queue_position": queue_position(db, job),
     }
     if job.get("status") == "done":
-        out["result"] = job_payload(job, entitled)
+        if job.get("kind") == KIND_SENSITIVITY:
+            out["result"] = {**(job.get("result") or {}), "job_id": job["_id"]}
+        else:
+            out["result"] = job_payload(job, entitled)
     elif job.get("status") == "failed":
         out["error"] = job.get("error") or FAILED_ERROR
     return out
@@ -379,3 +386,45 @@ def run_availability(
     if quick:
         payload["free_sims"] = free_sims.summary(db, uid)
     return status, payload
+
+
+# ---- What to improve (#225) ------------------------------------------------------
+
+def run_sensitivity(db, *, uid: str, graph: dict, options: dict, cache_key: str, rbd_id: Optional[str],
+                    resolve_model, resolve_owners=None) -> tuple[int, dict]:
+    """Run (or queue) a what-to-improve analysis the caller may run.
+    ``options`` are :func:`rbd_sensitivity.options`'; ``resolve_model``
+    resolves saved models in-process. Returns ``(status, payload)``: 200 with
+    the result (in-process, or a finished identical job), 202 with a job to
+    poll, 503 when the queue can't take it. The result is never stored on the
+    diagram."""
+    from backend.services import rbd_sensitivity
+
+    request = (compute_core.sensitivity_request(graph, **options)
+               if compute_queue.configured() else None)
+    if request is None:
+        # In-process: no queue configured (self-hosted, dev, tests), or a
+        # diagram that needs saved models re-fitted (see compute_core).
+        return 200, rbd_sensitivity.analyze_sensitivity(graph, resolve_model, simulate=True, **options)
+    existing = find_reusable(db, uid, cache_key, False, include_done=True)
+    if existing is not None:
+        if existing["status"] == "done":
+            return 200, {**(existing.get("result") or {}), "job_id": existing["_id"]}
+        return 202, _sensitivity_accepted(db, existing)
+    job = create(db, uid=uid, kind=KIND_SENSITIVITY, request=request, cache_key=cache_key, rbd_id=rbd_id,
+                 quick=False, store=False, owners=resolve_owners)
+    try:
+        compute_queue.enqueue(job["_id"], KIND_SENSITIVITY, request)
+    except compute_queue.QueueError as exc:
+        finish(db, job["_id"], "failed", error=str(exc) or QUEUE_UNAVAILABLE)
+        return 503, {"detail": QUEUE_UNAVAILABLE, "code": "compute_unavailable"}
+    return 202, _sensitivity_accepted(db, job)
+
+
+def _sensitivity_accepted(db, job: dict) -> dict:
+    return {
+        "kind": "sensitivity",
+        "status": job.get("status"),
+        "job": {"job_id": job["_id"], "status": job["status"], "queue_position": queue_position(db, job),
+                "kind": KIND_SENSITIVITY},
+    }
