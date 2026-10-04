@@ -91,7 +91,13 @@ function CreateTeamModal({ onClose, onCreated }) {
   );
 }
 
-export default function NavBar() {
+const MenuIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 7h16M4 12h16M4 17h16" />
+  </svg>
+);
+
+export default function NavBar({ menuOpen = false, onMenu, menuButtonRef }) {
   const { workspace, setWorkspaceId, teams, activeTeam, refreshTeams } = useWorkspace();
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -109,6 +115,21 @@ export default function NavBar() {
   return (
     <nav className="navbar">
       <div className="navbar-inner">
+        {/* Phone only (CSS): opens the sidebar as an off-canvas drawer. */}
+        {onMenu && (
+          <button
+            ref={menuButtonRef}
+            type="button"
+            className="nav-menu-btn"
+            onClick={onMenu}
+            aria-label="Menu"
+            aria-expanded={menuOpen}
+            aria-controls="app-sidebar"
+            title="Menu"
+          >
+            <MenuIcon />
+          </button>
+        )}
         <NavLink className="brand" to="/modelling">
           <Logo size={30} />
           <span className="brand-name">Reliafy</span>
