@@ -88,17 +88,8 @@ comes back inside the `availability` job, from the same seed (in a free quick
 run it keeps to the quick run's time budget). The likely next kind is **a large
 diagram's exact figures over time** (`exact=true`). These can take a minute.
 
-**Faster engine (#243).** The Mojo-accelerated RePyability engine (#243) is
-planned for compute. It's a private package, installed in Cloud Build with a
-read-only credential. Two things in this file change when it lands:
-- Compute's image becomes the web digest plus one layer, not the same digest.
-  The "Every future deploy" steps below then build that layer from the web
-  digest.
-- The engine matches RePyability "to rounding, or bit-for-bit in its exact
-  mode". Running it in exact mode keeps the same-seed guarantee and its test.
-  Otherwise the test needs a tolerance. **This needs a decision.**
-
-Without the package, RePyability's `engine="auto"` behaves exactly as today.
+Additional runtime packages may be layered onto the image at deploy time; the
+services must still run the same digest.
 
 ## Settings
 
@@ -385,9 +376,6 @@ send traffic to the web's latest revision:
 ```sh
 gcloud run services update-traffic reliafy --to-latest --region "$REGION" --project "$PROJECT"
 ```
-
-Once #243 lands, step 3 deploys compute's own image: the web digest plus the
-engine layer, built in Cloud Build. That image's notes go here then.
 
 ## Operating notes
 

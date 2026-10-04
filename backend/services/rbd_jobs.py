@@ -39,6 +39,7 @@ from typing import Optional
 from backend import config
 from backend.services import compute_core, compute_queue, free_sims
 from backend.services import rbds as rbds_service
+from backend.services.method_labels import generic_engine_fields
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +297,7 @@ def view(db, job: dict, entitled: bool) -> dict:
     }
     if job.get("status") == "done":
         if job.get("kind") in _PLAIN_RESULT_KINDS:
-            out["result"] = {**(job.get("result") or {}), "job_id": job["_id"]}
+            out["result"] = generic_engine_fields({**(job.get("result") or {}), "job_id": job["_id"]})
         else:
             out["result"] = job_payload(job, entitled)
     elif job.get("status") == "failed":

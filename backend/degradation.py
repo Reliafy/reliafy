@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS, FitError, _json_safe
+from backend.services.method_labels import hides_solver_names, note_fit
 from surpyval.degradation import PATH_MODELS as _SURPYVAL_PATHS
 from surpyval.degradation import DegradationAnalysis
 
@@ -98,6 +99,7 @@ def build_inputs(df: pd.DataFrame, mapping: dict) -> tuple:
     )
 
 
+@hides_solver_names
 def fit(
     df: pd.DataFrame,
     mapping: dict,
@@ -129,7 +131,7 @@ def fit(
     x, y, i = build_inputs(df, mapping)
 
     try:
-        model = DegradationAnalysis.fit(
+        model = note_fit(DegradationAnalysis.fit(
             x,
             y,
             i,
@@ -137,7 +139,7 @@ def fit(
             path=path,
             distribution=DISTRIBUTIONS[distribution_id]["dist"],
             population_method=population_method,
-        )
+        ))
     except FitError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message

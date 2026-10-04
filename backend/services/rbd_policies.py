@@ -41,6 +41,7 @@ from typing import Any, Optional
 import numpy as np
 
 from backend.services import rbd_maintenance as rm
+from backend.services.method_labels import route_reason
 from backend.services.rbd_analysis import AnalysisError, _f
 
 #: The most repair crews a diagram can name (more than any block count we draw).
@@ -229,7 +230,7 @@ def sil_band(pfd: Optional[float]) -> Optional[int]:
 def _route_basis(rbd) -> tuple[str, str]:
     try:
         route = rbd.analysis_routes()["mean_unavailability"]
-        return route.route, route.reason
+        return route.route, route_reason(route)
     except Exception:  # noqa: BLE001
         return "exact", ""
 
@@ -330,7 +331,7 @@ def long_run_method(rbd, labels: dict) -> Optional[dict]:
         route = rbd.analysis_routes()["mean_availability"]
     except Exception:  # noqa: BLE001
         return None
-    return {"route": route.route, "reason": _named(route.reason, labels),
+    return {"route": route.route, "reason": _named(route_reason(route), labels),
             "blocks": [labels.get(n, str(n)) for n in route.nodes or ()]}
 
 
