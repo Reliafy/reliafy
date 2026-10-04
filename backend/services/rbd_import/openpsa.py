@@ -23,8 +23,10 @@ Supported:
   converted to a rate per hour) and arithmetic expressions; uncertainty deviates
   (lognormal/normal/uniform/gamma/beta) are replaced by their mean, with a
   warning;
-* ``define-CCF-group model="beta-factor"`` -> ``ccf_groups`` (other CCF
-  models are skipped with a warning);
+* ``define-CCF-group model="beta-factor"`` (and an ``MGL`` group of two,
+  whose one factor is its beta) -> ``ccf_groups`` on the rate basis,
+  Reliafy's lifetime default (#210, #229), with a note; other CCF models are
+  skipped with a warning;
 * basic events with a fixed probability (a plain number, or an exponential
   over a fixed time rather than the mission time) -> a block *without* a
   life model, listed in the import notes with its probability. Reliafy
@@ -592,11 +594,13 @@ def _ccf_groups(conv: _Converter, used: set[str]) -> list[dict]:
         if not any(m in used for m in members):
             continue
         model = (g.get("model") or "").lower()
-        if model != "beta-factor":
-            conv.warn(f"Common-cause group “{name}” uses the {g.get('model')} model; only beta-factor "
-                      "groups are imported, so this one was skipped.")
-            continue
         factors = [c for c in g.iter() if _tag(c) == "factor"]
+        # An MGL group of two has one factor, its beta: a beta-factor group (#229).
+        pair_mgl = model == "mgl" and len(set(members)) == 2 and len(factors) == 1
+        if model != "beta-factor" and not pair_mgl:
+            conv.warn(f"Common-cause group “{name}” uses the {g.get('model')} model; only beta-factor "
+                      "groups (and MGL groups of two) are imported, so this one was skipped.")
+            continue
         if len(factors) != 1:
             conv.warn(f"Common-cause group “{name}”: expected one beta factor; skipped.")
             continue
@@ -606,6 +610,14 @@ def _ccf_groups(conv: _Converter, used: set[str]) -> list[dict]:
             conv.warn(f"Common-cause group “{name}”: beta={beta:g} is outside (0, 1); skipped.")
             continue
         out.append({"name": name, "members": [m for m in members if m in used], "beta": beta})
+    if out:
+        names = ", ".join(f"“{g['name']}”" for g in out)
+        conv.warn(
+            f"Common-cause group{'s' if len(out) > 1 else ''} {names} {'were' if len(out) > 1 else 'was'} "
+            "imported as beta-factor groups splitting each member's failure rate (Reliafy's basis for "
+            "lifetime analysis, #210). PRA codes split the probability of failing, which agrees while it "
+            "is small; over a lifetime it would make the group more reliable than it is. The Fault tree tab "
+            "draws each group's shared cause as an event of its own.")
     return out
 
 

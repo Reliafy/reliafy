@@ -21,7 +21,13 @@ unreliability ``1 - R(t)``. On top of ``from_rbd``:
   group in the diagram: on the rate basis (Reliafy's lifetime default, #210)
   the events have not occurred by ``t`` with ``R(t) ** (1 - beta)`` and
   ``R(t) ** beta``; on the probability basis they occur with ``(1 - beta) Q``
-  and ``beta Q``;
+  and ``beta Q``. RePyability 0.12's ``FaultTree(ccf_groups=...)`` (#229)
+  keeps the members as the basic events and folds the shared cause into the
+  cut sets' probabilities; the explicit shared event gives the same top event
+  and importance, and shows the shared cause as a cut set of its own, as PRA
+  codes list it (the tests check the two agree). ``common_cause`` in the
+  result sums up each group: the shared cause's probability and the share of
+  the top event carried by the cut sets holding it;
 * blocks **pinned** working/failed become events that never / always occur;
 * a **repairable** diagram gets the same tree over the blocks' steady-state
   unavailabilities, so its top event is the long-run unavailability.
@@ -30,6 +36,7 @@ unreliability ``1 - R(t)``. On top of ``from_rbd``:
 from __future__ import annotations
 
 import heapq
+import warnings
 from itertools import combinations
 from math import comb
 from typing import Any, Callable, Optional
@@ -39,6 +46,7 @@ import numpy as np
 from backend.services import rbd_analysis as ra
 from backend.services.rbd_analysis import AnalysisError
 from repyability import FaultTree
+from repyability.rbd.ccf import VALIDITY as CCF_VALIDITY
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 
@@ -121,8 +129,10 @@ class _Builder:
 
 
 def _structure_rbd(rbd: NonRepairableRBD, reliabilities: dict) -> NonRepairableRBD:
-    """The diagram rebuilt with other node models and no common-cause groups
-    (``from_rbd`` refuses them; they're added to the tree afterwards)."""
+    """The diagram rebuilt with other node models and no common-cause groups:
+    they're added to the tree afterwards, as explicit shared events (since
+    RePyability 0.12 ``from_rbd`` would keep them as ``ccf_groups`` over the
+    members instead, with no event of their own to draw or rank)."""
     args = dict(rbd._init_args)
     args["reliabilities"] = reliabilities
     args["ccf_groups"] = None
@@ -223,6 +233,7 @@ def _develop(
         b.event_info[shared] = {
             "label": "Common cause: " + ", ".join(labels.get(m, str(m)) for m in members),
             "path": list(path), "node_type": "ccf", "beta": beta, "basis": basis,
+            "members": [labels.get(m, str(m)) for m in members],
         }
         for m in members:
             independent = f"{prefix}{m}:independent"
@@ -661,6 +672,25 @@ def _payload(
         }
         for c, p in ranked[:_LISTED_CUT_SETS]
     ]
+    # Each common-cause group's shared event (#229): its probability, and the
+    # share of the top event carried by the cut sets holding it (its exact
+    # Fussell–Vesely), with how many of the listed cut sets hold it.
+    common_cause = []
+    for e in seen_events:
+        info = event_info.get(e, {})
+        if info.get("node_type") != "ccf":
+            continue
+        common_cause.append({
+            "event": e,
+            "label": info.get("label", e),
+            "path": info.get("path", []),
+            "members": info.get("members", []),
+            "beta": info.get("beta"),
+            "basis": info.get("basis"),
+            "probability": ra._f(q[e]),
+            "share": importance[e].get("fussell_vesely"),
+            "cut_sets_listed": sum(1 for row in listed if e in row["events"]),
+        })
     return {
         "kind": kind,
         "t": t if kind == "reliability" else None,
@@ -680,6 +710,7 @@ def _payload(
             # upper bound on the top event when the list is complete.
             "probability_sum": ra._f(sum(p for _, p in ranked)),
         },
+        "common_cause": common_cause,
         "n_gates": len(gates),
         "n_events": len(tree.events),
         "repyability_version": ra._repyability_version(),
@@ -733,15 +764,38 @@ def fault_tree(
             raise AnalysisError("The time must be a positive number.")
     b = _Builder(resolve_subsystem, resolve_model, covariates)
     top = _develop(b, graph, "", [], set(), top_level=True)
-    t_default = _default_time(graph, resolve_subsystem, resolve_model, covariates, t_max)
+    with warnings.catch_warnings():
+        # A probability-basis group past its range is noted below at the
+        # tree's own time, not over the calculator's whole time axis.
+        warnings.filterwarnings("ignore", message=r"Common-cause group \[")
+        t_default = _default_time(graph, resolve_subsystem, resolve_model, covariates, t_max)
     b.gate_info[top] = {"label": None, "role": "top"}
     tree = FaultTree(b.gates, b.events, top=top)
     t_eval = t if t is not None else t_default
     out = _payload(tree, b.gate_info, b.event_info, t_eval, "reliability")
     out["t_default"] = t_default
     out["unit"] = unit
-    out["notes"] = []
+    out["notes"] = _ccf_notes(out["common_cause"])
     return out
+
+
+def _ccf_notes(groups: list) -> list[str]:
+    """A note for each probability-basis group whose members' probability of
+    failing is past the small values the split is meant for (RePyability's
+    ``VALIDITY``), as the calculator relays RePyability's warning (#210)."""
+    notes = []
+    for g in groups:
+        beta, p = g.get("beta"), g.get("probability")
+        if g.get("basis") != "probability" or not beta or p is None:
+            continue
+        q = p / beta  # the shared cause occurs with beta * Q
+        if q > CCF_VALIDITY:
+            notes.append(
+                f"{g['label']} (β = {beta:g}, probability basis): its members' probability of failing is "
+                f"{q:.3g} here, beyond the {CCF_VALIDITY:g} the probability split is meant for — a rare-event "
+                "model, which understates the common cause over a lifetime. Set the group's basis to rate "
+                "(Reliafy's default) for lifetime figures.")
+    return notes
 
 
 def fault_tree_for_owner(

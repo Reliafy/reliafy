@@ -289,7 +289,7 @@ def test_the_simulated_route_and_the_compute_service_agree():
     assert rows["repair_crews"]["change"] == "one more repair crew"
     assert all("interval" in r for r in remote["levers"] if r.get("effect_basis") == "simulation")
     assert any("Shape parameters aren't simulated" in n for n in remote["notes"])
-    assert compute_core.KINDS == ("availability", "sensitivity")
+    assert compute_core.KINDS == ("availability", "sensitivity", "intervals", "alt_bounds")
     assert rs.analyze_sensitivity(graph, simulate=False)["status"] == "needs_simulation"
 
 

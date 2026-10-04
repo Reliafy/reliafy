@@ -48,6 +48,7 @@ from backend.routers import rbd_fault_tree as rbd_fault_tree_router
 from backend.routers import rbd_design as rbd_design_router
 from backend.routers import rbd_costs as rbd_costs_router
 from backend.routers import rbd_sensitivity as rbd_sensitivity_router
+from backend.routers import rbd_intervals as rbd_intervals_router
 from backend.routers import strategy as strategy_router
 from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
@@ -193,6 +194,7 @@ app.include_router(rbd_fault_tree_router.router)
 app.include_router(rbd_design_router.router)
 app.include_router(rbd_costs_router.router)
 app.include_router(rbd_sensitivity_router.router)
+app.include_router(rbd_intervals_router.router)
 app.include_router(strategy_router.router)
 app.include_router(compare_groups_router.router)
 app.include_router(billing_router.router)
@@ -365,6 +367,7 @@ def fit_endpoint(
     mixture_distribution: str | None = Form(default=None),
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
+    include_mixtures: str | None = Form(default=None),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
@@ -397,6 +400,7 @@ def fit_endpoint(
             )
         options = options_from_form(
             offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
+            include_mixtures=include_mixtures,
         )
         result = fit(
             distribution, df, mapping, covariates=z, formula=formula, unit=unit,

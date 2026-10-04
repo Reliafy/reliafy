@@ -42,7 +42,8 @@ numerical, over a window, simulated or large. The next failure from the
 current state (#240) is not a kind of its own: the availability analysis
 runs it whenever the request carries a ``state``
 (:mod:`backend.services.rbd_next_failure`), so it comes back in the same
-job, from the same seed. Another analysis joins by adding a request builder
+job, from the same seed. ``intervals`` (#228): a proof-test interval search
+over many combinations (:mod:`backend.services.rbd_intervals`), exact. Another analysis joins by adding a request builder
 here, a runner to ``RUNNERS``, and a ``KIND_…`` in
 :mod:`backend.services.rbd_jobs` — e.g. the exact figures over time of a
 large diagram.
@@ -54,7 +55,7 @@ import json
 import math
 from typing import Any, Callable, Optional
 
-from backend.services import rbd_analysis, rbd_sensitivity
+from backend.services import rbd_analysis, rbd_intervals, rbd_sensitivity
 
 # Node-data keys holding a life/repair model spec.
 _MODEL_KEYS = ("model", "repair", "standbyModel")
@@ -247,12 +248,127 @@ def run_sensitivity(request: dict) -> dict:
     return rbd_sensitivity.analyze_sensitivity(graph, resolve_model=_no_saved_models, simulate=True, **checked)
 
 
+def intervals_request(graph: dict, **options) -> Optional[dict]:
+    """A self-contained interval-optimisation request ``{"graph",
+    "options"}`` (#228; the options as :func:`rbd_intervals.options`
+    validates them), or None when the graph needs saved models the compute
+    service can't have."""
+    if needs_saved_models(graph):
+        return None
+    return {"graph": inline_graph(graph), "options": rbd_intervals.options(**options)}
+
+
+_INTERVAL_OPTIONS = frozenset({"schedule", "blocks", "min_availability", "max_cost_rate", "max_pfd", "target_sil",
+                               "allowed", "stagger", "assume_unlimited_crews"})
+
+
+def run_intervals(request: dict) -> dict:
+    """Run a self-contained interval-optimisation request (#228): a proof-test
+    search over many combinations (exact, deterministic: the in-process
+    answer)."""
+    if not isinstance(request, dict) or not isinstance(request.get("graph"), dict):
+        raise InvalidRequest("The request needs a graph.")
+    graph = request["graph"]
+    if not graph.get("repairable"):
+        raise InvalidRequest("Only repairable (availability) diagrams are computed here.")
+    options = request.get("options") or {}
+    if not isinstance(options, dict):
+        raise InvalidRequest("options must be an object.")
+    unknown = set(options) - _INTERVAL_OPTIONS
+    if unknown:
+        raise InvalidRequest(f"Unknown options: {', '.join(sorted(unknown))}.")
+    return rbd_intervals.optimise(graph, resolve_model=_no_saved_models, **options)
+
+
+def _wire_array(values) -> list:
+    """An array as JSON: nested lists, a non-finite value as null."""
+    def cell(v):
+        v = float(v)
+        return v if math.isfinite(v) else None
+    import numpy as np
+
+    arr = np.asarray(values, dtype=float)
+    if arr.ndim == 1:
+        return [cell(v) for v in arr]
+    return [[cell(v) for v in row] for row in arr]
+
+
+def alt_bounds_request(inputs: dict, *, distribution_id: str, life_model_id: str, use_stress: list,
+                       confidence: float, mission_time: Optional[float], t_max: Optional[float],
+                       n_boot: int, seed: int) -> dict:
+    """A self-contained ALT bootstrap-bounds request (#231): the fit's data
+    (``backend.alt.build_inputs``), the model it is refitted as, and the
+    bounds wanted. The bootstrap (hundreds of refits) is the only bound
+    method slow enough to queue; it takes exact and right-censored data, so
+    the times here are one per row."""
+    data = {"x": _wire_array(inputs["x"]), "Z": _wire_array(inputs["Z"])}
+    for key in ("c", "n"):
+        if inputs.get(key) is not None:
+            data[key] = [int(v) for v in inputs[key]]
+    if inputs.get("t") is not None:
+        data["t"] = _wire_array(inputs["t"])  # null = untruncated on that side
+    return {
+        "data": data,
+        "distribution_id": distribution_id,
+        "life_model_id": life_model_id,
+        "options": {
+            "use_stress": [float(v) for v in use_stress],
+            "method": "bootstrap",
+            "confidence": float(confidence),
+            "mission_time": None if mission_time is None else float(mission_time),
+            "t_max": None if t_max is None else float(t_max),
+            "n_boot": int(n_boot),
+            "seed": int(seed),
+        },
+    }
+
+
+def run_alt_bounds(request: dict) -> dict:
+    """Refit the ALT model of a :func:`alt_bounds_request` and return its
+    use-level bounds (:func:`backend.alt.use_level_bounds`). The same
+    function runs in-process, so a seed gives the same bounds either way."""
+    import numpy as np
+
+    from backend import alt
+    from backend.fitting import FitError
+
+    if not isinstance(request, dict) or not isinstance(request.get("data"), dict):
+        raise InvalidRequest("The request needs the fit's data.")
+    data, opts = request["data"], request.get("options") or {}
+    if not isinstance(opts, dict):
+        raise InvalidRequest("options must be an object.")
+    try:
+        inputs = {"x": np.asarray(data["x"], dtype=float), "Z": np.atleast_2d(np.asarray(data["Z"], dtype=float))}
+        for key in ("c", "n"):
+            if data.get(key) is not None:
+                inputs[key] = np.asarray(data[key], dtype=int)
+        if data.get("t") is not None:
+            t = np.asarray([[np.nan if v is None else v for v in row] for row in data["t"]], dtype=float)
+            t[:, 0] = np.where(np.isnan(t[:, 0]), -np.inf, t[:, 0])
+            t[:, 1] = np.where(np.isnan(t[:, 1]), np.inf, t[:, 1])
+            inputs["t"] = t
+    except (KeyError, TypeError, ValueError) as exc:
+        raise InvalidRequest(f"Malformed data: {exc}") from exc
+    try:
+        model = alt.refit(inputs, request.get("distribution_id"), request.get("life_model_id"))
+        return alt.use_level_bounds(
+            model, opts.get("use_stress") or [], request.get("life_model_id"),
+            method=opts.get("method", "bootstrap"), confidence=opts.get("confidence", alt.DEFAULT_CONFIDENCE),
+            mission_time=opts.get("mission_time"), t_max=opts.get("t_max"),
+            n_boot=opts.get("n_boot", alt.DEFAULT_N_BOOT), seed=opts.get("seed", alt.BOOTSTRAP_SEED))
+    except FitError as exc:
+        raise rbd_analysis.AnalysisError(str(exc)) from exc
+
+
 # What the compute service runs, by job kind. A new analysis adds its runner
 # here; the web side adds a request builder above and a KIND_ in rbd_jobs.
 # (#240's next failure rides in ``availability`` when a state is given.)
 RUNNERS: dict[str, Callable[[dict], dict]] = {
     "availability": run_availability,
     "sensitivity": run_sensitivity,
+    "intervals": run_intervals,
+    # ALT bootstrap confidence bounds at a use stress (#231).
+    "alt_bounds": run_alt_bounds,
 }
 KINDS = tuple(RUNNERS)
 

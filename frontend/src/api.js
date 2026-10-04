@@ -139,14 +139,18 @@ export function getColumns(file) {
 
 // Advanced fit options shared by fit + save: offset (3-parameter), zero
 // inflation, limited failure population, fixed parameter values, and a mixture
-// component count (mutually exclusive with the rest — see normalize_options).
-function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distribution } = {}) {
+// component count (mutually exclusive with the rest — see normalize_options),
+// the fit method, and Best fit's "consider two-mode mixtures" (#236).
+function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distribution, how,
+                                  include_mixtures } = {}) {
   if (offset) form.append("offset", "true");
   if (zi) form.append("zi", "true");
   if (lfp) form.append("lfp", "true");
   if (fixed && Object.keys(fixed).length) form.append("fixed", JSON.stringify(fixed));
   if (Number(mixture) > 1) form.append("mixture", String(Number(mixture)));
   if (mixture_distribution) form.append("mixture_distribution", mixture_distribution);
+  if (how) form.append("how", how);
+  if (include_mixtures) form.append("include_mixtures", "true");
 }
 
 // Column mapping -> form fields. ``mapping`` is { x, c, n, xl, xr, tl, tr }
@@ -331,6 +335,8 @@ export function updateModelFit(id, { distribution, mapping, covariates, formula,
       zi: !!fitOptions?.zi,
       lfp: !!fitOptions?.lfp,
       fixed: fitOptions?.fixed && Object.keys(fitOptions.fixed).length ? fitOptions.fixed : null,
+      how: fitOptions?.how || null,
+      include_mixtures: !!fitOptions?.include_mixtures,
     }),
   });
 }
@@ -737,6 +743,36 @@ export function rbdSensitivity({ graph, rbdId = null, window = null, step = null
   });
 }
 
+// Maintenance and proof-test intervals chosen together (#172, #228):
+// ``schedule`` "replacement" (age-replacement intervals) or "proof_test";
+// one target at most — ``minAvailability``, ``maxPfd``, ``targetSil`` or
+// ``maxCostRate`` (none: the lowest cost); ``allowed`` the proof-test
+// intervals to choose from (null: a monthly-to-four-yearly calendar);
+// ``stagger`` chooses the first tests' times too; ``assumeUnlimitedCrews``
+// chooses as if no repair waits for a crew (needed with limited crews).
+// Free (exact). 200 with the plan, or 202 with ``job`` to poll at getRbdJob.
+export function optimiseIntervals({ graph, rbdId = null, schedule = null, blocks = null, minAvailability = null,
+                                    maxPfd = null, targetSil = null, maxCostRate = null, allowed = null,
+                                    stagger = false, assumeUnlimitedCrews = false }) {
+  return request("/api/rbds/intervals", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      graph,
+      rbd_id: rbdId,
+      schedule,
+      blocks,
+      min_availability: minAvailability,
+      max_pfd: maxPfd,
+      target_sil: targetSil,
+      max_cost_rate: maxCostRate,
+      allowed,
+      stagger,
+      assume_unlimited_crews: assumeUnlimitedCrews,
+    }),
+  });
+}
+
 // Compare two repairable designs (#104): ``graph`` (A, the diagram in the
 // builder) against the saved diagram ``otherId`` (B). Returns the simulated
 // difference in the window's mean availability (B − A) with its interval, from
@@ -760,12 +796,14 @@ export function compareRbds(graph, otherId, { name = null, otherName = null, tMa
 // priced block own it for ``horizon`` at the lowest total cost, optionally at
 // least ``minAvailability`` available. Returns { current, design, graph, ... };
 // ``graph`` has the copies drawn on it (nothing is saved). Paid (402).
-export function cheapestRbdDesign({ graph, horizon = null, minAvailability = null, discountRate = null }) {
+// trains: [{name, blocks: [ids]}] copied whole (#227); blocks: [] with them
+// copies the trains alone.
+export function cheapestRbdDesign({ graph, horizon = null, minAvailability = null, discountRate = null, trains = null, blocks = null }) {
   return withEvent(
     request("/api/rbds/design/cheapest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ graph, horizon, min_availability: minAvailability, discount_rate: discountRate }),
+      body: JSON.stringify({ graph, horizon, min_availability: minAvailability, discount_rate: discountRate, trains, blocks }),
     }),
     "rbd_design_cheapest"
   );
@@ -845,7 +883,8 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name } = {}) {
   form.append("i", mapping.i);
   form.append("x", mapping.x);
   // Optional modifiers, matching the life-data column surface.
-  ["c", "n", "tl", "tr", "t"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
+  // ``mode`` is each failure's mode, for a growth projection (#232).
+  ["c", "n", "tl", "tr", "t", "mode"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
   if (model) form.append("model", model);
   if (unit) form.append("unit", unit);
   return form;
@@ -901,6 +940,22 @@ export function recurrentOverhaul(id, costRepair, costOverhaul) {
   });
 }
 
+// Reliability growth projection (AMSAA-Crow, #232): the panel's inputs (the
+// dataset's columns and the failure modes in the chosen column, plus the saved
+// settings and result), and a run — saved with the model when you can edit it.
+export function getRecurrentProjection(id, modeColumn) {
+  const q = modeColumn ? `?mode_column=${encodeURIComponent(modeColumn)}` : "";
+  return request(`/api/recurrent/models/${id}/projection${q}`);
+}
+
+export function runRecurrentProjection(id, { fef, bc, testEnd, modeColumn, save = true } = {}) {
+  return request(`/api/recurrent/models/${id}/projection`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fef, bc, test_end: testEnd ?? null, mode_column: modeColumn || null, save }),
+  });
+}
+
 // ---- Accelerated Life Testing (ALT) ----------------------------------------
 export function getAltOptions() {
   return request("/api/alt/options");
@@ -911,8 +966,8 @@ function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, un
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
-  form.append("x", mapping.x);
-  ["c", "n"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
+  // The failure time x, or inspection data's interval xl / xr (#237).
+  ["x", "xl", "xr", "c", "n", "tl", "tr"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
   // stress = [{col,label}, …]; s1 required, s2 optional.
   if (stress[0]) { form.append("s1", stress[0].col); if (stress[0].label) form.append("s1_label", stress[0].label); }
   if (stress[1]) { form.append("s2", stress[1].col); if (stress[1].label) form.append("s2_label", stress[1].label); }
@@ -953,11 +1008,35 @@ export function deleteAltModel(id) {
   return request(`/api/alt/models/${id}`, { method: "DELETE" });
 }
 
-export function evaluateAlt(id, useStress, refStress) {
+// Use-level reliability with its Wald confidence bounds (#231). ``opts``:
+// { missionTime, confidence }.
+export function evaluateAlt(id, useStress, refStress, opts = {}) {
   return request(`/api/alt/models/${id}/evaluate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ use_stress: useStress, ...(refStress ? { ref_stress: refStress } : {}) }),
+    body: JSON.stringify({
+      use_stress: useStress,
+      ...(refStress ? { ref_stress: refStress } : {}),
+      ...(opts.missionTime != null ? { mission_time: opts.missionTime } : {}),
+      ...(opts.confidence != null ? { confidence: opts.confidence } : {}),
+    }),
+  });
+}
+
+// Confidence bounds at a use stress by method (wald | lr | bootstrap, #231):
+// the bounds, or (bootstrap with the compute queue) ``{ job }`` to poll at
+// getRbdJob. A 402 (code pro_required) means bootstrap needs Pro or credits.
+export function altBounds(id, { useStress, method, confidence, missionTime, tMax }) {
+  return request(`/api/alt/models/${id}/bounds`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      use_stress: useStress,
+      method,
+      ...(confidence != null ? { confidence } : {}),
+      ...(missionTime != null ? { mission_time: missionTime } : {}),
+      ...(tMax != null ? { t_max: tMax } : {}),
+    }),
   });
 }
 
@@ -1467,11 +1546,15 @@ export function listFleets() {
   return request("/api/fleet/fleets");
 }
 
-export function createFleet(name, modelId) {
+// ``modelKind``: what ``modelId`` is — "life" (a saved life model; the server
+// stores "regression" when it's a regression model, #234), "alt" (an ALT
+// model, #234) or "recurrent" (a recurrent-event model — repairable items,
+// every failure counted; #235).
+export function createFleet(name, modelId, modelKind = "life") {
   return request("/api/fleet/fleets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, model_id: modelId }),
+    body: JSON.stringify({ name, model_id: modelId, model_kind: modelKind }),
   });
 }
 

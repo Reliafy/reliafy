@@ -197,6 +197,16 @@ export default function ResultView({ result, hideHead = false, modelId = null })
   const hasNotes =
     isNonparametric || isDiscrete || result.params_only ||
     result.selection?.candidates?.length > 1 || result.options || result.randomness;
+  // The adjustments a fit used, in words (a mixture's own settings aren't).
+  const optionWords = result.options
+    ? [
+        result.options.offset && "3-parameter offset",
+        result.options.lfp && "limited failure population",
+        result.options.zi && "zero-inflated",
+        result.options.fixed &&
+          `fixed ${Object.entries(result.options.fixed).map(([k, v]) => `${k} = ${v}`).join(", ")}`,
+      ].filter(Boolean)
+    : [];
   const notes = (
     <>
       {isNonparametric && (
@@ -218,24 +228,30 @@ export default function ResultView({ result, hideHead = false, modelId = null })
           available; there's no probability plot without data.
         </p>
       )}
-      {result.selection && result.selection.candidates?.length > 1 && (
+      {result.selection && result.selection.candidates?.length > 1 && (() => {
+        const key = result.selection.criterion || "aic";
+        const label = key === "bic" ? "BIC" : key === "aic_c" ? "AICc" : "AIC";
+        const [first, second] = result.selection.candidates;
+        // Mixtures on (#236): say which criterion decided — BIC between the
+        // best mixture and the best single, AIC among the singles.
+        if (result.selection.summary) {
+          return (
+            <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+              {result.selection.summary}
+            </p>
+          );
+        }
+        return (
+          <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
+            Selected by lowest {label} over {result.selection.candidates.length}{" "}
+            candidates{result.selection.include_mixtures ? ", two-mode mixtures included" : ""} — next best:{" "}
+            {second.name} (Δ{label} +{(second[key] - first[key]).toFixed(1)})
+          </p>
+        );
+      })()}
+      {optionWords.length > 0 && (
         <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-          Selected by lowest AIC over {result.selection.candidates.length}{" "}
-          candidates — next best:{" "}
-          {result.selection.candidates[1].name} (ΔAIC +
-          {(result.selection.candidates[1].aic - result.selection.candidates[0].aic).toFixed(1)})
-        </p>
-      )}
-      {result.options && (
-        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-          Fit options:{" "}
-          {[
-            result.options.offset && "3-parameter offset",
-            result.options.lfp && "limited failure population",
-            result.options.zi && "zero-inflated",
-            result.options.fixed &&
-              `fixed ${Object.entries(result.options.fixed).map(([k, v]) => `${k} = ${v}`).join(", ")}`,
-          ].filter(Boolean).join(" · ")}
+          Fit options: {optionWords.join(" · ")}
         </p>
       )}
       {result.randomness && <RandomnessVerdict r={result.randomness} />}
@@ -253,6 +269,10 @@ export default function ResultView({ result, hideHead = false, modelId = null })
         </div>
       )}
       <NoMaximumNotice notice={result.no_finite_maximum} style={{ margin: "0 0 12px" }} />
+      {/* Best fit picked a two-mode mixture (#236): say what the modes are. */}
+      {result.mixture_summary && (
+        <p className="mixture-summary">{result.mixture_summary}</p>
+      )}
       {/* Distributions with a probability plot move their parameters into the
           plot's side rail; proportional-hazards models move theirs into the
           calculator's side rail (like non-PH models). Other kinds keep the top

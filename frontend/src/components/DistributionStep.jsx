@@ -62,6 +62,9 @@ const OPTION_HELP = {
   mixture: "Fit two or more copies of this distribution at once — for data holding "
     + "several failure modes, which curves on the probability plot because no single "
     + "distribution can follow it.",
+  include_mixtures: "Two-component Weibull and LogNormal mixtures join the ranking. The single "
+    + "distributions keep their usual AIC ranking; BIC, which charges a mixture properly for its extra "
+    + "parameters, decides only whether the best mixture beats the best single distribution.",
 };
 
 // Distribution picker plus advanced fit options (offset / LFP / zero
@@ -87,6 +90,7 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
   const opts = fitOpts || {};
 
   const how = opts.how || "MLE";
+  const mixturesOn = value === "best" && Boolean(opts.include_mixtures);
 
   // Why a fit method is unavailable — distribution first, then the data, then
   // the other options. Every rule is SurPyval's; the server enforces them too,
@@ -108,6 +112,9 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
     for (const m of fitMethods)
       if (m.id !== "MLE") methodBlockers[m.id] = `A model with ${which} needs maximum likelihood.`;
   }
+  if (mixturesOn)
+    for (const m of fitMethods)
+      if (m.id !== "MLE") methodBlockers[m.id] = "Two-mode mixtures are fitted by maximum likelihood.";
   if (Object.keys(opts.fixed || {}).length)
     methodBlockers.MPP = "Probability plotting can't hold parameters fixed.";
 
@@ -122,6 +129,14 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
   const fixedBlocked = how === "MPP"
     ? "Probability plotting can't hold parameters fixed."
     : null;
+  // Best fit's mixtures are plain maximum-likelihood fits (#236): they can't
+  // compete with an offset, LFP, zero-inflation or another fit method.
+  const mixturesBlocked = value !== "best" ? null
+    : opts.offset || opts.lfp || opts.zi
+      ? "Turn off the offset, LFP and zero-inflation adjustments to let mixtures compete."
+      : how !== "MLE"
+        ? `Mixtures are fitted by maximum likelihood — the fit method is set to ${how}.`
+        : null;
 
   const setOpt = (key, val) => onFitOpts({ ...opts, [key]: val });
   const setFixed = (name, raw) => {
@@ -174,9 +189,28 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
       )}
       {!isMixture && DESCRIPTIONS[value] && (
         <p className="dist-blurb">
-          {DESCRIPTIONS[value]}
+          {value === "best" && opts.include_mixtures
+            ? "Fits every distribution and two-mode Weibull and LogNormal mixtures. The best mixture wins only if its BIC beats the best single distribution’s."
+            : DESCRIPTIONS[value]}
           <RefLink entryId={value} />
         </p>
+      )}
+      {value === "best" && (
+        <label className="fitopts-row fitopts-mixtures" title={mixturesBlocked || OPTION_HELP.include_mixtures}>
+          <input
+            type="checkbox"
+            checked={!!opts.include_mixtures}
+            disabled={!!mixturesBlocked && !opts.include_mixtures}
+            onChange={(e) => setOpt("include_mixtures", e.target.checked)}
+          />
+          <span>
+            <b>Consider two-mode mixtures</b> — for data holding two failure modes
+            (an S-bend on the probability plot). Slower. A mixture wins only if it
+            beats the best single distribution on BIC, so it has to earn its extra
+            parameters; the single distributions keep their usual ranking.
+            {mixturesBlocked && <span className="muted-line"> {mixturesBlocked}</span>}
+          </span>
+        </label>
       )}
 
       {isPlain && (
@@ -240,7 +274,7 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                   <input
                     type="checkbox"
                     checked={!!opts.offset}
-                    disabled={isMixture}
+                    disabled={isMixture || mixturesOn}
                     onChange={(e) => setOpt("offset", e.target.checked)}
                   />
                   <span><b>Offset (3-parameter)</b> — failure-free period γ</span>
@@ -250,7 +284,7 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                 <input
                   type="checkbox"
                   checked={!!opts.lfp}
-                  disabled={isMixture || !!zilfpBlocked}
+                  disabled={isMixture || mixturesOn || Boolean(zilfpBlocked)}
                   onChange={(e) => setOpt("lfp", e.target.checked)}
                 />
                 <span><b>Limited failure population</b> — a fraction p never fails</span>
@@ -259,7 +293,7 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
                 <input
                   type="checkbox"
                   checked={!!opts.zi}
-                  disabled={isMixture || !!ziBlocked}
+                  disabled={isMixture || mixturesOn || Boolean(ziBlocked)}
                   onChange={(e) => setOpt("zi", e.target.checked)}
                 />
                 <span><b>Zero-inflated</b> — a fraction f₀ failed at t = 0</span>

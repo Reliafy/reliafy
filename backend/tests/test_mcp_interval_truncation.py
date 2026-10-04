@@ -170,9 +170,11 @@ def test_interval_flags_and_misplaced_inputs_explain_themselves(env):
     msg = _err(_call(a, "fit_distribution", {"dataset_id": ds["id"], "time_column": "lo",
                                              "time_right_column": "nope"}))
     assert "Column 'nope' isn't in the dataset" in msg
+    # Parametric regression takes the intervals since #237; Cox's partial
+    # likelihood can't, and says which models can.
     msg = _err(_call(a, "fit_distribution", {"dataset_id": ds["id"], "time_column": "lo", "time_right_column": "hi",
-                                             "distribution": "weibull_ph", "covariates": ["temp"]}))
-    assert "Regression models take one time per row" in msg
+                                             "distribution": "cox_ph", "covariates": ["temp"]}))
+    assert "Cox PH can't fit interval-censored" in msg and "Weibull PH" in msg
 
 
 def test_schema_descriptions_and_instructions_name_the_new_inputs(env):
