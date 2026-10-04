@@ -8,10 +8,14 @@ only ``credit_cents`` and are migrated lazily on first touch. The user-facing
 balance is whole credits (1 credit == 1 cent), floored. Every grant/charge is
 also appended to the ``credit_ledger`` collection for an audit trail.
 
-Plans: ``free`` (default), ``agent`` (US$2/month — Reliafy from an AI agent
-over MCP only: roomier storage than free and a larger daily tool-call quota)
-and ``pro``. The MCP tool-call counters live in the ``mcp_usage``
-collection, one document per user per UTC day.
+Plans: ``free`` (default) and ``pro``. Using Reliafy from an AI agent over MCP
+is part of Pro (:func:`mcp_plan`); Free gets a small monthly allowance of
+tool calls to try it. ``agent`` is a retired plan
+(US$2/month, MCP only, sold briefly in October 2026): it is no longer sold,
+but existing subscribers keep it — MCP access, its storage caps and its daily
+MCP tool-call quota — until their subscription ends. Those tool-call counters
+(and Free's monthly allowance) live in the ``mcp_usage`` collection, one
+document per user per UTC day (per UTC month for Free).
 
 Everything here is dormant unless :data:`backend.config.BILLING_ENABLED` is set:
 plan caps aren't enforced and AI calls aren't charged, so the app behaves
@@ -66,11 +70,19 @@ def _ensure_millicents(db, uid: str) -> None:
 def is_admin_user(user: dict) -> bool:
     """Operator accounts (ADMIN_EMAILS env): full access regardless of payment.
 
-    ``user`` is the authenticated ``{uid, email, name}`` dict, so this works on
-    every request without a DB lookup.
+    ``user`` is the authenticated ``{uid, email, name, email_verified}`` dict,
+    so this works on every request without a DB lookup. The address must be
+    verified: anyone can create an email/password account with any address.
     """
     email = (user.get("email") or "").strip().lower()
-    return bool(email) and email in config.ADMIN_EMAILS
+    return bool(email) and email in config.ADMIN_EMAILS and email_trusted(user)
+
+
+def email_trusted(user: dict) -> bool:
+    """Whether this account's email address may be trusted as its identity
+    (invites, shares to an address, operator access): verified, or a
+    single-user install with sign-in turned off."""
+    return config.AUTH_DISABLED or user.get("email_verified") is True
 
 
 PLANS = ("free", "agent", "pro")
@@ -157,30 +169,183 @@ def ensure_starter_grant(db, uid: str) -> None:
         _ledger(db, uid, "grant", config.FREE_GRANT_CENTS * 1000, "starter")
 
 
+def _grant_key(reason: str, ref: str) -> str:
+    return f"grant:{reason}:{ref}"
+
+
+def grant_credits_once(db, uid: str, cents: int, reason: str, ref: str) -> bool:
+    """Add credit for an external event (a Stripe checkout session, a paid
+    invoice) at most once per ``(reason, ref)``. True if credit was added.
+
+    The ledger row is written first, under an ``_id`` derived from the reason
+    and the reference, and the balance is only incremented when that insert
+    succeeds — so a repeated delivery of the same event (a webhook retry or a
+    replay, even two arriving at once) fails on the unique ``_id`` and adds
+    nothing. Rows written before these keys existed are matched by
+    ``(kind, reason, ref)``.
+    """
+    from pymongo.errors import DuplicateKeyError
+
+    if not ref:
+        raise ValueError("an idempotent grant needs a reference")
+    mc = int(cents) * 1000
+    if db.credit_ledger.find_one({"kind": "grant", "reason": reason, "ref": ref}) is not None:
+        return False
+    _ensure_millicents(db, uid)
+    try:
+        db.credit_ledger.insert_one({
+            "_id": _grant_key(reason, ref), "uid": uid, "kind": "grant", "millicents": mc,
+            "cents": round(mc / 1000, 3), "reason": reason, "ref": ref, "ts": _now(),
+        })
+    except DuplicateKeyError:
+        return False
+    db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": mc}}, upsert=True)
+    return True
+
+
 def grant_credits(db, uid: str, cents: int, reason: str, ref: str = "") -> int:
     """Add credit to a user (purchase/grant, always whole cents). Returns the
-    new balance in cents."""
+    new balance in cents. With a ``ref`` the grant happens at most once per
+    ``(reason, ref)`` (see :func:`grant_credits_once`)."""
+    if ref:
+        grant_credits_once(db, uid, cents, reason, ref)
+        return account(db, uid)["credit_cents"]
     _ensure_millicents(db, uid)
-    db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": int(cents) * 1000}}, upsert=True)
     _ledger(db, uid, "grant", int(cents) * 1000, reason, ref)
+    db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": int(cents) * 1000}}, upsert=True)
     return account(db, uid)["credit_cents"]
 
 
+def _floor_at_zero(db, uid: str) -> None:
+    db.users.update_one({"_id": uid, "credit_millicents": {"$lt": 0}}, {"$set": {"credit_millicents": 0}})
+
+
 def charge_millicents(db, uid: str, millicents: int, reason: str, ref: str = "") -> int:
-    """Deduct metered AI usage at millicent precision. Floors at zero (a single
-    call can't push below 0 by more than its own cost, since a positive balance
-    is required to start). Returns the new balance in cents (floored)."""
+    """Deduct usage at millicent precision. Floors at zero. Returns the new
+    balance in cents (floored). Metered AI calls don't use this directly: they
+    reserve a hold first (:func:`reserve_millicents`) and settle it
+    (:func:`settle_hold`)."""
     millicents = int(millicents)
     if millicents <= 0:
         return account(db, uid)["credit_cents"]
     _ensure_millicents(db, uid)
     db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": -millicents}})
-    acct = account(db, uid)
-    if acct["credit_millicents"] < 0:
-        db.users.update_one({"_id": uid}, {"$set": {"credit_millicents": 0}})
-        acct = account(db, uid)
+    _floor_at_zero(db, uid)
     _ledger(db, uid, "charge", millicents, reason, ref)
-    return acct["credit_cents"]
+    return account(db, uid)["credit_cents"]
+
+
+# ---- Credit holds for metered AI calls ------------------------------------
+#
+# A metered AI call reserves its maximum cost before it starts: one
+# conditional update takes the hold from the balance only while the balance
+# covers it, so concurrent calls can never together spend more than the user
+# has. When the call ends — normally, with an error, or after the client went
+# away — the hold is settled: the actual cost is charged and the rest is
+# returned. Holds live in ``credit_holds`` (one document each, settled once)
+# and every step is in the ledger: ``hold``, then ``charge`` (actual cost) and
+# ``release`` (the unused part returned).
+
+def reserve_millicents(db, uid: str, hold_mc: int, reason: str) -> str | None:
+    """Take ``hold_mc`` from the balance if it's covered; the hold's id, or
+    None when the balance is short."""
+    import uuid
+
+    hold_mc = max(1, int(hold_mc))
+    _ensure_millicents(db, uid)
+    res = db.users.update_one(
+        {"_id": uid, "credit_millicents": {"$gte": hold_mc}},
+        {"$inc": {"credit_millicents": -hold_mc}},
+    )
+    if not getattr(res, "modified_count", 0):
+        return None
+    hold_id = uuid.uuid4().hex
+    db.credit_holds.insert_one({
+        "_id": hold_id, "uid": uid, "millicents": hold_mc, "reason": reason,
+        "settled": False, "created_at": _now(),
+    })
+    _ledger(db, uid, "hold", hold_mc, reason, hold_id)
+    return hold_id
+
+
+def reserve_up_to(db, uid: str, max_mc: int, min_mc: int, reason: str) -> tuple[str, int] | None:
+    """Hold ``max_mc``, or the whole balance when that is smaller but still at
+    least ``min_mc``. ``(hold_id, held)`` or None. For calls whose spend is
+    capped by the caller at whatever was held (a Reliability Agent turn)."""
+    for _ in range(3):  # a concurrent change between the read and the take: retry
+        bal = account(db, uid)["credit_millicents"]
+        want = min(int(max_mc), bal)
+        if want < max(1, int(min_mc)):
+            return None
+        hold_id = reserve_millicents(db, uid, want, reason)
+        if hold_id:
+            return hold_id, want
+    return None
+
+
+def settle_hold(db, hold_id: str, cost_mc: int | None) -> int:
+    """Settle a hold once: charge ``cost_mc`` and return the rest of the hold
+    to the balance. ``None`` (the call produced no usage — a provider error)
+    returns the whole hold. A cost above the hold takes the difference from
+    the balance, floored at zero. Later calls for the same hold change
+    nothing. Returns the balance in cents."""
+    doc = db.credit_holds.find_one_and_update(
+        {"_id": hold_id, "settled": False},
+        {"$set": {"settled": True, "settled_at": _now(),
+                  "cost_millicents": None if cost_mc is None else int(cost_mc)}},
+    )
+    if doc is None:
+        held = db.credit_holds.find_one({"_id": hold_id}) or {}
+        return account(db, held.get("uid", ""))["credit_cents"] if held else 0
+    uid, held, reason = doc["uid"], int(doc["millicents"]), doc.get("reason", "")
+    cost = max(0, int(cost_mc or 0))
+    back = held - cost
+    if back:
+        db.users.update_one({"_id": uid}, {"$inc": {"credit_millicents": back}})
+        if back < 0:
+            _floor_at_zero(db, uid)
+    if cost:
+        _ledger(db, uid, "charge", cost, reason, hold_id)
+    if back > 0:
+        _ledger(db, uid, "release", back, reason, hold_id)
+    return account(db, uid)["credit_cents"]
+
+
+# ---- Concurrent AI requests per user --------------------------------------
+
+AI_SLOT_SECONDS = {"assistant": 5 * 60, "reliability_agent": 60 * 60}
+
+
+def acquire_ai_slot(db, uid: str, kind: str = "assistant") -> tuple[str, str] | None:
+    """Take one of the user's :data:`config.AI_MAX_CONCURRENT` AI request
+    slots; ``(slot_id, token)`` to release it with, or None when all are in
+    use. A slot whose holder never released it (a crashed instance) frees
+    itself after its expiry."""
+    import time
+    import uuid
+
+    from pymongo.errors import DuplicateKeyError
+
+    token = uuid.uuid4().hex
+    now = time.time()
+    ttl = AI_SLOT_SECONDS.get(kind, AI_SLOT_SECONDS["assistant"])
+    fields = {"uid": uid, "token": token, "kind": kind, "expires_ts": now + ttl,
+              "expires_at": datetime.fromtimestamp(now + ttl, timezone.utc)}
+    for i in range(config.AI_MAX_CONCURRENT):
+        slot_id = f"{uid}:{i}"
+        try:
+            db.ai_slots.insert_one({"_id": slot_id, **fields})
+            return slot_id, token
+        except DuplicateKeyError:
+            res = db.ai_slots.update_one({"_id": slot_id, "expires_ts": {"$lt": now}}, {"$set": fields})
+            if getattr(res, "modified_count", 0):
+                return slot_id, token
+    return None
+
+
+def release_ai_slot(db, slot: tuple[str, str] | None) -> None:
+    if slot:
+        db.ai_slots.delete_one({"_id": slot[0], "token": slot[1]})
 
 
 def charge_credits(db, uid: str, cents: int, reason: str, ref: str = "") -> int:
@@ -211,8 +376,9 @@ def grant_monthly_pro_credits(
         return False
     if db.credit_ledger.find_one({"ref": invoice_id, "kind": "grant"}) is not None:
         return False  # already granted for this invoice
-    grant_credits(db, doc["_id"], config.PRO_MONTHLY_CREDIT_CENTS, "pro-monthly", invoice_id)
-    return True
+    # Ledger row first, keyed by the invoice: a concurrent duplicate fails the
+    # insert instead of adding the credit twice.
+    return grant_credits_once(db, doc["_id"], config.PRO_MONTHLY_CREDIT_CENTS, "pro-monthly", invoice_id)
 
 
 def set_plan(
@@ -224,7 +390,13 @@ def set_plan(
         fields["stripe_customer_id"] = customer_id
     if subscription_id:
         fields["stripe_subscription_id"] = subscription_id
+    before = db.users.find_one({"_id": uid}, {"plan": 1, "plan_until": 1}) or {}
     db.users.update_one({"_id": uid}, {"$set": fields}, upsert=True)
+    # Usage logging: a move to Pro is a conversion (and, after an MCP plan
+    # wall, the one the agent-plan question turns on).
+    from backend.services import usage as usage_service
+
+    usage_service.on_plan_change(db, uid, active_plan(before), active_plan(fields))
 
 
 def set_customer(db, uid: str, customer_id: str) -> None:
@@ -270,7 +442,8 @@ def owned_count(db, uid: str, collection: str) -> int:
     return db[collection].count_documents({"owner_id": uid})
 
 
-CAPPED_KINDS = ("datasets", "models", "rbds", "degradation_models", "tracked_items", "rcm_studies", "fleets")
+CAPPED_KINDS = ("datasets", "models", "rbds", "degradation_models", "tracked_items", "rcm_studies", "fleets",
+                "outage_logs")
 
 
 def plan_caps(plan: str) -> dict | None:
@@ -296,6 +469,7 @@ _CAP_NOUNS = {
     "tracked_items": ("tracked item", "tracked items"),
     "rcm_studies": ("RCM study", "RCM studies"),
     "fleets": ("failure forecast", "failure forecasts"),
+    "outage_logs": ("outage log", "outage logs"),
 }
 
 
@@ -338,12 +512,14 @@ def api_access_allowed(db, user: dict) -> bool:
 
 
 def mcp_plan(db, user: dict) -> str:
-    """The plan that governs this user's MCP use: 'pro' (no MCP limits beyond
-    the per-user rate limit), 'agent' or 'free'. Operator accounts and
-    self-hosted installs (billing off) count as Pro."""
-    if not config.BILLING_ENABLED or is_admin_user(user):
+    """The plan that governs this user's MCP use: 'pro' (everyone with API
+    access — Pro, operators, self-hosted installs with billing off: no MCP
+    limits beyond the per-user rate limit), 'agent' (a grandfathered Agent
+    subscriber: MCP within that plan's quota and caps) or 'free' (a small
+    monthly allowance of tool calls, without the Pro-only tools)."""
+    if api_access_allowed(db, user):
         return "pro"
-    return account(db, user["uid"])["active_plan"]
+    return "agent" if account(db, user["uid"])["is_agent"] else "free"
 
 
 def premium_compute_allowed(db, user: dict) -> bool:
@@ -364,10 +540,17 @@ def premium_compute_allowed(db, user: dict) -> bool:
     return account(db, uid)["is_pro"] or has_purchased_credits(db, uid)
 
 
-# ---- MCP daily quota (Free / Agent plans) --------------------------------
+# ---- MCP tool-call quotas (Free allowance, grandfathered Agent plan) -----
+#
+# Free: a small allowance per UTC calendar month, to try Reliafy from an AI
+# agent. Agent (retired, grandfathered): a quota per UTC day. Pro: none.
 
 def _day(now: datetime | None = None) -> str:
     return (now or _now()).strftime("%Y-%m-%d")
+
+
+def _month(now: datetime | None = None) -> str:
+    return (now or _now()).strftime("%Y-%m")
 
 
 def next_day_start(now: datetime | None = None) -> datetime:
@@ -376,70 +559,145 @@ def next_day_start(now: datetime | None = None) -> datetime:
     return datetime(now.year, now.month, now.day, tzinfo=timezone.utc) + timedelta(days=1)
 
 
+def next_month_start(now: datetime | None = None) -> datetime:
+    """When this month's (UTC) MCP tool-call allowance resets."""
+    now = now or _now()
+    year, month = (now.year + 1, 1) if now.month == 12 else (now.year, now.month + 1)
+    return datetime(year, month, 1, tzinfo=timezone.utc)
+
+
 def mcp_daily_quota(plan: str) -> int | None:
-    """MCP tool calls allowed per UTC day on ``plan`` (None = no quota)."""
-    return {"free": config.MCP_FREE_DAILY_CALLS, "agent": config.MCP_AGENT_DAILY_CALLS}.get(plan)
+    """MCP tool calls allowed per UTC day on ``plan``: only the retired Agent
+    plan has a daily quota."""
+    return config.MCP_AGENT_DAILY_CALLS if plan == "agent" else None
 
 
-def _calls_id(uid: str, day: str) -> str:
-    return f"calls:{uid}:{day}"
+def mcp_monthly_quota(plan: str) -> int | None:
+    """MCP tool calls allowed per UTC calendar month on ``plan``: only Free's
+    allowance to try it."""
+    return config.MCP_FREE_MONTHLY_CALLS if plan == "free" else None
 
 
-def mcp_calls_today(db, uid: str) -> int:
-    doc = db.mcp_usage.find_one({"_id": _calls_id(uid, _day())})
+def mcp_quota(plan: str) -> tuple[int | None, str | None]:
+    """``(quota, period)`` for ``plan``: (n, 'month') on Free, (n, 'day') on
+    the Agent plan, (None, None) on Pro."""
+    if (q := mcp_monthly_quota(plan)) is not None:
+        return q, "month"
+    if (q := mcp_daily_quota(plan)) is not None:
+        return q, "day"
+    return None, None
+
+
+def mcp_quota_resets_at(plan: str, now: datetime | None = None) -> datetime | None:
+    """When ``plan``'s current quota period ends (None: no quota)."""
+    _, period = mcp_quota(plan)
+    if period == "month":
+        return next_month_start(now)
+    if period == "day":
+        return next_day_start(now)
+    return None
+
+
+def _calls_id(uid: str, period_key: str) -> str:
+    # A day key (2026-10-03) and a month key (2026-10) never collide.
+    return f"calls:{uid}:{period_key}"
+
+
+def _period_key(plan: str, now: datetime | None = None) -> str | None:
+    _, period = mcp_quota(plan)
+    if period == "month":
+        return _month(now)
+    if period == "day":
+        return _day(now)
+    return None
+
+
+def mcp_calls_used(db, uid: str, plan: str) -> int:
+    """MCP tool calls counted in ``plan``'s current quota period."""
+    key = _period_key(plan)
+    if key is None:
+        return 0
+    doc = db.mcp_usage.find_one({"_id": _calls_id(uid, key)})
     return int((doc or {}).get("count", 0))
 
 
+def mcp_calls_today(db, uid: str) -> int:
+    """Today's counted calls on the (daily) Agent quota."""
+    return mcp_calls_used(db, uid, "agent")
+
+
 def consume_mcp_call(db, uid: str, plan: str) -> bool:
-    """Count one MCP tool call against today's quota for ``plan``; True if the
-    call may run. Nothing is counted on a plan without a quota, or once the
-    quota is reached. Atomic: the increment only matches while ``count`` is
-    under the quota, so concurrent calls can't both take the last slot."""
-    quota = mcp_daily_quota(plan)
+    """Count one MCP tool call against ``plan``'s quota for the current period;
+    True if the call may run. Nothing is counted on a plan without a quota, or
+    once the quota is reached. Atomic: the increment only matches while
+    ``count`` is under the quota, so concurrent calls can't both take the last
+    slot."""
+    quota, _ = mcp_quota(plan)
     if quota is None:
         return True
-    day = _day()
-    key = _calls_id(uid, day)
+    period_key = _period_key(plan)
+    key = _calls_id(uid, period_key)
     db.mcp_usage.update_one(
         {"_id": key},
-        # Kept a day past the reset, then the TTL index drops it.
-        {"$setOnInsert": {"uid": uid, "day": day, "count": 0,
-                          "expires_at": next_day_start() + timedelta(days=1)}},
+        # Kept a day past the reset (a month's allowance: ~32 days at most),
+        # then the TTL index drops it.
+        {"$setOnInsert": {"uid": uid, "period": period_key, "count": 0,
+                          "expires_at": mcp_quota_resets_at(plan) + timedelta(days=1)}},
         upsert=True,
     )
     res = db.mcp_usage.update_one({"_id": key, "count": {"$lt": int(quota)}}, {"$inc": {"count": 1}})
     return bool(getattr(res, "modified_count", 0))
 
 
+def refund_mcp_call(db, uid: str, plan: str) -> None:
+    """Give back a call :func:`consume_mcp_call` counted when the tool then
+    refused it (a storage cap, a Pro-only feature): refused calls don't count."""
+    key = _period_key(plan)
+    if key is None:
+        return
+    db.mcp_usage.update_one({"_id": _calls_id(uid, key), "count": {"$gt": 0}}, {"$inc": {"count": -1}})
+
+
 def mcp_usage_summary(db, uid: str, plan: str) -> dict:
-    """Today's MCP tool calls against the plan's quota, for the billing page."""
+    """MCP tool calls in the current period against the plan's quota, for the
+    billing page: ``calls_used`` of ``quota`` per ``period`` ('month' on Free,
+    'day' on the Agent plan, None on Pro), resetting at ``calls_reset_at``.
+    ``calls_today`` / ``daily_quota`` describe a daily quota only."""
+    quota, period = mcp_quota(plan)
+    used = mcp_calls_used(db, uid, plan)
+    resets = mcp_quota_resets_at(plan) or next_day_start()
     return {
-        "calls_today": mcp_calls_today(db, uid),
-        "daily_quota": mcp_daily_quota(plan),
-        "calls_reset_at": next_day_start().isoformat(),
+        "calls_today": used if period == "day" else 0,
+        "daily_quota": quota if period == "day" else None,
+        "calls_used": used,
+        "quota": quota,
+        "period": period,
+        "calls_reset_at": resets.isoformat(),
     }
 
 
 def usage_summary(db, uid: str, admin: bool = False) -> dict:
     """Plan, credit, caps and usage snapshot for GET /api/billing. ``admin``
-    (operator accounts) reports MCP use without quotas, as they have none."""
+    (operator accounts) reports MCP use without quotas, as they have none.
+    ``mcp`` is the MCP tool-call quota: Free's monthly allowance or a
+    grandfathered Agent subscriber's daily quota (``quota`` is None for Pro)."""
     acct = account(db, uid)
     plan = acct["active_plan"]
     return {
         "credit_cents": acct["credit_cents"],
         "plan": plan,
         "billing_enabled": config.BILLING_ENABLED,
-        # Free-plan caps (the Free vs paid comparison); ``plan_caps`` are the
-        # ones that apply to this user (None = unlimited).
+        # Free-plan caps (the Free vs Pro comparison); ``plan_caps`` are the
+        # ones that apply to this user (None = unlimited; a grandfathered
+        # Agent subscriber's are the Agent caps).
         "caps": plan_caps("free"),
-        "agent_caps": plan_caps("agent"),
         "plan_caps": plan_caps(plan),
         "mcp": mcp_usage_summary(db, uid, "pro" if admin or not config.BILLING_ENABLED else plan),
-        "mcp_free_daily_calls": config.MCP_FREE_DAILY_CALLS,
-        "mcp_agent_daily_calls": config.MCP_AGENT_DAILY_CALLS,
         # Quoted on /billing (Free vs Pro comparison) so the page never
         # hardcodes a number the operator can change with an env var.
         "free_grant_cents": config.FREE_GRANT_CENTS,
+        # Free's MCP allowance per UTC month, for the Free vs Pro comparison.
+        "mcp_free_monthly_calls": config.MCP_FREE_MONTHLY_CALLS,
         "pro_monthly_credit_cents": config.PRO_MONTHLY_CREDIT_CENTS,
         "usage": {kind: owned_count(db, uid, kind) for kind in CAPPED_KINDS},
         "packs": config.CREDIT_PACKS,

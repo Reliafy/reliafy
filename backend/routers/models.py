@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
+from backend import config
 from backend.db import get_session
+from backend.http_limits import read_upload
 from backend.fitting import FitError, options_from_form
 from backend import storage
+from backend.routers import excel as excel_router
 from backend.services import billing as billing_service
+from backend.services import excel as excel_service
 from backend.services import datasets as datasets_service
 from backend.services import models as models_service
 from backend.services import samples as samples_service
@@ -116,15 +120,38 @@ def list_datasets(session=Depends(get_session), ctx: AccessCtx = Depends(get_acc
 
 
 @router.post("/datasets")
-async def upload_dataset(
+def upload_dataset(
     file: UploadFile = File(...),
     name: str | None = Form(default=None),
     no_header: bool = Form(default=False),
+    sheet: str | None = Form(default=None),
+    header_row: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    """Store an uploaded CSV as a standalone dataset (no fit required)."""
-    contents = await file.read()
+    """Store an uploaded CSV as a standalone dataset (no fit required).
+
+    An Excel workbook (.xlsx) works too: ``sheet`` (default: the first) is
+    converted to CSV from ``header_row`` (a sheet row number; blank = the
+    guessed header, 0 = none — as does ``no_header``) and stored exactly as
+    that CSV would be.
+    """
+    # Up to the Excel reader's limit here; a CSV (or the CSV a sheet becomes)
+    # is held to MAX_UPLOAD_BYTES by create_dataset.
+    contents = read_upload(file, max(excel_service.MAX_FILE_BYTES, config.MAX_UPLOAD_BYTES))
+    if excel_service.is_excel(contents, file.filename or ""):
+        try:
+            row = excel_router.header_row_param(header_row)
+            # Under the user's import guard (a sync handler: FastAPI runs it
+            # in its threadpool, off the event loop).
+            table = excel_router.guarded(ctx.uid, excel_service.read_table, contents, sheet,
+                                         0 if no_header else row, file.filename or "")
+        except excel_service.ExcelError as exc:
+            return JSONResponse(status_code=422, content={"detail": str(exc)})
+        except Exception as exc:
+            return excel_router.excel_error(exc, "dataset", contents, file.filename or "")
+        contents = excel_service.to_csv(table)
+        no_header = False  # already applied: header-less sheets get col 1, col 2, …
     # Free-plan cap (new datasets only — re-uploading an existing file is fine).
     denied = _creation_denied(session, ctx, "datasets")
     if denied is not None:
@@ -138,10 +165,10 @@ async def upload_dataset(
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store dataset")
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to store dataset: {exc}"}
+            status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."}
         )
     return JSONResponse(content=_dataset_detail(dataset, session, ctx))
 
@@ -173,9 +200,9 @@ def paste_dataset(
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store pasted dataset")
-        return JSONResponse(status_code=500, content={"detail": f"Failed to store dataset: {exc}"})
+        return JSONResponse(status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."})
     return JSONResponse(content=_dataset_detail(dataset, session, ctx))
 
 
@@ -236,7 +263,7 @@ def list_models(session=Depends(get_session), ctx: AccessCtx = Depends(get_acces
 
 
 @router.post("/models")
-async def save_model(
+def save_model(
     name: str = Form(...),
     distribution: str = Form(...),
     file: UploadFile | None = File(default=None),
@@ -279,7 +306,7 @@ async def save_model(
                 )
         elif file is not None:
             dataset = datasets_service.create_dataset(
-                session, file.filename or "dataset.csv", await file.read(), ctx.write_owner
+                session, file.filename or "dataset.csv", read_upload(file), ctx.write_owner
             )
         else:
             return JSONResponse(
@@ -296,10 +323,12 @@ async def save_model(
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except HTTPException:
+        raise
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to save model")
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to save model: {exc}"}
+            status_code=500, content={"detail": "Failed to save the model. The error has been logged."}
         )
     return JSONResponse(content=_model_detail(model, ctx))
 
@@ -366,6 +395,22 @@ def get_model(
     if model is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     return JSONResponse(content=_model_detail(model, ctx))
+
+
+@router.get("/models/{model_id}/validation")
+def model_validation(
+    model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> JSONResponse:
+    """How good is this regression model? Harrell's C, the integrated Brier
+    score against a covariate-free baseline and the time-dependent AUC.
+    Stored at fit time; for a model saved before that, computed now from its
+    dataset and cached (#176)."""
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    if model.kind != "regression":
+        return JSONResponse(status_code=422, content={"detail": "Only regression models have these scores."})
+    return JSONResponse(content=models_service.ensure_validation(session, model))
 
 
 @router.put("/models/{model_id}/fit")

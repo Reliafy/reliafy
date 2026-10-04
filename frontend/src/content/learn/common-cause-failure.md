@@ -77,6 +77,21 @@ independent estimate — and no change to the pumps themselves would have reveal
 it. This is why CCF matters most in exactly the places redundancy is used for
 safety: shutdown systems, protective trips, backup power.
 
+## Over a lifetime: split the rate, not the probability
+
+The split above is the textbook PRA form, and it assumes *Q* is small — a
+mission or a proof-test interval. Over a whole life *Q* runs to 1, and the
+probability split stops describing a lifetime: from about Q = 0.5 it makes a
+redundant group *more* reliable than an independent one, and the group never
+fully fails. For reliability over time, split each component's failure **rate**
+instead: the shared cause has not struck by time *t* with probability R(t)^β,
+and each unit survives its own causes with R(t)^(1−β). The two agree while *Q*
+is small, and the rate split holds at any age.
+
+Reliafy uses the rate split for reliability over time (curves, MTTF, B-lives,
+importance). The probability split is still offered for a group that models
+basic events over a short mission; the MTTF isn't given with it.
+
 ## Beyond two units: MGL
 
 The beta-factor model treats a group as all-or-nothing: a common cause either

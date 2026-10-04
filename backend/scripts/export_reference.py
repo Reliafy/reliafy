@@ -38,7 +38,7 @@ def _num(v):
 
 
 def _params(dist) -> list:
-    names = list(getattr(dist, "param_names", []) or [])
+    names = list(getattr(dist, "parameter_names", []) or [])
     bounds = list(getattr(dist, "bounds", []) or [])
     out = []
     for i, name in enumerate(names):

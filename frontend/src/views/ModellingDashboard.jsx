@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import DashboardSection from "../components/DashboardSection.jsx";
+import { FirstRunPanel } from "../components/FirstRun.jsx";
+import { useFirstRun } from "../firstRun.js";
 import { useModels } from "../useModels.js";
 import { trackEvent } from "../telemetry.js";
 import { WaveIcon, PlusIcon, DegradeIcon, RecurrentIcon, AltIcon } from "../components/icons.jsx";
@@ -7,9 +9,12 @@ import { WaveIcon, PlusIcon, DegradeIcon, RecurrentIcon, AltIcon } from "../comp
 const ACTIVATED_KEY = "reliafy_activated";
 
 export default function ModellingDashboard() {
-  const { models } = useModels();
+  const { models, loading } = useModels();
   // Stats reflect the user's own work — shared samples would inflate them.
   const own = models.filter((m) => !m.is_sample);
+  // A workspace with nothing of its own (the first-run rule uses this same
+  // filter) gets the starts instead of a strip of zeros.
+  const firstRun = useFirstRun(loading ? undefined : own.length > 0);
 
   // Activation metric: fire once, the moment a workspace gains its first model
   // of its own. localStorage-guarded so it reports a browser's first activation.
@@ -81,7 +86,8 @@ export default function ModellingDashboard() {
       crumb={<>Modelling / <b>Overview</b></>}
       title="Modelling"
       subtitle="Fit, compare, and manage life-distribution and proportional-hazards models."
-      stats={stats}
+      intro={<FirstRunPanel info={firstRun} />}
+      stats={firstRun === false ? stats : []}
       cards={cards}
     />
   );

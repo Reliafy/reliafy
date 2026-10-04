@@ -32,6 +32,11 @@ _CLIP = 300
 RETENTION_DAYS = 90
 
 
+def _field(value, limit: int) -> str:
+    """A stored text field: bounded, with CR/LF escaped."""
+    return str(value or "")[:limit].replace("\r", "\\r").replace("\n", "\\n")
+
+
 def _visitor_hash(day: str, ip: str, user_agent: str) -> str:
     raw = f"{config.METRICS_SALT}|{day}|{ip}|{user_agent}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
@@ -69,12 +74,12 @@ def record_event(
     day = now.strftime("%Y-%m-%d")
     db.metrics_events.insert_one(
         {
-            "name": str(name or "pageview")[:100],
-            "path": str(path or "")[:_CLIP],
-            "ref_host": _referrer_host(str(referrer or "")),
-            "utm_source": str(utm_source or "")[:100],
-            "utm_medium": str(utm_medium or "")[:100],
-            "utm_campaign": str(utm_campaign or "")[:100],
+            "name": _field(name or "pageview", 100),
+            "path": _field(path, _CLIP),
+            "ref_host": _field(_referrer_host(str(referrer or "")), _CLIP),
+            "utm_source": _field(utm_source, 100),
+            "utm_medium": _field(utm_medium, 100),
+            "utm_campaign": _field(utm_campaign, 100),
             "visitor": _visitor_hash(day, ip, user_agent),
             "day": day,
             "created_at": now,

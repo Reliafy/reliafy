@@ -139,7 +139,7 @@ def test_common_cause_lowers_redundant_reliability():
     res = analyze(graph)
     ccf = res["ccf"]
     assert ccf is not None
-    assert ccf["groups"] == [{"members": ["Pump A", "Pump B"], "beta": 0.1}]
+    assert ccf["groups"] == [{"members": ["Pump A", "Pump B"], "beta": 0.1, "basis": "rate"}]
     # Common cause erodes the redundancy benefit.
     assert ccf["reliability_with"] < ccf["reliability_without"]
     # A graph without groups carries no ccf payload.
@@ -170,7 +170,7 @@ def test_validate_repairable_requires_repair_times():
 def test_validate_repairable_rejects_unsupported_blocks():
     graph = {
         "unit": "hours", "repairable": True,
-        "nodes": _io_nodes() + [{"id": "sb", "type": "standby", "data": {"label": "Bank"}}],
+        "nodes": _io_nodes() + [{"id": "sb", "type": "parallel", "data": {"label": "Bank"}}],
         "edges": [_edge("input", "sb"), _edge("sb", "output")],
     }
     v = validate_graph(graph)
@@ -255,6 +255,34 @@ def test_parallel_more_reliable_than_either_component():
     assert sorted(paths) == [["A"], ["B"]]
 
 
+def _km_component(node_id, label):
+    return {"id": node_id, "type": "component", "data": {"label": label, "model": {
+        "source": "saved", "kind": "nonparametric", "modelId": "km1", "name": "Seal KM",
+        "distribution": "Kaplan-Meier", "params": []}}}
+
+
+@pytest.mark.parametrize("repairable", [False, True])
+def test_a_non_parametric_block_is_refused_with_what_to_do(repairable):
+    """RePyability 0.12 refuses a non-parametric node: a diagram that holds one
+    validates with the reason and analyses to a clear error, not a crash."""
+    pump = (_repairable_component("pump", "Pump", 900, 1.4, 2.3) if repairable
+            else _component("pump", "Pump", "weibull", [("alpha", 900), ("beta", 1.4)]))
+    seal = _km_component("seal", "Seal")
+    if repairable:
+        seal["data"]["repair"] = pump["data"]["repair"]
+    graph = {"repairable": repairable, "nodes": _io_nodes() + [pump, seal],
+             "edges": [_edge("input", "pump"), _edge("pump", "seal"), _edge("seal", "output")]}
+    v = validate_graph(graph)
+    assert not v["valid"] and not v["can_calculate"]
+    (err,) = [e for e in v["errors"] if "non-parametric" in e]
+    assert "Seal" in err and "Kaplan-Meier" in err and "fit a parametric distribution" in err
+    with pytest.raises(AnalysisError, match="fit a parametric distribution"):
+        if repairable:
+            ra.analyze_availability(graph, n_simulations=20)
+        else:
+            analyze(graph, resolve_model=lambda _id: {"model": object()})
+
+
 def test_knode_two_out_of_three_requires_two_branches():
     # Three parallel components feed a 2-out-of-3 voting node.
     comps = [
@@ -277,11 +305,12 @@ def test_knode_two_out_of_three_requires_two_branches():
     }
     result = analyze(graph)
 
-    # Each minimal path set is a pair of components (any 2 of the 3) plus the
-    # voting node.
+    # Each minimal path set is a pair of components (any 2 of the 3). The
+    # voting node is a junction, in no path or cut set (RePyability 0.12, #198).
     paths = result["structure"]["min_path_sets"]
-    assert all(len(p) == 3 and "Vote" in p for p in paths)
+    assert all(len(p) == 2 and "Vote" not in p for p in paths)
     assert len(paths) == 3  # C(3,2)
+    assert not any("Vote" in c for c in result["structure"]["min_cut_sets"])
 
     # The voting gate is structural, so it isn't reported as a node curve.
     assert "v" not in {n["id"] for n in result["nodes"]}
@@ -444,7 +473,7 @@ def test_validate_flags_dangling_node():
     assert any("B" in e for e in v["errors"])
 
 
-def test_validate_blocks_non_analytic_standby():
+def test_validate_cold_standby_is_analytic():
     graph = {
         "nodes": _io_nodes()
         + [
@@ -466,11 +495,11 @@ def test_validate_blocks_non_analytic_standby():
         "edges": [_edge("input", "sb"), _edge("sb", "output")],
     }
     v = validate_graph(graph)
-    # Structurally valid; standby has no closed form so it isn't analytic, but
-    # ``analyze`` simulates it, so the diagram is still calculable.
-    assert v["valid"] and not v["analytic"]
+    # RePyability 0.11 solves cold standby of identical units numerically (no
+    # fit to simulated lifetimes), so the diagram is analytic and calculable.
+    assert v["valid"] and v["analytic"]
     assert v["can_calculate"]
-    assert v["non_analytic_nodes"] == {"Standby": "StandbyModel"}
+    assert not v["non_analytic_nodes"]
     # And the analysis really does run on it.
     result = analyze(graph)
     assert result["mttf"] > 0 and len(result["system"]["sf"]) > 0

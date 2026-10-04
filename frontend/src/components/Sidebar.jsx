@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
@@ -129,6 +129,7 @@ const ITEMS = [
       { to: "/strategy/replacement", label: "Optimal replacement" },
       { to: "/strategy/compare", label: "Compare two models" },
       { to: "/strategy/failure-finding", label: "Failure finding" },
+      { to: "/strategy/demonstration-test", label: "Demonstration test" },
       { to: "/strategy/analyses", label: "Saved analyses" },
     ],
   },
@@ -160,7 +161,14 @@ const ITEMS = [
   },
 ];
 
-export default function Sidebar({ collapsed, onToggle }) {
+const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+// On a phone (`phone`) the sidebar is an off-canvas drawer: `open` slides it
+// in over the page as a modal menu, and `onClose` dismisses it (backdrop tap,
+// Escape, the close button). While open, focus moves into the drawer and Tab
+// cycles within it.
+export default function Sidebar({ collapsed, onToggle, phone = false, open = false, onClose }) {
+  const asideRef = useRef(null);
   const { user, signOut } = useAuth();
   const { billing, reliability_agent: agentEnabled } = useAppConfig();
   // The Reliability Agent surface is behind a feature flag (hidden until ready).
@@ -169,6 +177,47 @@ export default function Sidebar({ collapsed, onToggle }) {
   const { pathname } = useLocation();
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+
+  const drawerOpen = phone && open;
+  useEffect(() => {
+    if (!drawerOpen) return undefined;
+    const aside = asideRef.current;
+    const focusables = () => [...aside.querySelectorAll(FOCUSABLE)];
+    focusables()[0]?.focus();
+    const onKey = (e) => {
+      // A dialog opened from the drawer (sign out) handles its own keys.
+      if (document.querySelector(".overlay")) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose?.();
+      } else if (e.key === "Tab") {
+        const els = focusables();
+        if (!els.length) return;
+        const first = els[0];
+        const last = els[els.length - 1];
+        if (e.shiftKey && (document.activeElement === first || !aside.contains(document.activeElement))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (document.activeElement === last || !aside.contains(document.activeElement))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    // The page behind the drawer shouldn't scroll under a finger.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [drawerOpen, onClose]);
+  // Any link closes the drawer, including one to the page already shown
+  // (which doesn't change the route).
+  const onDrawerClick = (e) => {
+    if (e.target.closest("a[href]")) onClose?.();
+  };
 
   const onSignOut = async () => {
     setSigningOut(true);
@@ -182,17 +231,37 @@ export default function Sidebar({ collapsed, onToggle }) {
   };
 
   return (
-    <aside className={"sidebar" + (collapsed ? " collapsed" : "")}>
+    <>
+    {drawerOpen && <div className="sidebar-backdrop" onClick={onClose} aria-hidden="true" />}
+    <aside
+      ref={asideRef}
+      id="app-sidebar"
+      className={"sidebar" + (collapsed ? " collapsed" : "") + (phone ? " drawer" : "") + (drawerOpen ? " open" : "")}
+      {...(drawerOpen ? { role: "dialog", "aria-modal": "true", "aria-label": "Menu" } : {})}
+      onClick={drawerOpen ? onDrawerClick : undefined}
+    >
       <div className="side-head">
         {!collapsed && <div className="side-label-group">Workspace</div>}
-        <button
-          className="sidebar-toggle"
-          onClick={onToggle}
-          title={collapsed ? "Expand menu" : "Collapse menu"}
-          aria-label={collapsed ? "Expand menu" : "Collapse menu"}
-        >
-          {collapsed ? "»" : "«"}
-        </button>
+        {phone ? (
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={onClose}
+            title="Close menu"
+            aria-label="Close menu"
+          >
+            ×
+          </button>
+        ) : (
+          <button
+            className="sidebar-toggle"
+            onClick={onToggle}
+            title={collapsed ? "Expand menu" : "Collapse menu"}
+            aria-label={collapsed ? "Expand menu" : "Collapse menu"}
+          >
+            {collapsed ? "»" : "«"}
+          </button>
+        )}
       </div>
       <nav className="sidebar-nav">
         {items.map((it) => {
@@ -333,5 +402,6 @@ export default function Sidebar({ collapsed, onToggle }) {
         </Modal>
       )}
     </aside>
+    </>
   );
 }

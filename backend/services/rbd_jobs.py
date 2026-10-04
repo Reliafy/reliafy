@@ -10,12 +10,18 @@ A job record::
 
     {_id, uid, kind: "availability", rbd_id, cache_key, quick, store,
      request: {graph, options},       # self-contained (compute_core)
+     context: {exact, current_state}, # what the finished payload is shown with
      status: queued | running | done | failed,
      created_at, started_at, finished_at, expires_at,
      result | error, timings, computed_at, free_sim_day}
 
 ``store`` says whether the result may be written to the diagram's saved
-availability result (the requester could edit the diagram). ``expires_at``
+availability result (the requester could edit the diagram). ``cache_key``
+identifies the inputs: the diagram's availability cache key, plus the current
+state when the run starts from one (such a run is never stored). ``context``
+holds the free part of the answer computed on the web (the exact figures,
+#154), so a finished job's view is the whole availability payload, as an
+in-process run returns it (:func:`availability_out`). ``expires_at``
 drives a TTL index: finished jobs are kept ``RBD_JOB_TTL_DAYS``. A job still
 queued or running after ``RBD_JOB_STALE_S`` was dropped by the queue (its
 retries were spent) and is reported failed. The names follow #111 (``rbd_jobs``
@@ -73,7 +79,8 @@ def _stale_before() -> datetime:
 # ---- Records -------------------------------------------------------------------
 
 def create(db, *, uid: str, kind: str, request: dict, cache_key: str, rbd_id: Optional[str],
-           quick: bool, store: bool, free_sim_day: Optional[str] = None) -> dict:
+           quick: bool, store: bool, free_sim_day: Optional[str] = None,
+           context: Optional[dict] = None) -> dict:
     now = _now()
     job = {
         "_id": uuid.uuid4().hex,
@@ -84,6 +91,7 @@ def create(db, *, uid: str, kind: str, request: dict, cache_key: str, rbd_id: Op
         "quick": bool(quick),
         "store": bool(store),
         "request": request,
+        "context": json.loads(json.dumps(context or {}, default=float)),
         "status": "queued",
         "created_at": now,
         "started_at": None,
@@ -220,6 +228,45 @@ def _result_payload(result: dict, computed_at, entitled: bool) -> dict:
     return {**result, "cached": False, "computed_at": computed_at, "can_recompute": entitled}
 
 
+def availability_out(sim: Optional[dict], free: dict, *, status: dict, state: Optional[dict],
+                     entitled: bool, graph: dict) -> dict:
+    """The availability payload the app and MCP get (#154): the simulation's
+    result (``sim``: a fresh run, a finished job or the saved one) with the
+    exact figures beside it, or the exact figures alone (``free``), plus the
+    simulation's ``status``, the current state it ran from, what the caller
+    may do, the common-cause note (#185) and RePyability's reasons in
+    Reliafy's words (#186)."""
+    from backend.services import rbd_analysis, rbd_policies
+
+    if sim is not None:
+        out = {**sim, "exact": (free or {}).get("exact"), "has_simulation": True}
+    else:
+        out = {**(free or {}), "has_simulation": False, "cached": False, "computed_at": None}
+    out.update(
+        simulation_status=status,
+        current_state=state,
+        # ``can_simulate`` / ``can_recompute`` let the UI offer "Run simulation"
+        # and "Re-run" to entitled users, and the Pro offer to the rest.
+        can_simulate=entitled,
+        can_recompute=entitled,
+    )
+    common_cause = rbd_policies.common_cause_note(graph, out)
+    if common_cause is not None:
+        out["common_cause"] = common_cause
+    return rbd_analysis.plain_reasons(out)
+
+
+def job_payload(job: dict, entitled: bool) -> dict:
+    """A finished job's result as the whole availability payload (see
+    :func:`availability_out`)."""
+    context = job.get("context") or {}
+    sim = _result_payload(job.get("result") or {}, job.get("computed_at"), entitled)
+    graph = (job.get("request") or {}).get("graph") or {}
+    state = ((job.get("request") or {}).get("options") or {}).get("state")
+    return availability_out(sim, {"exact": context.get("exact")}, status={"state": "done"},
+                            state=state, entitled=entitled, graph=graph)
+
+
 def view(db, job: dict, entitled: bool) -> dict:
     """A job as the app and MCP see it (owner-only; checked by the caller)."""
     out = {
@@ -234,7 +281,7 @@ def view(db, job: dict, entitled: bool) -> dict:
         "queue_position": queue_position(db, job),
     }
     if job.get("status") == "done":
-        out["result"] = _result_payload(job.get("result") or {}, job.get("computed_at"), entitled)
+        out["result"] = job_payload(job, entitled)
     elif job.get("status") == "failed":
         out["error"] = job.get("error") or FAILED_ERROR
     return out
@@ -264,14 +311,21 @@ def run_availability(
     entitled: bool,
     quick: bool,
     force: bool = False,
+    state: Optional[dict] = None,
+    context: Optional[dict] = None,
 ) -> tuple[int, dict]:
     """Run (or queue) an availability simulation the caller is allowed to run.
-    ``quick`` is a free, time-capped run counted against the daily cap.
+    ``quick`` is a free, time-capped run counted against the daily cap;
+    ``state`` a canonical current state to start from; ``context`` what a
+    finished job is shown with (see :func:`job_payload`).
 
-    Returns ``(status, payload)``: 200 with the result (in-process, or a
-    finished identical job), 202 with a job to poll, 429 when the free cap is
-    used up, 503 when the queue can't take the job."""
-    options = free_sims.options() if quick else {}
+    Returns ``(status, payload)``: 200 with the simulation's result
+    (in-process, or a finished identical job), 202 with a job to poll, 429
+    when the free cap is used up, 503 when the queue can't take the job."""
+    options = {**(free_sims.options() if quick else {}), **({"state": state} if state else {})}
+    if state:
+        # The same diagram from another state is another calculation.
+        cache_key = f"{cache_key}|state:{json.dumps(state, sort_keys=True, default=float)}"
     request = (
         compute_core.availability_request(graph, t_simulation=t_max, **options)
         if compute_queue.configured() else None
@@ -311,7 +365,7 @@ def run_availability(
         return 200, payload
 
     job = create(db, uid=uid, kind=KIND_AVAILABILITY, request=request, cache_key=cache_key,
-                 rbd_id=rbd_id, quick=quick, store=store, free_sim_day=free_day)
+                 rbd_id=rbd_id, quick=quick, store=store, free_sim_day=free_day, context=context)
     try:
         compute_queue.enqueue(job["_id"], KIND_AVAILABILITY, request)
     except compute_queue.QueueError as exc:

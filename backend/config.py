@@ -20,6 +20,15 @@ MONGODB_TIMEOUT_MS = int(os.environ.get("MONGODB_TIMEOUT_MS", "3000"))
 # Upload ceiling for CSV datasets. Raw bytes are stored inside the Mongo
 # document, whose hard limit is 16MB — stay well under it.
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
+# Shape limits for a CSV read into a DataFrame (uploads and stored datasets).
+# Life data is long and narrow; these sit far above any real dataset while
+# keeping one parse's memory bounded.
+MAX_CSV_ROWS = int(os.environ.get("MAX_CSV_ROWS", "500000"))
+MAX_CSV_COLS = int(os.environ.get("MAX_CSV_COLS", "500"))
+# Default ceiling on a request body. Routes that take larger files (Excel
+# workbooks, diagram imports, upload links) have their own higher caps and
+# CSV routes a lower one; see backend/http_limits.py.
+MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", str(10 * 1024 * 1024)))
 
 # Outbound transactional email (team invites, share notifications). Optional:
 # unset -> sends are logged no-ops. Works with any SMTP provider (Gmail app
@@ -52,6 +61,38 @@ def _truthy(value: str | None) -> bool:
 # external dependencies. Never enable it on a multi-user/cloud deployment.
 AUTH_DISABLED = _truthy(os.environ.get("AUTH_DISABLED"))
 DEV_USER_ID = os.environ.get("DEV_USER_ID", "dev-user")
+# Cloud Run sets K_SERVICE in every container it runs. Single-user mode there
+# would serve one shared account to the whole internet, so refuse to start.
+if AUTH_DISABLED and os.environ.get("K_SERVICE"):
+    raise RuntimeError(
+        "AUTH_DISABLED is set on a Cloud Run service (K_SERVICE is present). "
+        "Single-user mode is for local and self-hosted installs only; unset "
+        "AUTH_DISABLED for this deployment."
+    )
+
+# ---- Client address ----------------------------------------------------------
+# Rate limits and the visitor hash key on the client IP taken from
+# X-Forwarded-For (see backend/request_ip.py). Set TRUST_X_FORWARDED_FOR=false
+# when the app is reachable without a proxy in front, so the peer address is
+# used instead. TRUSTED_PROXY_CIDRS lists further proxy ranges (comma-separated)
+# whose entries are skipped when reading the header from the right.
+TRUST_X_FORWARDED_FOR = _truthy(os.environ.get("TRUST_X_FORWARDED_FOR", "true"))
+TRUSTED_PROXY_CIDRS = [
+    c.strip() for c in os.environ.get("TRUSTED_PROXY_CIDRS", "").split(",") if c.strip()
+]
+# Treat Google's own front-end addresses (goog.json minus Google Cloud
+# customer ranges; snapshot in backend/google_ip_ranges.json) as proxy
+# hops: requests through Firebase Hosting reach Cloud Run from them.
+TRUST_GOOGLE_FRONTENDS = _truthy(os.environ.get("TRUST_GOOGLE_FRONTENDS", "true"))
+
+# ---- Response security headers ------------------------------------------------
+# Extra sources for the Content-Security-Policy connect-src (space-separated):
+# the cross-origin SSE stream host (VITE_STREAM_ORIGIN) in production.
+CSP_CONNECT_EXTRA = os.environ.get("CSP_CONNECT_EXTRA", "https://*.run.app").split()
+# Extra frame-src sources: the Firebase auth domain's sign-in iframe.
+CSP_FRAME_EXTRA = os.environ.get(
+    "CSP_FRAME_EXTRA", "https://reliafy-app.firebaseapp.com https://*.firebaseapp.com"
+).split()
 
 # ---- Sample (starter) content ---------------------------------------------
 # Seeded sample datasets/models are stored once under this synthetic owner and
@@ -89,6 +130,13 @@ ADMIN_EMAILS = {
 # guessed (day, ip, ua) tuples.
 METRICS_SALT = os.environ.get("METRICS_SALT", "reliafy-metrics")
 
+# Product-usage logging (backend/services/usage.py): which features and MCP
+# tools signed-in accounts use, with outcomes. Account-linked events expire
+# after 90 days; only identifier-free daily totals are kept longer. On by
+# default (a self-hosted install logs into its own database); set
+# USAGE_LOGGING=false to record nothing.
+USAGE_LOGGING = _truthy(os.environ.get("USAGE_LOGGING", "true"))
+
 # Free-tier caps (owned items, excluding shared samples). Pro lifts them.
 FREE_MAX_DATASETS = _int("FREE_MAX_DATASETS", 3)
 FREE_MAX_MODELS = _int("FREE_MAX_MODELS", 3)
@@ -98,10 +146,12 @@ FREE_MAX_DEGRADATION_MODELS = _int("FREE_MAX_DEGRADATION_MODELS", 1)
 FREE_MAX_TRACKED_ITEMS = _int("FREE_MAX_TRACKED_ITEMS", 3)
 FREE_MAX_RCM_STUDIES = _int("FREE_MAX_RCM_STUDIES", 1)
 FREE_MAX_FLEETS = _int("FREE_MAX_FLEETS", 1)
+# Outage logs (an RBD's observed up/down history, issue #159).
+FREE_MAX_OUTAGE_LOGS = _int("FREE_MAX_OUTAGE_LOGS", 1)
 
-# Agent plan (US$2/month): Reliafy from an AI agent over MCP (OAuth) only — no
-# web-app features, no REST API, no fitting (agents fit locally with SurPyval).
-# Roomier storage than free; Pro stays unlimited.
+# Retired Agent plan (US$2/month, MCP only; sold briefly in October 2026, no
+# longer offered — MCP is part of Pro). Existing subscribers keep these caps,
+# and the daily MCP quota below, until their subscription ends.
 AGENT_MAX_DATASETS = _int("AGENT_MAX_DATASETS", 50)
 AGENT_MAX_MODELS = _int("AGENT_MAX_MODELS", 50)
 AGENT_MAX_RBDS = _int("AGENT_MAX_RBDS", 25)
@@ -109,12 +159,15 @@ AGENT_MAX_DEGRADATION_MODELS = _int("AGENT_MAX_DEGRADATION_MODELS", 10)
 AGENT_MAX_TRACKED_ITEMS = _int("AGENT_MAX_TRACKED_ITEMS", 50)
 AGENT_MAX_RCM_STUDIES = _int("AGENT_MAX_RCM_STUDIES", 10)
 AGENT_MAX_FLEETS = _int("AGENT_MAX_FLEETS", 5)
+AGENT_MAX_OUTAGE_LOGS = _int("AGENT_MAX_OUTAGE_LOGS", 10)
 # Availability (Monte-Carlo) simulation is not part of the Agent plan: it stays
 # Pro / purchased credits (billing.premium_compute_allowed) on every surface.
 
-# MCP tool calls per user per UTC day (tools/list and initialize don't count).
-# Pro has no daily quota, only the per-user rate limit every request gets.
-MCP_FREE_DAILY_CALLS = _int("MCP_FREE_DAILY_CALLS", 50)
+# MCP tool calls (tools/list and initialize don't count): a small allowance
+# per UTC calendar month so Free users can try Reliafy from their AI agent,
+# and the grandfathered Agent subscribers' quota per UTC day. Pro has no
+# quota, only the per-user rate limit every request gets.
+MCP_FREE_MONTHLY_CALLS = _int("MCP_FREE_MONTHLY_CALLS", 20)
 MCP_AGENT_DAILY_CALLS = _int("MCP_AGENT_DAILY_CALLS", 2000)
 
 # One-time prepaid credit packs (Stripe Checkout, mode=payment). `grant_cents`
@@ -139,6 +192,10 @@ PRO_MONTHLY_CREDIT_CENTS = _int("PRO_MONTHLY_CREDIT_CENTS", 1000)
 # proxy (Firebase Hosting forwards to Cloud Run with the service host). Unset =
 # fall back to the request's own base URL.
 PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/") or None
+# Where MCP upload links point. reliafy.com sits behind Firebase Hosting, whose
+# proxy to Cloud Run may cap request size and time; set this to the Cloud Run
+# service URL so a 30 MB PUT goes straight to the app. Defaults to PUBLIC_BASE_URL.
+UPLOAD_BASE_URL = (os.environ.get("UPLOAD_BASE_URL") or "").strip().rstrip("/") or None
 
 # ---- Stripe -----------------------------------------------------------------
 # The double-underscore names are kept for continuity with older deploy config;
@@ -151,8 +208,10 @@ STRIPE_WEBHOOK_SECRET = (
 STRIPE_PRO_PRICE_ID = (
     os.environ.get("STRIPE__PRICE_ID") or os.environ.get("STRIPE_PRO_PRICE_ID")
 )
-# Recurring Price id for the Agent plan (US$2/month, MCP only). Unset = the
-# plan isn't offered (subscribe with plan=agent answers 503).
+# Recurring Price id of the retired Agent plan (US$2/month, MCP only). It is
+# no longer sold; the id (or, unset, its Stripe lookup key — see
+# services/stripe_prices.py) only lets webhooks recognise an existing Agent
+# subscription's price.
 STRIPE_AGENT_PRICE_ID = os.environ.get("STRIPE_AGENT_PRICE_ID") or None
 
 # ---- Operator AI provider (server-side metered assistant) ------------------
@@ -237,6 +296,27 @@ try:
     MANAGED_AGENT_USD_PER_HOUR = float(os.environ.get("MANAGED_AGENT_USD_PER_HOUR", "0.08"))
 except ValueError:
     MANAGED_AGENT_USD_PER_HOUR = 0.08
+
+# ---- AI request limits and credit holds -------------------------------------
+# Every metered AI call first reserves (holds) its maximum cost from the
+# user's balance, then settles to the actual cost and returns the rest.
+# Request size limits for /api/assistant/step|stream: the whole JSON body, and
+# the number of items in the message history.
+AI_MAX_REQUEST_BYTES = _int("AI_MAX_REQUEST_BYTES", 1024 * 1024)
+AI_MAX_MESSAGES = _int("AI_MAX_MESSAGES", 400)
+# Output-token ceiling per assistant step: the Anthropic request's
+# ``max_tokens`` and the OpenAI request's ``max_output_tokens`` (reasoning
+# tokens count towards it). The hold covers this many output tokens.
+AI_MAX_OUTPUT_TOKENS = _int(
+    "AI_MAX_OUTPUT_TOKENS", 1500 if AI_PROVIDER == "anthropic" else 8000)
+# AI requests one user may have running at once (assistant steps and
+# Reliability Agent turns together).
+AI_MAX_CONCURRENT = max(1, _int("AI_MAX_CONCURRENT", 2))
+# A Reliability Agent turn holds up to this many credits (or the whole balance,
+# if smaller) and is stopped once its metered cost reaches the hold. A turn
+# needs at least the minimum to start.
+RELIABILITY_AGENT_TURN_MAX_CENTS = _int("RELIABILITY_AGENT_TURN_MAX_CENTS", 500)
+RELIABILITY_AGENT_TURN_MIN_CENTS = max(1, _int("RELIABILITY_AGENT_TURN_MIN_CENTS", 5))
 # Firebase/GCP project whose ID tokens we accept. Cloud Run usually injects
 # GOOGLE_CLOUD_PROJECT; FIREBASE_PROJECT_ID overrides it if the Firebase project
 # differs from the GCP project.

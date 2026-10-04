@@ -212,10 +212,10 @@ def test_instrument_air_samples_seed_once_and_validate(session):
     assert dryer["data"]["cold"] is True and dryer["data"]["spares"] == 1
     (ccf,) = design["ccf_groups"]
     assert ccf["beta"] == 0.1 and set(ccf["members"]) == {"compA", "compB", "compC"}
-    # A cold-standby node has no closed form, but the diagram must still be
-    # calculable (it's solved by simulation) — this is what the UI gates on.
+    # RePyability 0.11 solves the cold-standby dryer numerically, so the whole
+    # design case is analytic (no simulation) and calculable.
     vd = rbd_analysis.validate_graph(design)
-    assert vd["analytic"] is False and vd["can_calculate"] is True
+    assert vd["analytic"] is True and vd["can_calculate"] is True
     result = rbd_analysis.analyze(design)
     assert result["mttf"] > 0
     assert result["ccf"]["groups"]  # the CCF impact is reported

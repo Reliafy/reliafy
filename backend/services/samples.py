@@ -607,10 +607,11 @@ SAMPLE_RBDS = [
 # read-only for everyone, so every viewer is served this saved result.
 SAMPLE_AVAILABILITY_RBDS = ("sample-rbd-instrument-air-availability",)
 
-# Monte-Carlo replications for the seeded result: a quarter of the interactive
-# default (rbd_analysis._AVAIL_SIMS = 2000) to keep the one-off startup cost to
-# ~10 s of CPU. Runs only when the sample has no matching saved result (first
-# boot, or after the sample graph changes). Entitled users can Re-run.
+# Monte-Carlo replications for the seeded result: one batch of the run to the
+# precision target (rbd_analysis._AVAIL_BATCH), which is where an interactive
+# run of this sample stops — so it's the result an entitled Re-run gets, for
+# ~1-2 s of CPU at startup. Runs only when the sample has no matching saved
+# result (first boot, or after the sample graph changes).
 SAMPLE_AVAIL_SIMS = 500
 
 
@@ -624,8 +625,16 @@ def _seed_availability_results(db) -> None:
             doc = db.rbds.find_one({"_id": rbd_id})
             if doc is None or not (doc.get("graph") or {}).get("repairable"):
                 continue
+            # The exact figures over time (#154), saved for public links.
+            exact_key = rbds_service.exact_cache_key(doc["graph"], None, None)
+            if rbds_service.cached_exact(doc, exact_key) is None:
+                rbds_service.store_exact(
+                    db, rbd_id, exact_key, rbds_service.analyze_exact(db, doc["graph"], SAMPLE_OWNER))
             key = rbds_service.availability_cache_key(doc["graph"])
-            if rbds_service.cached_availability(doc, key) is not None:
+            cached = rbds_service.cached_availability(doc, key)
+            # A result saved before the precision report (#104) is re-seeded
+            # once, so the showcase sample shows it.
+            if cached is not None and "precision" in cached:
                 continue
             result = rbds_service.analyze_graph(
                 db, doc["graph"], SAMPLE_OWNER, n_simulations=SAMPLE_AVAIL_SIMS

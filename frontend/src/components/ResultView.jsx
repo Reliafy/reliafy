@@ -4,6 +4,7 @@ import SurvivalPlot from "./SurvivalPlot.jsx";
 import Calculator, { initCalcState } from "./Calculator.jsx";
 import GoodnessOfFit from "./GoodnessOfFit.jsx";
 import Coefficients from "./Coefficients.jsx";
+import ModelValidation from "./ModelValidation.jsx";
 import { distColor } from "../instrument.js";
 
 const DISTRIBUTION_TABS = [
@@ -75,6 +76,7 @@ const REGRESSION_TABS = [
   { id: "coef", label: "Coefficients" },
   { id: "calc", label: "Calculator" },
   { id: "gof", label: "Goodness of fit" },
+  { id: "check", label: "Validation" },
 ];
 
 // One-line interpretation of the failure pattern — the statistical evidence an
@@ -102,7 +104,9 @@ function RandomnessVerdict({ r }) {
 // Presentational result panel for a fit (used for both fresh and saved models).
 // ``hideHead`` drops the distribution pill when the surrounding page already
 // shows it (e.g. the saved-model page header) to avoid stating it twice.
-export default function ResultView({ result, hideHead = false }) {
+// ``modelId`` (a saved model) lets a regression model saved before its
+// validation scores existed fetch them.
+export default function ResultView({ result, hideHead = false, modelId = null }) {
   if (result.kind === "per_demand") return <PerDemandPanel result={result} />;
 
   const isRegression = result.kind === "regression";
@@ -325,6 +329,9 @@ export default function ResultView({ result, hideHead = false }) {
         )}
         {tab === "coef" && <Coefficients coefficients={result.coefficients} ratioLabel={result.ratio_label} />}
         {tab === "gof" && <GoodnessOfFit gof={result.gof} n={result.n} />}
+        {tab === "check" && (
+          <ModelValidation validation={result.validation} modelId={modelId} unit={result.unit} />
+        )}
       </div>
 
       {hasNotes && <div className="result-foot">{notes}</div>}

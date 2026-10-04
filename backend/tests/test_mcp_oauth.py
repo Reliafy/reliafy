@@ -1,6 +1,6 @@
 """OAuth for the MCP server: discovery, registration (DCR + CIMD), consent,
 PKCE code exchange, refresh rotation, revocation, and the resource side at
-/mcp (including the free-plan behaviour).
+/mcp (including the free-plan behaviour: connect and list, but MCP is Pro).
 
 Everything runs in-process against mongomock; the one outbound HTTP call the
 server makes (fetching a Client ID Metadata Document) is monkeypatched, so
@@ -523,11 +523,14 @@ def test_refresh_rotation_and_reuse_detection(env):
     assert _post_mcp(env, second["access_token"]).status_code == 200
 
     # A retried / concurrent refresh with the just-rotated token (inside the
-    # grace window) gets a fresh pair and does NOT disconnect the user.
+    # grace window) gets the SAME pair back and does NOT disconnect the user.
     r = _token(env, grant_type="refresh_token", refresh_token=first["refresh_token"], client_id=CLAUDE_CODE)
     assert r.status_code == 200, r.text
     retry = r.json()
-    assert retry["refresh_token"] not in (first["refresh_token"], second["refresh_token"])
+    assert retry["refresh_token"] == second["refresh_token"]
+    assert retry["access_token"] == second["access_token"]
+    assert env.db.oauth_tokens.count_documents({"family_id": env.db.oauth_tokens.find_one(
+        {"rotated": True})["family_id"]}) == 2
     assert _post_mcp(env, second["access_token"]).status_code == 200
     assert _post_mcp(env, retry["access_token"]).status_code == 200
 
@@ -606,7 +609,7 @@ def test_connected_apps_list_and_revoke(env):
 
 # ---- entitlement -------------------------------------------------------------------------------
 
-def test_free_oauth_user_uses_the_tools_but_pro_only_ones_explain_pro(env, monkeypatch):
+def test_free_oauth_user_tries_it_within_the_allowance(env, monkeypatch):
     from backend import config
     from backend.services import tokens as tokens_service
 
@@ -619,12 +622,12 @@ def test_free_oauth_user_uses_the_tools_but_pro_only_ones_explain_pro(env, monke
                 await client.call_tool("fit_distribution", {"data": [100, 200, 300]}))
 
     tools, listed, fit = _mcp(tokens["access_token"], use)
-    assert len(tools.tools) == 27
-    assert not listed.is_error  # the free plan's tools work over OAuth...
-    # ...while fitting is Pro, with the local-SurPyval route spelled out.
-    assert fit.is_error
-    assert "part of Reliafy Pro" in fit.content[0].text and "save_model" in fit.content[0].text
-    assert f"{BASE}/billing" in fit.content[0].text
+    assert len(tools.tools) == 43  # connecting and listing work on Free...
+    assert not listed.is_error  # ...as do the allowance's tools...
+    assert fit.is_error  # ...but not fitting, which is part of Pro
+    text = fit.content[0].text
+    assert "Fitting in Reliafy is part of Reliafy Pro (US$19/month)" in text
+    assert f"{BASE}/billing" in text and "upgrade_link" in text
 
     # API tokens keep the transport-level 403 for free users...
     api = tokens_service.create_token(env.db, U, "script")["token"]

@@ -118,6 +118,24 @@ def rename_model(db, model_id: str, name: str, owner_id: str) -> RecurrentModelD
     return doc
 
 
+def set_notes(db, model_id: str, notes: str, owner_id: str) -> RecurrentModelDoc:
+    """Set (or, with ``""``, clear) an owned recurrent model's notes (in its
+    spec, as for life models). Never touches the fit."""
+    doc = get_model(db, model_id, owner_id)
+    if doc is None or doc.owner_id != owner_id:
+        raise ModelNotFound(model_id)
+    doc.updated_at = _now()
+    update = {"$set": {"updated_at": doc.updated_at}}
+    if notes:
+        update["$set"]["spec.notes"] = notes
+        doc.spec = {**(doc.spec or {}), "notes": notes}
+    else:
+        update["$unset"] = {"spec.notes": ""}
+        doc.spec = {k: v for k, v in (doc.spec or {}).items() if k != "notes"}
+    db.recurrent_models.update_one({"_id": model_id, "owner_id": owner_id}, update)
+    return doc
+
+
 def delete_model(db, model_id: str, owner_id: str) -> None:
     result = db.recurrent_models.delete_one({"_id": model_id, "owner_id": owner_id})
     if result.deleted_count == 0:
@@ -150,6 +168,35 @@ def get_live_model(db, model_id: str, owner_id):
                 pass
         live = _refit(db, doc)
     return live
+
+
+def shape_interval(db, doc: RecurrentModelDoc) -> dict | None:
+    """``{"beta", "alpha", "ci"}``: a data-fitted Crow-AMSAA model's growth
+    shape β, its scale and β's 95% interval — as stored with the fit, or for
+    a model saved before intervals were, from a fresh fit of its dataset
+    (then stored on the model). None for a model built from parameters,
+    another model family, or one whose dataset is gone."""
+    spec = doc.spec or {}
+    if spec.get("params_only") or spec.get("model_id", "crow_amsaa") != "crow_amsaa":
+        return None
+    params = list((doc.results or {}).get("params") or [])
+    by_name = {p.get("name"): p for p in params}
+    if "beta" not in by_name or "alpha" not in by_name:
+        return None
+    ci = by_name["beta"].get("ci")
+    if not ci:
+        try:
+            live = _refit(db, doc)
+        except Exception:  # noqa: BLE001 - dataset gone or no longer fits: no interval
+            return None
+        cis = recurrent_fit.param_intervals("crow_amsaa", live)
+        if "beta" not in cis:
+            return None
+        params = [{**p, "ci": cis[p["name"]]} if p.get("name") in cis else p for p in params]
+        db.recurrent_models.update_one({"_id": doc.id}, {"$set": {"results.params": params}})
+        ci = cis["beta"]
+    return {"beta": float(by_name["beta"]["value"]), "alpha": float(by_name["alpha"]["value"]),
+            "ci": [float(ci[0]), float(ci[1])]}
 
 
 def _refit(db, doc: RecurrentModelDoc):

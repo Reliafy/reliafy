@@ -15,8 +15,8 @@ A = "user-a"
 B = "user-b"
 
 USERS = {
-    A: {"uid": A, "email": "a@x.com", "name": "Alice"},
-    B: {"uid": B, "email": "b@x.com", "name": "B"},
+    A: {"uid": A, "email": "a@x.com", "name": "Alice", "email_verified": True},
+    B: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True},
 }
 
 
@@ -44,7 +44,7 @@ def client(monkeypatch):
             email = USERS[uid]["email"]
             test_db.users.update_one(
                 {"_id": uid},
-                {"$set": {"email": email, "email_lc": email, "name": USERS[uid]["name"]}},
+                {"$set": {"email": email, "email_lc": email, "email_verified": True, "name": USERS[uid]["name"]}},
                 upsert=True,
             )
 
@@ -77,9 +77,10 @@ def test_owner_creates_link_and_public_read_works(client):
     token = r.json()["token"]
     assert len(token) >= 20 and r.json()["path"] == f"/p/{token}"
 
-    # Idempotent: re-creating returns the same token.
+    # An artifact can carry several links: creating again makes a new one.
     again = client.post("/api/public-links", json={"collection": "models", "artifact_id": model_id})
-    assert again.json()["token"] == token
+    assert again.json()["token"] != token
+    assert again.json()["protected"] is False and again.json()["expires_at"] is None
 
     # Unauthenticated fetch works and carries the results.
     client.act_as(None)

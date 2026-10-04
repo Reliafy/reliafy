@@ -90,7 +90,17 @@ async function authedFetch(url, opts = {}) {
 }
 
 async function request(url, opts = {}) {
-  const res = await authedFetch(url, opts);
+  return readJson(await authedFetch(url, opts));
+}
+
+// Share-link endpoints that need no account: a plain fetch, with no auth
+// headers and no refresh-and-retry on a 401 (which there means "password
+// needed", and on an unlock would spend a second attempt).
+async function publicRequest(url, opts = {}) {
+  return readJson(await fetch(url, opts));
+}
+
+async function readJson(res) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(
@@ -238,6 +248,12 @@ export function getModel(id) {
   return request(`/api/models/${id}`);
 }
 
+// A regression model's "how good is this model?" scores (#176). Stored at fit
+// time; for a model saved before that, computed (and cached) on request.
+export function getModelValidation(id) {
+  return request(`/api/models/${id}/validation`);
+}
+
 // Persist a fit. Same form fields as fitModel, plus a name.
 export function saveModel(
   name,
@@ -326,13 +342,76 @@ export function getDataset(id) {
   return request(`/api/datasets/${id}`);
 }
 
+// Split a dataset by a column and compare the groups (log-rank, RMST, Gray's).
+// ``body`` = { time_column, group_column, censor_column?, count_column?,
+// cause_column?, c_invert?, groups?, reference?, tau?, unit? }.
+export function compareGroups(datasetId, body) {
+  return request(`/api/datasets/${datasetId}/compare-groups`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // Upload a CSV as a standalone dataset (deduped by content on the server).
-export function uploadDataset(file, name, noHeader = false) {
+// An Excel workbook works too: ``excel`` = { sheet, headerRow } picks the
+// sheet and header row (headerRow 0 = none), converted to CSV server-side.
+export function uploadDataset(file, name, noHeader = false, excel = null) {
   const form = new FormData();
   form.append("file", file);
   if (name) form.append("name", name);
   if (noHeader) form.append("no_header", "true");
+  if (excel?.sheet) form.append("sheet", excel.sheet);
+  if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
   return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
+}
+
+// ---- Excel workbooks (.xlsx) -------------------------------------------------
+// Parsed server-side; the frontend picks a sheet + header row, then either
+// maps columns (RCM, RBD) or converts the sheet to CSV (life data).
+
+export const SPREADSHEET_ACCEPT = ".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+// Also catches formats the server refuses with a "save it as .xlsx" message.
+export const isSpreadsheetFile = (file) => /\.(xlsx|xlsm|xltx|xltm|xls|xlsb|ods)$/i.test(file?.name || "");
+
+function excelForm(file, sheet, headerRow, extra = {}) {
+  const form = new FormData();
+  form.append("file", file);
+  if (sheet) form.append("sheet", sheet);
+  if (headerRow != null && headerRow !== "") form.append("header_row", String(headerRow));
+  for (const [k, v] of Object.entries(extra)) {
+    if (v != null && v !== "") form.append(k, typeof v === "string" ? v : JSON.stringify(v));
+  }
+  return form;
+}
+
+// Sheets, a preview of each, and the guessed header row.
+export function inspectExcel(file) {
+  return request("/api/excel/inspect", { method: "POST", body: excelForm(file) });
+}
+
+// One sheet's columns + first rows; with ``target`` ("rcm", "rbd_blocks",
+// "rbd_connections") also that importer's fields and a guessed mapping.
+export function excelTable(file, sheet, headerRow, target) {
+  return request("/api/excel/table", {
+    method: "POST",
+    body: excelForm(file, sheet, headerRow, { target }),
+  });
+}
+
+// One sheet as a CSV File, ready for any CSV upload path.
+export async function excelToCsvFile(file, sheet, headerRow) {
+  const res = await authedFetch("/api/excel/csv", {
+    method: "POST",
+    body: excelForm(file, sheet, headerRow),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Couldn't read the workbook (${res.status})`);
+  }
+  const text = await res.text();
+  const stem = (file.name || "workbook").replace(/\.[^.]+$/, "");
+  return new File([text], `${stem}${sheet ? ` - ${sheet}` : ""}.csv`, { type: "text/csv" });
 }
 
 // Create a dataset from pasted tabular text (CSV or TSV; delimiter sniffed
@@ -373,6 +452,22 @@ export function saveRbd(name, graph, id, expectedUpdatedAt) {
   );
 }
 
+// Parse another tool's diagram file (BlockSim, Open-PSA, Galileo, RePyability JSON, Excel) into
+// builder graphs. Nothing is saved: the builder opens the chosen one unsaved.
+// ``mapping`` (Excel only) names the sheets/columns when the workbook doesn't
+// follow the template — the server answers code "excel_mapping" when needed.
+export function importRbdFile(file, mapping) {
+  const form = new FormData();
+  form.append("file", file);
+  if (mapping) form.append("mapping", JSON.stringify(mapping));
+  return withEvent(request("/api/rbds/import", { method: "POST", body: form }), "rbd_import");
+}
+
+// The Excel template for RBD import (README + Blocks + Connections example).
+export function downloadRbdTemplate() {
+  return downloadFile("/api/rbds/import/template.xlsx", "reliafy-rbd-template.xlsx");
+}
+
 export function renameRbd(id, name) {
   return request(`/api/rbds/${id}`, {
     method: "PATCH",
@@ -406,13 +501,9 @@ export function subscribePro() {
   return subscribe("pro");
 }
 
-// Start a Stripe Checkout for the Agent (MCP-only) subscription; returns { url }.
-export function subscribeAgent() {
-  return subscribe("agent");
-}
-
-// An Agent subscriber moving to Pro (or back) is switched on their existing
-// subscription server-side; { url } is then just the billing page.
+// A grandfathered subscriber to the retired Agent plan moving to Pro is
+// switched on their existing subscription server-side; { url } is then just
+// the billing page.
 function subscribe(plan) {
   return request("/api/billing/subscribe", {
     method: "POST",
@@ -433,13 +524,15 @@ export function getAssistantInfo() {
   return request("/api/assistant/info");
 }
 
-// Advance the assistant one provider round-trip. Returns the native assistant
-// message, token usage, the metered cost, and the new credit balance.
-export function assistantStep(system, messages, tools) {
+// Advance the assistant one provider round-trip. Only the message history is
+// sent — the server owns the system prompt and the tool definitions. Returns
+// the native assistant message, token usage, the metered cost, and the new
+// credit balance.
+export function assistantStep(messages) {
   return request("/api/assistant/step", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ system, messages, tools }),
+    body: JSON.stringify({ messages }),
   });
 }
 
@@ -448,7 +541,7 @@ export function assistantStep(system, messages, tools) {
 // ({ message, stop_reason, usage, credit_cents, ... }) — identical to what
 // assistantStep returns — so the caller can continue the tool loop. Throws on a
 // non-2xx response (credit/availability errors) or a mid-stream provider error.
-export async function assistantStepStream(system, messages, tools, { onDelta, signal } = {}) {
+export async function assistantStepStream(messages, { onDelta, signal } = {}) {
   const headers = {
     "Content-Type": "application/json",
     ...workspaceHeaders(),
@@ -457,7 +550,7 @@ export async function assistantStepStream(system, messages, tools, { onDelta, si
   const res = await fetch(STREAM_ORIGIN + "/api/assistant/stream", {
     method: "POST",
     headers,
-    body: JSON.stringify({ system, messages, tools }),
+    body: JSON.stringify({ messages }),
     signal,
   });
   if (!res.ok) {
@@ -566,10 +659,23 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 // and stored, and ``force`` to re-run even when one matches. A user without
 // the entitlement gets a 402 with ``code: "pro_required"`` unless a saved
 // result matches; results carry ``cached`` and ``computed_at``.
-// A repairable (availability) analysis may come back as a queued job —
-// {job: true, job_id, status, queue_position} — to poll with getRbdJob.
-// ``quick`` asks for a free, time-capped simulation (users without Pro).
-export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = null, force = false, quick = false } = {}) {
+// `band` ({ level }) adds a confidence band from the fitted blocks' uncertainty.
+// Repairable diagrams (#154/#155): ``simulate`` false gets the exact figures
+// (free) without running the paid simulation, true asks for it;
+// ``currentState`` ({nodeId: {down: true, since} | {age}}) starts the figures
+// from now; ``exact`` computes the figures over time of a large diagram;
+// ``quick`` asks for a free, time-capped simulation (users without Pro, #147).
+// With the compute queue (#146) the simulation may come back as a job: a 202
+// with the exact figures and ``job: {job_id, status, queue_position}`` to poll
+// with getRbdJob, whose ``result`` (when done) is the whole payload.
+// Non-repairable (#173): ``currentState`` ({nodeId: {failed: true} | {age}})
+// analyses the diagram as of now; ``targetReliability`` (e.g. 0.9) adds the
+// design life, the time the system reliability falls to it.
+export function analyzeRbd(
+  graph, tMax, covariates, conditionalAge,
+  { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false,
+    targetReliability = null, quick = false } = {}
+) {
   return request("/api/rbds/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -580,7 +686,12 @@ export function analyzeRbd(graph, tMax, covariates, conditionalAge, { rbdId = nu
       conditional_age: conditionalAge ?? null,
       rbd_id: rbdId || null,
       force: !!force,
-      quick: !!quick,
+      ...(band ? { band } : {}),
+      ...(simulate != null ? { simulate } : {}),
+      ...(currentState ? { current_state: currentState } : {}),
+      ...(exact ? { exact: true } : {}),
+      ...(targetReliability != null ? { target_reliability: targetReliability } : {}),
+      ...(quick ? { quick: true } : {}),
     }),
   });
 }
@@ -597,6 +708,40 @@ export function getActiveRbdJob(rbdId) {
   return request(`/api/rbd-jobs?rbd_id=${encodeURIComponent(rbdId)}`);
 }
 
+// Compare two repairable designs (#104): ``graph`` (A, the diagram in the
+// builder) against the saved diagram ``otherId`` (B). Returns the simulated
+// difference in the window's mean availability (B − A) with its interval, from
+// common random numbers, plus both exact long-run availabilities. Paid like
+// the availability simulation (402 ``pro_required``).
+export function compareRbds(graph, otherId, { name = null, otherName = null, tMax = null } = {}) {
+  return request("/api/rbds/compare", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      graph,
+      other_id: otherId,
+      name,
+      other_name: otherName,
+      t_max: tMax ?? null,
+    }),
+  });
+}
+
+// The cheapest design of a repairable diagram (#99): how many copies of each
+// priced block own it for ``horizon`` at the lowest total cost, optionally at
+// least ``minAvailability`` available. Returns { current, design, graph, ... };
+// ``graph`` has the copies drawn on it (nothing is saved). Paid (402).
+export function cheapestRbdDesign({ graph, horizon = null, minAvailability = null }) {
+  return withEvent(
+    request("/api/rbds/design/cheapest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ graph, horizon, min_availability: minAvailability }),
+    }),
+    "rbd_design_cheapest"
+  );
+}
+
 // Analyse a saved RBD by id (sub-systems are resolved server-side).
 export function analyzeSavedRbd(id, tMax) {
   const q = tMax != null ? `?t_max=${encodeURIComponent(tMax)}` : "";
@@ -611,6 +756,43 @@ export function validateRbd(graph) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ graph }),
+  });
+}
+
+// The fault tree of an (unsaved) graph (#101): gates over basic events, the
+// top event probability at ``t`` and ranked cut sets. ``t`` null = the
+// calculator's importance time; repairable graphs are at steady state.
+export function rbdFaultTree(graph, t = null, tMax = null) {
+  return request("/api/rbds/fault-tree", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t: t ?? null, t_max: tMax ?? null }),
+  });
+}
+
+// Redundancy design (non-repairable graphs): how many copies of each block.
+// ``blocks`` = [{id, cost, weight?, volume?, max_copies, required, strategy,
+// switching, name, types: [{name, model, cost, ...}]}]; give ``budget``
+// ({cost?, weight?, volume?}) or ``target`` (reliability at ``t``). Returns
+// { current, design, front, ... }. Nothing is saved.
+export function designRbd({ graph, t, blocks, budget = null, target = null, mixing = true }) {
+  return withEvent(
+    request("/api/rbds/design", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ graph, t, blocks, budget, target, mixing }),
+    }),
+    "rbd_design"
+  );
+}
+
+// The graph with one design (a result's ``design.blocks``) drawn on it, and
+// its R(t). The builder puts it on the canvas unsaved.
+export function applyRbdDesign({ graph, blocks, design, t }) {
+  return request("/api/rbds/design/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, blocks, design, t }),
   });
 }
 
@@ -857,6 +1039,15 @@ export function failureFinding(distributionId, params, targetAvailability, unit,
   });
 }
 
+// Plan a reliability demonstration test (units, test time, allowed failures).
+export function demonstrationTest(body) {
+  return request("/api/strategy/demonstration-test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // Persist a strategy analysis (results recomputed server-side from inputs).
 export function saveStrategyAnalysis(name, kind, inputs) {
   return request("/api/strategy/analyses", {
@@ -921,6 +1112,43 @@ export function renameRcmStudy(id, name) {
 
 export function deleteRcmStudy(id) {
   return request(`/api/rcm/studies/${id}`, { method: "DELETE" });
+}
+
+// What an FMEA / RCM spreadsheet would import as (nothing saved): the tree,
+// counts, warnings and the consequence / decision values found.
+// ``options`` = { mapping, consequence_map, outcome_map, extra_columns }.
+export function previewRcmImport(file, sheet, headerRow, options) {
+  return request("/api/rcm/import/preview", {
+    method: "POST",
+    body: excelForm(file, sheet, headerRow, { options }),
+  });
+}
+
+// Import the worksheet: a new study (``target.name``) or an existing one
+// (``target.studyId`` with mode "append" | "replace").
+export function importRcmWorksheet(file, sheet, headerRow, options, target) {
+  return withEvent(
+    request("/api/rcm/import", {
+      method: "POST",
+      body: excelForm(file, sheet, headerRow, {
+        options,
+        study_id: target.studyId,
+        mode: target.mode,
+        expected_updated_at: target.expectedUpdatedAt,
+        name: target.name,
+        system: target.system,
+        description: target.description,
+      }),
+    }),
+    "rcm_import"
+  );
+}
+
+// A study's tasks as a repairable RBD block's maintenance (#100): what each
+// would fill in a diagram in `unit` (scheduled replacement or proof test), or
+// why it can't.
+export function getRcmMaintenanceTasks(id, unit) {
+  return request(`/api/rcm/studies/${id}/maintenance-tasks?unit=${encodeURIComponent(unit || "")}`);
 }
 
 // Replace the whole worksheet tree; returns the study with fresh evidence
@@ -1003,25 +1231,61 @@ export function revokeShare(shareId) {
 
 // ---- Public share links -----------------------------------------------------
 
-export function createPublicLink(collection, artifactId) {
+// A new link (an artifact can have several). ``options``: { label,
+// expires_in_days, password, generate_password }. A generated passphrase
+// comes back once, as ``passphrase``.
+export function createPublicLink(collection, artifactId, options = {}) {
   return request("/api/public-links", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ collection, artifact_id: artifactId }),
+    body: JSON.stringify({ collection, artifact_id: artifactId, ...options }),
   });
 }
 
-export function getPublicLink(collection, artifactId) {
-  return request(`/api/public-links?collection=${collection}&artifact_id=${artifactId}`);
+// Every live link to an artifact, newest first: { links: [...] }.
+export function listPublicLinks(collection, artifactId) {
+  const q = new URLSearchParams({ collection, artifact_id: artifactId });
+  return request(`/api/public-links?${q}`);
+}
+
+// Relabel, or set / rotate / remove the password: { label } |
+// { password } | { generate_password: true } | { remove_password: true }.
+export function updatePublicLink(token, changes) {
+  return request(`/api/public-links/${encodeURIComponent(token)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
 }
 
 export function revokePublicLink(token) {
-  return request(`/api/public-links/${token}`, { method: "DELETE" });
+  return request(`/api/public-links/${encodeURIComponent(token)}`, { method: "DELETE" });
 }
 
-// Unauthenticated: resolve a public link to its artifact payload.
-export function getPublicArtifact(token) {
-  return request(`/api/public/${encodeURIComponent(token)}`);
+// The header that carries a password-protected link's unlock token.
+const UNLOCK_HEADER = "X-Share-Unlock";
+const unlockHeaders = (unlock) => (unlock ? { [UNLOCK_HEADER]: unlock } : {});
+
+// Unauthenticated: resolve a public link to its artifact payload. A
+// protected link without a valid unlock token rejects with status 401 and
+// ``passwordRequired`` set.
+export async function getPublicArtifact(token, unlock) {
+  try {
+    return await publicRequest(`/api/public/${encodeURIComponent(token)}`, { headers: unlockHeaders(unlock) });
+  } catch (err) {
+    if (err.status === 401) err.passwordRequired = true;
+    throw err;
+  }
+}
+
+// Trade a protected link's password for an unlock token:
+// { unlock_token, expires_at }.
+export function unlockPublicLink(token, password) {
+  return publicRequest(`/api/public/${encodeURIComponent(token)}/unlock`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
 }
 
 // ---- File downloads -----------------------------------------------------------
@@ -1042,8 +1306,8 @@ function dispositionFilename(header, fallback) {
 }
 
 // Fetch a file with the auth header and hand it to the browser as a download.
-async function downloadFile(url, fallbackName) {
-  const res = await authedFetch(url);
+async function downloadFile(url, fallbackName, opts = {}, fetcher = authedFetch) {
+  const res = await fetcher(url, opts);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     const err = new Error(data.detail || `Download failed (${res.status})`);
@@ -1077,9 +1341,25 @@ export function downloadRbdPython(id) {
   );
 }
 
-// The same download for a publicly linked RBD (no sign-in needed).
-export function downloadPublicRbdPython(token) {
-  return downloadFile(`/api/public/${encodeURIComponent(token)}/export.py`, "rbd.py");
+export const JSON_EXPORT_TIP =
+  "The diagram in RePyability's JSON format: load it in Python with rbd_from_json, or import it back into Reliafy.";
+
+// "Download as RePyability JSON" (#174): the saved diagram as RePyability's
+// to_json document (plus Reliafy's labels and layout, which RePyability
+// ignores). Free for every viewer, like the Python download.
+export function downloadRbdJson(id) {
+  return withEvent(
+    downloadFile(`/api/rbds/${encodeURIComponent(id)}/export.json`, "rbd.json"),
+    "rbd_export_json"
+  );
+}
+
+// The same download for a publicly linked RBD (no sign-in needed; a
+// protected link sends its unlock token).
+export function downloadPublicRbdPython(token, unlock) {
+  return downloadFile(`/api/public/${encodeURIComponent(token)}/export.py`, "rbd.py", {
+    headers: unlockHeaders(unlock),
+  }, (u, o) => fetch(u, o));
 }
 
 // ---- Personal API tokens ------------------------------------------------------
@@ -1088,11 +1368,12 @@ export function listApiTokens() {
   return request("/api/tokens");
 }
 
-export function createApiToken(name) {
+// ``scopes``: any of "ingest", "read", "write".
+export function createApiToken(name, scopes) {
   return request("/api/tokens", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, scopes }),
   });
 }
 
@@ -1134,6 +1415,11 @@ export function getAdminStats() {
 // Operator-only first-party traffic analytics.
 export function getAdminTraffic(days = 14) {
   return request(`/api/admin/traffic?days=${days}`);
+}
+
+// Operator-only product usage (app / MCP / API, the MCP plan wall).
+export function getAdminUsage(days = 30, includeAdmin = false) {
+  return request(`/api/admin/usage?days=${days}${includeAdmin ? "&include_admin=true" : ""}`);
 }
 
 // Un-hide all dismissed sample artifacts.
@@ -1267,4 +1553,45 @@ export function setEmailPreferences(prefs) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(prefs),
   });
+}
+
+// ---- Outage logs: an RBD's observed history (issue #159) -------------------
+
+function outageJson(method, url, body) {
+  return request(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+}
+
+export function listOutageLogs(rbdId) {
+  return request(`/api/rbds/${rbdId}/outage-logs`);
+}
+
+// Check a log before saving: headers, detected mapping, parsed outages or
+// every error (ok: false). Body: { csv, mapping?, unit?, window_start?,
+// window_end?, date_order?, asset_map? }.
+export function previewOutageLog(rbdId, body) {
+  return outageJson("POST", `/api/rbds/${rbdId}/outage-logs/preview`, body);
+}
+
+export function saveOutageLog(rbdId, body) {
+  return outageJson("POST", `/api/rbds/${rbdId}/outage-logs`, body);
+}
+
+export function updateOutageLog(rbdId, logId, body) {
+  return outageJson("PATCH", `/api/rbds/${rbdId}/outage-logs/${logId}`, body);
+}
+
+export function deleteOutageLog(rbdId, logId) {
+  return request(`/api/rbds/${rbdId}/outage-logs/${logId}`, { method: "DELETE" });
+}
+
+export function getOutageHistory(rbdId, logId) {
+  return request(`/api/rbds/${rbdId}/outage-logs/${logId}/history`);
+}
+
+export function fitOutageModels(rbdId, logId, body) {
+  return outageJson("POST", `/api/rbds/${rbdId}/outage-logs/${logId}/fit`, body);
 }

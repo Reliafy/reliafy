@@ -2,10 +2,14 @@ import { useNavigate } from "react-router-dom";
 import ModelLibrary from "./ModelLibrary.jsx";
 import { useModels } from "../useModels.js";
 import { deleteModel } from "../api.js";
+import { FirstRunStrip } from "../components/FirstRun.jsx";
+import { useFirstRun } from "../firstRun.js";
 
 export default function ModellingHome() {
   const navigate = useNavigate();
   const { models, loading, refresh } = useModels();
+  // No models, datasets or diagrams of their own yet (samples don't count).
+  const firstRun = useFirstRun(loading ? undefined : models.some((m) => !m.is_sample));
 
   const onDelete = async (m) => {
     const msg = m.is_sample
@@ -38,6 +42,8 @@ export default function ModellingHome() {
           </button>
         </div>
       </header>
+
+      <FirstRunStrip info={firstRun} />
 
       <ModelLibrary
         models={models}

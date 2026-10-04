@@ -11,19 +11,39 @@ Compact node (what an assistant writes and reads)::
     {"id": "p1", "type": "component", "label": "Pump A",
      "model": {"distribution_id": "weibull",
                "params": [{"name": "alpha", "value": 900}, {"name": "beta", "value": 1.4}],
-               "placeholder": true},          # optional: a guessed value
+               "placeholder": true,           # optional: a guessed value
+               "extras": {"gamma": 100}},     # optional: offset gamma, LFP p, ZI f0
      "repair": {...},                         # repairable diagrams only
+     "instant_repair": true,                  # repairable: repaired in zero time
+     "costs": {"repair": 200, "replace": 1500, "downtime": 50, "acquisition": 20000},
+     "preventive": {"policy": "age", "interval": 580, "duration": 7, "cost": 1000},
+     "inspection": {"interval": 8760, "duration": 0, "cost": 300},  # hidden failures
+     # a per-action cost may be a range, drawn uniformly: "repair": {"min": 150, "max": 250}
      "n": 2, "k": 3, "spares": 1, "cold": true,
+     "standbyModel": {...}, "startProb": 0.98,  # cold standby: spare's own model, switch reliability
+     "dormancy": 0.3,                         # standby: 0 cold, 1 hot, between = warm
      "subsystem_rbd_id": "<saved rbd id>"}
+
+A repeated block — the same physical component drawn again elsewhere — is a
+component node with ``"repeat_of": "<id of the component it repeats>"`` and
+no model of its own (see :mod:`backend.services.rbd_repeats`).
 
 A node may instead carry the persisted ``data: {...}`` object; both are
 accepted. ``model.saved_model_id`` references a saved plain life model; it is
 resolved (owner-scoped) into the same shape the builder's model picker stores.
+A repairable diagram may carry ``"costs": {"downtime_rate": 500, "horizon":
+87600}`` (see :mod:`backend.services.rbd_maintenance` for the cost and
+maintenance fields), ``"repair_crews": {"crews": 2}``, ``"maintenance_groups":
+{name: {"setup_cost", "system_down"}}``, ``"safety_function": true`` and
+``"target_sil"`` (see :mod:`backend.services.rbd_policies`).
 """
 
 from __future__ import annotations
 
+import math
 from typing import Callable, Optional
+
+from backend.services import rbd_repeats
 
 COL_GAP = 280
 ROW_GAP = 150
@@ -31,10 +51,99 @@ ROW_GAP = 150
 NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "standby", "subsystem")
 
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
+#: Repairable block fields beyond the models (#99/#100), carried as given.
+MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection", "rcm_source",
+                    "maintenance_group", "crew_priority", "repair_one_at_a_time")
+#: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
+DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil")
 
 
 class GraphError(ValueError):
     """A compact graph that can't be turned into a diagram (user-facing text)."""
+
+
+# Size limits for any diagram, however it arrives (builder save, import, the
+# assistant, the MCP server) — the same ceilings as the importers'.
+MAX_BLOCKS = 5000               # blocks, besides the input and output nodes
+MAX_EDGES = 50_000
+MAX_UNITS = 1000                # identical units / spares in one block
+#: Count fields per node type: ``(field, what, upper bound)``. A vote node's
+#: ``n`` (inputs required) and ``k`` (inputs wired) are bounded by the
+#: diagram's size; the unit counts expand into that many units each.
+_COUNT_FIELDS = {
+    "series": (("n", "the number of identical units (n)", MAX_UNITS),),
+    "parallel": (("n", "the number of identical units (n)", MAX_UNITS),),
+    "standby": (("spares", "the number of spares", MAX_UNITS),),
+    "loadshare": (("units", "the number of units", MAX_UNITS),
+                  ("k", "the number of units required (k)", MAX_UNITS)),
+    "knode": (("n", "the number of working inputs required (n)", MAX_BLOCKS),
+              ("k", "the number of inputs (k)", MAX_BLOCKS)),
+}
+
+
+def _count(value, where: str, what: str, upper: int) -> int:
+    if isinstance(value, bool):
+        raise GraphError(f"{where}: {what} must be a whole number.")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise GraphError(f"{where}: {what} must be a whole number.") from None
+    if not math.isfinite(number) or number != int(number):
+        raise GraphError(f"{where}: {what} must be a whole number.")
+    if not 1 <= number <= upper:
+        raise GraphError(f"{where}: {what} must be from 1 to {upper:,} (got {value}).")
+    return int(number)
+
+
+def check_counts(ntype: str, data: dict, where: str) -> None:
+    """Validate a block's unit counts (``n``, ``k``, ``spares``, ``units``):
+    whole numbers from 1 to their bound, and a load-sharing group's ``k`` no
+    more than its ``units``. A vote node's ``n`` is checked against the
+    branches actually wired into it when the diagram is validated (its ``k``
+    is only the count the builder shows). Missing fields are left to their
+    defaults."""
+    got = {}
+    for key, what, upper in _COUNT_FIELDS.get(ntype, ()):
+        value = data.get(key)
+        if value is None or value == "":
+            continue
+        if ntype == "standby" and key == "spares" and value in (0, "0", 0.0):
+            continue  # older diagrams hold 0; the analysis has always read it as 1
+        got[key] = _count(value, where, what, upper)
+    if ntype == "loadshare" and "k" in got and "units" in got and got["k"] > got["units"]:
+        raise GraphError(f"{where}: k ({got['k']}) can't exceed the number of units ({got['units']}).")
+
+
+def check_size(nodes, edges) -> None:
+    """At most :data:`MAX_BLOCKS` blocks and :data:`MAX_EDGES` connections."""
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        raise GraphError("nodes and edges must be lists.")
+    blocks = sum(1 for n in nodes if not (isinstance(n, dict) and n.get("type") in ("input", "output")))
+    if blocks > MAX_BLOCKS:
+        raise GraphError(f"the diagram has {blocks:,} blocks; a diagram can hold at most {MAX_BLOCKS:,} "
+                         "(group parts of it into sub-systems).")
+    if len(edges) > MAX_EDGES:
+        raise GraphError(f"the diagram has {len(edges):,} connections; a diagram can hold at most "
+                         f"{MAX_EDGES:,} (group parts of it into sub-systems).")
+
+
+def check_limits(graph) -> None:
+    """Size and unit-count limits for a whole graph, compact or persisted
+    (a node's fields may sit on it or in its ``data``). Raises
+    :class:`GraphError`."""
+    if not isinstance(graph, dict):
+        raise GraphError("the diagram must be an object.")
+    nodes = graph.get("nodes") or []
+    edges = graph.get("edges") or []
+    check_size(nodes, edges)
+    for raw in nodes:
+        if not isinstance(raw, dict):
+            continue
+        fields = {k: raw[k] for k in ("n", "k", "spares", "units", "label") if raw.get(k) is not None}
+        if isinstance(raw.get("data"), dict):
+            fields.update(raw["data"])
+        label = fields.get("label") or raw.get("id")
+        check_counts(str(raw.get("type") or ""), fields, f"node '{label}'")
 
 
 def layout_graph(nodes: list[dict], edges: list[dict]) -> list[dict]:
@@ -120,8 +229,51 @@ def _inline_model(model: dict, where: str) -> dict:
         "distribution_id": dist_id,
         "params": params,
     }
+    extras = _extras(model.get("extras"), where)
+    if extras:
+        out["extras"] = extras
     if model.get("placeholder"):
         out["placeholder"] = True
+    return out
+
+
+def _extras(raw, where: str) -> dict:
+    """A model's fitted extras the analysis rebuilds it with: an offset
+    ``gamma``, an LFP ``p`` and a zero-inflation ``f0`` (finite numbers)."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise GraphError(f"{where}: extras must be an object of gamma, p and f0.")
+    out = {}
+    for key in ("gamma", "p", "f0"):
+        value = raw.get(key)
+        if value is None:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise GraphError(f"{where}: {key} must be a number.") from None
+        if isinstance(value, bool) or not math.isfinite(number):
+            raise GraphError(f"{where}: {key} must be a finite number.")
+        out[key] = number
+    return out
+
+
+def _positions(nodes: list) -> Optional[dict]:
+    """``{id: position}`` when every node already has a finite ``{x, y}``
+    (a diagram drawn elsewhere keeps its layout), else None."""
+    out = {}
+    for n in nodes:
+        pos = n.get("position") if isinstance(n, dict) else None
+        if not isinstance(pos, dict):
+            return None
+        try:
+            x, y = float(pos.get("x")), float(pos.get("y"))
+        except (TypeError, ValueError):
+            return None
+        if not (math.isfinite(x) and math.isfinite(y)):
+            return None
+        out[str(n.get("id") or "").strip()] = {"x": x, "y": y}
     return out
 
 
@@ -131,7 +283,14 @@ def _saved_model(model_id: str, where: str, resolve_saved_model) -> dict:
     if saved is None:
         raise GraphError(f"{where}: saved model '{model_id}' not found.")
     r = saved.results or {}
-    if saved.kind not in ("distribution", "regression", "nonparametric"):
+    if saved.kind == "nonparametric":
+        # RePyability 0.12 refuses a non-parametric node in a diagram.
+        raise GraphError(
+            f"{where}: model “{saved.name}” is non-parametric ({r.get('distribution') or 'an empirical estimate'}), "
+            "which an RBD block can't take. Fit a parametric distribution (Weibull, say) to the same "
+            "data and use that, or give distribution_id + params inline."
+        )
+    if saved.kind not in ("distribution", "regression"):
         raise GraphError(
             f"{where}: model “{saved.name}” is a {saved.kind} model — RBD blocks need a "
             "life distribution; give distribution_id + params inline instead."
@@ -221,7 +380,8 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
         raise GraphError(f"node '{nid}': type must be one of {', '.join(NODE_TYPES)}.")
 
     data = dict(raw.get("data") or {})
-    for key in ("label", "model", "repair", "n", "k", "spares", "cold"):
+    for key in ("label", "model", "repair", "n", "k", "spares", "cold", "dormancy",
+                "standbyModel", "startProb", "repeat_of") + MAINTENANCE_KEYS:
         if raw.get(key) is not None and key not in data:
             data[key] = raw[key]
     if raw.get("subsystem_rbd_id") and "rbd" not in data:
@@ -229,8 +389,20 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
     where = f"node '{data.get('label') or nid}'"
     if data.get("model") is not None:
         data["model"] = normalize_model(data["model"], where, resolve_saved_model)
+    if data.get("standbyModel") is not None:
+        data["standbyModel"] = normalize_model(data["standbyModel"], f"{where} spare", resolve_saved_model)
     if data.get("repair") is not None:
         data["repair"] = normalize_repair(data["repair"], where)
+    for key in ("costs", "preventive", "inspection", "rcm_source"):
+        if data.get(key) is not None and not isinstance(data[key], dict):
+            raise GraphError(f"{where}: {key} must be an object.")
+    if data.get("maintenance_group") is not None and not isinstance(data["maintenance_group"], str):
+        raise GraphError(f"{where}: maintenance_group must be a group name.")
+    for key in ("preventive", "inspection"):
+        spec = data.get(key)
+        if spec and isinstance(spec.get("duration"), dict):
+            data[key] = {**spec, "duration": _inline_model(spec["duration"], f"{where} {key} duration")}
+    check_counts(ntype, data, where)
     if not data.get("label"):
         data["label"] = "Input" if ntype == "input" else "Output" if ntype == "output" else nid
 
@@ -252,11 +424,13 @@ def normalize_graph(
     resolve_saved_model: Optional[Callable[[str], object]] = None,
 ) -> dict:
     """Turn a compact ``{nodes, edges, unit, repairable?}`` into the persisted
-    builder shape. Raises :class:`GraphError` with a fixable message."""
+    builder shape, laid out left to right — unless every node already has a
+    ``position`` (a diagram drawn elsewhere, e.g. a RePyability JSON file
+    Reliafy wrote), which is kept. Raises :class:`GraphError` with a fixable
+    message."""
     raw_nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
-    if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
-        raise GraphError("nodes and edges must be lists.")
+    check_size(raw_nodes, raw_edges)
 
     nodes, seen = [], set()
     for raw in raw_nodes:
@@ -265,6 +439,10 @@ def normalize_graph(
         node = normalize_node(raw, resolve_saved_model)
         seen.add(node["id"])
         nodes.append(node)
+
+    _, problems = rbd_repeats.find_repeats(nodes)
+    if problems:
+        raise GraphError(next(iter(problems.values())))
 
     edges = []
     for i, e in enumerate(raw_edges):
@@ -276,11 +454,19 @@ def normalize_graph(
                 raise GraphError(f"edge {src} -> {tgt} references unknown node '{end}'.")
         edges.append(make_edge(src, tgt, e.get("id") or f"e-{src}-{tgt}-{i}"))
 
-    out = {"nodes": layout_graph(nodes, edges), "edges": edges, "unit": str(graph.get("unit") or "")}
+    positions = _positions(raw_nodes) if raw_nodes else None
+    if positions is not None:
+        placed = [{**n, "position": positions[n["id"]]} for n in nodes]
+    else:
+        placed = layout_graph(nodes, edges)
+    out = {"nodes": placed, "edges": edges, "unit": str(graph.get("unit") or "")}
     if graph.get("repairable"):
         out["repairable"] = True
     if graph.get("ccf_groups"):
         out["ccf_groups"] = graph["ccf_groups"]
+    for key in DIAGRAM_KEYS:
+        if graph.get(key):
+            out[key] = graph[key]
     return out
 
 
@@ -292,7 +478,7 @@ def compact_graph(graph: dict) -> dict:
         node = {"id": n.get("id"), "type": n.get("type")}
         if d.get("label"):
             node["label"] = d["label"]
-        for key in ("model", "repair"):
+        for key in ("model", "repair", "standbyModel"):
             m = d.get(key)
             if isinstance(m, dict):
                 cm = {"distribution_id": m.get("distribution_id"), "params": m.get("params")}
@@ -300,8 +486,10 @@ def compact_graph(graph: dict) -> dict:
                     cm["saved_model_id"] = m["modelId"]
                 if m.get("placeholder"):
                     cm["placeholder"] = True
+                if m.get("extras") and not m.get("modelId"):
+                    cm["extras"] = m["extras"]
                 node[key] = cm
-        for key in ("n", "k", "spares", "cold"):
+        for key in ("n", "k", "spares", "cold", "dormancy", "startProb", "repeat_of") + MAINTENANCE_KEYS:
             if d.get(key) is not None:
                 node[key] = d[key]
         if isinstance(d.get("rbd"), dict) and d["rbd"].get("id"):
@@ -313,6 +501,9 @@ def compact_graph(graph: dict) -> dict:
         out["repairable"] = True
     if graph.get("ccf_groups"):
         out["ccf_groups"] = graph["ccf_groups"]
+    for key in DIAGRAM_KEYS:
+        if graph.get(key):
+            out[key] = graph[key]
     return out
 
 

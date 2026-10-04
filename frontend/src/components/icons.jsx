@@ -11,6 +11,7 @@ export const ListIcon = () => svg(<path d="M4 6h16M4 12h16M4 18h10" />);
 export const CompareIcon = () => svg(<><path d="M4 18V8M9 18V5M14 18v-7M19 18v-4" /></>);
 export const RbdIcon = () => svg(<><rect x="3" y="4" width="6" height="6" rx="1" /><rect x="15" y="4" width="6" height="6" rx="1" /><rect x="9" y="14" width="6" height="6" rx="1" /><path d="M9 7h6M6 10v4M18 10v4" /></>);
 export const StrategyIcon = () => svg(<><circle cx="12" cy="12" r="8.5" /><path d="M12 12l4-2.5M12 12v4.5" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /></>);
+export const TestIcon = () => svg(<><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3" /><path d="M7.5 14h9" /></>);
 export const CostIcon = () => svg(<><path d="M4 19h16" /><path d="M5 6c4 9 10 9 14 1" /></>);
 export const DatabaseIcon = () => svg(<><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" /></>);
 export const DegradeIcon = () => svg(<><path d="M4 5c2 6 4 9 7 11s6 2.5 9 2.5" /><path d="M3 19h18" strokeDasharray="3 3" /></>);
@@ -19,4 +20,5 @@ export const DegradeIcon = () => svg(<><path d="M4 5c2 6 4 9 7 11s6 2.5 9 2.5" /
 export const RecurrentIcon = () => svg(<><path d="M3 21h18" strokeDasharray="2 3" /><path d="M4 19h3v-3h3v-3h3v-3h3v-3h3" /><circle cx="7" cy="16" r="1.15" fill="currentColor" stroke="none" /><circle cx="13" cy="10" r="1.15" fill="currentColor" stroke="none" /><circle cx="19" cy="7" r="1.15" fill="currentColor" stroke="none" /></>);
 export const RcmIcon = () => svg(<><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1" /><path d="m8.5 12 2 2 4-4.5" /></>);
 export const AltIcon = () => svg(<><path d="M4 20h16" /><path d="M4 20c3-2 5-11 8-11s5 6 8-1" /><path d="M18 4v4M16 6h4" strokeWidth="1.5" /></>);
+export const PasteIcon = () => svg(<><rect x="6" y="4" width="12" height="17" rx="2" /><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3" /></>);
 export const UploadIcon = () => svg(<><path d="M12 16V4m0 0 4 4m-4-4-4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></>);

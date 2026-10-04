@@ -8,24 +8,44 @@ in-process). It must never import the DB layer — ``backend.db``,
 ``backend.services.models`` / ``rbds`` / ``access`` — and the tests check that.
 
 What can be inlined. A repairable (availability) diagram is component blocks
-— each a life model and a repair model — plus k-of-n voting gates. A
+— each a life model and a repair model — plus k-of-n voting gates (junctions
+since RePyability 0.12), and the diagram's own settings: common-cause groups
+(with their rate/probability basis), costs, repair crews, maintenance groups
+and a safety function (:data:`backend.services.rbd_graph.DIAGRAM_KEYS`; every
+top-level key is carried, so a new setting needs no change here). A
 component's *parametric* model (distribution id + parameters, any fitted
 extras) is already stored on the node, so the analysis never looks up the
-saved model it came from; the saved-model id is dropped from the request.
-Models that only exist as a re-fit of saved data — proportional-hazards /
+saved model it came from. Its id stays on the node, never resolved (some
+checks compare blocks by it, so dropping it could change a result). Models
+that only exist as a re-fit of saved data — proportional-hazards /
 regression (``kind: "regression"``) and non-parametric (``kind:
 "nonparametric"``) models, and load-sharing groups — have no serialisable
 form, and nested sub-system blocks reference other saved diagrams. A graph
 with any of these is not self-contained: :func:`availability_request` returns
 None and the web app runs it in-process, as before (the repairable analysis
 rejects most of them anyway).
+
+Same seed, same result. The compute service runs exactly
+:func:`rbd_analysis.analyze_availability`, the in-process path's function, on
+the same image: RePyability 0.12 seeds every simulation's draws from the run's
+seed and the simulation's index alone, whatever the engine, so a request
+gives the in-process result to the last bit. Only where a *time budget*
+sizes the run (a Pro run to its precision target that the 20 s budget stops,
+or a free quick run) can the count of replications differ with the
+machine's speed; the result is then that of the count it reports.
+
+Job kinds (:data:`RUNNERS`). ``availability`` is the only one. Another
+analysis joins by adding a request builder here, a runner to ``RUNNERS``,
+and a ``KIND_…`` in :mod:`backend.services.rbd_jobs` — e.g. the next failure
+from the current state (#240, not merged yet) or the exact figures over time
+of a large diagram.
 """
 
 from __future__ import annotations
 
 import json
 import math
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from backend.services import rbd_analysis
 
@@ -33,8 +53,6 @@ from backend.services import rbd_analysis
 _MODEL_KEYS = ("model", "repair", "standbyModel")
 # Model kinds that only exist as a re-fit of a saved model's data.
 NEEDS_SAVED_MODEL = frozenset({"regression", "nonparametric"})
-# Saved-artifact references: not needed once the model is inline.
-_REFERENCE_KEYS = frozenset({"modelId", "model_id"})
 # Display-only node fields (React Flow), dropped from the request.
 _UI_KEYS = frozenset({
     "position", "positionAbsolute", "selected", "dragging", "width", "height",
@@ -42,7 +60,8 @@ _UI_KEYS = frozenset({
     "deletable", "hidden", "zIndex",
 })
 
-KINDS = ("availability",)
+# Top-level graph keys the analysis never reads (the builder's view).
+_GRAPH_UI_KEYS = frozenset({"viewport", "position", "selected"})
 
 # Request option bounds (the compute service validates what it is sent).
 _MAX_SIMULATIONS = 200_000
@@ -78,23 +97,15 @@ def needs_saved_models(graph: dict) -> list[str]:
     return out
 
 
-def _clean(value):
-    if isinstance(value, dict):
-        return {k: _clean(v) for k, v in value.items() if k not in _REFERENCE_KEYS}
-    if isinstance(value, list):
-        return [_clean(v) for v in value]
-    return value
-
-
 def inline_graph(graph: dict) -> dict:
     """The analysis-relevant graph as plain JSON: nodes reduced to id/type/data
-    (no saved-model ids, no layout), edges to source/target."""
+    (no layout), edges to source/target, and every diagram-level setting."""
     graph = graph or {}
     nodes = [
         {
             "id": n.get("id"),
             "type": n.get("type"),
-            "data": _clean({k: v for k, v in (n.get("data") or {}).items() if k not in _UI_KEYS}),
+            "data": {k: v for k, v in (n.get("data") or {}).items() if k not in _UI_KEYS},
         }
         for n in graph.get("nodes") or []
         if isinstance(n, dict)
@@ -104,7 +115,10 @@ def inline_graph(graph: dict) -> dict:
         for e in graph.get("edges") or []
         if isinstance(e, dict) and e.get("source") and e.get("target")
     ]
+    settings = {k: v for k, v in graph.items()
+                if k not in ("nodes", "edges") and k not in _GRAPH_UI_KEYS}
     out = {
+        **settings,
         "nodes": nodes,
         "edges": edges,
         "unit": (graph.get("unit") or "").strip(),
@@ -121,14 +135,17 @@ def availability_options(
     time_budget_s: Optional[float] = None,
     seed: Optional[int] = None,
     max_replications: Optional[int] = None,
+    state: Optional[dict] = None,
 ) -> dict:
-    """The options of an availability run, without the unset ones."""
+    """The options of an availability run, without the unset ones. ``state``
+    is a canonical current state (``rbd_analysis.parse_current_state``)."""
     raw = {
         "t_simulation": t_simulation,
         "n_simulations": n_simulations,
         "time_budget_s": time_budget_s,
         "seed": seed,
         "max_replications": max_replications,
+        "state": state or None,
     }
     return {k: v for k, v in raw.items() if v is not None}
 
@@ -154,12 +171,15 @@ def _number(options: dict, key: str, lo: float, hi: float, integer: bool = False
     return value
 
 
-def _validated_options(options: Any) -> dict:
+_OPTIONS = frozenset({"t_simulation", "n_simulations", "time_budget_s", "seed", "max_replications", "state"})
+
+
+def _validated_options(options: Any, graph: dict) -> dict:
     if options is None:
         options = {}
     if not isinstance(options, dict):
         raise InvalidRequest("options must be an object.")
-    unknown = set(options) - {"t_simulation", "n_simulations", "time_budget_s", "seed", "max_replications"}
+    unknown = set(options) - _OPTIONS
     if unknown:
         raise InvalidRequest(f"Unknown options: {', '.join(sorted(unknown))}.")
     out = {
@@ -168,6 +188,9 @@ def _validated_options(options: Any) -> dict:
         "time_budget_s": _number(options, "time_budget_s", 0.0, _MAX_BUDGET_S),
         "seed": _number(options, "seed", 0, 2**63 - 1, integer=True),
         "max_replications": _number(options, "max_replications", 1, _MAX_SIMULATIONS, integer=True),
+        # Canonical already; parsing again validates it against this graph
+        # (AnalysisError: the user's input, reported as such).
+        "state": rbd_analysis.parse_current_state(graph, options.get("state")),
     }
     return {k: v for k, v in out.items() if v is not None}
 
@@ -181,14 +204,28 @@ def run_availability(request: dict) -> dict:
     graph = request["graph"]
     if not graph.get("repairable"):
         raise InvalidRequest("Only repairable (availability) diagrams are computed here.")
-    options = _validated_options(request.get("options"))
+    options = _validated_options(request.get("options"), graph)
     return rbd_analysis.analyze_availability(graph, resolve_model=_no_saved_models, **options)
+
+
+# What the compute service runs, by job kind. A new analysis (e.g. #240's next
+# failure from the current state) adds its runner here; the web side adds a
+# request builder above and a KIND_ in rbd_jobs.
+RUNNERS: dict[str, Callable[[dict], dict]] = {
+    "availability": run_availability,
+}
+KINDS = tuple(RUNNERS)
+
+
+def to_wire(result: dict) -> dict:
+    """A result as it crosses the wire: plain JSON types only (no numpy
+    scalars), exactly what the callback carries and the job stores."""
+    return json.loads(json.dumps(result, default=float))
 
 
 def run(kind: str, request: dict) -> dict:
     """Run one compute request of ``kind`` and return its JSON-able result."""
-    if kind != "availability":
+    runner = RUNNERS.get(kind)
+    if runner is None:
         raise InvalidRequest(f"Unknown kind {kind!r}.")
-    result = run_availability(request)
-    # Plain types only (no numpy scalars), as the result crosses the wire.
-    return json.loads(json.dumps(result, default=float))
+    return to_wire(runner(request))

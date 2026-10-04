@@ -1,6 +1,11 @@
 """Billing API: plan/credit status, Stripe Checkout for credit packs and the
-Pro and Agent subscriptions, the billing portal, and the Stripe webhook that
-fulfils them."""
+Pro subscription, the billing portal, and the Stripe webhook that fulfils
+them.
+
+The Agent plan (US$2/month, MCP only) is retired — MCP is part of Pro — and
+can't be bought any more. Existing Agent subscriptions are still honoured:
+their webhook events (checkout completion, price changes, cancellation) are
+handled as before, and an Agent subscriber can move up to Pro in place."""
 
 from __future__ import annotations
 
@@ -19,6 +24,9 @@ from backend.services import stripe_prices
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
+
+# Shown when a Stripe call fails; Stripe's own message is logged, not returned.
+_PAYMENT_ERROR = "The payment provider couldn't complete this request. Please try again in a moment."
 
 
 def _public_base(request: Request) -> str:
@@ -73,9 +81,6 @@ def billing_status(session=Depends(get_session), user: dict = Depends(get_curren
     summary["admin"] = admin
     summary["stripe_enabled"] = bool(config.STRIPE_API_KEY)
     summary["pro_available"] = bool(config.STRIPE_API_KEY and config.STRIPE_PRO_PRICE_ID)
-    # The Agent plan's Price is provisioned on first use (stripe_prices), so
-    # a Stripe key is all it needs.
-    summary["agent_available"] = bool(config.STRIPE_API_KEY)
     summary["ai"] = assistant_service.info()
     return summary
 
@@ -112,23 +117,17 @@ def checkout(
             success_url=f"{base}billing?status=success",
             cancel_url=f"{base}billing?status=cancel",
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("Stripe checkout failed")
-        return JSONResponse(status_code=502, content={"detail": f"Stripe error: {exc}"})
+        return JSONResponse(status_code=502, content={"detail": _PAYMENT_ERROR})
     return JSONResponse(content={"url": cs.url})
 
 
+# Paid plans a subscription can be on (the retired Agent plan included, so
+# existing subscriptions keep working) vs the ones that can be bought.
 _PLAN_NAMES = {"pro": "Pro", "agent": "Agent"}
-
-
-def _plan_price(plan: str, stripe) -> str | None:
-    """The recurring Stripe Price for a paid plan (None = not configured).
-    The Agent plan's is created in Stripe the first time it's asked for."""
-    if plan == "pro":
-        return config.STRIPE_PRO_PRICE_ID
-    if plan == "agent":
-        return stripe_prices.agent_price_id(stripe)
-    return None
+_SOLD_PLANS = {"pro"}
+AGENT_RETIRED = "The Agent plan has been retired; MCP is now part of Pro."
 
 
 def _plan_for_prices(price_ids: set) -> str | None:
@@ -138,7 +137,7 @@ def _plan_for_prices(price_ids: set) -> str | None:
     if not price_ids:
         return None
     try:
-        agent = stripe_prices.agent_price_id(_stripe(), create=False)
+        agent = stripe_prices.agent_price_id(_stripe())
     except Exception:  # noqa: BLE001 - a Stripe hiccup mustn't fail the webhook
         logger.exception("Couldn't look up the Agent plan's Stripe Price")
         agent = None
@@ -171,33 +170,32 @@ def subscribe(
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
-    """Start a subscription: ``plan`` is 'pro' (default) or 'agent'.
+    """Start a Pro subscription (``plan`` 'pro', the default).
 
-    A user already on the other paid plan is switched in place (the existing
-    subscription's price is swapped, prorated) rather than sold a second
-    subscription alongside it.
+    ``plan=agent`` answers 410: the Agent plan is retired. A grandfathered
+    Agent subscriber is moved to Pro in place (the existing subscription's
+    price is swapped, prorated) rather than sold a second subscription.
     """
     status, payload = start_subscription(session, user, plan, _public_base(request))
     return JSONResponse(status_code=status, content=payload)
 
 
 def start_subscription(session, user: dict, plan: str, base: str, *, allow_switch: bool = True) -> tuple[int, dict]:
-    """(status, payload) for subscribing ``user`` to ``plan``: a Stripe
-    Checkout ``url`` for someone not yet on a paid plan, or — with
-    ``allow_switch`` — an in-place switch for someone on the other one.
+    """(status, payload) for subscribing ``user`` to ``plan`` (only 'pro' is
+    sold): a Stripe Checkout ``url`` for someone not yet on a paid plan, or —
+    with ``allow_switch`` — an in-place switch for a grandfathered Agent
+    subscriber.
 
     Without ``allow_switch`` (the MCP ``upgrade_link`` tool: an agent must
     never move a paying subscriber by itself) a switch answers 409 with the
     billing page, where the person confirms it."""
     plan = (plan or "pro").strip().lower()
-    if plan not in _PLAN_NAMES:
+    if plan == "agent":
+        return 410, {"detail": AGENT_RETIRED}
+    if plan not in _SOLD_PLANS:
         return 400, {"detail": "Unknown plan."}
     stripe = _stripe()
-    try:
-        price = _plan_price(plan, stripe)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Couldn't resolve the Stripe Price for %s", plan)
-        return 502, {"detail": f"Stripe error: {exc}"}
+    price = config.STRIPE_PRO_PRICE_ID
     if stripe is None or not price:
         return 503, {"detail": f"The {_PLAN_NAMES[plan]} plan is not configured."}
     acct = billing_service.account(session, user["uid"])
@@ -218,14 +216,14 @@ def start_subscription(session, user: dict, plan: str, base: str, *, allow_switc
             success_url=f"{base}billing?status=success",
             cancel_url=f"{base}billing?status=cancel",
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("Stripe subscribe failed")
-        return 502, {"detail": f"Stripe error: {exc}"}
+        return 502, {"detail": _PAYMENT_ERROR}
     return 200, {"url": cs.url}
 
 
 def _switch_plan(stripe, session, user, acct, plan: str, price: str, base: str) -> JSONResponse:
-    """Move an Agent subscriber to Pro (or back) on their existing subscription."""
+    """Move a grandfathered Agent subscriber to Pro on their existing subscription."""
     sub_id = acct.get("stripe_subscription_id")
     if not sub_id:
         # Subscribed before subscription ids were recorded: let Stripe's portal
@@ -241,9 +239,9 @@ def _switch_plan(stripe, session, user, acct, plan: str, price: str, base: str) 
             proration_behavior="create_prorations",
             metadata={"uid": user["uid"], "kind": plan},
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("Stripe plan switch failed")
-        return JSONResponse(status_code=502, content={"detail": f"Stripe error: {exc}"})
+        return JSONResponse(status_code=502, content={"detail": _PAYMENT_ERROR})
     # The customer.subscription.updated webhook confirms this; set it now so
     # the page the user returns to already shows the new plan.
     billing_service.set_plan(session, user["uid"], plan, until=None, subscription_id=sub_id)
@@ -267,15 +265,22 @@ def portal(
             customer=acct["stripe_customer_id"],
             return_url=f"{_public_base(request)}billing",
         )
-    except Exception as exc:  # noqa: BLE001
-        return JSONResponse(status_code=502, content={"detail": f"Stripe error: {exc}"})
+    except Exception:  # noqa: BLE001
+        logger.exception("Stripe billing portal failed")
+        return JSONResponse(status_code=502, content={"detail": _PAYMENT_ERROR})
     return JSONResponse(content={"url": ps.url})
 
 
 @router.post("/stripe/webhook")
 async def stripe_webhook(request: Request, session=Depends(get_session)) -> JSONResponse:
-    """Fulfil completed purchases. Public, but the payload is verified against the
-    Stripe signature when a webhook secret is configured."""
+    """Fulfil completed purchases. Public, so every payload is verified against
+    the Stripe signature. With billing enabled a webhook secret is required:
+    without one the endpoint answers 503 and acts on nothing (Stripe retries
+    once it's configured). Only a self-hosted install with billing off, where
+    plans and credits change nothing, accepts unsigned events."""
+    if config.BILLING_ENABLED and not config.STRIPE_WEBHOOK_SECRET:
+        logger.error("Stripe webhook received but STRIPE_WEBHOOK_SECRET is not set; refusing it.")
+        return JSONResponse(status_code=503, content={"detail": "Webhook not configured."})
     payload = await request.body()
     event = None
     if config.STRIPE_WEBHOOK_SECRET:
@@ -316,16 +321,23 @@ def _handle_event(session, event) -> None:
             return
         if meta.get("kind") == "pack":
             grant = int(meta.get("grant_cents") or 0)
-            if grant:
-                billing_service.grant_credits(session, uid, grant, "purchase", obj.get("id", ""))
+            # Once per checkout session: a retried or replayed event finds the
+            # session's ledger row already there and grants nothing.
+            ref = obj.get("id") or event.get("id")
+            if grant and ref:
+                billing_service.grant_credits_once(session, uid, grant, "purchase", ref)
+            elif grant:
+                logger.error("Credit-pack checkout event without an id; not granted: %s", event.get("type"))
         elif meta.get("kind") in _PLAN_NAMES:
+            # kind=agent still lands: an Agent checkout opened before the plan
+            # was retired can complete for up to 24 h, and that user paid.
             billing_service.set_plan(session, uid, meta["kind"], until=None, customer_id=obj.get("customer"),
                                      subscription_id=obj.get("subscription"))
 
     elif etype == "invoice.paid":
         # A paid Pro invoice (first and each renewal) grants the Pro plan's
-        # included monthly AI credit — idempotent per invoice. Agent invoices
-        # grant nothing.
+        # included monthly AI credit — idempotent per invoice. (Grandfathered)
+        # Agent invoices grant nothing.
         billing_service.grant_monthly_pro_credits(
             session, obj.get("customer"), obj.get("id"), _price_ids(obj.get("lines")))
 

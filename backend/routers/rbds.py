@@ -2,23 +2,32 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
-from fastapi import APIRouter, Body, Depends
+import os
+
+from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from backend import config
+from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.routers import excel as excel_router
 from backend.services import free_sims as free_sims_service
+from backend.services import import_guard
+from backend.services import rbd_import
 from backend.services import rbd_jobs as rbd_jobs_service
 from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
 from backend.services import shares as shares_service
+from backend.services import usage as usage_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import Rbd
 from backend.services.rbd_analysis import AnalysisError
+from backend.services.rbd_graph import GraphError, check_limits, normalize_graph
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -31,6 +40,7 @@ def _summary(rbd, ctx: AccessCtx) -> dict:
         "name": rbd.name,
         "n_nodes": len(graph.get("nodes", [])),
         "n_edges": len(graph.get("edges", [])),
+        "repairable": bool(graph.get("repairable")),
         "created_at": rbd.created_at.isoformat(),
         "updated_at": rbd.updated_at.isoformat(),
         "is_sample": samples_service.is_sample(rbd.owner_id),
@@ -63,6 +73,10 @@ def save_rbd(
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
+    try:
+        check_limits(graph)
+    except GraphError as exc:
+        return JSONResponse(status_code=422, content={"detail": f"Can't save: {exc}"})
     # Free-plan cap applies only when creating a new diagram (updating one you
     # own, or forking a sample, is checked by whether you already own it).
     existing = rbds_service.get_rbd(session, id, ctx.read_owners) if id else None
@@ -77,6 +91,13 @@ def save_rbd(
             status_code=402,
             content={"detail": billing_service.cap_message(session, ctx.uid, "rbds"), "code": "cap", "upgrade": True},
         )
+    # Saved models and sub-system diagrams on the blocks must be ones the
+    # writer can open (links the diagram already had are kept as they are).
+    kept = access_service.graph_refs(existing.graph) if not creating else ()
+    try:
+        access_service.check_references(session, ctx, access_service.graph_refs(graph), keep=kept)
+    except access_service.UnreadableReference as exc:
+        return JSONResponse(status_code=exc.status, content={"detail": str(exc), "code": "unreadable_reference"})
     try:
         rbd = rbds_service.save_rbd(
             session, name, graph, ctx.write_owner, rbd_id=id,
@@ -87,6 +108,110 @@ def save_rbd(
     access_service.stamp_editor(session, "rbds", rbd.id, ctx)
     rbd.updated_by = access_service.editor_of(ctx)
     return JSONResponse(content=_summary(rbd, ctx))
+
+
+@router.get("/rbds/import/template.xlsx")
+def rbd_import_template(user: dict = Depends(get_current_user)) -> Response:
+    """The Excel template for importing a diagram: a README sheet, and Blocks
+    + Connections sheets holding a small worked example."""
+    from backend.services.rbd_import import excel as rbd_excel
+
+    return Response(
+        content=rbd_excel.build_template(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="reliafy-rbd-template.xlsx"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def import_links(session, ctx: AccessCtx):
+    """``(saved_model, saved_rbd)``: id -> the saved model / diagram the
+    importing user can open, else None (see
+    :func:`backend.services.rbd_import.link_references`)."""
+    from backend.services import models as models_service
+
+    def saved_model(model_id: str):
+        return models_service.get_model(session, model_id, ctx.read_owners)
+
+    def saved_rbd(rbd_id: str):
+        rbd = rbds_service.get_rbd(session, rbd_id, ctx.read_owners)
+        return rbd if rbd is not None and rbd.id not in ctx.hidden else None
+
+    return saved_model, saved_rbd
+
+
+@router.post("/rbds/import")
+def import_rbd_file(
+    file: UploadFile = File(...),
+    mapping: str | None = Form(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Parse another tool's diagram file into builder graphs — nothing is saved.
+
+    The builder opens the chosen diagram unsaved, so the usual save (and the
+    free-plan cap) applies when the user keeps it.
+
+    ``mapping`` (JSON, Excel workbooks only) names the sheets and columns
+    holding the blocks and connections. Without it a workbook must follow the
+    template; one that doesn't is refused with ``code: "excel_mapping"`` so
+    the frontend can ask the user to map its columns.
+    """
+    data = file.file.read(rbd_import.MAX_UPLOAD_BYTES + 1)
+    ext = os.path.splitext(file.filename or "")[1].lower()[:12]
+    kwargs = {}
+    if mapping:
+        try:
+            kwargs["excel_mapping"] = json.loads(mapping)
+        except ValueError:
+            return JSONResponse(status_code=422, content={"detail": "The column mapping isn't valid JSON."})
+    saved_model, saved_rbd = import_links(session, ctx)
+
+    def parse():
+        found = rbd_import.import_file(data, file.filename or "", **kwargs)
+        # RePyability JSON from Reliafy: links back to what this user can open.
+        rbd_import.link_references(found, saved_model, saved_rbd)
+        return found
+
+    try:
+        diagrams = excel_router.guarded(ctx.uid, parse)
+    except (import_guard.ImportBusy, import_guard.ImportBudgetExceeded) as exc:
+        return excel_router.guard_error(exc)
+    except rbd_import.RbdImportError as exc:
+        logger.info("RBD import refused: ext=%s bytes=%d — %s", ext, len(data), exc)
+        content = {"detail": str(exc)}
+        if getattr(exc, "code", None):
+            content["code"] = exc.code
+        return JSONResponse(status_code=422, content=content)
+    except Exception:  # untrusted input: never 500 on a malformed file
+        logger.exception("RBD import failed: ext=%s bytes=%d", ext, len(data))
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Couldn't read this file — it may be damaged or from an unsupported version."},
+        )
+
+    out = []
+    for d in diagrams:
+        try:
+            graph = normalize_graph(d.graph, resolve_saved_model=saved_model)
+        except GraphError as exc:
+            out.append({"name": d.name, "source_format": d.source_format, "error": str(exc), "warnings": d.warnings})
+            continue
+        out.append({
+            "name": d.name,
+            "source_format": d.source_format,
+            "warnings": d.warnings,
+            "graph": graph,
+            "n_nodes": len(graph["nodes"]),
+            "n_edges": len(graph["edges"]),
+        })
+    logger.info(
+        "RBD import: format=%s ext=%s diagrams=%d ok=%d",
+        diagrams[0].source_format, ext, len(out), sum(1 for d in out if "graph" in d),
+    )
+    return JSONResponse(content={"diagrams": out})
 
 
 @router.get("/rbds/{rbd_id}")
@@ -142,10 +267,11 @@ def delete_rbd(
     return JSONResponse(content={"ok": True})
 
 
-# Availability (repairable RBDs) runs thousands of Monte-Carlo replications,
-# so a full run is a paid feature. Free users still build, validate and view
-# diagrams — and any saved (cached) result — and in the app they can run a
-# quick, time-capped simulation (#147), a few a day.
+# The availability simulation (repairable RBDs) runs thousands of Monte-Carlo
+# replications, so running it is a paid feature. Every user gets the exact
+# figures (#154: long-run, and over time where RePyability has an exact
+# route), and any saved (cached) simulation result; in the app a user without
+# Pro can run a quick, time-capped simulation (#147), a few a day.
 AVAILABILITY_PRO_PAYLOAD = {
     "detail": (
         "Availability simulation is a paid feature. Subscribe to Pro or buy AI "
@@ -164,66 +290,177 @@ def quick_sims_allowed(surface: str) -> bool:
     return surface == "app" or config.MCP_FREE_QUICK_SIMS
 
 
+SIMULATION_PRO_MESSAGE = (
+    "The simulation adds what only it gives (the spread of outcomes, the chance of no outage, "
+    "percentiles and criticality indices): it's part of Pro, or buy AI credits — or download the "
+    "diagram and run it locally with RePyability."
+)
+
+
+def _matches_saved(doc: dict | None, graph: dict) -> bool:
+    """Whether ``graph`` is the diagram as saved (layout aside)."""
+    if doc is None:
+        return False
+    return rbds_service.availability_cache_key(graph) == rbds_service.availability_cache_key(doc.get("graph") or {})
+
+
+def exact_payload(session, graph: dict, t_max, state, doc, writable: bool, resolve_owners,
+                  requested: bool) -> dict:
+    """The free part of an availability result (#154): the exact long-run
+    figures and the ``exact`` block over time, from the cache when it holds
+    them. Above the size cap the figures over time wait for a request
+    (``requested``), and the long-run figures come alone. A from-new result
+    for the diagram as saved is kept on its document (when the caller may
+    edit it); every result is kept in the process's cache."""
+    from backend.services import rbd_analysis
+
+    deferral = rbd_analysis.exact_deferral(graph, requested)
+    if deferral is not None:
+        return {**rbds_service.long_run_only(session, graph, resolve_owners, t_max, state), "exact": deferral}
+    key = rbds_service.exact_cache_key(graph, t_max, state)
+    hit = rbds_service.cached_exact(doc, key, resolve_owners)
+    if hit is not None:
+        return {**hit, "exact": {**(hit.get("exact") or {}), "cached": True}}
+    result = rbds_service.analyze_exact(session, graph, resolve_owners, t_max, state)
+    rbds_service.remember_exact(key, result, resolve_owners)
+    if writable and state is None and _matches_saved(doc, graph):
+        rbds_service.store_exact(session, doc["_id"], key, result)
+    return {**result, "exact": {**result["exact"], "cached": False}}
+
+
+def _has_figures(payload: dict) -> bool:
+    """Whether a free payload has anything to show: the exact long-run
+    availability, or the figures over time (computed, or on request)."""
+    exact = payload.get("exact") or {}
+    return payload.get("steady_state_availability") is not None or exact.get("status") in ("ok", "on_request")
+
+
 def availability_payload(
     session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners,
+    *, simulate: bool | None = None, current_state=None, exact: bool = False,
     quick: bool = False, surface: str = "app",
 ) -> tuple[int, dict]:
-    """A repairable (availability) analysis as ``(status, payload)``: the saved
-    result when it matches the graph, else compute it — if the user is entitled
-    (402 + :data:`AVAILABILITY_PRO_PAYLOAD` otherwise).
+    """A repairable (availability) analysis as ``(status, payload)``.
 
-    A user who isn't entitled gets the 402 with a ``quick`` summary (seconds,
-    runs left today) where quick runs are allowed (``surface``: "app" or
-    "mcp"); asking again with ``quick`` runs one — 429 ``free_sim_cap`` once
-    the day's runs are used.
+    Every user gets the exact figures (#154): the long-run values and, where
+    RePyability's ``analysis_routes()`` has an exact or numerical route, the
+    availability over time and the window's expected failures, outages,
+    downtime and cost (``payload["exact"]``), from new or from
+    ``current_state`` (#155). The Monte-Carlo simulation stays paid (Pro or
+    purchased credits): ``simulate`` None runs it when the user is entitled
+    and no saved result matches (the API's behaviour before #154), False
+    never runs it (a saved result is still served), True runs it; ``force``
+    re-runs over a saved one. A user who isn't entitled gets the exact
+    figures with ``simulation_status.state == "pro_required"`` — or, when
+    the diagram has no exact figures at all (simulation-only), 402 +
+    :data:`AVAILABILITY_PRO_PAYLOAD` as before.
 
     ``rbd`` is the saved diagram the request is about (None for an unsaved
-    graph, which is never cached). A fresh result is written back only when
-    the caller may edit the diagram; read-only viewers (samples, shares) get
-    the computation without touching the owner's document. Shared by the REST
+    graph, whose simulation is never saved). A fresh simulation is written
+    back only when the caller may edit the diagram, and never one from a
+    current state; read-only viewers (samples, shares) get the computation
+    without touching the owner's document. ``exact`` asks for the figures
+    over time of a diagram above the automatic size cap. Shared by the REST
     endpoints below and the MCP server, so both apply the same paid gate.
 
-    The computation runs in-process, or — with the compute queue configured
-    — as a job: then the answer is 202 ``{job_id, status, queue_position}``
-    to poll at ``GET /api/rbd-jobs/{job_id}`` (see rbd_jobs).
-    """
-    key = rbds_service.availability_cache_key(graph, t_max)
-    doc = session.rbds.find_one({"_id": rbd.id}) if rbd is not None else None
-    cached = rbds_service.cached_availability(doc, key)
-    entitled = billing_service.premium_compute_allowed(session, ctx.user)
-    if cached is not None and not (force and entitled):
-        # ``can_recompute`` lets the UI offer "Re-run" only to entitled users.
-        return 200, {**cached, "can_recompute": entitled}
-    if not entitled:
-        if not quick_sims_allowed(surface):
-            return 402, AVAILABILITY_PRO_PAYLOAD
-        if not quick:
-            return 402, {**AVAILABILITY_PRO_PAYLOAD,
-                         "quick": free_sims_service.summary(session, ctx.uid)}
+    Free quick runs (#147): where quick runs are allowed (``surface``: "app",
+    or "mcp" with ``MCP_FREE_QUICK_SIMS``), a user who isn't entitled sees
+    ``simulation_status.quick`` (seconds, runs left today) beside the exact
+    figures — or, for a simulation-only diagram, in the 402 — and asking with
+    ``quick`` (and ``simulate`` not false) runs one: 429 ``free_sim_cap`` once
+    the day's runs are used.
 
-    store = rbd is not None and access_service.can_write(ctx, rbd.owner_id)
-    return rbd_jobs_service.run_availability(
-        session,
-        uid=ctx.uid,
-        graph=graph,
-        cache_key=key,
-        t_max=t_max,
-        resolve_owners=resolve_owners,
-        rbd_id=rbd.id if rbd is not None else None,
-        store=store,
-        entitled=entitled,
-        quick=not entitled,
-        force=force,
-    )
+    The simulation runs in-process, or — with the compute queue configured —
+    as a job (#146): then the answer is 202, the exact figures with ``job``
+    ``{job_id, status, queue_position}`` to poll at
+    ``GET /api/rbd-jobs/{job_id}``, whose result is the whole payload (see
+    :func:`rbd_jobs.availability_out`).
+    Raises :class:`AnalysisError` for an invalid current state.
+    """
+    from backend.services import rbd_analysis
+
+    state = rbd_analysis.parse_current_state(graph, current_state)
+    doc = session.rbds.find_one({"_id": rbd.id}) if rbd is not None else None
+    writable = rbd is not None and access_service.can_write(ctx, rbd.owner_id)
+    entitled = billing_service.premium_compute_allowed(session, ctx.user)
+    free = exact_payload(session, graph, t_max, state, doc, writable, resolve_owners, exact)
+
+    # The simulation: the saved one (from new only), or a run.
+    key = rbds_service.availability_cache_key(graph, t_max)
+    cached = rbds_service.cached_availability(doc, key) if state is None else None
+    wanted = bool(force) or (entitled if simulate is None else bool(simulate))
+    run = entitled and wanted and (cached is None or bool(force))
+    # A free quick run (#147): asked for, allowed here, and nothing saved to show.
+    quick_ok = not entitled and quick_sims_allowed(surface)
+    run_quick = quick_ok and bool(quick) and simulate is not False and cached is None
+    sim = None
+    job = None
+    if run or run_quick:
+        code, res = rbd_jobs_service.run_availability(
+            session,
+            uid=ctx.uid,
+            graph=graph,
+            cache_key=key,
+            t_max=t_max,
+            resolve_owners=resolve_owners,
+            rbd_id=rbd.id if rbd is not None else None,
+            # Never a result from a current state on the diagram.
+            store=writable and state is None,
+            entitled=entitled,
+            quick=run_quick,
+            force=force,
+            state=state,
+            context={"exact": free.get("exact")},
+        )
+        if code == 200:
+            sim = res
+            status = {"state": "done"}
+        elif code == 202:
+            job = res
+            status = {"state": res["status"], "job_id": res["job_id"]}
+        else:  # 429 (today's free runs used) or 503 (the queue is unavailable)
+            return code, res
+    elif cached is not None:
+        sim = cached
+        status = {"state": "saved"}
+    elif not entitled:
+        status = {"state": "pro_required", "message": SIMULATION_PRO_MESSAGE}
+        if quick_ok:
+            status["quick"] = free_sims_service.summary(session, ctx.uid)
+    else:
+        status = {"state": "not_run"}
+
+    if sim is None and job is None and not entitled and not _has_figures(free):
+        # Simulation-only diagram (no exact figures at all): the paywall, as
+        # before — with the free quick run where it's allowed.
+        if quick_ok:
+            return 402, {**AVAILABILITY_PRO_PAYLOAD, "quick": free_sims_service.summary(session, ctx.uid)}
+        return 402, AVAILABILITY_PRO_PAYLOAD
+
+    out = rbd_jobs_service.availability_out(
+        sim, free, status=status, state=state, entitled=entitled, graph=graph)
+    if sim is not None and sim.get("free_sims"):
+        out["free_sims"] = sim["free_sims"]
+    if job is not None:
+        out["job"] = {k: job.get(k) for k in ("job_id", "status", "queue_position", "quick")}
+        if job.get("free_sims"):
+            out["free_sims"] = job["free_sims"]
+        return 202, out
+    return 200, out
 
 
 def _availability(
     session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners,
-    quick: bool = False,
+    simulate: bool | None = None, current_state=None, exact: bool = False, quick: bool = False,
 ) -> JSONResponse:
+    # The exact figures (free) unless the simulation runs or meets the paywall.
+    usage_service.set_feature("availability_exact")
     status, payload = availability_payload(
-        session, ctx, graph, t_max, rbd, force, resolve_owners, quick=quick, surface="app"
-    )
+        session, ctx, graph, t_max, rbd, force, resolve_owners,
+        simulate=simulate, current_state=current_state, exact=exact, quick=quick, surface="app")
+    sim_state = (payload.get("simulation_status") or {}).get("state")
+    if status in (202, 402) or sim_state == "done":
+        usage_service.set_feature("availability_sim")
     return JSONResponse(status_code=status, content=payload)
 
 
@@ -233,8 +470,13 @@ def analyze_graph(
     t_max: float | None = Body(default=None),
     covariates: dict = Body(default={}),
     conditional_age: float | None = Body(default=None),
+    band: dict | None = Body(default=None),
     rbd_id: str | None = Body(default=None),
     force: bool = Body(default=False),
+    simulate: bool | None = Body(default=None),
+    current_state: dict | None = Body(default=None),
+    exact: bool = Body(default=False),
+    target_reliability: float | None = Body(default=None),
     quick: bool = Body(default=False),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
@@ -244,19 +486,34 @@ def analyze_graph(
     ``t_max`` is the upper limit of the time axis to compute over.
     ``covariates`` maps node id -> covariate values for proportional-hazards
     nodes. ``conditional_age`` conditions the curves on having already survived
-    to that age (so the result is the conditional survival).
+    to that age (so the result is the conditional survival). ``band``
+    (``{"level": 0.95}``) adds a confidence band from the fitted blocks'
+    parameter uncertainty.
 
-    Repairable graphs run the (paid) availability simulation. ``rbd_id`` names
-    the saved diagram being edited so a saved result can be served / stored;
-    ``force`` re-runs even when a saved result matches (entitled users only).
-    ``quick`` runs a free, time-capped simulation (users without Pro).
+    Repairable graphs get the exact availability figures (free) and the
+    availability simulation (paid; see :func:`availability_payload`).
+    ``rbd_id`` names the saved diagram being edited so a saved result can be
+    served / stored; ``force`` re-runs even when a saved result matches
+    (entitled users only); ``simulate`` false skips the simulation, true asks
+    for it; ``current_state`` (``{node_id: {"down": true, "since": …} |
+    {"age": …}}``) starts the figures from now, over ``t_max``; ``exact``
+    computes the figures over time of a diagram above the automatic size cap;
+    ``quick`` runs a free, time-capped simulation (users without Pro, #147).
+
+    Non-repairable graphs (#173): ``current_state`` (``{node_id: {"failed":
+    true} | {"age": …}}``) analyses the diagram as of now — the curves, MTTF
+    and B-lives run from now — and ``target_reliability`` (e.g. 0.9) adds the
+    design life, the time the system reliability falls to it (with an
+    interval when ``band`` is asked for). Both are exact, free for everyone.
     """
     try:
         if graph.get("repairable"):
             rbd = None
             if rbd_id:
                 rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
-            return _availability(session, ctx, graph, t_max, rbd, force, ctx.read_owners, quick)
+            return _availability(session, ctx, graph, t_max, rbd, force, ctx.read_owners,
+                                 simulate=simulate, current_state=current_state, exact=exact,
+                                 quick=quick)
         return JSONResponse(
             content=rbds_service.analyze_graph(
                 session,
@@ -265,14 +522,17 @@ def analyze_graph(
                 t_max=t_max,
                 covariates=covariates,
                 conditional_age=conditional_age,
+                band=band,
+                current_state=current_state,
+                target_reliability=target_reliability,
             )
         )
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse RBD graph")
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to analyse RBD: {exc}"}
+            status_code=500, content={"detail": "Failed to analyse RBD. The error has been logged."}
         )
 
 
@@ -281,11 +541,14 @@ def analyze_rbd(
     rbd_id: str,
     t_max: float | None = None,
     force: bool = False,
+    simulate: bool | None = None,
+    exact: bool = False,
     quick: bool = False,
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    """Analyse a saved RBD with RePyability and return the results."""
+    """Analyse a saved RBD with RePyability and return the results (for a
+    repairable one, ``simulate`` and ``exact`` as for ``POST /rbds/analyze``)."""
     rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
     if rbd is None:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
@@ -293,7 +556,8 @@ def analyze_rbd(
     owners = [*ctx.read_owners, rbd.owner_id]
     try:
         if graph.get("repairable"):
-            return _availability(session, ctx, graph, t_max, rbd, force, owners, quick)
+            return _availability(session, ctx, graph, t_max, rbd, force, owners,
+                                 simulate=simulate, exact=exact, quick=quick)
         return JSONResponse(
             content=rbds_service.analyze_graph(session, graph, owners, t_max=t_max)
         )
@@ -301,10 +565,10 @@ def analyze_rbd(
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse RBD %s", rbd_id)
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to analyse RBD: {exc}"}
+            status_code=500, content={"detail": "Failed to analyse RBD. The error has been logged."}
         )
 
 
@@ -337,12 +601,48 @@ def export_rbd_python(
         filename, source = rbds_service.export_python(
             session, rbd.name, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id]
         )
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to export RBD %s as Python", rbd_id)
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to export RBD: {exc}"}
+            status_code=500, content={"detail": "Failed to export RBD. The error has been logged."}
         )
     return python_download(filename, source)
+
+
+@router.get("/rbds/{rbd_id}/export.json")
+def export_rbd_json(
+    rbd_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> Response:
+    """Download a saved RBD as RePyability JSON (#174): ``rbd_from_json``
+    loads it as the RBD the app analyses, and Reliafy's RBD import restores
+    the diagram from it. Free for anyone who can view the diagram, like
+    Download as Python; resolution in the same scope. A block whose model
+    lives only in the workspace (a fitted proportional-hazards,
+    non-parametric or load-sharing model) is refused by name (422)."""
+    from backend.services import rbd_json
+
+    rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
+    if rbd is None or rbd.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "RBD not found."})
+    try:
+        filename, text = rbds_service.export_json(
+            session, rbd.name, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id]
+        )
+    except rbd_json.ExportError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to export RBD %s as RePyability JSON", rbd_id)
+        return JSONResponse(
+            status_code=500, content={"detail": "Failed to export RBD. The error has been logged."}
+        )
+    return Response(
+        content=text,
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.post("/rbds/validate")

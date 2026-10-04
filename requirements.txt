@@ -6,10 +6,10 @@ numpy
 # SurPyval from git: the PyPI releases are stale and miss the proportional-
 # hazards / AFT / PO / AH classes, the discrete distributions, and more. Pinned
 # to a commit SHA so builds are reproducible. (Requires git at build time.)
-git+https://github.com/derrynknife/SurPyval.git@v0.21.0
+git+https://github.com/derrynknife/SurPyval.git@v0.22
 # RePyability is installed --no-deps in the Dockerfile (and CI), pinned to a
-# git tag (v0.10.1), which keeps the SurPyval pin above authoritative: it
-# declares surpyval>=0.20 (uncapped), but --no-deps also stops pip re-resolving
+# git tag (v0.12), which keeps the SurPyval pin above authoritative: it
+# declares surpyval>=0.22 (uncapped), but --no-deps also stops pip re-resolving
 # surpyval from PyPI. backend/tests/test_rbd_analysis.py exercises the pairing,
 # so a real break would fail the suite rather than reach production.
 # RePyability's runtime deps (numpy/scipy via surpyval, networkx, tqdm) are
@@ -23,8 +23,15 @@ pydantic
 pymongo
 mongomock
 firebase-admin
+# AES-GCM for the OAuth refresh grace window (backend/services/oauth.py).
+# Already installed with firebase-admin (PyJWT[crypto]); named here because
+# the backend imports it directly.
+cryptography
 stripe
 httpx
+# Safe XML parsing for uploaded Open-PSA fault trees (no entity expansion,
+# no external entities / DTD fetching) — backend/services/rbd_import/openpsa.py.
+defusedxml==0.7.1
 # Renders the "What's new" update emails (backend/scripts/send_update.py).
 markdown
 # Managed Agents live in the beta namespace (beta.agents/environments/sessions);
@@ -34,3 +41,12 @@ anthropic==0.117.0
 # The MCP server at /mcp (backend/mcp_server.py): MCPServer + the stateless
 # Streamable HTTP transport. Pinned — the 2.x SDK is young and moves quickly.
 mcp==2.2.0
+# BlockSim project import (backend/services/rbd_import/blocksim.py): a pure-Python
+# Microsoft Access (Jet) reader, Apache-2.0. Pinned because the importer subclasses
+# its internals to read from memory with bounded page walks. Pulls construct and
+# tabulate (both MIT).
+access-parser==0.0.6
+# Excel (.xlsx) import for datasets, RCM worksheets and RBD templates
+# (backend/services/excel.py). MIT. Read-only, values-only; parses the XML
+# with defusedxml (above) when it's installed.
+openpyxl==3.1.5

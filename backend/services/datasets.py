@@ -12,7 +12,7 @@ from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.fitting import FitError
 from backend.fitting import preview as _preview
-from backend.fitting import read_dataframe
+from backend.fitting import read_csv_capped, read_dataframe
 from backend.schema import Dataset, Model
 
 
@@ -35,7 +35,14 @@ def normalize_pasted(content: str) -> bytes:
     """
     import io
 
+    from backend import config
+
     text = (content or "").strip()
+    if len(text) > config.MAX_UPLOAD_BYTES:
+        raise FitError(
+            f"That's too much data to paste ({len(text) / (1024 * 1024):.1f} MB). "
+            f"The limit is {config.MAX_UPLOAD_BYTES / (1024 * 1024):.0f} MB — upload it as a file instead."
+        )
     if not text:
         raise FitError("Nothing to import — paste some data first (with a header row).")
 
@@ -47,7 +54,10 @@ def normalize_pasted(content: str) -> bytes:
             "and include a header row."
         )
     try:
-        df = pd.read_csv(io.StringIO(text), sep=delim, engine="python", skipinitialspace=True)
+        df = read_csv_capped(io.StringIO(text), sep=delim, width_text=header,
+                             engine="python", skipinitialspace=True)
+    except FitError:
+        raise
     except Exception as exc:
         raise FitError(f"Couldn't read the pasted data: {exc}") from exc
     if df.empty or df.shape[1] == 0:
@@ -67,7 +77,10 @@ def _apply_generic_header(file_bytes: bytes) -> bytes:
     import io
 
     try:
-        df = pd.read_csv(io.BytesIO(file_bytes), header=None)
+        df = read_csv_capped(io.BytesIO(file_bytes), header=None,
+                             width_text=bytes(file_bytes[:1024 * 1024]).decode("utf-8", "replace"))
+    except FitError:
+        raise
     except Exception as exc:  # pragma: no cover - pandas raises many types
         raise FitError(f"Could not parse the file as CSV: {exc}") from exc
     if df.empty or df.shape[1] == 0:
@@ -86,15 +99,20 @@ def create_dataset(db, name: str, file_bytes: bytes, owner_id: str, no_header: b
     """
     from backend import config
 
+    def _check_size(data: bytes) -> None:
+        if len(data) > config.MAX_UPLOAD_BYTES:
+            mb = config.MAX_UPLOAD_BYTES / (1024 * 1024)
+            raise FitError(
+                f"That file is too large ({len(data) / (1024 * 1024):.1f} MB). "
+                f"The limit is {mb:.0f} MB — try trimming unused columns or rows."
+            )
+
+    # Checked before parsing, and again after the header rewrite (which can
+    # lengthen the file).
+    _check_size(file_bytes)
     if no_header:
         file_bytes = _apply_generic_header(file_bytes)
-
-    if len(file_bytes) > config.MAX_UPLOAD_BYTES:
-        mb = config.MAX_UPLOAD_BYTES / (1024 * 1024)
-        raise FitError(
-            f"That file is too large ({len(file_bytes) / (1024 * 1024):.1f} MB). "
-            f"The limit is {mb:.0f} MB — try trimming unused columns or rows."
-        )
+        _check_size(file_bytes)
 
     digest = storage.checksum(file_bytes)
     existing = db.datasets.find_one({"checksum": digest, "owner_id": owner_id})
@@ -167,6 +185,23 @@ def models_for_dataset(db, dataset_id: str, owner_id: str, hidden=frozenset()) -
         ).sort("created_at", -1)
         if m["_id"] not in hidden
     ]
+
+
+def update_details(db, dataset_id: str, owner_id: str, name: str | None = None,
+                   notes: str | None = None) -> Dataset | None:
+    """Rename an owned dataset and/or set its notes (``notes=""`` clears them).
+    Never touches the data. Returns None if it doesn't exist or isn't owned
+    (shared samples are read-only)."""
+    fields: dict = {}
+    if name is not None:
+        fields["name"] = name
+    if notes is not None:
+        fields["notes"] = notes or None
+    if fields:
+        res = db.datasets.update_one({"_id": dataset_id, "owner_id": owner_id}, {"$set": fields})
+        if res.matched_count == 0:
+            return None
+    return from_doc(Dataset, db.datasets.find_one({"_id": dataset_id, "owner_id": owner_id}))
 
 
 def delete_dataset(db, dataset_id: str, owner_id: str) -> bool:

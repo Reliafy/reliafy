@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listRbds, deleteRbd, renameRbd } from "../api.js";
+import { listRbds, deleteRbd, renameRbd, importRbdFile, downloadRbdTemplate } from "../api.js";
 import ShareDialog from "../components/ShareDialog.jsx";
+import RbdExcelImportModal from "../components/RbdExcelImportModal.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
+import { FirstRunStrip } from "../components/FirstRun.jsx";
+import { useFirstRun } from "../firstRun.js";
 
 const PlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -25,6 +28,11 @@ const ShareIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="6" cy="12" r="2.6" /><circle cx="17" cy="5.5" r="2.6" /><circle cx="17" cy="18.5" r="2.6" />
     <path d="m8.4 10.8 6.2-4M8.4 13.2l6.2 4" />
+  </svg>
+);
+const ImportIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
   </svg>
 );
 const TrashIcon = () => (
@@ -65,10 +73,43 @@ function summarise(rbds) {
 export default function RbdHome() {
   const navigate = useNavigate();
   const [rbds, setRbds] = useState(null);
+  // No models, datasets or diagrams of their own yet (samples don't count).
+  const firstRun = useFirstRun(rbds ? rbds.some((r) => !r.is_sample) : undefined);
   const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(null); // rbd being shared
   const { workspace } = useWorkspace();
+  const fileRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+  const [imported, setImported] = useState(null); // {file, diagrams} when a file holds several
+  const [excelMapping, setExcelMapping] = useState(null); // {file, message}: a workbook to map by hand
+
+  // Open an imported diagram in the builder, unsaved (the builder's Save keeps it).
+  const openImported = (d) => navigate("/rbds/b", { state: { imported: d } });
+
+  const onImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    setImporting(true);
+    try {
+      showImported(file, await importRbdFile(file));
+    } catch (err) {
+      // An Excel workbook not laid out like the template: map its columns.
+      if (err.code === "excel_mapping") setExcelMapping({ file, message: err.message });
+      else setError(err.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const showImported = (file, { diagrams }) => {
+    const ok = diagrams.filter((d) => d.graph);
+    if (diagrams.length === 1 && ok.length === 1) openImported(ok[0]);
+    else if (!ok.length) setError(diagrams[0]?.error || "No diagram in this file could be imported.");
+    else setImported({ file: file.name, diagrams });
+  };
 
   const refresh = useCallback(() => {
     listRbds()
@@ -105,12 +146,75 @@ export default function RbdHome() {
             reliability, or start a new diagram from scratch.
           </p>
         </div>
-        <button onClick={() => navigate("/rbds/b")}>
-          <PlusIcon /> New RBD
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".rsgz9,.rsgz10,.rsgz11,.rsgz20,.rsgz21,.rsgz22,.rsgz23,.rsgz24,.rsgz25,.rsr9,.rsr10,.rsr11,.rsr20,.rsr21,.rsr22,.rsr23,.rsr24,.rsr25,.rsrp,.xml,.opsa,.dft,.json,.xlsx,.xlsm"
+            hidden
+            onChange={onImportFile}
+          />
+          <button
+            className="secondary"
+            disabled={importing}
+            title="Import a diagram from ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA XML, Galileo .dft, RePyability JSON or an Excel workbook (.xlsx)"
+            onClick={() => fileRef.current?.click()}
+          >
+            <ImportIcon /> {importing ? "Importing…" : "Import"}
+          </button>
+          <button
+            className="secondary"
+            title="An Excel template for building a diagram from a list of blocks and connections"
+            onClick={() => downloadRbdTemplate().catch((err) => setError(err.message))}
+          >
+            Excel template
+          </button>
+          <button onClick={() => navigate("/rbds/b")}>
+            <PlusIcon /> New RBD
+          </button>
+        </div>
       </header>
 
+      <FirstRunStrip info={firstRun} />
+
       {error && <div className="card error">{error}</div>}
+
+      {excelMapping && (
+        <RbdExcelImportModal
+          file={excelMapping.file}
+          message={excelMapping.message}
+          onClose={() => setExcelMapping(null)}
+          onImported={(result) => {
+            const file = excelMapping.file;
+            setExcelMapping(null);
+            showImported(file, result);
+          }}
+        />
+      )}
+
+      {imported && (
+        <div className="card">
+          <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem" }}>
+            <h2 style={{ margin: 0 }}>Diagrams in {imported.file}</h2>
+            <span className="grow" style={{ flex: 1 }} />
+            <button className="link-btn" onClick={() => setImported(null)}>Cancel</button>
+          </div>
+          <p>This file holds {imported.diagrams.length} diagrams. Pick one to open — it opens unsaved, so save it to keep it.</p>
+          <table className="lib-table">
+            <tbody>
+              {imported.diagrams.map((d, i) => (
+                <tr key={i} className={d.graph ? "lib-row" : undefined} onClick={d.graph ? () => openImported(d) : undefined}>
+                  <td><div className="lib-name">{d.name}</div></td>
+                  <td className="lib-n">{d.graph ? `${d.n_nodes} nodes` : ""}</td>
+                  <td className="lib-date">
+                    {d.error ? d.error : d.warnings?.length ? `${d.warnings.length} note${d.warnings.length > 1 ? "s" : ""}` : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {loading ? (
         <div className="card empty">Loading…</div>

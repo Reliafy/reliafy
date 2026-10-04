@@ -58,6 +58,11 @@ pick a plausible β and check whether the design still meets its target. A
 redundant system that only passes at β = 0 is trusting its redundancy further
 than the physics allows.
 
+β splits each component's failure *rate* by default, which holds over the
+whole life. The dialog also offers the failure-probability split of PRA basic
+events; keep that for short missions, since over a lifetime it overstates the
+group's reliability (and the MTTF isn't given with it).
+
 A note on symmetry: the β-factor model assumes the grouped units are
 *identical*. If their life models differ, Reliafy flags it when you validate —
 give them the same model for a result that means anything.

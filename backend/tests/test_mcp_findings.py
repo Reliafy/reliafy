@@ -5,6 +5,8 @@ helpers and ``env`` fixture come from test_mcp) or, for shared validation,
 through the service the web app uses too.
 """
 
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -330,6 +332,21 @@ def test_redundancy_heuristic_keeps_false_positives_low():
     assert not rbd_analysis.series_redundancy_warnings(rbd_graph.normalize_graph(GRAPH))
 
 
+def test_a_standby_nodes_own_label_is_not_a_redundant_pair():
+    """#183: "duty/standby" in a standby (or parallel / load-sharing) node's
+    label describes its own units, not its neighbours in series."""
+    from backend.services import rbd_analysis, rbd_graph
+
+    for ntype in ("standby", "parallel", "loadshare"):
+        graph = rbd_graph.normalize_graph(
+            _chain("Suction strainer", "CW pumps A/B (duty/standby)", "Discharge check valve"))
+        next(n for n in graph["nodes"] if n["id"] == "n1")["type"] = ntype
+        assert not rbd_analysis.series_redundancy_warnings(graph), ntype
+    # A plain component so labelled still warns.
+    graph = _chain("Suction strainer", "CW pump (standby)")
+    assert rbd_analysis.series_redundancy_warnings(rbd_graph.normalize_graph(graph))
+
+
 # ---- P2.8 conflicting inputs are refused, never resolved silently ----------------
 
 def test_conflicting_inputs_are_refused(samples):
@@ -494,6 +511,162 @@ def test_notes_never_round_small_numbers_to_zero(env):
         "0", "2e-05", "0.0123", "1.5", "1,000", "12,346", "3.2e+09"]
 
 
+# ---- #189 optimal_replacement flags a shape interval that reaches 1 -----------------------
+
+def _fitted_weibull(env, name, seed, beta, n=30, cutoff=7000.0):
+    """A saved Weibull fitted to n units of Weibull(7746, beta) life, still running at cutoff."""
+    rng = np.random.default_rng(seed)
+    t = 7746 * rng.weibull(beta, n)
+    flags = [int(x > cutoff) for x in t]
+    out = _ok(_call(env.token[A], "fit_and_save_model", {
+        "name": name, "data": [round(min(x, cutoff), 1) for x in t], "censored": flags, "unit": "hours"}))
+    (b,) = [p for p in out["params"] if p["name"] == "beta"]
+    return out["model_id"], b
+
+
+def test_optimal_replacement_flags_weak_wear_out_evidence(env):
+    costs = {"planned_cost": 4000, "unplanned_cost": 25000}
+    weak, b = _fitted_weibull(env, "Weak", seed=1, beta=1.77)  # β ≈ 1.97, 95% CI ≈ [1.09, 2.84]
+    assert 1 < b["ci"][0] < 1.2
+    out = _ok(_call(env.token[A], "optimal_replacement", {"model_id": weak, **costs}))
+    assert out["beneficial"] is True
+    su = out["shape_uncertainty"]
+    assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
+    assert su["at_beta_lower"]["savings"] < 0.5 * out["savings"] < su["at_beta_upper"]["savings"]
+    assert "reaches down to 1.09" in out["uncertainty_note"] and "weakly" in out["uncertainty_note"]
+
+    random_ish, b = _fitted_weibull(env, "Random-ish", seed=3, beta=1.77)  # CI ≈ [0.91, 2.23]
+    assert b["ci"][0] < 1 < b["ci"][1]
+    out = _ok(_call(env.token[A], "optimal_replacement", {"model_id": random_ish, **costs}))
+    assert "includes 1" in out["uncertainty_note"]
+    assert out["shape_uncertainty"]["at_beta_lower"]["beneficial"] is False
+
+    clear, b = _fitted_weibull(env, "Clear", seed=7, beta=4.0, n=60, cutoff=1e9)
+    out = _ok(_call(env.token[A], "optimal_replacement", {"model_id": clear, **costs}))
+    assert b["ci"][0] > 3 and out["shape_uncertainty"]["at_beta_lower"]["beneficial"]
+    assert "uncertainty_note" not in out
+
+    inline = _ok(_call(env.token[A], "optimal_replacement", {
+        "distribution_id": "weibull", "params": [{"name": "alpha", "value": 7746}, {"name": "beta", "value": 1.77}],
+        **costs}))
+    assert "shape_uncertainty" not in inline and "uncertainty_note" not in inline  # no fit, no interval
+
+
+def test_failure_finding_interval_gets_the_shape_treatment(env):
+    """#189 follow-up: the failure-finding interval at each end of a fitted
+    Weibull's β interval (α held), and a note when an end asks for a test
+    interval 20%+ shorter than the estimate's — the unsafe side."""
+    target = {"target_availability": 0.99}
+    early, b = _fitted_weibull(env, "Early", seed=3, beta=0.6, n=20, cutoff=1e9)  # β ≈ 0.62, CI ≈ [0.41, 0.83]
+    out = _ok(_call(env.token[A], "failure_finding_interval", {"model_id": early, **target}))
+    su = out["shape_uncertainty"]
+    assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
+    alpha = next(p["value"] for p in _ok(_call(env.token[A], "get_model", {"model_id": early}))["params"]
+                 if p["name"] == "alpha")
+    for end, beta in (("at_beta_lower", b["ci"][0]), ("at_beta_upper", b["ci"][1])):
+        expected = 2 * 0.01 * alpha * math.gamma(1 + 1 / beta)  # FFI = 2(1 - A) MTTF, α held
+        assert su[end]["interval"] == pytest.approx(expected, rel=1e-3)
+    assert su["at_beta_upper"]["interval"] < 0.8 * out["interval"]
+    assert "as short as" in out["uncertainty_note"] and "shorter one" in out["uncertainty_note"]
+
+    clear, _ = _fitted_weibull(env, "Clear", seed=7, beta=4.0, n=60, cutoff=1e9)
+    out = _ok(_call(env.token[A], "failure_finding_interval", {"model_id": clear, **target}))
+    assert out["shape_uncertainty"]["at_beta_lower"]["interval"] > 0.8 * out["interval"]
+    assert "uncertainty_note" not in out
+
+    inline = _ok(_call(env.token[A], "failure_finding_interval", {
+        "distribution_id": "weibull", "params": [{"name": "alpha", "value": 7746}, {"name": "beta", "value": 0.6}],
+        **target}))
+    assert "shape_uncertainty" not in inline and "uncertainty_note" not in inline  # no fit, no interval
+
+
+def _nhpp_model(env, name, seed, beta, systems, window):
+    """A saved Crow-AMSAA model fitted to power-law (alpha 1000) event times."""
+    from backend.services import datasets as datasets_service
+    from backend.services import recurrent as recurrent_service
+
+    rng = np.random.default_rng(seed)
+    lines = ["system,time,window"]
+    for s in range(systems):
+        t = 1000.0 * np.cumsum(rng.exponential(1.0, 400)) ** (1.0 / beta)
+        lines += [f"S{s},{x:.2f},{window}" for x in t[t <= window]]
+    ds = datasets_service.create_dataset(env.db, name, "\n".join(lines).encode(), A)
+    spec = {"mapping": {"i": "system", "x": "time", "tr": "window"}, "model_id": "crow_amsaa", "unit": "hours"}
+    return recurrent_service.save_model(env.db, name, ds, spec, A)
+
+
+def test_optimal_overhaul_gets_the_shape_treatment(env):
+    """#189 follow-up: the overhaul optimum at each end of the Crow-AMSAA
+    β interval (α held, savings over the estimate's horizon), and the same
+    notes as optimal_replacement."""
+    from backend import recurrent as recurrent_fit
+    from backend.services import recurrent as recurrent_service
+
+    costs = {"cost_repair": 100, "cost_overhaul": 1000}
+    clear = _nhpp_model(env, "Compressors", seed=1, beta=2.5, systems=5, window=3000)
+    (a, b) = clear.results["params"]
+    assert 2.0 < b["ci"][0] < b["value"] < b["ci"][1]  # the interval is stored with the fit
+    out = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": clear.id, **costs}))
+    su = out["shape_uncertainty"]
+    assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
+    low = recurrent_fit.optimal_overhaul({"model_id": "crow_amsaa", "params": [a["value"], b["ci"][0]]}, 100, 1000)
+    assert su["at_beta_lower"]["optimal_interval"] == pytest.approx(low["optimal"]["interval"], rel=1e-3)
+    assert su["at_beta_lower"]["saving_pct"] == pytest.approx(low["saving_pct"], rel=1e-3)
+    assert su["at_beta_lower"]["horizon"] == pytest.approx(3 * low["optimal"]["interval"], rel=1e-3)
+    assert su["at_beta_lower"]["pays"] and su["at_beta_lower"]["saving_pct"] >= 0.5 * out["saving_pct"]
+    assert "uncertainty_note" not in out
+
+    weak = _nhpp_model(env, "Pumps", seed=2, beta=1.5, systems=2, window=2000)
+    out = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": weak.id, **costs}))
+    assert out["optimal"] and out["shape_uncertainty"]["beta_ci_95"][0] < 1
+    assert out["shape_uncertainty"]["at_beta_lower"]["pays"] is False
+    assert "includes 1" in out["uncertainty_note"] and "tentative" in out["uncertainty_note"]
+
+    # A model saved before intervals were stored gets one from a refit, kept on the model.
+    params = [{k: v for k, v in p.items() if k != "ci"} for p in clear.results["params"]]
+    env.db.recurrent_models.update_one({"_id": clear.id}, {"$set": {"results.params": params}})
+    assert "shape_uncertainty" in _ok(_call(env.token[A], "optimal_overhaul", {"model_id": clear.id, **costs}))
+    assert env.db.recurrent_models.find_one({"_id": clear.id})["results"]["params"][1]["ci"]
+
+    # Built from parameters: no data, no interval.
+    doc = recurrent_service.save_from_params(
+        env.db, "Typed", "crow_amsaa", [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}], 5000,
+        "hours", A)
+    out = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": doc.id, **costs}))
+    assert "shape_uncertainty" not in out and "uncertainty_note" not in out
+
+
+# ---- #190 a censor column named like a failure flag -----------------------------------
+
+def test_fit_warns_when_the_censor_column_sounds_like_1_means_failed(env):
+    from backend import mcp_server
+
+    failed = [1 - f for f in FLAGS]  # the spreadsheet way: 1 = failed
+    ds = _ok(_call(env.token[A], "upload_dataset", {
+        "name": "Pumps", "csv": "hours,failed,censored\n"
+        + "\n".join(f"{t},{a},{b}" for t, a, b in zip(TIMES, failed, FLAGS))}))
+    base = {"dataset_id": ds["id"], "time_column": "hours"}
+
+    out = _ok(_call(env.token[A], "fit_distribution", {**base, "censor_column": "failed"}))
+    (warning,) = [w for w in out["warnings"] if "c_invert" in w]
+    assert "“failed” sounds like 1 = failed" in warning and "3 failures and 7 still running" in warning
+    assert list(out)[0] == "warnings"  # ahead of the numbers
+    assert out["censoring"] == {"n_failed": 3, "n_right_censored": 7, "n_left_censored": 0}
+
+    fixed = _ok(_call(env.token[A], "fit_distribution", {**base, "censor_column": "failed", "c_invert": True}))
+    assert "warnings" not in fixed and fixed["censoring"]["n_failed"] == 7
+    plain = _ok(_call(env.token[A], "fit_distribution", {**base, "censor_column": "censored"}))
+    assert "warnings" not in plain and plain["censoring"]["n_failed"] == 7
+    assert [p["value"] for p in plain["params"]] == pytest.approx([p["value"] for p in fixed["params"]])
+
+    saved = _ok(_call(env.token[A], "fit_and_save_model", {**base, "censor_column": "failed", "name": "Pumps"}))
+    assert any("c_invert=true" in w for w in saved["warnings"]) and saved["censoring"]["n_failed"] == 3
+
+    names = {"failed": True, "Failed?": True, "is_failure": True, "FailFlag": True, "Status": True,
+             "event": True, "censored": False, "suspended": False, "fail_or_censor": False, "c": False}
+    assert {n: mcp_server._sounds_like_failure_flag(n) for n in names} == names
+
+
 # ---- P3.15 large payloads are opt-in --------------------------------------------------
 
 def test_calculator_curves_are_opt_in(env):
@@ -629,3 +802,58 @@ def test_failure_finding_note_prints_the_target_as_given(env):
         "distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 1e-4}],
         "target_availability": 0.9999999}))
     assert "near 99.99999%" in out["note"]
+
+
+# ---- #215: output polish --------------------------------------------------------------------
+
+def test_demonstration_target_is_printed_as_given_and_null_rows_explained():
+    from backend.services import strategy
+
+    out = strategy.demonstration_test(reliability=0.999999, confidence=0.9)
+    assert "≥ 99.9999%" in out["summary"] and "100%" not in out["summary"]
+    assert "99.9999% target" in " ".join(out["assumptions"])
+    assert "note" not in out["tradeoff"]  # solving for units: every cell has a value
+    plan = strategy.demonstration_test(reliability=0.9, confidence=0.9, units=2, failures=1, shape=2.0)
+    rows = plan["tradeoff"]["rows"]
+    assert any(v is None for r in rows for v in r["values"])
+    assert "unit count no larger than the failures allowed" in plan["tradeoff"]["note"]
+
+
+def test_failed_fit_has_no_verdict_or_metrics(env):
+    data = [1e-300, 1e-100, 1.0, 1e100, 1e300]
+    out = _ok(_call(env.token[A], "fit_distribution", {"data": data}))
+    assert out["fit_ok"] is False
+    assert out["metrics"] is None and "didn't converge" in out["metrics_omitted"]
+    assert out["randomness"]["verdict"] == "inconclusive" and "didn't converge" in out["randomness"]["reason"]
+    good = _ok(_call(env.token[A], "fit_distribution", {"data": [120, 340, 510, 700, 980, 1200]}))
+    assert good["metrics"] and "metrics_omitted" not in good
+    assert good["randomness"]["verdict"] != "inconclusive" or good["randomness"]["beta_ci"] is None
+
+
+# ---- #213: published schemas in step with what the tools accept -------------------------
+
+def test_every_argument_a_tool_takes_is_in_its_published_schema(env):
+    """A client that validates against the schema can't send an argument the
+    tool reads but doesn't publish (reliability_at's confidence was one)."""
+    import inspect
+
+    from mcp.server.mcpserver import Context
+
+    from backend import mcp_server
+    from backend.tests.test_mcp import _run
+
+    tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
+    for name, tool in tools.items():
+        fn = getattr(mcp_server, name, None)
+        assert fn is not None and hasattr(fn, "__wrapped__"), name
+        params = [p for p, spec in inspect.signature(fn).parameters.items()
+                  if spec.annotation is not Context and p != "ctx"]
+        missing = set(params) - set(tool.input_schema.get("properties") or {})
+        assert not missing, (name, missing)
+    props = tools["reliability_at"].input_schema["properties"]
+    assert props["confidence"]["anyOf"][0] == {"exclusiveMaximum": 1, "exclusiveMinimum": 0, "type": "number"}
+    fit = tools["fit_distribution"].input_schema["properties"]
+    assert "-1" in fit["censored"]["description"] and "-1" in fit["censor_column"]["description"]
+    compare = tools["compare_groups"].input_schema["properties"]
+    assert "-1" not in compare["c_invert"]["description"]
+    assert "right-censored only" in compare["censored"]["description"]

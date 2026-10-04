@@ -1,5 +1,9 @@
+# Base images are pinned by digest (the multi-arch index) so a rebuild gets the
+# same bytes; the tag beside each is what the digest was resolved from. To
+# update: docker buildx imagetools inspect <image:tag>, copy the index Digest.
+
 # ---- Stage 1: build the React frontend ----
-FROM node:22-slim AS frontend
+FROM node:22-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS frontend
 WORKDIR /frontend
 COPY frontend/package*.json ./
 RUN npm ci
@@ -17,7 +21,7 @@ RUN npm run build
 RUN if [ "$VITE_AUTH_DISABLED" != "true" ]; then npm run prerender; fi
 
 # ---- Stage 2: Python backend serving the built frontend ----
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:bab1b7ef4b450c81002278d035eff85ebe394ae94df904f7a3ba14f7e16e487b
 WORKDIR /code
 
 # Everything that needs build tools happens in ONE layer that also removes
@@ -39,10 +43,10 @@ RUN apt-get update \
     && python -m pip install --no-cache-dir --upgrade pip \
     && grep -viE '^firebase-admin' requirements.txt > /tmp/requirements-runtime.txt \
     && pip install --no-cache-dir -r /tmp/requirements-runtime.txt \
-    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.10.1" \
+    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.12" \
     && pip install --no-cache-dir --no-deps "firebase-admin==7.7.0" \
     && pip install --no-cache-dir google-auth cachecontrol "pyjwt[crypto]" requests httpx \
-    && python -c "import firebase_admin, firebase_admin.auth, surpyval, repyability" \
+    && python -c "import firebase_admin, firebase_admin.auth, surpyval, repyability, access_parser, defusedxml, openpyxl" \
     && find /usr/local/lib/python3.11/site-packages -depth -type d \( -name tests -o -name test \) \
          -not -path '*/_pytest/*' -prune -exec rm -rf {} + \
     && python -m pip uninstall -y pip \
@@ -50,12 +54,19 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /root/.cache /tmp/requirements-runtime.txt
 
 # No display on the server: skip matplotlib's GUI-backend probing at import.
-ENV MPLBACKEND=Agg
+# Its font/config cache goes to /tmp (the app user's home is read-only).
+ENV MPLBACKEND=Agg \
+    MPLCONFIGDIR=/tmp/matplotlib
 
 COPY backend/ ./backend/
 # Precompile our own code so a cold start doesn't byte-compile it.
 RUN python -m compileall -q backend
 COPY --from=frontend /frontend/dist ./frontend/dist
+
+# Run as an unprivileged user. The code stays root-owned (read-only to the
+# app); nothing is written at runtime except under /tmp.
+RUN useradd --system --uid 10001 --no-create-home --home-dir /tmp --shell /usr/sbin/nologin app
+USER 10001:10001
 
 # Cloud Run injects $PORT (default 8080); fall back to 8000 for local runs.
 EXPOSE 8080

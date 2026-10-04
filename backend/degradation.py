@@ -217,7 +217,7 @@ def _build_payload(model, distribution_id: str, unit: str, measurement_unit: str
     life = model.life_model
     life_params = [
         {"name": n, "value": float(v)}
-        for n, v in zip(life.dist.param_names, np.atleast_1d(life.params))
+        for n, v in zip(life.dist.parameter_names, np.atleast_1d(life.params))
     ]
     # Population reliability curve with two-stage confidence bounds.
     curves = reliability_curves(model)

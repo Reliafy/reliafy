@@ -81,6 +81,9 @@ from surpyval import (
 from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
+from backend.formula_check import FormulaRejected, check_formula
+from backend.model_validation import validate_regression
+
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
 # ``offsetable``: supports the 3-parameter offset (failure-free period) —
 # only distributions on the half real line; a location shift is meaningless
@@ -188,6 +191,23 @@ def _store_model(model, grid: np.ndarray, fields: list) -> str:
     return model_id
 
 
+def bind_owner(model_id: str | None, owner: str) -> None:
+    """Tie a stored model to the account that fitted it, so the calculator
+    endpoints only serve it back to that account."""
+    entry = _MODEL_STORE.get(model_id) if model_id else None
+    if entry is not None:
+        entry["owner"] = owner
+
+
+def _entry_for(model_id: str, owner: str | None) -> dict:
+    """The stored model, or ModelNotFound. With ``owner`` given, an entry
+    bound to someone else (or to no one) is treated as not found."""
+    entry = _MODEL_STORE.get(model_id)
+    if entry is None or (owner is not None and entry.get("owner") != owner):
+        raise ModelNotFound(model_id)
+    return entry
+
+
 def serialize_live(cache_id: str) -> dict | None:
     """Serialise a stored live model (surpyval ``to_dict``) plus its evaluation
     grid and covariate fields, so it can be persisted in Mongo and rehydrated
@@ -225,10 +245,59 @@ class FitError(ValueError):
     """Raised when the uploaded data cannot be turned into a fitted model."""
 
 
-def read_dataframe(file_bytes: bytes) -> pd.DataFrame:
-    """Parse uploaded bytes as a CSV into a DataFrame."""
+def csv_width(text: str, sep: str = ",") -> int:
+    """Number of fields in the first record of CSV ``text`` (0 if empty).
+    Counted with the stdlib reader, before pandas builds any columns."""
+    import csv
+
     try:
-        df = pd.read_csv(io.BytesIO(file_bytes))
+        return len(next(csv.reader(io.StringIO(text), delimiter=sep), []))
+    except csv.Error:
+        return 0
+
+
+def check_csv_shape(width: int, n_rows: int | None = None) -> None:
+    """Refuse a table wider than ``MAX_CSV_COLS`` or longer than
+    ``MAX_CSV_ROWS`` with a FitError the user can act on."""
+    from backend import config
+
+    if width > config.MAX_CSV_COLS:
+        raise FitError(
+            f"The file has {width:,} columns; the limit is {config.MAX_CSV_COLS:,}. "
+            "Remove the columns you don't need and upload it again."
+        )
+    if n_rows is not None and n_rows > config.MAX_CSV_ROWS:
+        raise FitError(
+            f"The file has more than {config.MAX_CSV_ROWS:,} rows, the limit. "
+            "Split it, or summarise repeated values with a count column."
+        )
+
+
+def read_csv_capped(buf, *, sep: str = ",", width_text: str | None = None, **kwargs) -> pd.DataFrame:
+    """``pd.read_csv`` within the shape limits: the header's width is checked
+    before parsing, and at most ``MAX_CSV_ROWS`` + 1 rows are read (one more
+    than allowed, to tell "at the limit" from "over it"). Raises FitError."""
+    from backend import config
+
+    if width_text is not None:
+        check_csv_shape(csv_width(width_text, sep if len(sep) == 1 else ","))
+    df = pd.read_csv(buf, sep=sep, nrows=config.MAX_CSV_ROWS + 1, **kwargs)
+    check_csv_shape(df.shape[1], len(df))
+    return df
+
+
+def _head_text(file_bytes: bytes, limit: int = 1024 * 1024) -> str:
+    """The start of the file as text, enough to hold its header row."""
+    return bytes(file_bytes[:limit]).decode("utf-8", errors="replace")
+
+
+def read_dataframe(file_bytes: bytes) -> pd.DataFrame:
+    """Parse uploaded bytes as a CSV into a DataFrame, within the
+    ``MAX_CSV_COLS`` / ``MAX_CSV_ROWS`` limits."""
+    try:
+        df = read_csv_capped(io.BytesIO(file_bytes), width_text=_head_text(file_bytes))
+    except FitError:
+        raise
     except Exception as exc:  # pragma: no cover - pandas raises many types
         raise FitError(f"Could not parse the file as CSV: {exc}") from exc
 
@@ -399,6 +468,8 @@ def build_fit_inputs(df: pd.DataFrame, mapping: dict) -> dict:
 
     kwargs: dict = {}
     for field, name in mapping.items():
+        if name not in df.columns:
+            raise FitError(f"The data has no column named '{name}'.")
         col = pd.to_numeric(df[name], errors="coerce").to_numpy(dtype=float)
         if field == "tl":
             col = np.where(np.isnan(col), -np.inf, col)
@@ -791,7 +862,7 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
     if fixed is not None:
         if not isinstance(fixed, dict):
             raise FitError('fixed must be an object like {"beta": 2}.')
-        names = set(getattr(entry["dist"], "param_names", []) or [])
+        names = set(getattr(entry["dist"], "parameter_names", []) or [])
         # Extras can be fixed too when their option is active.
         if out["offset"]:
             names.add("gamma")
@@ -929,7 +1000,7 @@ def param_values(distribution_id: str, params: list, where: str = "") -> list[fl
             f"'{distribution_id}' isn't a supported plain distribution. "
             f"Supported: {', '.join(DISTRIBUTIONS)}."
         )
-    names = list(getattr(entry["dist"], "param_names", []) or [])
+    names = list(getattr(entry["dist"], "parameter_names", []) or [])
     prefix = f"{where}: " if where else ""
     takes = f"{entry['name']} takes the parameters {', '.join(names)}"
     params = list(params or [])
@@ -1004,7 +1075,7 @@ def result_from_params(
     except Exception as exc:
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
 
-    names = list(getattr(dist, "param_names", []) or [f"p{i}" for i in range(len(values))])
+    names = list(getattr(dist, "parameter_names", []) or [f"p{i}" for i in range(len(values))])
     result = {
         "distribution": entry["name"],
         "distribution_id": distribution_id,
@@ -1298,7 +1369,7 @@ def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int) -> 
     except Exception as exc:
         raise FitError(_fit_failure_hint(exc, kwargs, f"a {entry['name']} mixture")) from exc
 
-    base_names = list(getattr(dist, "param_names", []) or [])
+    base_names = list(getattr(dist, "parameter_names", []) or [])
     values = np.asarray(raw.params, dtype=float).reshape(raw.m, -1)
     weights = np.ravel(np.asarray(raw.w, dtype=float))
     params = []
@@ -1345,10 +1416,16 @@ def _fit_distribution(
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             model = dist.fit(**kwargs)
+        # SurPyval 0.22 records whether every likelihood fit reached a verified
+        # maximum (``model.maximum``); its warning's wording is no longer
+        # "... FAILED ...". Older fits only had the warning text.
+        unverified = getattr(model, "maximum", "verified") not in ("verified", None)
         fit_warning = next(
             (str(w.message) for w in caught
-             if "FAILED" in str(w.message).upper()), None
+             if "FAILED" in str(w.message).upper() or "verified maximum" in str(w.message)), None
         )
+        if unverified and not fit_warning:
+            fit_warning = "The maximum-likelihood search did not reach a verified maximum."
         # Backfill the covariance when SurPyval's Hessian came out non-finite
         # (otherwise the confidence band would be all-NaN).
         _ensure_covariance(model)
@@ -1366,8 +1443,8 @@ def _fit_distribution(
         raise FitError(_fit_failure_hint(exc, kwargs, entry["name"])) from exc
 
     param_names = (
-        getattr(model, "param_names", None)
-        or getattr(dist, "param_names", None)
+        getattr(model, "parameter_names", None)
+        or getattr(dist, "parameter_names", None)
         or [f"p{i}" for i in range(len(model.params))]
     )
     params = _params_with_uncertainty(model, param_names)
@@ -1413,6 +1490,11 @@ def _fit_distribution(
         result["warnings"] = notes
     randomness = _randomness_verdict(distribution, params)
     if randomness is not None:
+        if fit_warning:
+            # #215: no verdict from parameters the optimiser didn't settle on.
+            randomness = {**randomness, "verdict": "inconclusive",
+                          "reason": "The fit didn't converge, so its shape says nothing about the failure "
+                                    "pattern."}
         result["randomness"] = randomness
     return result
 
@@ -1475,8 +1557,8 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
 
     param_names = (
-        getattr(model, "param_names", None)
-        or getattr(dist, "param_names", None)
+        getattr(model, "parameter_names", None)
+        or getattr(dist, "parameter_names", None)
         or [f"p{i}" for i in range(len(model.params))]
     )
     params = _params_with_uncertainty(model, param_names)
@@ -1636,7 +1718,10 @@ def _fit_regression(
         if mapping.get(field):
             fit_kwargs[kw] = mapping[field]
     if formula:
-        fit_kwargs["formula"] = formula
+        try:
+            fit_kwargs["formula"] = check_formula(formula, df.columns)
+        except FormulaRejected as exc:
+            raise FitError(str(exc)) from exc
     elif covariates:
         fit_kwargs["Z_cols"] = list(covariates)
 
@@ -1668,7 +1753,7 @@ def _fit_regression(
 
     # Baseline distribution parameters (empty for semi-parametric Cox).
     base_dist = getattr(model, "distribution", None)
-    base_names = getattr(base_dist, "param_names", None) or [
+    base_names = getattr(base_dist, "parameter_names", None) or [
         f"p{i}" for i in range(k_dist)
     ]
     baseline = [
@@ -1737,6 +1822,8 @@ def _fit_regression(
         "n": n,
         "gof": gof,
         "functions": functions,
+        # How good is this model? Harrell's C, Brier score, AUC (#176).
+        "validation": validate_regression(model, df, mapping, raw_vars),
     }
 
 
@@ -1797,12 +1884,11 @@ def _custom_grid(grid, x_min=None, x_max=None) -> np.ndarray:
     return np.linspace(lo, hi, n)
 
 
-def evaluate(model_id: str, values: dict, x_min=None, x_max=None) -> dict:
+def evaluate(model_id: str, values: dict, x_min=None, x_max=None, *, owner: str | None = None) -> dict:
     """Re-evaluate the reliability functions at given covariate ``values``,
-    optionally over a custom ``[x_min, x_max]`` grid."""
-    entry = _MODEL_STORE.get(model_id)
-    if entry is None:
-        raise ModelNotFound(model_id)
+    optionally over a custom ``[x_min, x_max]`` grid. ``owner`` restricts the
+    lookup to a model bound to that account (see :func:`bind_owner`)."""
+    entry = _entry_for(model_id, owner)
     model, fields = entry["model"], entry["fields"]
     grid = _custom_grid(entry["grid"], x_min, x_max)
 
@@ -1839,6 +1925,8 @@ def confidence_bounds(
     bound: str = "two-sided",
     x_min=None,
     x_max=None,
+    *,
+    owner: str | None = None,
 ) -> dict:
     """Confidence bounds of a fitted model's ``on`` function over its grid.
 
@@ -1855,9 +1943,7 @@ def confidence_bounds(
     if not 0.0 < alpha_ci < 1.0:
         raise FitError("Confidence level must be between 0% and 100% (exclusive).")
 
-    entry = _MODEL_STORE.get(model_id)
-    if entry is None:
-        raise ModelNotFound(model_id)
+    entry = _entry_for(model_id, owner)
     model = entry["model"]
     grid = _custom_grid(entry["grid"], x_min, x_max)
     if not hasattr(model, "cb"):

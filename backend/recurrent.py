@@ -18,6 +18,7 @@ a bounded in-memory store and re-fitted on demand from the dataset + spec.
 from __future__ import annotations
 
 import uuid
+import warnings
 from collections import OrderedDict
 
 import numpy as np
@@ -173,7 +174,7 @@ def _power_law(model_id: str, params) -> tuple:
 
 def _param_names(model_id: str, n: int) -> list:
     fitter = MODELS.get(model_id, {}).get("fitter")
-    names = list(getattr(fitter, "param_names", []) or [])
+    names = list(getattr(fitter, "parameter_names", []) or [])
     return names if len(names) == n else [f"p{k}" for k in range(n)]
 
 
@@ -185,8 +186,10 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
     nx = np.asarray(np_model.x, dtype=float)
     mcf_obs = np.asarray(np_model.mcf_hat, dtype=float)
     try:
-        cb = np.asarray(np_model.mcf_cb(nx, confidence=0.95), dtype=float)
-        upper, lower = cb[:, 0].tolist(), cb[:, 1].tolist()
+        cb = np.asarray(np_model.mcf_cb(nx, alpha_ci=0.05), dtype=float)
+        # Order-proof: SurPyval 0.22 returns (lower, upper); earlier releases
+        # returned (upper, lower).
+        lower, upper = np.minimum(cb[:, 0], cb[:, 1]).tolist(), np.maximum(cb[:, 0], cb[:, 1]).tolist()
     except Exception:  # pragma: no cover - bounds are optional
         upper = lower = None
 
@@ -215,6 +218,8 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
         tt = laplace(x=x, i=i)
         signif = tt.p_value < 0.05
         direction = getattr(tt, "trend", None)
+        if direction == "none":  # SurPyval 0.22 says "none"; the app and API say "no trend"
+            direction = "no trend"
         trend = {
             "test": getattr(tt, "test", "Laplace"),
             "statistic": float(tt.statistic),
@@ -226,13 +231,15 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
         trend = None
 
     param_names = _param_names(model_id, params_arr.size)
+    cis = param_intervals(model_id, para)
     payload = {
         "kind": "recurrent",
         "unit": (unit or "").strip(),
         "n_systems": n_systems,
         "n_events": n_events,
         "model": {"id": model_id, "name": MODELS[model_id]["name"]},
-        "params": [{"name": n, "value": float(v)} for n, v in zip(param_names, params_arr)],
+        "params": [{"name": n, "value": float(v), **({"ci": cis[n]} if n in cis else {})}
+                   for n, v in zip(param_names, params_arr)],
         "beta": beta,
         "growth": growth,
         "rocof": rocof,
@@ -245,6 +252,27 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
         "gof": _gof(para),
     }
     return _json_safe(payload)
+
+
+def param_intervals(model_id: str, model) -> dict:
+    """``{name: [lower, upper]}``: the 95% confidence interval on each of a
+    Crow-AMSAA fit's parameters (SurPyval's Wald bounds from the observed
+    information, kept inside each parameter's support). Only a maximum-
+    likelihood fit to data has them: {} for another model family, a model
+    built from its parameters, or one restored without its data."""
+    if model_id != "crow_amsaa":
+        return {}
+    out = {}
+    for name in getattr(model, "parameter_names", None) or []:
+        try:
+            with warnings.catch_warnings(), np.errstate(all="ignore"):
+                warnings.simplefilter("ignore")
+                lo, hi = (float(v) for v in np.asarray(model.param_cb(name, alpha_ci=0.05), dtype=float))
+        except Exception:  # noqa: BLE001 - no likelihood (from params / restored): no interval
+            return {}
+        if np.isfinite(lo) and np.isfinite(hi) and lo <= hi:
+            out[name] = [lo, hi]
+    return out
 
 
 def _gof(model) -> list:

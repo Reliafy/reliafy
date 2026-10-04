@@ -1,6 +1,7 @@
-"""Availability simulation (repairable RBDs) is a paid feature: free users see
-saved results only, entitled users compute (and save), public links never
-compute, and the repairable sample ships with a precomputed result."""
+"""Availability simulation (repairable RBDs) is a paid feature: free users get
+the exact figures (#154) and saved simulation results only, entitled users
+simulate (and save), public links never compute, and the repairable sample
+ships with a precomputed result."""
 
 import copy
 
@@ -19,10 +20,10 @@ ADMIN = "user-admin"
 BUYER = "user-buyer"
 
 USERS = {
-    FREE: {"uid": FREE, "email": "free@example.org", "name": "Free"},
-    PRO: {"uid": PRO, "email": "pro@example.org", "name": "Pro"},
-    ADMIN: {"uid": ADMIN, "email": "admin@example.org", "name": "Admin"},
-    BUYER: {"uid": BUYER, "email": "buyer@example.org", "name": "Buyer"},
+    FREE: {"uid": FREE, "email": "free@example.org", "name": "Free", "email_verified": True},
+    PRO: {"uid": PRO, "email": "pro@example.org", "name": "Pro", "email_verified": True},
+    ADMIN: {"uid": ADMIN, "email": "admin@example.org", "name": "Admin", "email_verified": True},
+    BUYER: {"uid": BUYER, "email": "buyer@example.org", "name": "Buyer", "email_verified": True},
 }
 
 PRO_PAYLOAD = {
@@ -65,18 +66,19 @@ def client(monkeypatch):
     for uid, user in USERS.items():
         test_db.users.update_one(
             {"_id": uid},
-            {"$set": {"email": user["email"], "email_lc": user["email"], "name": user["name"]}},
+            {"$set": {"email": user["email"], "email_lc": user["email"], "email_verified": True, "name": user["name"]}},
             upsert=True,
         )
     billing.set_plan(test_db, PRO, "pro")
     billing.grant_credits(test_db, BUYER, 500, "purchase")
 
-    # Count real simulations.
+    # Count real simulations (not the exact, simulate=False, analyses).
     calls = {"n": 0}
     real = rbd_analysis.analyze_availability
 
     def spy(*args, **kwargs):
-        calls["n"] += 1
+        if kwargs.get("simulate", True):
+            calls["n"] += 1
         return real(*args, **kwargs)
 
     monkeypatch.setattr(rbd_analysis, "analyze_availability", spy)
@@ -172,20 +174,29 @@ def test_premium_compute_allowed(client, monkeypatch):
 
 # ---- Free users ----------------------------------------------------------------
 
-def test_free_user_gets_402_without_saved_result_and_cache_when_it_matches(client):
+def test_free_user_gets_exact_figures_not_the_simulation_and_cache_when_it_matches(client):
     from backend.services import rbds as rbds_service
 
     client.act_as(FREE)
     graph = _rbd_graph(repairable=True)
     rbd_id = _save(client, graph)
 
+    # No paywall: the exact figures, with the simulation offered as Pro.
     r = _analyze(client, graph, rbd_id)
-    assert _paywall(r)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["has_simulation"] is False and body["cached"] is False
+    assert body["simulation_status"]["state"] == "pro_required"
+    assert body["can_simulate"] is False and body["can_recompute"] is False
+    assert body["exact"]["status"] == "ok" and body["steady_state_availability"] > 0.9
     r = client.get(f"/api/rbds/{rbd_id}/analyze")
-    assert r.status_code == 402 and r.json()["code"] == "pro_required"
-    # Unsaved graphs too.
-    assert _analyze(client, graph).status_code == 402
+    assert r.status_code == 200 and r.json()["simulation_status"]["state"] == "pro_required"
+    # Unsaved graphs too; asking for the simulation outright changes nothing.
+    assert _analyze(client, graph).json()["has_simulation"] is False
+    r = client.post("/api/rbds/analyze", json={"graph": graph, "rbd_id": rbd_id, "simulate": True})
+    assert r.status_code == 200 and r.json()["simulation_status"]["state"] == "pro_required"
     assert client.sims["n"] == 0
+    assert "availability_cache" not in client.db.rbds.find_one({"_id": rbd_id})
 
     # A saved result for this exact graph (e.g. from a Pro teammate/backfill).
     key = rbds_service.availability_cache_key(graph)
@@ -196,7 +207,9 @@ def test_free_user_gets_402_without_saved_result_and_cache_when_it_matches(clien
     assert r.status_code == 200
     body = r.json()
     assert body["cached"] is True and body["computed_at"] and body["can_recompute"] is False
+    assert body["has_simulation"] is True and body["simulation_status"]["state"] == "saved"
     assert body["steady_state_availability"] == 0.99
+    assert body["exact"]["status"] == "ok"  # the exact figures ride along
     assert client.get(f"/api/rbds/{rbd_id}/analyze").json()["cached"] is True
     # force is ignored for a free user: still the saved result, no simulation.
     assert _analyze(client, graph, rbd_id, force=True).json()["cached"] is True
@@ -207,10 +220,22 @@ def test_free_user_gets_402_without_saved_result_and_cache_when_it_matches(clien
     assert _analyze(client, moved, rbd_id).json()["cached"] is True
     changed = _with_param(graph, 2500)
     r = _analyze(client, changed, rbd_id)
-    assert _paywall(r)
+    assert r.status_code == 200 and r.json()["has_simulation"] is False
     _save_over = client.post("/api/rbds", json={"name": "Loop", "graph": changed, "id": rbd_id})
     assert _save_over.status_code == 200
-    assert client.get(f"/api/rbds/{rbd_id}/analyze").status_code == 402
+    assert client.get(f"/api/rbds/{rbd_id}/analyze").json()["has_simulation"] is False
+    assert client.sims["n"] == 0
+
+
+def test_free_user_meets_the_paywall_on_a_simulation_only_diagram(client):
+    """One repair crew for wear-out lives has no exact figures at all
+    (long-run or over time): the paywall, as before #154. (Proof tests that
+    take time were the example until RePyability 0.12 made them numerical.)"""
+    client.act_as(FREE)
+    graph = _rbd_graph(repairable=True)
+    graph["repair_crews"] = {"crews": 1}
+    r = _analyze(client, graph)
+    assert r.status_code == 402 and r.json() == PRO_PAYLOAD
     assert client.sims["n"] == 0
 
 

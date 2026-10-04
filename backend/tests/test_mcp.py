@@ -31,14 +31,19 @@ FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]  # 0 = failed, 1 = still running
 
 READ_TOOLS = {
     "list_models", "get_model", "reliability_at", "list_datasets", "list_rbds", "get_rbd",
-    "analyze_rbd", "get_job", "fit_distribution", "export_rbd_python", "optimal_replacement", "failure_finding_interval",
-    "optimal_overhaul", "list_fleets", "fleet_forecast", "list_fleet_alerts", "upgrade_link",
+    "analyze_rbd", "get_job", "fit_distribution", "export_rbd_python", "export_rbd_json", "optimal_replacement",
+    "failure_finding_interval",
+    "optimal_overhaul", "plan_demonstration_test", "list_fleets", "fleet_forecast", "list_fleet_alerts",
+    "upgrade_link", "system_history", "list_share_links", "get_account", "get_dataset", "inspect_upload",
+    "compare_groups",
 }
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
 WRITE_TOOLS = {"fit_and_save_model", "save_model", "upload_dataset", "create_rbd", "clone_rbd", "edit_rbd",
                "create_fleet_alert",
-               "delete_model", "delete_dataset", "delete_rbd"}
+               "delete_model", "delete_dataset", "delete_rbd", "upload_outage_log", "share_link",
+               "revoke_share_link", "update_model", "update_dataset",
+               "create_upload", "import_rbd", "import_excel"}
 
 
 def _weibull(alpha, beta, placeholder=False):
@@ -377,12 +382,16 @@ def test_repairable_analysis_follows_the_paid_gate_and_cache(env, monkeypatch):
     rid = created["id"]
     assert created["repairable"] is True
 
-    # API access but no premium compute: a clear message, not an error, and no simulation.
+    # API access but no premium compute: the exact figures (#154), and a clear
+    # message for the simulation, not an error.
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: False)
     denied = _call(env.token[A], "analyze_rbd", {"rbd_id": rid})
     out = _ok(denied)
-    assert out["available"] is False and out["code"] == "pro_required"
-    assert "paid feature" in out["message"]
+    assert out["available"] is True and out["has_simulation"] is False
+    assert out["exact"]["status"] == "ok" and 0 < out["exact"]["mission_availability"] <= 1
+    assert out["simulation"]["available"] is False and out["simulation"]["code"] == "pro_required"
+    assert "Pro" in out["simulation"]["message"]
+    assert not env.db.rbds.find_one({"_id": rid}).get("availability_cache")
 
     # Entitled: computes and stores the result on the owner's diagram.
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: True)
@@ -418,6 +427,36 @@ def test_calculators_match_the_strategy_service(env):
     assert "model_id" in msg
 
 
+def test_plan_demonstration_test(env):
+    out = _ok(_call(env.token[A], "plan_demonstration_test", {
+        "reliability": 0.95, "confidence": 0.95, "mission_time": 1000, "unit": "hours"}))
+    assert out["units"] == 59 and out["solve_for"] == "units"
+    assert out["summary"] == (
+        "Test 59 units for 1,000 hours each with no failures to show R(1,000 hours) ≥ 95% at 95% confidence.")
+    assert out["assumptions"] and out["tradeoff"]["cells"] == "Units to test"
+    assert out["tradeoff"]["columns"] == "allowed failures 0, 1, 2, 3"
+    assert out["tradeoff"]["rows"] == {"1,000 hours (1×)": [59, 93, 124, 153]}
+    assert "rows" not in out["tradeoff"]["rows"] and "curve" not in out  # lean: no plotting fields
+
+    # Weibayes: test twice as long with a known shape, fewer units; the same plan the app computes.
+    ext = _ok(_call(env.token[A], "plan_demonstration_test", {
+        "reliability": 0.95, "mission_time": 1000, "test_multiple": 2, "shape": 2, "unit": "hours"}))
+    assert ext["units"] == 15 and ext["test_time_per_unit"] == 2000
+    assert ext["tradeoff"]["rows"]["2,000 hours (2×)"] == [15, 24, 32, 40]
+
+    # Units given: solve for the test time per unit.
+    tt = _ok(_call(env.token[A], "plan_demonstration_test", {
+        "reliability": 0.95, "mission_time": 1000, "shape": 2, "units": 20, "unit": "hours"}))
+    assert tt["solve_for"] == "test_time" and round(tt["test_time_per_unit"]) == 1709
+
+    mtbf = _ok(_call(env.token[A], "plan_demonstration_test", {"method": "mtbf", "mtbf": 1000, "unit": "hours"}))
+    assert round(mtbf["total_test_time"]) == 2996 and mtbf["summary"].startswith("Run 2,996 hours")
+
+    assert "Weibull shape" in _err(_call(env.token[A], "plan_demonstration_test", {
+        "reliability": 0.95, "test_multiple": 2}))
+    assert "Target reliability" in _err(_call(env.token[A], "plan_demonstration_test", {}))
+
+
 def test_optimal_overhaul_uses_a_recurrent_model(env):
     from backend.services import recurrent as recurrent_service
 
@@ -432,6 +471,17 @@ def test_optimal_overhaul_uses_a_recurrent_model(env):
 
 
 # ---- scoping -------------------------------------------------------------------------
+
+def test_a_non_parametric_model_is_no_rbd_block(env):
+    """RePyability 0.12 refuses a non-parametric node: create_rbd says to fit a
+    parametric distribution instead."""
+    km = _ok(_call(env.token[A], "fit_and_save_model", {
+        "data": TIMES, "censored": FLAGS, "distribution": "kaplan_meier", "name": "KM bearings"}))
+    graph = {**GRAPH, "nodes": [
+        {**n, "model": {"saved_model_id": km["model_id"]}} if n["id"] == "ctl" else n for n in GRAPH["nodes"]]}
+    msg = _err(_call(env.token[A], "create_rbd", {"name": "Empirical", **graph}))
+    assert "non-parametric" in msg and "Fit a parametric distribution" in msg
+
 
 def test_users_cannot_read_each_others_artifacts(env):
     model = _ok(_call(env.token[A], "fit_and_save_model", {

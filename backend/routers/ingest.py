@@ -1,9 +1,9 @@
 """Personal API tokens + the ingestion API.
 
 Token management uses normal session auth. The ``/api/ingest`` endpoints
-accept either a personal API token (``Authorization: Bearer rlf_…``) or a
-normal session — tokens work *only* here, so a leaked token can push data
-but never read analyses.
+accept either a personal API token (``Authorization: Bearer rlf_…``) with the
+``ingest`` scope or a normal session; a token without that scope gets a 403
+(see :mod:`backend.services.tokens` for the scopes).
 
 Bodies are JSON or raw ``text/csv`` (``curl --data-binary @file.csv -H
 "Content-Type: text/csv"``), matching how this data leaves a CMMS.
@@ -26,6 +26,7 @@ from backend.services import fleet_alerts as fleet_alerts_service
 from backend.services import ingest as ingest_service
 from backend.services import metrics as metrics_service
 from backend.services import tokens as tokens_service
+from backend.services import usage as usage_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -64,6 +65,7 @@ def ingest_user(
         user = tokens_service.verify(session, authorization.split(" ", 1)[1].strip())
         if user is None:
             raise HTTPException(status_code=401, detail="Invalid or revoked API token.")
+        usage_service.note_user(user, channel="api")
     else:
         user = get_current_user(authorization)
     if not billing_service.api_access_allowed(session, user):
@@ -71,18 +73,36 @@ def ingest_user(
     return user
 
 
+def scoped_user(scope: str):
+    """A dependency: :func:`ingest_user`, and — for an API token — the token
+    must carry ``scope`` (403 otherwise). Sessions have every scope."""
+
+    def dependency(user: dict = Depends(ingest_user)) -> dict:
+        if not tokens_service.has_scope(user, scope):
+            raise HTTPException(status_code=403, detail=tokens_service.scope_message(scope))
+        return user
+
+    return dependency
+
+
+ingest_scope = scoped_user("ingest")
+read_scope = scoped_user("read")
+write_scope = scoped_user("write")
+
+
 # ---- token management (session auth) ----------------------------------------
 
 @router.post("/tokens")
 def create_token(
     name: str = Body(default="", embed=True),
+    scopes: list[str] | None = Body(default=None, embed=True),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
     if not billing_service.api_access_allowed(session, user):
         return JSONResponse(status_code=402, content={"detail": _PRO_REQUIRED, "code": "pro_required"})
     try:
-        return JSONResponse(content=tokens_service.create_token(session, user["uid"], name))
+        return JSONResponse(content=tokens_service.create_token(session, user["uid"], name, scopes))
     except tokens_service.TokenError as exc:
         return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
 
@@ -140,7 +160,7 @@ async def ingest_fleet_usage(
     fleet_id: str,
     request: Request,
     session=Depends(get_session),
-    user: dict = Depends(ingest_user),
+    user: dict = Depends(ingest_scope),
 ) -> JSONResponse:
     """Update forecast-fleet items' current use (and optional rate)."""
 
@@ -160,7 +180,7 @@ async def ingest_measurements(
     fleet_id: str,
     request: Request,
     session=Depends(get_session),
-    user: dict = Depends(ingest_user),
+    user: dict = Depends(ingest_scope),
 ) -> JSONResponse:
     """Append degradation readings (item, time, value) to a tracked fleet."""
 
@@ -177,7 +197,7 @@ async def ingest_measurements(
 async def import_model(
     request: Request,
     session=Depends(get_session),
-    user: dict = Depends(ingest_user),
+    user: dict = Depends(ingest_scope),
 ) -> JSONResponse:
     """Import a model built elsewhere (e.g. a SurPyval notebook).
 
@@ -203,7 +223,9 @@ async def import_model(
         return JSONResponse(status_code=422, content={"detail": "Provide 'data' arrays or 'params'."})
 
     try:
-        model = models_service.import_model(
+        # A data import refits server-side: off the event loop.
+        model = await run_in_threadpool(
+            models_service.import_model,
             session, user["uid"], name,
             distribution=payload.get("distribution", ""),
             unit=payload.get("unit"),
@@ -214,9 +236,13 @@ async def import_model(
         )
     except ingest_service.IngestError as exc:  # pragma: no cover - defensive
         return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
-    except Exception as exc:
-        # fitting.FitError and friends carry a user-facing message.
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except (ValueError, TypeError, KeyError, models_service.ModelNotFound) as exc:
+        # fitting.FitError (a ValueError) and friends carry a user-facing message.
+        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid model."})
+    except Exception:
+        logger.exception("Model import failed")
+        return JSONResponse(status_code=500,
+                            content={"detail": "The model couldn't be imported. The error has been logged."})
 
     metrics_service.record_event(session, name="import_model", path="/api/import/models")
     return JSONResponse(content={
@@ -234,7 +260,7 @@ async def ingest_dataset_lives(
     request: Request,
     refit: bool = True,
     session=Depends(get_session),
-    user: dict = Depends(ingest_user),
+    user: dict = Depends(ingest_scope),
 ) -> JSONResponse:
     """Append rows to a dataset; by default, refit its models in place."""
 

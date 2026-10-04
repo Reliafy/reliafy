@@ -12,19 +12,25 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, Body, Depends, File, UploadFile
+from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from backend import config
 from backend.auth import get_current_user
 from backend.db import get_session
+from backend.services import ai_relay
 from backend.services import billing as billing_service
 from backend.services import reliability_agent as agent_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
+REASON = "reliability_agent"
 _MAX_CSV_BYTES = 8 * 1024 * 1024  # 8 MB — plenty for a fitting dataset
+_MULTIPART_OVERHEAD = 64 * 1024  # boundaries and part headers around the file
+_MAX_MESSAGE_CHARS = 100_000  # one chat message to the agent
 
 # The Reliability Agent is a paid feature (its Opus sandbox runs cost far more
 # than the metered assistant): a purely free-tier user — only the starter grant,
@@ -78,48 +84,100 @@ def agent_session_transcript(
         return JSONResponse(status_code=404, content={"detail": "Session not found."})
     try:
         messages = agent_service.get_transcript(session, session_id)
-    except Exception as exc:  # noqa: BLE001 - platform/SDK error
+    except Exception:  # noqa: BLE001 - platform/SDK error
         logger.exception("Failed to load agent transcript")
-        return JSONResponse(status_code=502, content={"detail": f"Couldn't load the transcript: {exc}"})
+        return JSONResponse(status_code=502, content={
+            "detail": "Couldn't load the transcript. Please try again in a moment."})
     return JSONResponse(content={"session_id": session_id, "messages": messages})
+
+
+class _TooLarge(Exception):
+    pass
+
+
+async def _read_upload(request: Request) -> tuple[bytes, str] | JSONResponse:
+    """The uploaded file's bytes and name, read with a size cap: a declared
+    ``Content-Length`` over the cap is refused before anything is read, and
+    the body is counted as it streams, so an oversized upload stops at the
+    cap instead of being read in full first."""
+    from starlette.formparsers import MultiPartException, MultiPartParser
+
+    too_large = JSONResponse(status_code=413, content={"detail": "File too large (max 8 MB)."})
+    limit = _MAX_CSV_BYTES + _MULTIPART_OVERHEAD
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > limit:
+        return too_large
+    if "multipart/form-data" not in (request.headers.get("content-type") or ""):
+        return JSONResponse(status_code=400, content={"detail": "Send the file as multipart/form-data."})
+
+    async def capped():
+        size = 0
+        async for piece in request.stream():
+            size += len(piece)
+            if size > limit:
+                raise _TooLarge
+            yield piece
+
+    try:
+        form = await MultiPartParser(request.headers, capped(), max_files=1, max_fields=4).parse()
+    except _TooLarge:
+        return too_large
+    except MultiPartException as exc:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+    try:
+        upload = form.get("file")
+        if not isinstance(upload, StarletteUploadFile):
+            return JSONResponse(status_code=400, content={"detail": "No file in the upload."})
+        data = await upload.read(_MAX_CSV_BYTES + 1)
+        if len(data) > _MAX_CSV_BYTES:
+            return too_large
+        return data, upload.filename or "data.csv"
+    finally:
+        await form.close()
 
 
 @router.post("/reliability-agent/upload")
 async def agent_upload(
-    file: UploadFile = File(...),
+    request: Request,
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
     if not agent_service.enabled():
         return JSONResponse(status_code=503, content={"detail": "The Reliability Agent isn't configured yet."})
-    allowed, _admin, _acct = _agent_access(session, user)
+    allowed, _admin, _acct = await run_in_threadpool(_agent_access, session, user)
     if not allowed:
         return JSONResponse(status_code=403, content={"detail": _PRO_MSG, "code": "pro_required"})
-    data = await file.read()
-    if len(data) > _MAX_CSV_BYTES:
-        return JSONResponse(status_code=413, content={"detail": "File too large (max 8 MB)."})
+    got = await _read_upload(request)
+    if isinstance(got, JSONResponse):
+        return got
+    data, filename = got
     try:
-        file_id = agent_service.upload_csv(data, file.filename or "data.csv")
+        file_id = await run_in_threadpool(agent_service.upload_csv, data, filename)
     except agent_service.AgentError as exc:
         return JSONResponse(status_code=502, content={"detail": str(exc)})
-    return JSONResponse(content={"file_id": file_id, "filename": file.filename})
+    await run_in_threadpool(agent_service.record_upload, session, user["uid"], file_id, filename)
+    return JSONResponse(content={"file_id": file_id, "filename": filename})
 
 
 def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
-@router.post("/reliability-agent/run", response_model=None)
-def agent_run(
-    message: str = Body(...),
-    file_id: str | None = Body(default=None),
-    session_id: str | None = Body(default=None),
-    approved: bool = Body(default=False),
-    session=Depends(get_session),
-    user: dict = Depends(get_current_user),
-) -> StreamingResponse | JSONResponse:
-    """Run one agent turn, streaming events as Server-Sent Events. The final
-    ``done`` event carries the metered cost and new credit balance."""
+def _cost(meter: dict) -> int:
+    return agent_service.cost_millicents(
+        meter.get("seconds", 0.0) or 0.0, meter.get("input_tokens", 0) or 0, meter.get("output_tokens", 0) or 0)
+
+
+def start_run(session, user: dict, message: str, file_id: str | None, session_id: str | None,
+              approved: bool) -> ai_relay.Relay | JSONResponse:
+    """Check and start one agent turn: a :class:`ai_relay.Relay` streaming the
+    turn's events, or the refusal.
+
+    The turn holds credit up front — :data:`config.RELIABILITY_AGENT_TURN_MAX_CENTS`,
+    or the whole balance if that's smaller — and is stopped once its metered
+    cost reaches the hold. The turn and its settlement run on the relay's
+    worker thread: a client that disconnects stops the turn, and is charged
+    for what it used, with the rest of the hold returned."""
     if not agent_service.enabled():
         return JSONResponse(status_code=503, content={"detail": "The Reliability Agent isn't configured yet."})
 
@@ -127,39 +185,104 @@ def agent_run(
     allowed, admin, acct = _agent_access(session, user)  # operator/self-host aren't gated
     if not allowed:
         return JSONResponse(status_code=403, content={"detail": _PRO_MSG, "code": "pro_required"})
-    if config.BILLING_ENABLED and not admin and acct["credit_cents"] <= 0:
-        return JSONResponse(
-            status_code=402,
-            content={"detail": "You're out of AI credits. Top up to keep using the agent.", "code": "no_credits"},
-        )
+    if session_id and not agent_service.owns_session(session, uid, session_id):
+        return JSONResponse(status_code=404, content={"detail": "Session not found."})
+    if file_id and not agent_service.owns_file(session, uid, file_id):
+        return JSONResponse(status_code=404, content={"detail": "Uploaded file not found. Attach it again."})
 
-    def event_stream():
+    metered = config.BILLING_ENABLED and not admin
+    slot = billing_service.acquire_ai_slot(session, uid, "reliability_agent")
+    if slot is None:
+        return JSONResponse(status_code=429, content={
+            "detail": "Another AI request is still running. Wait for it to finish, then try again.",
+            "code": "busy"})
+    hold_id, held = None, 0
+    if metered:
+        got = billing_service.reserve_up_to(
+            session, uid, config.RELIABILITY_AGENT_TURN_MAX_CENTS * 1000,
+            config.RELIABILITY_AGENT_TURN_MIN_CENTS * 1000, REASON)
+        if got is None:
+            billing_service.release_ai_slot(session, slot)
+            have = billing_service.account(session, uid)["credit_cents"]
+            return JSONResponse(status_code=402, content={
+                "detail": ("You're out of AI credits. Top up to keep using the agent." if have <= 0 else
+                           f"An agent turn needs at least {config.RELIABILITY_AGENT_TURN_MIN_CENTS} AI "
+                           f"credits and you have {have}. Top up to keep using the agent."),
+                "code": "no_credits"})
+        hold_id, held = got
+
+    meter: dict = {}
+    state = {"settled": False, "balance": None, "over_budget": False}
+
+    def settle() -> int:
+        if not state["settled"]:
+            state["settled"] = True
+            try:
+                if hold_id:
+                    state["balance"] = billing_service.settle_hold(
+                        session, hold_id, _cost(meter) if meter else None)
+                else:
+                    state["balance"] = billing_service.account(session, uid)["credit_cents"]
+            finally:
+                billing_service.release_ai_slot(session, slot)
+        return state["balance"]
+
+    def produce(emit, stopped) -> None:
+        def should_stop() -> bool:
+            if stopped.is_set():
+                return True
+            if hold_id and _cost(meter) >= held:
+                state["over_budget"] = True
+                return True
+            return False
+
         try:
-            for ev in agent_service.stream_run(session, uid, message, file_id, session_id, approved):
+            for ev in agent_service.stream_run(session, uid, message, file_id, session_id, approved,
+                                               meter=meter, should_stop=should_stop):
                 if ev.get("type") == "_meter":
-                    cost_mc = agent_service.cost_millicents(
-                        ev.get("seconds", 0.0), ev.get("input_tokens", 0), ev.get("output_tokens", 0)
-                    )
-                    balance = billing_service.account(session, uid)["credit_cents"]
-                    if config.BILLING_ENABLED and not admin:
-                        balance = billing_service.charge_millicents(session, uid, cost_mc, "reliability_agent")
-                    yield _sse({
+                    meter.update({k: v for k, v in ev.items() if k != "type"})
+                    cost_mc = _cost(meter)
+                    balance = settle()
+                    if state["over_budget"]:
+                        emit({"type": "error", "detail": (
+                            f"This turn used the {held // 1000} credits it reserved and was paused. "
+                            "Send a message to continue.")})
+                    emit({
                         "type": "done",
-                        "session_id": ev.get("session_id"),  # reuse for the next turn
+                        "session_id": meter.get("session_id"),  # reuse for the next turn
                         "cost_millicents": cost_mc,
                         "cost_cents": max(1, -(-cost_mc // 1000)),
                         "credit_cents": balance,
                     })
-                else:
-                    yield _sse(ev)
+                elif not emit(ev):
+                    stopped.set()
         except agent_service.AgentError as exc:
-            yield _sse({"type": "error", "detail": str(exc)})
-        except Exception as exc:  # noqa: BLE001
+            emit({"type": "error", "detail": str(exc)})
+        except Exception:  # noqa: BLE001
             logger.exception("reliability agent stream failed")
-            yield _sse({"type": "error", "detail": str(exc)})
+            emit({"type": "error", "detail": agent_service.STREAM_ERROR})
+        finally:
+            settle()
 
+    return ai_relay.Relay(produce).start()
+
+
+@router.post("/reliability-agent/run", response_model=None)
+async def agent_run(
+    message: str = Body(..., max_length=_MAX_MESSAGE_CHARS),
+    file_id: str | None = Body(default=None, max_length=200),
+    session_id: str | None = Body(default=None, max_length=200),
+    approved: bool = Body(default=False),
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> StreamingResponse | JSONResponse:
+    """Run one agent turn, streaming events as Server-Sent Events. The final
+    ``done`` event carries the metered cost and new credit balance."""
+    relay = await run_in_threadpool(start_run, session, user, message, file_id, session_id, approved)
+    if isinstance(relay, JSONResponse):
+        return relay
     return StreamingResponse(
-        event_stream(),
+        (_sse(item) for item in relay.items()),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

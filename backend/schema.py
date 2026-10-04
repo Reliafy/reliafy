@@ -32,6 +32,7 @@ class Dataset(BaseModel):
     n_rows: int = 0
     columns: list = Field(default_factory=list)
     data: bytes = b""  # raw CSV bytes (excluded from API responses)
+    notes: Optional[str] = None  # free-text annotation (set over MCP: update_dataset)
 
 
 class Model(BaseModel):
@@ -177,7 +178,7 @@ class StrategyAnalysis(BaseModel):
     updated_by: Optional[dict] = None
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
-    kind: str = "optimal_replacement"  # | 'compare_two' | 'failure_finding'
+    kind: str = "optimal_replacement"  # | 'compare_two' | 'failure_finding' | 'demonstration_test'
     inputs: dict = Field(default_factory=dict)
     results: dict = Field(default_factory=dict)
 

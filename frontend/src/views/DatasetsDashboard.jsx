@@ -32,7 +32,7 @@ export default function DatasetsDashboard() {
       state: { openUpload: true },
       icon: <UploadIcon />,
       title: "Upload a dataset",
-      body: "Add a CSV that you can reuse across models without re-uploading.",
+      body: "Add a CSV or Excel file that you can reuse across models without re-uploading.",
       cta: "Upload",
     },
   ];

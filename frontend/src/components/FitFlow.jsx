@@ -6,7 +6,9 @@ import {
   saveModel,
   listDatasets,
   getDataset,
+  SPREADSHEET_ACCEPT,
 } from "../api.js";
+import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import ColumnMapper from "./ColumnMapper.jsx";
 import Covariates from "./Covariates.jsx";
 import PreviewTable from "./PreviewTable.jsx";
@@ -106,6 +108,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
+  // An Excel workbook becomes a CSV of the chosen sheet before anything else.
+  const { toCsv, modal: sheetModal } = useSpreadsheet();
   const inputRef = useRef(null);
 
   // Step 4 (Result): the fit, a name, and the save action.
@@ -146,7 +150,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       ? "best model"
       : distributions.find((d) => d.id === distribution)?.name || "model";
 
-  const pickFile = async (f) => {
+  const pickFile = async (picked) => {
+    if (!picked) return;
+    const f = await toCsv(picked);
     if (!f) return;
     // Server enforces the same ceiling; fail fast before uploading.
     if (f.size > 5 * 1024 * 1024) {
@@ -345,7 +351,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         <span className="hint" style={{ margin: 0 }}>
           {source === "paste"
             ? "Paste your values, or pick a dataset, to continue"
-            : "Upload a CSV or pick a dataset to continue"}
+            : "Upload a CSV or Excel file, or pick a dataset, to continue"}
         </span>
       </>
     );
@@ -388,7 +394,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               className={`source-tab${source === "upload" ? " active" : ""}`}
               onClick={() => { setSource("upload"); setError(null); }}
             >
-              Upload a CSV
+              Upload CSV / Excel
             </button>
             <button
               type="button"
@@ -448,19 +454,20 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               <span className="dz-big filename">{file.name}</span>
             ) : (
               <span className="dz-big">
-                Drop a CSV here or <strong>click to browse</strong>
+                Drop a CSV or Excel file here or <strong>click to browse</strong>
               </span>
             )}
             <span className="dz-hint">columns: time · censored · covariates</span>
             <input
               ref={inputRef}
               type="file"
-              accept=".csv,text/csv"
+              accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`}
               hidden
-              onChange={(e) => pickFile(e.target.files?.[0])}
+              onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }}
             />
           </div>
           )}
+          {sheetModal}
 
           {datasets.length > 0 && (
             <div className="recent">

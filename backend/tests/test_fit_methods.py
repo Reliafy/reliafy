@@ -22,12 +22,12 @@ from backend.main import distributions_endpoint
 
 @pytest.fixture(scope="module")
 def clean():
-    return pd.DataFrame({"hours": np.round(np.abs(sp.Weibull.random(150, 800, 1.9)), 3)})
+    return pd.DataFrame({"hours": np.round(np.abs(sp.Weibull.random(150, 800, 1.9, random_state=1)), 3)})
 
 
 def _fits(dist_id, how, **kw):
     """True if SurPyval will actually produce finite parameters this way."""
-    x = np.abs(sp.Weibull.random(150, 800, 1.9))
+    x = np.abs(sp.Weibull.random(150, 800, 1.9, random_state=2))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         try:
@@ -92,7 +92,7 @@ def test_methods_disagree_slightly_so_the_option_is_doing_something(clean):
 def test_a_failed_optimisation_is_reported_not_swallowed():
     """MPS warns 'MPS FAILED' and returns numbers anyway. Handing those over
     silently is the failure mode worth guarding."""
-    df = pd.DataFrame({"hours": np.round(np.abs(sp.Weibull.random(150, 800, 1.9)), 3)})
+    df = pd.DataFrame({"hours": np.round(np.abs(sp.Weibull.random(150, 800, 1.9, random_state=3)), 3)})
     r = fitting.fit("weibull", df, {"x": "hours"}, options={"how": "MPS"})
     if r.get("fit_warning"):
         assert "FAILED" in r["fit_warning"].upper()
@@ -120,7 +120,7 @@ def test_data_dependent_rules():
     assert set(fitting.methods_for_data({"c": "cens"})) == {"MOM"}
     assert set(fitting.methods_for_data({"tl": "entry"})) == {"MOM", "MSE"}
     # And the underlying library really does refuse them.
-    x = np.abs(sp.Weibull.random(120, 800, 1.9))
+    x = np.abs(sp.Weibull.random(120, 800, 1.9, random_state=4))
     c = np.zeros(len(x)); c[-20:] = 1
     with pytest.raises(Exception):
         sp.Weibull.fit(x=x, c=c, how="MOM")

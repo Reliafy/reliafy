@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import uuid
+from collections import OrderedDict
 from datetime import datetime, timezone
 
 from backend.services import access
@@ -32,8 +34,12 @@ def save_rbd(db, name: str, graph: dict, owner_id: str, rbd_id: str | None = Non
 
     ``expected_updated_at`` (the isoformat the client loaded) makes the update
     optimistic: a mismatch raises :class:`access.EditConflict` instead of
-    overwriting another editor's save.
+    overwriting another editor's save. A graph over the size or unit-count
+    limits raises :class:`backend.services.rbd_graph.GraphError`.
     """
+    from backend.services.rbd_graph import check_limits
+
+    check_limits(graph)
     if rbd_id:
         existing = db.rbds.find_one({"_id": rbd_id, "owner_id": owner_id})
         if existing is not None:
@@ -91,6 +97,8 @@ def delete_rbd(db, rbd_id: str, owner_id: str) -> None:
     result = db.rbds.delete_one({"_id": rbd_id, "owner_id": owner_id})
     if result.deleted_count == 0:
         raise RbdNotFound(rbd_id)
+    # Its outage logs go with it (they mean nothing without the diagram).
+    db.outage_logs.delete_many({"rbd_id": rbd_id, "owner_id": owner_id})
 
 
 # Node-data keys that reference the owner's other saved artifacts by id. A
@@ -135,6 +143,10 @@ def analyze_graph(
     conditional_age: float | None = None,
     n_simulations: int | None = None,
     at_times=None,
+    band: dict | None = None,
+    state: dict | None = None,
+    current_state: dict | None = None,
+    target_reliability: float | None = None,
     time_budget_s: float | None = None,
     seed: int | None = None,
     max_replications: int | None = None,
@@ -148,7 +160,13 @@ def analyze_graph(
     covariate values for proportional-hazards nodes. ``conditional_age``
     conditions the curves on having already survived to that age.
     ``at_times`` (non-repairable) adds the system reliability evaluated
-    exactly at those times. ``time_budget_s`` / ``seed`` / ``max_replications``
+    exactly at those times. ``band`` (``{"level": 0.95}``) adds a confidence band from the fitted blocks'
+    parameter uncertainty (non-repairable diagrams only). ``state`` (repairable, canonical: see
+    :func:`rbd_analysis.parse_current_state`) starts the availability simulation from the blocks'
+    current states. ``current_state`` (non-repairable, raw: see
+    :func:`rbd_analysis.parse_nonrepairable_state`) analyses the diagram as of
+    now — failed and aged blocks — and ``target_reliability`` adds its design
+    life (#173). ``time_budget_s`` / ``seed`` / ``max_replications``
     (repairable) make a quick, time-capped availability run (#147).
     """
 
@@ -164,8 +182,8 @@ def analyze_graph(
     if graph.get("repairable"):
         return rbd_analysis.analyze_availability(
             graph, resolve_model=resolve_model, t_simulation=t_max,
-            n_simulations=n_simulations, time_budget_s=time_budget_s, seed=seed,
-            max_replications=max_replications,
+            n_simulations=n_simulations, state=state, time_budget_s=time_budget_s,
+            seed=seed, max_replications=max_replications,
         )
 
     return rbd_analysis.analyze(
@@ -176,6 +194,9 @@ def analyze_graph(
         resolve_model=resolve_model,
         conditional_age=conditional_age,
         at_times=at_times,
+        band=band,
+        current_state=current_state,
+        target_reliability=target_reliability,
     )
 
 
@@ -201,17 +222,10 @@ def analyze_rbd(
     )
 
 
-def export_python(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
-    """Render a diagram as a standalone SurPyval + RePyability script.
-
-    Returns ``(filename, source)``. Sub-systems and saved-model references
-    resolve exactly as :func:`analyze_graph` resolves them — scoped to
-    ``owner_id`` — so the script rebuilds what the viewer's analysis uses.
-    Saved models are read from their stored fit summary (no re-fit): the
-    block's own stored parameters are what the analysis uses, and the summary
-    only fills in what a block lacks.
-    """
-    from backend.services import rbd_export
+def _export_resolvers(db, owner_id):
+    """``(resolve_model, resolve_subsystem)`` for the exports, scoped to
+    ``owner_id``: a saved model as its stored fit summary (no re-fit), a
+    sub-system as its graph."""
 
     def resolve_subsystem(sub_id: str) -> dict | None:
         sub = get_rbd(db, sub_id, owner_id)
@@ -232,6 +246,35 @@ def export_python(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
             "unit": results.get("unit"),
         }
 
+    return resolve_model, resolve_subsystem
+
+
+def export_json(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
+    """Render a diagram as RePyability JSON (``rbd_from_json`` loads it; a
+    Reliafy import restores it). Returns ``(filename, text)``; raises
+    :class:`backend.services.rbd_json.ExportError` (user-facing) for blocks
+    the format can't hold. Resolution as in :func:`export_python`."""
+    from backend.services import rbd_json
+
+    resolve_model, resolve_subsystem = _export_resolvers(db, owner_id)
+    doc = rbd_json.to_document(graph or {}, name, resolve_model=resolve_model,
+                               resolve_subsystem=resolve_subsystem)
+    return rbd_json.filename(name), rbd_json.to_json(doc)
+
+
+def export_python(db, name: str, graph: dict, owner_id) -> tuple[str, str]:
+    """Render a diagram as a standalone SurPyval + RePyability script.
+
+    Returns ``(filename, source)``. Sub-systems and saved-model references
+    resolve exactly as :func:`analyze_graph` resolves them — scoped to
+    ``owner_id`` — so the script rebuilds what the viewer's analysis uses.
+    Saved models are read from their stored fit summary (no re-fit): the
+    block's own stored parameters are what the analysis uses, and the summary
+    only fills in what a block lacks.
+    """
+    from backend.services import rbd_export
+
+    resolve_model, resolve_subsystem = _export_resolvers(db, owner_id)
     source = rbd_export.to_python(
         graph or {},
         name,
@@ -290,6 +333,16 @@ def _strip_ui(value):
     return value
 
 
+# Node data that records where values came from (#100: the RCM study a
+# block's maintenance was filled from). The filled values themselves are in
+# the key; the link isn't, so it never invalidates a saved result.
+_PROVENANCE_KEYS = frozenset({"rcm_source"})
+
+
+def _analysis_data(data: dict) -> dict:
+    return _strip_ui({k: v for k, v in data.items() if k not in _PROVENANCE_KEYS})
+
+
 def canonical_analysis_graph(graph: dict) -> dict:
     """The analysis-relevant part of a graph, in a canonical order."""
     graph = graph or {}
@@ -297,7 +350,7 @@ def canonical_analysis_graph(graph: dict) -> dict:
         {
             "id": n.get("id"),
             "type": n.get("type"),
-            "data": _strip_ui(n.get("data") or {}),
+            "data": _analysis_data(n.get("data") or {}),
         }
         for n in graph.get("nodes") or []
         if isinstance(n, dict)
@@ -310,13 +363,24 @@ def canonical_analysis_graph(graph: dict) -> dict:
             if isinstance(e, dict) and e.get("source") and e.get("target")
         }
     )
-    return {
+    out = {
         "nodes": nodes,
         "edges": [list(e) for e in edges],
         "unit": (graph.get("unit") or "").strip(),
         "repairable": bool(graph.get("repairable")),
         "ccf_groups": graph.get("ccf_groups") or [],
     }
+    # Diagram-level costs (#99: system downtime cost, ownership horizon).
+    # Block costs and maintenance live in node data, already covered above.
+    # Only present when set, so diagrams without costs keep their saved key.
+    if graph.get("costs"):
+        out["costs"] = graph["costs"]
+    # Repair crews, maintenance groups and a safety function (#156, #157):
+    # likewise only when set.
+    for key in ("repair_crews", "maintenance_groups", "safety_function", "target_sil"):
+        if graph.get(key):
+            out[key] = graph[key]
+    return out
 
 
 def _t_sim(t_simulation) -> float | None:
@@ -348,6 +412,23 @@ def cached_availability(doc: dict | None, key: str) -> dict | None:
     return {**entry["result"], "cached": True, "computed_at": entry.get("computed_at")}
 
 
+def availability_outdated_by(doc: dict | None, old_graph: dict, new_graph: dict) -> bool:
+    """Whether changing a diagram from ``old_graph`` to ``new_graph`` puts its
+    saved availability simulation out of date: the saved result matched the
+    old diagram (over the default window, or the window it was run over) and
+    doesn't match the new one. A result already out of date, or a change the
+    analysis doesn't see (a block moved on the canvas), gives False."""
+    entry = (doc or {}).get("availability_cache") or {}
+    key = entry.get("key")
+    if not key:
+        return False
+    windows = [None, ((entry.get("result") or {}).get("t_simulation"))]
+    for t in windows:
+        if availability_cache_key(old_graph or {}, t) == key:
+            return availability_cache_key(new_graph or {}, t) != key
+    return False
+
+
 def store_availability(db, rbd_id: str, key: str, result: dict, uid: str | None) -> str:
     """Save an availability result on the RBD doc. Returns ``computed_at``."""
     computed_at = datetime.now(timezone.utc).isoformat()
@@ -364,6 +445,120 @@ def store_availability(db, rbd_id: str, key: str, result: dict, uid: str | None)
         }}},
     )
     return computed_at
+
+
+def availability_state_key(graph: dict, t_simulation: float | None, state: dict | None) -> str:
+    """The key of a simulation from a current state (#155): never the saved
+    from-new key, so such a run can't be served as, or replace, the saved
+    result."""
+    payload = {"base": availability_cache_key(graph, t_simulation), "state": state or {}}
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+# ---- Exact availability results (#154 / #155) --------------------------------
+#
+# The exact figures over time (rbd_analysis.exact_availability) take from a
+# fraction of a second to a minute, so they are cached by a hash of the graph,
+# the window and the current state: on the RBD document (``exact_cache``, a
+# few entries, newest kept) when the caller may edit it, and in a small
+# per-process LRU (scoped to the caller's read owners, as saved models resolve
+# in that scope) for unsaved graphs, viewers and samples. They never touch
+# ``availability_cache``, the saved simulation.
+
+EXACT_CACHE_VERSION = 1
+EXACT_DOC_ENTRIES = 6
+_EXACT_LRU_SIZE = 64
+_exact_lru: "OrderedDict[tuple, dict]" = OrderedDict()
+_exact_lock = threading.Lock()
+
+
+def exact_cache_key(graph: dict, horizon: float | None, state: dict | None) -> str:
+    """sha256 of the canonical analysis graph, the window (None: the default
+    horizon) and the canonical current state."""
+    payload = {
+        "v": EXACT_CACHE_VERSION,
+        "graph": canonical_analysis_graph(graph),
+        "horizon": _t_sim(horizon),
+        "state": state or {},
+    }
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _scope(owner_id) -> tuple:
+    return tuple(sorted(str(o) for o in (owner_id if isinstance(owner_id, (list, tuple, set)) else [owner_id])))
+
+
+def cached_exact(doc: dict | None, key: str, owner_id=None) -> dict | None:
+    """A cached exact payload for ``key``: from the RBD doc, else this
+    process's LRU (in ``owner_id``'s scope; None reads the doc only)."""
+    entry = ((doc or {}).get("exact_cache") or {}).get(key)
+    if isinstance(entry, dict) and isinstance(entry.get("result"), dict):
+        return entry["result"]
+    if owner_id is None:
+        return None
+    with _exact_lock:
+        hit = _exact_lru.get((_scope(owner_id), key))
+        if hit is not None:
+            _exact_lru.move_to_end((_scope(owner_id), key))
+        return hit
+
+
+def remember_exact(key: str, result: dict, owner_id=None) -> None:
+    """Keep an exact payload in this process's LRU."""
+    with _exact_lock:
+        _exact_lru[(_scope(owner_id), key)] = result
+        _exact_lru.move_to_end((_scope(owner_id), key))
+        while len(_exact_lru) > _EXACT_LRU_SIZE:
+            _exact_lru.popitem(last=False)
+
+
+def clear_exact_lru() -> None:
+    with _exact_lock:
+        _exact_lru.clear()
+
+
+def store_exact(db, rbd_id: str, key: str, result: dict) -> None:
+    """Save an exact payload on the RBD doc, keeping the newest
+    :data:`EXACT_DOC_ENTRIES` entries."""
+    doc = db.rbds.find_one({"_id": rbd_id}, {"exact_cache": 1}) or {}
+    entries = dict(doc.get("exact_cache") or {})
+    entries[key] = {
+        "result": json.loads(json.dumps(result, default=float)),
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    newest = sorted(entries.items(), key=lambda kv: kv[1].get("computed_at") or "", reverse=True)
+    db.rbds.update_one({"_id": rbd_id}, {"$set": {"exact_cache": dict(newest[:EXACT_DOC_ENTRIES])}})
+
+
+def analyze_exact(db, graph: dict, owner_id, horizon: float | None = None,
+                  state: dict | None = None) -> dict:
+    """The free (no simulation) availability payload: the exact long-run
+    figures, importance and costs (:func:`rbd_analysis.analyze_availability`
+    with ``simulate=False``) plus the ``exact`` block over time
+    (:func:`rbd_analysis.exact_availability`). Saved models resolve in
+    ``owner_id``'s scope, as for :func:`analyze_graph`."""
+
+    def resolve_model(model_id: str) -> dict | None:
+        return models_service.get_live_model(db, model_id, owner_id)
+
+    # The state sizes the default window from now (#155) the same way for both.
+    base = rbd_analysis.analyze_availability(
+        graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False, state=state)
+    exact = rbd_analysis.exact_availability(graph, resolve_model=resolve_model, horizon=horizon, state=state)
+    return {**base, "exact": exact}
+
+
+def long_run_only(db, graph: dict, owner_id, horizon: float | None = None,
+                  state: dict | None = None) -> dict:
+    """The free payload without the figures over time (they're deferred)."""
+
+    def resolve_model(model_id: str) -> dict | None:
+        return models_service.get_live_model(db, model_id, owner_id)
+
+    return rbd_analysis.analyze_availability(
+        graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False, state=state)
 
 
 def should_store_availability(doc: dict | None, key: str) -> bool:

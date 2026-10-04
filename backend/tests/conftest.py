@@ -11,3 +11,35 @@ def _fast_sample_availability(monkeypatch):
     from backend.services import samples
 
     monkeypatch.setattr(samples, "SAMPLE_AVAIL_SIMS", 10)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_exact_cache():
+    """The exact availability figures are kept in a per-process cache; each
+    test starts without another's."""
+    from backend.services import rbds
+
+    rbds.clear_exact_lru()
+    yield
+    rbds.clear_exact_lru()
+
+
+@pytest.fixture(autouse=True)
+def _no_background_usage_rollup(monkeypatch):
+    """Usage logging rolls up finished days in a background thread at most
+    every few minutes; tests call usage.rollup() themselves rather than race
+    a thread over the in-memory database."""
+    from backend.services import usage
+
+    monkeypatch.setattr(usage, "_next_rollup", float("inf"))
+
+
+@pytest.fixture(autouse=True)
+def _fresh_email_verification_cache():
+    """Email-verification lookups are cached per process; each test starts
+    without another's answers."""
+    from backend.services import email_trust
+
+    email_trust.clear_cache()
+    yield
+    email_trust.clear_cache()

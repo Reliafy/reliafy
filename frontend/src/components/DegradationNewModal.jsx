@@ -5,7 +5,9 @@ import {
   getDegradationOptions,
   fitDegradation,
   listDatasets,
+  SPREADSHEET_ACCEPT,
 } from "../api.js";
+import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import PreviewTable from "./PreviewTable.jsx";
@@ -17,6 +19,8 @@ const STEPS = ["Source", "Data", "Model"];
 
 export default function DegradationNewModal({ onClose, onFitted }) {
   const [step, setStep] = useState(1);
+  // An Excel workbook becomes a CSV of the chosen sheet before anything else.
+  const { toCsv, modal: sheetModal } = useSpreadsheet();
   const [file, setFile] = useState(null);
   const [datasetId, setDatasetId] = useState(null);
   const [sourceName, setSourceName] = useState("");
@@ -50,7 +54,9 @@ export default function DegradationNewModal({ onClose, onFitted }) {
     return distinct.size;
   }, [csv, mapping.i]);
 
-  const pickFile = async (f) => {
+  const pickFile = async (picked) => {
+    if (!picked) return;
+    const f = await toCsv(picked);
     if (!f) return;
     setFile(f);
     setDatasetId(null);
@@ -150,7 +156,7 @@ export default function DegradationNewModal({ onClose, onFitted }) {
     footer = (
       <>
         {stepper}
-        <span className="hint">Upload a CSV or pick a dataset to continue</span>
+        <span className="hint">Upload a CSV or Excel file, or pick a dataset, to continue</span>
       </>
     );
   } else if (step === 2) {
@@ -221,10 +227,12 @@ export default function DegradationNewModal({ onClose, onFitted }) {
             ) : file ? (
               <span className="dz-big filename">{file.name}</span>
             ) : (
-              <span className="dz-big">Drop a CSV here or <strong>click to browse</strong></span>
+              <span className="dz-big">Drop a CSV or Excel file here or <strong>click to browse</strong></span>
             )}
             <span className="dz-hint">long format: item id · time · measurement (one row per reading)</span>
-            <input ref={inputRef} type="file" accept=".csv,text/csv" hidden onChange={(e) => pickFile(e.target.files?.[0])} />
+            <input ref={inputRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
+                   onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
+            {sheetModal}
           </div>
 
           {datasets.length > 0 && (

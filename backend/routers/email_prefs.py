@@ -10,6 +10,7 @@ lives under ``/api/me/email-preferences``.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -51,12 +52,19 @@ async def unsubscribe(request: Request, t: str = Query(default=""),
                       session=Depends(get_session)):
     """Opt out. Accepts the RFC 8058 one-click form body
     (``List-Unsubscribe=One-Click``), JSON, or nothing at all; idempotent."""
-    doc = email_prefs.user_by_token(session, t)
-    if doc is None:
-        return _not_found()
     body = (await request.body())[:1024]
     source = "one_click" if b"List-Unsubscribe=One-Click" in body else "link"
-    email_prefs.set_opt_out(session, doc["_id"], True, source)
+
+    def opt_out():
+        # Database calls run off the event loop.
+        doc = email_prefs.user_by_token(session, t)
+        if doc is not None:
+            email_prefs.set_opt_out(session, doc["_id"], True, source)
+        return doc
+
+    doc = await run_in_threadpool(opt_out)
+    if doc is None:
+        return _not_found()
     return {"email": email_prefs.mask_email(doc.get("email")), "subscribed": False}
 
 
