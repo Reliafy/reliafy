@@ -10,6 +10,7 @@ import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
 import AvailabilityPolicies from "./AvailabilityPolicies.jsx";
 import { precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
+import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -247,6 +248,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
           <div className="name">
             {now ? "Mean remaining life" : cond ? "Mean residual life" : "MTTF"}
             {unit ? ` (${unit})` : ""}
+            {now && result.mean_residual_life && <> <MethodTag method={result.mean_residual_life.method} /></>}
           </div>
           <BandInterval band={band} interval={band?.mttf} />
         </div>
@@ -588,7 +590,7 @@ function ExactSection({ exact, steady, unit, onCompute, computing }) {
 
 // Shown in place of the simulation's results when none has been run: what it
 // adds over the exact figures, and the way to run it (Pro, or credits).
-function SimulationOffer({ canSimulate, onSimulate, simulating, graph }) {
+function SimulationOffer({ canSimulate, onSimulate, simulating, graph, fromNow = false }) {
   const [upgrade, setUpgrade] = useState(false);
   if (!onSimulate) return null;
   return (
@@ -597,7 +599,7 @@ function SimulationOffer({ canSimulate, onSimulate, simulating, graph }) {
       <p style={{ margin: "4px 0 0" }}>
         The figures above are exact. A Monte-Carlo simulation adds the spread of outcomes: the chance of no
         outage, percentiles, criticality indices (which block trips the system, which restores it) and a
-        confidence band.
+        confidence band.{fromNow && " From now, it also gives the time to the next system failure, its mean residual life and its likely cause."}
       </p>
       <div className="rbd-upgrade-actions">
         <button
@@ -672,6 +674,9 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         <div className="alt-metric" title={basisNote("mean_up_time")}><span className="k">Mean up time</span><span className="v">{fmt(result.mean_up_time)}{u}</span></div>
         <div className="alt-metric" title={basisNote("mean_down_time")}><span className="k">Mean down time</span><span className="v">{fmt(result.mean_down_time)}{u}</span></div>
         <div className="alt-metric" title={basisNote("failure_frequency")}><span className="k">Failure frequency</span><span className="v">{fmt(result.failure_frequency)}{u ? ` /${unit}` : ""}</span></div>
+        {hasSim && result.next_failure && (
+          <div className="alt-metric" title="Simulated mean time from now to the next system failure (see Next system failure from now)"><span className="k">Mean residual life</span><span className="v">{meanResidualLife(result.next_failure)}{u}</span></div>
+        )}
       </div>
 
       <ExactSection
@@ -729,6 +734,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           <div className="ds-section-h">
             Simulation{result.current_state ? " from now" : ""} <MethodTag method="simulated" />
           </div>
+          <RbdNextFailure result={result} unit={unit} />
           {exactOk && <DowntimeBars rows={simPer} title="Simulated share of downtime" />}
           {curve && curve.t?.length > 1 && (
             <Plot
@@ -759,6 +765,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           onSimulate={onSimulate}
           simulating={busy === "simulate"}
           graph={graph}
+          fromNow={!!result.current_state}
         />
       )}
     </div>

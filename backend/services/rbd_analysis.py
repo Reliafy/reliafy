@@ -1540,6 +1540,34 @@ class _GivenState:
         return conditional_survival(self, x, X)
 
 
+def _mean_residual_life(rbd, state: dict, working: set, broken: set,
+                        integrated: Optional[float]) -> Optional[dict]:
+    """The mean residual life as of now (#221): ``{"value", "method"}``.
+
+    RePyability's ``mean_residual_life(state)`` (0.12) where it takes the
+    diagram as it is — every pin a failed block (``NodeState(alive=False)``),
+    none held working — "exact" (the area under ``sf_given_state`` by
+    quadrature, to about 1e-10); otherwise the area under the curve from now
+    (``integrated``), "numerical". None when the system has already failed
+    or has no remaining life to give."""
+    from repyability import NodeState
+
+    if not working:
+        states = {nid: NodeState(alive=False) if v.get("failed") else NodeState(age=float(v["age"]))
+                  for nid, v in state.items()}
+        states.update({nid: NodeState(alive=False) for nid in broken})
+        try:
+            with np.errstate(all="ignore"):
+                value = float(rbd.mean_residual_life(states))
+        except Exception:  # noqa: BLE001 - the integral of the curve stands
+            value = None
+        if value is not None and np.isfinite(value):
+            return {"value": value, "method": "exact"} if value > 0 else None
+    if integrated is None:
+        return None
+    return {"value": float(integrated), "method": "numerical"}
+
+
 def parse_target(value) -> Optional[float]:
     """A target reliability in (0, 1), or None. Raises :class:`AnalysisError`."""
     if value is None:
@@ -1665,6 +1693,7 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
     # evaluated from now, each aged block conditioned on its age.
     system = rbd
     ages: dict = {}
+    pins = (set(working_nodes), set(broken_nodes))  # the what-if pins, before the failed blocks join them
     if state:
         broken_nodes = broken_nodes | {nid for nid, v in state.items() if v.get("failed")}
         ages = {nid: v["age"] for nid, v in state.items() if "age" in v}
@@ -1781,6 +1810,9 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
     mttf, mttf_note = _system_mttf(rbd, system, float(grid[-1]), s, overrides)
     if mttf_note:
         notes.append(mttf_note)
+    mrl = _mean_residual_life(rbd, state, *pins, mttf) if state else None
+    if mrl is not None:
+        mttf = mrl["value"]
 
     # System B-lives: time by which x% of systems have failed (R = 1 − x/100),
     # read off the (conditional) system reliability curve. None if beyond the
@@ -1865,6 +1897,8 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
         # (0 when the failed blocks cut every path).
         result["current_state"] = state
         result["reliability_now"] = float(np.clip(system.sf(0.0), 0.0, 1.0))
+        if mrl is not None:
+            result["mean_residual_life"] = mrl
     if target is not None:
         result["design_life"] = _design_life(rbd, system, target, s, overrides, now=bool(state))
     if band is not None:
@@ -2690,6 +2724,19 @@ def analyze_availability(
         import logging
 
         logging.getLogger(__name__).exception("Crew/safety summary failed")
+    if node_states and res is not None:
+        # As of now, with the simulation (#220, #221): the time to the next
+        # system failure from the blocks' states, its causes and its mean.
+        try:
+            from backend.services import rbd_next_failure
+
+            extras["next_failure"] = rbd_next_failure.next_failure(
+                rbd, labels, overrides, node_states, float(t_simulation),
+                max_n=int(n_simulations) if fixed_n else _AVAIL_SIMS)
+        except Exception:  # noqa: BLE001 - never lose the availability result
+            import logging
+
+            logging.getLogger(__name__).exception("Next-failure simulation failed")
 
     return {
         "kind": "repairable",
