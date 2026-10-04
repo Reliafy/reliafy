@@ -148,3 +148,33 @@ def test_saved_analyses_roundtrip_and_isolation(monkeypatch):
     )
     assert abs(ffi.results["interval"] - 175.2) < 0.1
     assert "Check every" in strategy_store.headline(ffi)
+
+
+def test_compute_and_saved_analyses_keep_the_models_extras():
+    """The calculators' extras (offset, LFP fraction, zero inflation) are
+    used when computing and saving, so a saved analysis matches what the
+    calculator showed."""
+    import mongomock
+
+    from backend.services import strategy_store
+
+    weib = [{"name": "alpha", "value": 1000.0}, {"name": "beta", "value": 3.0}]
+    inputs = {"distribution_id": "weibull", "params": weib, "planned_cost": 100, "unplanned_cost": 1000,
+              "extras": {"p": 0.6}}
+    shown = st.optimal_replacement("weibull", weib, 100, 1000, extras={"p": 0.6})
+    assert shown["beneficial"] is False
+    assert strategy_store.compute("optimal_replacement", inputs)["beneficial"] is False
+    db = mongomock.MongoClient()["t"]
+    saved = strategy_store.save_analysis(db, "LFP pumps", "optimal_replacement", inputs, "user-a")
+    assert saved.results["beneficial"] is False and saved.results["recommendation"] == shown["recommendation"]
+    # SurPyval 0.23's name for the LFP fraction is read the same way.
+    lfp_p = strategy_store.compute("optimal_replacement", {**inputs, "extras": {"lfp_p": 0.6}})
+    assert lfp_p["recommendation"] == shown["recommendation"]
+
+    rate = [{"name": "failure_rate", "value": 1e-3}]
+    ff = strategy_store.compute("failure_finding", {
+        "distribution_id": "exponential", "params": rate, "target_availability": 0.99,
+        "extras": {"gamma": 500.0}})
+    assert ff["interval"] == pytest.approx(
+        st.failure_finding("exponential", rate, 0.99, extras={"gamma": 500.0})["interval"])
+    assert ff["interval"] > st.failure_finding("exponential", rate, 0.99)["interval"]

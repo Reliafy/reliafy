@@ -626,11 +626,12 @@ def _seed_availability_results(db) -> None:
             if doc is None or not (doc.get("graph") or {}).get("repairable"):
                 continue
             # The exact figures over time (#154), saved for public links.
-            exact_key = rbds_service.exact_cache_key(doc["graph"], None, None)
+            models = rbds_service.model_fingerprints(db, doc["graph"], SAMPLE_OWNER)
+            exact_key = rbds_service.exact_cache_key(doc["graph"], None, None, models)
             if rbds_service.cached_exact(doc, exact_key) is None:
                 rbds_service.store_exact(
                     db, rbd_id, exact_key, rbds_service.analyze_exact(db, doc["graph"], SAMPLE_OWNER))
-            key = rbds_service.availability_cache_key(doc["graph"])
+            key = rbds_service.availability_cache_key(doc["graph"], models=models)
             cached = rbds_service.cached_availability(doc, key)
             # A result saved before the precision report (#104) is re-seeded
             # once, so the showcase sample shows it.

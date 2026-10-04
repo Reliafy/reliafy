@@ -304,9 +304,11 @@ done
 # Expect latestRevision True, 100 percent, for each.
 
 # Compute is private: anonymous calls are refused …
-curl -s -o /dev/null -w '%{http_code}\n' "$COMPUTE_URL/healthz"            # 403
+# (/health, not /healthz: Cloud Run reserves paths ending in "z" and answers
+# /healthz with its own 404, before the service sees it.)
+curl -s -o /dev/null -w '%{http_code}\n' "$COMPUTE_URL/health"             # 403
 # … and an authorised one works (your account is project owner):
-curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" "$COMPUTE_URL/healthz"
+curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" "$COMPUTE_URL/health"
 # {"ok":true,"repyability_version":"0.12"}
 
 # The callback refuses anything without the compute SA's token.
@@ -372,7 +374,7 @@ Set the step 0 variables first.
    gcloud run deploy reliafy-compute --image "$IMAGE" --region "$REGION" --project "$PROJECT"
    ```
 4. Run step 7's checks: traffic on both, the same digest on both, and
-   `/healthz` reporting the RePyability version the Dockerfile pins (0.12 now).
+   `/health` reporting the RePyability version the Dockerfile pins (0.12 now).
 
 Between steps 1 and 3, compute runs the previous image for a minute. That's
 harmless unless the release changes the request format in

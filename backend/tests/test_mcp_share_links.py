@@ -35,6 +35,28 @@ def test_share_tools_are_on_every_plan_and_counted():
     assert not {"share_link", "list_share_links", "revoke_share_link"} & (PRO_ONLY_TOOLS | UNGATED_TOOLS)
 
 
+def test_every_public_collection_is_a_share_kind():
+    """#89: share_link offers every kind the app can publish (recurrent
+    models were missing), and its Literal matches the map."""
+    from typing import get_args
+
+    from backend.mcp_server import _SHARE_KINDS, _ShareKind
+    from backend.services.public_links import PUBLIC_COLLECTIONS
+
+    assert set(_SHARE_KINDS.values()) == PUBLIC_COLLECTIONS
+    assert set(get_args(_ShareKind)) == set(_SHARE_KINDS)
+
+
+def test_assistant_can_share_every_sharable_collection():
+    """#89: the in-app assistant's share_artifact offers every collection
+    the share endpoint accepts (fleets and recurrent models were missing)."""
+    from backend.services.access import SHARABLE_COLLECTIONS
+    from backend.services.assistant_spec import TOOLS
+
+    tool = next(t for t in TOOLS if t["name"] == "share_artifact")
+    assert set(tool["parameters"]["properties"]["collection"]["enum"]) == set(SHARABLE_COLLECTIONS)
+
+
 def test_acceptance_protected_expiring_rbd_link(env):
     """Claude creates an RBD, analyses it, shares a password-protected link
     that expires in 30 days; a viewer with no account unlocks it, sees the

@@ -22,6 +22,7 @@ from backend import fitting
 from backend.config import SAMPLE_OWNER
 from backend.schema import Fleet
 from backend.db import from_doc
+from backend.services import access
 from backend.services import datasets as datasets_service
 from backend.services import degradation as degradation_service
 from backend.services import fleet as fleet_service
@@ -207,7 +208,7 @@ def apply_fleet_usage(db, fleet_id: str, uid: str, entries: list[dict],
 
     db.fleets.update_one(
         {"_id": fleet_id, "owner_id": uid},
-        {"$set": {"items": items, "updated_at": _now()}},
+        {"$set": {"items": items, "updated_at": access.next_updated_at(doc.get("updated_at"))}},
     )
     fleet = from_doc(Fleet, db.fleets.find_one({"_id": fleet_id}))
     forecast = fleet_service.compute(db, fleet, [uid, SAMPLE_OWNER])

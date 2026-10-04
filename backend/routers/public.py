@@ -99,7 +99,7 @@ def revoke_link(
 # Detail handlers per collection, replayed under the guest ctx. Imported
 # lazily inside the endpoint to avoid circular imports at module load.
 def _detail_handler(collection: str):
-    from backend.routers import degradation, fleet, models, rbds, rcm, strategy
+    from backend.routers import degradation, fleet, models, rbds, rcm, recurrent, strategy
 
     return {
         "models": models.get_model,
@@ -109,6 +109,7 @@ def _detail_handler(collection: str):
         "rcm_studies": rcm.get_study,
         "fleets": fleet.get_fleet,
         "rbds": rbds.get_rbd,
+        "recurrent_models": recurrent.get_model,
     }[collection]
 
 
@@ -135,12 +136,15 @@ def _with_rbd_analysis(session, payload: dict, rbd_id: str, owner_id: str, ctx) 
     try:
         if graph.get("repairable"):
             doc = session.rbds.find_one({"_id": rbd_id})
+            # Keyed on the referenced saved models' fits too (#92): a result
+            # saved before a refit is stale, not served.
+            models = rbds_service.model_fingerprints(session, graph, [*ctx.read_owners, owner_id])
             analysis = rbds_service.cached_availability(
-                doc, rbds_service.availability_cache_key(graph)
+                doc, rbds_service.availability_cache_key(graph, models=models)
             )
             # The owner's saved exact figures (#154) ride along, or stand in
             # for a simulation that hasn't been run: read, never computed here.
-            exact = rbds_service.cached_exact(doc, rbds_service.exact_cache_key(graph, None, None))
+            exact = rbds_service.cached_exact(doc, rbds_service.exact_cache_key(graph, None, None, models))
             if analysis is not None:
                 analysis = {**analysis, "has_simulation": True,
                             **({"exact": exact["exact"]} if exact else {})}

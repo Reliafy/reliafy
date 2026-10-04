@@ -5788,6 +5788,7 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
   box-shadow: 0 10px 32px rgba(20, 24, 32, 0.14);
   z-index: 40;
 }
+.ovm-menu[hidden] { display: none; }
 .ovm-item {
   width: 100%;
   text-align: left;

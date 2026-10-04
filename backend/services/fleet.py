@@ -20,7 +20,6 @@ model — never stored — so it always reflects the model's current fit.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
 import numpy as np
 
@@ -85,10 +84,6 @@ def item_rate(item: dict, default_rate: float, rate_source: str) -> tuple[float,
 
 _SIMS = 2000
 _MAX_DRAWS = 2_000_000  # items × sims ceiling — clamp sims for huge fleets
-
-
-def _now():
-    return datetime.now(timezone.utc)
 
 
 def _list_query(owner_id, shared=frozenset()):
@@ -212,7 +207,7 @@ def rename_fleet(db, fleet_id: str, name: str, owner_id: str) -> Fleet:
     if fleet is None or fleet.owner_id != owner_id:
         raise FleetNotFound(fleet_id)
     fleet.name = name
-    fleet.updated_at = _now()
+    fleet.updated_at = access.next_updated_at(fleet.updated_at)
     db.fleets.update_one(
         {"_id": fleet_id, "owner_id": owner_id},
         {"$set": {"name": name, "updated_at": fleet.updated_at}},
@@ -231,9 +226,12 @@ def replace_items(db, fleet_id: str, settings, items, owner_id: str,
     fleet = get_fleet(db, fleet_id, owner_id)
     if fleet is None or fleet.owner_id != owner_id:
         raise FleetNotFound(fleet_id)
+    query = {"_id": fleet_id, "owner_id": owner_id}
     if expected_updated_at and fleet.updated_at is not None:
         if not access.timestamps_match(fleet.updated_at, expected_updated_at):
             raise access.EditConflict()
+        # Conditional on the stamp checked: a save racing in between conflicts.
+        query["updated_at"] = fleet.updated_at
     fleet.settings = _clean_settings(settings)
     previous = {it.get("id"): it for it in (fleet.items or [])}
     fleet.items = _clean_items(items)
@@ -243,12 +241,14 @@ def replace_items(db, fleet_id: str, settings, items, owner_id: str,
         for key in ESTIMATE_KEYS:
             if key in old:
                 it[key] = old[key]
-    fleet.updated_at = _now()
-    db.fleets.update_one(
-        {"_id": fleet_id, "owner_id": owner_id},
+    fleet.updated_at = access.next_updated_at(fleet.updated_at)
+    result = db.fleets.update_one(
+        query,
         {"$set": {"settings": fleet.settings, "items": fleet.items,
                   "updated_at": fleet.updated_at}},
     )
+    if result.matched_count == 0:
+        raise access.EditConflict()
     return fleet
 
 

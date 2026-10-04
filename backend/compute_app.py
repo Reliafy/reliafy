@@ -20,7 +20,10 @@ Endpoints:
   callback is idempotent).
 * ``POST /compute/availability`` — the same analysis, answered directly (for
   checks and debugging).
-* ``GET /healthz``.
+* ``GET /health`` — liveness and the RePyability version. Cloud Run reserves
+  paths ending in "z" (its front end answers ``/healthz`` itself, with a 404),
+  so this is the one to call in production; ``GET /healthz`` stays for local
+  use.
 """
 
 from __future__ import annotations
@@ -173,9 +176,16 @@ def run_job(job_id: str, kind: str, request: dict, callback_url: str) -> bool:
 
 # ---- Routes ---------------------------------------------------------------------
 
+@app.get("/health")
+def health() -> dict:
+    return {"ok": True, "repyability_version": _repyability_version()}
+
+
 @app.get("/healthz")
 def healthz() -> dict:
-    return {"ok": True, "repyability_version": _repyability_version()}
+    """``/health`` for local use: unreachable on Cloud Run, which reserves
+    paths ending in "z"."""
+    return health()
 
 
 @app.post("/compute/availability")
