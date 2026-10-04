@@ -2129,7 +2129,7 @@ def edit_rbd(
     # A saved availability simulation that matched the diagram before this
     # edit no longer does: say so once, briefly.
     saved_sim = db.rbds.find_one({"_id": rbd.id}, {"availability_cache": 1})
-    if rbds_service.availability_outdated_by(saved_sim, rbd.graph or {}, graph):
+    if rbds_service.availability_outdated_by(saved_sim, rbd.graph or {}, graph, db, owners):
         out["simulation_note"] = (
             ("Saving this edit would put" if dry_run else "This edit puts")
             + " the saved availability simulation out of date; analyze_rbd gives the exact figures, "

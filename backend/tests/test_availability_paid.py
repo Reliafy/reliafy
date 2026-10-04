@@ -363,6 +363,108 @@ def test_public_link_never_simulates(client, monkeypatch):
     assert client.get(f"/api/public/{token}").json()["artifact"]["analysis"] is None
 
 
+def test_refitting_a_referenced_model_makes_the_saved_result_stale(client, monkeypatch):
+    """#92: a block that references a saved fitted model by id (here a
+    proportional-hazards one) carries only the id, so the model's fit is part
+    of the availability and exact keys (with the window and state as before):
+    a refit invalidates the saved results, a rename doesn't."""
+    import io
+
+    import numpy as np
+    import pandas as pd
+
+    from backend.routers import rbds as rbds_routes
+    from backend.services import datasets as ds_service
+    from backend.services import models as models_service
+    from backend.services import rbds as rbds_service
+
+    # The exact figures aren't computed here (the saved ones are what free
+    # viewers and public links rely on): stub them for the app's endpoint.
+    monkeypatch.setattr(rbds_routes, "exact_payload", lambda *a, **k: {
+        "steady_state_availability": 0.9, "exact": {"status": "ok"}})
+
+    db = client.db
+    buf = io.StringIO()
+    rng = np.random.default_rng(3)
+    age = rng.normal(50, 10, 80)
+    pd.DataFrame({"t": np.round(rng.weibull(1.5, 80) * 900 * np.exp(-0.02 * (age - 50)), 2),
+                  "c": (rng.random(80) < 0.2).astype(int),
+                  "age": np.round(age, 1)}).to_csv(buf, index=False)
+    dataset = ds_service.create_dataset(db, "pumps.csv", buf.getvalue().encode(), FREE)
+    model = models_service.save_model(db, "Pump PH", dataset, "weibull_ph", {"x": "t"}, ["age"], None,
+                                      owner_id=FREE)
+    assert model.kind == "regression"
+
+    graph = _rbd_graph(repairable=True)
+    graph["nodes"][3]["data"]["model"] = {
+        "source": "saved", "kind": "regression", "modelId": model.id, "name": "Pump PH",
+        "distribution": "Weibull PH", "distribution_id": "weibull_ph",
+        "covariates": [{"name": "age", "type": "number", "default": 50.0}]}
+    # Parametric blocks carry their parameters, so only the resolved model
+    # counts, and a diagram without one keeps its key (saved results and the
+    # samples' precomputed ones still serve).
+    models = rbds_service.model_fingerprints(db, graph, FREE)
+    assert list(models) == [model.id] and models[model.id]
+    plain = _rbd_graph(repairable=True)
+    assert rbds_service.model_fingerprints(db, plain, FREE) == {}
+    assert rbds_service.availability_cache_key(plain, models={}) == rbds_service.availability_cache_key(plain)
+    assert rbds_service.exact_cache_key(plain, None, None, {}) == rbds_service.exact_cache_key(plain, None, None)
+    # The window and the state still key both.
+    assert rbds_service.availability_cache_key(graph, 500, models) != rbds_service.availability_cache_key(
+        graph, None, models)
+    assert rbds_service.exact_cache_key(graph, None, {"n": {"age": 1}}, models) != rbds_service.exact_cache_key(
+        graph, None, None, models)
+
+    client.act_as(FREE)
+    rbd_id = _save(client, graph)
+    rbds_service.store_availability(
+        db, rbd_id, rbds_service.availability_cache_key(graph, models=models),
+        {"kind": "repairable", "steady_state_availability": 0.97}, PRO,
+    )
+    rbds_service.store_exact(db, rbd_id, rbds_service.exact_cache_key(graph, None, None, models),
+                             {"steady_state_availability": 0.97, "exact": {"status": "ok"}})
+    doc = db.rbds.find_one({"_id": rbd_id})
+    assert rbds_service.should_store_availability(
+        doc, rbds_service.availability_cache_key(graph, models=models), db, FREE)
+    token = client.post(
+        "/api/public-links", json={"collection": "rbds", "artifact_id": rbd_id}
+    ).json()["token"]
+
+    def served():
+        state = client.get(f"/api/rbds/{rbd_id}/analyze").json()["simulation_status"]["state"]
+        client.act_as(None)
+        public = client.get(f"/api/public/{token}").json()["artifact"]["analysis"]
+        client.act_as(FREE)
+        return state == "saved", public is not None and public.get("has_simulation") is True, public
+
+    assert served()[:2] == (True, True)
+    assert served()[2]["exact"] == {"status": "ok"}
+    models_service.rename_model(db, model.id, "Pump bank PH", FREE)
+    assert served()[:2] == (True, True)
+
+    # An edit that doesn't touch the model leaves the result current; one
+    # that changes a block puts it out of date (MCP edit_rbd's note).
+    moved = copy.deepcopy(graph)
+    moved["nodes"][3]["position"] = {"x": 999, "y": 9}
+    assert not rbds_service.availability_outdated_by(doc, graph, moved, db, FREE)
+    assert rbds_service.availability_outdated_by(doc, graph, _with_param(graph, 2100), db, FREE)
+
+    # Refit (censoring now counted): the graph is unchanged, the results aren't valid.
+    models_service.update_fit(db, model.id, FREE, "weibull_ph", {"x": "t", "c": "c"},
+                              ["age"], None, None, None)
+    refit = rbds_service.model_fingerprints(db, graph, FREE)
+    assert refit != models
+    assert served()[:2] == (False, False)
+    # Neither the saved simulation nor the saved exact figures are served publicly.
+    assert served()[2] is None
+    doc = db.rbds.find_one({"_id": rbd_id})
+    assert not rbds_service.cached_availability(doc, rbds_service.availability_cache_key(graph, models=refit))
+    assert not rbds_service.cached_exact(doc, rbds_service.exact_cache_key(graph, None, None, refit))
+    # A fresh run for the diagram as saved replaces the stale one.
+    assert rbds_service.should_store_availability(
+        doc, rbds_service.availability_cache_key(graph, models=refit), db, FREE)
+
+
 def test_public_link_non_repairable_unchanged(client):
     client.act_as(FREE)
     rbd_id = _save(client, _rbd_graph(repairable=False))
