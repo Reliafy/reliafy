@@ -139,7 +139,7 @@ def test_common_cause_lowers_redundant_reliability():
     res = analyze(graph)
     ccf = res["ccf"]
     assert ccf is not None
-    assert ccf["groups"] == [{"members": ["Pump A", "Pump B"], "beta": 0.1}]
+    assert ccf["groups"] == [{"members": ["Pump A", "Pump B"], "beta": 0.1, "basis": "rate"}]
     # Common cause erodes the redundancy benefit.
     assert ccf["reliability_with"] < ccf["reliability_without"]
     # A graph without groups carries no ccf payload.

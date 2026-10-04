@@ -591,10 +591,35 @@ def _build_rbd(
     return rbd, labels, node_types, reliabilities, working_nodes, broken_nodes, baseline
 
 
-def _ccf_groups(graph: dict, reliabilities: dict) -> list:
+#: What a common-cause group's beta is a fraction of (RePyability's
+#: ``BetaFactor`` basis, #210): each member's failure *rate* — a lifetime
+#: model, right over the whole life — or its failure *probability*, the PRA
+#: basic-event split, valid only while that probability is small (a mission
+#: or a proof-test interval). Non-repairable (lifetime) analysis defaults to
+#: the rate; a repairable diagram's groups (a safety function's PFDavg) keep
+#: the probability default, which RePyability's Markov chain ignores anyway
+#: (a repairable component's failures are a rate).
+CCF_BASES = ("rate", "probability")
+
+
+def ccf_basis(group: dict, repairable: bool = False) -> str:
+    """A common-cause group's basis: its own ``basis`` when set, else the
+    default for the diagram kind (rate for lifetime analysis). Raises
+    :class:`AnalysisError` for a basis that isn't one of :data:`CCF_BASES`."""
+    basis = (group or {}).get("basis") if isinstance(group, dict) else None
+    if basis in (None, ""):
+        return "probability" if repairable else "rate"
+    if basis not in CCF_BASES:
+        raise AnalysisError(
+            f"A common-cause group's basis must be 'rate' or 'probability'; got {basis!r}.")
+    return basis
+
+
+def _ccf_groups(graph: dict, reliabilities: dict, repairable: bool = False) -> list:
     """Build RePyability CCFGroups from ``graph['ccf_groups']`` — each a set of
-    ≥2 redundant components coupled by a beta-factor shared cause. Groups whose
-    members aren't all present (or fewer than two) are skipped."""
+    ≥2 redundant components coupled by a beta-factor shared cause, on the
+    group's basis (:func:`ccf_basis`). Groups whose members aren't all
+    present (or fewer than two) are skipped."""
     out = []
     for g in graph.get("ccf_groups") or []:
         # A repeated block (its model is the name of its original) is no member.
@@ -608,8 +633,34 @@ def _ccf_groups(graph: dict, reliabilities: dict) -> list:
             continue
         if not (0.0 < beta < 1.0):
             continue
-        out.append(CCFGroup(members=list(dict.fromkeys(members)), model=BetaFactor(beta)))
+        model = BetaFactor(beta, basis=ccf_basis(g, repairable))
+        out.append(CCFGroup(members=list(dict.fromkeys(members)), model=model))
     return out
+
+
+def _ccf_bases(rbd) -> set:
+    """The bases of the common-cause groups in ``rbd`` and the diagrams
+    nested in it (empty without any)."""
+    out = {g.model.basis for g in getattr(rbd, "ccf_groups", None) or []}
+    for model in (getattr(rbd, "reliabilities", None) or {}).values():
+        if isinstance(model, NonRepairableRBD):
+            out |= _ccf_bases(model)
+    return out
+
+
+# RePyability's warning that a probability-basis group is evaluated past the
+# small probabilities it is meant for (see :func:`_ccf_warning`).
+_CCF_WARNING = re.compile(r"^Common-cause group \[")
+
+
+def _ccf_warning(text: str, labels: dict) -> str:
+    """RePyability's common-cause validity warning in Reliafy's words: the
+    blocks by label, and the fix as the group's basis rather than a call."""
+    text = _with_labels(text, labels)
+    text = re.sub(r"^Common-cause group \[(.*?)\] \(BetaFactor\(beta=([^,)]+)\)\)",
+                  r"Common-cause group (\1; β = \2, probability basis)", text)
+    return re.sub(r"Over a lifetime, split the failure rate: .*$",
+                  "For lifetime figures, set the group's basis to rate (Reliafy's default).", text)
 
 
 def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
@@ -820,6 +871,9 @@ def validate_graph(
         errors.extend(rbd_maintenance.validation_errors(graph))
         errors.extend(rbd_policies.validation_errors(graph))
         warnings.extend(rbd_policies.validation_warnings(graph))
+        # A repairable diagram's groups take either basis (its chain splits
+        # the rate whatever it is): only a malformed one is an error.
+        errors.extend(_ccf_basis_checks(graph, labels)[0])
         valid = len(errors) == 0
         # ``analytic`` describes the reliability curve and stays False here;
         # how each availability figure is computed (#154: exact, numerical or
@@ -834,6 +888,9 @@ def validate_graph(
     # (symmetric) components — warn if the members' life models differ.
     for msg in _ccf_symmetry_warnings(graph, labels):
         warnings.append(msg)
+    basis_errors, basis_warnings = _ccf_basis_checks(graph, labels)
+    errors.extend(basis_errors)
+    warnings.extend(basis_warnings)
 
     valid = len(errors) == 0
     analytic = valid and len(non_analytic) == 0
@@ -1002,6 +1059,31 @@ def _ccf_symmetry_warnings(graph: dict, labels: dict) -> list:
                 "beta-factor model assumes identical redundant components, so give "
                 "them the same model for a meaningful result.")
     return out
+
+
+def _ccf_basis_checks(graph: dict, labels: dict) -> tuple[list[str], list[str]]:
+    """``(errors, warnings)`` on the common-cause groups' basis (#210) in a
+    non-repairable diagram: a basis that isn't rate or probability is an
+    error; the probability basis is warned of, since over a lifetime it
+    overstates a redundant group's reliability and leaves the MTTF undefined."""
+    errors, warnings_ = [], []
+    for g in graph.get("ccf_groups") or []:
+        if not isinstance(g, dict):
+            continue
+        names = ", ".join(labels.get(m, str(m)) for m in g.get("members") or [])
+        try:
+            basis = ccf_basis(g)
+        except AnalysisError:
+            errors.append(f"Common-cause group ({names}): basis must be 'rate' or 'probability'; "
+                          f"got {g.get('basis')!r}.")
+            continue
+        if basis == "probability":
+            warnings_.append(
+                f"Common-cause group ({names}) splits each member's failure probability (probability "
+                "basis): a rare-event model for a short mission or proof-test interval. Over a lifetime it "
+                "makes the group more reliable than it is, and the MTTF isn't given — set its basis to rate "
+                "for lifetime figures.")
+    return errors, warnings_
 
 
 def _model_hi(model) -> Optional[float]:
@@ -1299,6 +1381,39 @@ def _mttf(rbd, base_hi: float, s: float = 0.0, **sf_kwargs) -> Optional[float]:
     return value if np.isfinite(value) and value > 0 else None
 
 
+_MTTF_PROBABILITY_NOTE = (
+    "The MTTF isn't given: a common-cause group splits its members' failure probability (probability "
+    "basis), which doesn't hold over a whole life (RePyability refuses the MTTF for it). Set the group's "
+    "basis to rate for lifetime figures.")
+
+
+def _system_mttf(rbd, system, base_hi: float, s: float, overrides: dict) -> tuple[Optional[float], Optional[str]]:
+    """``(MTTF or mean residual/remaining life, why it is missing)``.
+
+    A diagram with common-cause groups (#210) takes RePyability's exact
+    ``rbd.mean()`` where it applies — from new, with no block pinned — so
+    its guard holds: a group on the probability basis has no MTTF (it
+    doesn't describe a lifetime), and neither does the trapezoid get one
+    for it. Anything else is :func:`_mttf`, integrated from the curve."""
+    bases = _ccf_bases(rbd)
+    if "probability" in bases:
+        return None, _MTTF_PROBABILITY_NOTE
+    if bases and system is rbd and s <= 0 and not any(overrides.values()):
+        try:
+            with np.errstate(all="ignore"):
+                value = float(rbd.mean())
+            if np.isfinite(value) and value > 0:
+                return value, None
+        except NotImplementedError:
+            return None, _MTTF_PROBABILITY_NOTE
+        except Exception:  # noqa: BLE001 - the integral of the curve below still stands
+            pass
+    try:
+        return _mttf(system, base_hi, s, **overrides), None
+    except Exception:  # noqa: BLE001
+        return None, None
+
+
 def _clean(arr) -> list:
     """Coerce an array to a JSON-safe list (inf/nan -> null)."""
     out = []
@@ -1507,7 +1622,33 @@ def analyze(
     reliability falls to it (from new, the survived age or now), with an
     interval in the band when one is asked for. Raises :class:`AnalysisError`
     with a user-facing message if the graph can't be turned into a valid RBD.
+
+    ``warnings`` lists RePyability's common-cause warnings (#210: a group on
+    the probability basis evaluated past the small probabilities it is meant
+    for), in Reliafy's words, and why the MTTF is missing when it is.
     """
+    args = (graph, resolve_subsystem, t_max, covariates, resolve_model, conditional_age, at_times, band,
+            current_state, target_reliability)
+    with warnings.catch_warnings(record=True) as caught:
+        # Every time, not once per place: each analysis builds its own RBD.
+        warnings.filterwarnings("always", message=_CCF_WARNING.pattern, category=UserWarning)
+        result, labels, notes = _analyze(*args)
+    relayed = []
+    for w in caught:
+        if issubclass(w.category, UserWarning) and _CCF_WARNING.match(str(w.message)):
+            relayed.append(_ccf_warning(str(w.message), labels))
+        else:  # not ours to relay: let it through as it would have gone
+            warnings.warn_explicit(w.message, w.category, w.filename, w.lineno, source=w.source)
+    out = list(dict.fromkeys(relayed + notes))
+    if out:
+        result["warnings"] = out
+    return result
+
+
+def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditional_age, at_times, band,
+             current_state, target_reliability) -> tuple[dict, dict, list]:
+    """:func:`analyze`'s work: ``(result, block labels, notes for its warnings)``."""
+    notes: list[str] = []
     state = parse_nonrepairable_state(graph, current_state)
     target = parse_target(target_reliability)
     s = float(conditional_age) if conditional_age and conditional_age > 0 else 0.0
@@ -1634,12 +1775,12 @@ def analyze(
     except Exception:
         importance = {}
 
-    # Mean time to failure (or mean residual life at s), integrated from the
-    # system reliability curve.
-    try:
-        mttf = _mttf(system, float(grid[-1]), s, **overrides)
-    except Exception:
-        mttf = None
+    # Mean time to failure (or mean residual life at s): RePyability's exact
+    # rbd.mean() for a diagram with common-cause groups (#210), else
+    # integrated from the system reliability curve.
+    mttf, mttf_note = _system_mttf(rbd, system, float(grid[-1]), s, overrides)
+    if mttf_note:
+        notes.append(mttf_note)
 
     # System B-lives: time by which x% of systems have failed (R = 1 − x/100),
     # read off the (conditional) system reliability curve. None if beyond the
@@ -1687,7 +1828,7 @@ def analyze(
             ccf = {
                 "groups": [
                     {"members": [labels.get(m, str(m)) for m in (g.get("members") or [])],
-                     "beta": float(g.get("beta"))}
+                     "beta": float(g.get("beta")), "basis": ccf_basis(g)}
                     for g in (graph.get("ccf_groups") or [])
                     if len([m for m in (g.get("members") or []) if m in reliabilities]) >= 2
                     and _valid_beta(g.get("beta"))
@@ -1734,7 +1875,7 @@ def analyze(
             resolve_subsystem=resolve_subsystem, resolve_model=resolve_model,
             covariates=covariates, level=(band or {}).get("level"), target=target, ages=ages,
         )
-    return result
+    return result, labels, notes
 
 
 def _valid_beta(v) -> bool:
@@ -1915,7 +2056,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf: bool = Fals
         "maintenance_groups": rbd_policies.maintenance_groups(graph, members),
     }
     if with_ccf:
-        extra["ccf_groups"] = _ccf_groups(graph, components) or None
+        extra["ccf_groups"] = _ccf_groups(graph, components, repairable=True) or None
     input_node = "input" if "input" in node_ids else None
     output_node = "output" if "output" in node_ids else None
     try:

@@ -667,9 +667,11 @@ def _fit_summary(result: dict) -> dict:
 
     A fit the optimiser reported as failed leads with ``fit_ok: false`` and
     the warning, ahead of the numbers, so they aren't quoted as a result."""
-    metrics = result.get("metrics") or _live_metrics((result.get("functions") or {}).get("model_id"))
+    failed = result.get("fit_ok") is False or bool(result.get("fit_warning"))
+    metrics = None if failed else (
+        result.get("metrics") or _live_metrics((result.get("functions") or {}).get("model_id")))
     lead: dict[str, Any] = {}
-    if result.get("fit_ok") is False or result.get("fit_warning"):
+    if failed:
         lead = {"fit_ok": False, "warning": _fit_failure_warning(result.get("fit_warning"))}
     if result.get("warnings"):
         lead["warnings"] = result["warnings"]
@@ -684,6 +686,9 @@ def _fit_summary(result: dict) -> dict:
         "gof": {g["id"]: g["value"] for g in result.get("gof") or []},
         "metrics": metrics,
     }
+    if failed:
+        # #215: a median of 7.7e19 from a fit that didn't converge isn't a result.
+        out["metrics_omitted"] = "The fit didn't converge, so no life metrics are given."
     for key in ("extra_params", "coefficients", "randomness", "options", "validation"):
         if result.get(key):
             out[key] = result[key]
@@ -1586,6 +1591,11 @@ class Stage(BaseModel):
                                                                   "beta-factor common-cause coupling for this stage's "
                                                                   "redundant components, 0 ≤ beta < 1 (typically "
                                                                   "0.01–0.2).")
+    common_cause_basis: Optional[Literal["rate", "probability"]] = Field(None, description=(
+        "With common_cause_beta: what beta is a fraction of. 'rate' (default) splits each member's failure rate "
+        "and holds over the whole life; 'probability' is the PRA basic-event split, only for small failure "
+        "probabilities (a short mission or proof-test interval) — over a lifetime it overstates the group's "
+        "reliability and analyze_rbd gives no MTTF."))
 
 
 def _stage_graph(db, uid: str, stages: list[Stage], repairable: bool) -> dict:
@@ -1802,6 +1812,10 @@ class AddCcfOp(_Op):
     op: Literal["add_ccf"]
     members: list[str] = Field(min_length=2, description="2+ component block ids not already in a group.")
     beta: float = Field(description="Beta factor: shared-cause fraction of each member's failures, 0 < beta < 1.")
+    basis: Optional[Literal["rate", "probability"]] = Field(None, description=(
+        "What beta is a fraction of: 'rate' (default) splits each member's failure rate and holds over the whole "
+        "life; 'probability' is the PRA basic-event split, for small failure probabilities only (a short mission "
+        "or proof-test interval) — over a lifetime it overstates the group's reliability and gives no MTTF."))
     id: Optional[str] = Field(None, description="Group id (default ccf-1, ccf-2, …).")
 
 
@@ -1894,8 +1908,8 @@ def edit_rbd(
     - add_edge / remove_edge {source, target}
     - set {name?, unit?, repairable?, repair_crews? (0 = as many as needed), maintenance_groups?,
       safety_function?, target_sil? (0 clears)}
-    - add_ccf {members, beta, id?} / remove_ccf {id} — common-cause (beta-factor) groups; in a repairable
-      diagram they enter a safety function's PFDavg.
+    - add_ccf {members, beta, basis?, id?} / remove_ccf {id} — common-cause (beta-factor) groups (basis 'rate',
+      the default, for lifetime analysis); in a repairable diagram they enter a safety function's PFDavg.
     Removing a node drops it from its common-cause group (and the group if under 2 members remain).
     Changing connections re-lays out the diagram automatically. Returns one line per op, the validation
     warnings this edit introduced (warnings_unchanged counts the rest), the node ids, and simulation_note when
@@ -1972,7 +1986,21 @@ def _labelled(values: dict, labels: dict) -> dict:
     return {labels.get(k, k): v for k, v in (values or {}).items()}
 
 
-def _reliability_summary(result: dict, graph: dict, times: list[float] | None) -> dict:
+def _ccf_summary(result: dict, include_curves: bool) -> dict:
+    """The common-cause impact for an agent (#214): the groups and the
+    reliability with and without them at the importance time; the curve
+    without them, as {t, reliability} at the times of `curve`, only on
+    request (the app's result carries it as bare values)."""
+    ccf = {k: v for k, v in result["ccf"].items() if k != "baseline_sf"}
+    if include_curves:
+        ccf["curve_without"] = _downsample(result.get("time") or [], result["ccf"].get("baseline_sf") or [])
+    else:
+        ccf["curve_omitted"] = "Pass include_curves=true for the reliability curve without common cause."
+    return ccf
+
+
+def _reliability_summary(result: dict, graph: dict, times: list[float] | None,
+                         include_curves: bool = False) -> dict:
     t = result.get("time") or []
     sf = (result.get("system") or {}).get("sf") or []
     labels = {n.get("id"): (n.get("data") or {}).get("label") or n.get("id") for n in graph.get("nodes") or []}
@@ -1996,7 +2024,7 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None) -
     if result.get("conditional_age"):
         out["conditional_age"] = result["conditional_age"]
     if result.get("ccf"):
-        out["ccf"] = result["ccf"]
+        out["ccf"] = _ccf_summary(result, include_curves)
     out.update(_as_of_now_summary(result, labels))
     return out
 
@@ -2110,6 +2138,9 @@ def analyze_rbd(
     confidence: Annotated[Optional[float], Field(ge=0.5, lt=1, description=(
         "Non-repairable: also give confidence intervals at this level (e.g. 0.9) on the MTTF, B-lives and "
         "design life, from the parameter uncertainty of blocks that use saved fitted models."))] = None,
+    include_curves: Annotated[bool, Field(description=(
+        "Non-repairable with common-cause groups: also return ccf.curve_without, the system reliability without "
+        "the groups at the times of `curve`. Off by default to keep the answer small."))] = False,
 ) -> dict[str, Any]:
     """Analyse a saved RBD. Non-repairable diagrams: system reliability curve, MTTF, B-lives (B10/B50),
     component importance (Birnbaum, Fussell–Vesely, RAW/RRW) and minimal cut/path sets — from new, or from
@@ -2200,7 +2231,11 @@ def analyze_rbd(
                                             at_times=times, current_state=state,
                                             target_reliability=target_reliability,
                                             band={"level": confidence} if confidence is not None else None)
-        return {**head, "available": True, **_reliability_summary(result, graph, times)}
+        out = {**head, "available": True, **_reliability_summary(result, graph, times, include_curves)}
+        if result.get("warnings"):
+            # RePyability's common-cause warnings, and why the MTTF is missing (#210).
+            out["warnings"] = list(dict.fromkeys([*(head.get("warnings") or []), *result["warnings"]]))
+        return out
     except (ToolError, *_USER_ERRORS, models_service.ModelNotFound, fitting.ModelNotFound,
             rbds_service.RbdNotFound):
         raise
@@ -2592,7 +2627,8 @@ def compare_groups(
     group_column: Annotated[Optional[str], Field(description="Dataset column to split by (supplier, site, design "
                                                             "revision…); required with dataset_id.")] = None,
     censor_column: Annotated[Optional[str], Field(description="Dataset column of censoring flags: 0 = failed, "
-                                                              "1 = still running.")] = None,
+                                                              "1 = still running (right-censored only: these "
+                                                              "tests don't take -1).")] = None,
     count_column: _FitCountCol = None,
     cause_column: Annotated[Optional[str], Field(description="Optional dataset column naming each failure's "
                                                              "mode: adds Gray's test per mode (competing "
@@ -2600,19 +2636,22 @@ def compare_groups(
     data: _FitData = None,
     group: Annotated[Optional[list[str]], Field(description="Inline: the group label of each time in `data`.")] = None,
     censored: Annotated[Optional[list[int]], Field(description="Inline: 0 = failed, 1 = still running, per time "
-                                                               "in `data`.")] = None,
+                                                               "in `data` (right-censored only: these tests "
+                                                               "don't take -1).")] = None,
     counts: _FitCounts = None,
     cause: Annotated[Optional[list[Optional[str]]], Field(description="Inline: each failure's mode (null for a "
                                                                       "unit still running), for Gray's "
                                                                       "test.")] = None,
-    c_invert: _FitInvert = False,
+    c_invert: Annotated[bool, Field(description=(
+        "True when the censoring flags use the opposite convention (1 = failed, 0 = running); Reliafy flips "
+        "them before the tests."))] = False,
     groups: Annotated[Optional[list[str]], Field(description="Only these groups, in this order (default: "
                                                              "all, at most 12).")] = None,
     reference: Annotated[Optional[str], Field(description="Group the RMST differences are measured from "
                                                           "(default: the first).")] = None,
     tau: Annotated[Optional[float], Field(gt=0, description="Horizon for the restricted mean survival time "
-                                                            "(default: the shortest group's longest "
-                                                            "time).")] = None,
+                                                            "(default and most: the shortest group's longest "
+                                                            "time; a longer one is capped there).")] = None,
     unit: _FitUnit = None,
     include_curves: Annotated[bool, Field(description="Return each group's Kaplan–Meier curve too.")] = False,
 ) -> dict[str, Any]:
@@ -2667,7 +2706,9 @@ def compare_groups(
         url = _url(f"/datasets/d/{dataset.id}?compare={quote(group_column)}")
     prepared = compare_groups_service.prepare(
         df, time_column=time_column, group_column=group_column, censor_column=censor_column,
-        count_column=count_column, cause_column=cause_column, c_invert=c_invert)
+        count_column=count_column, cause_column=cause_column, c_invert=c_invert,
+        # Inline data: errors name the arguments, not the frame's columns (#211).
+        names={"c": "`censored`", "n": "`counts`"} if data is not None else None)
     result = compare_groups_service.compare_groups(
         prepared, groups=groups, reference=reference, tau=tau, unit=unit, group_column=label)
     verdict = result["verdict"]

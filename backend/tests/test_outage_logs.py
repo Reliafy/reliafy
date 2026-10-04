@@ -324,7 +324,7 @@ def test_unmapped_assets_are_listed_and_left_out():
     assert parsed["asset_map"] == {"Pump A": "a", "fan c": "c"}  # labels match ignoring case
     h = ol.system_history(GRAPH, {**parsed, "_id": "x"})
     assert h["kpis"]["outages"] == 1  # Fan C alone doesn't stop the system
-    assert any("unmapped assets" in n for n in h["notes"])
+    assert "1 outage of unmapped assets is left out — map their assets to blocks to include them." in h["notes"]
     # Mapped by hand (to the node id), it counts.
     remapped = ol.parse_log(text, GRAPH, window_start=0, window_end=100, asset_map={"Compressor 9": "b"})
     assert remapped["unmapped"] == [] and remapped["asset_map"]["Compressor 9"] == "b"

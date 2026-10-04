@@ -24,7 +24,8 @@ the RePyability part:
 * ``k`` on a vote node is its n; on any other node a vote node is put in
   front of it;
 * nested non-repairable diagrams are drawn in place, between two junctions;
-* beta-factor common-cause groups (probability basis);
+* beta-factor common-cause groups, on either basis (the probability, RePyability's
+  default, or the rate);
 * repairable diagrams: life and repair models, instant repair, costs (a
   per-failure cost drawn from a uniform distribution -> a range), preventive
   maintenance (age, block, condition), proof tests, maintenance groups,
@@ -33,7 +34,7 @@ the RePyability part:
 
 What Reliafy can't hold is listed in the import notes, and the block is
 imported without a model (to set before analysing) rather than guessed:
-capacities, MGL or rate-basis common-cause models, degrading, regression,
+capacities, MGL common-cause models, degrading, regression,
 load-sharing and non-parametric models, distributions Reliafy doesn't offer,
 standby with more than one unit operating or mixed spares, imperfect repair,
 replace-after-n-repairs, other nested repairable diagrams. The importer never
@@ -963,13 +964,24 @@ class _Converter:
                 if node is not None and node["type"] == "component":
                     members.append(node["id"])
             beta = _finite(model.get("beta"))
-            if (model.get("kind") != "beta_factor" or model.get("basis", "probability") != "probability"
+            # RePyability's default basis is the probability (a file leaves it out).
+            basis = model.get("basis", "probability")
+            if (model.get("kind") != "beta_factor" or basis not in ("probability", "rate")
                     or beta is None or not 0 < beta < 1):
-                self.note("A common-cause group that isn't a beta-factor model on the probability basis (MGL, or "
-                          "a rate basis) isn't imported.")
+                self.note("A common-cause group that isn't a beta-factor model (MGL, say) isn't imported.")
                 continue
             if len(set(members)) < 2:
                 self.note("A common-cause group whose members aren't plain blocks isn't imported.")
                 continue
-            self.ccf.append({"id": f"ccf-{len(self.ccf) + 1}", "members": list(dict.fromkeys(members)),
-                             "beta": beta})
+            group = {"id": f"ccf-{len(self.ccf) + 1}", "members": list(dict.fromkeys(members)), "beta": beta}
+            # Reliafy's default (#210) is the rate for lifetime analysis and the
+            # probability in a repairable diagram: the basis is kept only
+            # where it differs, so a file Reliafy wrote reads back unchanged.
+            if basis != ("probability" if self.repairable else "rate"):
+                group["basis"] = basis
+            if basis == "probability" and not self.repairable:
+                self.note("A common-cause group splits its members' failure probability (RePyability's default "
+                          "basis), kept as it is: a rare-event model, so over a lifetime it overstates the "
+                          "group's reliability and the MTTF isn't given. Set its basis to rate for lifetime "
+                          "figures.")
+            self.ccf.append(group)

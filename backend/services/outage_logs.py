@@ -1219,14 +1219,17 @@ def system_history(graph: dict, log: dict) -> dict:
     notes = list(log.get("notes") or [])
     notes += [n for n in _unit_notes(log.get("asset_map") or {}, log.get("asset_units"), blocks) if n not in notes]
     if info["outside"]:
-        notes.append(f"{info['outside']} outage{'s' if info['outside'] != 1 else ''} fall outside the observation "
-                     "window and are left out.")
+        one = info["outside"] == 1
+        notes.append(f"{info['outside']} outage{'' if one else 's'} fall{'s' if one else ''} outside the "
+                     f"observation window and {'is' if one else 'are'} left out.")
     if info["unmapped"]:
-        notes.append(f"{info['unmapped']} outage{'s' if info['unmapped'] != 1 else ''} of unmapped assets are left "
-                     "out — map their assets to blocks to include them.")
+        one = info["unmapped"] == 1
+        notes.append(f"{info['unmapped']} outage{'' if one else 's'} of unmapped assets {'is' if one else 'are'} "
+                     "left out — map their assets to blocks to include them.")
     if info["merged"]:
-        notes.append(f"{info['merged']} overlap{'s' if info['merged'] != 1 else ''} between assets mapped to the "
-                     "same block were merged.")
+        one = info["merged"] == 1
+        notes.append(f"{info['merged']} overlap{'' if one else 's'} between assets mapped to the same block "
+                     f"{'was' if one else 'were'} merged.")
     diagram_unit = str((graph or {}).get("unit") or "").strip()
     if diagram_unit and log.get("unit") and _norm_name(diagram_unit) != _norm_name(log["unit"]):
         notes.append(f"The log's times are in {log['unit']}, but the diagram's unit is now {diagram_unit}: "

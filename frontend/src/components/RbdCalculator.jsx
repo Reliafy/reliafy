@@ -236,6 +236,9 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
           </span>
         </div>
       )}
+      {(result.warnings || []).map((w) => (
+        <p className="muted-line" key={w}>⚠ {w}</p>
+      ))}
       {now && <AsOfNote result={result} idToLabel={idToLabel} />}
       <DesignLife result={result} />
       <div className="params">

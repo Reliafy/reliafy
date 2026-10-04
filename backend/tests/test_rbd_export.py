@@ -414,7 +414,7 @@ def test_output_is_deterministic_and_self_describing():
     # One commented variable per block, with its label.
     assert "# Compressor A: Weibull(alpha=12000 Hours, beta=1.6)" in a
     assert "compressor_a = surv.Weibull.from_params([12000.0, 1.6])" in a
-    assert "CCFGroup(" in a and "BetaFactor(0.1)" in a
+    assert "CCFGroup(" in a and "BetaFactor(0.1, basis='rate')" in a
     assert '"vote": PerfectReliability,  # voting gate: 2 of its inputs must work' in a
     assert "K = {\"vote\": 2}" in a
     assert max(len(line) for line in a.splitlines()) <= 79

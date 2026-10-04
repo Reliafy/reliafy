@@ -802,3 +802,58 @@ def test_failure_finding_note_prints_the_target_as_given(env):
         "distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 1e-4}],
         "target_availability": 0.9999999}))
     assert "near 99.99999%" in out["note"]
+
+
+# ---- #215: output polish --------------------------------------------------------------------
+
+def test_demonstration_target_is_printed_as_given_and_null_rows_explained():
+    from backend.services import strategy
+
+    out = strategy.demonstration_test(reliability=0.999999, confidence=0.9)
+    assert "≥ 99.9999%" in out["summary"] and "100%" not in out["summary"]
+    assert "99.9999% target" in " ".join(out["assumptions"])
+    assert "note" not in out["tradeoff"]  # solving for units: every cell has a value
+    plan = strategy.demonstration_test(reliability=0.9, confidence=0.9, units=2, failures=1, shape=2.0)
+    rows = plan["tradeoff"]["rows"]
+    assert any(v is None for r in rows for v in r["values"])
+    assert "unit count no larger than the failures allowed" in plan["tradeoff"]["note"]
+
+
+def test_failed_fit_has_no_verdict_or_metrics(env):
+    data = [1e-300, 1e-100, 1.0, 1e100, 1e300]
+    out = _ok(_call(env.token[A], "fit_distribution", {"data": data}))
+    assert out["fit_ok"] is False
+    assert out["metrics"] is None and "didn't converge" in out["metrics_omitted"]
+    assert out["randomness"]["verdict"] == "inconclusive" and "didn't converge" in out["randomness"]["reason"]
+    good = _ok(_call(env.token[A], "fit_distribution", {"data": [120, 340, 510, 700, 980, 1200]}))
+    assert good["metrics"] and "metrics_omitted" not in good
+    assert good["randomness"]["verdict"] != "inconclusive" or good["randomness"]["beta_ci"] is None
+
+
+# ---- #213: published schemas in step with what the tools accept -------------------------
+
+def test_every_argument_a_tool_takes_is_in_its_published_schema(env):
+    """A client that validates against the schema can't send an argument the
+    tool reads but doesn't publish (reliability_at's confidence was one)."""
+    import inspect
+
+    from mcp.server.mcpserver import Context
+
+    from backend import mcp_server
+    from backend.tests.test_mcp import _run
+
+    tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
+    for name, tool in tools.items():
+        fn = getattr(mcp_server, name, None)
+        assert fn is not None and hasattr(fn, "__wrapped__"), name
+        params = [p for p, spec in inspect.signature(fn).parameters.items()
+                  if spec.annotation is not Context and p != "ctx"]
+        missing = set(params) - set(tool.input_schema.get("properties") or {})
+        assert not missing, (name, missing)
+    props = tools["reliability_at"].input_schema["properties"]
+    assert props["confidence"]["anyOf"][0] == {"exclusiveMaximum": 1, "exclusiveMinimum": 0, "type": "number"}
+    fit = tools["fit_distribution"].input_schema["properties"]
+    assert "-1" in fit["censored"]["description"] and "-1" in fit["censor_column"]["description"]
+    compare = tools["compare_groups"].input_schema["properties"]
+    assert "-1" not in compare["c_invert"]["description"]
+    assert "right-censored only" in compare["censored"]["description"]

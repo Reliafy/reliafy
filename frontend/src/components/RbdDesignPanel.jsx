@@ -552,7 +552,7 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
       </div>
       {(result.common_cause || []).map((g) => (
         <p className="hint" key={g.id}>
-          Common-cause group {g.members.join(" · ")} (β = {g.beta}) is included
+          Common-cause group {g.members.join(" · ")} (β = {g.beta}{g.basis === "probability" ? ", probability basis" : ""}) is included
           {g.designed.length
             ? ": extra copies share the group, so redundancy pays off less than with independent failures."
             : " in every design's reliability."}

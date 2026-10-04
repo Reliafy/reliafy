@@ -520,8 +520,9 @@ _DEMO_MAX_SHAPE = 20.0
 
 
 def _pct(p: float) -> str:
-    """A probability as a percentage for a sentence: 0.95 -> '95%'."""
-    return f"{float(p) * 100:.4g}%"
+    """A probability as a percentage for a sentence, as given: 0.95 -> '95%',
+    0.999999 -> '99.9999%' (never rounded up to 100%, #215)."""
+    return f"{float(p) * 100:.10g}%"
 
 
 def _blank(value) -> bool:
@@ -781,7 +782,7 @@ def _demo_attribute_tradeoff(demo, R, c, r, k, beta, t, unit_s, solve_for, n) ->
         value_label = "Test length per unit (missions)"
     else:
         value_label = f"Test time per unit ({unit_s})" if unit_s else "Test time per unit"
-    return {
+    out = {
         "solve_for": "test_time",
         "row_label": "Units on test",
         "x_label": "units on test",
@@ -789,6 +790,11 @@ def _demo_attribute_tradeoff(demo, R, c, r, k, beta, t, unit_s, solve_for, n) ->
         "failures": cols,
         "rows": rows,
     }
+    if any(v is None for row in rows for v in row["values"]):
+        # #215: say why a cell is empty rather than leave a bare null.
+        out["note"] = ("A null value is a unit count no larger than the failures allowed: with every unit "
+                       "allowed to fail, no test time demonstrates anything, so the test needs more units.")
+    return out
 
 
 def _demo_mtbf(demo, mtbf, c, r, n_given, design_mtbf, unit_s) -> dict:

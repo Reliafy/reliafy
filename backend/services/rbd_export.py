@@ -666,7 +666,8 @@ class _Script:
             except (TypeError, ValueError):
                 continue
             if 0.0 < beta < 1.0:
-                ccf.append((members, beta))
+                # As the app builds it (#210): the rate basis by default.
+                ccf.append((members, beta, rbd_analysis.ccf_basis(g)))
         return {
             "edges": edges,
             "rel": rel,
@@ -703,9 +704,9 @@ class _Script:
         if with_ccf and s["ccf"]:
             self.imports.update({"CCFGroup", "BetaFactor"})
             L.append("    ccf_groups=[")
-            for members, beta in s["ccf"]:
+            for members, beta, basis in s["ccf"]:
                 L.append(f"        CCFGroup(members={_lit(members)}, "
-                         f"model=BetaFactor({_num(beta)})),")
+                         f"model={_beta_factor(beta, basis)}),")
             L.append("    ],")
         L.append(")")
         if s["ignored_pins"]:
@@ -1004,12 +1005,16 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
         script.imports.update({"CCFGroup", "BetaFactor"})
         out.append("# Common-cause failure: a beta-factor share of each "
                    "member's failures takes")
-        out.append("# the whole group out together.")
+        out.append("# the whole group out together. basis=\"rate\" splits "
+                   "each member's failure")
+        out.append("# rate, which holds over the whole life (RePyability's "
+                   "default, the")
+        out.append("# probability, is a rare-event model for short missions).")
         out.append("CCF_GROUPS = [")
-        for members, beta in s["ccf"]:
+        for members, beta, basis in s["ccf"]:
             out.append("    CCFGroup(")
             out.append(f"        members={_lit(members)},")
-            out.append(f"        model=BetaFactor({_num(beta)}),")
+            out.append(f"        model={_beta_factor(beta, basis)},")
             out.append("    ),")
         out.append("]")
         out.append("")
@@ -1017,7 +1022,7 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
                    "    k=K,\n" + io_args + "    ccf_groups=CCF_GROUPS,\n)")
         out.append("")
         pinned = set(s["working"]) | set(s["broken"])
-        if any(m in pinned for members, _ in s["ccf"] for m in members):
+        if any(m in pinned for members, *_ in s["ccf"] for m in members):
             out.append("# RePyability's importance measures can't hold a "
                        "common-cause group's member")
             out.append("# working or failed, so (as in Reliafy) they are "
@@ -1072,14 +1077,38 @@ def _set_literal(items) -> str:
 
 
 _NONREPAIRABLE_MAIN = '''
-def mean_time_to_failure(model, horizon, **overrides):
-    """MTTF as the integral of R(t) dt, computed exactly as Reliafy does.
+def ccf_bases(model):
+    """The bases of the common-cause groups in a diagram and those nested
+    in it (empty without any)."""
+    out = {g.model.basis for g in getattr(model, "ccf_groups", None) or []}
+    for node in (getattr(model, "reliabilities", None) or {}).values():
+        if isinstance(node, NonRepairableRBD):
+            out |= ccf_bases(node)
+    return out
 
-    The horizon is doubled (up to 8 times) until R(t) has decayed below 1e-4,
-    then R(t) is integrated with the trapezoid rule on 4000 points.
-    (RePyability's own ``rbd.mean()`` is exact too, by quadrature, but it
-    refuses common-cause groups that split a probability.)
+
+def mean_time_to_failure(model, horizon, **overrides):
+    """MTTF exactly as Reliafy computes it.
+
+    A diagram with common-cause groups, with no block pinned: RePyability's
+    exact ``rbd.mean()`` (adaptive quadrature). It refuses a group on the
+    probability basis, which doesn't describe a lifetime, and so does
+    Reliafy: then there is no MTTF (None). Otherwise the integral of R(t)
+    dt: the horizon is doubled (up to 8 times) until R(t) has decayed below
+    1e-4, then R(t) is integrated with the trapezoid rule on 4000 points.
     """
+    bases = ccf_bases(model)
+    if "probability" in bases:
+        return None
+    if bases and not any(overrides.values()):
+        try:
+            mean = float(model.mean())
+            if np.isfinite(mean) and mean > 0:
+                return mean
+        except NotImplementedError:
+            return None
+        except Exception:  # the integral below still stands
+            pass
     t_end = horizon
     for _ in range(8):
         if model.sf(np.array([t_end]), **overrides)[0] < 1e-4:
@@ -1143,9 +1172,10 @@ def main():
     b10 = b_life(times, system_sf, 0.10)
     b50 = b_life(times, system_sf, 0.50)
 
-    # R(t) at a few round times around the MTTF, plus the calculator's
-    # default read-out time (the middle of the time axis).
-    checkpoints = [float(f"{mttf * f:.2g}") for f in (0.25, 0.5, 1.0, 2.0)]
+    # R(t) at a few round times around the MTTF (around the middle of the
+    # time axis without one), plus the calculator's default read-out time.
+    centre = mttf if mttf is not None else t_max / 2
+    checkpoints = [float(f"{centre * f:.2g}") for f in (0.25, 0.5, 1.0, 2.0)]
     checkpoints.append(float(f"{t_max / 2:.4g}"))
     print("System reliability R(t)")
     reliability = {}
@@ -1154,7 +1184,11 @@ def main():
         reliability[repr(t)] = r
         print(f"  R({t:,.6g}{unit}) = {r:.6f}")
 
-    print(f"MTTF: {mttf:,.6g}{unit}")
+    if mttf is None:
+        print("MTTF: not given (a common-cause group on the probability "
+              "basis doesn't describe a lifetime; use basis='rate')")
+    else:
+        print(f"MTTF: {mttf:,.6g}{unit}")
     for name, value in (("B10", b10), ("B50", b50)):
         shown = f"{value:,.6g}{unit}" if value is not None else "beyond t_max"
         print(f"{name} life: {shown}")
@@ -1371,8 +1405,8 @@ def _repairable_body(script: _Script, graph) -> str:
         if ccf:
             script.imports.update({"CCFGroup", "BetaFactor"})
             groups_src = "".join(
-                f"        CCFGroup(members={members!r}, model=BetaFactor({beta!r})),\n"
-                for members, beta in ccf)
+                f"        CCFGroup(members={members!r}, model={_beta_factor(beta, basis)}),\n"
+                for members, beta, basis in ccf)
             ccf_expr = ("RepairableRBD(\n    EDGES,\n    COMPONENTS,\n    k=K,\n"
                         + "".join(f"    {a},\n" for a in io)
                         + "    ccf_groups=[\n" + groups_src + "    ],\n)")
@@ -1435,9 +1469,18 @@ def _repairable_body(script: _Script, graph) -> str:
     return "\n".join(out)
 
 
+def _beta_factor(beta: float, basis: str) -> str:
+    """The ``BetaFactor`` call for a group (its basis only when it isn't
+    RePyability's default, the probability)."""
+    if basis == "probability":
+        return f"BetaFactor({_num(beta)})"
+    return f"BetaFactor({_num(beta)}, basis={basis!r})"
+
+
 def _repairable_ccf(graph: dict, nodes: set) -> list:
-    """``(members, beta)`` of the common-cause groups Reliafy builds for a
-    repairable diagram's PFDavg (as :func:`rbd_analysis._ccf_groups`)."""
+    """``(members, beta, basis)`` of the common-cause groups Reliafy builds
+    for a repairable diagram's PFDavg (as :func:`rbd_analysis._ccf_groups`;
+    the basis doesn't change RePyability's chain)."""
     out = []
     for g in graph.get("ccf_groups") or []:
         members = list(dict.fromkeys(m for m in g.get("members") or [] if m in nodes))
@@ -1446,7 +1489,7 @@ def _repairable_ccf(graph: dict, nodes: set) -> list:
         except (TypeError, ValueError):
             continue
         if len(members) >= 2 and 0.0 < beta < 1.0:
-            out.append((members, beta))
+            out.append((members, beta, rbd_analysis.ccf_basis(g, repairable=True)))
     return out
 
 
