@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def _now() -> datetime:
@@ -202,6 +202,24 @@ class TrackedItem(BaseModel):
     prediction: Optional[dict] = None
 
 
+FLEET_MODEL_KINDS = ("life", "regression", "alt", "recurrent")
+# The collection each kind's model_id lives in.
+FLEET_MODEL_COLLECTIONS = {"life": "models", "regression": "models",
+                           "alt": "alt_models", "recurrent": "recurrent_models"}
+
+
+def fleet_model_kind(doc: dict) -> str:
+    """A fleet's model kind from its raw document, reading the field names
+    either feature branch saved before they were unified: ``model_kind``
+    ("life" / "recurrent", #235) and ``model_source`` (None / "alt", #234)."""
+    kind = doc.get("model_kind")
+    if kind in FLEET_MODEL_KINDS and kind != "life":
+        return kind
+    if doc.get("model_source") == "alt":
+        return "alt"
+    return "life"
+
+
 class Fleet(BaseModel):
     """A fleet failure forecast: in-service items running against one saved
     life model. Items and settings live in the document; the forecast itself
@@ -216,17 +234,37 @@ class Fleet(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model_id: str
-    # "life": model_id is a saved life model (first failures / renewals);
-    # "recurrent": a saved recurrent-event model, each item a repairable
-    # system whose every failure is counted (#235).
+    # What model_id is, and so how the fleet is forecast — one field:
+    #   "life"       a plain life distribution (``models``): first failures
+    #                or failures with replacement;
+    #   "regression" a regression life model (``models``, #234): first
+    #                failures, each item at its own covariates;
+    #   "alt"        an ALT model (``alt_models``, #234): first failures,
+    #                each item at its own stress;
+    #   "recurrent"  a recurrent-event model (``recurrent_models``, #235):
+    #                each item a repairable system, every failure counted.
+    # Fleets saved before the field was unified may carry ``model_source:
+    # "alt"`` instead; ``fleet_model_kind`` reads either.
     model_kind: str = "life"
     # {periods, period_label, default_rate, method: "renewals"|"single",
-    #  rate_source: "manual"|"estimated"}
+    #  rate_source: "manual"|"estimated", + #234: covariates {name: value}
+    #  (fleet defaults for a regression/ALT model), warranty_use,
+    #  warranty_periods}
     settings: dict = Field(default_factory=dict)
-    # [{id, name, current_use, rate|null, notes?, next_service_at? (recurrent),
-    #  + rate-estimator state from API readings: last_reading_use/at,
-    #  latest_read_at, estimated_rate(_n)}]
+    # [{id, name, current_use, rate|null, notes?, + rate-estimator state from
+    #  API readings: last_reading_use/at, latest_read_at, estimated_rate(_n),
+    #  + next_service_at? (recurrent, #235), + #234: covariates {name: value}
+    #  overrides, service_periods}]
     items: list = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _unify_model_kind(cls, data):
+        if isinstance(data, dict):
+            kind = fleet_model_kind(data)
+            if data.get("model_kind") != kind:
+                data = {**data, "model_kind": kind}
+        return data
 
 
 class TrackedFleet(BaseModel):

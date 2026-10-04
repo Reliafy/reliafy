@@ -23,6 +23,7 @@ from fastapi import Depends, Header, HTTPException
 from backend.auth import get_current_user
 from backend.config import SAMPLE_OWNER
 from backend.db import get_session
+from backend.schema import FLEET_MODEL_COLLECTIONS, fleet_model_kind
 
 TEAM_PREFIX = "team:"
 PERSONAL = "personal"
@@ -351,8 +352,7 @@ def refs_of(collection: str, doc: dict) -> list[tuple[str, str]]:
     if collection in ("models", "degradation_models", "recurrent_models") and _str_id(doc.get("dataset_id")):
         refs.append(("datasets", doc["dataset_id"]))
     elif collection == "fleets" and _str_id(doc.get("model_id")):
-        coll = "recurrent_models" if doc.get("model_kind") == "recurrent" else "models"
-        refs.append((coll, doc["model_id"]))
+        refs.append((FLEET_MODEL_COLLECTIONS[fleet_model_kind(doc)], doc["model_id"]))
     elif collection == "rcm_studies":
         refs.extend(evidence_refs(doc.get("functions")))
     elif collection == "rbds":

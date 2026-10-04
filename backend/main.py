@@ -367,6 +367,7 @@ def fit_endpoint(
     mixture_distribution: str | None = Form(default=None),
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
+    include_mixtures: str | None = Form(default=None),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
@@ -399,6 +400,7 @@ def fit_endpoint(
             )
         options = options_from_form(
             offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
+            include_mixtures=include_mixtures,
         )
         result = fit(
             distribution, df, mapping, covariates=z, formula=formula, unit=unit,

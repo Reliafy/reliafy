@@ -740,7 +740,8 @@ def _fit_summary(result: dict) -> dict:
     elif failed:
         # #215: a median of 7.7e19 from a fit that didn't converge isn't a result.
         out["metrics_omitted"] = "The fit didn't converge, so no life metrics are given."
-    for key in ("extra_params", "coefficients", "randomness", "options", "validation", "gof_note"):
+    for key in ("extra_params", "coefficients", "randomness", "options", "validation", "gof_note",
+                "mixture_summary"):
         if result.get(key):
             out[key] = result[key]
     if result.get("selection"):
@@ -881,6 +882,11 @@ _FitTruncRightCol = Annotated[Optional[str], Field(
 _FitCovariates = Annotated[Optional[list[str]], Field(
     description="Dataset covariate columns — regression (proportional-hazards etc.) distributions only.")]
 _FitUnit = Annotated[Optional[str], Field(description="Time unit of the data, e.g. 'hours', 'cycles', 'km'.")]
+_FitIncludeMixtures = Annotated[bool, Field(
+    description="With distribution='best' only: let two-component Weibull and LogNormal mixtures compete "
+                "with the single distributions (two failure modes in one dataset, an S-curve on probability "
+                "paper). Everything is then ranked by BIC; a winning mixture comes with mixture_summary, the "
+                "two modes in plain words. Slower, so off by default.")]
 
 
 def _mcp_fit_error(exc: FitError, c_invert: bool) -> FitError:
@@ -993,7 +999,7 @@ def _per_row(values, n: int, label: str) -> list:
 def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, dataset_id, time_column,
               censor_column, count_column, covariates, unit, data_right, trunc_left, trunc_right,
               time_right_column, trunc_left_column, trunc_right_column, method,
-              save: bool, name: str | None) -> dict[str, Any]:
+              save: bool, name: str | None, include_mixtures: bool = False) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     known = {fitting.BEST_ID, fitting.MIXTURE_ID, *fitting.DISTRIBUTIONS, *fitting.DISCRETE,
@@ -1063,6 +1069,11 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         if method in ruled_out:
             raise ToolError(f"{ruled_out[method]} Use MLE (the default) or another method.")
         options["how"] = method
+    if include_mixtures:
+        if dist != fitting.BEST_ID:
+            raise ToolError("include_mixtures applies to distribution='best' only. To fit a mixture on "
+                            "purpose, use distribution='mixture'.")
+        options["include_mixtures"] = True
     options = options or None
 
     checks = _censor_checks(df, mapping, c_invert, censor_column)
@@ -1128,6 +1139,7 @@ def fit_distribution(
     covariates: _FitCovariates = None,
     method: _FitMethod = None,
     unit: _FitUnit = None,
+    include_mixtures: _FitIncludeMixtures = False,
 ) -> dict[str, Any]:
     """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
     goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Saves nothing — use
@@ -1145,7 +1157,7 @@ def fit_distribution(
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                save=False, name=None)
+                include_mixtures=include_mixtures, save=False, name=None)
 
 
 @_tool("fit_and_save_model", _WRITE, "Fit and save a model")
@@ -1170,6 +1182,7 @@ def fit_and_save_model(
     covariates: _FitCovariates = None,
     method: _FitMethod = None,
     unit: _FitUnit = None,
+    include_mixtures: _FitIncludeMixtures = False,
     demand_batches: Annotated[Optional[list[DemandBatch]], Field(
         min_length=1, description=(
             "Save a per-demand (one-shot) model instead of a life distribution: one {demands, failures, "
@@ -1201,7 +1214,7 @@ def fit_and_save_model(
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                save=True, name=name)
+                include_mixtures=include_mixtures, save=True, name=name)
 
 
 def _per_demand_summary(result: dict) -> dict:
@@ -3763,11 +3776,13 @@ def compare_groups(
 @_tool("list_fleets", _READ, "List fleet forecasts")
 def list_fleets(ctx: Context) -> dict[str, Any]:
     """List the user's fleet failure forecasts (in-service items run against one saved model). model_kind
-    'life' = a life model (first failures or failures with replacement); 'recurrent' = a recurrent-event model,
-    each item a repairable system whose every failure is counted. Reliafy Pro only."""
+    'life' = a plain life model (first failures or failures with replacement); 'regression' = a regression
+    life model and 'alt' = an ALT model (model_id is then an ALT model id), each item forecast at its own
+    covariates or stress, first failures; 'recurrent' = a recurrent-event model, each item a repairable
+    system whose every failure is counted. Reliafy Pro only."""
     user, db = _caller(ctx), _db()
     return {"fleets": [
-        {"id": f.id, "name": f.name, "model_id": f.model_id, "model_kind": f.model_kind or "life",
+        {"id": f.id, "name": f.name, "model_id": f.model_id, "model_kind": f.model_kind,
          "n_items": len(f.items or []),
          "settings": f.settings, "is_sample": samples_service.is_sample(f.owner_id),
          "url": _url(f"/fleet/forecasts/{f.id}")}
@@ -3785,26 +3800,36 @@ def fleet_forecast(
     include_items: Annotated[bool, Field(description=(
         f"Return every item's forecast (up to 500). By default only the {_TOP_ITEMS} items with the most "
         "expected failures are listed."))] = False,
+    item_probabilities: Annotated[bool, Field(description=(
+        "First-failures forecasts: add each listed item's chance of failing by the end of every period "
+        "(probability_by_period), for 'which items are at risk, and when'."))] = False,
 ) -> dict[str, Any]:
     """The live failure forecast for a fleet: expected failures over the horizon with a P10–P90 range,
-    plus per-period and per-item breakdowns (the top items by default). For a fleet on a recurrent model
-    (model_kind 'recurrent': repairable systems, minimal repair) every failure is counted — each item's
-    expected repeat failures, its chance of at least one, and, where the item has a next service, its chance
-    of a failure before it; the fleet's and each period's counts have Poisson P10–P90 intervals."""
+    plus per-period and per-item breakdowns (the top items by default). A first-failures forecast
+    (method 'single') gives the exact Poisson-binomial interval (interval_method 'exact'), the interval of
+    each period's count (per_period_interval) and each item's chance of failing (prob_any); on a regression or
+    ALT model (model_kind 'regression' / 'alt') each item is forecast at its own covariates or stress
+    (per_item covariates), and it can stop counting at a warranty limit (settings warranty_use /
+    warranty_periods). For a fleet on a recurrent model (model_kind 'recurrent': repairable systems, minimal
+    repair) every failure is counted — each item's expected repeat failures, its chance of at least one, and,
+    where the item has a next service, its chance of a failure before it; the fleet's and each period's counts
+    have Poisson P10–P90 intervals."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     fleet = fleet_service.get_fleet(db, fleet_id, owners)
     if fleet is None:
         raise ToolError("Fleet not found.")
-    forecast = fleet_service.compute(db, fleet, [*owners, fleet.owner_id])
-    items = forecast.get("per_item") or []
+    forecast = fleet_service.compute(db, fleet, [*owners, fleet.owner_id], item_periods=item_probabilities)
+    names = {it.get("id"): it.get("name") for it in fleet.items or []}
+    items = [{"name": names.get(r.get("id")), **r} for r in forecast.get("per_item") or []]
+    forecast = {**forecast, "per_item": items}
     if not include_items and len(items) > _TOP_ITEMS:
         top = sorted(items, key=lambda r: -(r.get("expected") or 0.0))[:_TOP_ITEMS]
         forecast = {**forecast, "per_item": top,
                     "per_item_note": f"Top {_TOP_ITEMS} of {len(items)} items by expected failures; pass "
                                      "include_items=true for all of them."}
     return {"fleet": {"id": fleet.id, "name": fleet.name, "model_id": fleet.model_id,
-                      "model_kind": fleet.model_kind or "life", "url": _url(f"/fleet/forecasts/{fleet.id}")},
+                      "model_kind": fleet.model_kind, "url": _url(f"/fleet/forecasts/{fleet.id}")},
             "headline": fleet_service.headline(fleet, forecast), "forecast": forecast}
 
 
@@ -3911,7 +3936,8 @@ def delete_model(
             raise _sample_refusal("model", m.name)
         # Stricter than the app: an agent mustn't leave a fleet forecast
         # running on nothing, so a model a fleet uses is refused outright.
-        fleets = [f for f in fleet_service.list_fleets(db, uid) if f.model_id == m.id]
+        fleets = [f for f in fleet_service.list_fleets(db, uid)
+                  if fleet_service.MODEL_COLLECTIONS[f.model_kind] == "models" and f.model_id == m.id]
         if fleets:
             names = ", ".join(f"\u201c{f.name}\u201d ({_url(f'/fleet/forecasts/{f.id}')})" for f in fleets)
             raise ToolError(

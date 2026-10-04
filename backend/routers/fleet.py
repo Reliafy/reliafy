@@ -26,7 +26,7 @@ def _summary(fleet, ctx: AccessCtx, forecast: dict | None = None) -> dict:
         "id": fleet.id,
         "name": fleet.name,
         "model_id": fleet.model_id,
-        "model_kind": getattr(fleet, "model_kind", "life") or "life",
+        "model_kind": fleet.model_kind,
         "settings": fleet.settings,
         "n_items": len(fleet.items or []),
         "is_sample": samples_service.is_sample(fleet.owner_id),
@@ -46,7 +46,9 @@ def _summary(fleet, ctx: AccessCtx, forecast: dict | None = None) -> dict:
 def create_fleet(
     name: str = Body(...),
     model_id: str = Body(...),
-    model_kind: str = Body(default="life"),
+    model_kind: str | None = Body(default=None),
+    # Read for a client of the pre-unification API (#234): "alt" = model_kind "alt".
+    model_source: str | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -61,7 +63,10 @@ def create_fleet(
     ):
         return JSONResponse(status_code=402, content={"detail": billing_service.cap_message(session, ctx.uid, "fleets"), "code": "cap", "upgrade": True})
     try:
-        fleet = fleet_service.create_fleet(session, name, model_id, ctx.write_owner, model_kind)
+        if model_source and model_source != "alt":
+            raise fleet_service.FleetValidationError(f"Unknown model source '{model_source}'.")
+        kind = model_kind or ("alt" if model_source == "alt" else None)
+        fleet = fleet_service.create_fleet(session, name, model_id, ctx.write_owner, kind)
     except fleet_service.FleetValidationError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     access_service.stamp_editor(session, "fleets", fleet.id, ctx)

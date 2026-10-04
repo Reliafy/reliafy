@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import Modal from "../components/Modal.jsx";
 import Select from "../components/Select.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
-import { listFleets, createFleet, deleteFleet, listModels, listRecurrentModels } from "../api.js";
+import { listFleets, createFleet, deleteFleet, listModels, listAltModels, listRecurrentModels } from "../api.js";
 import { relativeTime } from "../instrument.js";
 
 const PlusIcon = () => (
@@ -50,19 +50,27 @@ export default function FleetForecasts() {
   const openCreate = async () => {
     setCreateError(null);
     setModalOpen(true);
-    try {
-      const { models: all } = await listModels();
-      // Forecasting needs a plain distribution (no covariates).
-      setModels(all.filter((m) => m.distribution && !String(m.distribution).includes("PH")));
-    } catch {
-      setModels([]);
-    }
-    try {
-      const { models: rec } = await listRecurrentModels();
-      setRecurrentModels(rec || []);
-    } catch {
-      setRecurrentModels([]);
-    }
+    // Replaceable equipment: life distributions, regression models and ALT
+    // models (#234) — a regression or ALT fleet forecasts each item at its own
+    // covariates or stress; picker values carry the kind, "alt:<id>" for an
+    // ALT model. Repairable equipment: recurrent-event models (#235).
+    const [life, alt, rec] = await Promise.all([
+      listModels().then((d) => d.models || []).catch(() => []),
+      listAltModels().then((d) => d.models || []).catch(() => []),
+      listRecurrentModels().then((d) => d.models || []).catch(() => []),
+    ]);
+    const plain = life.filter((m) => m.kind === "distribution" && m.distribution);
+    const regression = life.filter((m) => m.kind === "regression");
+    const asOpt = (m, value, hint) => ({ value, label: m.name, hint });
+    setModels([
+      ...(plain.length ? [{ heading: "Life distributions" }] : []),
+      ...plain.map((m) => asOpt(m, m.id, m.distribution)),
+      ...(regression.length ? [{ heading: "Regression models — each item at its own covariates" }] : []),
+      ...regression.map((m) => asOpt(m, m.id, m.distribution)),
+      ...(alt.length ? [{ heading: "ALT models — each item at its own stress" }] : []),
+      ...alt.map((m) => asOpt(m, `alt:${m.id}`, [m.distribution, m.life_model].filter(Boolean).join(" · "))),
+    ]);
+    setRecurrentModels(rec.map((m) => asOpt(m, m.id, m.model)));
   };
 
   const onCreate = async () => {
@@ -70,7 +78,9 @@ export default function FleetForecasts() {
     setCreating(true);
     setCreateError(null);
     try {
-      const fleet = await createFleet(name.trim(), modelId, modelKind);
+      const alt = modelKind !== "recurrent" && modelId.startsWith("alt:");
+      const fleet = await createFleet(
+        name.trim(), alt ? modelId.slice(4) : modelId, modelKind === "recurrent" ? "recurrent" : alt ? "alt" : "life");
       navigate(`/fleet/forecasts/${fleet.id}`);
     } catch (err) {
       if (err.code === "cap") {
@@ -214,7 +224,7 @@ export default function FleetForecasts() {
                 value={modelKind}
                 onChange={(v) => { setModelKind(v); setModelId(""); }}
                 options={[
-                  { value: "life", label: "Replaceable — a life model",
+                  { value: "life", label: "Replaceable — a life, regression or ALT model",
                     hint: "Failures until each item is replaced (first failures, or with replacement)." },
                   { value: "recurrent", label: "Repairable — a recurrent model",
                     hint: "Each item is repaired and fails again: every repeat failure counted." },
@@ -227,17 +237,13 @@ export default function FleetForecasts() {
                 value={modelId}
                 onChange={setModelId}
                 placeholder="Choose a saved model…"
-                options={(modelKind === "recurrent" ? recurrentModels : models).map((m) => ({
-                  value: m.id,
-                  label: m.name,
-                  hint: modelKind === "recurrent" ? m.model : m.distribution,
-                }))}
+                options={modelKind === "recurrent" ? recurrentModels : models}
               />
             </label>
             <p className="muted-line">
               {modelKind === "recurrent"
                 ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Modelling › Recurrent events first if you don't have one yet."
-                : "The forecast evaluates this model at each item's age — fit one under Modelling first if you don't have one yet."}
+                : "The forecast evaluates this model at each item's age (and, for a regression or ALT model, at each item's own conditions) — fit one under Modelling first if you don't have one yet."}
             </p>
           </div>
         </Modal>
