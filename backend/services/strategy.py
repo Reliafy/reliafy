@@ -125,7 +125,8 @@ def optimal_replacement(
     # (0.9+) handles it: no replacement age beats running to failure, whose
     # long-run cost rate is 0 — the units still running are, more and more,
     # the ones that never will fail.
-    p_fail = float(extras["p"]) if extras and extras.get("p") is not None else 1.0
+    # Read as the model was built (``p`` or SurPyval 0.23's ``lfp_p``).
+    p_fail = surpyval_extras(extras).get("lfp_p", 1.0)
     lfp = p_fail < 1.0
     nr = NonRepairable(model)
     nr.set_costs_planned_and_unplanned(cp, cu)

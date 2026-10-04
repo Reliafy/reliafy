@@ -2566,7 +2566,7 @@ def cheapest_design(
 
 def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None,
                  params: list[Param] | None, unit: str | None) -> dict:
-    """distribution_id + params, given inline or taken from a saved plain life model."""
+    """distribution_id + params (+ the fit's extras), given inline or taken from a saved plain life model."""
     if model_id and (distribution_id or params):
         raise ToolError("Give exactly one of model_id or distribution_id + params, not both.")
     if model_id:
@@ -2576,8 +2576,10 @@ def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None
         if m.kind != "distribution":
             raise ToolError(f"“{m.name}” is a {m.kind} model — the calculators need a plain life distribution.")
         r = m.results or {}
+        # The fit's offset / LFP fraction / zero inflation, as the app's
+        # calculators pass them: without them the answer is for another model.
         return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": _plain_params(r),
-                "unit": unit or r.get("unit") or ""}
+                "extras": r.get("extras") or None, "unit": unit or r.get("unit") or ""}
     if not distribution_id or not params:
         raise ToolError("Give a model_id, or distribution_id + params.")
     # Params are checked by SurPyval name in the strategy service (an
