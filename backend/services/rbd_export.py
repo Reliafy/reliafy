@@ -48,7 +48,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 
 from backend.fitting import DISTRIBUTIONS
-from backend.services import rbd_analysis, rbd_next_failure, rbd_repeats
+from backend.services import rbd_analysis, rbd_next_failure, rbd_repeats, rbd_sensitivity
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_VERSIONS = {"surpyval": "0.23", "repyability": "0.12"}
@@ -1498,7 +1498,8 @@ def _repairable_body(script: _Script, graph) -> str:
     out.append("")
     main = rbd_export_costs.main_source(_REPAIRABLE_MAIN, graph).strip("\n")
     # As of now (#220, #221): the next failure's code, as the app runs it.
-    helpers = rbd_next_failure.export_source() + "\n\n" + _NEXT_FAILURE_REPORT.strip("\n") + "\n\n"
+    helpers = (rbd_next_failure.export_source() + "\n\n" + _NEXT_FAILURE_REPORT.strip("\n") + "\n\n\n"
+               + rbd_sensitivity.export_source() + "\n\n")
     out.append(main.replace("\ndef main():", "\n" + helpers + "\ndef main():", 1))
     return "\n".join(out)
 
@@ -1767,6 +1768,9 @@ def main():
         "blocks": per_block,
         "exact": exact,
     }
+    # What to improve (#225): each lever moved a step the way that raises the
+    # long-run availability, ranked as Reliafy's panel ranks it.
+    results["what_to_improve"] = what_to_improve(rbd, overrides, LABELS, K, WHAT_TO_IMPROVE_STEP)
     # As of now (STATE): the time to the next system failure from the blocks'
     # states, its mean (the mean residual life) and the blocks that cause it.
     if node_states():

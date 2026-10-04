@@ -31,10 +31,12 @@ def get_job(job_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(
 
 
 @router.get("/api/rbd-jobs")
-def active_job(rbd_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """The caller's newest in-flight job for a diagram (``job`` null when
-    none), so a reloaded page can pick up where it left off."""
-    job = rbd_jobs_service.latest_active(session, ctx.uid, rbd_id)
+def active_job(rbd_id: str, kind: str = rbd_jobs_service.KIND_AVAILABILITY, session=Depends(get_session),
+               ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """The caller's newest in-flight job of ``kind`` (``availability`` or
+    ``sensitivity``) for a diagram (``job`` null when none), so a reloaded
+    page can pick up where it left off."""
+    job = rbd_jobs_service.latest_active(session, ctx.uid, rbd_id, kind)
     if job is None:
         return JSONResponse(content={"job": None})
     entitled = billing_service.premium_compute_allowed(session, ctx.user)

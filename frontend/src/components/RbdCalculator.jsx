@@ -11,6 +11,7 @@ import AvailabilityPolicies from "./AvailabilityPolicies.jsx";
 import { precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
 import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
+import WhatToImprove from "./WhatToImprove.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -1483,6 +1484,9 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
           </span>
           <Link to="/billing">Pro runs the full simulation for a tighter estimate</Link>
         </div>
+      )}
+      {result && !stale && result.kind === "repairable" && (
+        <WhatToImprove graph={graph} rbdId={rbdId} result={result} />
       )}
       {result && !stale && result.kind === "repairable" && (
         <AvailabilityCompare graph={graph} rbdId={rbdId} result={result} />

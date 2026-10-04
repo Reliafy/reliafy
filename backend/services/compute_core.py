@@ -35,9 +35,12 @@ sizes the run (a Pro run to its precision target that the 20 s budget stops,
 or a free quick run) can the count of replications differ with the
 machine's speed; the result is then that of the count it reports.
 
-Job kinds (:data:`RUNNERS`). ``availability`` is the only one. The next
-failure from the current state (#240) is not a kind of its own: the
-availability analysis runs it whenever the request carries a ``state``
+Job kinds (:data:`RUNNERS`). ``availability``, and ``sensitivity`` — what
+to improve (#225): a repairable diagram's levers ranked by what a step of
+each gains (:mod:`backend.services.rbd_sensitivity`), when that is
+numerical, over a window, simulated or large. The next failure from the
+current state (#240) is not a kind of its own: the availability analysis
+runs it whenever the request carries a ``state``
 (:mod:`backend.services.rbd_next_failure`), so it comes back in the same
 job, from the same seed. Another analysis joins by adding a request builder
 here, a runner to ``RUNNERS``, and a ``KIND_…`` in
@@ -51,7 +54,7 @@ import json
 import math
 from typing import Any, Callable, Optional
 
-from backend.services import rbd_analysis
+from backend.services import rbd_analysis, rbd_sensitivity
 
 # Node-data keys holding a life/repair model spec.
 _MODEL_KEYS = ("model", "repair", "standbyModel")
@@ -212,11 +215,44 @@ def run_availability(request: dict) -> dict:
     return rbd_analysis.analyze_availability(graph, resolve_model=_no_saved_models, **options)
 
 
+def sensitivity_request(graph: dict, **options) -> Optional[dict]:
+    """A self-contained what-to-improve request ``{"graph", "options"}``
+    (the options as :func:`rbd_sensitivity.options` validates them), or None
+    when the graph needs saved models the compute service can't have."""
+    if needs_saved_models(graph):
+        return None
+    return {"graph": inline_graph(graph), "options": rbd_sensitivity.options(**options)}
+
+
+_SENSITIVITY_OPTIONS = frozenset({"window", "step", "rank_by", "costs", "n_simulations", "seed"})
+
+
+def run_sensitivity(request: dict) -> dict:
+    """Run a self-contained what-to-improve request (#225): the levers ranked,
+    simulated where there is no exact or numerical route (the web app queues
+    that only for a user entitled to the simulation)."""
+    if not isinstance(request, dict) or not isinstance(request.get("graph"), dict):
+        raise InvalidRequest("The request needs a graph.")
+    graph = request["graph"]
+    if not graph.get("repairable"):
+        raise InvalidRequest("Only repairable (availability) diagrams are computed here.")
+    options = request.get("options") or {}
+    if not isinstance(options, dict):
+        raise InvalidRequest("options must be an object.")
+    unknown = set(options) - _SENSITIVITY_OPTIONS
+    if unknown:
+        raise InvalidRequest(f"Unknown options: {', '.join(sorted(unknown))}.")
+    # Validated again here (AnalysisError: the user's input, reported as such).
+    checked = rbd_sensitivity.options(**options)
+    return rbd_sensitivity.analyze_sensitivity(graph, resolve_model=_no_saved_models, simulate=True, **checked)
+
+
 # What the compute service runs, by job kind. A new analysis adds its runner
 # here; the web side adds a request builder above and a KIND_ in rbd_jobs.
 # (#240's next failure rides in ``availability`` when a state is given.)
 RUNNERS: dict[str, Callable[[dict], dict]] = {
     "availability": run_availability,
+    "sensitivity": run_sensitivity,
 }
 KINDS = tuple(RUNNERS)
 
