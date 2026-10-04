@@ -163,9 +163,14 @@ def test_static_tree_unreliability_matches_published_value(name, model, referenc
     assert value == pytest.approx(reference, rel=1e-7)
 
 
-def test_static_tree_import_refuses_plain_probabilities():
-    with pytest.raises(RbdImportError, match="fixed failure probability"):
-        import_graph(PRESSURE_TANK)
+def test_static_tree_plain_probabilities_import_as_blocks_needing_a_model():
+    """A static tree's prob= events have no time model: each imports as a
+    block WITHOUT a life model (nothing invented), named in the notes."""
+    (d,) = galileo.parse(PRESSURE_TANK.encode(), "model.dft")
+    blocks = [n for n in d.graph["nodes"] if n.get("type") == "component"]
+    assert len(blocks) == 6 and not any(n.get("model") for n in blocks)
+    (note,) = [w for w in d.warnings if "fixed probability" in w]
+    assert "6 basic event(s)" in note and "“TankRupture” (p = 5e-06)" in note
 
 
 # ---------------------------------------------------------------------------

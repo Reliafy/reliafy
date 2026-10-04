@@ -299,15 +299,46 @@ def test_excel_rbd_template_through_import_excel_and_import_rbd(env):
     assert d["name"] == "Pump skid" and "Pump A" in {n["label"] for n in d["nodes"]}
     assert _no_uploads_left(env.db)
 
-    # import_rbd takes a template workbook too; rbd_id on import_excel replaces a diagram.
+    # import_rbd takes a template workbook too.
     link2, _ = _upload(env, template, "skid.xlsx", purpose="rbd_import")
     again = _ok(_call(env.token[A], "import_rbd", {"upload_id": link2["upload_id"]}))
     assert again["diagrams"][0]["source_format"] == "Excel"
-    link3, _ = _upload(env, template, "skid.xlsx", purpose="excel")
-    replaced = _ok(_call(env.token[A], "import_excel", {"upload_id": link3["upload_id"], "target": "rbd_template",
-                                                        "rbd_id": d["id"]}))
-    assert replaced["replaced"] == d["id"] and replaced["diagrams"][0]["id"] == d["id"]
     assert env.db.rbds.count_documents({"owner_id": A}) == 2
+
+
+def test_import_excel_with_rbd_id_saves_a_copy_unless_replace(env):
+    """import_excel with rbd_id used to overwrite that diagram. It now saves
+    a new copy (the original unchanged), as the app's import always opens a
+    new diagram; replace=true overwrites, and the result says which."""
+    from backend.services import rbds as rbds_service
+    from backend.services.rbd_import import excel as rbd_excel
+
+    template = rbd_excel.build_template()
+    mine = {"id": rbds_service.save_rbd(env.db, "Skid", MCP_GRAPH, A).id}
+    before = env.db.rbds.find_one({"_id": mine["id"]})
+    n0 = env.db.rbds.count_documents({"owner_id": A})
+
+    link, _ = _upload(env, template, "skid.xlsx", purpose="excel")
+    out = _ok(_call(env.token[A], "import_excel", {"upload_id": link["upload_id"], "target": "rbd_template",
+                                                   "rbd_id": mine["id"]}))
+    assert out["action"] == "copied" and out["copy_of"] == mine["id"] and out["id"] != mine["id"]
+    assert "replaced" not in out and "unchanged" in out["note"] and "replace=true" in out["note"]
+    (d,) = out["diagrams"]
+    assert d["id"] == out["id"] and d["name"] == "Skid (copy)"
+    assert env.db.rbds.count_documents({"owner_id": A}) == n0 + 1
+    assert env.db.rbds.find_one({"_id": mine["id"]})["graph"] == before["graph"]  # untouched
+
+    link2, _ = _upload(env, template, "skid.xlsx", purpose="excel")
+    out = _ok(_call(env.token[A], "import_excel", {"upload_id": link2["upload_id"], "target": "rbd_template",
+                                                   "rbd_id": mine["id"], "replace": True}))
+    assert out["action"] == "replaced" and out["replaced"] == out["id"] == mine["id"]
+    assert out["diagrams"][0]["id"] == mine["id"] and out["diagrams"][0]["name"] == "Skid"
+    assert env.db.rbds.count_documents({"owner_id": A}) == n0 + 1
+    assert env.db.rbds.find_one({"_id": mine["id"]})["graph"] != before["graph"]
+
+    link3, _ = _upload(env, template, "skid.xlsx", purpose="excel")
+    assert "replace applies with rbd_id" in _err(_call(env.token[A], "import_excel", {
+        "upload_id": link3["upload_id"], "target": "rbd_template", "replace": True}))
 
 
 @pytest.mark.parametrize("name, fmt", [("blocksim_example1_V20.rsgz20", "rsgz"),
@@ -399,6 +430,23 @@ def test_open_psa_fixed_probability_events_import_as_blocks_needing_a_model(env)
     saved = env.db.rbds.find_one({"_id": d["id"]})["graph"]
     (mcc,) = [n for n in saved["nodes"] if n["data"].get("label") == "MCC"]
     assert "model" not in mcc["data"]
+
+
+def test_galileo_prob_events_import_as_blocks_needing_a_model(env):
+    """Galileo ``prob=`` events get the same treatment as Open-PSA's: saved as
+    a block with no life model, listed in needs_model; nothing invented."""
+    dft = PUMPS_DFT.replace('"MCC" lambda=1e-5;', '"MCC" prob=0.01;')
+    out = _ok(_call(env.token[A], "import_rbd", {"content": dft, "format": "galileo", "time_unit": "Hours"}))
+    assert out["saved"] is True
+    (d,) = out["diagrams"]
+    assert d["analysable"] is False and d["needs_model"] == ["MCC"] and "Don't invent" in d["needs_model_note"]
+    assert any("fixed probability" in n and "“MCC” (p = 0.01)" in n for n in d["import_notes"])
+    assert d["structure"] == "(PA ∥ PB) → MCC → Valve"
+    saved = env.db.rbds.find_one({"_id": d["id"]})["graph"]
+    (mcc,) = [n for n in saved["nodes"] if n["data"].get("label") == "MCC"]
+    assert "model" not in mcc["data"]
+    assert "isn't between 0 and 1" in _err(_call(env.token[A], "import_rbd", {
+        "content": dft.replace("prob=0.01", "prob=1.01"), "format": "galileo"}))
 
 
 # ---- Excel targets -------------------------------------------------------------------------
@@ -647,6 +695,24 @@ def test_ttl_indexes_exist(env):
     env.db.uploads.update_one({"_id": link["upload_id"]},
                               {"$set": {"delete_at": datetime.now(timezone.utc) - timedelta(seconds=1)}})
     assert "Upload not found" in _err(_call(env.token[A], "inspect_upload", {"upload_id": link["upload_id"]}))
+
+
+def test_privacy_page_states_the_upload_retention():
+    """The privacy policy states the upload store's real retention: the link
+    works 15 minutes, a file is deleted once imported or an hour after it
+    arrived. Change the TTLs and this fails until the policy says so too."""
+    from pathlib import Path
+
+    from backend.services import uploads
+
+    assert uploads.TOKEN_TTL == timedelta(minutes=15)
+    assert uploads.KEEP_AFTER_UPLOAD == timedelta(hours=1)
+    page = (Path(__file__).resolve().parents[2] / "frontend/src/views/PrivacyPage.jsx").read_text()
+    text = " ".join(page.split())
+    assert "Files you upload to import:</strong> used only to import them." in text
+    assert "(which works for 15 minutes)" in text
+    assert "deleted as soon as it's imported, or automatically an hour after it arrived" in text
+    assert "read during the import and not stored" in text
 
 
 # ---- the RBD cap: all or nothing --------------------------------------------------------------

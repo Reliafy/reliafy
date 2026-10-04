@@ -24,12 +24,17 @@ Mapped to Reliafy:
   ``lambda * (1 - res)``;
 * ``prob=0`` / ``lambda=0`` events never fail and drop out; ``prob=1`` events
   have failed from the start;
+* any other ``prob=`` with no life distribution (a fixed failure probability)
+  -> a block *without* a life model, listed in the import notes with its
+  probability, as Open-PSA's fixed-probability events are (#188). Reliafy
+  blocks have no fixed-probability model, and inventing a failure rate would
+  change the answer, so the user sets one before analysing;
 * a basic event under several gates -> a repeated block in each place (one
   component; see :mod:`.fault_tree`).
 
 Refused (no RBD equivalent): ``pand``/``por``/``seq``/``fdep``/``pdep``/
-``mutex`` and inspection modules, fixed-probability events, ``prob`` combined
-with a life distribution, coverage (``cov`` < 1), replication (``repl``),
+``mutex`` and inspection modules, ``prob`` outside [0, 1], ``prob`` combined
+with a life distribution, a fixed-probability unit in a spare gate, coverage (``cov`` < 1), replication (``repl``),
 parameterised models, spare modules (a gate as a spare) and spares shared
 between gates.
 """
@@ -331,8 +336,12 @@ _KNOWN_ATTRS = {"lambda", "prob", "dorm", "repair", "phases", "res", "interval",
                 "shape", "rate", "scale", "mean", "stddev", "cov", "repl"}
 
 
-def _event(name: str, attrs: dict[str, str], warnings: list[str]) -> tuple[ft.Leaf, Optional[float], Optional[float]]:
-    """Return ``(leaf, repair_rate, explicit_dormancy)`` for a basic event."""
+def _event(name: str, attrs: dict[str, str], warnings: list[str],
+           fixed: Optional[dict[str, float]] = None) -> tuple[ft.Leaf, Optional[float], Optional[float]]:
+    """Return ``(leaf, repair_rate, explicit_dormancy)`` for a basic event.
+
+    A fixed failure probability (``prob=`` strictly between 0 and 1, no life
+    distribution) is recorded in ``fixed`` and becomes a block with no model."""
     unknown = sorted(set(attrs) - _KNOWN_ATTRS)
     if unknown:
         raise RbdImportError(
@@ -353,9 +362,9 @@ def _event(name: str, attrs: dict[str, str], warnings: list[str]) -> tuple[ft.Le
     has_life = any(k in attrs for k in ("lambda", "shape", "mean"))
 
     if "prob" in attrs:
-        p = _num(name, "prob", attrs["prob"])
-        if p > 1:
-            raise RbdImportError(f"Basic event “{name}”: prob={attrs['prob']} is above 1.")
+        p = _num(name, "prob", attrs["prob"], signed=True)
+        if not 0 <= p <= 1:
+            raise RbdImportError(f"Basic event “{name}”: prob={attrs['prob']} isn't between 0 and 1.")
         if has_life:
             if p == 1:
                 pass  # certainly subject to its life distribution
@@ -369,11 +378,11 @@ def _event(name: str, attrs: dict[str, str], warnings: list[str]) -> tuple[ft.Le
             return ft.Leaf(name, constant=False), None, dorm
         elif p == 1:
             return ft.Leaf(name, constant=True), None, dorm
-        else:
-            raise RbdImportError(
-                f"Basic event “{name}” has a fixed failure probability (prob={p}) and no "
-                "failure-time distribution. Reliafy blocks need a life distribution "
-                "(e.g. lambda=...).")
+        # No time model: a block without a life model, which the user must
+        # set before analysing — never an invented rate (as Open-PSA, #188).
+        if fixed is not None:
+            fixed[name] = p
+        return ft.Leaf(name, {"type": "component"}), repair, dorm
 
     if "lambda" in attrs:
         lam = _num(name, "lambda", attrs["lambda"])
@@ -454,10 +463,11 @@ def _convert(top: str, gates, events, stem: str) -> ImportedDiagram:
     nodes: dict[str, ft.Node] = {}
     repair: dict[str, Optional[float]] = {}
     dorm: dict[str, Optional[float]] = {}
+    fixed: dict[str, float] = {}
     for name, attrs in events.items():
         if name not in reach:
             continue
-        leaf, rep, d = _event(name, attrs, warnings)
+        leaf, rep, d = _event(name, attrs, warnings, fixed)
         nodes[name] = leaf
         repair[name] = rep
         dorm[name] = d
@@ -507,6 +517,19 @@ def _convert(top: str, gates, events, stem: str) -> ImportedDiagram:
         warnings.append(
             f"Repair rates were dropped and the diagram imported as non-repairable: {why}.")
 
+    shown_fixed = [e for e in used_events if e in fixed]
+    if shown_fixed:
+        n = len(shown_fixed)
+        shown = [f"“{e}” (p = {fixed[e]:.3g})" for e in shown_fixed]
+        more_txt = f" and {n - 10} more" if n > 10 else ""
+        warnings.append(
+            f"{n} basic event(s) have a fixed probability and no failure-time model: "
+            f"{', '.join(shown[:10])}{more_txt}. Reliafy blocks need a life distribution, so "
+            f"{'it was' if n == 1 else 'they were'} imported as "
+            f"block{'' if n == 1 else 's'} WITHOUT a life model — set one (e.g. an "
+            "exponential failure rate) before analysing. Nothing was assumed for "
+            f"{'it' if n == 1 else 'them'}.")
+
     graph, more = ft.to_graph(tree, unit="", repairable=repairable)
     warnings.extend(more)
     return ImportedDiagram(name=stem or top, graph=graph, warnings=warnings)
@@ -545,6 +568,12 @@ def _spare_block(name, gtype, kids, nodes, gates, parents, dorm, warnings) -> ft
         raise RbdImportError(
             f"Spare gate “{name}” has a unit with a fixed state (prob=0/1 or lambda=0); give each "
             "unit a failure rate.")
+    no_model = [c for c, lf in zip(kids, leaves) if not (lf.node or {}).get("model")]
+    if no_model:
+        raise RbdImportError(
+            f"Spare gate “{name}” has a unit with a fixed failure probability "
+            f"(“{no_model[0]}”); a standby block needs each unit's failure distribution, so give "
+            "it a failure rate (lambda=...).")
     if len(kids) < 2:
         return ft.Leaf(name, dict(leaves[0].node), label=kids[0])
     primary, spares = leaves[0], leaves[1:]

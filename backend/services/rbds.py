@@ -407,6 +407,23 @@ def cached_availability(doc: dict | None, key: str) -> dict | None:
     return {**entry["result"], "cached": True, "computed_at": entry.get("computed_at")}
 
 
+def availability_outdated_by(doc: dict | None, old_graph: dict, new_graph: dict) -> bool:
+    """Whether changing a diagram from ``old_graph`` to ``new_graph`` puts its
+    saved availability simulation out of date: the saved result matched the
+    old diagram (over the default window, or the window it was run over) and
+    doesn't match the new one. A result already out of date, or a change the
+    analysis doesn't see (a block moved on the canvas), gives False."""
+    entry = (doc or {}).get("availability_cache") or {}
+    key = entry.get("key")
+    if not key:
+        return False
+    windows = [None, ((entry.get("result") or {}).get("t_simulation"))]
+    for t in windows:
+        if availability_cache_key(old_graph or {}, t) == key:
+            return availability_cache_key(new_graph or {}, t) != key
+    return False
+
+
 def store_availability(db, rbd_id: str, key: str, result: dict, uid: str | None) -> str:
     """Save an availability result on the RBD doc. Returns ``computed_at``."""
     computed_at = datetime.now(timezone.utc).isoformat()
@@ -521,20 +538,22 @@ def analyze_exact(db, graph: dict, owner_id, horizon: float | None = None,
     def resolve_model(model_id: str) -> dict | None:
         return models_service.get_live_model(db, model_id, owner_id)
 
+    # The state sizes the default window from now (#155) the same way for both.
     base = rbd_analysis.analyze_availability(
-        graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False)
+        graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False, state=state)
     exact = rbd_analysis.exact_availability(graph, resolve_model=resolve_model, horizon=horizon, state=state)
     return {**base, "exact": exact}
 
 
-def long_run_only(db, graph: dict, owner_id, horizon: float | None = None) -> dict:
+def long_run_only(db, graph: dict, owner_id, horizon: float | None = None,
+                  state: dict | None = None) -> dict:
     """The free payload without the figures over time (they're deferred)."""
 
     def resolve_model(model_id: str) -> dict | None:
         return models_service.get_live_model(db, model_id, owner_id)
 
     return rbd_analysis.analyze_availability(
-        graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False)
+        graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False, state=state)
 
 
 def should_store_availability(doc: dict | None, key: str) -> bool:

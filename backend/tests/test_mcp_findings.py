@@ -5,6 +5,8 @@ helpers and ``env`` fixture come from test_mcp) or, for shared validation,
 through the service the web app uses too.
 """
 
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -548,6 +550,90 @@ def test_optimal_replacement_flags_weak_wear_out_evidence(env):
         "distribution_id": "weibull", "params": [{"name": "alpha", "value": 7746}, {"name": "beta", "value": 1.77}],
         **costs}))
     assert "shape_uncertainty" not in inline and "uncertainty_note" not in inline  # no fit, no interval
+
+
+def test_failure_finding_interval_gets_the_shape_treatment(env):
+    """#189 follow-up: the failure-finding interval at each end of a fitted
+    Weibull's β interval (α held), and a note when an end asks for a test
+    interval 20%+ shorter than the estimate's — the unsafe side."""
+    target = {"target_availability": 0.99}
+    early, b = _fitted_weibull(env, "Early", seed=3, beta=0.6, n=20, cutoff=1e9)  # β ≈ 0.62, CI ≈ [0.41, 0.83]
+    out = _ok(_call(env.token[A], "failure_finding_interval", {"model_id": early, **target}))
+    su = out["shape_uncertainty"]
+    assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
+    alpha = next(p["value"] for p in _ok(_call(env.token[A], "get_model", {"model_id": early}))["params"]
+                 if p["name"] == "alpha")
+    for end, beta in (("at_beta_lower", b["ci"][0]), ("at_beta_upper", b["ci"][1])):
+        expected = 2 * 0.01 * alpha * math.gamma(1 + 1 / beta)  # FFI = 2(1 - A) MTTF, α held
+        assert su[end]["interval"] == pytest.approx(expected, rel=1e-3)
+    assert su["at_beta_upper"]["interval"] < 0.8 * out["interval"]
+    assert "as short as" in out["uncertainty_note"] and "shorter one" in out["uncertainty_note"]
+
+    clear, _ = _fitted_weibull(env, "Clear", seed=7, beta=4.0, n=60, cutoff=1e9)
+    out = _ok(_call(env.token[A], "failure_finding_interval", {"model_id": clear, **target}))
+    assert out["shape_uncertainty"]["at_beta_lower"]["interval"] > 0.8 * out["interval"]
+    assert "uncertainty_note" not in out
+
+    inline = _ok(_call(env.token[A], "failure_finding_interval", {
+        "distribution_id": "weibull", "params": [{"name": "alpha", "value": 7746}, {"name": "beta", "value": 0.6}],
+        **target}))
+    assert "shape_uncertainty" not in inline and "uncertainty_note" not in inline  # no fit, no interval
+
+
+def _nhpp_model(env, name, seed, beta, systems, window):
+    """A saved Crow-AMSAA model fitted to power-law (alpha 1000) event times."""
+    from backend.services import datasets as datasets_service
+    from backend.services import recurrent as recurrent_service
+
+    rng = np.random.default_rng(seed)
+    lines = ["system,time,window"]
+    for s in range(systems):
+        t = 1000.0 * np.cumsum(rng.exponential(1.0, 400)) ** (1.0 / beta)
+        lines += [f"S{s},{x:.2f},{window}" for x in t[t <= window]]
+    ds = datasets_service.create_dataset(env.db, name, "\n".join(lines).encode(), A)
+    spec = {"mapping": {"i": "system", "x": "time", "tr": "window"}, "model_id": "crow_amsaa", "unit": "hours"}
+    return recurrent_service.save_model(env.db, name, ds, spec, A)
+
+
+def test_optimal_overhaul_gets_the_shape_treatment(env):
+    """#189 follow-up: the overhaul optimum at each end of the Crow-AMSAA
+    β interval (α held, savings over the estimate's horizon), and the same
+    notes as optimal_replacement."""
+    from backend import recurrent as recurrent_fit
+    from backend.services import recurrent as recurrent_service
+
+    costs = {"cost_repair": 100, "cost_overhaul": 1000}
+    clear = _nhpp_model(env, "Compressors", seed=1, beta=2.5, systems=5, window=3000)
+    (a, b) = clear.results["params"]
+    assert 2.0 < b["ci"][0] < b["value"] < b["ci"][1]  # the interval is stored with the fit
+    out = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": clear.id, **costs}))
+    su = out["shape_uncertainty"]
+    assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
+    low = recurrent_fit.optimal_overhaul({"model_id": "crow_amsaa", "params": [a["value"], b["ci"][0]]}, 100, 1000)
+    assert su["at_beta_lower"]["optimal_interval"] == pytest.approx(low["optimal"]["interval"], rel=1e-3)
+    assert su["at_beta_lower"]["saving_pct"] == pytest.approx(low["saving_pct"], rel=1e-3)
+    assert su["at_beta_lower"]["horizon"] == pytest.approx(3 * low["optimal"]["interval"], rel=1e-3)
+    assert su["at_beta_lower"]["pays"] and su["at_beta_lower"]["saving_pct"] >= 0.5 * out["saving_pct"]
+    assert "uncertainty_note" not in out
+
+    weak = _nhpp_model(env, "Pumps", seed=2, beta=1.5, systems=2, window=2000)
+    out = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": weak.id, **costs}))
+    assert out["optimal"] and out["shape_uncertainty"]["beta_ci_95"][0] < 1
+    assert out["shape_uncertainty"]["at_beta_lower"]["pays"] is False
+    assert "includes 1" in out["uncertainty_note"] and "tentative" in out["uncertainty_note"]
+
+    # A model saved before intervals were stored gets one from a refit, kept on the model.
+    params = [{k: v for k, v in p.items() if k != "ci"} for p in clear.results["params"]]
+    env.db.recurrent_models.update_one({"_id": clear.id}, {"$set": {"results.params": params}})
+    assert "shape_uncertainty" in _ok(_call(env.token[A], "optimal_overhaul", {"model_id": clear.id, **costs}))
+    assert env.db.recurrent_models.find_one({"_id": clear.id})["results"]["params"][1]["ci"]
+
+    # Built from parameters: no data, no interval.
+    doc = recurrent_service.save_from_params(
+        env.db, "Typed", "crow_amsaa", [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}], 5000,
+        "hours", A)
+    out = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": doc.id, **costs}))
+    assert "shape_uncertainty" not in out and "uncertainty_note" not in out
 
 
 # ---- #190 a censor column named like a failure flag -----------------------------------

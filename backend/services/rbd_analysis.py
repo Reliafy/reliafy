@@ -1028,13 +1028,38 @@ def _model_hi(model) -> Optional[float]:
     return None
 
 
-def _time_grid(reliabilities: dict, t_max: Optional[float] = None) -> np.ndarray:
+def _remaining_hi(model, age: float) -> Optional[float]:
+    """A sensible upper bound for a block's *remaining* life at ``age``: the
+    time from now its conditional reliability R(age + t) / R(age) falls to 1%.
+    Shorter than the from-new bound for a worn block; longer for one whose
+    hazard falls with age. None when the model can't say (the caller then
+    uses the from-new bound)."""
+    try:
+        r_age = float(np.asarray(model.sf(age)).item())
+        if not (0.0 < r_age <= 1.0):
+            return None
+        v = float(np.asarray(model.qf(1.0 - 0.01 * r_age)).item()) - float(age)
+    except Exception:  # noqa: BLE001 - no sf/qf (a sub-system, say)
+        return None
+    return v if np.isfinite(v) and v > 0 else None
+
+
+def _time_grid(reliabilities: dict, t_max: Optional[float] = None,
+               ages: Optional[dict] = None) -> np.ndarray:
     """Time grid from 0 to ``t_max``. When ``t_max`` isn't given (or isn't
-    positive) it is auto-derived from the nodes' own time scales."""
+    positive) it is auto-derived from the nodes' own time scales — for a
+    block given an age (As of now), its remaining life from that age."""
     if t_max is not None and np.isfinite(t_max) and t_max > 0:
         hi = float(t_max)
     else:
-        his = [hi for m in reliabilities.values() if (hi := _model_hi(m))]
+        ages = ages or {}
+
+        def node_hi(nid, m):
+            if nid in ages:
+                return _remaining_hi(m, ages[nid]) or _model_hi(m)
+            return _model_hi(m)
+
+        his = [hi for nid, m in reliabilities.items() if (hi := node_hi(nid, m))]
         hi = max(his) if his else 1.0
     return np.linspace(0.0, hi, _GRID_POINTS)
 
@@ -1505,9 +1530,11 @@ def analyze(
                 np.asarray(conditional_survival(reliabilities[nid], times, ages[nid]), dtype=float)), 0.0, 1.0)
         return _conditional_sf(reliabilities[nid], times, s)
 
-    grid = _time_grid(reliabilities, t_max)
+    grid = _time_grid(reliabilities, t_max, ages)
     if not (t_max is not None and np.isfinite(t_max) and t_max > 0):
-        # Auto axis: size it to the system, not the longest-lived block.
+        # Auto axis: size it to the system, not the longest-lived block —
+        # as of now, to its remaining life (searched up to the blocks'
+        # remaining-life bounds), not the from-new range.
         grid = np.linspace(0.0, _system_horizon(system, float(grid[-1]), s, **overrides), _GRID_POINTS)
     system_sf = _conditional_sf(system, grid, s, **overrides)
 
@@ -2334,7 +2361,8 @@ def analyze_availability(
     # the slowest component's characteristic life, unless the user set one.
     t_chosen, horizon_shortened = chosen_horizon(t_simulation, graph)
     user_horizon = t_chosen is not None
-    t_simulation = t_chosen if user_horizon else _availability_horizon(graph)
+    # From now (#155) the default window is sized to the blocks' remaining life.
+    t_simulation = t_chosen if user_horizon else _availability_horizon(graph, state)
     batch = max_n = n_sims
     if simulate and not fixed_n:
         batch, max_n, t_simulation, shortened = _size_simulation(
@@ -2495,36 +2523,78 @@ def _spec_mean(spec) -> Optional[float]:
     return mean if np.isfinite(mean) and mean > 0 else None
 
 
-def _settling_time(model: dict, repair: Optional[dict]) -> Optional[float]:
+def _residual_mean(spec, t: float) -> Optional[float]:
+    """Mean remaining time of an inline/saved life or repair spec that has
+    already lasted ``t``: ∫ₜ^∞ R(u) du / R(t). None when it can't be built
+    or integrated (the caller falls back to the plain mean)."""
+    if not t or t <= 0:
+        return _spec_mean(spec)
+    try:
+        from scipy.integrate import quad
+
+        entry = DISTRIBUTIONS[spec["distribution_id"]]
+        dist = entry["dist"].from_params([float(p["value"]) for p in spec.get("params") or []])
+
+        def sf(u):
+            return float(np.asarray(dist.sf(u), dtype=float).reshape(-1)[0])
+
+        r_t = sf(t)
+        if not (np.isfinite(r_t) and r_t > 0):
+            return None
+        with warnings.catch_warnings(), np.errstate(all="ignore"):
+            warnings.simplefilter("ignore")
+            area, _ = quad(sf, t, np.inf, limit=200)
+        mean = area / r_t
+    except Exception:  # noqa: BLE001 - covariate models, odd specs: skip
+        return None
+    return mean if np.isfinite(mean) and mean > 0 else None
+
+
+def _settling_time(model: dict, repair: Optional[dict], now: Optional[dict] = None) -> Optional[float]:
     """How long a component's point availability takes to settle, roughly: a
     few failure-repair cycles for a wear-out (non-exponential) life, but only a
     few repair times for an exponential one — its availability relaxes at rate
-    λ + μ, however rare the failures."""
+    λ + μ, however rare the failures.
+
+    ``now`` (a canonical current-state entry, #155) measures it from the
+    block's state now: a running block of age ``a`` has its remaining life
+    (the mean residual life at ``a``) left to run instead of a whole one; a
+    block down for ``since`` has its remaining repair to finish first."""
     life = _spec_mean(model)
     if life is None:
         return None
     mttr = _spec_mean(repair) if isinstance(repair, dict) else None
+    wait = 0.0
+    if now and now.get("down") and isinstance(repair, dict):
+        wait = _residual_mean(repair, float(now.get("since") or 0.0)) or (mttr or 0.0)
     if model.get("distribution_id") == "exponential":
-        return mttr if mttr is not None else None
-    return life + (mttr or 0.0)
+        return (wait + mttr) if mttr is not None else None
+    if now and now.get("age"):
+        life = _residual_mean(model, float(now["age"])) or life
+    return wait + life + (mttr or 0.0)
 
 
-def _availability_horizon(graph: dict) -> float:
+def _availability_horizon(graph: dict, state: Optional[dict] = None) -> float:
     """A simulation length that reaches steady state: 10× the slowest settling
     time among the components that matter — those carrying ≥1% of the largest
     downtime weight (Birnbaum importance × unavailability). A reliable block
     off in a redundant corner, or an exponential block that rarely fails, no
     longer stretches the simulation for every other block. Fallback 1000.
+
+    With a current state (As of now, #155) each block's settling time runs
+    from its state now (:func:`_settling_time`), so the window is sized to
+    the blocks' remaining life rather than the from-new range.
     """
     from backend.services.rbd_maintenance import horizon_floor
 
     # Maintenance cycles (#100): cover a few of the longest interval.
     floor = horizon_floor(graph)
     nodes = {n.get("id"): (n.get("data") or {}) for n in graph.get("nodes") or []}
+    state = state or {}
     settle = {
         nid: t for nid, data in nodes.items()
         if isinstance(data.get("model"), dict)
-        and (t := _settling_time(data["model"], data.get("repair"))) is not None
+        and (t := _settling_time(data["model"], data.get("repair"), state.get(nid))) is not None
     }
     if not settle:
         return max(1000.0, floor)
@@ -2782,7 +2852,7 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
     overrides = {"working_nodes": working_nodes | gate_ids, "broken_nodes": broken_nodes}
     node_states = _node_states(state, labels)
     chosen, _ = chosen_horizon(horizon, graph)
-    window = chosen if chosen is not None else float(_availability_horizon(graph))
+    window = chosen if chosen is not None else float(_availability_horizon(graph, state))
     routes = rbd.analysis_routes()
     summary = _routes_summary(routes, labels)
     base: dict[str, Any] = {
