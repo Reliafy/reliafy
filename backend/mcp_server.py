@@ -2530,7 +2530,10 @@ def upload_outage_log(
     ))] = "auto",
     asset_map: Annotated[Optional[dict[str, str]], Field(description=(
         "Map asset names in the log to node ids where they don't match a block's label or id exactly "
-        "(get_rbd lists the nodes)."))] = None,
+        "(get_rbd lists the nodes). Several assets may map to one standby, parallel/series count or "
+        "load-sharing block: each is one of its units, and the block is down only while too few units are up. "
+        "Pick a unit with 'node#2' (an asset that replaced another shares its unit), or 'node#all' for an "
+        "asset that stands for the whole block."))] = None,
     name: Annotated[Optional[str], Field(description="A name for the log.")] = None,
     upload_id: Annotated[Optional[str], Field(description=(
         "Instead of csv: a file sent through create_upload (CSV/TSV, or an .xlsx workbook with sheet)."))] = None,
