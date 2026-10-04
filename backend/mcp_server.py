@@ -1896,8 +1896,8 @@ def edit_rbd(
       diagram they enter a safety function's PFDavg.
     Removing a node drops it from its common-cause group (and the group if under 2 members remain).
     Changing connections re-lays out the diagram automatically. Returns one line per op, the validation
-    warnings this edit introduced (warnings_unchanged counts the rest) and the node ids; read the full graph
-    with get_rbd."""
+    warnings this edit introduced (warnings_unchanged counts the rest), the node ids, and simulation_note when
+    the edit puts the diagram's saved availability simulation out of date; read the full graph with get_rbd."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     owners = _owners(uid)
@@ -1948,6 +1948,14 @@ def edit_rbd(
     if unchanged:
         out["warnings"] = [w for w in out["warnings"] if w not in known]
         out["warnings_unchanged"] = len(unchanged)
+    # A saved availability simulation that matched the diagram before this
+    # edit no longer does: say so once, briefly.
+    saved_sim = db.rbds.find_one({"_id": rbd.id}, {"availability_cache": 1})
+    if rbds_service.availability_outdated_by(saved_sim, rbd.graph or {}, graph):
+        out["simulation_note"] = (
+            ("Saving this edit would put" if dry_run else "This edit puts")
+            + " the saved availability simulation out of date; analyze_rbd gives the exact figures, "
+            "simulate=true re-runs it.")
     return out
 
 

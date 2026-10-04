@@ -407,6 +407,23 @@ def cached_availability(doc: dict | None, key: str) -> dict | None:
     return {**entry["result"], "cached": True, "computed_at": entry.get("computed_at")}
 
 
+def availability_outdated_by(doc: dict | None, old_graph: dict, new_graph: dict) -> bool:
+    """Whether changing a diagram from ``old_graph`` to ``new_graph`` puts its
+    saved availability simulation out of date: the saved result matched the
+    old diagram (over the default window, or the window it was run over) and
+    doesn't match the new one. A result already out of date, or a change the
+    analysis doesn't see (a block moved on the canvas), gives False."""
+    entry = (doc or {}).get("availability_cache") or {}
+    key = entry.get("key")
+    if not key:
+        return False
+    windows = [None, ((entry.get("result") or {}).get("t_simulation"))]
+    for t in windows:
+        if availability_cache_key(old_graph or {}, t) == key:
+            return availability_cache_key(new_graph or {}, t) != key
+    return False
+
+
 def store_availability(db, rbd_id: str, key: str, result: dict, uid: str | None) -> str:
     """Save an availability result on the RBD doc. Returns ``computed_at``."""
     computed_at = datetime.now(timezone.utc).isoformat()
