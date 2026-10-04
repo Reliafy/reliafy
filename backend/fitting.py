@@ -931,16 +931,21 @@ def distribution_capabilities(dist_id: str) -> dict:
 def methods_for_data(mapping: Optional[dict]) -> dict:
     """Methods the *data* rules out, keyed by method id -> why.
 
-    MOM can't take censoring or truncation; MSE can't take truncation. Known
-    from the column mapping alone, so the picker can grey them out rather than
-    letting the fit fail.
+    MOM can't take censoring or truncation; MSE can't take truncation; MPS
+    and MPP (without the Turnbull heuristic, which isn't offered) can't take
+    interval bounds. Known from the column mapping alone, so the picker can
+    grey them out rather than letting the fit fail.
     """
     mapping = mapping or {}
-    censored = bool(mapping.get("c"))
+    interval = bool(mapping.get("xl") or mapping.get("xr"))
+    censored = bool(mapping.get("c")) or interval
     truncated = bool(mapping.get("tl") or mapping.get("tr"))
     out = {}
     if censored:
         out["MOM"] = "Method of moments doesn't support censored data."
+    if interval:
+        out["MPS"] = "Maximum product spacing doesn't support interval-censored data."
+        out["MPP"] = "Probability plotting doesn't support interval-censored data."
     if truncated:
         out["MOM"] = "Method of moments doesn't support truncation."
         out["MSE"] = "Mean square error doesn't support truncation."
@@ -1747,10 +1752,13 @@ def _fit_distribution(
         # (otherwise the confidence band would be all-NaN).
         _ensure_covariance(model)
 
-        # Left (c=-1) and interval (c=2) censoring require the Turnbull
-        # estimator for the empirical plotting positions.
+        # Left (c=-1) and interval (c=2) censoring, and right truncation,
+        # require the Turnbull estimator for the empirical plotting positions.
         c = np.asarray(model.data["c"])
-        heuristic = "Turnbull" if np.any((c == -1) | (c == 2)) else "Nelson-Aalen"
+        t = model.data.get("t")
+        right_truncated = t is not None and np.any(np.isfinite(np.asarray(t, dtype=float)[..., -1]))
+        heuristic = ("Turnbull" if np.any((c == -1) | (c == 2)) or right_truncated
+                     else "Nelson-Aalen")
         plot = _shape_plot(model, dist, heuristic=heuristic)
         curves = _function_curves(model)
         gof = _goodness_of_fit(model)
