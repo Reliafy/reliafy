@@ -73,6 +73,7 @@ from typing import Any, Optional
 import numpy as np
 
 from backend.services import rbd_analysis as ra
+from backend.services.method_labels import route_reason
 from backend.services.rbd_analysis import AnalysisError
 
 #: The default step: each lever moved 10% of its value (a 10% longer mean life).
@@ -423,7 +424,7 @@ def options(window=None, step=None, rank_by=None, costs=None, n_simulations=None
 def _route(rbd, name: str) -> tuple[str, str]:
     try:
         r = rbd.analysis_routes()[name]
-        return r.route, r.reason
+        return r.route, route_reason(r)
     except Exception:  # noqa: BLE001
         return "refused", ""
 

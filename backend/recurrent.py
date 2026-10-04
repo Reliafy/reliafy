@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import FitError, _json_safe
+from backend.services.method_labels import hides_solver_names, note_fit
 from surpyval.recurrent import CrowAMSAA, Duane, HPP, NonParametricCounting, laplace
 
 # Parametric recurrence models offered (all power-law / Poisson intensities).
@@ -126,6 +127,7 @@ def build_inputs(df: pd.DataFrame, mapping: dict) -> dict:
     return out
 
 
+@hides_solver_names
 def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str = "") -> tuple[dict, str]:
     """Fit the recurrent model and build the JSON-safe results payload.
 
@@ -140,9 +142,9 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
     np_inputs = {k: v for k, v in inputs.items() if k != "tr"}
 
     try:
-        np_model = NonParametricCounting.fit(**np_inputs)
+        np_model = note_fit(NonParametricCounting.fit(**np_inputs))
         fitter = MODELS[model_id]["fitter"]
-        para = fitter.fit(**inputs)
+        para = note_fit(fitter.fit(**inputs))
     except FitError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message

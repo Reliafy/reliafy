@@ -19,6 +19,7 @@ from backend.db import get_session
 from backend.request_ip import client_ip as _client_ip
 from backend.services import public_links as links_service
 from backend.services import rbds as rbds_service
+from backend.services.method_labels import generic_engine_fields
 from backend.services.rbd_analysis import AnalysisError
 
 logger = logging.getLogger(__name__)
@@ -163,7 +164,7 @@ def _with_rbd_analysis(session, payload: dict, rbd_id: str, owner_id: str, ctx) 
     return {
         **payload,
         "graph": rbds_service.public_graph(graph),
-        "analysis": analysis,
+        "analysis": generic_engine_fields(analysis),
         "analysis_error": error,
         "analysis_note": note,
     }

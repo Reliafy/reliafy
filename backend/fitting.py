@@ -85,6 +85,7 @@ from surpyval.univariate.regression import CoxPH
 
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
+from backend.services.method_labels import hides_solver_names, note_fit
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
 # ``offsetable``: supports the 3-parameter offset (failure-free period) —
@@ -1117,6 +1118,7 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
     return {k: v for k, v in out.items() if v}
 
 
+@hides_solver_names
 def fit(
     distribution: str,
     df: pd.DataFrame,
@@ -1388,6 +1390,7 @@ def per_demand_batches_from_df(df: pd.DataFrame, demands_col: str, failures_col:
     return per_demand_batches(rows)
 
 
+@hides_solver_names
 def result_per_demand(
     demands: Optional[int] = None,
     failures: Optional[int] = None,
@@ -1426,7 +1429,7 @@ def result_per_demand(
 
     n_demands = int(sum(r["demands"] for r in rows))
     n_failures = int(sum(r["failures"] for r in rows))
-    model = Binomial.fit([r["failures"] for r in rows], n_trials=[r["demands"] for r in rows])
+    model = note_fit(Binomial.fit([r["failures"] for r in rows], n_trials=[r["demands"] for r in rows]))
     p = float(model.params[1])
     lo, hi = (float(v) for v in np.ravel(model.param_cb("p", alpha_ci=alpha)))
     p_upper = float(np.ravel(model.param_cb("p", alpha_ci=alpha, bound="upper"))[0])
@@ -1513,7 +1516,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         try:
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
-                model = entry["dist"].fit(**kwargs)
+                model = note_fit(entry["dist"].fit(**kwargs), kwargs.get("how"))
             reissue_deprecations(caught)
             scores = _criteria(_goodness_of_fit(model))
         except Exception as exc:
@@ -1893,7 +1896,7 @@ def _fit_raw_mixture(dist, m: int, kwargs: dict):
     """A SurPyval mixture of ``m`` copies of ``dist`` fitted to ``kwargs``."""
     raw = MixtureModel(dist=dist, m=int(m))
     raw.fit(**kwargs)
-    return raw
+    return note_fit(raw)
 
 
 def _fit_mixture(distribution: str, df: pd.DataFrame, mapping: dict, m: int, raw=None) -> dict:
@@ -1981,7 +1984,7 @@ def _fit_distribution(
         # than the fit being unavailable, so capture and report it.
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            model = dist.fit(**kwargs)
+            model = note_fit(dist.fit(**kwargs), kwargs.get("how"))
         reissue_deprecations(caught)
         # No finite maximum (#230): say which parameter runs off, and why.
         no_max = no_maximum_notice(model, caught)
@@ -2135,7 +2138,7 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
     try:
         kwargs = build_fit_inputs(df, mapping)
         _validate_discrete_inputs(kwargs)
-        model = dist.fit(**kwargs)
+        model = note_fit(dist.fit(**kwargs))
         curves = _function_curves(model)
         gof = _goodness_of_fit(model)
         metrics = _life_metrics(model)
@@ -2175,7 +2178,7 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
     est = entry["est"]
     try:
         kwargs = build_fit_inputs(df, mapping)
-        model = est.fit(**kwargs)
+        model = note_fit(est.fit(**kwargs))
         xs = np.asarray(model.x, dtype=float)
         R = np.asarray(model.R, dtype=float)
         try:
@@ -2327,7 +2330,7 @@ def _fit_regression(
     try:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            model = fitter.fit_from_df(df, **fit_kwargs)
+            model = note_fit(fitter.fit_from_df(df, **fit_kwargs))
         reissue_deprecations(caught)
         gof = _goodness_of_fit(model)
     except Exception as exc:

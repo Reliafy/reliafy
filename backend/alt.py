@@ -39,6 +39,7 @@ from backend.fitting import (
     reissue_deprecations,
     without_intervals,
 )
+from backend.services.method_labels import hides_solver_names, note_fit
 from surpyval import AcceleratedLife
 from surpyval.univariate.regression import accelerated_life as _al
 
@@ -267,6 +268,7 @@ def bounds_methods(inputs: dict) -> list:
 # ---------------------------------------------------------------------------
 # Fit
 # ---------------------------------------------------------------------------
+@hides_solver_names
 def fit(
     df: pd.DataFrame,
     mapping: dict,
@@ -303,7 +305,7 @@ def fit(
     try:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            model = AcceleratedLife(dist, entry["model"]).fit(**inputs)
+            model = note_fit(AcceleratedLife(dist, entry["model"]).fit(**inputs))
         reissue_deprecations(caught)
     except FitError:
         raise
@@ -344,7 +346,7 @@ def refit(inputs: dict, distribution_id: str, life_model_id: str):
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            return AcceleratedLife(dist, LIFE_MODELS[life_model_id]["model"]).fit(**inputs)
+            return note_fit(AcceleratedLife(dist, LIFE_MODELS[life_model_id]["model"]).fit(**inputs))
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
         raise FitError(str(exc) or type(exc).__name__) from exc
 
@@ -613,7 +615,7 @@ def _probability_plot(model, dist, inputs, k_dist, uniq, life_at_uniq, labels) -
                 fit_kwargs["n"] = ns
             if t is not None:
                 fit_kwargs["t"] = t[mask]
-            per_level = dist.fit(**fit_kwargs)
+            per_level = note_fit(dist.fit(**fit_kwargs))
             # Inspection (interval) and left-censored data have no exact
             # failure times to rank: the Turnbull estimate places them (#237).
             turnbull = xs.ndim == 2 or (cs is not None and np.any(np.isin(cs, (-1, 2))))
