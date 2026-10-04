@@ -280,7 +280,9 @@ availability simulation may come back as a job_id still queued or running: call 
 seconds until it is done. Edit, \
 don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/remove/update blocks and \
 edges) rather than re-creating it; clone_rbd copies a sample or makes a variant to edit. cheapest_design \
-finds a repairable diagram's redundancy with the lowest total cost of ownership; a discount_rate (percent a \
+finds a repairable diagram's redundancy with the lowest total cost of ownership (trains copies whole chains of \
+blocks: "a fourth pump train?"); rbd_fault_tree gives the fault tree's ranked cut sets, common causes \
+included; a discount_rate (percent a \
 year: 7 = 7%) makes its totals, and analyze_rbd's, present values. "What should we fix first?" on a \
 repairable diagram is rbd_sensitivity: every lever (mean life, mean repair time, intervals, coverage, one \
 more crew) ranked by what a 10% step gains in availability (or cost), in plain words with its basis (exact, \
@@ -2706,15 +2708,22 @@ def cheapest_design(
     min_availability: Annotated[Optional[float], Field(gt=0, lt=1, description=(
         "Only designs at least this available in the long run, e.g. 0.9995."))] = None,
     blocks: Annotated[Optional[list[str]], Field(max_length=rbd_costs.MAX_BLOCKS, description=(
-        "Component block ids that may be given copies; default every block with a purchase price."))] = None,
+        "Component block ids that may be given copies one at a time; default every block with a purchase price "
+        "(outside the trains). [] with trains: copy the trains alone."))] = None,
     discount_rate: Annotated[Optional[float], Field(ge=0, le=100, description=(
         "Percent a year (7 = 7%; 0 = undiscounted): the totals are present values and the design with the "
         "lowest is chosen. Default the diagram's own discount rate."))] = None,
+    trains: Annotated[Optional[dict[str, list[str]]], Field(max_length=rbd_costs.MAX_TRAINS, description=(
+        "Trains copied whole, {name: [block ids]}: each a chain of blocks in series (a pump with its valve and "
+        "motor) whose last block feeds one node. A copy is another path alongside the train into that node, "
+        "so copies of a train into a 2-out-of-3 vote make it 2-out-of-4 (\"should we add a fourth pump "
+        "train?\"). Name one of identical trains; at least one of its blocks needs a purchase price."))] = None,
 ) -> dict[str, Any]:
     """The redundancy that owns a repairable diagram at the lowest total cost (RePyability's
     allocate_redundancy, scored exactly): how many active, independently repaired copies of each priced block
     to fit, weighing each copy's purchase price and running costs against the system downtime (lost
-    production) it saves, optionally keeping the long-run availability at least min_availability. Returns the
+    production) it saves, optionally keeping the long-run availability at least min_availability. With trains,
+    whole trains of blocks are copied too (design.trains gives each train's copies, 1 = as drawn). Returns the
     design as drawn and the cheapest side by side (total cost, purchase, running cost rate, availability), the
     copies per block and the saving; the totals are present values when discounted. Needs block purchase prices
     and the diagram's downtime cost (edit_rbd: update_node costs.acquisition, set costs). Nothing is saved:
@@ -2737,12 +2746,97 @@ def cheapest_design(
     owners = [*_owners(uid), rbd.owner_id]
     result = rbd_costs.cheapest_design(
         graph, lambda mid: models_service.get_live_model(db, mid, owners), horizon=horizon,
-        min_availability=min_availability, blocks=blocks, discount_rate=discount_rate)
+        min_availability=min_availability, blocks=blocks, discount_rate=discount_rate, trains=trains)
     keep = ("unit", "horizon", "min_availability", "discount_rate", "method", "max_copies", "current", "saving",
             "changed", "note")
     out = {**head, "available": True, **{k: result[k] for k in keep}}
     out["present_value"] = result["discount_rate"] is not None
     out["design"] = {k: v for k, v in result["design"].items() if k != "units"}
+    return out
+
+
+def _fault_tree_name(row: dict) -> str:
+    """An event's (or gate's) label with the sub-systems it sits in."""
+    return " › ".join([*(row.get("path") or []), str(row.get("label") or row.get("id"))])
+
+
+@_tool("rbd_fault_tree", _READ, "Fault tree and ranked cut sets of an RBD")
+def rbd_fault_tree(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="An RBD id from list_rbds.")],
+    t: Annotated[Optional[float], Field(gt=0, description=(
+        "Non-repairable diagrams: the time (diagram unit) the tree is evaluated at; default the calculator's "
+        "design point, where the system reliability is about 90%. Ignored for a repairable diagram (steady "
+        "state)."))] = None,
+    max_cut_sets: Annotated[int, Field(ge=1, le=100, description="Cut sets returned, most likely first.")] = 20,
+    max_events: Annotated[int, Field(ge=1, le=100, description=(
+        "Basic events returned with their importance, most critical first."))] = 15,
+    include_gates: Annotated[bool, Field(description=(
+        "Also return the gates (AND / OR / VOTE with their inputs). Default: just the top event, cut sets, "
+        "events and common causes."))] = False,
+) -> dict[str, Any]:
+    """The diagram as a fault tree (the app's Fault tree tab): series blocks become OR gates, parallel blocks
+    AND gates, k-of-n blocks VOTE gates, sub-systems developed into their own gates. Returns the top event
+    probability (unreliability F(t) at t, or a repairable diagram's long-run unavailability, equal to
+    analyze_rbd's), the minimal cut sets ranked by probability with each one's share of the top event, the basic
+    events ranked by criticality with Birnbaum, Fussell–Vesely, RAW and RRW, and common_cause: each common-cause
+    group's shared cause, drawn as one basic event under every member (each member fails on its own OR by the
+    shared cause), so it appears in the cut sets as a cut set of its own (common_cause=true on the row), with its
+    probability and the share of the top event its cut sets carry. Exact, free on every plan."""
+    from backend.services import rbd_fault_tree as fault_tree_service
+
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    rbd = _get_rbd(db, uid, rbd_id)
+    graph = rbd.graph or {}
+    owners = [*_owners(uid), rbd.owner_id]
+    res = fault_tree_service.fault_tree_for_owner(db, graph, owners, t=None if graph.get("repairable") else t)
+    events = {e["id"]: e for e in res["events"]}
+
+    def cut_row(c: dict) -> dict:
+        return {"events": [_fault_tree_name(events.get(e, {"id": e})) for e in c["events"]], "order": c["order"],
+                "probability": c["probability"], "share": c["share"],
+                "common_cause": any((events.get(e) or {}).get("node_type") == "ccf" for e in c["events"])}
+
+    ranked = sorted(res["events"], key=lambda e: -((e.get("importance") or {}).get("criticality") or 0.0))
+    cuts = res["cut_sets"]
+    out: dict[str, Any] = {
+        "rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}"),
+        "kind": res["kind"], "unit": res.get("unit") or None,
+        "top_event_probability": res["top_event_probability"],
+        "n_gates": res["n_gates"], "n_events": res["n_events"],
+        "cut_sets": {
+            "count": cuts["count"], "complete": cuts["complete"], "basis": cuts["basis"],
+            **({"max_order": cuts["max_order"]} if cuts.get("max_order") else {}),
+            "probability_sum": cuts["probability_sum"],
+            "listed": [cut_row(c) for c in cuts["listed"][:max_cut_sets]],
+        },
+        "events": [
+            {"name": _fault_tree_name(e), "kind": e.get("node_type"), "probability": e["probability"],
+             **({"pinned": e["pinned"]} if e.get("pinned") else {}),
+             "importance": {k: v for k, v in (e.get("importance") or {}).items() if v is not None}}
+            for e in ranked[:max_events]
+        ],
+        "common_cause": [
+            {"members": g["members"], **({"in": " › ".join(g["path"])} if g.get("path") else {}),
+             "beta": g["beta"], "basis": g["basis"], "probability": g["probability"], "share": g["share"]}
+            for g in res.get("common_cause") or []
+        ],
+        "notes": res.get("notes") or [],
+    }
+    if res["kind"] == "reliability":
+        out["t"], out["t_default"] = res["t"], res["t_default"]
+        out["reliability"] = None if res["top_event_probability"] is None else 1.0 - res["top_event_probability"]
+    else:
+        out["unavailability"] = res.get("unavailability")
+    if include_gates:
+        out["gates"] = [
+            {"id": g["id"], "kind": g["kind"], "k": g["k"], **({"label": g["label"]} if g.get("label") else {}),
+             "probability": g["probability"],
+             "inputs": [i["id"] if i["kind"] == "gate" else _fault_tree_name(events.get(i["id"], {"id": i["id"]}))
+                        for i in g["inputs"]]}
+            for g in res["gates"]
+        ]
     return out
 
 

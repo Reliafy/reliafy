@@ -13,7 +13,10 @@
   active copies of each priced block give the lowest total cost of ownership
   over a horizon, optionally with an availability floor, and the diagram with
   those copies drawn on it (nothing is saved; the builder puts it on the
-  canvas).
+  canvas). Since RePyability 0.12 (#227) whole *trains* — chains of blocks in
+  series, such as a pump with its valve and motor — can be copied too: a copy
+  of a train is another path alongside it into the node it feeds, joining a
+  vote there (2-out-of-3 becomes 2-out-of-4).
 
 Costs are in whatever currency the user entered them. The total cost of
 ownership (and the cheapest design's) is undiscounted unless the diagram (or
@@ -42,8 +45,11 @@ CATEGORIES = ("repair", "replace", "preventive", "inspection", "setup", "compone
 PERCENTILES = (10, 50, 90)
 #: The most copies of one block the cheapest-design search considers.
 MAX_COPIES = 6
-#: The most blocks it designs at once (branch and bound suits a handful).
+#: The most blocks and trains it designs at once (branch and bound suits a handful).
 MAX_BLOCKS = 12
+#: The most trains, and the most blocks in one train (#227).
+MAX_TRAINS = 6
+MAX_TRAIN_BLOCKS = 20
 _COPY_GAP = 110
 _COL_GAP = 280
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
@@ -310,15 +316,107 @@ def _friendly(message: str, labels: dict) -> str:
     return message
 
 
+def _order_chain(members: list, edges: list) -> Optional[list]:
+    """``members`` in the order a chain in series runs (each fed by the one
+    before it), or None when they aren't one chain."""
+    inside = set(members)
+    succ: dict = {}
+    pred: dict = {}
+    for src, tgt in edges:
+        if src in inside and tgt in inside:
+            succ.setdefault(src, []).append(tgt)
+            pred.setdefault(tgt, []).append(src)
+    heads = [m for m in members if m not in pred]
+    if len(heads) != 1:
+        return None
+    order = [heads[0]]
+    while len(order) < len(members):
+        nxt = succ.get(order[-1]) or []
+        if len(nxt) != 1 or nxt[0] in order:
+            return None
+        order.append(nxt[0])
+    return order
+
+
+def normalise_trains(trains) -> list[dict]:
+    """Trains as given — ``[{"name", "blocks": [ids]}]`` or ``{name: [ids]}``
+    — as ``[{"name", "blocks"}]``, checked for shape. Empty: none."""
+    if not trains:
+        return []
+    if isinstance(trains, dict):
+        items = [{"name": k, "blocks": v} for k, v in trains.items()]
+    elif isinstance(trains, (list, tuple)):
+        items = list(trains)
+    else:
+        raise AnalysisError("Trains must be a list of {name, blocks}.")
+    if len(items) > MAX_TRAINS:
+        raise AnalysisError(f"The cheapest design copies up to {MAX_TRAINS} trains at once.")
+    out, names = [], set()
+    for i, t in enumerate(items, start=1):
+        if not isinstance(t, dict):
+            raise AnalysisError("Each train must be {name, blocks}.")
+        name = str(t.get("name") or "").strip()[:80] or f"Train {i}"
+        if name in names:
+            raise AnalysisError(f"Two trains are named “{name}” — name them apart.")
+        names.add(name)
+        blocks = t.get("blocks")
+        if isinstance(blocks, (str, bytes)) or not isinstance(blocks, (list, tuple)) or not blocks:
+            raise AnalysisError(f"Train “{name}” needs at least one block.")
+        if len(blocks) > MAX_TRAIN_BLOCKS:
+            raise AnalysisError(f"Train “{name}” has more than {MAX_TRAIN_BLOCKS} blocks.")
+        out.append({"name": name, "blocks": list(dict.fromkeys(str(b) for b in blocks))})
+    return out
+
+
+def _checked_trains(trains: list[dict], graph: dict, rbd, labels: dict, gate_ids: set) -> list[dict]:
+    """Each train's blocks in chain order, under an internal key (a train is
+    named apart from the nodes in RePyability's ``units``): ``[{"key",
+    "name", "blocks"}]``. Raises :class:`AnalysisError` in the user's words
+    for a block that isn't a component or a set that isn't one chain
+    (RePyability checks the rest: the chain's last block feeds one node)."""
+    edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []]
+    taken = {str(n) for n in rbd.G.nodes}
+    seen: dict = {}
+    out = []
+    for i, t in enumerate(trains, start=1):
+        name = t["name"]
+        for b in t["blocks"]:
+            if b not in rbd.components or b in gate_ids:
+                raise AnalysisError(f"Train “{name}”: “{labels.get(b, b)}” isn't a component block of this diagram.")
+            if b in seen:
+                raise AnalysisError(f"“{labels.get(b, b)}” is in trains “{seen[b]}” and “{name}” — "
+                                    "a block is in one train at most.")
+            seen[b] = name
+        order = _order_chain(t["blocks"], edges)
+        if order is None:
+            raise AnalysisError(
+                f"Train “{name}” must be a chain of blocks in series, each feeding the next alone — "
+                f"{', '.join(labels.get(b, b) for b in t['blocks'])} aren't one.")
+        key = f"train:{i}"
+        while key in taken:
+            key += "'"
+        taken.add(key)
+        out.append({"key": key, "name": name, "blocks": order})
+    return out
+
+
 def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availability=None,
-                    blocks: Optional[list] = None, discount_rate=None) -> dict:
+                    blocks: Optional[list] = None, discount_rate=None, trains=None) -> dict:
     """The number of active copies of each priced block (every block with a
     purchase price, or ``blocks``) that owns the diagram for ``horizon`` at the
     lowest total cost (``RepairableRBD.allocate_redundancy``), optionally only
     among designs at least ``min_availability`` available; with the design as
     drawn for comparison, and the diagram with the copies drawn on it.
     ``discount_rate`` (% a year; default the diagram's, 0 undiscounted) makes
-    the totals present values, and chooses the design with the lowest (#219)."""
+    the totals present values, and chooses the design with the lowest (#219).
+
+    ``trains`` (#227, ``[{"name", "blocks"}]`` or ``{name: [block ids]}``)
+    are chains of blocks in series that may be copied whole: each copy
+    another path alongside the train, fed as its first block is and feeding
+    the node its last feeds (a vote there keeps the number it needs, so a
+    fourth train of a 2-out-of-3 makes it 2-out-of-4). With trains, the
+    blocks copied one at a time default to the priced blocks outside them
+    (``blocks=[]``: none)."""
     if not (graph or {}).get("repairable"):
         raise AnalysisError("The cheapest design is for repairable (availability) diagrams.")
     diagram = rm.diagram_costs(graph)
@@ -336,23 +434,41 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
         if not 0.0 < floor < 1.0:
             raise AnalysisError("The minimum availability must be between 0% and 100%.")
 
+    trains = normalise_trains(trains)
     drawn = _as_drawn(graph)
     rbd, labels, gate_ids, _, _ = ra._build_repairable_rbd(drawn, resolve_model)
+    trained = _checked_trains(trains, drawn, rbd, labels, gate_ids)
+    in_trains = {b: t["name"] for t in trained for b in t["blocks"]}
     if blocks:
         chosen = [b for b in blocks if b in rbd.components and b not in gate_ids]
+        both = [b for b in chosen if b in in_trains]
+        if both:
+            raise AnalysisError(
+                f"“{labels.get(both[0], both[0])}” is in train “{in_trains[both[0]]}” and among the blocks "
+                "copied on their own — copy it with its train or alone.")
+    elif blocks is not None and trained:  # [] with trains: the trains alone
+        chosen = []
     else:
-        chosen = [n for n in rbd.components if n in rbd.acquisition_costs and n not in gate_ids]
-    if not chosen:
+        chosen = [n for n in rbd.components
+                  if n in rbd.acquisition_costs and n not in gate_ids and n not in in_trains]
+    for t in trained:
+        if not any(rbd.acquisition_costs.get(b) for b in t["blocks"]):
+            raise AnalysisError(
+                f"Give a block of train “{t['name']}” a purchase price (in its Cost & maintenance "
+                "section): the cheapest design weighs what a copy of the train costs against the "
+                "downtime it saves.")
+    if not chosen and not trained:
         raise AnalysisError(
             "Give at least one block a purchase price (in its Cost & maintenance section): "
             "the cheapest design weighs what a copy costs to buy and run against the "
             "downtime it saves."
         )
-    if len(chosen) > MAX_BLOCKS:
+    if len(chosen) + len(trained) > MAX_BLOCKS:
         raise AnalysisError(
-            f"The cheapest design handles up to {MAX_BLOCKS} priced blocks at once — "
-            f"this diagram has {len(chosen)}."
+            f"The cheapest design handles up to {MAX_BLOCKS} priced blocks and trains at once — "
+            f"this one has {len(chosen) + len(trained)}."
         )
+    named = {**labels, **{t["key"]: t["name"] for t in trained}}
     if not rbd.downtime_cost_rate:
         note = ("The diagram has no system downtime cost, so extra copies only add cost — "
                 "set the cost of an hour of downtime to weigh them.")
@@ -361,7 +477,9 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
     try:
         with np.errstate(all="ignore"):
             alloc = rbd.allocate_redundancy(
-                horizon, nodes=chosen, min_availability=floor, max_units=MAX_COPIES, discount_rate=r,
+                horizon, nodes=chosen or None, min_availability=floor, max_units=MAX_COPIES, discount_rate=r,
+                # Trains are copied whole (#227); without, every node copied alone.
+                **({"trains": {t["key"]: t["blocks"] for t in trained}} if trained else {}),
             )
             current = {
                 "total_cost": float(rbd.total_cost(horizon, discount_rate=r)),
@@ -372,18 +490,29 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
     except NotImplementedError as exc:
         # Since RePyability 0.12 proof tests that take time have exact long-run
         # costs too (#159); limited repair crews for wear-out lives don't.
-        reason = ra.plain_reason(_friendly(str(exc), labels))
+        reason = ra.plain_reason(_friendly(str(exc), named))
+        if "a train holds a member" in str(exc) or "in a common-cause group, whose copies the allocation of trains" in str(exc):
+            raise AnalysisError(
+                f"{reason.split(', whose copies')[0]}: copies of a train can't yet join a "
+                "common-cause group — take its members out of the train and copy them one at a time."
+            ) from exc
         reason = reason.split(": estimate")[0].split(". Estimate")[0].split(". ")[0].rstrip(". ")
         raise AnalysisError(
             "The cheapest design needs exact long-run costs, which RePyability doesn't have "
             f"for this diagram: {reason}."
         ) from exc
     except ValueError as exc:
-        msg = _friendly(str(exc), labels)
+        msg = _friendly(str(exc), named)
         if "min_availability" in msg or "cannot be reached" in msg or "reach" in msg:
             raise AnalysisError(
-                f"No design with up to {MAX_COPIES} copies of each priced block reaches that "
-                "availability — lower the minimum, or price more blocks."
+                f"No design with up to {MAX_COPIES} copies of each priced block"
+                f"{' and train' if trained else ''} reaches that availability — lower the minimum, "
+                "or price more blocks."
+            ) from exc
+        if trained and "must end at a node feeding one node" in msg:
+            raise AnalysisError(
+                f"{msg.split(' must end')[0]} must end at a block feeding one node (a vote, a block or the "
+                "output), which its copies join — its last block feeds more than one."
             ) from exc
         raise AnalysisError(f"Couldn't find the cheapest design: {msg}") from exc
 
@@ -394,15 +523,23 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
          "price": rbd.acquisition_costs.get(n, 0.0)}
         for n in chosen
     ]
+    # A train's copies are under its key in RePyability's units (#227).
+    train_rows = [
+        {"name": t["name"], "copies": units.pop(t["key"], 1),
+         "blocks": [{"id": str(b), "label": labels.get(b, str(b))} for b in t["blocks"]],
+         "price": float(sum(rbd.acquisition_costs.get(b, 0.0) for b in t["blocks"]))}
+        for t in trained
+    ]
     design = {
         "units": units,
         "blocks": rows,
+        "trains": train_rows,
         "total_cost": float(alloc.total_cost),
         "cost_rate": float(alloc.cost_rate),
         "acquisition_cost": float(alloc.acquisition_cost),
         "availability": float(alloc.availability),
     }
-    changed = any(v != 1 for v in units.values())
+    changed = any(v != 1 for v in units.values()) or any(t["copies"] != 1 for t in train_rows)
     return {
         "kind": "repairable_cost_design",
         "unit": (graph.get("unit") or "").strip(),
@@ -418,7 +555,8 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
         "saving": current["total_cost"] - design["total_cost"],
         "changed": changed,
         "note": note,
-        "graph": apply_copies(graph, units) if changed else None,
+        # Trains first, so a block's copies are wired to the trains' copies too.
+        "graph": apply_copies(apply_train_copies(graph, train_rows), units) if changed else None,
         "repyability_version": ra._repyability_version(),
     }
 
@@ -503,6 +641,75 @@ def apply_copies(graph: dict, units: dict) -> dict:
         for c in copies[1:]:
             by_id[c["id"]] = c
         edges += new_edges
+    out["nodes"] = nodes
+    out["edges"] = edges
+    return out
+
+
+def apply_train_copies(graph: dict, trains: list) -> dict:
+    """The diagram with ``copies - 1`` more of each train (``[{"blocks":
+    [{"id"} or id, ...], "copies"}]``, blocks in chain order) drawn below
+    what is there: each copy fed by what feeds the train's first block and
+    feeding the node its last block feeds, as RePyability scores it (#227).
+    A vote there keeps the number it needs and gains the branches
+    (2-out-of-3 becomes 2-out-of-4). Copies keep their blocks' models, costs
+    and maintenance; pins are dropped. Nothing is saved."""
+    out = copy.deepcopy(graph)
+    nodes = list(out.get("nodes") or [])
+    edges = list(out.get("edges") or [])
+    by_id = {n.get("id"): n for n in nodes}
+    taken = set(by_id)
+
+    def fresh(base: str) -> str:
+        i, nid = 1, base
+        while nid in taken:
+            i += 1
+            nid = f"{base}{i}"
+        taken.add(nid)
+        return nid
+
+    def pos(node) -> dict:
+        return node.get("position") or {"x": 0, "y": 0}
+
+    for train in trains:
+        extra = int(train.get("copies") or 1) - 1
+        ids = [b["id"] if isinstance(b, dict) else b for b in train.get("blocks") or []]
+        if extra < 1 or not ids or any(i not in by_id for i in ids):
+            continue
+        feeds = [e.get("source") for e in edges if e.get("target") == ids[0]]
+        exits = [e.get("target") for e in edges if e.get("source") == ids[-1]]
+        xs = [pos(by_id[i]).get("x", 0) for i in ids]
+        top = min(pos(by_id[i]).get("y", 0) for i in ids)
+        # Below whatever is drawn across the train's columns.
+        base = max(pos(n).get("y", 0) for n in nodes if min(xs) - 60 <= pos(n).get("x", 0) <= max(xs) + 60)
+        for j in range(1, extra + 1):
+            chain = []
+            for nid in ids:
+                node = by_id[nid]
+                data = node.get("data") or {}
+                cid = fresh(f"{nid}t{j}")
+                cdata = {k: copy.deepcopy(v) for k, v in data.items() if k not in ("state", "repeat_of")}
+                cdata["label"] = f"{data.get('label') or nid} ({j + 1})"
+                p = pos(node)
+                chain.append({
+                    **{k: v for k, v in node.items() if k not in ("id", "data", "position", "selected")},
+                    "id": cid, "data": cdata,
+                    "position": {"x": p.get("x", 0), "y": base + j * _COPY_GAP + p.get("y", 0) - top},
+                })
+            for c in chain:
+                by_id[c["id"]] = c
+            nodes.extend(chain)
+            edges += [_edge(src, chain[0]["id"]) for src in feeds]
+            edges += [_edge(a["id"], b["id"]) for a, b in zip(chain, chain[1:])]
+            edges += [_edge(chain[-1]["id"], tgt) for tgt in exits]
+        for tgt in exits:  # a vote's count of branches (its "k"; "n" is the number needed)
+            target = by_id.get(tgt) or {}
+            data = target.get("data")
+            if target.get("type") == "knode" and isinstance(data, dict) and data.get("k") is not None:
+                try:
+                    target["data"] = {**data, "k": int(data["k"]) + extra}
+                except (TypeError, ValueError):
+                    pass
     out["nodes"] = nodes
     out["edges"] = edges
     return out

@@ -7321,6 +7321,18 @@ button.danger:hover { background: #fdeeee; }
 .rbd-cheapest-inputs { margin-top: 0; }
 .rbd-cheapest-result { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .rbd-cheapest-result.stale { opacity: 0.6; }
+/* Trains copied whole (#227). */
+.rbd-trains { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
+.rbd-trains-head { display: flex; flex-direction: column; gap: 2px; }
+.rbd-train { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.rbd-train-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rbd-train-row input[type="text"] {
+  flex: 1 1 160px; min-width: 0; max-width: 320px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+  padding: 0.45rem 0.6rem; font-size: 0.9rem; font-family: inherit;
+}
+.rbd-train-row input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(47, 109, 246, 0.18); }
+.rbd-train-singles { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; }
 
 /* One toolbar across the top of the canvas: the diagram's settings on the
    left, its actions on the right — which wrap onto a second row rather than
