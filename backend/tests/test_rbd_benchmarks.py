@@ -262,13 +262,6 @@ def rbc_availability():
         rbd_analysis._AVAIL_SIMS = old
 
 
-def _voting_gate_standin():
-    """Unavailability and failure frequency of the never-failing stand-in
-    Reliafy uses for a k-of-n gate in availability analysis."""
-    gate = rbd_analysis._always_up()
-    return 1 - float(gate.mean_availability()), float(gate.failure_frequency())
-
-
 def test_rbc_oracle_agrees_with_published_unavailability():
     unavail, _, _ = _rbc_oracle()
     assert unavail == pytest.approx(RBC_UNAVAILABILITY, rel=1e-6)
@@ -289,14 +282,15 @@ def test_rbc_mean_up_time_against_markov_oracle(rbc_availability):
 
 
 def test_voting_gates_add_no_unavailability(rbc_availability):
-    """Regression: a k-of-n gate is pure logic. Its repairable stand-in is only
-    nearly perfect (unavailable ~1e-12), so it must be pinned working —
-    otherwise RBC's single 2-of-3 gate alone inflated the unavailability by 16%."""
+    """Regression: a k-of-n gate is pure logic. Its old repairable stand-in was
+    only nearly perfect (RBC's single 2-of-3 gate alone inflated the
+    unavailability by 16% unless pinned); since RePyability 0.12 it is a
+    junction (#224), folded out of the structure, so it adds exactly nothing."""
     graph, res = rbc_availability
-    assert [n for n in graph["nodes"] if n["type"] == "knode"]
-    q_gate, _ = _voting_gate_standin()
-    assert q_gate > 0  # the stand-in on its own isn't perfect...
-    # ...but it contributes nothing to the system figure.
+    gates = {n["id"] for n in graph["nodes"] if n["type"] == "knode"}
+    assert gates
+    rbd = rbd_analysis._build_repairable_rbd(graph)[0]
+    assert rbd._junctions() == gates and not gates & set(rbd.components)
     assert res["unavailability"] == pytest.approx(RBC_UNAVAILABILITY, rel=1e-6)
 
 

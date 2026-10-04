@@ -54,7 +54,7 @@ def _design(graph: dict, resolve_model) -> dict:
             "diagrams need repair times on their blocks."
         )
     rbd, labels, gate_ids, working, broken = ra._build_repairable_rbd(graph, resolve_model)
-    overrides = {"working_nodes": working | gate_ids, "broken_nodes": broken}
+    overrides = {"working_nodes": working, "broken_nodes": broken}
     try:
         with np.errstate(all="ignore"):
             steady = float(rbd.mean_availability(**overrides))

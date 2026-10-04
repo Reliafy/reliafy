@@ -216,7 +216,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
         returns={`{ "interval": 176.4, "method": "…", "mttf": 8760, "target_availability": 0.99 }`}
       />
       <ClientFn
-        sig="strategy.demonstration_test(reliability, *, confidence=0.95, mission_time=None, failures=0, test_multiple=1.0, shape=None, units=None, method='attribute', mtbf=None, unit=None)"
+        sig="strategy.demonstration_test(reliability, *, confidence=0.95, mission_time=None, failures=0, test_multiple=1.0, shape=None, units=None, method='attribute', mtbf=None, design_reliability=None, design_mtbf=None, producer_risk=None, unit=None)"
         endpoint="POST /api/v1/strategy/demonstration-test"
         desc="Plan a reliability demonstration test: units to test, test time per unit, allowed failures."
         params={[
@@ -226,8 +226,10 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
           { name: "failures", type: "int", req: false, desc: "Failures allowed, default 0 (success run)." },
           { name: "test_multiple / shape", type: "number", req: false, desc: "Test each unit k missions, Weibull shape known." },
           { name: "units", type: "int", req: false, desc: "Units available: solve for test time per unit (needs shape)." },
+          { name: "design_reliability / design_mtbf", type: "number", req: false, desc: "A good design's true reliability (or MTBF): its chance of passing." },
+          { name: "producer_risk", type: "number", req: false, desc: "With the good design: the most chance of failing it, e.g. 0.2. The plan keeps both risks and chooses the failures allowed." },
         ]}
-        returns={`{ "units": 59, "test_time_per_unit": 1000, "summary": "Test 59 units for 1,000 hours each…", "tradeoff": {…} }`}
+        returns={`{ "units": 128, "failures": 8, "consumer_risk": 0.097, "producer_risk": 0.192, "summary": "Test 128 units…", "oc_curve": {…}, "tradeoff": {…} }`}
       />
 
       <h3>reliafy.fleet</h3>
@@ -536,7 +538,7 @@ const MCP_TOOLS = [
   ["import_excel", "Import an Excel workbook: a sheet as a dataset, an FMEA / RCM worksheet into a new or existing RCM study, or the RBD template as a diagram. Given an existing diagram (rbd_id), the import is saved as a new copy of it and the original is left unchanged, unless replace=true overwrites it; the result says which, with the saved diagram’s id."],
   ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function. For a saved Weibull fitted to data, the answer at each end of the shape’s 95% interval too, with a note when it makes the recommendation less firm."],
   ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model. For a Crow-AMSAA model fitted to data, the answer at each end of the growth shape’s 95% interval too, with a note when it makes the recommendation less firm."],
-  ["plan_demonstration_test", "Plan a reliability demonstration test — units, test time per unit and allowed failures to show a reliability at a confidence — with a units-vs-failures trade-off table. Needs no saved data."],
+  ["plan_demonstration_test", "Plan a reliability demonstration test — units, test time per unit and allowed failures to show a reliability at a confidence — with a units-vs-failures trade-off table. With producer_risk and a good design, a plan that keeps both risks. Needs no saved data."],
   ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items."],
   ["list_fleet_alerts / create_fleet_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API."],
   ["delete_model / delete_dataset / delete_rbd", "Permanently delete your own models, datasets and diagrams (never shared samples; Claude asks first). A dataset still used by a model can’t be deleted, nor a model a fleet forecast runs on."],
