@@ -524,7 +524,7 @@ const MCP_TOOLS = [
   ["upload_outage_log / system_history", "Save a real outage log (asset, down, back up) — as CSV text, or a CSV or Excel file sent with create_upload — against one of your diagrams, then read the system’s observed availability, its outages each with the block that caused it, and the blocks ranked by downtime share."],
   ["create_upload", "A single-use link (15 minutes) to send a file to Reliafy with a plain HTTP PUT — a ready curl command — so the file never passes through the conversation. Up to 30 MB; deleted after its import, or after an hour."],
   ["inspect_upload", "Look inside an uploaded file before importing it: a workbook’s sheets with their header rows, columns, row counts and a guessed mapping; a diagram file’s diagrams and block counts."],
-  ["import_rbd", "Import diagrams from ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA XML, Galileo DFT or Reliafy’s Excel RBD template, saved as RBDs with notes on anything approximated. Preview first if you like; small text files can be pasted instead of uploaded."],
+  ["import_rbd", "Import diagrams from ReliaSoft BlockSim (.rsgz / .rsr), Open-PSA XML, Galileo DFT or Reliafy’s Excel RBD template, saved as RBDs with notes on anything approximated. Preview first to check the structure and minimal cut sets; small text files can be pasted instead of uploaded. A file that states no time unit takes time_unit, or is flagged."],
   ["import_excel", "Import an Excel workbook: a sheet as a dataset, an FMEA / RCM worksheet into a new or existing RCM study, or the RBD template as a diagram."],
   ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function."],
   ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model."],
@@ -617,6 +617,7 @@ export function McpDocs({ tokenNote }) {
           <li><code>PUT /api/uploads/{"{upload_id}"}?t=…</code> (or <code>POST</code> with the raw body) — no sign-in: the link’s token is the credential. It works once and expires after 15 minutes. Answers <code>{`{ upload_id, size, sha256, detected_format }`}</code>.</li>
           <li>Errors: <code>404</code> (no such upload, or a wrong token), <code>409</code> (already used), <code>410</code> (expired), <code>413</code> (over the size limit — 30 MB at most), <code>429</code> (too many attempts).</li>
           <li>Uploads are private to you, are never served back, and are deleted once imported or after an hour.</li>
+          <li>If Claude’s environment can’t reach the URL (a sandbox proxy refusing it, or no network), small text files (up to 200 KB) can be pasted instead — CSV into <code>upload_dataset</code> or <code>upload_outage_log</code>, Open-PSA or Galileo text into <code>import_rbd</code> — and anything else uploaded in the app.</li>
         </ul>
 
         <h3>Tools</h3>

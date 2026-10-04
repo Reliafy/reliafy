@@ -13,7 +13,7 @@ from typing import Optional
 
 from .types import MAX_UPLOAD_BYTES, ImportedDiagram, RbdImportError
 
-__all__ = ["FORMATS", "ImportedDiagram", "RbdImportError", "import_file"]
+__all__ = ["FORMATS", "ImportedDiagram", "RbdImportError", "UNIT_MISSING", "apply_time_unit", "import_file"]
 
 # module name -> human label, in sniffing order (binary formats first).
 FORMATS = {
@@ -24,18 +24,49 @@ FORMATS = {
 }
 
 
+#: The import note for a diagram whose file states no time unit (#187).
+UNIT_MISSING = (
+    "The file doesn't state a time unit, so the diagram's unit is blank. Its failure rates and times "
+    "are per whatever unit the source model used (Galileo and Open-PSA rates are usually per hour): "
+    "set the diagram's unit to match before reading any results."
+)
+
+
+def apply_time_unit(diagrams: list[ImportedDiagram], time_unit: Optional[str] = None) -> None:
+    """Settle each diagram's time unit (#187): the unit the file states wins;
+    otherwise ``time_unit`` (the caller's word for what the rates are per);
+    otherwise the unit stays blank and :data:`UNIT_MISSING` leads the import
+    notes. The parameters are never rescaled."""
+    given = (time_unit or "").strip()
+    for d in diagrams:
+        stated = str(d.graph.get("unit") or "").strip()
+        if stated:
+            if given and given.lower() != stated.lower():
+                d.warnings.insert(0, (
+                    f"The file states its time unit ({stated}), so the diagram uses it; time_unit "
+                    f"“{given}” was ignored — the parameters are in the file's unit."))
+        elif given:
+            d.graph["unit"] = given
+            d.warnings.insert(0, (
+                f"The file doesn't state a time unit; its rates and times were read as per {given}, "
+                "as given."))
+        else:
+            d.warnings.insert(0, UNIT_MISSING)
+
+
 def _module(name: str):
     return importlib.import_module(f"{__name__}.{name}")
 
 
 def import_file(data: bytes, filename: str, excel_mapping: Optional[dict] = None,
-                format: Optional[str] = None) -> list[ImportedDiagram]:
+                format: Optional[str] = None, time_unit: Optional[str] = None) -> list[ImportedDiagram]:
     """Parse an uploaded file into one or more diagrams.
 
     ``excel_mapping`` (Excel workbooks only) says which sheets and columns
     hold the blocks and connections when the workbook doesn't follow the
     template (see :func:`.excel.parse`). ``format`` (a :data:`FORMATS` key)
-    skips the sniffing and parses the file as that format."""
+    skips the sniffing and parses the file as that format. ``time_unit`` is
+    the diagrams' unit when the file states none (see :func:`apply_time_unit`)."""
     if not data:
         raise RbdImportError("The file is empty.")
     if len(data) > MAX_UPLOAD_BYTES:
@@ -58,6 +89,7 @@ def import_file(data: bytes, filename: str, excel_mapping: Optional[dict] = None
                 d.source_format = d.source_format or label
             if not diagrams:
                 raise RbdImportError(f"No reliability block diagrams found in this {label} file.")
+            apply_time_unit(diagrams, time_unit)
             return diagrams
     raise RbdImportError(
         "Unrecognised file. Reliafy imports ReliaSoft BlockSim projects (.rsgz / .rsr — "

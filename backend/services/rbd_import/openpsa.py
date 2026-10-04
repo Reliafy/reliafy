@@ -23,15 +23,19 @@ Supported:
   (lognormal/normal/uniform/gamma/beta) are replaced by their mean, with a
   warning;
 * ``define-CCF-group model="beta-factor"`` -> ``ccf_groups`` (other CCF
-  models are skipped with a warning).
+  models are skipped with a warning);
+* basic events with a fixed probability (a plain number, or an exponential
+  over a fixed time rather than the mission time) -> a block *without* a
+  life model, listed in the import notes with its probability. Reliafy
+  blocks have no fixed-probability model, and inventing a failure rate would
+  change the answer, so the user sets one before analysing (#188).
 
 A basic event used under several gates (a repeated event) becomes a repeated
 block, drawn in each place but analysed as one component (see
 :mod:`.fault_tree`).
 
 Refused: non-coherent logic (``not``, ``xor``, ``nand``, ``nor``, ``iff``,
-``imply``) and basic events with a fixed probability and no failure-time
-model.
+``imply``) and basic events with no data at all.
 
 Parsing uses ``defusedxml`` (no entity expansion, no external entities or DTD
 fetching) and bounds the element depth.
@@ -181,7 +185,7 @@ class _Converter:
         self.warnings: list[str] = []
         self.nodes: dict[str, ft.Node] = {}
         self.units: set[str] = set()
-        self.fixed_prob: list[str] = []
+        self.fixed_prob: dict[str, tuple[str, float]] = {}  # event -> (block label, probability)
         self.no_data: list[str] = []
         self.ccf_members: dict[str, object] = {}   # event -> CCF group element
         self.anon = 0
@@ -373,7 +377,7 @@ class _Converter:
             lam = self.num(args[0], name)
             factor = self._time_factor(args[1], name)
             if factor is None:
-                return self._fixed(name, 1 - math.exp(-lam * self.num(args[1], name)))
+                return self._fixed(name, 1 - math.exp(-lam * self.num(args[1], name)), label)
             if factor != 1:
                 self.note("time_factor", name)
             return self._life(name, ft.exponential_model(lam * factor), label, lam * factor)
@@ -402,7 +406,7 @@ class _Converter:
             self.note("periodic_test", name)
             return self._life(name, ft.exponential_model(lam), label, lam)
         # Anything else is a plain number: a fixed probability.
-        return self._fixed(name, self.num(expr, name))
+        return self._fixed(name, self.num(expr, name), label)
 
     def _life(self, name, model, label, rate) -> ft.Leaf:
         if rate is not None and rate == 0:
@@ -413,13 +417,17 @@ class _Converter:
                                      "must be positive.")
         return ft.Leaf(name, {"type": "component", "model": model}, label=label)
 
-    def _fixed(self, name, p) -> ft.Leaf:
+    def _fixed(self, name, p, label=None) -> ft.Leaf:
+        if not (math.isfinite(p) and 0 <= p <= 1):
+            raise RbdImportError(f"Basic event “{name}”: probability {p:g} isn't between 0 and 1.")
         if p == 0:
             return ft.Leaf(name, constant=False)
         if p == 1:
             return ft.Leaf(name, constant=True)
-        self.fixed_prob.append(name)
-        return ft.Leaf(name, constant=False)
+        # No time model: a block without a life model, which the user must
+        # set before analysing — never an invented rate (#188).
+        self.fixed_prob[name] = (label or name, p)
+        return ft.Leaf(name, {"type": "component"}, label=label)
 
     # -- expressions ------------------------------------------------------
     def _deref(self, el, depth=0):
@@ -643,10 +651,15 @@ def _convert(model: _Model, top: str) -> ImportedDiagram:
             "build their blocks from.")
     fixed = sorted(set(conv.fixed_prob) & used)
     if fixed:
-        raise RbdImportError(
-            f"{len(fixed)} basic event(s) have a fixed probability and no failure-time model "
-            f"({_names(fixed)}). Reliafy blocks need a life distribution (e.g. <exponential> "
-            "with a failure rate), so this tree can't be imported as an RBD.")
+        shown = [f"“{conv.fixed_prob[n][0]}” (p = {conv.fixed_prob[n][1]:.3g})" for n in fixed]
+        more = f" and {len(shown) - 10} more" if len(shown) > 10 else ""
+        conv.warn(
+            f"{len(fixed)} basic event(s) have a fixed probability and no failure-time model: "
+            f"{', '.join(shown[:10])}{more}. Reliafy blocks need a life distribution, so "
+            f"{'it was' if len(fixed) == 1 else 'they were'} imported as "
+            f"block{'' if len(fixed) == 1 else 's'} WITHOUT a life model — set one (e.g. an "
+            "exponential failure rate) before analysing. Nothing was assumed for "
+            f"{'it' if len(fixed) == 1 else 'them'}.")
 
     live = [n for n in used if isinstance(conv.nodes.get(n), ft.Leaf) and conv.nodes[n].constant is None]
     with_repair = [n for n in live if (conv.nodes[n].node or {}).get("repair")]

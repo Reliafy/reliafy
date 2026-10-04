@@ -94,6 +94,8 @@ from backend.services import public_links as links_service
 from backend.services import rbd_edit
 from backend.services import rbd_graph
 from backend.services import rbd_import
+from backend.services import rbd_repeats
+from backend.services.rbd_import import structure as rbd_structure
 from backend.services import rbds as rbds_service
 from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
@@ -273,7 +275,9 @@ window, its outages each attributed to the block that took it down, and the bloc
 diagram, an Excel workbook, a CSV of failure times or outages): create_upload, then send the file with the \
 curl PUT it returns, inspect_upload if you need its sheets, columns or diagrams, then import_rbd / \
 import_excel / upload_dataset / upload_outage_log with the upload_id. Paste only small text formats \
-(import_rbd's content, upload_dataset's csv). Relay the import notes: they say what was approximated.
+(import_rbd's content, upload_dataset's csv). If the PUT can't reach Reliafy from your environment (a \
+proxy 403, no network), follow create_upload's fallback: paste a small text file (at most 200 KB) instead, \
+or ask the user to upload the file in the app. Relay the import notes: they say what was approximated.
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
@@ -783,6 +787,65 @@ def _mcp_fit_error(exc: FitError, c_invert: bool) -> FitError:
     return FitError(text)
 
 
+# A censor column named like a failure flag ("failed", "is_failure", "Status")
+# usually holds 1 = failed — the opposite of Reliafy's convention (#190).
+_FAILURE_FLAG_WORDS = {"fail", "failed", "fails", "failure", "failures", "failing", "event", "events", "status",
+                       "broken", "broke", "dead", "death", "died", "fault", "faulted", "faulty", "defect",
+                       "defective", "rejected", "reject"}
+_CENSOR_WORDS = {"censor", "censored", "censoring", "cens", "suspended", "suspension", "suspensions", "running",
+                 "survived", "survival", "alive", "right", "rc"}
+
+
+def _sounds_like_failure_flag(column: str) -> bool:
+    """Whether a column name reads as "1 = failed" (and not as a censoring flag)."""
+    spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", column or "").lower()
+    words = set(re.findall(r"[a-z]+", spaced))
+    return bool(words & _FAILURE_FLAG_WORDS or "fail" in spaced) and not words & _CENSOR_WORDS
+
+
+def _censor_counts(df: pd.DataFrame, mapping: dict, invert: bool) -> Optional[dict]:
+    """The failures and censored units a fit used (after any c_invert), so
+    the caller can check them against what the user described (#190)."""
+    if "c" not in mapping:
+        return None
+    try:
+        c = pd.to_numeric(df[mapping["c"]], errors="coerce")
+        n = pd.to_numeric(df[mapping["n"]], errors="coerce") if "n" in mapping else pd.Series(1, index=df.index)
+        if invert:
+            c = c.map({0: 1, 1: 0}).fillna(c)
+        return {"n_failed": int(n[c == 0].sum()), "n_right_censored": int(n[c == 1].sum()),
+                "n_left_censored": int(n[c == -1].sum())}
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _censor_checks(df: pd.DataFrame, mapping: dict, c_invert: bool, censor_column: Optional[str]) -> dict:
+    """``censoring`` counts plus, when the censor column is named like a
+    failure flag and c_invert isn't set, a non-blocking warning."""
+    out: dict[str, Any] = {}
+    counts = _censor_counts(df, mapping, c_invert)
+    if counts is not None:
+        out["censoring"] = counts
+    if censor_column and not c_invert and _sounds_like_failure_flag(censor_column):
+        used = (f" This fit used {counts['n_failed']} failures and {counts['n_right_censored']} still running."
+                if counts else "")
+        out["warning"] = (
+            f"The censor column “{censor_column}” sounds like 1 = failed, but Reliafy reads 1 as still running "
+            f"(0 = failed).{used} If 1 marks failures in this column, refit with c_invert=true.")
+    return out
+
+
+def _censoring(checks: dict) -> dict:
+    return {"censoring": checks["censoring"]} if "censoring" in checks else {}
+
+
+def _with_censor_checks(summary: dict, checks: dict) -> dict:
+    """The fit summary with the censor warning among its warnings."""
+    if checks.get("warning"):
+        summary = {**summary, "warnings": [*(summary.get("warnings") or []), checks["warning"]]}
+    return summary
+
+
 def _fit(ctx: Context, *, distribution, data, censored, counts, c_invert, dataset_id, time_column,
          censor_column, count_column, covariates, unit, save: bool, name: str | None) -> dict[str, Any]:
     """Shared body of fit_distribution (report only) and fit_and_save_model."""
@@ -852,10 +915,11 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             raise ToolError("c_invert flips censoring flags — pass `censored` (or censor_column) too.")
         options = {fitting.CENSOR_INVERT_KEY: True}
 
+    checks = _censor_checks(df, mapping, c_invert, censor_column)
     if not save:
         result = fitting.fit(dist, df, mapping, covariates=covariates, unit=unit, options=options)
-        summary = _fit_summary(result)
-        return {**_fit_lead(summary), "saved": False, **summary}
+        summary = _with_censor_checks(_fit_summary(result), checks)
+        return {**_fit_lead(summary), "saved": False, **_censoring(checks), **summary}
 
     name = (name or "").strip()
     if not name:
@@ -880,9 +944,10 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         if created is not None:
             datasets_service.delete_dataset(db, created.id, uid)
         raise
-    summary = _fit_summary(model.results or {})
+    summary = _with_censor_checks(_fit_summary(model.results or {}), checks)
     return {
         **_fit_lead(summary),
+        **_censoring(checks),
         "saved": True,
         "model_id": model.id,
         "name": model.name,
@@ -912,7 +977,8 @@ def fit_distribution(
     fit_and_save_model to keep the model. Reliafy's censoring convention: 0 = the unit failed, 1 = still
     running (suspended), -1 = left-censored (found failed, at some unknown earlier time); if the data marks
     failures with 1, pass c_invert=true. A fit that says every (or
-    all but one) row is censored almost always means the flags are inverted. Weibull beta < 1 = infant
+    all but one) row is censored almost always means the flags are inverted; censoring gives the failures
+    and censored units the fit used — check them against what the user said. Weibull beta < 1 = infant
     mortality, ≈ 1 = random failures, > 1 = wear-out."""
     return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
@@ -2130,6 +2196,56 @@ def _maybe_curve(result: dict, include: bool) -> dict:
             "curve_omitted": "Pass include_curve=true for the cost-rate curve."}
 
 
+def _sig(x: Optional[float]) -> Optional[float]:
+    return None if x is None else float(f"{x:.4g}")
+
+
+def _shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, costs: dict, point: dict) -> dict:
+    """How far the replacement answer moves across a fitted Weibull's shape
+    interval (#189): the optimum at each end of β's 95% CI, α held at its
+    estimate. A point estimate can read as firm wear-out when the data only
+    weakly show it — at β ≈ 1 preventive replacement doesn't pay. Only for a
+    saved Weibull model whose fit gave β an interval; {} otherwise."""
+    if not model_id or inputs.get("distribution_id") != "weibull":
+        return {}
+    m = models_service.get_model(db, model_id, _owners(uid))
+    beta = next((p for p in ((m.results or {}).get("params") or []) if p.get("name") == "beta"), None) if m else None
+    ci = (beta or {}).get("ci")
+    if not ci or len(ci) != 2 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in ci):
+        return {}
+    lo, hi = float(ci[0]), float(ci[1])
+
+    def at(b: float) -> Optional[dict]:
+        if b <= 0:
+            return None
+        params = [{**p, "value": b} if p["name"] == "beta" else p for p in inputs["params"]]
+        try:
+            r = strategy_store.compute("optimal_replacement", {**inputs, "params": params, **costs})
+        except (StrategyError, ValueError):
+            return None
+        return {"beta": _sig(b), "beneficial": r["beneficial"], "optimal_time": _sig(r["optimal_time"]),
+                "savings": _sig(r["savings"])}
+
+    low, high = at(lo), at(hi)
+    block = {"beta": _sig(float(beta["value"])), "beta_ci_95": [_sig(lo), _sig(hi)],
+             "held_fixed": "alpha at its estimate", "at_beta_lower": low, "at_beta_upper": high}
+    out: dict[str, Any] = {"shape_uncertainty": block}
+    if not point.get("beneficial"):
+        return out
+    if lo <= 1:
+        out["uncertainty_note"] = (
+            f"The shape's 95% interval [{lo:.3g}, {hi:.3g}] includes 1: the data don't clearly show wear-out. "
+            "If failures are close to random, preventive replacement saves little or nothing — treat this "
+            "recommendation as tentative and say so.")
+    elif low is not None and (not low["beneficial"] or (low["savings"] or 0) < 0.5 * point["savings"]):
+        saving = f"saves {low['savings']:.0%}" if low["beneficial"] else "doesn't pay"
+        out["uncertainty_note"] = (
+            f"The shape's 95% interval reaches down to {lo:.3g}: the data only weakly show wear-out. At that "
+            f"end preventive replacement {saving} (vs {point['savings']:.0%} at the estimate), so the "
+            "recommendation is less firm than the point estimate suggests — say so.")
+    return out
+
+
 @_tool("optimal_replacement", _READ, "Optimal replacement interval")
 def optimal_replacement(
     ctx: Context,
@@ -2142,11 +2258,14 @@ def optimal_replacement(
     include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Cost-optimal preventive (age) replacement interval for a component with a known life distribution.
-    beneficial=false means run-to-failure is cheaper (e.g. no wear-out, or planned ≈ unplanned cost)."""
+    beneficial=false means run-to-failure is cheaper (e.g. no wear-out, or planned ≈ unplanned cost). For a
+    saved Weibull model fitted to data, shape_uncertainty gives the answer at each end of the shape's 95%
+    interval; relay uncertainty_note when present — the recommendation is then less firm than it reads."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
-    out = strategy_store.compute("optimal_replacement", {
-        **inputs, "planned_cost": planned_cost, "unplanned_cost": unplanned_cost})
+    costs = {"planned_cost": planned_cost, "unplanned_cost": unplanned_cost}
+    out = strategy_store.compute("optimal_replacement", {**inputs, **costs})
+    out.update(_shape_uncertainty(db, user["uid"], model_id, inputs, costs, out))
     return _maybe_curve(out, include_curve)
 
 
@@ -2620,6 +2739,17 @@ _UPLOAD_NOTE = (
     "Send the file with an HTTP PUT to this URL (it's single-use and expires in 15 minutes). Then call "
     "import_rbd / import_excel / upload_dataset / upload_outage_log with upload_id. Don't paste the file's "
     "contents into a tool call.")
+# #191: sandboxed agents often can't reach the upload host (an egress proxy's
+# 403, no network). The fallback is a path that already exists: paste a small
+# text file into the tool that takes it, or have the user upload in the app.
+_UPLOAD_FALLBACK = (
+    "If the PUT can't reach this URL from your environment (a proxy 403, CONNECT refused, no network), don't "
+    "retry it: a small text file (at most 200 KB) can be passed as text instead — upload_dataset csv, "
+    "upload_outage_log csv, import_rbd content (Open-PSA XML or Galileo .dft). Anything else (an .xlsx "
+    "workbook, a BlockSim project, a larger file): ask the user to upload it in the Reliafy app ({app}).")
+_UPLOAD_APP_PAGES = {"rbd_import": ("/rbds/list", "RBDs › Import"), "dataset": ("/datasets/list", "Datasets"),
+                     "excel": ("/datasets/list", "Datasets, RCM or RBDs › Import"),
+                     "outage_log": ("/rbds/list", "the diagram's Outage history tab")}
 # Inline content (import_rbd): small text formats only — anything larger goes
 # through create_upload rather than the agent's context.
 INLINE_MAX_BYTES = 200 * 1024
@@ -2700,6 +2830,11 @@ def _upload_table_text(db, uid: str, upload_id: str, sheet: Optional[str]) -> tu
     return doc, uploads_service.as_text(data)
 
 
+def _upload_fallback(purpose: str) -> str:
+    path, where = _UPLOAD_APP_PAGES[purpose]
+    return _UPLOAD_FALLBACK.format(app=f"{where}: {_url(path)}")
+
+
 @_tool("create_upload", _WRITE, "Get a file upload link")
 def create_upload(
     ctx: Context,
@@ -2718,7 +2853,10 @@ def create_upload(
     tool with upload_id: import_rbd (diagram files), import_excel (workbooks), upload_dataset or
     upload_outage_log. inspect_upload shows a workbook's sheets and columns, or a diagram file's diagrams,
     before importing. The URL expires in 15 minutes and works once; the file is deleted after its import, or
-    after an hour. Never read a file into your context to paste it: use this."""
+    after an hour. Never read a file into your context to paste it: use this. If your environment can't reach
+    the URL (a proxy 403, no network), don't retry: pass a small text file (at most 200 KB) as text instead
+    (upload_dataset / upload_outage_log csv, import_rbd content), and ask the user to upload anything else in
+    the Reliafy app — the response's fallback says where."""
     user, db = _caller(ctx), _db()
     doc, token = uploads_service.create(
         db, user["uid"], purpose, filename, size_bytes,
@@ -2735,6 +2873,7 @@ def create_upload(
         "curl": (f"curl -sS -X PUT --data-binary @{shlex.quote(doc['filename'])} "
                  f"-H \"Content-Type: application/octet-stream\" \"{url}\""),
         "note": _UPLOAD_NOTE + " Replace the @file in curl with the file's path.",
+        "fallback": _upload_fallback(purpose),
     }
 
 
@@ -2762,12 +2901,53 @@ def _lean_outline(graph: dict, check: dict) -> dict:
     return out
 
 
+# Blocks that carry a life model of their own (not junctions, sub-systems or
+# repeated copies).
+_MODEL_FREE_TYPES = ("input", "output", "knode", "subsystem")
+_STAND_IN_MODEL = {"source": "params", "distribution": "Exponential", "distribution_id": "exponential",
+                   "params": [{"name": "failure_rate", "value": 1.0}]}
+_PREVIEW_EDGES = 200    # edges listed per previewed diagram
+_UNIT_ASK = ("The file doesn't state a time unit, so the diagram's unit is blank. Ask the user what the rates "
+             "and times are per, then import with time_unit (e.g. 'Hours') — or set it later with edit_rbd "
+             "{op: 'set', unit}. Don't assume one.")
+
+
+def _modelless_blocks(graph: dict) -> list[dict]:
+    """Imported blocks with no life model (a BlockSim block Reliafy can't
+    represent, an Open-PSA fixed-probability event): the user sets one."""
+    return [n for n in graph.get("nodes") or []
+            if n.get("type") not in _MODEL_FREE_TYPES and not (n.get("data") or {}).get("model")
+            and rbd_repeats.repeat_of(n) is None]
+
+
+def _check_import(db, graph: dict, owners) -> dict:
+    """validate_graph for an imported diagram. One whose only problem is
+    blocks still needing a life model is importable — it's checked with a
+    stand-in model on each (never saved) and comes back with ``needs_model``."""
+    check = rbds_service.validate_graph(db, graph, owners)
+    if check.get("valid", False):
+        return check
+    missing = _modelless_blocks(graph)
+    if not missing:
+        return check
+    ids = {n["id"] for n in missing}
+    stand_in = copy.deepcopy(graph)
+    for n in stand_in["nodes"]:
+        if n["id"] in ids:
+            n.setdefault("data", {})["model"] = dict(_STAND_IN_MODEL)
+    check_in = rbds_service.validate_graph(db, stand_in, owners)
+    if not check_in.get("valid", False):
+        return check
+    return {**check_in, "needs_model": [(n.get("data") or {}).get("label") or n["id"] for n in missing]}
+
+
 def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool, only: Optional[list[str]],
                    upload: Optional[dict], rbd_id: Optional[str] = None) -> dict:
     """Validate imported diagrams and (``save``) save them — all or nothing
-    against the RBD cap. Returns each diagram's brief, import notes and a
-    concise node list (never the whole graph); deletes the upload once
-    saved."""
+    against the RBD cap. Returns each diagram's brief, import notes, its time
+    unit, a one-line structure and a concise node list (never the whole
+    graph) — a preview adds its edges and minimal cut sets, to check the
+    conversion before saving (#187). Deletes the upload once saved."""
     uid = user["uid"]
     owners = _owners(uid)
     if only:
@@ -2784,7 +2964,7 @@ def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool,
         except rbd_graph.GraphError as exc:
             skipped.append({"name": d.name, "error": str(exc)})
             continue
-        check = rbds_service.validate_graph(db, graph, owners)
+        check = _check_import(db, graph, owners)
         if not check.get("valid", False):
             skipped.append({"name": d.name, "error": "; ".join(check.get("errors") or ["invalid structure"])})
             continue
@@ -2823,10 +3003,30 @@ def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool,
             item.update(_rbd_brief(saved[i]))
         else:
             item["n_blocks"] = sum(1 for n in graph["nodes"] if n.get("type") not in ("input", "output"))
+        item["unit"] = graph.get("unit") or ""
+        if not item["unit"]:
+            item["unit_warning"] = _UNIT_ASK
         item["analytic"] = check.get("analytic", True)
+        if check.get("needs_model"):
+            item["analysable"] = False
+            item["needs_model"] = check["needs_model"][:_OUTLINE_NODES]
+            item["needs_model_note"] = (
+                "These blocks have no life model (the import notes say why), so the diagram can't be analysed "
+                "until each gets one: edit_rbd with the user's data, or the user sets them in the builder. "
+                "Don't invent values.")
         item["import_notes"] = d.warnings[:_IMPORT_NOTES]
         if len(d.warnings) > _IMPORT_NOTES:
             item["more_import_notes"] = len(d.warnings) - _IMPORT_NOTES
+        shape = rbd_structure.describe(graph)
+        item["structure"] = shape["structure"]
+        if not save:
+            if shape["cut_sets"] is not None:
+                item["minimal_cut_sets"] = shape["cut_sets"]
+                item["n_cut_sets"] = shape["n_cut_sets"]
+            edges = graph.get("edges") or []
+            item["edges"] = [f"{e['source']} -> {e['target']}" for e in edges[:_PREVIEW_EDGES]]
+            if len(edges) > _PREVIEW_EDGES:
+                item["n_edges"] = len(edges)
         item.update(_lean_outline(graph, check))
         items.append(item)
     out: dict[str, Any] = {"saved": bool(saved), "diagrams": items}
@@ -2868,12 +3068,19 @@ def import_rbd(
     only: Annotated[Optional[list[str]], Field(description=(
         "Import just these diagrams, by name (a BlockSim project can hold many; preview with save=false or "
         "inspect_upload)."))] = None,
+    time_unit: Annotated[Optional[str], Field(max_length=40, description=(
+        "What the file's rates and times are per ('Hours', 'Cycles', …), used only when the file doesn't "
+        "state a unit itself (Galileo never does). Ask the user rather than guess; parameters are never "
+        "rescaled."))] = None,
 ) -> dict[str, Any]:
     """Import reliability block diagrams from another tool's file — BlockSim, Open-PSA, Galileo, or Reliafy's
     Excel RBD template — and save each as an RBD in the user's workspace (all or nothing against the plan's
     RBD limit). Send files with create_upload and pass upload_id; paste only small text formats into content.
-    Returns, per diagram, its id and url, the import notes (what was approximated — tell the user), and a
-    concise node list; get_rbd reads the full graph, edit_rbd changes it. save=false previews."""
+    Returns, per diagram, its id and url, its time unit (unit_warning when the file states none), a one-line
+    structure, the import notes (what was approximated — tell the user), needs_model (blocks imported
+    without a life model, e.g. fixed-probability events — they must get one before analysis) and a concise
+    node list; get_rbd reads the full graph, edit_rbd changes it. save=false previews, adding the edges and
+    minimal cut sets so the conversion can be checked before saving."""
     user, db = _caller(ctx), _db()
     if (upload_id is None) == (content is None):
         raise ToolError("Give either upload_id (a file sent through create_upload) or content (small text) — "
@@ -2894,7 +3101,7 @@ def import_rbd(
         filename = upload["filename"]
     with _untrusted_file(user["uid"]):
         try:
-            diagrams = rbd_import.import_file(data, filename, format=format)
+            diagrams = rbd_import.import_file(data, filename, format=format, time_unit=time_unit)
         except rbd_import.RbdImportError as exc:
             if getattr(exc, "code", None) == "excel_mapping":
                 raise _excel_mapping_error(exc, data, filename) from None
