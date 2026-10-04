@@ -173,3 +173,13 @@ def test_comparison_window_is_bounded():
     out = rbd_compare.compare_availability(a, b, t_simulation=1e300, n_simulations=4)
     assert out["horizon_shortened"] is True
     assert out["t_simulation"] < 1e12
+
+
+
+def test_standby_spares_zero_from_older_diagrams_still_reads_as_one():
+    from backend.services import rbd_graph
+
+    rbd_graph.check_counts("standby", {"spares": 0}, "Standby")  # accepted
+    import pytest as _pytest
+    with _pytest.raises(rbd_graph.GraphError):
+        rbd_graph.check_counts("standby", {"spares": -1}, "Standby")

@@ -106,6 +106,8 @@ def check_counts(ntype: str, data: dict, where: str) -> None:
         value = data.get(key)
         if value is None or value == "":
             continue
+        if ntype == "standby" and key == "spares" and value in (0, "0", 0.0):
+            continue  # older diagrams hold 0; the analysis has always read it as 1
         got[key] = _count(value, where, what, upper)
     if ntype == "loadshare" and "k" in got and "units" in got and got["k"] > got["units"]:
         raise GraphError(f"{where}: k ({got['k']}) can't exceed the number of units ({got['units']}).")
