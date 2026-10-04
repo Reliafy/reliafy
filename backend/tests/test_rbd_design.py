@@ -452,7 +452,7 @@ def test_a_common_cause_diagram_is_designed():
     graph = _pumps()
     res = rd.design_redundancy(graph, T, PUMP_BLOCKS, budget={"cost": 14})
     assert res["common_cause"] == [
-        {"id": "g1", "beta": 0.1, "members": ["Pumpa", "Pumpb"], "designed": ["Pumpa", "Pumpb"]}
+        {"id": "g1", "beta": 0.1, "basis": "rate", "members": ["Pumpa", "Pumpb"], "designed": ["Pumpa", "Pumpb"]}
     ]
     # As drawn, with the group (below the same diagram without it).
     assert res["current"]["reliability"] == pytest.approx(rd.applied_reliability(graph, T), rel=1e-12)
@@ -485,7 +485,7 @@ def test_common_cause_scores_match_brute_force_and_the_library():
     rbd = NonRepairableRBD(
         [("input", "ctrl"), ("ctrl", "pumpA"), ("ctrl", "pumpB"), ("pumpA", "output"), ("pumpB", "output")],
         {"ctrl": surv.Exponential.from_params([0.0005]), "pumpA": pump, "pumpB": pump},
-        ccf_groups=[CCFGroup(["pumpA", "pumpB"], BetaFactor(0.1))],
+        ccf_groups=[CCFGroup(["pumpA", "pumpB"], BetaFactor(0.1, basis="rate"))],
     )
     costs = {"ctrl": {"cost": 3.0}, "pumpA": {"cost": 2.0}, "pumpB": {"cost": 2.0}}
     want = rbd.allocate_redundancy(costs, budget={"cost": 14.0}, t=T, max_units=3)

@@ -11,7 +11,8 @@ diagram with ``rbd_from_json`` and get the RBD the app analyses:
   and hot standby as ``RepeatedNode`` (or a small nested diagram when a hot
   spare has its own model), cold and warm standby as ``StandbyModel``, k-of-n
   vote nodes as a perfectly reliable node with ``k``, repeated blocks as
-  RePyability repeated nodes, beta-factor common-cause groups, and sub-systems
+  RePyability repeated nodes, beta-factor common-cause groups (on the rate
+  basis unless a group says otherwise, #210), and sub-systems
   as nested diagrams;
 * a **repairable** diagram is the ``RepairableRBD`` the availability analysis
   builds (:func:`.rbd_analysis._build_repairable_rbd`), costs, maintenance,
@@ -235,7 +236,17 @@ class _Exporter:
             except (TypeError, ValueError):
                 continue
             if len(members) >= 2 and 0.0 < beta < 1.0:
-                ccf.append({"members": members, "model": {"kind": "beta_factor", "beta": beta}})
+                # As the analysis builds it (#210): the rate basis unless the
+                # group says probability, written as rbd_to_dict writes it
+                # (the basis only when it isn't RePyability's default).
+                try:
+                    basis = ra.ccf_basis(group)
+                except ra.AnalysisError as exc:
+                    raise ExportError(str(exc)) from None
+                model = {"kind": "beta_factor", "beta": beta}
+                if basis != "probability":
+                    model["basis"] = basis
+                ccf.append({"members": members, "model": model})
         return _rbd_dict(
             "NonRepairableRBD",
             edges=edges,

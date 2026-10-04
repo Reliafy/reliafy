@@ -1490,6 +1490,11 @@ def _fit_distribution(
         result["warnings"] = notes
     randomness = _randomness_verdict(distribution, params)
     if randomness is not None:
+        if fit_warning:
+            # #215: no verdict from parameters the optimiser didn't settle on.
+            randomness = {**randomness, "verdict": "inconclusive",
+                          "reason": "The fit didn't converge, so its shape says nothing about the failure "
+                                    "pattern."}
         result["randomness"] = randomness
     return result
 

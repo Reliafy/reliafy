@@ -755,7 +755,13 @@ def _build_rbd_graph(db, uid: str, stages: list, repairable: bool = False) -> di
                     raise ValueError(
                         f"{where}: common_cause_beta couples redundant components, so the stage needs 2 or "
                         "more components in parallel.")
-                ccf_groups.append({"id": f"ccf-s{si}", "members": list(comp_ids), "beta": beta})
+                group = {"id": f"ccf-s{si}", "members": list(comp_ids), "beta": beta}
+                basis = stage.get("common_cause_basis")
+                if basis is not None:
+                    if basis not in ("rate", "probability"):
+                        raise ValueError(f"{where}: common_cause_basis must be 'rate' or 'probability'.")
+                    group["basis"] = basis
+                ccf_groups.append(group)
         if m > 1:
             kid = f"s{si}k"
             nodes.append({"id": kid, "type": "knode", "position": {"x": x + _RBD_COL_W // 2, "y": 160},

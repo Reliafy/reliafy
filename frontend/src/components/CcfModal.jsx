@@ -4,8 +4,12 @@ import { openGuide } from "./HelpButton.jsx";
 
 // Set the beta-factor for a common-cause group: the fraction of each member's
 // failures that are shared-cause (and take out the whole group at once).
-export default function CcfModal({ initial, memberLabels, onClose, onSubmit }) {
+export default function CcfModal({ initial, memberLabels, repairable, onClose, onSubmit }) {
   const [beta, setBeta] = useState(initial?.beta ?? 0.1);
+  // What β is a fraction of (#210): each member's failure rate (holds over
+  // the whole life, the default) or its failure probability (PRA basic
+  // events: only while that probability is small).
+  const [basis, setBasis] = useState(initial?.basis === "probability" ? "probability" : "rate");
   const b = Number(beta);
   const valid = Number.isFinite(b) && b > 0 && b < 1;
   const pct = Math.round((valid ? b : 0) * 100);
@@ -16,7 +20,7 @@ export default function CcfModal({ initial, memberLabels, onClose, onSubmit }) {
       <span className="hint">Typical β is 1–20%.</span>
       <div className="row" style={{ margin: 0 }}>
         <button className="secondary" onClick={onClose}>Cancel</button>
-        <button onClick={() => valid && onSubmit({ beta: b })} disabled={!valid}>
+        <button onClick={() => valid && onSubmit({ beta: b, basis })} disabled={!valid}>
           {initial?.groupId ? "Update group" : "Create group"}
         </button>
       </div>
@@ -39,6 +43,21 @@ export default function CcfModal({ initial, memberLabels, onClose, onSubmit }) {
                  onChange={(e) => setBeta(e.target.value)} className="ccf-beta-num" />
         </div>
       </label>
+      {!repairable && (
+        <label className="login-field">
+          <span>β splits each component's</span>
+          <select value={basis} onChange={(e) => setBasis(e.target.value)}>
+            <option value="rate">Failure rate — holds over the whole life (recommended)</option>
+            <option value="probability">Failure probability — short missions only (PRA basic events)</option>
+          </select>
+        </label>
+      )}
+      {!repairable && basis === "probability" && (
+        <p className="hint">
+          The probability split is a rare-event model: over a lifetime it makes the group more reliable
+          than it is, and the MTTF isn't given.
+        </p>
+      )}
       <p className="hint">
         {pct}% of each component's failures are shared-cause — they take out all{" "}
         {n} at once; the remaining {100 - pct}% are independent. Higher β erodes

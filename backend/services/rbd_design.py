@@ -30,7 +30,8 @@ over reliability at a mission time (their cheapest design is #99's).
 Common-cause (beta-factor) groups are scored in every candidate design
 (RePyability 0.11, #140): a copy of a group member joins its group, so the
 shared cause that fails the member fails each of its copies too, with the
-group's ``beta`` unchanged at the larger size. Such a member's copies are
+group's ``beta`` (and basis: the failure rate by default, #210) unchanged
+at the larger size. Such a member's copies are
 active copies of its own model (``required`` of them needed): no alternative
 types and no cold spares, which the library doesn't model in a group.
 :func:`apply_design` draws each copy of a member as its own component and adds
@@ -569,6 +570,7 @@ def _common_cause(graph: dict, rbd, labels: dict, reliabilities: dict, designed:
         out.append({
             "id": g.get("id") or f"group-{i + 1}",
             "beta": float(g.get("beta")),
+            "basis": rbd_analysis.ccf_basis(g),
             "members": [labels[m] for m in members],
             "designed": [labels[m] for m in members if m in designed],
         })

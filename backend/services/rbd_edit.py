@@ -16,7 +16,7 @@ Ops (plain dicts, already shape-checked by the MCP layer's pydantic models)::
     {"op": "remove_edge", "source": ..., "target": ...}
     {"op": "set", "name"?, "unit"?, "repairable"?, "repair_crews"?, "maintenance_groups"?,
      "safety_function"?, "target_sil"?}
-    {"op": "add_ccf", "members": [...], "beta": ..., "id"?}
+    {"op": "add_ccf", "members": [...], "beta": ..., "basis"?, "id"?}
     {"op": "remove_ccf", "id": ...}
 
 Layout: whenever an op changes which nodes exist or how they connect, the
@@ -411,6 +411,9 @@ class _Editor:
         if not 0 < beta < 1:
             raise EditError(f"beta = {beta:g} is out of range — it's the fraction of each component's failures "
                             "that are shared-cause, 0 < beta < 1 (typically 0.01–0.2).")
+        basis = op.get("basis")
+        if basis is not None and basis not in ("rate", "probability"):
+            raise EditError(f"basis must be 'rate' or 'probability'; got {basis!r}.")
         members = list(dict.fromkeys(op.get("members") or []))
         if len(members) < 2:
             raise EditError("a common-cause group couples 2 or more distinct components.")
@@ -430,8 +433,13 @@ class _Editor:
             while f"ccf-{i}" in taken:
                 i += 1
             gid = f"ccf-{i}"
-        self._set_ccf([*groups, {"id": gid, "members": members, "beta": beta}])
-        return f"added common-cause group {gid} ({', '.join(members)}; beta {beta:g})"
+        group = {"id": gid, "members": members, "beta": beta}
+        if basis is not None:
+            # Optional (#210): the rate basis is the lifetime default.
+            group["basis"] = basis
+        self._set_ccf([*groups, group])
+        shown = f"; {basis} basis" if basis is not None else ""
+        return f"added common-cause group {gid} ({', '.join(members)}; beta {beta:g}{shown})"
 
     def remove_ccf(self, op: dict) -> str:
         gid = op["id"]
