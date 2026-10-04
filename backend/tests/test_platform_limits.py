@@ -345,8 +345,19 @@ def test_frontend_event_names_are_allowed():
             depth += {"(": 1, ")": -1}.get(src[i], 0)
             i += 1
         names.add(re.findall(r'"([a-z_]+)"', src[m.end():i])[-1])
-    names |= {"pageview", "activated"}
+    # Direct trackEvent("name") calls anywhere in the app.
+    for f in (REPO / "frontend" / "src").rglob("*.js*"):
+        names |= set(re.findall(r'trackEvent\(\s*"([a-z_]+)"', f.read_text()))
+    assert {"pageview", "activated", "first_run_sample"} <= names
     assert names and names <= CLIENT_EVENTS, names - CLIENT_EVENTS
+
+
+def test_first_run_start_events_are_stored(client):
+    # #194: each first-run start is counted, so first actions can be measured.
+    for name in ("first_run_sample", "first_run_paste", "first_run_rbd", "first_run_agent"):
+        r = client.post("/api/metrics/event", json={"name": name, "path": "/modelling"})
+        assert r.status_code == 200, name
+        assert client.db.metrics_events.count_documents({"name": name}) == 1, name
 
 
 def test_telemetry_is_rate_limited_per_client(client, monkeypatch):

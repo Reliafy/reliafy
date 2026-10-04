@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { distColor, relativeTime } from "../instrument.js";
+import { FirstRunStrip } from "../components/FirstRun.jsx";
+import { useFirstRun } from "../firstRun.js";
 import {
   listModels,
   deleteModel,
@@ -46,6 +48,8 @@ export default function AllModelsPage() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
   const [query, setQuery] = useState("");
+  // No models, datasets or diagrams of their own yet (samples don't count).
+  const firstRun = useFirstRun(rows ? rows.some((r) => !r.is_sample) : undefined);
 
   const load = useCallback(() => {
     Promise.all([listModels(), listDegradationModels(), listAltModels(), listRecurrentModels()])
@@ -147,6 +151,8 @@ export default function AllModelsPage() {
           </button>
         </div>
       </header>
+
+      <FirstRunStrip info={firstRun} />
 
       {error && <div className="card error">{error}</div>}
 
