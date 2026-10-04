@@ -42,7 +42,8 @@ numerical, over a window, simulated or large. The next failure from the
 current state (#240) is not a kind of its own: the availability analysis
 runs it whenever the request carries a ``state``
 (:mod:`backend.services.rbd_next_failure`), so it comes back in the same
-job, from the same seed. Another analysis joins by adding a request builder
+job, from the same seed. ``intervals`` (#228): a proof-test interval search
+over many combinations (:mod:`backend.services.rbd_intervals`), exact. Another analysis joins by adding a request builder
 here, a runner to ``RUNNERS``, and a ``KIND_…`` in
 :mod:`backend.services.rbd_jobs` — e.g. the exact figures over time of a
 large diagram.
@@ -54,7 +55,7 @@ import json
 import math
 from typing import Any, Callable, Optional
 
-from backend.services import rbd_analysis, rbd_sensitivity
+from backend.services import rbd_analysis, rbd_intervals, rbd_sensitivity
 
 # Node-data keys holding a life/repair model spec.
 _MODEL_KEYS = ("model", "repair", "standbyModel")
@@ -247,12 +248,45 @@ def run_sensitivity(request: dict) -> dict:
     return rbd_sensitivity.analyze_sensitivity(graph, resolve_model=_no_saved_models, simulate=True, **checked)
 
 
+def intervals_request(graph: dict, **options) -> Optional[dict]:
+    """A self-contained interval-optimisation request ``{"graph",
+    "options"}`` (#228; the options as :func:`rbd_intervals.options`
+    validates them), or None when the graph needs saved models the compute
+    service can't have."""
+    if needs_saved_models(graph):
+        return None
+    return {"graph": inline_graph(graph), "options": rbd_intervals.options(**options)}
+
+
+_INTERVAL_OPTIONS = frozenset({"schedule", "blocks", "min_availability", "max_cost_rate", "max_pfd", "target_sil",
+                               "allowed", "stagger", "assume_unlimited_crews"})
+
+
+def run_intervals(request: dict) -> dict:
+    """Run a self-contained interval-optimisation request (#228): a proof-test
+    search over many combinations (exact, deterministic: the in-process
+    answer)."""
+    if not isinstance(request, dict) or not isinstance(request.get("graph"), dict):
+        raise InvalidRequest("The request needs a graph.")
+    graph = request["graph"]
+    if not graph.get("repairable"):
+        raise InvalidRequest("Only repairable (availability) diagrams are computed here.")
+    options = request.get("options") or {}
+    if not isinstance(options, dict):
+        raise InvalidRequest("options must be an object.")
+    unknown = set(options) - _INTERVAL_OPTIONS
+    if unknown:
+        raise InvalidRequest(f"Unknown options: {', '.join(sorted(unknown))}.")
+    return rbd_intervals.optimise(graph, resolve_model=_no_saved_models, **options)
+
+
 # What the compute service runs, by job kind. A new analysis adds its runner
 # here; the web side adds a request builder above and a KIND_ in rbd_jobs.
 # (#240's next failure rides in ``availability`` when a state is given.)
 RUNNERS: dict[str, Callable[[dict], dict]] = {
     "availability": run_availability,
     "sensitivity": run_sensitivity,
+    "intervals": run_intervals,
 }
 KINDS = tuple(RUNNERS)
 

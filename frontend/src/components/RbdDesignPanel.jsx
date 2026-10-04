@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
 import { applyRbdDesign, designRbd } from "../api.js";
 import RbdCheapestDesign from "./RbdCheapestDesign.jsx";
+import RbdIntervals from "./RbdIntervals.jsx";
 import LifeModelModal from "./LifeModelModal.jsx";
 import Select from "./Select.jsx";
 import { modelSummary } from "./RbdNodes.jsx";
@@ -130,8 +131,14 @@ export default function RbdDesignPanel({ graph, onApply, onView }) {
   const budgetCost = budget.cost === "" ? String(Number((2 * currentCost).toPrecision(4))) : budget.cost;
 
   if (graph.repairable) {
-    // Repairable diagrams: the copies with the lowest total cost of ownership (#99).
-    return <RbdCheapestDesign graph={graph} onApply={onApply} onView={onView} />;
+    // Repairable diagrams: the copies with the lowest total cost of ownership
+    // (#99), and the maintenance and proof-test intervals chosen together (#228).
+    return (
+      <>
+        <RbdCheapestDesign graph={graph} onApply={onApply} onView={onView} />
+        <RbdIntervals graph={graph} onApply={onApply} onView={onView} />
+      </>
+    );
   }
 
   const payloadBlocks = () =>

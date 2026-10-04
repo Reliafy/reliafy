@@ -284,7 +284,10 @@ finds a repairable diagram's redundancy with the lowest total cost of ownership;
 year: 7 = 7%) makes its totals, and analyze_rbd's, present values. "What should we fix first?" on a \
 repairable diagram is rbd_sensitivity: every lever (mean life, mean repair time, intervals, coverage, one \
 more crew) ranked by what a 10% step gains in availability (or cost), in plain words with its basis (exact, \
-numerical or simulation); with costs_to_change, order='benefit_per_cost' ranks by benefit per unit of cost.
+numerical or simulation); with costs_to_change, order='benefit_per_cost' ranks by benefit per unit of cost. \
+optimise_maintenance_intervals chooses a repairable diagram's age-replacement or proof-test intervals \
+together (lowest cost, or a target availability, PFDavg or SIL, or a cost cap), optionally staggering the \
+tests, and with limited repair crews simulates the plan with them.
 - Observed history: upload_outage_log saves a real outage log (asset, start, end; blank end = still down) \
 against one of the user's diagrams; system_history then gives the system's actual availability over the \
 window, its outages each attributed to the block that took it down, and the blocks ranked by downtime share.
@@ -2630,10 +2633,12 @@ def analyze_rbd(
 @_tool("get_job", _READ, "Check an analysis job")
 def get_job(
     ctx: Context,
-    job_id: Annotated[str, Field(description="A job_id returned by analyze_rbd or rbd_sensitivity.")],
+    job_id: Annotated[str, Field(description=(
+        "A job_id returned by analyze_rbd, rbd_sensitivity or optimise_maintenance_intervals."))],
 ) -> dict[str, Any]:
-    """Check an analysis job that analyze_rbd or rbd_sensitivity queued (a long availability simulation, or a
-    numerical, windowed or simulated what-to-improve, runs on Reliafy's calculation service). status is queued
+    """Check an analysis job that analyze_rbd, rbd_sensitivity or optimise_maintenance_intervals queued (a long
+    availability simulation, a numerical, windowed or simulated what-to-improve, or a large proof-test interval
+    search runs on Reliafy's calculation service). status is queued
     (with queue_position: jobs ahead of it), running, done (with the same results the tool that queued it
     returns; kind says which) or failed (with the reason in message). Call it every few seconds until done;
     jobs and their results are kept for a week."""
@@ -2647,6 +2652,8 @@ def get_job(
         out["url"] = _url(f"/rbds/b/{job['rbd_id']}")
     if job.get("status") == "done" and job.get("kind") == rbd_jobs_service.KIND_SENSITIVITY:
         return {**out, **_sensitivity_summary(job.get("result") or {}, 15)}
+    if job.get("status") == "done" and job.get("kind") == rbd_jobs_service.KIND_INTERVALS:
+        return {**out, **_intervals_summary(job.get("result") or {})}
     if job.get("status") == "done":
         view = rbd_jobs_service.view(db, job, billing_service.premium_compute_allowed(db, user))
         payload = view["result"]
@@ -2854,6 +2861,213 @@ def rbd_sensitivity(
     if payload.get("status") == "pro_required" and user.get("mcp_plan", "pro") != "pro":
         _soft_refusal("pro_only")
     return {**head, **_sensitivity_summary(payload, limit)}
+
+
+# Maintenance and proof-test intervals chosen together (#172, #228).
+_INTERVAL_FIGURES = ("cost_rate", "availability", "pfd_avg", "sil", "meets_target")
+
+
+def _interval_figures(figures: Optional[dict]) -> Optional[dict]:
+    if not figures:
+        return None
+    return {k: figures[k] for k in _INTERVAL_FIGURES if figures.get(k) is not None}
+
+
+def _interval_ops(graph: dict, rows: list[dict]) -> list[dict]:
+    """edit_rbd ops that put a plan on the saved diagram (update_node
+    replaces a whole schedule, so each carries the block's own with the new
+    interval and first test)."""
+    nodes = {n.get("id"): (n.get("data") or {}) for n in graph.get("nodes") or []}
+    ops = []
+    for row in rows:
+        if not row.get("changed"):
+            continue
+        data = nodes.get(row["id"]) or {}
+        if row.get("never"):
+            ops.append({"op": "update_node", "id": row["id"], "clear": ["preventive"]})
+            continue
+        key = "preventive" if isinstance(data.get("preventive"), dict) else "inspection"
+        spec = {k: v for k, v in (data.get(key) or {}).items() if v not in (None, "")}
+        if isinstance(spec.get("duration"), dict):
+            continue  # a duration model edit_rbd can't carry: set in the app (see the note)
+        spec["interval"] = row["interval"]
+        if key == "inspection":
+            if row.get("offset"):
+                spec["offset"] = row["offset"]
+            else:
+                spec.pop("offset", None)
+        ops.append({"op": "update_node", "id": row["id"], key: spec})
+    return ops
+
+
+def _intervals_summary(payload: dict, graph: Optional[dict] = None) -> dict:
+    """optimise_maintenance_intervals' answer: the plan beside the diagram as
+    drawn (and the best with every test together), per block, lean."""
+    if payload.get("status") == "crews_limited":
+        return {"available": False, "code": "crews_limited", "schedule": payload.get("schedule"),
+                "crews": payload.get("crews"), "message": payload.get("message")
+                + " Call again with assume_unlimited_crews=true (and simulate_with_crews=true to see the effect)."}
+    rows = [{k: r.get(k) for k in ("id", "label", "interval_now", "interval", "never", "offset_now", "offset",
+                                   "changed") if k in r} for r in payload.get("blocks") or []]
+    out: dict[str, Any] = {
+        "available": True,
+        **{k: payload.get(k) for k in ("schedule", "unit", "safety_function", "target", "basis", "stagger",
+                                       "changed", "notes")},
+        "blocks": rows,
+        "plan": _interval_figures(payload.get("plan")),
+        "as_drawn": _interval_figures(payload.get("current")),
+    }
+    if payload.get("current_note"):
+        out["as_drawn_note"] = payload["current_note"]
+    together = payload.get("together")
+    if together:
+        out["tested_together"] = (
+            {**_interval_figures(together), "blocks": [{k: r.get(k) for k in ("id", "interval")}
+                                                       for r in together.get("blocks") or []]}
+            if together.get("met") else {"met": False, "message": together.get("message")})
+    if payload.get("allowed"):
+        out["allowed"] = payload["allowed"]
+    for key in ("crews", "common_cause"):
+        if payload.get(key):
+            out[key] = payload[key]
+    if graph is not None and payload.get("changed"):
+        out["edit_rbd_ops"] = _interval_ops(graph, payload.get("blocks") or [])
+        done = {op["id"] for op in out["edit_rbd_ops"]}
+        left = [r["label"] for r in payload.get("blocks") or [] if r.get("changed") and r["id"] not in done]
+        if left:
+            out["edit_rbd_note"] = (f"{', '.join(left)}: the schedule's duration is a model, which edit_rbd can't "
+                                    "carry — set the new interval in the app (Design tab → Apply to diagram).")
+    return out
+
+
+def _plan_with_crews(db, user: dict, actx, graph: dict, owners: list) -> dict:
+    """The plan simulated with the diagram's own repair crews (the paid
+    availability simulation of the diagram with the plan on it): what the
+    waiting costs."""
+    from backend.routers.rbds import availability_payload
+
+    plan = user.get("mcp_plan", "pro")
+    status, payload = availability_payload(db, actx, graph, None, None, False, owners, simulate=True, quick=True,
+                                           surface="mcp")
+    if status == 202:
+        job = _await_job(db, payload["job"]["job_id"], config.MCP_JOB_WAIT_S)
+        if job is None or job.get("status") == "failed":
+            return {"available": False, "message": (job or {}).get("error") or rbd_jobs_service.FAILED_ERROR}
+        if job.get("status") != "done":
+            return {"available": False, **_job_pending(db, job),
+                    "note": "The simulation with the crews is running: call get_job with this job_id for the "
+                            "diagram-with-the-plan's availability (and PFDavg) with the crews."}
+        payload = rbd_jobs_service.view(db, job, billing_service.premium_compute_allowed(db, user))["result"]
+        status = 200
+    if status == 503:
+        return {"available": False, "message": payload.get("detail") or rbd_jobs_service.QUEUE_UNAVAILABLE}
+    if status != 200 or not payload.get("has_simulation"):
+        if plan != "pro":
+            _soft_refusal("pro_only")
+        return {"available": False, "code": "pro_required",
+                "message": _simulation_message(plan) if plan != "pro" else (
+                    (payload.get("simulation_status") or {}).get("message") or payload.get("detail"))}
+    precision = payload.get("precision") or {}
+    out: dict[str, Any] = {
+        "available": True, "basis": "simulation", "t_simulation": payload.get("t_simulation"),
+        "n_simulations": payload.get("n_simulations"),
+        "availability": precision.get("window_availability"),
+        "availability_interval": [precision.get("lower"), precision.get("upper")],
+    }
+    safety = payload.get("safety") or {}
+    if safety.get("pfd_avg") is not None:
+        out["pfd_avg"], out["sil"] = safety["pfd_avg"], safety.get("sil")
+    costs = payload.get("costs") or {}
+    if costs.get("cost_rate") is not None:
+        out["cost_rate"], out["cost_rate_basis"] = costs["cost_rate"], costs.get("cost_rate_basis")
+    return out
+
+
+@_tool("optimise_maintenance_intervals", _READ, "Choose a repairable RBD's maintenance or proof-test intervals")
+def optimise_maintenance_intervals(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="A repairable RBD id from list_rbds.")],
+    schedule: Annotated[Optional[Literal["replacement", "proof_test"]], Field(description=(
+        "replacement: the age-replacement intervals of blocks under age replacement; proof_test: the proof-test "
+        "intervals of blocks with hidden failures. Default: whichever the diagram has."))] = None,
+    blocks: Annotated[Optional[list[str]], Field(max_length=12, description=(
+        "Block ids whose intervals to choose; default every block with that schedule."))] = None,
+    min_availability: Annotated[Optional[float], Field(gt=0, lt=1, description=(
+        "The cheapest intervals keeping the long-run availability at least this."))] = None,
+    max_pfd: Annotated[Optional[float], Field(gt=0, lt=1, description=(
+        "Safety function: the cheapest intervals keeping PFDavg at most this, e.g. 1e-3."))] = None,
+    target_sil: Annotated[Optional[int], Field(ge=1, le=4, description=(
+        "Safety function: the cheapest intervals reaching this SIL (PFDavg below the band's top)."))] = None,
+    max_cost_rate: Annotated[Optional[float], Field(gt=0, description=(
+        "The most available intervals costing at most this per unit time."))] = None,
+    allowed_intervals: Annotated[Optional[list[float]], Field(max_length=8, description=(
+        "proof_test: the intervals every block chooses from (diagram unit). Default a calendar: 1, 3, 6, 12, "
+        "24, 36 and 48 months in the diagram's unit, plus each block's own interval."))] = None,
+    stagger_tests: Annotated[bool, Field(description=(
+        "proof_test: choose the first tests' times too (even shares of the interval): testing redundant "
+        "channels apart finds a common-cause failure sooner. The best plan with all tests together comes back "
+        "beside it."))] = False,
+    assume_unlimited_crews: Annotated[bool, Field(description=(
+        "Needed when the diagram has fewer repair crews than repair jobs: choose the intervals as if every "
+        "repair started at once (the exact values can't include waiting for a crew)."))] = False,
+    simulate_with_crews: Annotated[bool, Field(description=(
+        "With limited crews: also simulate the diagram with the plan on it with its own crews, to show what "
+        "the waiting costs in availability (and PFDavg). Pro or credits, as analyze_rbd's simulation."))] = False,
+) -> dict[str, Any]:
+    """Choose a repairable diagram's maintenance or proof-test intervals together (RePyability's
+    optimal_replacement_intervals / optimal_inspection_intervals, scored by exact long-run values): the lowest
+    running cost per unit time, or the cheapest meeting min_availability (a safety function: max_pfd or
+    target_sil), or the most available within max_cost_rate. Returns each block's interval now and in the
+    plan (proof tests: and its first test, offset), the plan's cost rate, availability and — for a safety
+    function — PFDavg and SIL beside the diagram as drawn; with stagger_tests also the best plan with every test
+    at once (tested_together), so the effect of staggering shows; a safety function's common-cause groups are in
+    its PFDavg. With limited repair crews it needs assume_unlimited_crews (the intervals are chosen as if no
+    repair waits) and simulate_with_crews gives the plan's availability and PFDavg with the crews (with_crews).
+    Free (exact); a large proof-test search runs as a job (call get_job). Nothing is saved: apply the plan with
+    edit_rbd using edit_rbd_ops."""
+    from backend.routers.rbd_intervals import intervals_payload
+    from backend.services import rbd_intervals
+    from backend.services.access import PERSONAL, AccessCtx
+
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    rbd = _get_rbd(db, uid, rbd_id)
+    graph = rbd.graph or {}
+    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
+    if not graph.get("repairable"):
+        raise ToolError(f"“{rbd.name}” is non-repairable (analysed for reliability): maintenance and proof-test "
+                        "intervals are chosen on a repairable diagram. For one component's replacement age use "
+                        "optimal_replacement; for its test interval, failure_finding_interval.")
+    owners = [*_owners(uid), rbd.owner_id]
+    actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid, read_owners=_owners(uid),
+                     list_owners=uid, share_fallback=False)
+    status, payload = intervals_payload(
+        db, actx, graph, rbd, owners, schedule=schedule, blocks=blocks, min_availability=min_availability,
+        max_cost_rate=max_cost_rate, max_pfd=max_pfd, target_sil=target_sil, allowed=allowed_intervals,
+        stagger=stagger_tests, assume_unlimited_crews=assume_unlimited_crews)
+    if status == 503:
+        raise ToolError(payload.get("detail") or rbd_jobs_service.QUEUE_UNAVAILABLE)
+    if status == 202:
+        job = _await_job(db, payload["job"]["job_id"], config.MCP_JOB_WAIT_S)
+        if job is None:
+            raise ToolError("The calculation was lost. Run optimise_maintenance_intervals again.")
+        if job.get("status") == "failed":
+            raise ToolError(job.get("error") or rbd_jobs_service.FAILED_ERROR)
+        if job.get("status") != "done":
+            return {**head, "available": False, **_job_pending(db, job),
+                    "note": "The interval search is running on Reliafy's calculation service. Call get_job with "
+                            "this job_id in a few seconds for the plan."}
+        payload = job.get("result") or {}
+    out = {**head, **_intervals_summary(payload, graph)}
+    crews = payload.get("crews") or {}
+    if simulate_with_crews and crews.get("waits") and payload.get("status") == "ok":
+        applied = rbd_intervals.apply_plan(graph, payload.get("blocks") or [])
+        out["with_crews"] = _plan_with_crews(db, user, actx, applied, owners)
+    elif crews.get("assumed_unlimited"):
+        out["with_crews"] = {"available": False, "note": (
+            "These figures assume no repair waits for a crew; call again with simulate_with_crews=true to "
+            "simulate the plan with the diagram's crews.")}
+    return out
 
 
 # ---------------------------------------------------------------------------
