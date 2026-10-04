@@ -16,6 +16,7 @@ active workspace's ``write_owner``), so mutation queries and their
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, Header, HTTPException
 
@@ -31,25 +32,50 @@ class EditConflict(Exception):
     """A whole-document write raced another editor (optimistic-lock miss)."""
 
 
+def _to_ms(ts) -> datetime:
+    """``ts`` (a datetime or an isoformat) as tz-aware UTC, truncated to the
+    millisecond — the precision MongoDB stores."""
+    value = ts if isinstance(ts, datetime) else datetime.fromisoformat(str(ts))
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    value = value.astimezone(timezone.utc)
+    return value.replace(microsecond=value.microsecond // 1000 * 1000)
+
+
 def timestamps_match(stored, expected_iso: str) -> bool:
     """Whether a stored timestamp is the one the client loaded.
 
     MongoDB truncates datetimes to millisecond precision and drops tzinfo on
     the round-trip, so exact string equality would always miss — compare
-    tz-normalised with a 1ms tolerance instead.
+    tz-normalised at millisecond precision instead. Every write's stamp is
+    :func:`next_updated_at`, at least 1 ms after the one it replaces, so a
+    later save never matches an earlier ``loaded_at`` (#91: a tolerance did,
+    when two saves landed within a millisecond).
     """
-    from datetime import datetime, timezone
-
     try:
-        expected = datetime.fromisoformat(str(expected_iso))
-        actual = stored if hasattr(stored, "isoformat") else datetime.fromisoformat(str(stored))
+        return _to_ms(stored) == _to_ms(expected_iso)
     except (ValueError, TypeError):
         return False
-    if expected.tzinfo is None:
-        expected = expected.replace(tzinfo=timezone.utc)
-    if actual.tzinfo is None:
-        actual = actual.replace(tzinfo=timezone.utc)
-    return abs((actual - expected).total_seconds()) < 0.001
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def next_updated_at(previous=None) -> datetime:
+    """The ``updated_at`` for a write over a document stamped ``previous``:
+    now at millisecond precision (exactly what's stored, so the value the
+    client gets back is the one it will send as ``expected_updated_at``), and
+    always at least 1 ms after ``previous``, so every write is distinguishable
+    by :func:`timestamps_match` however close together they land."""
+    now = _to_ms(_utcnow())
+    if previous is None:
+        return now
+    try:
+        floor = _to_ms(previous) + timedelta(milliseconds=1)
+    except (ValueError, TypeError):
+        return now
+    return max(now, floor)
 
 
 CONFLICT_MSG = (
