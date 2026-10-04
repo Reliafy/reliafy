@@ -26,6 +26,11 @@ export default function PrivacyPage() {
               via sign-in with email/password or Google.</li>
             <li><strong>Your content:</strong> the datasets (CSV files), fitted models,
               and reliability block diagrams you save.</li>
+            <li><strong>Files you upload to import:</strong> used only to import them. A
+              file imported in the app is read during the import and not stored; only
+              what you save from it is kept. A file sent through an assistant's upload
+              link (which works for 15 minutes) is deleted as soon as it's imported, or
+              automatically an hour after it arrived if it isn't.</li>
             <li><strong>Billing records:</strong> your plan, AI credit balance, and a
               ledger of credit grants and usage. Card details go directly to Stripe —
               we never see or store them.</li>

@@ -697,6 +697,24 @@ def test_ttl_indexes_exist(env):
     assert "Upload not found" in _err(_call(env.token[A], "inspect_upload", {"upload_id": link["upload_id"]}))
 
 
+def test_privacy_page_states_the_upload_retention():
+    """The privacy policy states the upload store's real retention: the link
+    works 15 minutes, a file is deleted once imported or an hour after it
+    arrived. Change the TTLs and this fails until the policy says so too."""
+    from pathlib import Path
+
+    from backend.services import uploads
+
+    assert uploads.TOKEN_TTL == timedelta(minutes=15)
+    assert uploads.KEEP_AFTER_UPLOAD == timedelta(hours=1)
+    page = (Path(__file__).resolve().parents[2] / "frontend/src/views/PrivacyPage.jsx").read_text()
+    text = " ".join(page.split())
+    assert "Files you upload to import:</strong> used only to import them." in text
+    assert "(which works for 15 minutes)" in text
+    assert "deleted as soon as it's imported, or automatically an hour after it arrived" in text
+    assert "read during the import and not stored" in text
+
+
 # ---- the RBD cap: all or nothing --------------------------------------------------------------
 
 @pytest.fixture()
