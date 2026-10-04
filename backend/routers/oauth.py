@@ -68,8 +68,25 @@ def authorization_server_metadata() -> JSONResponse:
 
 # ---- Registration ------------------------------------------------------------------
 
+# Dynamic client registrations allowed per client IP per window. A connector
+# registers once per install; this only stops floods of throwaway clients.
+REGISTER_WINDOW_SECONDS = 3600
+REGISTER_PER_IP = 20
+
+
 @router.post("/oauth/register")
 async def register(request: Request, db=Depends(get_session)) -> JSONResponse:
+    from backend.routers.telemetry import _client_ip
+    from backend.services import rate_limit
+
+    key = rate_limit.ip_key("oauth-register", _client_ip(request))
+    allowed = await run_in_threadpool(rate_limit.consume, db, key, REGISTER_PER_IP, REGISTER_WINDOW_SECONDS)
+    if not allowed:
+        return JSONResponse(
+            {"error": "slow_down", "error_description": "Too many client registrations — try again later."},
+            status_code=429,
+            headers={**_NO_STORE, "Retry-After": str(rate_limit.retry_after(REGISTER_WINDOW_SECONDS))},
+        )
     body = await request.body()
     if len(body) > 16 * 1024:
         return _oauth_error(OAuthError("invalid_client_metadata", "Registration request too large."))

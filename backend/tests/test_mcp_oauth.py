@@ -523,11 +523,14 @@ def test_refresh_rotation_and_reuse_detection(env):
     assert _post_mcp(env, second["access_token"]).status_code == 200
 
     # A retried / concurrent refresh with the just-rotated token (inside the
-    # grace window) gets a fresh pair and does NOT disconnect the user.
+    # grace window) gets the SAME pair back and does NOT disconnect the user.
     r = _token(env, grant_type="refresh_token", refresh_token=first["refresh_token"], client_id=CLAUDE_CODE)
     assert r.status_code == 200, r.text
     retry = r.json()
-    assert retry["refresh_token"] not in (first["refresh_token"], second["refresh_token"])
+    assert retry["refresh_token"] == second["refresh_token"]
+    assert retry["access_token"] == second["access_token"]
+    assert env.db.oauth_tokens.count_documents({"family_id": env.db.oauth_tokens.find_one(
+        {"rotated": True})["family_id"]}) == 2
     assert _post_mcp(env, second["access_token"]).status_code == 200
     assert _post_mcp(env, retry["access_token"]).status_code == 200
 

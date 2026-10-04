@@ -4,8 +4,8 @@ and fit, read fleet forecasts, and run strategy calculators.
 Auth is the same personal API token (``Authorization: Bearer rlf_…``) or a
 session, Pro-gated — reusing the ingest router's dependency. Everything is
 scoped to the caller's own personal data (``owner_id == uid``); a token can
-read and write the user's data but never touch the account, billing, tokens,
-or team artifacts.
+read (``read`` scope) and create (``write`` scope) the user's data but never
+touch the account, billing, tokens, or team artifacts.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from backend import config
 from backend.db import get_session
 from backend.fitting import FitError
-from backend.routers.ingest import _rate_check, ingest_user
+from backend.routers.ingest import _rate_check, read_scope, write_scope
 from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import metrics as metrics_service
@@ -69,7 +69,7 @@ def _norm_params(params) -> list:
 # ---- models & reliability --------------------------------------------------
 
 @router.get("/models")
-def api_list_models(session=Depends(get_session), user: dict = Depends(ingest_user)) -> JSONResponse:
+def api_list_models(session=Depends(get_session), user: dict = Depends(read_scope)) -> JSONResponse:
     """List the caller's saved models."""
     _rate_check(user["uid"])
     models = models_service.list_models(session, _read_owners(user["uid"]))
@@ -77,7 +77,7 @@ def api_list_models(session=Depends(get_session), user: dict = Depends(ingest_us
 
 
 @router.get("/models/{model_id}")
-def api_get_model(model_id: str, session=Depends(get_session), user: dict = Depends(ingest_user)) -> JSONResponse:
+def api_get_model(model_id: str, session=Depends(get_session), user: dict = Depends(read_scope)) -> JSONResponse:
     """A model's fitted parameters (with CIs), life metrics, and goodness-of-fit."""
     _rate_check(user["uid"])
     m = models_service.get_model(session, model_id, _read_owners(user["uid"]))
@@ -98,7 +98,7 @@ def api_reliability(
     model_id: str,
     body: dict = Body(default={}),
     session=Depends(get_session),
-    user: dict = Depends(ingest_user),
+    user: dict = Depends(read_scope),
 ) -> JSONResponse:
     """Evaluate the model's reliability functions.
 
@@ -151,7 +151,7 @@ def api_reliability(
 async def api_create_dataset(
     request: Request,
     session=Depends(get_session),
-    user: dict = Depends(ingest_user),
+    user: dict = Depends(write_scope),
 ) -> JSONResponse:
     """Create a dataset from CSV text or column arrays.
 
@@ -192,7 +192,7 @@ async def api_create_dataset(
 def api_fit(
     body: dict = Body(default={}),
     session=Depends(get_session),
-    user: dict = Depends(ingest_user),
+    user: dict = Depends(write_scope),
 ) -> JSONResponse:
     """Fit and save a model from one of the caller's datasets.
 
@@ -229,7 +229,7 @@ def api_fit(
 def api_fleet_forecast(
     fleet_id: str,
     session=Depends(get_session),
-    user: dict = Depends(ingest_user),
+    user: dict = Depends(read_scope),
 ) -> JSONResponse:
     """The live failure forecast for one of the caller's fleets."""
     _rate_check(user["uid"])
@@ -259,7 +259,7 @@ def _strategy(kind: str, body: dict, uid: str) -> JSONResponse:
 @router.post("/strategy/optimal-replacement")
 def api_optimal_replacement(
     body: dict = Body(default={}),
-    user: dict = Depends(ingest_user),
+    user: dict = Depends(read_scope),
 ) -> JSONResponse:
     """Cost-optimal preventive-replacement interval.
 
@@ -272,7 +272,7 @@ def api_optimal_replacement(
 @router.post("/strategy/failure-finding")
 def api_failure_finding(
     body: dict = Body(default={}),
-    user: dict = Depends(ingest_user),
+    user: dict = Depends(read_scope),
 ) -> JSONResponse:
     """Failure-finding inspection interval for a hidden (protective) function.
 
@@ -285,7 +285,7 @@ def api_failure_finding(
 @router.post("/strategy/demonstration-test")
 def api_demonstration_test(
     body: dict = Body(default={}),
-    user: dict = Depends(ingest_user),
+    user: dict = Depends(read_scope),
 ) -> JSONResponse:
     """Plan a reliability demonstration test (RePyability's test planning).
 

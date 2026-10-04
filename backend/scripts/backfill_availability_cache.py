@@ -38,7 +38,7 @@ def _owner_user(db, owner_id: str) -> dict | None:
         if not uid:
             return None
     doc = db.users.find_one({"_id": uid}) or {}
-    return {"uid": uid, "email": doc.get("email")}
+    return {"uid": uid, "email": doc.get("email"), "email_verified": doc.get("email_verified")}
 
 
 def candidates(db) -> list[dict]:

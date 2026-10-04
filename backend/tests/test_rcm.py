@@ -218,7 +218,7 @@ def test_api_caps_and_isolation(monkeypatch):
     monkeypatch.setattr(db, "_simulated", True)
     client = TestClient(app)
     try:
-        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True}
         r = client.post("/api/rcm/studies", json={"name": "S1"})
         assert r.status_code == 200
         sid = r.json()["id"]
@@ -243,7 +243,7 @@ def test_api_caps_and_isolation(monkeypatch):
         assert client.get("/api/billing").json()["caps"]["rcm_studies"] == 1
 
         # Isolation.
-        app.dependency_overrides[get_current_user] = lambda: {"uid": B, "email": "b@x.com", "name": "B"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True}
         assert client.get(f"/api/rcm/studies/{sid}").status_code == 404
     finally:
         app.dependency_overrides.clear()
@@ -266,7 +266,7 @@ def test_sample_study_seeds_with_contradicted_demo(session, monkeypatch):
     monkeypatch.setattr(config, "AUTH_DISABLED", False)
     client = TestClient(app)
     try:
-        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True}
         study = client.get("/api/rcm/studies/sample-rcm-truck").json()
         assert study["is_sample"] is True
         assert study["rollup"]["supported"] == 3
@@ -277,7 +277,7 @@ def test_sample_study_seeds_with_contradicted_demo(session, monkeypatch):
         assert client.patch("/api/rcm/studies/sample-rcm-truck", json={"name": "x"}).status_code == 403
         assert client.delete("/api/rcm/studies/sample-rcm-truck").json()["ok"] is True
         assert client.get("/api/rcm/studies/sample-rcm-truck").status_code == 404
-        app.dependency_overrides[get_current_user] = lambda: {"uid": B, "email": "b@x.com", "name": "B"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True}
         assert client.get("/api/rcm/studies/sample-rcm-truck").status_code == 200
     finally:
         app.dependency_overrides.clear()

@@ -157,7 +157,13 @@ def test_tasks_endpoint_respects_study_access(client):
     assert client.get(f"/api/rcm/studies/{sid}/maintenance-tasks").status_code == 404
     # Nor does citing A's analysis in C's own study lend C its cost.
     own = client.post("/api/rcm/studies", json={"name": "Theirs"}).json()["id"]
-    client.put(f"/api/rcm/studies/{own}/tree", json={"functions": _tree(aid, interval=500)})
+    # Saving that link is refused; the study stands for one saved before.
+    assert client.put(f"/api/rcm/studies/{own}/tree",
+                      json={"functions": _tree(aid, interval=500)}).status_code == 422
+    from backend.services import rcm as rcm_service
+
+    client.db.rcm_studies.update_one(
+        {"_id": own}, {"$set": {"functions": rcm_service.clean_tree(_tree(aid, interval=500))}})
     [task] = client.get(f"/api/rcm/studies/{own}/maintenance-tasks").json()["tasks"]
     assert task["fill"] == {"policy": "age", "interval": 500.0} and "cost" not in task["sources"]
     # Unknown ids are the same 404.

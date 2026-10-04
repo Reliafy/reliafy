@@ -23,6 +23,10 @@ pydantic
 pymongo
 mongomock
 firebase-admin
+# AES-GCM for the OAuth refresh grace window (backend/services/oauth.py).
+# Already installed with firebase-admin (PyJWT[crypto]); named here because
+# the backend imports it directly.
+cryptography
 stripe
 httpx
 # Safe XML parsing for uploaded Open-PSA fault trees (no entity expansion,

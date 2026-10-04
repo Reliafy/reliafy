@@ -110,7 +110,7 @@ def test_api_enforces_dataset_cap(monkeypatch):
     monkeypatch.setattr(db, "_simulated", True)
     client = TestClient(app)
     try:
-        app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A", "email_verified": True}
         r1 = client.post("/api/datasets", files={"file": ("a.csv", _csv(), "text/csv")}, data={"name": "a"})
         assert r1.status_code == 200
         r2 = client.post("/api/datasets", files={"file": ("b.csv", _csv()[:-3] + b"9\n", "text/csv")}, data={"name": "b"})
@@ -141,7 +141,7 @@ def test_assistant_step_requires_config_then_charges(monkeypatch):
     client = TestClient(app)
     body = {"system": "s", "messages": [{"role": "user", "content": "hi"}], "tools": []}
     try:
-        app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A", "email_verified": True}
 
         # Not configured -> 503.
         monkeypatch.setattr(assistant_service, "enabled", lambda: False)
@@ -219,9 +219,9 @@ def test_admin_emails_bypass_caps_and_ai_credits(monkeypatch):
     monkeypatch.setattr(db, "_simulated", True)
     client = TestClient(app)
 
-    admin = {"uid": "admin-1", "email": "Admin@example.com", "name": "D"}  # case-insensitive
+    admin = {"uid": "admin-1", "email": "Admin@example.com", "name": "D", "email_verified": True}  # case-insensitive
     assert billing.is_admin_user(admin) is True
-    assert billing.is_admin_user({"uid": "x", "email": "someone@else.com"}) is False
+    assert billing.is_admin_user({"uid": "x", "email": "someone@else.com", "email_verified": True}) is False
 
     try:
         app.dependency_overrides[get_current_user] = lambda: admin
@@ -362,7 +362,7 @@ def test_billing_status_exposes_plan_comparison_numbers(monkeypatch):
     monkeypatch.setattr(db, "_simulated", True)
     client = TestClient(app)
     try:
-        app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
+        app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A", "email_verified": True}
         r = client.get("/api/billing")
     finally:
         app.dependency_overrides.clear()

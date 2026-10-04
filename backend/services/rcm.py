@@ -258,14 +258,23 @@ def clean_tree(functions) -> list[dict]:
 
 
 def replace_tree(db, study_id: str, functions, owner_id: str,
-                 expected_updated_at: str | None = None) -> RcmStudy:
+                 expected_updated_at: str | None = None,
+                 reader: "access.AccessCtx | None" = None) -> RcmStudy:
+    """Swap a study's worksheet. With ``reader`` (the writer's access
+    context), every newly linked evidence item must be one the writer can
+    open — :class:`access.UnreadableReference` otherwise; links the study
+    already had are kept as they are."""
     study = get_study(db, study_id, owner_id)
     if study is None or study.owner_id != owner_id:
         raise StudyNotFound(study_id)
     if expected_updated_at and study.updated_at is not None:
         if not access.timestamps_match(study.updated_at, expected_updated_at):
             raise access.EditConflict()
-    study.functions = clean_tree(functions)
+    cleaned = clean_tree(functions)
+    if reader is not None:
+        access.check_references(db, reader, access.evidence_refs(cleaned),
+                                keep=access.evidence_refs(study.functions))
+    study.functions = cleaned
     study.updated_at = _now()
     db.rcm_studies.update_one(
         {"_id": study_id, "owner_id": owner_id},

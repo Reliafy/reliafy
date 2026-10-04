@@ -14,8 +14,8 @@ import pytest
 A = "user-a"
 B = "user-b"
 USERS = {
-    A: {"uid": A, "email": "a@x.com", "name": "A"},
-    B: {"uid": B, "email": "b@x.com", "name": "B"},
+    A: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True},
+    B: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True},
 }
 
 

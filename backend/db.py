@@ -126,6 +126,8 @@ def init_db() -> None:
     # never touched). Unlock-attempt windows drop the same way.
     db.public_links.create_index([("expires_at", 1)], expireAfterSeconds=0)
     db.public_link_attempts.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Fixed-window request limits (backend/services/rate_limit.py).
+    db.rate_limits.create_index([("expires_at", 1)], expireAfterSeconds=0)
     db.api_tokens.create_index([("token_hash", 1)], unique=True)
     db.api_tokens.create_index([("uid", 1)])
     # Product-update emails: the unsubscribe token is the lookup key for the
