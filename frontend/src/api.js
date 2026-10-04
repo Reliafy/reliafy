@@ -139,14 +139,18 @@ export function getColumns(file) {
 
 // Advanced fit options shared by fit + save: offset (3-parameter), zero
 // inflation, limited failure population, fixed parameter values, and a mixture
-// component count (mutually exclusive with the rest — see normalize_options).
-function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distribution } = {}) {
+// component count (mutually exclusive with the rest — see normalize_options),
+// the fit method, and Best fit's "consider two-mode mixtures" (#236).
+function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distribution, how,
+                                  include_mixtures } = {}) {
   if (offset) form.append("offset", "true");
   if (zi) form.append("zi", "true");
   if (lfp) form.append("lfp", "true");
   if (fixed && Object.keys(fixed).length) form.append("fixed", JSON.stringify(fixed));
   if (Number(mixture) > 1) form.append("mixture", String(Number(mixture)));
   if (mixture_distribution) form.append("mixture_distribution", mixture_distribution);
+  if (how) form.append("how", how);
+  if (include_mixtures) form.append("include_mixtures", "true");
 }
 
 // Column mapping -> form fields. ``mapping`` is { x, c, n, xl, xr, tl, tr }
@@ -331,6 +335,8 @@ export function updateModelFit(id, { distribution, mapping, covariates, formula,
       zi: !!fitOptions?.zi,
       lfp: !!fitOptions?.lfp,
       fixed: fitOptions?.fixed && Object.keys(fitOptions.fixed).length ? fitOptions.fixed : null,
+      how: fitOptions?.how || null,
+      include_mixtures: !!fitOptions?.include_mixtures,
     }),
   });
 }
@@ -1467,11 +1473,13 @@ export function listFleets() {
   return request("/api/fleet/fleets");
 }
 
-export function createFleet(name, modelId) {
+// ``modelSource`` "alt" links an ALT model; omitted, a saved life model
+// (a plain distribution or a regression model) (#234).
+export function createFleet(name, modelId, modelSource) {
   return request("/api/fleet/fleets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, model_id: modelId }),
+    body: JSON.stringify({ name, model_id: modelId, ...(modelSource ? { model_source: modelSource } : {}) }),
   });
 }
 

@@ -216,11 +216,18 @@ class Fleet(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model_id: str
+    # Where model_id lives (#234): None = a saved life model (``models``, a
+    # plain distribution or a regression model), "alt" = an ALT model
+    # (``alt_models``).
+    model_source: Optional[str] = None
     # {periods, period_label, default_rate, method: "renewals"|"single",
-    #  rate_source: "manual"|"estimated"}
+    #  rate_source: "manual"|"estimated", + #234: covariates {name: value}
+    #  (fleet defaults for a regression/ALT model), warranty_use,
+    #  warranty_periods}
     settings: dict = Field(default_factory=dict)
     # [{id, name, current_use, rate|null, notes?, + rate-estimator state from
-    #  API readings: last_reading_use/at, latest_read_at, estimated_rate(_n)}]
+    #  API readings: last_reading_use/at, latest_read_at, estimated_rate(_n),
+    #  + #234: covariates {name: value} overrides, service_periods}]
     items: list = Field(default_factory=list)
 
 

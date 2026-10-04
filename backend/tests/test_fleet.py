@@ -156,14 +156,17 @@ def test_stale_when_model_deleted(session):
     assert f["status"] == "stale"
 
 
-def test_regression_model_rejected(session):
+def test_regression_model_fleet_is_first_failures(session):
+    """Regression models run fleets since #234 (test_fleet_regression.py): the
+    fleet counts first failures, each item at its own covariates."""
     from backend.services import fleet as fs
 
-    # Fake a regression model result on a saved doc.
     model = _make_model(session, A)
     session.models.update_one({"_id": model.id}, {"$set": {"results.kind": "regression"}})
-    with pytest.raises(fs.FleetValidationError):
-        fs.create_fleet(session, "F", model.id, A)
+    fleet = fs.create_fleet(session, "F", model.id, A)
+    assert fleet.settings["method"] == "single"
+    # This doc only claims to be a regression model: there's no fit to evaluate.
+    assert fs.compute(session, fleet, A)["status"] == "stale"
 
 
 # ---- API: caps, isolation, conflict ------------------------------------------------

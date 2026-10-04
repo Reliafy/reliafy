@@ -289,6 +289,7 @@ def save_model(
     mixture_distribution: str | None = Form(default=None),
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
+    include_mixtures: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -321,6 +322,7 @@ def save_model(
             owner_id=ctx.write_owner,
             options=options_from_form(
                 offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
+                include_mixtures=include_mixtures,
             ),
         )
         access_service.stamp_editor(session, "models", model.id, ctx)
@@ -452,6 +454,7 @@ def update_model_fit(
     mixture_distribution: str | None = Body(default=None),
     how: str | None = Body(default=None),
     c_invert: bool = Body(default=False),
+    include_mixtures: bool = Body(default=False),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -465,7 +468,7 @@ def update_model_fit(
         return JSONResponse(status_code=status, content=payload)
     options = {"offset": offset, "zi": zi, "lfp": lfp, "fixed": fixed or None,
                "mixture": mixture, "mixture_distribution": mixture_distribution,
-               "how": how, "c_invert": bool(c_invert)}
+               "how": how, "c_invert": bool(c_invert), "include_mixtures": bool(include_mixtures)}
     try:
         model = models_service.update_fit(
             session, model_id, existing.owner_id, distribution,

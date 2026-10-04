@@ -26,6 +26,7 @@ def _summary(fleet, ctx: AccessCtx, forecast: dict | None = None) -> dict:
         "id": fleet.id,
         "name": fleet.name,
         "model_id": fleet.model_id,
+        "model_source": fleet.model_source,
         "settings": fleet.settings,
         "n_items": len(fleet.items or []),
         "is_sample": samples_service.is_sample(fleet.owner_id),
@@ -45,6 +46,7 @@ def _summary(fleet, ctx: AccessCtx, forecast: dict | None = None) -> dict:
 def create_fleet(
     name: str = Body(...),
     model_id: str = Body(...),
+    model_source: str | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -59,7 +61,8 @@ def create_fleet(
     ):
         return JSONResponse(status_code=402, content={"detail": billing_service.cap_message(session, ctx.uid, "fleets"), "code": "cap", "upgrade": True})
     try:
-        fleet = fleet_service.create_fleet(session, name, model_id, ctx.write_owner)
+        fleet = fleet_service.create_fleet(session, name, model_id, ctx.write_owner,
+                                           model_source=model_source)
     except fleet_service.FleetValidationError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     access_service.stamp_editor(session, "fleets", fleet.id, ctx)
