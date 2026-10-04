@@ -1424,6 +1424,8 @@ def _repairable_body(script: _Script, graph) -> str:
                  None)
     if first is not None:
         out.append(f'# STATE = {{{_lit(first)}: {{"down": True, "since": 2.0}}}}')
+    out.append("# (As of now, Reliafy sizes its default window to the blocks' remaining")
+    out.append("# life; set WINDOW to the window the app shows to match it exactly.)")
     out.append("STATE = {}")
     if rbd_export_costs.uses_extras(graph):
         out += rbd_export_costs.pilot_constant() + rbd_export_costs.constants(graph)

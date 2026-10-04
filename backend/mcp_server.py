@@ -2074,8 +2074,9 @@ def analyze_rbd(
     times: Annotated[Optional[list[float]], Field(max_length=200, description=(
         "Non-repairable: times (diagram unit) to report system reliability at."))] = None,
     t_max: Annotated[Optional[float], Field(description=(
-        "Non-repairable: end of the time axis (default sized to the system). Repairable: the simulated "
-        "horizon."))] = None,
+        "Non-repairable: end of the time axis (default sized to the system; with current_state, to its "
+        "remaining life). Repairable: the window and simulated horizon (default long enough to settle; with "
+        "current_state, sized to the blocks' remaining life)."))] = None,
     conditional_age: Annotated[Optional[float], Field(description=(
         "Non-repairable: condition on the system having already survived to this age."))] = None,
     recompute: Annotated[bool, Field(description=(

@@ -521,20 +521,22 @@ def analyze_exact(db, graph: dict, owner_id, horizon: float | None = None,
     def resolve_model(model_id: str) -> dict | None:
         return models_service.get_live_model(db, model_id, owner_id)
 
+    # The state sizes the default window from now (#155) the same way for both.
     base = rbd_analysis.analyze_availability(
-        graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False)
+        graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False, state=state)
     exact = rbd_analysis.exact_availability(graph, resolve_model=resolve_model, horizon=horizon, state=state)
     return {**base, "exact": exact}
 
 
-def long_run_only(db, graph: dict, owner_id, horizon: float | None = None) -> dict:
+def long_run_only(db, graph: dict, owner_id, horizon: float | None = None,
+                  state: dict | None = None) -> dict:
     """The free payload without the figures over time (they're deferred)."""
 
     def resolve_model(model_id: str) -> dict | None:
         return models_service.get_live_model(db, model_id, owner_id)
 
     return rbd_analysis.analyze_availability(
-        graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False)
+        graph, resolve_model=resolve_model, t_simulation=horizon, simulate=False, state=state)
 
 
 def should_store_availability(doc: dict | None, key: str) -> bool:

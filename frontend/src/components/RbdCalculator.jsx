@@ -873,6 +873,12 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
   const [needsPro, setNeedsPro] = useState(false); // 402 pro_required (availability)
   const [tMax, setTMax] = useState(""); // x-axis 'to' limit (blank = auto)
   const [evalT, setEvalT] = useState(""); // time at which R(t)/F(t) is read off
+  // Whether "To" / "Evaluate at" hold the values a calculation filled in
+  // (auto) rather than ones the user typed. An auto "To" isn't sent back, so
+  // the next calculation sizes its own axis — as of now, to the remaining
+  // life rather than the from-new range. A typed value always wins.
+  const [tMaxAuto, setTMaxAuto] = useState(true);
+  const [evalTAuto, setEvalTAuto] = useState(true);
   const [condAge, setCondAge] = useState(""); // conditional survival age s
   const [covValues, setCovValues] = useState({}); // {nodeId: {covName: value}}
   const [calcSig, setCalcSig] = useState(null); // inputs used for the last calc
@@ -962,8 +968,9 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
   // Signature of the calculation inputs, so we can tell when the shown result
   // is out of date with the current "To" / covariate / conditional selections.
   const bandSig = band.on ? band.level : null;
+  const tSent = tMax === "" || tMaxAuto ? null : Number(tMax); // null: the backend sizes the axis
   const inputSig = JSON.stringify({
-    t: tMax, s: asOf && !graph.repairable ? "" : condAge, cov: covPayload(), band: bandSig,
+    t: tSent, s: asOf && !graph.repairable ? "" : condAge, cov: covPayload(), band: bandSig,
     now: statePayload(), target,
   });
   const dirty = result != null && calcSig != null && inputSig !== calcSig;
@@ -984,7 +991,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
       const now = statePayload();
       const res = await analyzeRbd(
         graph,
-        tMax === "" ? null : Number(tMax),
+        tSent,
         cov,
         s,
         // Saved repairable diagrams can be served a saved availability result.
@@ -1003,19 +1010,21 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         }
       );
       setResult(res);
-      let usedTMax = tMax;
       // Repairable diagrams return an availability payload (no reliability grid).
       if (res.kind !== "repairable") {
         // Prefill the prompts with the range actually used so the user can see
-        // and adjust them.
+        // and adjust them (refreshed while they're still the auto values).
         const limit = res.time[res.time.length - 1];
-        if (tMax === "") {
-          usedTMax = Number(limit.toPrecision(4));
-          setTMax(usedTMax);
+        if (tSent == null) {
+          setTMax(Number(limit.toPrecision(4)));
+          setTMaxAuto(true);
         }
-        if (evalT === "") setEvalT(Number((limit / 2).toPrecision(4)));
+        if (evalT === "" || evalTAuto) {
+          setEvalT(Number((limit / 2).toPrecision(4)));
+          setEvalTAuto(true);
+        }
       }
-      setCalcSig(JSON.stringify({ t: usedTMax, s: sInput, cov, band: bandSig, now, target }));
+      setCalcSig(JSON.stringify({ t: tSent, s: sInput, cov, band: bandSig, now, target }));
       setPhase("idle");
       setBusy(null);
     } catch (err) {
@@ -1098,7 +1107,10 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
               step="any"
               placeholder="auto"
               value={tMax}
-              onChange={(e) => setTMax(e.target.value)}
+              onChange={(e) => {
+                setTMax(e.target.value);
+                setTMaxAuto(e.target.value === "");
+              }}
             />
           </label>
           <label className="calc-t">
@@ -1109,7 +1121,10 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
               max={tMax || undefined}
               step="any"
               value={evalT}
-              onChange={(e) => setEvalT(e.target.value)}
+              onChange={(e) => {
+                setEvalT(e.target.value);
+                setEvalTAuto(e.target.value === "");
+              }}
             />
           </label>
           {!asOf && (
@@ -1168,7 +1183,10 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
                 step="any"
                 placeholder="auto"
                 value={tMax}
-                onChange={(e) => setTMax(e.target.value)}
+                onChange={(e) => {
+                  setTMax(e.target.value);
+                  setTMaxAuto(e.target.value === "");
+                }}
               />
             </label>
             <label className="rbd-asof-toggle">
@@ -1242,7 +1260,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
         <Results
           result={result}
           t={evalT === "" ? null : Number(evalT)}
-          tMax={tMax === "" ? null : Number(tMax)}
+          tMax={tSent}
           conditionalAge={result.conditional_age || 0}
         />
       )}

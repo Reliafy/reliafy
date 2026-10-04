@@ -289,6 +289,36 @@ def test_a_block_down_now_lowers_early_availability_and_recovers():
     assert ci.lower <= down["mission_availability"] <= ci.upper
 
 
+def test_as_of_now_window_is_sized_to_the_remaining_life():
+    """As of now, the default window is sized to the blocks' remaining life
+    (each block's settling time measured from its state now), as the
+    non-repairable axis is — not the from-new window. A chosen window wins,
+    and the simulation's default window is the same one."""
+    from backend.tests.test_rbd_costs import _series
+
+    graph = _series(_node("p", model=_w(1000, 3), repair=_ln(2.0, 0.5)))
+    new = ra.exact_availability(graph)
+    aged = ra.exact_availability(graph, state={"p": {"age": 900.0}})
+    assert aged["from"] == "now" and aged["window"] < 0.5 * new["window"]
+    # 10x (remaining mean life at 900 + mean repair), as from new it is 10x (mean life + mean repair).
+    from scipy.integrate import quad
+    import surpyval as surv
+
+    w = surv.Weibull.from_params([1000, 3])
+    mrl = quad(lambda u: float(w.sf(u)), 900, np.inf)[0] / float(w.sf(900))
+    mttr = math.exp(2.0 + 0.5 ** 2 / 2)
+    assert aged["window"] == pytest.approx(10 * (mrl + mttr), rel=1e-6)
+    assert new["window"] == pytest.approx(10 * (float(w.mean()) + mttr), rel=1e-6)
+    # A block down now has its remaining repair to finish first.
+    down = ra.exact_availability(graph, state={"p": {"down": True, "since": 1.0}})
+    assert down["window"] > new["window"]
+    # A chosen window still wins.
+    assert ra.exact_availability(graph, horizon=500, state={"p": {"age": 900.0}})["window"] == 500
+    # The free payload's window and the simulation's default match the exact one.
+    base = ra.analyze_availability(graph, simulate=False, state={"p": {"age": 900.0}})
+    assert base["t_simulation"] == pytest.approx(aged["window"])
+
+
 @pytest.mark.parametrize("raw, message", [
     ("down", "must be an object"),
     ({"nope": {"age": 1}}, "isn't a component block"),
