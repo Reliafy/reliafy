@@ -34,6 +34,7 @@ import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
 from backend.services import rbd_repeats
+from backend.services.method_labels import generic_engine_fields, hide_engine_names, route_reason
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 from repyability.rbd.repairable_rbd import RepairableRBD
@@ -2145,22 +2146,24 @@ _CREW_JOBS = re.compile(r"(\d+) repair crew\(s\) for (\d+) components\b")
 
 
 def plain_reason(text):
-    """A RePyability reason in Reliafy's words (see ``_PY_CALL``); anything
-    but a string is returned as is. Idempotent, so saved results can be
-    cleaned again."""
+    """A RePyability reason in Reliafy's words (see ``_PY_CALL``), naming no
+    simulation engine (:func:`hide_engine_names`); anything but a string is
+    returned as is. Idempotent, so saved results can be cleaned again."""
     if not isinstance(text, str):
         return text
-    text = _PY_CALL.sub("", text)
+    text = hide_engine_names(_PY_CALL.sub("", text))
     return _CREW_JOBS.sub(lambda m: f"{m.group(1)} repair crew{'s' if m.group(1) != '1' else ''} for "
                                     f"{m.group(2)} repair jobs (each unit of a standby group is one)", text)
 
 
 def plain_reasons(payload: dict) -> dict:
     """An availability payload with RePyability's reasons in Reliafy's words
-    (:func:`plain_reason`), also those of a result saved before (#186)."""
+    (:func:`plain_reason`) and no simulation engine named
+    (:func:`generic_engine_fields`), also those of a result saved before
+    (#186)."""
     if not isinstance(payload, dict):
         return payload
-    out = dict(payload)
+    out = generic_engine_fields(payload)
     for key in ("long_run_method", "safety"):
         if isinstance(out.get(key), dict):
             out[key] = {k: plain_reason(v) if k in ("reason", "note") else v for k, v in out[key].items()}
@@ -3138,7 +3141,7 @@ def _routes_summary(routes: dict, labels: dict) -> dict:
             continue
         out[key] = {
             "route": r.route,
-            "reason": _with_labels(r.reason, labels),
+            "reason": _with_labels(route_reason(r), labels),
             "blocks": [labels.get(n, str(n)) for n in r.nodes],
         }
     return out
