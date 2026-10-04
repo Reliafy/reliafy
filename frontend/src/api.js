@@ -108,6 +108,7 @@ async function readJson(res) {
     );
     err.status = res.status;
     if (data.code) err.code = data.code;
+    err.data = data;
     throw err;
   }
   return data;
@@ -665,14 +666,18 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 // Repairable diagrams (#154/#155): ``simulate`` false gets the exact figures
 // (free) without running the paid simulation, true asks for it;
 // ``currentState`` ({nodeId: {down: true, since} | {age}}) starts the figures
-// from now; ``exact`` computes the figures over time of a large diagram.
+// from now; ``exact`` computes the figures over time of a large diagram;
+// ``quick`` asks for a free, time-capped simulation (users without Pro, #147).
+// With the compute queue (#146) the simulation may come back as a job: a 202
+// with the exact figures and ``job: {job_id, status, queue_position}`` to poll
+// with getRbdJob, whose ``result`` (when done) is the whole payload.
 // Non-repairable (#173): ``currentState`` ({nodeId: {failed: true} | {age}})
 // analyses the diagram as of now; ``targetReliability`` (e.g. 0.9) adds the
 // design life, the time the system reliability falls to it.
 export function analyzeRbd(
   graph, tMax, covariates, conditionalAge,
   { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false,
-    targetReliability = null } = {}
+    targetReliability = null, quick = false } = {}
 ) {
   return request("/api/rbds/analyze", {
     method: "POST",
@@ -689,8 +694,21 @@ export function analyzeRbd(
       ...(currentState ? { current_state: currentState } : {}),
       ...(exact ? { exact: true } : {}),
       ...(targetReliability != null ? { target_reliability: targetReliability } : {}),
+      ...(quick ? { quick: true } : {}),
     }),
   });
+}
+
+// An analysis job: {job_id, status: queued|running|done|failed,
+// queue_position, result (done), error (failed)}.
+export function getRbdJob(jobId) {
+  return request(`/api/rbd-jobs/${encodeURIComponent(jobId)}`);
+}
+
+// The newest in-flight job for a diagram ({job: null} when none), so a
+// reloaded page picks up a simulation still queued or running.
+export function getActiveRbdJob(rbdId) {
+  return request(`/api/rbd-jobs?rbd_id=${encodeURIComponent(rbdId)}`);
 }
 
 // Compare two repairable designs (#104): ``graph`` (A, the diagram in the

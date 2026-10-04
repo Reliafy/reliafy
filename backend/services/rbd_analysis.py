@@ -1938,6 +1938,15 @@ _AVAIL_MIN_SIMS = 100
 _AVAIL_PILOT_SIMS = 20
 _AVAIL_SEED = 1
 _AVAIL_CONFIDENCE = 0.95
+
+# Quick (time-capped) runs (#147): a pilot block of _QUICK_BLOCK replications
+# times the simulation, then one run of as many whole blocks as fit the rest of
+# the budget. Since RePyability 0.12 simulation r draws the same numbers
+# however many a run has, so a quick run of n replications *is* the fixed run
+# of n (``n_simulations=n``), reproducible for its seed on any machine; only
+# how many replications fit the budget depends on the machine.
+_QUICK_BLOCK = 50
+_clock = time.perf_counter  # the quick run's clock (tests swap in a fake one)
 # Tolerance on the window's mean availability, relative to the unavailability
 # (a fixed absolute tolerance is meaningless at 99.99%: ±0.001 would swamp a
 # 0.0001 unavailability), and never looser than 0.1 percentage point.
@@ -2373,7 +2382,7 @@ def _plan_simulation(per_rep: float, n_max: int, t_sim: float,
     return batch, batch * (max_n // batch), t_sim, False
 
 
-def _simulate(rbd, t_sim: float, overrides: dict, n: int, **kwargs):
+def _simulate(rbd, t_sim: float, overrides: dict, n: int, seed: int = _AVAIL_SEED, **kwargs):
     """``(result, antithetic)``: RePyability's availability simulation, seeded,
     in antithetic pairs when every block's draws can be replayed (surpyval
     parametric models) and plain otherwise. ``kwargs`` pass the stopping rule
@@ -2390,11 +2399,11 @@ def _simulate(rbd, t_sim: float, overrides: dict, n: int, **kwargs):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         try:
-            res = rbd.availability(t_simulation=t_sim, mc_samples=_even(n), method="c", seed=_AVAIL_SEED,
+            res = rbd.availability(t_simulation=t_sim, mc_samples=_even(n), method="c", seed=seed,
                                    antithetic=True, **plain, **kwargs, **overrides)
             return res, True
         except NotImplementedError:
-            return rbd.availability(t_simulation=t_sim, mc_samples=n, method="c", seed=_AVAIL_SEED,
+            return rbd.availability(t_simulation=t_sim, mc_samples=n, method="c", seed=seed,
                                     **plain, **kwargs, **overrides), False
 
 
@@ -2503,7 +2512,7 @@ def chosen_horizon(t_simulation, *graphs: dict) -> tuple[Optional[float], bool]:
 
 
 def _run_to_precision(rbd, t_sim: float, overrides: dict, batch: int, max_n: int,
-                      tolerance: float, expect_downtime: bool):
+                      tolerance: float, expect_downtime: bool, seed: int = _AVAIL_SEED):
     """``(result, antithetic)`` of a run to ``tolerance`` on the window's mean
     availability. RePyability stops as soon as the interval is narrow enough,
     and one batch that saw no system downtime at all has a zero-width
@@ -2512,11 +2521,40 @@ def _run_to_precision(rbd, t_sim: float, overrides: dict, batch: int, max_n: int
     kwargs = {"confidence": _AVAIL_CONFIDENCE}
     if max_n > batch:
         kwargs.update(tolerance=tolerance, max_samples=max_n)
-    res, antithetic = _simulate(rbd, t_sim, overrides, batch, **kwargs)
+    res, antithetic = _simulate(rbd, t_sim, overrides, batch, seed=seed, **kwargs)
     if (expect_downtime and max_n > getattr(res, "n_simulations", max_n)
             and not float(getattr(res, "system_downtime", 1.0) or 0.0) > 0.0):
-        res, antithetic = _simulate(rbd, t_sim, overrides, max_n)
+        res, antithetic = _simulate(rbd, t_sim, overrides, max_n, seed=seed)
     return res, antithetic
+
+
+def _quick_simulation(rbd, t_sim: float, overrides: dict, time_budget_s: float,
+                      max_replications: Optional[int], seed: int = _AVAIL_SEED):
+    """``(result, antithetic, blocks)`` of a time-capped availability run
+    (#147): a pilot block of :data:`_QUICK_BLOCK` replications is timed, then
+    one run of as many whole blocks as the rest of ``time_budget_s`` pays for,
+    capped at ``max_replications`` (the pilot alone when that is one or none).
+
+    Since RePyability 0.12 simulation ``r`` of a seeded run draws the same
+    numbers however many simulations the run has, so the result is exactly
+    :func:`_simulate`'s fixed run of its ``n_simulations`` (the in-process and
+    compute paths agree for a seed, whatever the machine), and its first
+    block is the pilot. Plain simulations, as every run here
+    (:func:`_simulate`); ``rbd.shards`` / ``availability_from_chunks`` would
+    save the pilot's rework but apply the default (exact) means."""
+    cap = _even(max_replications) if max_replications else None
+    block = _QUICK_BLOCK if cap is None else min(_QUICK_BLOCK, cap)
+    start = _clock()
+    res, antithetic = _simulate(rbd, t_sim, overrides, block, seed=seed)
+    elapsed = max(_clock() - start, 1e-9)
+    # Whole blocks that fit what is left of the budget (the rerun repeats the
+    # pilot's block, so the run takes about the budget in all), then the cap.
+    n = block * max(int((float(time_budget_s) - elapsed) // elapsed), 1)
+    if cap is not None:
+        n = min(n, cap)
+    if n > block:
+        res, antithetic = _simulate(rbd, t_sim, overrides, n, seed=seed)
+    return res, antithetic, -(-n // block)
 
 
 def _precision(res, tolerance: float, antithetic: bool, max_n: Optional[int],
@@ -2555,6 +2593,9 @@ def analyze_availability(
     n_simulations: Optional[int] = None,
     simulate: bool = True,
     state: Optional[dict] = None,
+    time_budget_s: Optional[float] = None,
+    seed: Optional[int] = None,
+    max_replications: Optional[int] = None,
 ) -> dict:
     """Availability analysis of a repairable RBD: steady-state uptime, mean up/
     down time, failure frequency, each component's share of downtime, and
@@ -2570,11 +2611,22 @@ def analyze_availability(
     importance, costs and downtime split only (what every user gets for free,
     beside :func:`exact_availability`). ``state`` (canonical, from
     :func:`parse_current_state`) starts the simulation from the blocks'
-    current states; the long-run figures don't depend on it."""
+    current states; the long-run figures don't depend on it.
+
+    ``time_budget_s`` makes it a quick run instead (#147, the free tier's):
+    whole blocks of :data:`_QUICK_BLOCK` replications, as many as fit that
+    many seconds (see :func:`_quick_simulation`), capped at
+    ``max_replications``; the result is flagged ``quick`` and is exactly the
+    fixed run of its ``replications``. ``seed`` defaults to
+    :data:`_AVAIL_SEED`."""
     from backend.services import rbd_costs, rbd_maintenance, rbd_policies
 
     fixed_n = bool(n_simulations)
     n_sims = int(n_simulations) + int(n_simulations) % 2 if n_simulations else _AVAIL_SIMS
+    seed = _AVAIL_SEED if seed is None else int(seed)
+    quick = bool(simulate and time_budget_s and time_budget_s > 0)
+    if quick:
+        fixed_n = True  # a quick run is a fixed run of what fits its budget
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(
         graph, resolve_model
     )
@@ -2623,19 +2675,27 @@ def analyze_availability(
     curve = None
     criticality: dict = {}
     precision = None
+    batches = None
     try:
         if not simulate:
             n_sims = 0
+        elif quick:
+            res, antithetic, batches = _quick_simulation(
+                rbd, float(t_simulation), sim_overrides, float(time_budget_s),
+                max_replications, seed)
         elif fixed_n:
-            res, antithetic = _simulate(rbd, float(t_simulation), sim_overrides, n_sims)
+            res, antithetic = _simulate(rbd, float(t_simulation), sim_overrides, n_sims, seed=seed)
         else:
             res, antithetic = _run_to_precision(
-                rbd, float(t_simulation), sim_overrides, batch, max_n, tolerance, expect_downtime)
+                rbd, float(t_simulation), sim_overrides, batch, max_n, tolerance, expect_downtime,
+                seed=seed)
         if res is None:
             raise _NoSimulation
         n_sims = int(getattr(res, "n_simulations", n_sims))
         precision = _precision(res, tolerance, antithetic, None if fixed_n else max_n,
                                expect_downtime)
+        if precision is not None and quick:
+            precision["mode"] = "quick"
         if precision is not None:
             # The window's mean: exact where RePyability works it out, the
             # simulated interval kept beside it as the run's precision.
@@ -2723,12 +2783,17 @@ def analyze_availability(
     if node_states and res is not None:
         # As of now, with the simulation (#220, #221): the time to the next
         # system failure from the blocks' states, its causes and its mean.
+        # A quick run (#147) has no ``n_simulations``: its histories are the
+        # replications that fit its budget, and the next failure keeps to
+        # that budget too, so a free run stays about as quick as it says.
         try:
             from backend.services import rbd_next_failure
 
+            nf_options = {"max_n": int(n_simulations) if n_simulations else (n_sims if fixed_n else _AVAIL_SIMS)}
+            if quick:
+                nf_options["budget"] = min(float(time_budget_s), rbd_next_failure.NEXT_FAILURE_TIME_BUDGET)
             extras["next_failure"] = rbd_next_failure.next_failure(
-                rbd, labels, overrides, node_states, float(t_simulation),
-                max_n=int(n_simulations) if fixed_n else _AVAIL_SIMS)
+                rbd, labels, overrides, node_states, float(t_simulation), **nf_options)
         except Exception:  # noqa: BLE001 - never lose the availability result
             import logging
 
@@ -2746,7 +2811,11 @@ def analyze_availability(
         "figures_basis": figures_basis,
         "simulated": sim,
         "n_simulations": n_sims,
+        "replications": n_sims,
         "t_simulation": float(t_simulation),
+        "seed": seed,
+        "quick": quick,
+        **({"time_budget_s": float(time_budget_s), "batches": batches} if quick else {}),
         "horizon_shortened": horizon_shortened,
         "precision": precision,
         "per_node": per_node,

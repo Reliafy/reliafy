@@ -39,6 +39,8 @@ export function precisionNote(result) {
     : ` Over that window the system was up ${pctAt(p.window_availability, d)} of the time${interval}`;
   const target = `±${Math.abs(p.tolerance * 100).toFixed(pctDigits(p.tolerance))}-point`;
   if (p.mode === "fixed") return `${lead}, from a fixed ${n} replications.`;
+  // A free quick run (#147): as many replications as fit a few seconds.
+  if (p.mode === "quick") return `${lead}: a quick estimate from ${n} replications — Pro runs to the precision target.`;
   if (p.reached) return `${lead}: within the ${target} precision target, reached after ${n} replications.`;
   return `${lead}: the ${target} precision target wasn't reached within the time budget (${n} replications), so the interval shows the precision achieved.`;
 }
