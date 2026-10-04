@@ -171,11 +171,13 @@ def get_log(rbd_id: str, log_id: str, session=Depends(get_session),
     names = sorted({r["asset"] for r in log.get("rows") or []})
     blocks = logs_service.diagram_blocks(rbd.graph or {})
     amap = log.get("asset_map") or {}
+    units, _ = logs_service.unit_assignment(amap, log.get("asset_units"), blocks)
     return JSONResponse(content={
         **logs_service.summary(log),
         "rows": log.get("rows") or [],
         "assets": [{"name": n, "node_id": amap.get(n), "label": blocks.get(amap.get(n) or "", {}).get("label"),
-                    "n_outages": sum(1 for r in log.get("rows") or [] if r["asset"] == n)} for n in names],
+                    "n_outages": sum(1 for r in log.get("rows") or [] if r["asset"] == n),
+                    **({"unit": units[n]} if n in units else {})} for n in names],
         "blocks": _block_options(rbd.graph or {}),
     })
 

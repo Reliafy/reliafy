@@ -909,6 +909,9 @@ _UNIT_SUFFIX = re.compile(
     r"^(?P<stem>.*?[a-z0-9])(?:[\s\-_#/.]+(?P<tok>[a-h]|\d+|i{1,3}|iv|left|right|port|starboard|north|"
     r"south|east|west|primary|secondary|upper|lower)|(?P<num>\d+))$")
 _BLOCK_TYPES = ("component", "series", "parallel", "standby", "subsystem", "loadshare")
+#: Blocks that are themselves redundancy: a "duty/standby" in their label
+#: describes their own units, not a partner wired next to them (#183).
+_REDUNDANT_TYPES = ("parallel", "standby", "loadshare")
 
 
 def _label_stem(label: str) -> tuple[str, Optional[str]]:
@@ -928,7 +931,9 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
     left/right…, or that call one of them duty/standby/spare/backup/redundant.
     Redundancy wired in series makes the system look far less reliable than
     it is. Only directly adjacent series blocks (the one's sole output feeding
-    the other's sole input) are compared, to keep false positives low."""
+    the other's sole input) are compared, to keep false positives low; and a
+    standby, parallel or load-sharing block's own "duty/standby" label
+    describes its units, so it doesn't count (#183)."""
     nodes = {n.get("id"): n for n in graph.get("nodes") or []}
     edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
              if e.get("source") in nodes and e.get("target") in nodes]
@@ -952,7 +957,8 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
         (stem_a, tok_a), (stem_b, tok_b) = _label_stem(la), _label_stem(lb)
         if stem_a and stem_a == stem_b and tok_a != tok_b:
             why = "the same item with a different unit suffix"
-        elif _REDUNDANCY_WORDS.search(la) or _REDUNDANCY_WORDS.search(lb):
+        elif any(_REDUNDANCY_WORDS.search(lab) and nodes[nid].get("type") not in _REDUNDANT_TYPES
+                 for nid, lab in ((s, la), (t, lb))):
             why = "one is labelled duty/standby/spare/backup/redundant"
         else:
             continue
@@ -1697,7 +1703,47 @@ def _component_message(text: str, labels: dict) -> str:
     """RePyability's message about a component, naming blocks by label."""
     for nid, label in labels.items():
         text = text.replace(f"'{nid}'", f"“{label}”")
-    return text
+    return plain_reason(text)
+
+
+# RePyability's reasons end with the Python call that would simulate the
+# system ("… Simulate the system with availability() or cost().") — calls a
+# Reliafy user can't make (#186) — and count a crew's jobs as "components"
+# (each unit of a standby group is one). Relayed without the call, and
+# naming what the count is.
+_PY_CALL = re.compile(r",?\s+with\s+availability\((?:demand=\.\.\.)?\)(?:\s+or\s+cost\(\))?")
+_CREW_JOBS = re.compile(r"(\d+) repair crew\(s\) for (\d+) components\b")
+
+
+def plain_reason(text):
+    """A RePyability reason in Reliafy's words (see ``_PY_CALL``); anything
+    but a string is returned as is. Idempotent, so saved results can be
+    cleaned again."""
+    if not isinstance(text, str):
+        return text
+    text = _PY_CALL.sub("", text)
+    return _CREW_JOBS.sub(lambda m: f"{m.group(1)} repair crew{'s' if m.group(1) != '1' else ''} for "
+                                    f"{m.group(2)} repair jobs (each unit of a standby group is one)", text)
+
+
+def plain_reasons(payload: dict) -> dict:
+    """An availability payload with RePyability's reasons in Reliafy's words
+    (:func:`plain_reason`), also those of a result saved before (#186)."""
+    if not isinstance(payload, dict):
+        return payload
+    out = dict(payload)
+    for key in ("long_run_method", "safety"):
+        if isinstance(out.get(key), dict):
+            out[key] = {k: plain_reason(v) if k in ("reason", "note") else v for k, v in out[key].items()}
+    exact = out.get("exact")
+    if isinstance(exact, dict):
+        exact = {**exact, "message": plain_reason(exact.get("message")),
+                 **({"cost_note": plain_reason(exact["cost_note"])} if "cost_note" in exact else {})}
+        if isinstance(exact.get("routes"), dict):
+            exact["routes"] = {k: ({**r, "reason": plain_reason(r.get("reason"))} if isinstance(r, dict) else r)
+                               for k, r in exact["routes"].items()}
+        out["exact"] = exact
+    return out
 
 
 def _resample_step(timeline, values, grid) -> np.ndarray:
@@ -2353,9 +2399,11 @@ _OVER_TIME_OK = ("exact", "numerical")
 
 
 def count_blocks(graph: dict) -> int:
-    """The component blocks of a diagram (voting gates, input and output
-    aren't blocks): what the exact figures' cost scales with."""
-    return sum(1 for n in (graph or {}).get("nodes") or [] if n.get("type") == "component")
+    """The blocks of a diagram — components and standby groups; voting gates,
+    input and output aren't blocks: what the exact figures' cost scales with,
+    and the count the rest of a result uses (#186)."""
+    return sum(1 for n in (graph or {}).get("nodes") or []
+               if n.get("type") not in ("input", "output", "knode"))
 
 
 def exact_deferral(graph: dict, requested: bool) -> Optional[dict]:
@@ -2462,10 +2510,10 @@ def _node_states(state: Optional[dict], labels: Optional[dict] = None) -> Option
 
 def _with_labels(text: str, labels: dict) -> str:
     """RePyability's message with the node ids it quotes replaced by the
-    blocks' labels."""
+    blocks' labels (and its Python calls left out: :func:`plain_reason`)."""
     for nid, label in sorted(labels.items(), key=lambda kv: -len(str(kv[0]))):
         text = text.replace(repr(nid), f"“{label}”")
-    return text
+    return plain_reason(text)
 
 
 def _routes_summary(routes: dict, labels: dict) -> dict:
