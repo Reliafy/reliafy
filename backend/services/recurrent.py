@@ -199,6 +199,79 @@ def shape_interval(db, doc: RecurrentModelDoc) -> dict | None:
             "ci": [float(ci[0]), float(ci[1])]}
 
 
+# ---- Reliability growth projection (#232) ---------------------------------------
+
+def _dataset_frame(db, doc: RecurrentModelDoc):
+    """The model's event data, or a FitError when it has none (built from
+    parameters) or its dataset is gone."""
+    if (doc.spec or {}).get("params_only") or not doc.dataset_id:
+        raise FitError("A growth projection needs the test's failure data: this model was built from "
+                       "parameters. Fit a model to event data with a failure-mode column.")
+    dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
+    if dataset is None:
+        raise FitError("This model's dataset is gone, so there's no failure data to project from.")
+    return datasets_service.load_dataframe(dataset)
+
+
+def _projection_mapping(doc: RecurrentModelDoc, mode_column: str | None) -> dict:
+    spec = doc.spec or {}
+    mapping = dict(spec.get("mapping") or {})
+    chosen = mode_column or (spec.get("projection") or {}).get("mode_column") or mapping.get("mode")
+    if chosen:
+        mapping["mode"] = chosen
+    else:
+        mapping.pop("mode", None)
+    return mapping
+
+
+def projection_view(db, doc: RecurrentModelDoc, mode_column: str | None = None) -> dict:
+    """What the Projection panel needs before (or after) a run: the dataset's
+    columns, the failure-mode column in use, its modes, and the saved
+    settings and result."""
+    spec = doc.spec or {}
+    saved = spec.get("projection")
+    out = {"available": False, "columns": [], "mode_column": None, "modes": [],
+           "settings": saved, "result": (doc.results or {}).get("projection"),
+           "default_fef": recurrent_fit.DEFAULT_FEF}
+    try:
+        df = _dataset_frame(db, doc)
+    except FitError as exc:
+        return {**out, "reason": str(exc)}
+    mapping = _projection_mapping(doc, mode_column)
+    used = {mapping.get(k) for k in ("i", "x", "c", "n", "tl", "tr", "t")}
+    out["columns"] = [str(c) for c in df.columns if c not in used]
+    if not mapping.get("mode"):
+        return {**out, "available": True, "reason": "Choose the column that holds each failure's mode."}
+    try:
+        out["modes"] = recurrent_fit.failure_modes(df, mapping)
+    except FitError as exc:
+        return {**out, "available": True, "mode_column": mapping["mode"], "reason": str(exc)}
+    return {**out, "available": True, "mode_column": mapping["mode"]}
+
+
+def run_projection(db, doc: RecurrentModelDoc, *, fef, bc=None, test_end=None,
+                   mode_column: str | None = None) -> dict:
+    df = _dataset_frame(db, doc)
+    mapping = _projection_mapping(doc, mode_column)
+    unit = (doc.results or {}).get("unit") or (doc.spec or {}).get("unit", "")
+    return recurrent_fit.growth_projection(df, mapping, fef, bc=bc, test_end=test_end, unit=unit)
+
+
+def save_projection(db, doc: RecurrentModelDoc, payload: dict, mode_column: str | None, owner_id: str) -> None:
+    """Keep the projection's settings (in the spec) and result with the model."""
+    settings = {"mode_column": _projection_mapping(doc, mode_column).get("mode"),
+                "fef": payload.get("fef") or {}, "bc": payload.get("bc") or [],
+                "test_end": payload.get("test_end")}
+    now = _now()
+    db.recurrent_models.update_one(
+        {"_id": doc.id, "owner_id": owner_id},
+        {"$set": {"spec.projection": settings, "results.projection": payload, "updated_at": now}},
+    )
+    doc.spec = {**(doc.spec or {}), "projection": settings}
+    doc.results = {**(doc.results or {}), "projection": payload}
+    doc.updated_at = now
+
+
 def _refit(db, doc: RecurrentModelDoc):
     spec = doc.spec or {}
     if spec.get("params_only"):

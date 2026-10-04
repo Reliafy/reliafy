@@ -351,7 +351,8 @@ def refs_of(collection: str, doc: dict) -> list[tuple[str, str]]:
     if collection in ("models", "degradation_models", "recurrent_models") and _str_id(doc.get("dataset_id")):
         refs.append(("datasets", doc["dataset_id"]))
     elif collection == "fleets" and _str_id(doc.get("model_id")):
-        refs.append(("models", doc["model_id"]))
+        coll = "recurrent_models" if doc.get("model_kind") == "recurrent" else "models"
+        refs.append((coll, doc["model_id"]))
     elif collection == "rcm_studies":
         refs.extend(evidence_refs(doc.get("functions")))
     elif collection == "rbds":
