@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
+from fastapi import APIRouter, HTTPException, Body, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
 from backend import degradation as degradation_fit
 from backend.db import get_session
+from backend.http_limits import read_upload
 from backend.fitting import DISTRIBUTIONS, FitError
 from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
@@ -93,7 +94,7 @@ def degradation_options(ctx: AccessCtx = Depends(get_access)) -> dict:
     }
 
 
-async def _resolve_dataset(session, ctx: AccessCtx, dataset_id, file):
+def _resolve_dataset(session, ctx: AccessCtx, dataset_id, file):
     """Dataset from an id or an uploaded CSV (stored, like the model save flow).
 
     Scoped to the workspace principal (+samples) so a saved model only ever
@@ -106,7 +107,7 @@ async def _resolve_dataset(session, ctx: AccessCtx, dataset_id, file):
         return dataset
     if file is not None:
         return datasets_service.create_dataset(
-            session, file.filename or "dataset.csv", await file.read(), ctx.write_owner
+            session, file.filename or "dataset.csv", read_upload(file), ctx.write_owner
         )
     raise FitError("Provide a CSV file or a dataset_id.")
 
@@ -124,7 +125,7 @@ def _spec_from_form(i, x, y, threshold, path, distribution, population_method, u
 
 
 @router.post("/degradation/fit")
-async def fit_preview(
+def fit_preview(
     file: UploadFile | None = File(default=None),
     dataset_id: str | None = Form(default=None),
     i: str = Form(...),
@@ -142,7 +143,7 @@ async def fit_preview(
     """Fit a degradation model for preview (nothing persisted except the
     uploaded dataset, which is content-addressed like the model-fit flow)."""
     try:
-        dataset = await _resolve_dataset(session, ctx, dataset_id, file)
+        dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(i, x, y, threshold, path, distribution, population_method, unit, measurement_unit)
         df = datasets_service.load_dataframe(dataset)
         payload, _ = degradation_fit.fit(
@@ -152,14 +153,16 @@ async def fit_preview(
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except HTTPException:
+        raise
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Degradation fit failed")
-        return JSONResponse(status_code=500, content={"detail": f"Fit failed: {exc}"})
+        return JSONResponse(status_code=500, content={"detail": "Fit failed. The error has been logged."})
     return JSONResponse(content={"dataset_id": dataset.id, "spec": spec, "results": payload})
 
 
 @router.post("/degradation/models")
-async def save_model(
+def save_model(
     name: str = Form(...),
     file: UploadFile | None = File(default=None),
     dataset_id: str | None = Form(default=None),
@@ -179,15 +182,17 @@ async def save_model(
     if denied is not None:
         return denied
     try:
-        dataset = await _resolve_dataset(session, ctx, dataset_id, file)
+        dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(i, x, y, threshold, path, distribution, population_method, unit, measurement_unit)
         doc = degradation_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "degradation_models", doc.id, ctx)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except HTTPException:
+        raise
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to save degradation model")
-        return JSONResponse(status_code=500, content={"detail": f"Failed to save: {exc}"})
+        return JSONResponse(status_code=500, content={"detail": "Failed to save. The error has been logged."})
     return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": doc.results})
 
 

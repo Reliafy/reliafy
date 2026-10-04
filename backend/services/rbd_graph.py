@@ -39,6 +39,7 @@ maintenance fields), ``"repair_crews": {"crews": 2}``, ``"maintenance_groups":
 
 from __future__ import annotations
 
+import math
 from typing import Callable, Optional
 
 from backend.services import rbd_repeats
@@ -58,6 +59,90 @@ DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function"
 
 class GraphError(ValueError):
     """A compact graph that can't be turned into a diagram (user-facing text)."""
+
+
+# Size limits for any diagram, however it arrives (builder save, import, the
+# assistant, the MCP server) — the same ceilings as the importers'.
+MAX_BLOCKS = 5000               # blocks, besides the input and output nodes
+MAX_EDGES = 50_000
+MAX_UNITS = 1000                # identical units / spares in one block
+#: Count fields per node type: ``(field, what, upper bound)``. A vote node's
+#: ``n`` (inputs required) and ``k`` (inputs wired) are bounded by the
+#: diagram's size; the unit counts expand into that many units each.
+_COUNT_FIELDS = {
+    "series": (("n", "the number of identical units (n)", MAX_UNITS),),
+    "parallel": (("n", "the number of identical units (n)", MAX_UNITS),),
+    "standby": (("spares", "the number of spares", MAX_UNITS),),
+    "loadshare": (("units", "the number of units", MAX_UNITS),
+                  ("k", "the number of units required (k)", MAX_UNITS)),
+    "knode": (("n", "the number of working inputs required (n)", MAX_BLOCKS),
+              ("k", "the number of inputs (k)", MAX_BLOCKS)),
+}
+
+
+def _count(value, where: str, what: str, upper: int) -> int:
+    if isinstance(value, bool):
+        raise GraphError(f"{where}: {what} must be a whole number.")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise GraphError(f"{where}: {what} must be a whole number.") from None
+    if not math.isfinite(number) or number != int(number):
+        raise GraphError(f"{where}: {what} must be a whole number.")
+    if not 1 <= number <= upper:
+        raise GraphError(f"{where}: {what} must be from 1 to {upper:,} (got {value}).")
+    return int(number)
+
+
+def check_counts(ntype: str, data: dict, where: str) -> None:
+    """Validate a block's unit counts (``n``, ``k``, ``spares``, ``units``):
+    whole numbers from 1 to their bound, and a load-sharing group's ``k`` no
+    more than its ``units``. A vote node's ``n`` is checked against the
+    branches actually wired into it when the diagram is validated (its ``k``
+    is only the count the builder shows). Missing fields are left to their
+    defaults."""
+    got = {}
+    for key, what, upper in _COUNT_FIELDS.get(ntype, ()):
+        value = data.get(key)
+        if value is None or value == "":
+            continue
+        if ntype == "standby" and key == "spares" and value in (0, "0", 0.0):
+            continue  # older diagrams hold 0; the analysis has always read it as 1
+        got[key] = _count(value, where, what, upper)
+    if ntype == "loadshare" and "k" in got and "units" in got and got["k"] > got["units"]:
+        raise GraphError(f"{where}: k ({got['k']}) can't exceed the number of units ({got['units']}).")
+
+
+def check_size(nodes, edges) -> None:
+    """At most :data:`MAX_BLOCKS` blocks and :data:`MAX_EDGES` connections."""
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        raise GraphError("nodes and edges must be lists.")
+    blocks = sum(1 for n in nodes if not (isinstance(n, dict) and n.get("type") in ("input", "output")))
+    if blocks > MAX_BLOCKS:
+        raise GraphError(f"the diagram has {blocks:,} blocks; a diagram can hold at most {MAX_BLOCKS:,} "
+                         "(group parts of it into sub-systems).")
+    if len(edges) > MAX_EDGES:
+        raise GraphError(f"the diagram has {len(edges):,} connections; a diagram can hold at most "
+                         f"{MAX_EDGES:,} (group parts of it into sub-systems).")
+
+
+def check_limits(graph) -> None:
+    """Size and unit-count limits for a whole graph, compact or persisted
+    (a node's fields may sit on it or in its ``data``). Raises
+    :class:`GraphError`."""
+    if not isinstance(graph, dict):
+        raise GraphError("the diagram must be an object.")
+    nodes = graph.get("nodes") or []
+    edges = graph.get("edges") or []
+    check_size(nodes, edges)
+    for raw in nodes:
+        if not isinstance(raw, dict):
+            continue
+        fields = {k: raw[k] for k in ("n", "k", "spares", "units", "label") if raw.get(k) is not None}
+        if isinstance(raw.get("data"), dict):
+            fields.update(raw["data"])
+        label = fields.get("label") or raw.get("id")
+        check_counts(str(raw.get("type") or ""), fields, f"node '{label}'")
 
 
 def layout_graph(nodes: list[dict], edges: list[dict]) -> list[dict]:
@@ -266,6 +351,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
         spec = data.get(key)
         if spec and isinstance(spec.get("duration"), dict):
             data[key] = {**spec, "duration": _inline_model(spec["duration"], f"{where} {key} duration")}
+    check_counts(ntype, data, where)
     if not data.get("label"):
         data["label"] = "Input" if ntype == "input" else "Output" if ntype == "output" else nid
 
@@ -290,8 +376,7 @@ def normalize_graph(
     builder shape. Raises :class:`GraphError` with a fixable message."""
     raw_nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
-    if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
-        raise GraphError("nodes and edges must be lists.")
+    check_size(raw_nodes, raw_edges)
 
     nodes, seen = [], set()
     for raw in raw_nodes:

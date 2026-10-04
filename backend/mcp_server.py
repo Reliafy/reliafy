@@ -86,6 +86,7 @@ from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
+from backend.services import import_guard
 from backend.services import oauth as oauth_service
 from backend.services import outage_logs as outage_logs_service
 from backend.services import models as models_service
@@ -232,6 +233,10 @@ def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
     user = resolve_bearer(db, raw)
     if user is None:
         return 401, None, "Invalid, expired or revoked token."
+    if not (tokens_service.has_scope(user, "read") or tokens_service.has_scope(user, "write")):
+        return 403, None, (
+            "This API token can only push data (ingest scope). To use Reliafy over MCP, create a token "
+            "with the read (and write, for saving) scope under Settings > API access.")
     plan = billing_service.mcp_plan(db, user)
     if plan == "pro":
         return 200, {**user, "mcp_plan": "pro"}, ""
@@ -426,8 +431,24 @@ def _refund(ctx: Context) -> None:
     billing_service.refund_mcp_call(_db(), user["uid"], user.get("mcp_plan", "pro"))
 
 
+def _tool_scope(annotations: ToolAnnotations) -> str:
+    """The API-token scope a tool needs: ``write`` for anything that changes
+    the workspace (the destructive-hint tools), ``read`` for the rest —
+    reads, calculations, ``upgrade_link`` and ``get_account``."""
+    return "read" if annotations.read_only_hint else "write"
+
+
+def _require_scope(ctx: Context, scope: str) -> None:
+    """Refuse a tool an API token's scopes don't cover (sessions via OAuth have
+    every scope)."""
+    if not tokens_service.has_scope(_caller(ctx), scope):
+        raise ToolError(tokens_service.scope_message(scope))
+
+
 def _tool(name: str, annotations: ToolAnnotations, title: str):
-    """Register a tool, translating user-facing failures into tool errors."""
+    """Register a tool, translating user-facing failures into tool errors.
+    An API token needs the tool's scope (:func:`_tool_scope`)."""
+    scope = _tool_scope(annotations)
 
     def decorator(fn):
         @functools.wraps(fn)
@@ -438,6 +459,8 @@ def _tool(name: str, annotations: ToolAnnotations, title: str):
             token = _CALL.set(state)
             counted, outcome = False, "error"
             try:
+                if ctx is not None:
+                    _require_scope(ctx, scope)
                 counted = _gate(ctx, name) if ctx is not None else False
                 result = fn(*args, **kwargs)
                 outcome = state.get("refused") or "ok"
@@ -489,6 +512,24 @@ def _caller(ctx: Context) -> dict:
 def _owners(uid: str) -> list[str]:
     """Reads see the caller's own artifacts plus the shared samples (as /api/v1)."""
     return [uid, config.SAMPLE_OWNER]
+
+
+def _reader(user: dict) -> "access_service.AccessCtx":
+    """The caller's access context for MCP: personal workspace, reads scoped to
+    :func:`_owners` (no team or shared-to-me fallback)."""
+    uid = user["uid"]
+    return access_service.AccessCtx(
+        user=user, uid=uid, workspace=access_service.PERSONAL, write_owner=uid,
+        read_owners=_owners(uid), list_owners=uid, share_fallback=False,
+    )
+
+
+def _check_graph_refs(db, user: dict, graph: dict, keep_graph: dict | None = None) -> None:
+    """Saved models and sub-system diagrams on a graph's blocks must be the
+    caller's own or samples (links an existing diagram already had are kept)."""
+    access_service.check_references(
+        db, _reader(user), access_service.graph_refs(graph),
+        keep=access_service.graph_refs(keep_graph) if keep_graph else ())
 
 
 def _url(path: str) -> str:
@@ -1551,6 +1592,7 @@ def create_rbd(
     check = rbds_service.validate_graph(db, graph, owners)
     if not check.get("valid", False):
         raise ToolError("Invalid RBD structure: " + "; ".join(check.get("errors") or ["unknown problem"]))
+    _check_graph_refs(db, user, graph)
     _cap(db, user, "rbds", "RBDs")
     rbd = rbds_service.save_rbd(db, name.strip(), graph, uid)
     return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), **_rbd_outline(graph, check, include_graph)}
@@ -1731,6 +1773,7 @@ def clone_rbd(
     new_name = (name or "").strip() or f"{src.name} (copy)"
     graph = copy.deepcopy(src.graph or {})
     check = rbds_service.validate_graph(db, graph, owners)
+    _check_graph_refs(db, user, graph)
     _cap(db, user, "rbds", "RBDs")
     rbd = rbds_service.save_rbd(db, new_name, graph, uid)
     out = {**_rbd_brief(rbd), "cloned_from": src.id, **_rbd_outline(graph, check, False)}
@@ -1791,6 +1834,10 @@ def edit_rbd(
     graph = result.graph
     check = _check_rbd(db, graph, owners, f"Nothing was saved — after all {len(ops)} op(s) the diagram is "
                                           "invalid: ")
+    try:
+        _check_graph_refs(db, user, graph, keep_graph=rbd.graph or {})
+    except access_service.UnreadableReference as exc:
+        raise ToolError(f"Nothing was saved — {exc}") from None
     out_rbd = rbd
     if not dry_run:
         try:
@@ -1983,7 +2030,7 @@ def analyze_rbd(
     try:
         if graph.get("repairable"):
             actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
-                             read_owners=_owners(uid), list_owners=uid)
+                             read_owners=_owners(uid), list_owners=uid, share_fallback=False)
             state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
                      if current_state else None)
             plan = user.get("mcp_plan", "pro")
@@ -2586,12 +2633,17 @@ _UPLOAD_ID = Annotated[str, Field(min_length=1, max_length=64, description="An u
 
 
 @contextmanager
-def _untrusted_file():
-    """Parsing an uploaded file: the importers' own errors reach the agent
-    as they are; anything else (a malformed file tripping a parser) is a
-    plain "couldn't read" — never a traceback, never "Error executing tool"."""
+def _untrusted_file(uid: str):
+    """Parsing an uploaded file: one at a time per user, within the import
+    budget (:mod:`backend.services.import_guard`). The importers' own errors
+    reach the agent as they are; anything else (a malformed file tripping a
+    parser) is a plain "couldn't read" — never a traceback, never "Error
+    executing tool"."""
     try:
-        yield
+        with import_guard.guard(_db(), uid):
+            yield
+    except (import_guard.ImportBusy, import_guard.ImportBudgetExceeded) as exc:
+        raise ToolError(str(exc)) from None
     except (ToolError, ValueError, TypeError):
         raise
     except Exception:  # noqa: BLE001 - untrusted input
@@ -2639,7 +2691,7 @@ def _upload_table_text(db, uid: str, upload_id: str, sheet: Optional[str]) -> tu
     from backend.services import excel
 
     doc, data = uploads_service.read(db, upload_id, uid)
-    with _untrusted_file():
+    with _untrusted_file(uid):
         if uploads_service.is_excel(doc):
             return doc, excel.to_csv(_workbook_table(data, doc["filename"], sheet)).decode("utf-8")
     if doc.get("detected_format") not in ("csv", "text"):
@@ -2695,7 +2747,7 @@ def inspect_upload(ctx: Context, upload_id: _UPLOAD_ID) -> dict[str, Any]:
     row count. Only the user's own uploads."""
     user, db = _caller(ctx), _db()
     doc, data = uploads_service.read(db, upload_id, user["uid"])
-    with _untrusted_file():
+    with _untrusted_file(user["uid"]):
         details = uploads_service.inspect(doc, data)
     return {**uploads_service.brief(doc), **details}
 
@@ -2755,6 +2807,8 @@ def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool,
 
     saved = []
     if save:
+        for _, graph, _ in ready:
+            _check_graph_refs(db, user, graph)
         if target is None:
             _cap(db, user, "rbds", "RBDs", n=len(ready))
         for d, graph, _ in ready:
@@ -2838,7 +2892,7 @@ def import_rbd(
     else:
         upload, data = uploads_service.read(db, upload_id, user["uid"])
         filename = upload["filename"]
-    with _untrusted_file():
+    with _untrusted_file(user["uid"]):
         try:
             diagrams = rbd_import.import_file(data, filename, format=format)
         except rbd_import.RbdImportError as exc:
@@ -2902,12 +2956,13 @@ def _excel_rcm(db, user, doc, data, sheet, mapping, name, header_row, study_id) 
         study = rcm_service.get_study(db, study_id, [uid])
         if study is None:
             raise ToolError("RCM study not found (only the user's own studies can be imported into).")
-        study = rcm_service.replace_tree(db, study.id, [*(study.functions or []), *imported], uid)
+        study = rcm_service.replace_tree(db, study.id, [*(study.functions or []), *imported], uid,
+                                         reader=_reader(user))
     else:
         _cap(db, user, "rcm_studies", "RCM studies")
         stem = excel.csv_filename(filename, table.sheet).rsplit(".", 1)[0]
         study = rcm_service.create_study(db, (name or stem).strip()[:200], "", "", uid)
-        study = rcm_service.replace_tree(db, study.id, imported, uid)
+        study = rcm_service.replace_tree(db, study.id, imported, uid, reader=_reader(user))
     uploads_service.delete(db, doc["_id"])
     unmapped = {k: [v for v in vals if v.get("guess") is None][:_RCM_VALUES]
                 for k, vals in (result.get("values") or {}).items()}
@@ -2986,7 +3041,7 @@ def import_excel(
         raise ToolError("rbd_id applies to target rbd_template.")
     if study_id and target != "rcm":
         raise ToolError("study_id applies to target rcm.")
-    with _untrusted_file():
+    with _untrusted_file(user["uid"]):
         if target == "dataset":
             return _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row)
         if target == "rcm":

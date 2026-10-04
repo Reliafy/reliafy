@@ -32,3 +32,14 @@ def _no_background_usage_rollup(monkeypatch):
     from backend.services import usage
 
     monkeypatch.setattr(usage, "_next_rollup", float("inf"))
+
+
+@pytest.fixture(autouse=True)
+def _fresh_email_verification_cache():
+    """Email-verification lookups are cached per process; each test starts
+    without another's answers."""
+    from backend.services import email_trust
+
+    email_trust.clear_cache()
+    yield
+    email_trust.clear_cache()

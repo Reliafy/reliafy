@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from backend.auth import get_current_user
-from backend.services import excel
+from backend.services import excel, import_guard
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/excel")
@@ -30,8 +30,29 @@ def read_upload(file: UploadFile) -> bytes:
     return file.file.read(excel.MAX_FILE_BYTES + 1)
 
 
+def guarded(uid: str, fn, *args, **kwargs):
+    """Run a file parser under the user's import guard (one at a time, within
+    the time budget — see :mod:`backend.services.import_guard`)."""
+    from backend.db import get_db
+
+    with import_guard.guard(get_db(), uid):
+        return fn(*args, **kwargs)
+
+
+def guard_error(exc: Exception) -> JSONResponse | None:
+    """The response for the import guard's refusals (None for anything else)."""
+    if isinstance(exc, import_guard.ImportBusy):
+        return JSONResponse(status_code=429, content={"detail": str(exc)}, headers={"Retry-After": "15"})
+    if isinstance(exc, import_guard.ImportBudgetExceeded):
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return None
+
+
 def excel_error(exc: Exception, what: str, data: bytes, filename: str) -> JSONResponse:
     """422 for a workbook that can't be read — never a 500 on untrusted input."""
+    refused = guard_error(exc)
+    if refused is not None:
+        return refused
     if isinstance(exc, excel.ExcelError):
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     logger.exception("Excel %s failed: bytes=%d", what, len(data))
@@ -59,7 +80,7 @@ def inspect_workbook(
     """The workbook's sheets with a preview and a guessed header row each."""
     data = read_upload(file)
     try:
-        return JSONResponse(content=excel.inspect(data, file.filename or ""))
+        return JSONResponse(content=guarded(user["uid"], excel.inspect, data, file.filename or ""))
     except Exception as exc:
         return excel_error(exc, "inspect", data, file.filename or "")
 
@@ -94,7 +115,8 @@ def workbook_table(
     notes)."""
     data = read_upload(file)
     try:
-        table = excel.read_table(data, sheet, header_row_param(header_row), file.filename or "")
+        table = guarded(user["uid"], excel.read_table, data, sheet, header_row_param(header_row),
+                        file.filename or "")
     except Exception as exc:
         return excel_error(exc, "table", data, file.filename or "")
     extra: dict = {}
@@ -128,7 +150,8 @@ def workbook_csv(
     """One sheet as CSV text — so a workbook can go wherever a CSV does."""
     data = read_upload(file)
     try:
-        table = excel.read_table(data, sheet, header_row_param(header_row), file.filename or "")
+        table = guarded(user["uid"], excel.read_table, data, sheet, header_row_param(header_row),
+                        file.filename or "")
     except Exception as exc:
         return excel_error(exc, "csv", data, file.filename or "")
     name = excel.csv_filename(file.filename or "", table.sheet)

@@ -388,7 +388,7 @@ def test_purchased_credits_unlock_agent_without_pro(monkeypatch):
     try:
         app.dependency_overrides[get_current_user] = lambda: {"uid": U, "email": "a", "name": "A"}
         monkeypatch.setattr(agent, "enabled", lambda: True)
-        monkeypatch.setattr(agent, "stream_run", lambda db, uid, message, file_id=None, session_id=None, approved=False: iter([
+        monkeypatch.setattr(agent, "stream_run", lambda db, uid, message, file_id=None, session_id=None, approved=False, **kw: iter([
             {"type": "text", "text": "plan"},
             {"type": "_meter", "session_id": "s1", "seconds": 0.0, "input_tokens": 0, "output_tokens": 0},
         ]))
@@ -412,13 +412,14 @@ def test_run_streams_events_and_meters(monkeypatch):
         billing.grant_credits(test_db, U, 1000, "test")
         billing.set_plan(test_db, U, "pro")  # the agent is Pro-only
         monkeypatch.setattr(agent, "enabled", lambda: True)
-        # stream_run signature: (db, uid, message, file_id=None, session_id=None, approved=False).
-        monkeypatch.setattr(agent, "stream_run", lambda db, uid, message, file_id=None, session_id=None, approved=False: iter([
+        # stream_run signature: (db, uid, message, file_id=None, session_id=None, approved=False, *, meter, should_stop).
+        monkeypatch.setattr(agent, "stream_run", lambda db, uid, message, file_id=None, session_id=None, approved=False, **kw: iter([
             {"type": "text", "text": "here's my plan…"},
             {"type": "reliafy_tool", "name": "create_dataset", "input": {}},
             {"type": "reliafy_tool_result", "name": "create_dataset", "ok": True, "summary": "Created dataset “X” (10 rows)."},
             {"type": "_meter", "session_id": "sesn_xyz", "seconds": 60.0, "input_tokens": 1000, "output_tokens": 1000},
         ]))
+        agent.record_upload(test_db, U, "f1", "d.csv")  # the run attaches the user's own upload
 
         r = client.post("/api/reliability-agent/run", json={"message": "fit weibull", "file_id": "f1"})
         assert r.status_code == 200

@@ -126,6 +126,8 @@ def init_db() -> None:
     # never touched). Unlock-attempt windows drop the same way.
     db.public_links.create_index([("expires_at", 1)], expireAfterSeconds=0)
     db.public_link_attempts.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Fixed-window request limits (backend/services/rate_limit.py).
+    db.rate_limits.create_index([("expires_at", 1)], expireAfterSeconds=0)
     db.api_tokens.create_index([("token_hash", 1)], unique=True)
     db.api_tokens.create_index([("uid", 1)])
     # Product-update emails: the unsubscribe token is the lookup key for the
@@ -148,11 +150,25 @@ def init_db() -> None:
     # MCP tool calls per user per UTC day (the retired Agent plan's quota): one
     # document per user per day, keyed by id; TTL drops it after the reset.
     db.mcp_usage.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Metered AI calls (backend/services/billing.py): credit holds, looked up
+    # per user and by whether they're settled; per-user concurrency slots,
+    # dropped by TTL if a holder never released one; and which user uploaded
+    # each Reliability Agent file.
+    db.credit_holds.create_index([("uid", 1), ("created_at", -1)])
+    db.credit_holds.create_index([("settled", 1), ("created_at", 1)])
+    db.credit_ledger.create_index([("uid", 1), ("kind", 1)])
+    db.ai_slots.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    db.agent_files.create_index([("owner_id", 1)])
     # MCP file uploads (backend/services/uploads.py): TTL drops every upload
     # and its chunks an hour after it arrived (or, unused, after its link).
     from backend.services import uploads as uploads_service
 
     uploads_service.ensure_indexes(db)
+    # One import per user at a time (backend/services/import_guard.py): TTL
+    # drops a lease once it has expired.
+    from backend.services import import_guard
+
+    import_guard.ensure_indexes(db)
     # Product-usage logging: account-linked events expire after 90 days (the
     # privacy policy's promise); the identifier-free daily totals stay.
     from backend.services import usage as usage_service

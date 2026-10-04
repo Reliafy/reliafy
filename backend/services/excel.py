@@ -55,6 +55,8 @@ MAX_ROWS = 100_000
 MAX_COLS = 200
 MAX_SHEETS = 100
 PREVIEW_ROWS = 20
+# Merged ranges read per sheet; a sheet with more is read without merge fill.
+MAX_MERGES = 10_000
 
 EXCEL_EXTENSIONS = (".xlsx", ".xlsm", ".xltx", ".xltm")
 REFUSED_EXTENSIONS = {
@@ -237,21 +239,44 @@ def display(value: Any) -> str:
 class _SheetMeta:
     merges: list[tuple[int, int, int, int]] = field(default_factory=list)  # r1, c1, r2, c2
     uncached_formulas: int = 0
+    # More merged ranges than MAX_MERGES: merge fill is skipped.
+    merges_skipped: bool = False
+    # Whether any cell sits right of MAX_COLS (None: unknown — the pass
+    # failed, or a cell had no reference), and whether one holds a value.
+    wide: Optional[bool] = None
+    wide_values: bool = False
 
 
 def _sheet_meta(ws) -> _SheetMeta:
     """One streaming pass over the sheet XML for what read-only mode doesn't
-    expose: merged ranges, and formula cells with no saved value."""
+    expose: merged ranges, formula cells with no saved value, and whether any
+    cell lies beyond the columns read.
+
+    Merged ranges that start below :data:`MAX_ROWS` or right of
+    :data:`MAX_COLS` can't affect the table and are dropped; past
+    :data:`MAX_MERGES` the rest are ignored and the sheet is read without
+    merge fill (with a note)."""
     from defusedxml.ElementTree import iterparse
+    from openpyxl.utils import get_column_letter
     from openpyxl.utils.cell import range_boundaries
+
+    from backend.services import import_guard
 
     meta = _SheetMeta()
     try:
         src = ws._get_source()
     except Exception:  # pragma: no cover - openpyxl internals moved
         return meta
+    last = get_column_letter(MAX_COLS)
+    limit = (len(last), last)
+    wide = False
+    unknown = False
+    events = 0
     try:
         for _event, el in iterparse(src, events=("end",)):
+            events += 1
+            if not events % 10_000:
+                import_guard.check()
             tag = el.tag.rsplit("}", 1)[-1]
             if tag == "c":
                 has_f = has_v = False
@@ -263,16 +288,34 @@ def _sheet_meta(ws) -> _SheetMeta:
                         has_v = has_v or bool(child.text) or ctag == "is"
                 if has_f and not has_v:
                     meta.uncached_formulas += 1
+                ref = el.get("r")
+                if not ref:
+                    unknown = True
+                else:
+                    letters = ref.rstrip("0123456789").upper()
+                    if (len(letters), letters) > limit:
+                        wide = True
+                        meta.wide_values = meta.wide_values or has_v or has_f
             elif tag == "row":
                 el.clear()
             elif tag == "mergeCell":
+                if meta.merges_skipped:
+                    continue
                 ref = el.get("ref") or ""
                 try:
                     c1, r1, c2, r2 = range_boundaries(ref)
                 except (TypeError, ValueError):
                     continue
-                if None not in (c1, r1, c2, r2):
-                    meta.merges.append((r1, c1, r2, c2))
+                if None in (c1, r1, c2, r2) or r1 > MAX_ROWS or c1 > MAX_COLS:
+                    continue
+                if len(meta.merges) >= MAX_MERGES:
+                    meta.merges_skipped = True
+                    meta.merges = []
+                    continue
+                meta.merges.append((r1, c1, r2, c2))
+        meta.wide = None if unknown else wide
+    except import_guard.ImportBudgetExceeded:
+        raise
     except Exception:
         # A sheet openpyxl can read but this pass can't: carry on without
         # merge fill / formula notes rather than refusing the file.
@@ -287,30 +330,62 @@ def _sheet_meta(ws) -> _SheetMeta:
 # ---------------------------------------------------------------------------
 
 
-def _raw_rows(ws, stats: dict, max_rows: Optional[int]) -> Iterator[tuple[int, list]]:
+def _raw_rows(ws, meta: _SheetMeta, stats: dict, max_rows: Optional[int]) -> Iterator[tuple[int, list]]:
     """``(sheet row number, cleaned values)`` for every row, capped."""
+    from backend.services import import_guard
+
     # Stored dimensions are often wrong (or claim the whole grid); read what's there.
     ws.reset_dimensions()
-    for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
+    # A sheet with cells right of MAX_COLS (or that the metadata pass
+    # couldn't place) is read only that far: openpyxl otherwise pads every
+    # such row out to its last cell, up to column XFD.
+    bounded = meta.wide is not False
+    rows = ws.iter_rows(max_col=MAX_COLS + 1, values_only=True) if bounded else ws.iter_rows(values_only=True)
+    if meta.wide_values:
+        stats["truncated_cols"] = True
+    for i, row in enumerate(rows, start=1):
         if max_rows is not None and i > max_rows:
             stats["truncated_rows"] = True
             return
+        if not i % 1000:
+            import_guard.check()
         values = list(row[:MAX_COLS])
         if len(row) > MAX_COLS and any(v not in (None, "") for v in row[MAX_COLS:]):
             stats["truncated_cols"] = True
+        if bounded:
+            # Padded to MAX_COLS: drop the blank tail, as an unpadded row has none.
+            if values.count(None) == len(values):
+                values = []
+            else:
+                while values[-1] is None:
+                    values.pop()
         yield i, [_clean(v, stats) for v in values]
+
+
+def _fill_merges(meta: _SheetMeta) -> list[tuple[int, int, int, int]]:
+    """The merged ranges that fill down: those spanning more than one row,
+    and at most one at a time in any column (overlapping ranges are invalid
+    in Excel; the first one wins)."""
+    out = []
+    reach: dict[int, int] = {}  # column -> last row covered so far
+    for m in sorted((m for m in meta.merges if m[2] > m[0]), key=lambda m: (m[1], m[0])):
+        r1, c1, r2, _c2 = m
+        if r1 <= reach.get(c1, 0):
+            continue
+        reach[c1] = r2
+        out.append(m)
+    return out
 
 
 def _filled_rows(ws, meta: _SheetMeta, stats: dict, max_rows: Optional[int]) -> Iterator[tuple[int, list, list]]:
     """``(row number, filled values, raw values)``: vertically merged blocks
     fill down their first column (the value Excel shows across the block)."""
     anchors: dict[tuple, Any] = {}
-    merges = [m for m in meta.merges if m[2] > m[0]]  # spans more than one row
-    by_start = {}
-    for m in merges:
+    by_start: dict[int, list] = {}
+    for m in _fill_merges(meta):
         by_start.setdefault(m[0], []).append(m)
     active: list = []
-    for rnum, raw in _raw_rows(ws, stats, max_rows):
+    for rnum, raw in _raw_rows(ws, meta, stats, max_rows):
         values = list(raw)
         for m in by_start.get(rnum, ()):
             c = m[1] - 1
@@ -414,6 +489,10 @@ def _notes(stats: dict, meta: _SheetMeta, max_rows: int) -> list[str]:
     if stats.get("error_cells"):
         n = stats["error_cells"]
         notes.append(f"{n} cell{'s' if n != 1 else ''} with an Excel error (#DIV/0!, #N/A, …) read as blank.")
+    if meta.merges_skipped:
+        notes.append(
+            f"The sheet has more than {MAX_MERGES:,} merged cell ranges, so merged cells weren't "
+            "filled in: a value merged across several rows appears in its first row only.")
     if stats.get("truncated_rows"):
         notes.append(f"Only the first {max_rows:,} rows were read.")
     if stats.get("truncated_cols"):

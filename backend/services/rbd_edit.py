@@ -299,6 +299,7 @@ class _Editor:
                 data.pop(key, None)
                 if key in ("preventive", "inspection"):
                     data.pop("rcm_source", None)
+            rbd_graph.check_counts(ntype, data, where)
             node["data"] = data
         parts = [f"updated {', '.join(changes)}"] if changes else []
         if clear:
@@ -487,6 +488,10 @@ def apply_ops(
         except (EditError, GraphError) as exc:
             raise EditError(f"ops[{i}] ({_describe(op)}): {exc}") from None
 
+    try:
+        rbd_graph.check_size(ed.nodes, ed.edges)
+    except GraphError as exc:
+        raise EditError(f"after these ops {exc}") from None
     relaid = ed.topology_changed
     if relaid:
         nodes = [{k: v for k, v in n.items() if k != "positionAbsolute"} for n in ed.nodes]

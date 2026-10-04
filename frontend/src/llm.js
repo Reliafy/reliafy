@@ -3,7 +3,9 @@
 // the browser never holds a provider key. Tools still execute in the browser;
 // this just drives the loop. The server picks the provider, so the caller passes
 // `provider` (from /api/assistant/info) only so we shape messages/tool results
-// the way that provider expects.
+// the way that provider expects. The system prompt and the tool definitions
+// live on the server (backend/services/assistant_spec.py); we send only the
+// message history.
 import { assistantStep, assistantStepStream } from "./api.js";
 
 const MAX_STEPS = 8; // safety cap on tool round-trips per user message
@@ -16,11 +18,11 @@ export async function runTurn(opts) {
   return opts.provider === "anthropic" ? runAnthropic(opts) : runOpenAI(opts);
 }
 
-async function runAnthropic({ system, messages, tools, executeTool, onText, onTool, onBalance, shouldStop }) {
+async function runAnthropic({ messages, executeTool, onText, onTool, onBalance, shouldStop }) {
   let msgs = [...messages];
   for (let step = 0; step < MAX_STEPS; step++) {
     if (shouldStop?.()) return msgs;
-    const res = await assistantStep(system, msgs, tools);
+    const res = await assistantStep(msgs);
     onBalance?.(res.credit_cents);
     const message = res.message;
     msgs.push(message);
@@ -49,13 +51,13 @@ async function runAnthropic({ system, messages, tools, executeTool, onText, onTo
 // with a `function_call_output` item spliced in after each tool runs. The
 // server (backend/services/assistant.py:_openai) returns `res.message` as that
 // output-item array; we append it verbatim and resend everything next step.
-async function runOpenAI({ system, messages, tools, executeTool, onText, onDelta, onTool, onBalance, onStreamEnd, shouldStop }) {
+async function runOpenAI({ messages, executeTool, onText, onDelta, onTool, onBalance, onStreamEnd, shouldStop }) {
   let msgs = [...messages];
   for (let step = 0; step < MAX_STEPS; step++) {
     if (shouldStop?.()) return msgs;
     // Assistant text streams in via onDelta; the resolved payload carries the
     // full output items (message/function_call/reasoning) to continue the loop.
-    const res = await assistantStepStream(system, msgs, tools, { onDelta: (t) => onDelta?.(t) });
+    const res = await assistantStepStream(msgs, { onDelta: (t) => onDelta?.(t) });
     onBalance?.(res.credit_cents);
     onStreamEnd?.(); // close the live text bubble; tool chips / next step start fresh
     const output = Array.isArray(res.message) ? res.message : [];

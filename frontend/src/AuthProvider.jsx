@@ -9,6 +9,9 @@ const DEV_USER = { uid: "dev-user", email: "dev@local", displayName: "Dev User" 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(AUTH_DISABLED ? DEV_USER : null);
   const [loading, setLoading] = useState(!AUTH_DISABLED);
+  // Bumped when a reload finds the email newly verified, so consumers of
+  // user.emailVerified (Firebase mutates the user object in place) re-render.
+  const [verifiedTick, setVerifiedTick] = useState(0);
 
   // The Firebase SDK is loaded on demand (see firebase.js). Start straight
   // after mount so it's ready long before anyone clicks "Sign in" — the Google
@@ -47,13 +50,44 @@ export function AuthProvider({ children }) {
     return {
       user,
       loading,
+      verifiedTick,
       signIn: (email, password) => withAuth((m) => m.signInWithEmailAndPassword(m.auth, email, password)),
-      signUp: (email, password) => withAuth((m) => m.createUserWithEmailAndPassword(m.auth, email, password)),
+      // A new email/password account gets Firebase's verification email
+      // straight away (best-effort: the banner offers a resend). Google
+      // accounts arrive verified.
+      signUp: (email, password) =>
+        withAuth(async (m) => {
+          const cred = await m.createUserWithEmailAndPassword(m.auth, email, password);
+          try {
+            await m.sendEmailVerification(cred.user);
+          } catch {
+            /* the banner's resend button covers a failed send */
+          }
+          return cred;
+        }),
+      resendVerification: () =>
+        withAuth((m) => (m.auth.currentUser ? m.sendEmailVerification(m.auth.currentUser) : null)),
+      // After the user follows the link in the email: reload the account,
+      // refresh the ID token (it carries email_verified) and re-sync the
+      // profile so invites waiting for this address activate. Resolves to
+      // whether the address is now verified.
+      refreshVerification: () =>
+        withAuth(async (m) => {
+          const current = m.auth.currentUser;
+          if (!current) return false;
+          await m.reload(current);
+          if (!current.emailVerified) return false;
+          await current.getIdToken(true);
+          setVerifiedTick((n) => n + 1);
+          const { getMe } = await import("./api.js");
+          await getMe().catch(() => {});
+          return true;
+        }),
       signInWithGoogle: () => withAuth((m) => m.signInWithPopup(m.auth, m.googleProvider)),
       resetPassword: (email) => withAuth((m) => m.sendPasswordResetEmail(m.auth, email)),
       signOut: () => (AUTH_DISABLED ? Promise.resolve() : withAuth((m) => m.signOut(m.auth))),
     };
-  }, [user, loading]);
+  }, [user, loading, verifiedTick]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

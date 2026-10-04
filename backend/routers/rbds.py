@@ -13,6 +13,8 @@ from fastapi.responses import JSONResponse, Response
 from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.routers import excel as excel_router
+from backend.services import import_guard
 from backend.services import rbd_import
 from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
@@ -22,7 +24,7 @@ from backend.services import usage as usage_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import Rbd
 from backend.services.rbd_analysis import AnalysisError
-from backend.services.rbd_graph import GraphError, normalize_graph
+from backend.services.rbd_graph import GraphError, check_limits, normalize_graph
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -68,6 +70,10 @@ def save_rbd(
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
+    try:
+        check_limits(graph)
+    except GraphError as exc:
+        return JSONResponse(status_code=422, content={"detail": f"Can't save: {exc}"})
     # Free-plan cap applies only when creating a new diagram (updating one you
     # own, or forking a sample, is checked by whether you already own it).
     existing = rbds_service.get_rbd(session, id, ctx.read_owners) if id else None
@@ -82,6 +88,13 @@ def save_rbd(
             status_code=402,
             content={"detail": billing_service.cap_message(session, ctx.uid, "rbds"), "code": "cap", "upgrade": True},
         )
+    # Saved models and sub-system diagrams on the blocks must be ones the
+    # writer can open (links the diagram already had are kept as they are).
+    kept = access_service.graph_refs(existing.graph) if not creating else ()
+    try:
+        access_service.check_references(session, ctx, access_service.graph_refs(graph), keep=kept)
+    except access_service.UnreadableReference as exc:
+        return JSONResponse(status_code=exc.status, content={"detail": str(exc), "code": "unreadable_reference"})
     try:
         rbd = rbds_service.save_rbd(
             session, name, graph, ctx.write_owner, rbd_id=id,
@@ -135,7 +148,9 @@ def import_rbd_file(
         except ValueError:
             return JSONResponse(status_code=422, content={"detail": "The column mapping isn't valid JSON."})
     try:
-        diagrams = rbd_import.import_file(data, file.filename or "", **kwargs)
+        diagrams = excel_router.guarded(ctx.uid, rbd_import.import_file, data, file.filename or "", **kwargs)
+    except (import_guard.ImportBusy, import_guard.ImportBudgetExceeded) as exc:
+        return excel_router.guard_error(exc)
     except rbd_import.RbdImportError as exc:
         logger.info("RBD import refused: ext=%s bytes=%d — %s", ext, len(data), exc)
         content = {"detail": str(exc)}
@@ -426,10 +441,10 @@ def analyze_graph(
         )
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse RBD graph")
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to analyse RBD: {exc}"}
+            status_code=500, content={"detail": "Failed to analyse RBD. The error has been logged."}
         )
 
 
@@ -461,10 +476,10 @@ def analyze_rbd(
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse RBD %s", rbd_id)
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to analyse RBD: {exc}"}
+            status_code=500, content={"detail": "Failed to analyse RBD. The error has been logged."}
         )
 
 
@@ -497,10 +512,10 @@ def export_rbd_python(
         filename, source = rbds_service.export_python(
             session, rbd.name, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id]
         )
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to export RBD %s as Python", rbd_id)
         return JSONResponse(
-            status_code=500, content={"detail": f"Failed to export RBD: {exc}"}
+            status_code=500, content={"detail": "Failed to export RBD. The error has been logged."}
         )
     return python_download(filename, source)
 

@@ -16,9 +16,18 @@ Send it as a bearer header:
 Authorization: Bearer rlf_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
-Tokens are **write-only**: they authenticate the `/api/ingest/*` endpoints
-and nothing else — a leaked token can push data but can never read your
-analyses or touch your account. Revoke tokens any time from the same page.
+Each token has **scopes**, chosen when you create it:
+
+| Scope | Allows |
+|---|---|
+| `ingest` (Push data) | the `/api/ingest/*` endpoints and `/api/import/models` |
+| `read` | `/api/v1` reads and calculations; the read-only MCP tools |
+| `write` | `/api/v1` dataset creation and fitting; every MCP tool that saves, changes, deletes or shares |
+
+A request outside the token's scopes gets `403`. A token that only has
+`ingest` can push data but can never read your analyses; no token can touch
+your account, billing or tokens. Tokens created before scopes existed keep
+all three. Revoke tokens any time from the same page.
 
 Rate limit: 120 requests/minute. Row limit: 5,000 rows/request.
 

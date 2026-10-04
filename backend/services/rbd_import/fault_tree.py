@@ -49,6 +49,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional, Union
 
+from backend.services import import_guard
+
 from .types import RbdImportError
 
 # Guards for untrusted input.
@@ -108,6 +110,10 @@ def _simplify(tree: FaultTree):
     """Fold constants and degenerate gates. Returns ``(expr, labels)`` where
     ``labels`` maps ``id(expr)`` of each voting expression to its gate's name."""
     memo: dict[str, object] = {}
+    # Basic-event appearances under each simplified node once the tree is
+    # drawn out (a sub-tree used in several places is drawn in each), so the
+    # diagram's size is known before any list is built.
+    sizes: dict[str, int] = {}
     visiting: set[str] = set()
     labels: dict[int, str] = {}
 
@@ -117,6 +123,7 @@ def _simplify(tree: FaultTree):
                 f"The fault tree is nested more than {MAX_DEPTH} gates deep — too deep to import.")
         if name in memo:
             return memo[name]
+        import_guard.check()
         node = tree.nodes.get(name)
         if node is None:
             raise RbdImportError(f"“{name}” is used in the fault tree but never defined.")
@@ -125,13 +132,22 @@ def _simplify(tree: FaultTree):
         if isinstance(node, Leaf):
             out = node.constant if node.constant is not None else ("leaf", name)
             memo[name] = out
+            sizes[name] = 0 if isinstance(out, bool) else 1
             return out
         visiting.add(name)
         try:
             kids = [visit(c, depth + 1) for c in node.children]
         finally:
             visiting.discard(name)
+        # Flattening and constant folding keep every non-constant child's
+        # events, so the drawn size is the sum over the children.
+        size = sum(sizes[c] for c in node.children)
+        if size > MAX_BLOCKS:
+            raise RbdImportError(
+                f"The diagram would have more than {MAX_BLOCKS} blocks once every shared sub-tree is "
+                "drawn in each place it is used — too large to import.")
         out = _fold(node, kids)
+        sizes[name] = 0 if isinstance(out, bool) else size
         if isinstance(out, tuple) and out[0] == "atleast":
             labels.setdefault(id(out), node.label or name)
         memo[name] = out
@@ -250,6 +266,7 @@ class _Builder:
         self.leaf_ids: dict[str, str] = {}
 
     def _new_id(self, base: str) -> str:
+        import_guard.check()
         slug = re.sub(r"[^A-Za-z0-9_.:-]+", "_", base).strip("_") or "node"
         slug = slug[:60]
         nid, i = slug, 2
