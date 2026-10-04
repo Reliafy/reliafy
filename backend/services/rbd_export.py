@@ -1448,6 +1448,15 @@ def _repairable_body(script: _Script, graph) -> str:
     out.append("WINDOW = T_SIMULATION")
     out.append(f"EXACT_POINTS = {rbd_analysis.EXACT_POINTS}")
     out.append(f"EXACT_EARLY_POINTS = {rbd_analysis.EXACT_EARLY_POINTS}")
+    out.append("# The simulated window's mean availability (and cost) is "
+               "reported exactly, as")
+    out.append("# in Reliafy, for a diagram of up to EXACT_WINDOW_MEAN_MAX_BLOCKS "
+               "blocks; above it")
+    out.append("# Reliafy reports the simulated mean, and so does this script "
+               "(see window_mean).")
+    out.append(f"N_BLOCKS = {rbd_analysis.count_blocks(graph)}  "
+               "# components and standby groups, as Reliafy counts them")
+    out.append(f"EXACT_WINDOW_MEAN_MAX_BLOCKS = {rbd_analysis.EXACT_WINDOW_MEAN_MAX_BLOCKS}")
     out.append("# Start them from the blocks' current states instead of new, "
                "as Reliafy's")
     out.append('# "As of now": by block id, {"down": True, "since": <time into '
@@ -1548,6 +1557,11 @@ def window_mean(overrides, name):
     RePyability works it out (basis "exact" or "numerical"), as Reliafy
     reports it beside the simulation's interval; ``(None, "simulation")``
     otherwise."""
+    if N_BLOCKS > EXACT_WINDOW_MEAN_MAX_BLOCKS:
+        # Above EXACT_WINDOW_MEAN_MAX_BLOCKS blocks Reliafy doesn't compute
+        # the window's exact mean with every run (it takes too long), so it
+        # reports the simulated mean: this script does too, to match it.
+        return None, "simulation"
     route = rbd.analysis_routes()[name].route
     if route not in ("exact", "numerical"):
         return None, "simulation"
@@ -1651,6 +1665,9 @@ def main():
     window_exact, window_basis = window_mean(overrides, "mission_availability")
     if window_exact is not None:
         print(f"  window mean availability ({window_basis}): {window_exact:.6f}")
+    elif N_BLOCKS > EXACT_WINDOW_MEAN_MAX_BLOCKS:
+        print(f"  (the simulated mean stands, as in Reliafy: {N_BLOCKS} blocks is more "
+              f"than the {EXACT_WINDOW_MEAN_MAX_BLOCKS} its exact window mean is computed for)")
     print(f"  simulated mean up time: {sim.mean_up_time:,.6g}{unit}")
     print(f"  simulated mean down time: {sim.mean_down_time:,.6g}{unit}")
     print(f"  simulated failure frequency: {sim.failure_frequency:.6g}")

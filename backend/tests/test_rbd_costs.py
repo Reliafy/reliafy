@@ -376,6 +376,40 @@ def test_export_reproduces_costs_and_maintenance(tmp_path):
     assert "Long-run cost rate (exact)" in proc.stdout
 
 
+@pytest.mark.parametrize("limit, basis", [(2, "exact"), (1, "simulation")])
+def test_app_and_export_agree_on_the_window_mean_basis_either_side_of_the_limit(
+        tmp_path, monkeypatch, limit, basis):
+    """EXACT_WINDOW_MEAN_MAX_BLOCKS: up to it the simulated window's mean
+    availability and cost are RePyability's exact values, above it the
+    simulated means, in the app and in "Download as Python" alike, so both
+    report the same numbers. A two-block diagram at the limit, then above it."""
+    monkeypatch.setattr(ra, "EXACT_WINDOW_MEAN_MAX_BLOCKS", limit)
+    a = _node("a", 200, 0, model=_exp(1e-3), repair=_exp(0.1), costs={"repair": 300})
+    b = _node("b", 400, 0, model=_exp(2e-3), repair=_exp(0.05), costs={"downtime": 40})
+    g = _series(a, b, costs={"downtime_rate": 250})
+    assert ra.count_blocks(g) == 2
+    app = ra.analyze_availability(g, n_simulations=60)
+    code = rbd_export.to_python(g, "Limit", exported_at=WHEN)
+    assert f"EXACT_WINDOW_MEAN_MAX_BLOCKS = {limit}" in code and "N_BLOCKS = 2" in code
+    res, proc = _run(code, tmp_path, n_sims="60")
+
+    prec, got = app["precision"], res["precision"]
+    assert prec["window_availability_basis"] == got["window_availability_basis"]
+    assert app["costs"]["simulated"]["mean_basis"] == res["costs"]["simulated"]["mean_basis"]
+    if basis == "exact":
+        assert got["window_availability_basis"] in ("exact", "numerical")
+        assert res["costs"]["simulated"]["mean_basis"] in ("exact", "numerical")
+        assert got["window_availability"] != got["simulated_window_availability"]
+    else:
+        assert got["window_availability_basis"] == "simulation"
+        assert res["costs"]["simulated"]["mean_basis"] == "simulation"
+        assert got["window_availability"] == got["simulated_window_availability"]
+        assert "the simulated mean stands" in proc.stdout
+    # The same numbers either way.
+    assert got["window_availability"] == pytest.approx(prec["window_availability"], rel=1e-12)
+    assert res["costs"]["simulated"]["mean"] == pytest.approx(app["costs"]["simulated"]["mean"], rel=1e-12)
+
+
 def test_export_runs_block_replacement_to_the_same_precision_target(tmp_path):
     g = _wearing({"policy": "block", "interval": 580, "duration": 7, "cost": 1000})
     app = ra.analyze_availability(g)

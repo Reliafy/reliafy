@@ -2356,6 +2356,13 @@ def _simulate(rbd, t_sim: float, overrides: dict, n: int, **kwargs):
                                     **plain, **kwargs, **overrides), False
 
 
+def window_mean_exact_ok(graph: dict) -> bool:
+    """Whether a simulation's window mean may be the exact (or numerical)
+    one: up to :data:`EXACT_WINDOW_MEAN_MAX_BLOCKS` blocks. Above it the
+    simulated mean stands — in the app and in "Download as Python" alike."""
+    return count_blocks(graph) <= EXACT_WINDOW_MEAN_MAX_BLOCKS
+
+
 def window_routes(rbd) -> dict:
     """``{"mission_availability": route, "expected_cost": route}`` from
     RePyability's ``analysis_routes()`` (None where it has none)."""
@@ -2373,9 +2380,8 @@ def _window_exact(rbd, graph: dict, t_sim: float, overrides: dict,
     ``mission_availability`` (from the same start as the simulation) when its
     route is exact or numerical, its basis that route; otherwise
     ``(None, "simulation")``. Not for a diagram above
-    :data:`EXACT_AUTO_MAX_BLOCKS` blocks, whose exact figures over time are
-    computed only on request."""
-    if count_blocks(graph) > EXACT_AUTO_MAX_BLOCKS:
+    :data:`EXACT_WINDOW_MEAN_MAX_BLOCKS` blocks (:func:`window_mean_exact_ok`)."""
+    if not window_mean_exact_ok(graph):
         return None, "simulation"
     route = window_routes(rbd)["mission_availability"]
     if route not in _OVER_TIME_OK:
@@ -2865,6 +2871,12 @@ EXACT_EARLY_POINTS = 40   # plus log-spaced points near the start, for the early
 # EXACT_MAX_BLOCKS not on this service at all.
 EXACT_AUTO_MAX_BLOCKS = 30
 EXACT_MAX_BLOCKS = 120
+# Up to this many blocks a simulation's window mean (availability and cost)
+# is RePyability's exact or numerical value, the simulated interval beside it;
+# above it the simulated mean stands, so a large diagram's run isn't held up.
+# "Download as Python" applies the same limit, so the script reports the same
+# numbers. For now the same as EXACT_AUTO_MAX_BLOCKS; a Cloud Run benchmark sets it.
+EXACT_WINDOW_MEAN_MAX_BLOCKS = 30
 
 # The routes shown with the figures, in this order.
 _EXACT_ROUTE_KEYS = (

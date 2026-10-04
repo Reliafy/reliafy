@@ -316,10 +316,15 @@ def report_costs(sim, overrides):
                 print(f"    {category.replace('_', ' ')}: {value:,.6g}")
         # The window's mean cost, exact where RePyability works it out (as
         # in Reliafy); the interval and percentiles stay the simulation's.
+        # Above EXACT_WINDOW_MEAN_MAX_BLOCKS blocks Reliafy reports the
+        # simulated mean (the exact one takes too long), and so does this.
         mean, mean_basis = (window_mean(overrides, "expected_cost") if rbd.has_costs
                             else (None, "simulation"))
         if mean is not None:
             print(f"  expected cost of the window ({mean_basis}): {mean:,.6g}")
+        elif N_BLOCKS > EXACT_WINDOW_MEAN_MAX_BLOCKS:
+            print(f"  (the simulated mean cost stands, as in Reliafy: {N_BLOCKS} blocks is "
+                  f"more than the {EXACT_WINDOW_MEAN_MAX_BLOCKS} its exact window mean is computed for)")
         out["simulated"] = {
             "mean": cost.mean if mean is None else mean, "mean_basis": mean_basis,
             "simulated_mean": cost.mean, "lower": window.lower, "upper": window.upper,

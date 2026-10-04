@@ -125,8 +125,8 @@ def _window_mean(rbd, graph: dict, t_sim: float, overrides: dict,
     is exact or numerical, its basis that route; otherwise
     ``(None, "simulation")``. As the window's availability
     (``rbd_analysis._window_exact``), not above
-    ``EXACT_AUTO_MAX_BLOCKS`` blocks."""
-    if ra.count_blocks(graph) > ra.EXACT_AUTO_MAX_BLOCKS:
+    ``EXACT_WINDOW_MEAN_MAX_BLOCKS`` blocks."""
+    if not ra.window_mean_exact_ok(graph):
         return None, "simulation"
     route = ra.window_routes(rbd)["expected_cost"]
     if route not in ra._OVER_TIME_OK:
