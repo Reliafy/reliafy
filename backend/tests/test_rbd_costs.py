@@ -304,7 +304,7 @@ def _sample():
 
 
 def test_old_diagrams_build_and_analyse_exactly_as_before():
-    from repyability import NonRepairable, RepairableRBD
+    from repyability import NonRepairable, PerfectReliability, RepairableRBD
 
     g = _sample()
     rbd, labels, gates, working, broken = ra._build_repairable_rbd(g)
@@ -313,11 +313,12 @@ def test_old_diagrams_build_and_analyse_exactly_as_before():
     # The same components, built the way they were before #99.
     old = RepairableRBD(
         rbd._init_args["edges"],
-        {n: (c if n in gates else NonRepairable(c.reliability, c.time_to_replace))
-         for n, c in rbd.components.items()},
+        # The voting gates are junctions (#224), no components.
+        {**{n: PerfectReliability for n in gates},
+         **{n: NonRepairable(c.reliability, c.time_to_replace) for n, c in rbd.components.items()}},
         k=rbd._init_args["k"], input_node="input", output_node="output",
     )
-    ov = {"working_nodes": working | gates, "broken_nodes": broken}
+    ov = {"working_nodes": working, "broken_nodes": broken}
     assert rbd.mean_availability(**ov) == old.mean_availability(**ov)
     new_res = rbd.availability(t_simulation=5000, mc_samples=40, method="c", seed=1, antithetic=True, **ov)
     old_res = old.availability(t_simulation=5000, mc_samples=40, method="c", seed=1, antithetic=True, **ov)
@@ -500,8 +501,8 @@ def test_applied_copies_join_a_vote_through_a_junction():
     a1 = 10 / 1010
     pa, p = 1 - a1 ** 2, 1 - a1
     two_of_three = pa * p * p + pa * p * (1 - p) * 2 + (1 - pa) * p * p
-    gates = {"vote", "aj"}
-    assert rbd.mean_availability(working_nodes=gates) == pytest.approx(two_of_three, rel=1e-12)
+    assert rbd._junctions() == {"vote", "aj"}  # #224: junctions, never pinned
+    assert rbd.mean_availability() == pytest.approx(two_of_three, rel=1e-12)
 
 
 def test_cheapest_design_needs_prices_and_exact_costs():

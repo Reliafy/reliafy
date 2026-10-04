@@ -35,8 +35,9 @@ W = surv.Weibull.from_params
 
 
 def _build(graph):
-    rbd, labels, gates, working, broken = ra._build_repairable_rbd(graph)
-    return rbd, labels, {"working_nodes": working | gates, "broken_nodes": broken}
+    rbd, labels, _gates, working, broken = ra._build_repairable_rbd(graph)
+    # Voting gates are junctions (#224): never pinned, as the app runs it.
+    return rbd, labels, {"working_nodes": working, "broken_nodes": broken}
 
 
 def _next(graph, state, window, n=2000):

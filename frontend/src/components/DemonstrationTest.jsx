@@ -22,6 +22,7 @@ export default function DemonstrationTest() {
   const [units, setUnits] = useState("20");
   const [mtbf, setMtbf] = useState("1000");
   const [design, setDesign] = useState("");
+  const [producerRisk, setProducerRisk] = useState("");
   const [result, setResult] = useState(null);
   const [inputs, setInputs] = useState(null);
   const [error, setError] = useState(null);
@@ -29,6 +30,8 @@ export default function DemonstrationTest() {
 
   const attribute = method === "attribute";
   const byTime = attribute && solveFor === "test_time";
+  // Both risks (#223): the plan chooses the failures allowed.
+  const twoRisk = producerRisk !== "" && producerRisk != null;
 
   const buildBody = () => {
     const body = {
@@ -37,6 +40,7 @@ export default function DemonstrationTest() {
       failures: num(failures) ?? 0,
       unit: unit.trim() || null,
     };
+    if (twoRisk) body.producer_risk = frac(producerRisk);
     if (attribute) {
       Object.assign(body, {
         reliability: frac(reliability),
@@ -118,7 +122,13 @@ export default function DemonstrationTest() {
             <span>Unit</span>
             <input type="text" placeholder="e.g. hours" value={unit} onChange={(e) => setUnit(e.target.value)} />
           </label>
-          {field("Failures allowed", failures, setFailures, { min: "0", max: "100", step: "1" })}
+          {field("Failures allowed", twoRisk ? "" : failures, setFailures, {
+            min: "0",
+            max: "100",
+            step: "1",
+            disabled: twoRisk,
+            placeholder: twoRisk ? "chosen by the plan" : undefined,
+          })}
         </div>
 
         <div className="strategy-costs">
@@ -132,8 +142,20 @@ export default function DemonstrationTest() {
               placeholder: "e.g. 2",
             })}
           {attribute
-            ? field("Design's true reliability (%, optional)", design, setDesign, { min: "0.1", max: "99.999", placeholder: "e.g. 99" })
-            : field("Design's true MTBF (optional)", design, setDesign, { min: "0", placeholder: "e.g. 3000" })}
+            ? field(twoRisk ? "Good design's reliability (%)" : "Design's true reliability (%, optional)", design, setDesign, {
+                min: "0.1",
+                max: "99.999",
+                placeholder: "e.g. 99",
+              })
+            : field(twoRisk ? "Good design's MTBF" : "Design's true MTBF (optional)", design, setDesign, {
+                min: "0",
+                placeholder: "e.g. 3000",
+              })}
+          {field("Producer's risk (%, optional)", producerRisk, setProducerRisk, {
+            min: "0.1",
+            max: "99.9",
+            placeholder: "e.g. 20",
+          })}
           <button onClick={run} disabled={loading}>
             {loading ? "Computing…" : "Compute"}
           </button>
@@ -148,6 +170,11 @@ export default function DemonstrationTest() {
               : "Testing each unit for longer than one mission needs fewer units when the Weibull shape β is known (Weibayes). Leave the length at 1 for a plain success-run / binomial test."}
           </p>
         )}
+        <p className="hint">
+          {twoRisk
+            ? "Keeping both risks: a design at the target passes at most (100 − confidence)% of the time, and the good design fails at most the producer's risk. The plan chooses the failures allowed."
+            : "A test sized for the consumer’s risk alone often fails a good design. Give a good design and a producer’s risk (e.g. 20%) for a plan that keeps both."}
+        </p>
       </div>
 
       {error && <div className="error">{error}</div>}

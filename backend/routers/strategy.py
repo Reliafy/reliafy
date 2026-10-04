@@ -108,16 +108,18 @@ def demonstration_test_endpoint(
     design_reliability: float | None = Body(default=None),
     design_mtbf: float | None = Body(default=None),
     unit: str | None = Body(default=None),
+    producer_risk: float | None = Body(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
-    """Plan a reliability demonstration test: units, test time and allowed failures."""
+    """Plan a reliability demonstration test: units, test time and allowed failures
+    (with ``producer_risk`` and the good design, a plan that keeps both risks)."""
     try:
         return JSONResponse(
             content=strategy_service.demonstration_test(
                 reliability=reliability, confidence=confidence, mission_time=mission_time,
                 failures=failures, test_multiple=test_multiple, shape=shape, units=units,
                 method=method, mtbf=mtbf, design_reliability=design_reliability,
-                design_mtbf=design_mtbf, unit=unit,
+                design_mtbf=design_mtbf, unit=unit, producer_risk=producer_risk,
             )
         )
     except StrategyError as exc:

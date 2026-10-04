@@ -15,7 +15,13 @@
   those copies drawn on it (nothing is saved; the builder puts it on the
   canvas).
 
-Costs are undiscounted, in whatever currency the user entered them.
+Costs are in whatever currency the user entered them. The total cost of
+ownership (and the cheapest design's) is undiscounted unless the diagram (or
+the request) gives a discount rate in % a year (#219, RePyability 0.12's
+``discount_rate``): then it is the present value, the purchases at the start
+and the running costs discounted continuously, the horizon counting as
+``(1 - exp(-r H)) / r``. The window's cost (simulated or exact) is never
+discounted.
 """
 
 from __future__ import annotations
@@ -245,10 +251,44 @@ def cost_summary(rbd, graph: dict, labels: dict, gate_ids: set, overrides: dict,
         "acquisition_cost": acquisition,
         "horizon": horizon,
         "horizon_basis": "set" if diagram["horizon"] else "window",
-        "running_cost": ra._f(rate * horizon) if rate is not None else None,
-        "total_cost": ra._f(acquisition + rate * horizon) if rate is not None else None,
+        **present_value(acquisition, rate, horizon, rm.discount(graph)),
         "simulated": simulated,
     }
+
+
+def present_value(acquisition: float, rate: Optional[float], horizon: float,
+                  disc: Optional[dict]) -> dict:
+    """The total cost of owning the system for ``horizon``: the purchases plus
+    the running ``rate`` over it, as ``RepairableRBD.total_cost`` gives it —
+    with a discount (:func:`rbd_maintenance.discount`) its present value, the
+    horizon counting as ``(1 - exp(-r H)) / r`` (#219). ``running_cost`` and
+    ``total_cost`` (None without a rate), the discount (% a year, and the
+    continuous rate per unit time RePyability takes; None undiscounted) and,
+    discounted, the undiscounted total beside it."""
+    from repyability.rbd.repairable_rbd import _present_horizon
+
+    r = disc["per_unit"] if disc else 0.0
+    present = _present_horizon(float(horizon), r)
+    has_rate = rate is not None
+    return {
+        "running_cost": ra._f(rate * present) if has_rate else None,
+        "total_cost": ra._f(acquisition + rate * present) if has_rate else None,
+        "discount_rate": disc["annual"] if disc else None,
+        "discount_rate_per_unit": r if disc else None,
+        "undiscounted_total_cost": ra._f(acquisition + rate * horizon) if (disc and has_rate) else None,
+    }
+
+
+def with_discount(costs: Optional[dict], graph: dict, annual) -> Optional[dict]:
+    """An availability result's ``costs`` re-priced at ``annual`` % a year (0:
+    undiscounted) — the same long-run rate, purchases and horizon, so a saved
+    result needn't be run again for another rate (the MCP ``analyze_rbd``'s
+    ``discount_rate``)."""
+    if not costs or annual is None:
+        return costs
+    disc = rm.discount(graph, annual)
+    return {**costs, **present_value(float(costs.get("acquisition_cost") or 0.0), costs.get("cost_rate"),
+                                     float(costs["horizon"]), disc)}
 
 
 # ---------------------------------------------------------------------------
@@ -271,18 +311,22 @@ def _friendly(message: str, labels: dict) -> str:
 
 
 def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availability=None,
-                    blocks: Optional[list] = None) -> dict:
+                    blocks: Optional[list] = None, discount_rate=None) -> dict:
     """The number of active copies of each priced block (every block with a
     purchase price, or ``blocks``) that owns the diagram for ``horizon`` at the
     lowest total cost (``RepairableRBD.allocate_redundancy``), optionally only
     among designs at least ``min_availability`` available; with the design as
-    drawn for comparison, and the diagram with the copies drawn on it."""
+    drawn for comparison, and the diagram with the copies drawn on it.
+    ``discount_rate`` (% a year; default the diagram's, 0 undiscounted) makes
+    the totals present values, and chooses the design with the lowest (#219)."""
     if not (graph or {}).get("repairable"):
         raise AnalysisError("The cheapest design is for repairable (availability) diagrams.")
     diagram = rm.diagram_costs(graph)
     horizon = rm._number(horizon, "ownership horizon", "Diagram", positive=True) or diagram["horizon"]
     if not horizon:
         raise AnalysisError("Set how long the system is owned (the horizon) to price it over.")
+    disc = rm.discount(graph, discount_rate)
+    r = disc["per_unit"] if disc else 0.0
     floor = None
     if not rm._blank(min_availability):
         try:
@@ -317,10 +361,10 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
     try:
         with np.errstate(all="ignore"):
             alloc = rbd.allocate_redundancy(
-                horizon, nodes=chosen, min_availability=floor, max_units=MAX_COPIES,
+                horizon, nodes=chosen, min_availability=floor, max_units=MAX_COPIES, discount_rate=r,
             )
             current = {
-                "total_cost": float(rbd.total_cost(horizon)),
+                "total_cost": float(rbd.total_cost(horizon, discount_rate=r)),
                 "cost_rate": float(rbd.expected_cost_rate()),
                 "acquisition_cost": float(rbd.acquisition_cost),
                 "availability": float(rbd.mean_availability()),
@@ -364,6 +408,9 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
         "unit": (graph.get("unit") or "").strip(),
         "horizon": float(horizon),
         "min_availability": floor,
+        # % a year, and the continuous rate per unit time RePyability took (None: undiscounted).
+        "discount_rate": disc["annual"] if disc else None,
+        "discount_rate_per_unit": r if disc else None,
         "method": alloc.method,
         "max_copies": MAX_COPIES,
         "current": current,

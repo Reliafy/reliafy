@@ -1964,10 +1964,11 @@ class _NoSimulation(Exception):
 
 
 def _always_up():
-    """A repairable stand-in that never fails — used for pure logic/voting
-    (k-of-n) gates, which carry no failure or repair behaviour of their own but
-    must still be a repairable component for RePyability's availability solver.
-    Callers also pin it working (``working_nodes``), so it is exactly perfect.
+    """A repairable stand-in that never fails, for a block pinned in a
+    what-if (``working_nodes`` / ``broken_nodes``) with no life or repair
+    model: the override fixes its state, so the stand-in is never consulted.
+    (A k-of-n voting gate is no longer one: since RePyability 0.12 it is a
+    junction, ``PerfectReliability``, folded out of the structure, #224.)
     Its life and repair are exponential so that, with limited repair crews
     (#156), RePyability's Markov chain covers it as it does the blocks."""
     import surpyval as sp
@@ -2003,7 +2004,10 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf: bool = Fals
     working/failed (``data.state``) are forced via RePyability's native
     ``working_nodes``/``broken_nodes`` overrides; a pinned node needs no life
     or repair model (validation doesn't ask for one), so a never-failing
-    stand-in is used when it has none. Returns
+    stand-in is used when it has none. A k-of-n vote is a junction
+    (``PerfectReliability``, #224), anywhere in the diagram: ``gate_ids``
+    names them, and they are never in ``working_nodes`` (RePyability refuses
+    a junction there). Returns
     ``(rbd, labels, gate_ids, working_nodes, broken_nodes)``.
     """
     from backend.services import rbd_maintenance, rbd_policies
@@ -2054,9 +2058,17 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf: bool = Fals
             broken_nodes.add(nid)
         pinned = state in ("working", "failed")
         if ntype == "knode":
-            components[nid] = _always_up()
             k[nid] = max(int(data.get("n") or 1), 1)
             gate_ids.add(nid)
+            if state == "failed":
+                # A vote point pinned failed (a what-if): a stand-in held broken.
+                components[nid] = _always_up()
+                continue
+            # A junction (RePyability 0.12, #224): it never fails, so it's no
+            # component — folded out of every analysis and simulation, in no
+            # cut or path set, and never pinned (RePyability refuses that).
+            components[nid] = PerfectReliability
+            working_nodes.discard(nid)
             continue
         if ntype not in ("component", "standby"):
             raise AnalysisError(
@@ -2570,10 +2582,8 @@ def analyze_availability(
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(
         graph, resolve_model
     )
-    # Voting gates are pinned working too: their never-failing stand-in is only
-    # *nearly* perfect (unavailable ~1e-12), which would otherwise add a bias to
-    # every exact figure of a highly available system.
-    overrides = {"working_nodes": working_nodes | gate_ids, "broken_nodes": broken_nodes}
+    # Voting gates are junctions (#224): exactly perfect, and never pinned.
+    overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
     # The simulation alone takes the current state (the long-run figures and
     # importance are the same whatever the blocks' states now).
     node_states = _node_states(state, labels)
@@ -2859,9 +2869,9 @@ def _availability_horizon(graph: dict, state: Optional[dict] = None) -> float:
     try:
         # Graph only (no model resolver), so the exported script computes the
         # very same horizon; saved life models carry their parameters inline.
-        rbd, _, gate_ids, working, broken = _build_repairable_rbd(graph)
+        rbd, _, _, working, broken = _build_repairable_rbd(graph)
         probs = rbd._probabilities_with_overrides(
-            rbd.node_availability(), working | gate_ids, broken)
+            rbd.node_availability(), working, broken)
         birnbaum = rbd._birnbaum_importance(probs)
         weight = {
             nid: float(np.atleast_1d(birnbaum.get(nid, 0.0))[0]) * (1.0 - float(np.atleast_1d(probs[nid])[0]))
@@ -3113,7 +3123,7 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
     the graph and returns plain JSON."""
     started = time.perf_counter()
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(graph, resolve_model)
-    overrides = {"working_nodes": working_nodes | gate_ids, "broken_nodes": broken_nodes}
+    overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
     node_states = _node_states(state, labels)
     chosen, _ = chosen_horizon(horizon, graph)
     window = chosen if chosen is not None else float(_availability_horizon(graph, state))
