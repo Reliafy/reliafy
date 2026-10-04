@@ -299,15 +299,46 @@ def test_excel_rbd_template_through_import_excel_and_import_rbd(env):
     assert d["name"] == "Pump skid" and "Pump A" in {n["label"] for n in d["nodes"]}
     assert _no_uploads_left(env.db)
 
-    # import_rbd takes a template workbook too; rbd_id on import_excel replaces a diagram.
+    # import_rbd takes a template workbook too.
     link2, _ = _upload(env, template, "skid.xlsx", purpose="rbd_import")
     again = _ok(_call(env.token[A], "import_rbd", {"upload_id": link2["upload_id"]}))
     assert again["diagrams"][0]["source_format"] == "Excel"
-    link3, _ = _upload(env, template, "skid.xlsx", purpose="excel")
-    replaced = _ok(_call(env.token[A], "import_excel", {"upload_id": link3["upload_id"], "target": "rbd_template",
-                                                        "rbd_id": d["id"]}))
-    assert replaced["replaced"] == d["id"] and replaced["diagrams"][0]["id"] == d["id"]
     assert env.db.rbds.count_documents({"owner_id": A}) == 2
+
+
+def test_import_excel_with_rbd_id_saves_a_copy_unless_replace(env):
+    """import_excel with rbd_id used to overwrite that diagram. It now saves
+    a new copy (the original unchanged), as the app's import always opens a
+    new diagram; replace=true overwrites, and the result says which."""
+    from backend.services import rbds as rbds_service
+    from backend.services.rbd_import import excel as rbd_excel
+
+    template = rbd_excel.build_template()
+    mine = {"id": rbds_service.save_rbd(env.db, "Skid", MCP_GRAPH, A).id}
+    before = env.db.rbds.find_one({"_id": mine["id"]})
+    n0 = env.db.rbds.count_documents({"owner_id": A})
+
+    link, _ = _upload(env, template, "skid.xlsx", purpose="excel")
+    out = _ok(_call(env.token[A], "import_excel", {"upload_id": link["upload_id"], "target": "rbd_template",
+                                                   "rbd_id": mine["id"]}))
+    assert out["action"] == "copied" and out["copy_of"] == mine["id"] and out["id"] != mine["id"]
+    assert "replaced" not in out and "unchanged" in out["note"] and "replace=true" in out["note"]
+    (d,) = out["diagrams"]
+    assert d["id"] == out["id"] and d["name"] == "Skid (copy)"
+    assert env.db.rbds.count_documents({"owner_id": A}) == n0 + 1
+    assert env.db.rbds.find_one({"_id": mine["id"]})["graph"] == before["graph"]  # untouched
+
+    link2, _ = _upload(env, template, "skid.xlsx", purpose="excel")
+    out = _ok(_call(env.token[A], "import_excel", {"upload_id": link2["upload_id"], "target": "rbd_template",
+                                                   "rbd_id": mine["id"], "replace": True}))
+    assert out["action"] == "replaced" and out["replaced"] == out["id"] == mine["id"]
+    assert out["diagrams"][0]["id"] == mine["id"] and out["diagrams"][0]["name"] == "Skid"
+    assert env.db.rbds.count_documents({"owner_id": A}) == n0 + 1
+    assert env.db.rbds.find_one({"_id": mine["id"]})["graph"] != before["graph"]
+
+    link3, _ = _upload(env, template, "skid.xlsx", purpose="excel")
+    assert "replace applies with rbd_id" in _err(_call(env.token[A], "import_excel", {
+        "upload_id": link3["upload_id"], "target": "rbd_template", "replace": True}))
 
 
 @pytest.mark.parametrize("name, fmt", [("blocksim_example1_V20.rsgz20", "rsgz"),

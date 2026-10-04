@@ -3127,12 +3127,16 @@ def _check_import(db, graph: dict, owners) -> dict:
 
 
 def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool, only: Optional[list[str]],
-                   upload: Optional[dict], rbd_id: Optional[str] = None) -> dict:
+                   upload: Optional[dict], rbd_id: Optional[str] = None, replace: bool = False) -> dict:
     """Validate imported diagrams and (``save``) save them — all or nothing
     against the RBD cap. Returns each diagram's brief, import notes, its time
     unit, a one-line structure and a concise node list (never the whole
     graph) — a preview adds its edges and minimal cut sets, to check the
-    conversion before saving (#187). Deletes the upload once saved."""
+    conversion before saving (#187). Deletes the upload once saved.
+
+    With ``rbd_id`` the one imported diagram is saved as a new copy of that
+    diagram (named “<its name> (copy)”), which is left as it was — as the
+    app's import always opens a new diagram — or, with ``replace``, over it."""
     uid = user["uid"]
     owners = _owners(uid)
     if only:
@@ -3160,12 +3164,16 @@ def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool,
     target = None
     if rbd_id:
         if len(ready) != 1:
-            raise ToolError("rbd_id replaces one diagram, but this import holds several.")
-        target = _own_rbd(db, uid, rbd_id)
+            raise ToolError("rbd_id takes one diagram, but this import holds several.")
+        target = _get_rbd(db, uid, rbd_id)
+        if replace and samples_service.is_sample(target.owner_id):
+            raise ToolError(f"“{target.name}” is a shared sample diagram, so it can't be overwritten. Leave "
+                            "replace off to save the import as a copy of it.")
+    overwrite = target is not None and replace
 
     def title(d) -> str:
-        if target is not None and not name:
-            return target.name
+        if target is not None and not (name and name.strip()):
+            return target.name if overwrite else f"{target.name} (copy)"
         if name and name.strip():
             return name.strip() if len(ready) == 1 else f"{name.strip()} — {d.name}"
         return d.name
@@ -3174,11 +3182,11 @@ def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool,
     if save:
         for _, graph, _ in ready:
             _check_graph_refs(db, user, graph)
-        if target is None:
+        if not overwrite:
             _cap(db, user, "rbds", "RBDs", n=len(ready))
         for d, graph, _ in ready:
             saved.append(rbds_service.save_rbd(db, title(d)[:200], graph, uid,
-                                               rbd_id=target.id if target is not None else None))
+                                               rbd_id=target.id if overwrite else None))
         if upload is not None:
             uploads_service.delete(db, upload["_id"])
     items = []
@@ -3216,7 +3224,13 @@ def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool,
         items.append(item)
     out: dict[str, Any] = {"saved": bool(saved), "diagrams": items}
     if target is not None and saved:
-        out["replaced"] = target.id
+        if overwrite:
+            out.update(action="replaced", replaced=target.id, id=target.id,
+                       note=f"Replaced the contents of “{target.name}” (id {target.id}) with the import.")
+        else:
+            out.update(action="copied", id=saved[0].id, copy_of=target.id,
+                       note=(f"Saved as a new diagram “{saved[0].name}” (id {saved[0].id}); “{target.name}” "
+                             "is unchanged. Pass replace=true to overwrite it instead."))
     if skipped:
         out["skipped"] = skipped
     if not save:
@@ -3382,7 +3396,7 @@ def _excel_rcm(db, user, doc, data, sheet, mapping, name, header_row, study_id) 
     return out
 
 
-def _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id) -> dict:
+def _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id, replace=False) -> dict:
     filename = doc["filename"]
     excel_mapping = mapping
     if mapping and "blocks" not in mapping:
@@ -3396,7 +3410,8 @@ def _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id) ->
             raise _excel_mapping_error(exc, data, filename) from None
         raise
     return {"target": "rbd_template",
-            **_save_imported(db, user, diagrams, name=name, save=True, only=None, upload=doc, rbd_id=rbd_id)}
+            **_save_imported(db, user, diagrams, name=name, save=True, only=None, upload=doc, rbd_id=rbd_id,
+                             replace=replace)}
 
 
 @_tool("import_excel", _WRITE, "Import from an Excel workbook")
@@ -3419,8 +3434,13 @@ def import_excel(
     name: Annotated[Optional[str], Field(max_length=200, description=(
         "A name for the new dataset, study or diagram. Default: from the file and sheet."))] = None,
     rbd_id: Annotated[Optional[str], Field(description=(
-        "rbd_template only: replace this existing diagram of the user's (its structure) instead of creating one."
+        "rbd_template only: an existing diagram of the user's. The import is saved as a new copy of it "
+        "(“<name> (copy)”, or name), leaving it unchanged — unless replace=true, which overwrites its contents. "
+        "The result's action says which (copied / replaced) and id is the diagram saved."
     ))] = None,
+    replace: Annotated[bool, Field(description=(
+        "rbd_template with rbd_id only: overwrite that diagram instead of saving a copy. Only when the user "
+        "asked to replace it."))] = False,
     study_id: Annotated[Optional[str], Field(description=(
         "rcm only: append the imported functions to this existing study of the user's instead of creating one."
     ))] = None,
@@ -3429,7 +3449,8 @@ def import_excel(
 ) -> dict[str, Any]:
     """Import an .xlsx workbook sent through create_upload: a sheet as a dataset (the same columns
     upload_dataset returns), an FMEA / RCM worksheet into a new or existing RCM study, or Reliafy's Excel
-    RBD template as an RBD. Call inspect_upload first to see the sheets, their columns and a guessed mapping.
+    RBD template as an RBD — a new one; with rbd_id, a new copy of that diagram (it stays unchanged) unless
+    replace=true overwrites it. Call inspect_upload first to see the sheets, their columns and a guessed mapping.
     Formulas are read as the values Excel last saved; nothing is ever evaluated."""
     user, db = _caller(ctx), _db()
     doc, data = uploads_service.read(db, upload_id, user["uid"])
@@ -3438,6 +3459,8 @@ def import_excel(
                         "upload_dataset / upload_outage_log with upload_id; diagram files to import_rbd.")
     if rbd_id and target != "rbd_template":
         raise ToolError("rbd_id applies to target rbd_template.")
+    if replace and not rbd_id:
+        raise ToolError("replace applies with rbd_id (the diagram to overwrite).")
     if study_id and target != "rcm":
         raise ToolError("study_id applies to target rcm.")
     with _untrusted_file(user["uid"]):
@@ -3445,7 +3468,7 @@ def import_excel(
             return _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row)
         if target == "rcm":
             return _excel_rcm(db, user, doc, data, sheet, mapping, name, header_row, study_id)
-        return _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id)
+        return _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id, replace)
 
 
 # ---------------------------------------------------------------------------
