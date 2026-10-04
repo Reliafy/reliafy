@@ -707,8 +707,34 @@ export function getRbdJob(jobId) {
 
 // The newest in-flight job for a diagram ({job: null} when none), so a
 // reloaded page picks up a simulation still queued or running.
-export function getActiveRbdJob(rbdId) {
-  return request(`/api/rbd-jobs?rbd_id=${encodeURIComponent(rbdId)}`);
+export function getActiveRbdJob(rbdId, kind = null) {
+  const k = kind ? `&kind=${encodeURIComponent(kind)}` : "";
+  return request(`/api/rbd-jobs?rbd_id=${encodeURIComponent(rbdId)}${k}`);
+}
+
+// What to improve (#225): a repairable diagram's levers ranked by what a step
+// of each gains. ``costs`` maps lever ids to the cost of making that change;
+// ``order`` "benefit" ranks by gain alone, "benefit_per_cost" puts the costed
+// levers first by gain per unit spent; ``window`` ranks by the mean over
+// [0, window) instead of the long run; ``simulate`` runs the simulated route
+// where the diagram needs it (Pro). 200 with the ranked levers (or a
+// ``status`` saying why not yet), or 202 with ``job`` to poll at getRbdJob.
+export function rbdSensitivity({ graph, rbdId = null, window = null, step = null, rankBy = null, costs = null,
+                                 order = null, simulate = false }) {
+  return request("/api/rbds/sensitivity", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      graph,
+      rbd_id: rbdId,
+      window,
+      step,
+      rank_by: rankBy,
+      costs,
+      order,
+      simulate,
+    }),
+  });
 }
 
 // Compare two repairable designs (#104): ``graph`` (A, the diagram in the

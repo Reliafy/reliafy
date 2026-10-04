@@ -6821,6 +6821,37 @@ button.danger:hover { background: #fdeeee; }
   .rbd-compare-verdict { background: #232a33; }
 }
 
+/* "What to improve" on repairable results (#225) */
+.rbd-improve { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); min-width: 0; }
+.rbd-improve .ds-section-h { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.rbd-improve-controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.rbd-improve-top { margin: 0; padding: 8px 12px; border-radius: 8px; font-size: 14px; background: var(--panel-2, #eef1f5); border-left: 3px solid #16a34a; }
+.rbd-improve-table td, .rbd-improve-table th { font-variant-numeric: tabular-nums; vertical-align: top; }
+.rbd-improve-table th:nth-child(2), .rbd-improve-table td.rbd-improve-lever { text-align: left; }
+.rbd-improve-table td.rbd-improve-lever { min-width: 220px; white-space: normal; }
+.rbd-improve-table td.rbd-improve-lever .muted { font-size: 12px; color: var(--muted); }
+.rbd-improve-table .rbd-improve-rank { color: var(--muted); width: 1.5em; }
+.rbd-improve-table tr.is-shape td { color: var(--muted); }
+.rbd-improve-table tr.is-shape td b { font-weight: 500; }
+.rbd-improve-iv { font-size: 11px; white-space: nowrap; }
+.rbd-improve-approx { color: var(--muted); cursor: help; }
+.rbd-improve-cost { width: 7.5em; }
+.rbd-improve-more { align-self: flex-start; }
+/* Narrow screens: the effects stay in view beside the lever (only the cost
+   inputs, when open, make the table scroll). */
+.rbd-avail-imp-scroll .calc-table.rbd-improve-table { min-width: 0; }
+.rbd-improve-narrow { display: none; }
+@media (max-width: 620px) {
+  .rbd-improve-table th, .rbd-improve-table td { padding: 0.4rem 0.3rem; }
+  .rbd-improve-table td.rbd-improve-lever { min-width: 128px; }
+  .rbd-improve-table .rbd-improve-rank { display: none; }
+  .rbd-improve-wide { display: none; }
+  .rbd-improve-narrow { display: inline; }
+}
+@media (prefers-color-scheme: dark) {
+  .rbd-improve-top { background: #232a33; }
+}
+
 /* Common-cause failure groups (RBD builder) */
 .rbd-comp.ccf-member { box-shadow: 0 0 0 2px rgba(208, 118, 47, 0.55), 0 0 0 5px rgba(208, 118, 47, 0.18); }
 .rbd-ccf-chip {
