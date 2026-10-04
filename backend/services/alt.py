@@ -120,7 +120,13 @@ def evaluate(db, model_id: str, use_stress: list, owner_id, ref_stress=None) -> 
         raise ModelNotFound(model_id)
     live = get_live_model(db, model_id, owner_id)
     life_model_id = (doc.spec or {}).get("life_model_id", "arrhenius")
-    return alt_fit.evaluate(live, use_stress, life_model_id, ref_stress=ref_stress)
+    out = alt_fit.evaluate(live, use_stress, life_model_id, ref_stress=ref_stress)
+    # A fit with no finite maximum (#230) extrapolates nothing: the use-level
+    # numbers travel with the warning, never without it.
+    notice = (doc.results or {}).get("no_finite_maximum")
+    if notice:
+        out["no_finite_maximum"] = notice
+    return out
 
 
 def _remember_live(model_id: str, cache_id: str) -> None:

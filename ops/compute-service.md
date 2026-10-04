@@ -82,11 +82,11 @@ browser polls GET /api/rbd-jobs/<id>; MCP waits up to 20 s, then get_job.
 **Job kinds.** `compute_core.RUNNERS` maps a job kind to what compute runs.
 `availability` is the only kind today. Another analysis joins in three steps:
 a request builder in `compute_core`, a runner in `RUNNERS`, and a `KIND_…` in
-`rbd_jobs`. The likely next ones are:
-- **#240's next failure from the current state.** PR #240 wasn't merged when
-  this was written, so its simulation still runs in-process.
-- **A large diagram's exact figures over time** (`exact=true`). These can take
-  a minute.
+`rbd_jobs`. #240's next failure from the current state needs no kind of its
+own: `analyze_availability` runs it whenever a current state is given, so it
+comes back inside the `availability` job, from the same seed (in a free quick
+run it keeps to the quick run's time budget). The likely next kind is **a large
+diagram's exact figures over time** (`exact=true`). These can take a minute.
 
 **Faster engine (#243).** The Mojo-accelerated RePyability engine (#243) is
 planned for compute. It's a private package, installed in Cloud Build with a

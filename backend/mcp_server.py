@@ -332,11 +332,13 @@ availability and the window's expected system failures, outages, downtime and co
 numerical: deterministic, no simulation), plus the long-run figures — from new, or from now with \
 current_state ({node_id: {"down": true, "since": <time into the repair>} or {"age": <time since new>}}), \
 over t_max (e.g. the next 720 hours). The Monte-Carlo simulation adds only what it alone gives \
-(distributions, P(no outage), percentiles, criticality indices) and is a paid feature; a saved result is \
+(distributions, P(no outage), percentiles, criticality indices; from current_state, next_failure: the time \
+to the next system failure, its mean residual life and likely cause) and is a paid feature; a saved result is \
 served when one exists. When the response says the exact figures are simulation-only for a diagram (e.g. \
 one repair crew for wear-out lives), say so.
 - Non-repairable RBDs: analyze_rbd's current_state ({node_id: {"failed": true} or {"age": <time run>}}) \
-gives the remaining life from now; target_reliability gives the design life (e.g. R ≥ 90% until t).
+gives the remaining life from now (mean_residual_life, exact); target_reliability gives the design life \
+(e.g. R ≥ 90% until t).
 - Every artifact has a url; share it so the user can open the result in Reliafy.
 
 Plans: using Reliafy from AI agents (these tools) is part of Reliafy Pro, which includes everything with \
@@ -601,6 +603,22 @@ class Param(BaseModel):
     value: float
 
 
+class DemandBatch(BaseModel):
+    demands: int = Field(ge=1, description="Demands (trials) in this batch: proof tests, starts, activations.")
+    failures: int = Field(ge=0, description="Failures among those demands (0 to demands).")
+    label: Optional[str] = Field(default=None, max_length=80,
+                                 description="Optional name for the batch, e.g. a site, lot or test campaign.")
+
+
+_DemandBatches = Annotated[Optional[list[DemandBatch]], Field(
+    min_length=1, max_length=fitting.PER_DEMAND_MAX_BATCHES, description=(
+        "Per-demand (one-shot) data: one {demands, failures, label?} per batch of demands — several sites, "
+        "lots of different sizes or test campaigns are pooled into one failure probability per demand, "
+        "with exact bounds."))]
+_DemandConfidence = Annotated[float, Field(
+    gt=0, lt=1, description="Confidence level of the exact bounds, e.g. 0.9 or 0.95 (default).")]
+
+
 def _plain_params(results: dict) -> list[dict]:
     return [{"name": p.get("name"), "value": p.get("value")} for p in (results.get("params") or [])]
 
@@ -619,6 +637,8 @@ def _life_brief(m) -> dict:
         "is_sample": samples_service.is_sample(m.owner_id),
         "created_at": m.created_at.isoformat(),
         "url": _url(f"/modelling/m/{m.id}"),
+        # #230: a fit whose numbers aren't estimates is flagged in the list too.
+        **({"maximum": "no finite maximum"} if r.get("no_finite_maximum") else {}),
     }
 
 
@@ -653,7 +673,10 @@ def _live_metrics(cache_id: str | None) -> dict | None:
 
 def _fit_lead(summary: dict) -> dict:
     """The keys of a fit summary that must come first in the response."""
-    return {k: summary[k] for k in ("fit_ok", "warning", "warnings") if k in summary}
+    lead = ["fit_ok", "warning", "warnings"]
+    if summary.get("maximum") == "no finite maximum":  # #230: say it first
+        lead.insert(1, "maximum")
+    return {k: summary[k] for k in lead if k in summary}
 
 
 def _fit_failure_warning(fit_warning: str | None) -> str:
@@ -674,11 +697,16 @@ def _fit_summary(result: dict) -> dict:
 
     A fit the optimiser reported as failed leads with ``fit_ok: false`` and
     the warning, ahead of the numbers, so they aren't quoted as a result."""
-    failed = result.get("fit_ok") is False or bool(result.get("fit_warning"))
+    no_max = result.get("no_finite_maximum")  # #230: SurPyval 0.23 says so
+    failed = bool(no_max) or result.get("fit_ok") is False or bool(result.get("fit_warning"))
     metrics = None if failed else (
         result.get("metrics") or _live_metrics((result.get("functions") or {}).get("model_id")))
     lead: dict[str, Any] = {}
-    if failed:
+    if no_max:
+        lead = {"fit_ok": False, "maximum": "no finite maximum",
+                "warning": f"{no_max['message']} {no_max['suggestion']} Don't quote the parameters "
+                           "or metrics below as a result."}
+    elif failed:
         lead = {"fit_ok": False, "warning": _fit_failure_warning(result.get("fit_warning"))}
     if result.get("warnings"):
         lead["warnings"] = result["warnings"]
@@ -693,10 +721,14 @@ def _fit_summary(result: dict) -> dict:
         "gof": {g["id"]: g["value"] for g in result.get("gof") or []},
         "metrics": metrics,
     }
-    if failed:
+    if result.get("maximum") and "maximum" not in out:
+        out["maximum"] = result["maximum"]
+    if no_max:
+        out["metrics_omitted"] = "The fit has no finite maximum, so no life metrics are given."
+    elif failed:
         # #215: a median of 7.7e19 from a fit that didn't converge isn't a result.
         out["metrics_omitted"] = "The fit didn't converge, so no life metrics are given."
-    for key in ("extra_params", "coefficients", "randomness", "options", "validation"):
+    for key in ("extra_params", "coefficients", "randomness", "options", "validation", "gof_note"):
         if result.get(key):
             out[key] = result[key]
     if result.get("selection"):
@@ -761,7 +793,15 @@ def get_model(
             out["validation"] = models_service.ensure_validation(db, m)
         if (m.spec or {}).get("notes"):
             out["notes"] = m.spec["notes"]
-        if r.get("fit_ok") is False or r.get("fit_warning"):
+        for key in ("maximum", "gof_note"):
+            if r.get(key):
+                out[key] = r[key]
+        no_max = r.get("no_finite_maximum")
+        if no_max:
+            # #230: lead with it, as the fit tools do.
+            out = {"fit_ok": False, "maximum": "no finite maximum",
+                   "warning": f"{no_max['message']} {no_max['suggestion']}", **out}
+        elif r.get("fit_ok") is False or r.get("fit_warning"):
             # Lead with it, as the fit tools do.
             out = {"fit_ok": False, "warning": _fit_failure_warning(r.get("fit_warning")), **out}
         return out
@@ -1029,15 +1069,117 @@ def fit_and_save_model(
     count_column: _FitCountCol = None,
     covariates: _FitCovariates = None,
     unit: _FitUnit = None,
+    demand_batches: Annotated[Optional[list[DemandBatch]], Field(
+        min_length=1, description=(
+            "Save a per-demand (one-shot) model instead of a life distribution: one {demands, failures, "
+            "label?} per batch, as fit_per_demand takes them. Give only name (and demand_confidence) "
+            "with it."))] = None,
+    demand_confidence: Annotated[float, Field(
+        gt=0, lt=1, description="Confidence of a per-demand model's exact bounds (default 0.95).")] = 0.95,
 ) -> dict[str, Any]:
     """Fit a life distribution exactly as fit_distribution does, then save it as a model in the user's
     Reliafy workspace (inline data is saved as a dataset too) and return its id and url. Use it when the
     user wants to keep the model — for reliability_at, the calculators, or an RBD block. Same censoring
     convention: 0 = failed, 1 = still running, -1 = left-censored; c_invert=true when the data marks failures
-    with 1."""
+    with 1. With demand_batches it saves a per-demand (one-shot) model instead, as fit_per_demand reports
+    it."""
+    if demand_batches is not None:
+        stray = [k for k, v in (("data", data), ("censored", censored), ("counts", counts),
+                                ("dataset_id", dataset_id), ("time_column", time_column),
+                                ("censor_column", censor_column), ("count_column", count_column),
+                                ("covariates", covariates)) if v is not None]
+        if stray:
+            raise ToolError(f"{', '.join(stray)} don't apply to a per-demand model — drop them.")
+        return _save_per_demand(ctx, name, demand_batches, demand_confidence)
     return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
                 count_column=count_column, covariates=covariates, unit=unit, save=True, name=name)
+
+
+def _per_demand_summary(result: dict) -> dict:
+    """A per-demand result for an MCP caller (#233)."""
+    d = result.get("per_demand") or {}
+    c = d.get("confidence", 0.95)
+    out = {
+        "kind": "per_demand",
+        "demands": d.get("demands"),
+        "failures": d.get("failures"),
+        "p": d.get("p"),
+        "reliability": d.get("reliability"),
+        "confidence": c,
+        "bounds_method": "exact (Clopper-Pearson)",
+        "p_interval": d.get("ci"),
+        "reliability_interval": d.get("reliability_ci"),
+        "p_upper_one_sided": d.get("p_upper"),
+        "reliability_lower_one_sided": d.get("reliability_lower"),
+        "note": (f"p is the failure probability per demand, pooled over every batch (assumes one p for all). "
+                 f"The intervals are two-sided at {c:.0%}; the one-sided bounds are at {c:.0%} too, "
+                 f"e.g. reliability per demand is at least {d.get('reliability_lower', 0):.4g} with "
+                 f"{c:.0%} confidence."),
+    }
+    if d.get("batches"):
+        out["batches"] = d["batches"]
+    if d.get("success_run"):
+        out["success_run"] = {**d["success_run"], "note": (
+            "Zero failures: a success-run demonstration. reliability_lower is the demonstrated reliability "
+            "per demand, R >= (1 - C)^(1/n).")}
+    return out
+
+
+def _demand_rows(batches, dataset_id, demands_column, failures_column, batch_column, uid) -> list[dict]:
+    if (batches is None) == (dataset_id is None):
+        raise ToolError("Give either `batches` (a list of {demands, failures}) or a `dataset_id` — exactly one.")
+    if batches is not None:
+        if demands_column or failures_column or batch_column:
+            raise ToolError("The *_column arguments only apply with dataset_id — drop them, or switch to it.")
+        return [b.model_dump() for b in batches]
+    dataset = datasets_service.get_dataset(_db(), dataset_id, uid)
+    if dataset is None:
+        raise ToolError("Dataset not found.")
+    names = [c["name"] for c in dataset.columns]
+    if not (demands_column and failures_column):
+        raise ToolError("Say which columns hold the demands and the failures (demands_column, "
+                        f"failures_column). Columns: {', '.join(names)}.")
+    for col in (demands_column, failures_column, batch_column):
+        if col and col not in names:
+            raise ToolError(f"Column '{col}' isn't in the dataset. Columns: {', '.join(names)}.")
+    return fitting.per_demand_batches_from_df(
+        datasets_service.load_dataframe(dataset), demands_column, failures_column, batch_column)
+
+
+@_tool("fit_per_demand", _READ, "Per-demand reliability")
+def fit_per_demand(
+    ctx: Context,
+    batches: _DemandBatches = None,
+    dataset_id: Annotated[Optional[str], Field(
+        description="A saved dataset with one row per batch, instead of `batches`.")] = None,
+    demands_column: Annotated[Optional[str], Field(description="Dataset column of demands per batch.")] = None,
+    failures_column: Annotated[Optional[str], Field(description="Dataset column of failures per batch.")] = None,
+    batch_column: Annotated[Optional[str], Field(description="Optional dataset column naming each batch.")] = None,
+    confidence: _DemandConfidence = 0.95,
+) -> dict[str, Any]:
+    """Per-demand (one-shot) reliability — a relief valve that must open, an igniter, a standby start — from
+    one or several batches of demands and failures (sites, lots of different sizes, test campaigns). Reports
+    the failure probability per demand p and the reliability per demand 1 - p, pooled over every batch, with
+    EXACT (Clopper-Pearson) bounds at `confidence`: the two-sided interval and the one-sided bound. With zero
+    failures the one-sided bound is the success-run demonstration (59 clean demands show 95% reliability at
+    95% confidence). Saves nothing — to keep it, call fit_and_save_model with demand_batches."""
+    uid = _caller(ctx)["uid"]
+    rows = _demand_rows(batches, dataset_id, demands_column, failures_column, batch_column, uid)
+    result = fitting.result_per_demand(confidence=confidence, batches=rows)
+    return {"saved": False, **_per_demand_summary(result)}
+
+
+def _save_per_demand(ctx: Context, name: str, batches: list, confidence: float) -> dict[str, Any]:
+    user, db = _caller(ctx), _db()
+    name = (name or "").strip()
+    if not name:
+        raise ToolError("A `name` is required to save the model.")
+    _cap(db, user, "models", "models")
+    model = models_service.create_per_demand(db, user["uid"], name, confidence=confidence,
+                                             batches=[b.model_dump() for b in batches])
+    return {"saved": True, "model_id": model.id, "name": model.name,
+            "url": _url(f"/modelling/m/{model.id}"), **_per_demand_summary(model.results or {})}
 
 
 _EXTRA_PARAMS = ("gamma", "p", "f0")  # offset, limited failure population, zero-inflation
@@ -1104,7 +1246,7 @@ def save_model(
         notes=notes, source_dataset_id=dataset_id or None,
     )
     try:
-        live = entry["dist"].from_params([given[n] for n in names], **extras)
+        live = entry["dist"].from_params([given[n] for n in names], **fitting.surpyval_extras(extras))
         metrics = fitting._life_metrics(live)
     except Exception:  # noqa: BLE001 - metrics are a convenience
         metrics = None
@@ -2062,6 +2204,9 @@ def _as_of_now_summary(result: dict, labels: dict) -> dict:
             nid: {**v, "label": labels.get(nid, nid)} for nid, v in result["current_state"].items()}
         out["reliability_now"] = result.get("reliability_now")
         out["from"] = "now"
+        if result.get("mean_residual_life"):
+            # The mean remaining life from now (#221), exact where RePyability gives it.
+            out["mean_residual_life"] = result["mean_residual_life"]
     if result.get("design_life"):
         out["design_life"] = result["design_life"]
     band = result.get("band")
@@ -2116,6 +2261,8 @@ def _availability_summary(result: dict) -> dict:
         for k in ("n_simulations", "precision", "per_node", "criticality", "cached", "computed_at"):
             out.pop(k, None)
     out["exact"] = _exact_summary(result.get("exact"))
+    if result.get("next_failure") and result.get("has_simulation", True):
+        out.update(_next_failure_summary(result["next_failure"]))
     costs = _costs_summary(result.get("costs"))
     if costs:
         out["costs"] = costs
@@ -2145,6 +2292,22 @@ def _costs_summary(costs: dict | None) -> dict | None:
     if sim:
         out["window_cost"] = {k: sim.get(k) for k in ("mean", "mean_basis", "t_simulation", "percentiles")}
     return out
+
+
+def _next_failure_summary(nf: dict) -> dict:
+    """As of now with the simulation (#220, #221): the time to the next
+    system failure from the blocks' states — its mean (the mean residual
+    life), percentiles, P(failure) at 21 times and the blocks that cause it."""
+    curve = nf.get("curve") or {}
+    points = _downsample(curve.get("t") or [], curve.get("cdf") or [])
+    keys = ("window", "n_simulations", "down_now", "failed_share", "mean", "mean_is_lower_bound", "mean_lower",
+            "mean_upper", "confidence", "percentiles", "time_limited")
+    out = {"method": "simulated", **{k: nf.get(k) for k in keys if k in nf},
+           "p_failed_by": [{"t": p["t"], "p": p["reliability"]} for p in points],
+           "causes": [{k: c.get(k) for k in ("label", "count", "share")} for c in nf.get("causes") or []]}
+    mrl = {"value": nf.get("mean"), "method": "simulated", "lower": nf.get("mean_lower"),
+           "upper": nf.get("mean_upper"), "lower_bound": bool(nf.get("mean_is_lower_bound"))}
+    return {"next_failure": out, "mean_residual_life": mrl}
 
 
 class BlockState(BaseModel):
@@ -2203,9 +2366,11 @@ def analyze_rbd(
     current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
         "Blocks' states now, keyed by node id; blocks left out are new. Repairable: {down: true, since: "
         "<time into the repair>} or {age: <time since new>}; the figures then run from now over t_max "
-        "(e.g. the next 720 hours). Never replaces the saved from-new result. Non-repairable: {failed: "
+        "(e.g. the next 720 hours); with the simulation, next_failure gives the time to the next system "
+        "failure from now (its mean is mean_residual_life) and the blocks that cause it. Never replaces the "
+        "saved from-new result. Non-repairable: {failed: "
         "true} or {age: <time it has run>} on component blocks; the reliability curve, MTTF, B-lives and "
-        "design life are then the remaining life from now."))] = None,
+        "design life are then the remaining life from now (mean_residual_life: exact)."))] = None,
     compute_exact: Annotated[bool, Field(description=(
         f"Repairable diagrams over {rbd_analysis.EXACT_AUTO_MAX_BLOCKS} blocks: compute the exact figures "
         "over time anyway (from several seconds to a minute or so)."))] = False,
@@ -2233,7 +2398,8 @@ def analyze_rbd(
     failures, outages, downtime and cost — each with its method (exact / numerical; no simulation) — from
     new or from current_state. A priced diagram adds `costs`: the long-run cost rate, and the total cost of
     ownership over its horizon (a present value when discounted: discount_rate, or the diagram's own, set
-    with edit_rbd's set costs). The Monte-Carlo simulation (distributions, criticality) is a paid feature
+    with edit_rbd's set costs). The Monte-Carlo simulation (distributions, criticality; from current_state,
+    next_failure and mean_residual_life: the time to the next system failure and its cause) is a paid feature
     (Pro or purchased credits): a saved result is always served; otherwise, without entitlement, the
     response carries `simulation: {available: false, message}` — relay it, and offer export_rbd_python to
     run the simulation locally. A diagram whose figures are simulation-only (exact.status

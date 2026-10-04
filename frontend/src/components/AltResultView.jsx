@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
 import AltCalculator from "./AltCalculator.jsx";
+import NoMaximumNotice from "./NoMaximumNotice.jsx";
 
 const fmt = (v, d = 4) =>
   v === null || v === undefined || !Number.isFinite(v)
@@ -69,6 +70,7 @@ export default function AltResultView({ results, modelId }) {
 
   return (
     <div className="alt-result">
+      <NoMaximumNotice notice={r.no_finite_maximum} />
       <div className="seg" style={{ alignSelf: "flex-start" }}>
         {TABS.map((t) => (
           <button key={t.id} className={"seg-btn" + (tab === t.id ? " active" : "")}

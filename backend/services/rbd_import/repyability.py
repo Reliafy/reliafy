@@ -509,7 +509,10 @@ class _Converter:
                 extras["p"] = _finite(m["p"])
             if m.get("zi") and _finite(m.get("f0")) is not None:
                 extras["f0"] = _finite(m["f0"])
-            if m.get("cov_matrix") is not None or str(m.get("how") or "") not in ("given parameters", "from_params", ""):
+            # A fitted model carries its covariance: "covariance" from SurPyval
+            # 0.23 (#605), "cov_matrix" before.
+            fitted = m.get("covariance") is not None or m.get("cov_matrix") is not None
+            if fitted or str(m.get("how") or "") not in ("given parameters", "from_params", ""):
                 self.fitted.append(label)
         elif kind == "parametric":  # RePyability's format before 0.10
             dist, names, values = d.get("dist"), None, d.get("params")

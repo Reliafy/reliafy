@@ -353,6 +353,9 @@ def test_compute_gives_the_in_process_result_for_the_same_seed(make):
         local = compute_core.to_wire(rbd_analysis.analyze_availability(graph, **options))
         assert remote == local, options
         assert remote["n_simulations"] == 40
+        # From a current state the availability job carries the time to the
+        # next system failure (#240): it runs on compute with the rest.
+        assert ("next_failure" in remote) == ("state" in options), options
 
 
 def test_quick_run_on_compute_is_the_in_process_quick_run(monkeypatch):
@@ -369,6 +372,73 @@ def test_quick_run_on_compute_is_the_in_process_quick_run(monkeypatch):
     fake_clock()
     local = compute_core.to_wire(rbd_analysis.analyze_availability(graph, time_budget_s=4.0, max_replications=2000))
     assert remote == local and remote["quick"] is True and remote["replications"] == 150
+
+
+def test_next_failure_from_now_on_compute_is_the_in_process_one(monkeypatch):
+    """#240's next failure from the current state is part of the availability
+    job: compute gives the in-process histories, causes and mean, for a fixed
+    run and for a quick run (whose histories are its replications)."""
+    from backend.services import compute_core, rbd_analysis
+
+    graph = _graph()
+    first = next(n["id"] for n in graph["nodes"] if n["type"] == "component" and not n["data"].get("state"))
+    state = {first: {"age": 50.0}}
+    request = json.loads(json.dumps(compute_core.availability_request(graph, n_simulations=60, state=state)))
+    remote = compute_core.run("availability", request)
+    local = compute_core.to_wire(rbd_analysis.analyze_availability(graph, n_simulations=60, state=state))
+    assert remote["next_failure"] == local["next_failure"] and remote == local
+    assert remote["next_failure"]["n_simulations"] == 60
+
+    def fake_clock():
+        ticks = iter(range(10_000))
+        monkeypatch.setattr(rbd_analysis, "_clock", lambda: next(ticks))
+
+    options = {"time_budget_s": 4.0, "max_replications": 2000, "state": state}
+    fake_clock()
+    request = json.loads(json.dumps(compute_core.availability_request(graph, **options)))
+    remote = compute_core.run("availability", request)
+    fake_clock()
+    local = compute_core.to_wire(rbd_analysis.analyze_availability(graph, **options))
+    assert remote == local and remote["quick"] is True
+    assert remote["next_failure"]["n_simulations"] == remote["replications"] == 150
+
+
+@pytest.mark.parametrize("queued", [False, True], ids=["no-queue", "queue"])
+def test_next_failure_from_now_with_and_without_the_queue(client, monkeypatch, queued):
+    """From a current state the app's answer carries the next failure whether
+    COMPUTE_QUEUE is unset (in-process) or set (a job on compute), and the two
+    are the same."""
+    from backend.services import compute_queue
+
+    client.act_as(PRO)
+    graph = _graph()
+    first = next(n["id"] for n in graph["nodes"] if n["type"] == "component" and not n["data"].get("state"))
+    body = {"graph": graph, "force": True, "current_state": {first: {"age": 50.0}}}
+    local = client.post("/api/rbds/analyze", json=body)
+    assert local.status_code == 200, local.text
+    local = local.json()
+    assert local["current_state"] and local["next_failure"]["mean"] > 0
+    if not queued:
+        assert client.db.rbd_jobs.count_documents({}) == 0
+        return
+
+    from backend import compute_app
+
+    _configure(monkeypatch)
+    tasks = []
+    monkeypatch.setattr(compute_queue, "enqueue", lambda job_id, kind, request: tasks.append(
+        json.loads(json.dumps({"job_id": job_id, "kind": kind, "request": request}))) or True)
+    monkeypatch.setattr(compute_queue, "_verify_token", _fake_verify)
+    monkeypatch.setattr(compute_app, "_post", lambda url, payload, timeout: client.post(
+        "/internal/compute/callback", json=payload, headers={"Authorization": "Bearer compute-token"}).status_code)
+    job_id = _job_id(client.post("/api/rbds/analyze", json=body))
+    assert tasks[-1]["request"]["options"]["state"]
+    compute = TestClient(compute_app.app)
+    assert compute.post("/compute/run", json={**tasks.pop(), "callback_url": CALLBACK_URL}).status_code == 200
+    view = _poll(client, job_id)
+    assert view["status"] == "done"
+    assert view["result"]["next_failure"] == local["next_failure"]
+    _same(view["result"], local)
 
 
 def test_whole_payload_through_the_queue_matches_in_process(client, monkeypatch):

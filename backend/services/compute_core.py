@@ -35,11 +35,14 @@ sizes the run (a Pro run to its precision target that the 20 s budget stops,
 or a free quick run) can the count of replications differ with the
 machine's speed; the result is then that of the count it reports.
 
-Job kinds (:data:`RUNNERS`). ``availability`` is the only one. Another
-analysis joins by adding a request builder here, a runner to ``RUNNERS``,
-and a ``KIND_…`` in :mod:`backend.services.rbd_jobs` — e.g. the next failure
-from the current state (#240, not merged yet) or the exact figures over time
-of a large diagram.
+Job kinds (:data:`RUNNERS`). ``availability`` is the only one. The next
+failure from the current state (#240) is not a kind of its own: the
+availability analysis runs it whenever the request carries a ``state``
+(:mod:`backend.services.rbd_next_failure`), so it comes back in the same
+job, from the same seed. Another analysis joins by adding a request builder
+here, a runner to ``RUNNERS``, and a ``KIND_…`` in
+:mod:`backend.services.rbd_jobs` — e.g. the exact figures over time of a
+large diagram.
 """
 
 from __future__ import annotations
@@ -209,9 +212,9 @@ def run_availability(request: dict) -> dict:
     return rbd_analysis.analyze_availability(graph, resolve_model=_no_saved_models, **options)
 
 
-# What the compute service runs, by job kind. A new analysis (e.g. #240's next
-# failure from the current state) adds its runner here; the web side adds a
-# request builder above and a KIND_ in rbd_jobs.
+# What the compute service runs, by job kind. A new analysis adds its runner
+# here; the web side adds a request builder above and a KIND_ in rbd_jobs.
+# (#240's next failure rides in ``availability`` when a state is given.)
 RUNNERS: dict[str, Callable[[dict], dict]] = {
     "availability": run_availability,
 }

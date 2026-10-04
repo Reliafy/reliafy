@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from backend import config
 from backend.db import get_session
 from backend.http_limits import read_upload
-from backend.fitting import FitError, options_from_form
+from backend.fitting import FitError, options_from_form, per_demand_batches_from_df
 from backend import storage
 from backend.routers import excel as excel_router
 from backend.services import billing as billing_service
@@ -60,6 +60,9 @@ def _model_summary(model, ctx: AccessCtx) -> dict:
         # Randomness verdict (weibull beta CI / exponential), used when picking
         # RCM evidence for run-to-failure decisions.
         "randomness": results.get("randomness"),
+        # A fit whose likelihood has no finite maximum (#230): its numbers
+        # aren't estimates, so the list says so too.
+        **({"no_finite_maximum": True} if results.get("no_finite_maximum") else {}),
     }
 
 
@@ -364,23 +367,43 @@ def create_from_params(
 @router.post("/models/per-demand")
 def create_per_demand(
     name: str = Body(...),
-    demands: int = Body(...),
-    failures: int = Body(...),
+    demands: int | None = Body(default=None),
+    failures: int | None = Body(default=None),
     confidence: float = Body(default=0.95),
+    batches: list[dict] | None = Body(default=None),
+    dataset_id: str | None = Body(default=None),
+    demands_column: str | None = Body(default=None),
+    failures_column: str | None = Body(default=None),
+    batch_column: str | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    """Create a per-demand (Binomial) model from demands + failures counts.
-    A one-shot / protective-device reliability. With zero failures it's a
-    success-run demonstration test (``confidence`` sets the demonstrated
-    reliability lower bound). Counts against the model cap."""
+    """Create a per-demand (Binomial) model: a one-shot / protective-device
+    reliability, from one demands/failures count, several ``batches``
+    (``[{label, demands, failures}]``), or a dataset with one row per batch
+    (``dataset_id`` + ``demands_column`` + ``failures_column``, optionally
+    ``batch_column``). Bounds are exact (Clopper-Pearson) at ``confidence``;
+    with zero failures the lower bound is the success-run demonstration
+    (#233). Counts against the model cap."""
     denied = _creation_denied(session, ctx, "models")
     if denied is not None:
         return denied
     if not (name or "").strip():
         return JSONResponse(status_code=422, content={"detail": "A name is required."})
     try:
-        model = models_service.create_per_demand(session, ctx.write_owner, name.strip(), demands, failures, confidence)
+        if dataset_id:
+            dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+            if dataset is None:
+                return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+            if not (demands_column and failures_column):
+                raise FitError("Say which columns hold the demands and the failures.")
+            batches = per_demand_batches_from_df(
+                datasets_service.load_dataframe(dataset), demands_column, failures_column, batch_column)
+        elif batches is None and (demands is None or failures is None):
+            raise FitError("Give the demands and failures, or a list of batches.")
+        model = models_service.create_per_demand(session, ctx.write_owner, name.strip(), demands, failures,
+                                                 confidence, batches=batches,
+                                                 source_dataset_id=dataset_id or None)
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})

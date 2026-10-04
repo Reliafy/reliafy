@@ -5,6 +5,7 @@ import Calculator, { initCalcState } from "./Calculator.jsx";
 import GoodnessOfFit from "./GoodnessOfFit.jsx";
 import Coefficients from "./Coefficients.jsx";
 import ModelValidation from "./ModelValidation.jsx";
+import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import { distColor } from "../instrument.js";
 
 const DISTRIBUTION_TABS = [
@@ -25,9 +26,16 @@ const DISCRETE_TABS = [
 const pct = (v) => `${(v * 100).toFixed(v < 0.1 ? 2 : 1)}%`;
 
 // Per-demand (Binomial) reliability: a probability, not a curve over time.
+// Models saved before #233 carry a Wilson 95% interval and no confidence /
+// method; newer ones carry exact (Clopper-Pearson) bounds at their confidence,
+// the one-sided reliability bound and, from several batches, the batches.
 function PerDemandPanel({ result }) {
   const d = result.per_demand || {};
   const color = distColor(result.distribution);
+  const exact = d.method === "exact";
+  const c = Math.round((d.confidence ?? 0.95) * 100);
+  const level = exact ? `${c}%` : "95%";
+  const batches = d.batches || [];
   return (
     <>
       <div className="result-head">
@@ -37,23 +45,44 @@ function PerDemandPanel({ result }) {
         <div className="stat">
           <div className="value">{pct(d.p)}</div>
           <div className="name">failure probability / demand</div>
-          {d.ci && <div className="param-ci">95% CI [{pct(d.ci[0])}, {pct(d.ci[1])}]</div>}
+          {d.ci && <div className="param-ci">{level} CI [{pct(d.ci[0])}, {pct(d.ci[1])}]</div>}
         </div>
         <div className="stat">
           <div className="value">{pct(d.reliability)}</div>
           <div className="name">reliability / demand</div>
+          {d.reliability_ci && (
+            <div className="param-ci">{level} CI [{pct(d.reliability_ci[0])}, {pct(d.reliability_ci[1])}]</div>
+          )}
         </div>
+        {exact && d.reliability_lower != null && (
+          <div className="stat">
+            <div className="value">≥ {pct(d.reliability_lower)}</div>
+            <div className="name">reliability @ {c}% conf. (one-sided)</div>
+          </div>
+        )}
         <div className="stat">
           <div className="value">{d.failures} / {d.demands}</div>
-          <div className="name">failures / demands</div>
+          <div className="name">failures / demands{batches.length > 1 ? ` · ${batches.length} batches` : ""}</div>
         </div>
-        {d.success_run && (
+        {!exact && d.success_run && (
           <div className="stat">
             <div className="value">≥ {pct(d.success_run.reliability_lower)}</div>
             <div className="name">demonstrated @ {Math.round(d.success_run.confidence * 100)}% conf.</div>
           </div>
         )}
       </div>
+      {batches.length > 1 && (
+        <div className="pd-batch-table">
+          <table className="mini-table">
+            <thead><tr><th>Batch</th><th>Demands</th><th>Failures</th><th>Failures / demand</th></tr></thead>
+            <tbody>
+              {batches.map((b, i) => (
+                <tr key={i}><td>{b.label}</td><td>{b.demands}</td><td>{b.failures}</td><td>{pct(b.p)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       {d.success_run ? (
         <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
           Success run — {d.demands} demand{d.demands === 1 ? "" : "s"} with zero failures
@@ -61,6 +90,13 @@ function PerDemandPanel({ result }) {
           {Math.round(d.success_run.confidence * 100)}% confidence (one-sided lower bound,
           R ≥ (1 − C)<sup>1/n</sup>). For one-shot and protective equipment — feeds
           failure-finding intervals.
+        </p>
+      ) : exact ? (
+        <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
+          Estimated from {d.failures} failure{d.failures === 1 ? "" : "s"} in {d.demands} demands
+          {batches.length > 1 ? `, pooled over ${batches.length} batches (one failure probability for all)` : ""}.
+          Bounds are exact (Clopper-Pearson) at {c}% confidence. For one-shot and protective
+          equipment — feeds failure-finding intervals.
         </p>
       ) : (
         <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
@@ -216,6 +252,7 @@ export default function ResultView({ result, hideHead = false, modelId = null })
           </span>
         </div>
       )}
+      <NoMaximumNotice notice={result.no_finite_maximum} style={{ margin: "0 0 12px" }} />
       {/* Distributions with a probability plot move their parameters into the
           plot's side rail; proportional-hazards models move theirs into the
           calculator's side rail (like non-PH models). Other kinds keep the top
@@ -297,7 +334,7 @@ export default function ResultView({ result, hideHead = false, modelId = null })
                   ))}
                 </div>
               )}
-              {result.fit_warning && (
+              {result.fit_warning && !result.no_finite_maximum && (
                 <div className="detail-note warn" style={{ marginBottom: 10 }}>
                   ⚠ {result.fit_warning}
                 </div>
@@ -328,7 +365,7 @@ export default function ResultView({ result, hideHead = false, modelId = null })
           />
         )}
         {tab === "coef" && <Coefficients coefficients={result.coefficients} ratioLabel={result.ratio_label} />}
-        {tab === "gof" && <GoodnessOfFit gof={result.gof} n={result.n} />}
+        {tab === "gof" && <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} />}
         {tab === "check" && (
           <ModelValidation validation={result.validation} modelId={modelId} unit={result.unit} />
         )}
