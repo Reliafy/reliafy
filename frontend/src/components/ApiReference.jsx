@@ -297,7 +297,12 @@ function HttpDocs({ base }) {
               { "name": "beta",  "value": 2.5,    "ci": [1.78, 3.21] } ],
   "coefficients": [],          // populated for proportional-hazards models
   "metrics": null,             // {median, mttf, b10} for discrete / non-parametric
-  "gof": [ { "id": "aic", "label": "AIC", "value": 466.3 }, … ]
+  "gof": [ { "id": "aic", "label": "AIC", "value": 466.3 }, … ],
+  "validation": { … }          // regression models only: how good is this model?
+                               // {available, concordance: {value, rating, reading},
+                               //  brier: {model, baseline, improvement, from, to, reading},
+                               //  auc: [{time, value}], n_units, sampled, note}
+                               // or {available: false, reason}
 }`}
       />
 
@@ -509,8 +514,8 @@ function HttpDocs({ base }) {
 
 // What each MCP tool does, in plain English (mirrors backend/mcp_server.py).
 const MCP_TOOLS = [
-  ["list_models / get_model", "Your saved life and recurrent models — distribution, parameters with confidence intervals, goodness of fit, MTTF and B10."],
-  ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset, and report the result — nothing is saved."],
+  ["list_models / get_model", "Your saved life and recurrent models — distribution, parameters with confidence intervals, goodness of fit, MTTF and B10. Regression models add how good the model is: Harrell’s C, the integrated Brier score against no covariates, and the time-dependent AUC."],
+  ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset, and report the result — nothing is saved. A regression fit reports the same validation scores as get_model."],
   ["fit_and_save_model", "The same fit, saved as a model in your workspace (Claude asks before saving)."],
   ["save_model", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval — with an optional dataset reference and notes."],
   ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age, and with confidence bounds (the same as the app’s band) where the model has them."],

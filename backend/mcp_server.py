@@ -682,7 +682,7 @@ def _fit_summary(result: dict) -> dict:
         "gof": {g["id"]: g["value"] for g in result.get("gof") or []},
         "metrics": metrics,
     }
-    for key in ("extra_params", "coefficients", "randomness", "options"):
+    for key in ("extra_params", "coefficients", "randomness", "options", "validation"):
         if result.get(key):
             out[key] = result[key]
     if result.get("selection"):
@@ -720,7 +720,11 @@ def get_model(
 ) -> dict[str, Any]:
     """Read one saved model in full: fitted parameters with 95% confidence intervals, goodness of fit
     (log-likelihood, AIC, BIC), life metrics (median, MTTF, B10), regression coefficients for
-    proportional-hazards models, and the time unit. Works for life and recurrent models."""
+    proportional-hazards models, and the time unit. Works for life and recurrent models.
+    Regression models also report `validation` (how good is this model?): Harrell's C with a plain
+    reading (0.5 = coin toss, 1 = perfect ranking), the integrated Brier score against one
+    Kaplan-Meier curve for every unit (lower is better), and the time-dependent AUC at the failure-time
+    quartiles — or `available: false` with the reason."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
@@ -739,6 +743,8 @@ def get_model(
                 out[key] = r[key]
         if (r.get("functions") or {}).get("covariates"):
             out["covariates"] = r["functions"]["covariates"]
+        if m.kind == "regression":
+            out["validation"] = models_service.ensure_validation(db, m)
         if (m.spec or {}).get("notes"):
             out["notes"] = m.spec["notes"]
         if r.get("fit_ok") is False or r.get("fit_warning"):
@@ -987,7 +993,8 @@ def fit_distribution(
     failures with 1, pass c_invert=true. A fit that says every (or
     all but one) row is censored almost always means the flags are inverted; censoring gives the failures
     and censored units the fit used — check them against what the user said. Weibull beta < 1 = infant
-    mortality, ≈ 1 = random failures, > 1 = wear-out."""
+    mortality, ≈ 1 = random failures, > 1 = wear-out. Regression fits also report `validation`: how good
+    the model is (Harrell's C, Brier score against no covariates, time-dependent AUC; see get_model)."""
     return _fit(ctx, distribution=distribution, data=data, censored=censored, counts=counts, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, censor_column=censor_column,
                 count_column=count_column, covariates=covariates, unit=unit, save=False, name=None)

@@ -82,6 +82,7 @@ from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
 from backend.formula_check import FormulaRejected, check_formula
+from backend.model_validation import validate_regression
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
 # ``offsetable``: supports the 3-parameter offset (failure-free period) —
@@ -1816,6 +1817,8 @@ def _fit_regression(
         "n": n,
         "gof": gof,
         "functions": functions,
+        # How good is this model? Harrell's C, Brier score, AUC (#176).
+        "validation": validate_regression(model, df, mapping, raw_vars),
     }
 
 
