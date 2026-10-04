@@ -400,6 +400,7 @@ def analyze_graph(
     simulate: bool | None = Body(default=None),
     current_state: dict | None = Body(default=None),
     exact: bool = Body(default=False),
+    target_reliability: float | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -420,6 +421,12 @@ def analyze_graph(
     for it; ``current_state`` (``{node_id: {"down": true, "since": …} |
     {"age": …}}``) starts the figures from now, over ``t_max``; ``exact``
     computes the figures over time of a diagram above the automatic size cap.
+
+    Non-repairable graphs (#173): ``current_state`` (``{node_id: {"failed":
+    true} | {"age": …}}``) analyses the diagram as of now — the curves, MTTF
+    and B-lives run from now — and ``target_reliability`` (e.g. 0.9) adds the
+    design life, the time the system reliability falls to it (with an
+    interval when ``band`` is asked for). Both are exact, free for everyone.
     """
     try:
         if graph.get("repairable"):
@@ -437,6 +444,8 @@ def analyze_graph(
                 covariates=covariates,
                 conditional_age=conditional_age,
                 band=band,
+                current_state=current_state,
+                target_reliability=target_reliability,
             )
         )
     except AnalysisError as exc:

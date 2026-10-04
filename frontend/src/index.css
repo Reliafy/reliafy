@@ -6436,6 +6436,22 @@ button.danger:hover { background: #fdeeee; }
 .rbd-asof-table input { width: 110px; }
 .rbd-asof-table tr.is-down .calc-row-label { color: #b42318; font-weight: 600; }
 
+/* Non-repairable "As of now" and the design life (#173). */
+.rbd-asof-note {
+  margin-top: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel); font-size: 13px; color: var(--text);
+}
+.rbd-asof-note.is-failed { border-color: rgba(180, 35, 24, 0.45); background: rgba(180, 35, 24, 0.06); }
+.rbd-design-life {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; margin-top: 12px; border: 1px solid rgba(47, 109, 246, 0.35);
+  background: rgba(47, 109, 246, 0.06); border-radius: 12px; font-size: 14px; margin-bottom: 10px;
+}
+.rbd-design-life-name {
+  font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+}
+.rbd-design-life-value { font-size: 20px; font-variant-numeric: tabular-nums; color: var(--accent-strong); }
+
 /* Repeated blocks (#102): a linked copy of a component, drawn again */
 .rbd-comp.repeat:not(.state-working):not(.state-failed) {
   background: repeating-linear-gradient(135deg, var(--panel) 0 9px, rgba(47, 109, 246, 0.05) 9px 18px);

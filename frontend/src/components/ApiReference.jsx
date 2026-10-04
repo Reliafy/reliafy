@@ -519,7 +519,7 @@ const MCP_TOOLS = [
   ["create_rbd", "Build and save a diagram — series, parallel, k-of-n, standby, sub-systems — which opens in the RBD builder."],
   ["edit_rbd", "Change a saved diagram with a short batch of edits — add a block in series or parallel, remove one, swap a model on several blocks at once — all or nothing, instead of rebuilding it."],
   ["clone_rbd", "Copy a sample or one of your diagrams into your workspace, to edit or to make a variant."],
-  ["analyze_rbd", "System reliability, MTTF, B-lives and importance; availability for repairable diagrams (a paid feature, saved results are reused)."],
+  ["analyze_rbd", "System reliability, MTTF, B-lives and importance; availability for repairable diagrams (a paid feature, saved results are reused). For a non-repairable diagram, current_state (blocks failed, or running for some time) gives the remaining life from now, target_reliability the design life (e.g. R ≥ 90% until when), and confidence intervals on them from fitted blocks."],
   ["export_rbd_python", "A diagram as a standalone SurPyval + RePyability script."],
   ["upload_outage_log / system_history", "Save a real outage log (asset, down, back up) — as CSV text, or a CSV or Excel file sent with create_upload — against one of your diagrams, then read the system’s observed availability, its outages each with the block that caused it, and the blocks ranked by downtime share."],
   ["create_upload", "A single-use link (15 minutes) to send a file to Reliafy with a plain HTTP PUT — a ready curl command — so the file never passes through the conversation. Up to 30 MB; deleted after its import, or after an hour."],

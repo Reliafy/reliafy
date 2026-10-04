@@ -316,6 +316,8 @@ over t_max (e.g. the next 720 hours). The Monte-Carlo simulation adds only what 
 (distributions, P(no outage), percentiles, criticality indices) and is a paid feature; a saved result is \
 served when one exists. When the response says the exact figures are simulation-only for a diagram (e.g. \
 proof tests that take time), say so.
+- Non-repairable RBDs: analyze_rbd's current_state ({node_id: {"failed": true} or {"age": <time run>}}) \
+gives the remaining life from now; target_reliability gives the design life (e.g. R ≥ 90% until t).
 - Every artifact has a url; share it so the user can open the result in Reliafy.
 
 Plans: using Reliafy from AI agents (these tools) is part of Reliafy Pro, which includes everything with \
@@ -1904,6 +1906,32 @@ def _reliability_summary(result: dict, graph: dict, times: list[float] | None) -
         out["conditional_age"] = result["conditional_age"]
     if result.get("ccf"):
         out["ccf"] = result["ccf"]
+    out.update(_as_of_now_summary(result, labels))
+    return out
+
+
+def _as_of_now_summary(result: dict, labels: dict) -> dict:
+    """A non-repairable result's as-of-now and design-life parts (#173): the
+    state it ran from (with block labels), the reliability now, the design
+    life and, when asked for, the confidence intervals from the fitted blocks."""
+    out: dict = {}
+    if result.get("current_state"):
+        out["current_state"] = {
+            nid: {**v, "label": labels.get(nid, nid)} for nid, v in result["current_state"].items()}
+        out["reliability_now"] = result.get("reliability_now")
+        out["from"] = "now"
+    if result.get("design_life"):
+        out["design_life"] = result["design_life"]
+    band = result.get("band")
+    if band:
+        out["confidence"] = {
+            "level": band.get("level"), "n_draws": band.get("n_draws"),
+            "mttf": band.get("mttf"), "b_life": band.get("blife"),
+            **({"design_life": band["design_life"]} if "design_life" in band else {}),
+            "uncertain_blocks": [b.get("label") for b in band.get("uncertain") or []],
+            "fixed_blocks": [{"label": b.get("label"), "reason": b.get("reason")}
+                             for b in band.get("fixed") or []],
+        }
     return out
 
 
@@ -1949,6 +1977,8 @@ def _availability_summary(result: dict) -> dict:
 
 
 class BlockState(BaseModel):
+    failed: Optional[bool] = Field(None, description=(
+        "Non-repairable: true if the block has failed (it stays failed)."))
     down: Optional[bool] = Field(None, description="True: the block is down now (in a repair).")
     since: Optional[float] = Field(None, ge=0, description=(
         "With down: how long it has been down so far (diagram unit; 0 = just failed)."))
@@ -1974,15 +2004,25 @@ def analyze_rbd(
         "P(no outage), percentiles and criticality. False = the exact figures only (faster). Ignored "
         "without entitlement: the exact figures come anyway."))] = True,
     current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
-        "Repairable: blocks' states now, keyed by node id — {down: true, since: <time into the repair>} or "
-        "{age: <time since new>}; blocks left out are new. The figures then run from now over t_max "
-        "(e.g. the next 720 hours). Never replaces the saved from-new result."))] = None,
+        "Blocks' states now, keyed by node id; blocks left out are new. Repairable: {down: true, since: "
+        "<time into the repair>} or {age: <time since new>}; the figures then run from now over t_max "
+        "(e.g. the next 720 hours). Never replaces the saved from-new result. Non-repairable: {failed: "
+        "true} or {age: <time it has run>} on component blocks; the reliability curve, MTTF, B-lives and "
+        "design life are then the remaining life from now."))] = None,
     compute_exact: Annotated[bool, Field(description=(
         f"Repairable diagrams over {rbd_analysis.EXACT_AUTO_MAX_BLOCKS} blocks: compute the exact figures "
         "over time anyway (from several seconds to a minute or so)."))] = False,
+    target_reliability: Annotated[Optional[float], Field(gt=0, lt=1, description=(
+        "Non-repairable: the design life at this reliability, e.g. 0.9 — the time the system reliability "
+        "falls to it (from now with current_state)."))] = None,
+    confidence: Annotated[Optional[float], Field(ge=0.5, lt=1, description=(
+        "Non-repairable: also give confidence intervals at this level (e.g. 0.9) on the MTTF, B-lives and "
+        "design life, from the parameter uncertainty of blocks that use saved fitted models."))] = None,
 ) -> dict[str, Any]:
     """Analyse a saved RBD. Non-repairable diagrams: system reliability curve, MTTF, B-lives (B10/B50),
-    component importance (Birnbaum, Fussell–Vesely, RAW/RRW) and minimal cut/path sets. Repairable
+    component importance (Birnbaum, Fussell–Vesely, RAW/RRW) and minimal cut/path sets — from new, or from
+    now with current_state (failed and aged blocks: the remaining life); target_reliability adds the design
+    life (the time to that reliability) and confidence adds intervals from fitted blocks. Repairable
     diagrams, on every plan: the exact long-run availability, mean up/down time and failure frequency, how
     the long-run values were found (long_run_method: exact / numerical / simulated, e.g. the repair crews'
     Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety), and (in
@@ -2013,9 +2053,12 @@ def analyze_rbd(
         raise ToolError("times and conditional_age apply to non-repairable diagrams; this one is repairable "
                         "(analysed for availability). Drop them — t_max sets the window (and the simulated "
                         "horizon); current_state starts it from now.")
-    if current_state and not graph.get("repairable"):
-        raise ToolError("current_state applies to repairable (availability) diagrams; for a non-repairable one "
-                        "use conditional_age.")
+    if graph.get("repairable") and (target_reliability is not None or confidence is not None):
+        raise ToolError("target_reliability and confidence apply to non-repairable diagrams; this one is "
+                        "repairable (analysed for availability).")
+    if current_state and conditional_age and not graph.get("repairable"):
+        raise ToolError("Give either conditional_age (the whole system's age) or current_state (each block's "
+                        "state now), not both.")
     placeholders = rbd_graph.placeholder_labels(graph)
     head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
     if placeholders:
@@ -2056,8 +2099,12 @@ def analyze_rbd(
                 out["simulation"] = {"available": bool(payload.get("has_simulation")), "state": sim_state}
             return out
 
+        state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
+                 if current_state else None)
         result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
-                                            at_times=times)
+                                            at_times=times, current_state=state,
+                                            target_reliability=target_reliability,
+                                            band={"level": confidence} if confidence is not None else None)
         return {**head, "available": True, **_reliability_summary(result, graph, times)}
     except (ToolError, *_USER_ERRORS, models_service.ModelNotFound, fitting.ModelNotFound,
             rbds_service.RbdNotFound):
