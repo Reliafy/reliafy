@@ -283,7 +283,14 @@ def _saved_model(model_id: str, where: str, resolve_saved_model) -> dict:
     if saved is None:
         raise GraphError(f"{where}: saved model '{model_id}' not found.")
     r = saved.results or {}
-    if saved.kind not in ("distribution", "regression", "nonparametric"):
+    if saved.kind == "nonparametric":
+        # RePyability 0.12 refuses a non-parametric node in a diagram.
+        raise GraphError(
+            f"{where}: model “{saved.name}” is non-parametric ({r.get('distribution') or 'an empirical estimate'}), "
+            "which an RBD block can't take. Fit a parametric distribution (Weibull, say) to the same "
+            "data and use that, or give distribution_id + params inline."
+        )
+    if saved.kind not in ("distribution", "regression"):
         raise GraphError(
             f"{where}: model “{saved.name}” is a {saved.kind} model — RBD blocks need a "
             "life distribution; give distribution_id + params inline instead."

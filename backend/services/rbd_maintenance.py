@@ -2,7 +2,7 @@
 #100, #156, #157): costs, instant repair, scheduled preventive maintenance
 (age, block or condition-based replacement, opportunistic renewal in a
 maintenance group) and proof-tested hidden failures (staggered, imperfect
-tests) — turned into RePyability 0.11 ``RepairableRBD`` component specs.
+tests) — turned into RePyability ``RepairableRBD`` component specs.
 
 Graph format (all optional; a block without any of them is built exactly as
 before, as a plain ``NonRepairable``)::
@@ -476,8 +476,8 @@ def without_planned_outages(graph: dict) -> dict:
 
 def estimated_unavailability(rbd, t_sim: float, overrides: dict) -> Optional[float]:
     """A quick simulated unavailability, to set the precision target when the
-    exact long-run availability isn't known (proof tests whose tests or
-    repairs take time)."""
+    exact long-run availability isn't known (limited repair crews for
+    wear-out lives, say)."""
     from backend.services import rbd_analysis as ra
 
     try:

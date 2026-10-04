@@ -123,7 +123,7 @@ def _independent_run(design: dict, t_sim: float, n: int, seed: int):
     block's draws can't be replayed from a stream of its own (non-parametric
     models)."""
     res = design["rbd"].availability(t_simulation=t_sim, mc_samples=n, method="c", seed=seed,
-                                     **design["overrides"])
+                                     control_variate=False, conditional=False, **design["overrides"])
     costs = np.asarray(res.cost.samples, dtype=float) if res.cost is not None else None
     return np.asarray(res.uptimes, dtype=float) / t_sim, costs
 

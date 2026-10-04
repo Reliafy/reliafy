@@ -472,6 +472,17 @@ def test_optimal_overhaul_uses_a_recurrent_model(env):
 
 # ---- scoping -------------------------------------------------------------------------
 
+def test_a_non_parametric_model_is_no_rbd_block(env):
+    """RePyability 0.12 refuses a non-parametric node: create_rbd says to fit a
+    parametric distribution instead."""
+    km = _ok(_call(env.token[A], "fit_and_save_model", {
+        "data": TIMES, "censored": FLAGS, "distribution": "kaplan_meier", "name": "KM bearings"}))
+    graph = {**GRAPH, "nodes": [
+        {**n, "model": {"saved_model_id": km["model_id"]}} if n["id"] == "ctl" else n for n in GRAPH["nodes"]]}
+    msg = _err(_call(env.token[A], "create_rbd", {"name": "Empirical", **graph}))
+    assert "non-parametric" in msg and "Fit a parametric distribution" in msg
+
+
 def test_users_cannot_read_each_others_artifacts(env):
     model = _ok(_call(env.token[A], "fit_and_save_model", {
         "data": TIMES, "censored": FLAGS, "name": "A's model"}))

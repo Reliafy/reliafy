@@ -8,8 +8,8 @@ numpy
 # to a commit SHA so builds are reproducible. (Requires git at build time.)
 git+https://github.com/derrynknife/SurPyval.git@v0.22
 # RePyability is installed --no-deps in the Dockerfile (and CI), pinned to a
-# git tag (v0.11), which keeps the SurPyval pin above authoritative: it
-# declares surpyval>=0.20 (uncapped), but --no-deps also stops pip re-resolving
+# git tag (v0.12), which keeps the SurPyval pin above authoritative: it
+# declares surpyval>=0.22 (uncapped), but --no-deps also stops pip re-resolving
 # surpyval from PyPI. backend/tests/test_rbd_analysis.py exercises the pairing,
 # so a real break would fail the suite rather than reach production.
 # RePyability's runtime deps (numpy/scipy via surpyval, networkx, tqdm) are

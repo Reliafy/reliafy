@@ -51,7 +51,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
 
   return (
     <Modal title={repairable ? "Component models" : "Life model"} onClose={onClose} footer={footer}>
-      <ModelPicker label="Life model (time to failure)" value={initial?.model} onChange={setModel} />
+      <ModelPicker label="Life model (time to failure)" value={initial?.model} onChange={setModel} rbdBlock />
       {repairable && (
         <div style={{ marginTop: "1rem" }}>
           <label className="rbd-instant-repair" title="Parts swapped much faster than the timescale you're studying, or no repair-time data: the block still fails and costs, but is never down.">
@@ -63,6 +63,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
               label="Repair-time distribution (time to repair)"
               value={initial?.repair}
               onChange={setRepair}
+              rbdBlock
             />
           )}
           <BlockCostSection initial={initial} onChange={setExtras} unit={unit} crews={crews} groups={groups} />

@@ -621,7 +621,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
   const hasSim = result.has_simulation !== false;
   const exact = result.exact || null;
   const exactOk = exact?.status === "ok";
-  // No exact long-run value (proof tests whose tests or repairs take time — #100):
+  // No exact long-run value (limited repair crews for wear-out lives, say):
   // the headline is the simulated availability over the window.
   const simulatedOnly = result.availability_basis === "simulation";
   const a = simulatedOnly ? result.precision?.window_availability : result.steady_state_availability;

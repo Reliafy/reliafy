@@ -90,9 +90,14 @@ def test_exact_cost_rate_matches_a_hand_calculation():
     [block] = c["blocks"]
     assert block["id"] == "pump" and block["rate"] == pytest.approx(500 / 1010)
     assert block["downtime_share"] == pytest.approx(1.0)
-    # The window's simulated cost, from the availability simulation itself.
+    # The window's cost, from the availability simulation itself: its mean
+    # exact (RePyability 0.12's expected_cost), its interval simulated.
     sim = c["simulated"]
-    assert sim["n_simulations"] == N and sim["lower"] <= sim["mean"] <= sim["upper"]
+    rbd = ra._build_repairable_rbd(g)[0]
+    assert sim["mean_basis"] in ("exact", "numerical")
+    assert sim["mean"] == pytest.approx(rbd.expected_cost(r["t_simulation"]).mean, rel=1e-12)
+    assert sim["n_simulations"] == N and sim["lower"] <= sim["simulated_mean"] <= sim["upper"]
+    assert sim["lower"] < sim["upper"]
     assert set(sim["percentiles"]) == {"10", "50", "90"}
     assert "downtime" not in r  # nothing maintained
 
@@ -208,7 +213,11 @@ def test_timed_proof_tests_take_the_channel_offline():
     lam, tau = 1e-4, 1000.0
     v = _node("valve", model=_exp(lam), instant_repair=True, inspection={"interval": tau, "duration": 5})
     r = ra.analyze_availability(_series(v), n_simulations=N)
-    assert r["availability_basis"] == "simulation"  # no exact value with timed tests
+    # Numerical since RePyability 0.12 (#159); a simulation before.
+    assert r["availability_basis"] == "exact" and r["long_run_method"]["route"] == "numerical"
+    p = r["precision"]
+    assert p["window_availability_basis"] == "numerical"
+    assert p["lower"] - 1e-3 <= p["window_availability"] <= p["upper"] + 1e-3
     split = r["downtime"]
     # Each 5-hour test that takes the working channel off-line (the tests at
     # 1000, 2000, … 9000 h, less those that find it failed) is planned downtime.
@@ -367,6 +376,40 @@ def test_export_reproduces_costs_and_maintenance(tmp_path):
     assert "Long-run cost rate (exact)" in proc.stdout
 
 
+@pytest.mark.parametrize("limit, basis", [(2, "exact"), (1, "simulation")])
+def test_app_and_export_agree_on_the_window_mean_basis_either_side_of_the_limit(
+        tmp_path, monkeypatch, limit, basis):
+    """EXACT_WINDOW_MEAN_MAX_BLOCKS: up to it the simulated window's mean
+    availability and cost are RePyability's exact values, above it the
+    simulated means, in the app and in "Download as Python" alike, so both
+    report the same numbers. A two-block diagram at the limit, then above it."""
+    monkeypatch.setattr(ra, "EXACT_WINDOW_MEAN_MAX_BLOCKS", limit)
+    a = _node("a", 200, 0, model=_exp(1e-3), repair=_exp(0.1), costs={"repair": 300})
+    b = _node("b", 400, 0, model=_exp(2e-3), repair=_exp(0.05), costs={"downtime": 40})
+    g = _series(a, b, costs={"downtime_rate": 250})
+    assert ra.count_blocks(g) == 2
+    app = ra.analyze_availability(g, n_simulations=60)
+    code = rbd_export.to_python(g, "Limit", exported_at=WHEN)
+    assert f"EXACT_WINDOW_MEAN_MAX_BLOCKS = {limit}" in code and "N_BLOCKS = 2" in code
+    res, proc = _run(code, tmp_path, n_sims="60")
+
+    prec, got = app["precision"], res["precision"]
+    assert prec["window_availability_basis"] == got["window_availability_basis"]
+    assert app["costs"]["simulated"]["mean_basis"] == res["costs"]["simulated"]["mean_basis"]
+    if basis == "exact":
+        assert got["window_availability_basis"] in ("exact", "numerical")
+        assert res["costs"]["simulated"]["mean_basis"] in ("exact", "numerical")
+        assert got["window_availability"] != got["simulated_window_availability"]
+    else:
+        assert got["window_availability_basis"] == "simulation"
+        assert res["costs"]["simulated"]["mean_basis"] == "simulation"
+        assert got["window_availability"] == got["simulated_window_availability"]
+        assert "the simulated mean stands" in proc.stdout
+    # The same numbers either way.
+    assert got["window_availability"] == pytest.approx(prec["window_availability"], rel=1e-12)
+    assert res["costs"]["simulated"]["mean"] == pytest.approx(app["costs"]["simulated"]["mean"], rel=1e-12)
+
+
 def test_export_runs_block_replacement_to_the_same_precision_target(tmp_path):
     g = _wearing({"policy": "block", "interval": 580, "duration": 7, "cost": 1000})
     app = ra.analyze_availability(g)
@@ -464,13 +507,19 @@ def test_applied_copies_join_a_vote_through_a_junction():
 def test_cheapest_design_needs_prices_and_exact_costs():
     with pytest.raises(AnalysisError, match="purchase price"):
         rbd_costs.cheapest_design(_series(_pump()), horizon=1000)
-    # Proof tests that take time have no exact long-run costs (block
-    # replacement has had them since RePyability 0.10, #92).
+    # Limited repair crews for wear-out lives have no exact long-run costs.
+    # (Proof tests that take time have, since RePyability 0.12, #159; block
+    # replacement since 0.10, #92.)
+    crews = _series(_node("a", model=_w(1000, 2), repair=_ln(2, 0.5), costs={"acquisition": 1000}),
+                    _node("b", model=_w(800, 1.5), repair=_ln(2, 0.5), costs={"acquisition": 500}),
+                    costs={"downtime_rate": 100})
+    crews["repair_crews"] = {"crews": 1}
+    with pytest.raises(AnalysisError, match="needs exact long-run costs.*repair crew"):
+        rbd_costs.cheapest_design(crews, horizon=1000)
     timed = _series(_node("v", model=_exp(1e-4), instant_repair=True,
                           inspection={"interval": 1000, "duration": 5},
                           costs={"acquisition": 1000}), costs={"downtime_rate": 100})
-    with pytest.raises(AnalysisError, match="instant tests"):
-        rbd_costs.cheapest_design(timed, horizon=1000)
+    assert rbd_costs.cheapest_design(timed, horizon=1000)["design"]["availability"] > 0
     block = _wearing({"policy": "block", "interval": 580})
     block["nodes"][2]["data"]["costs"]["acquisition"] = 1000
     assert rbd_costs.cheapest_design(block, horizon=1000)["design"]["availability"] > 0
@@ -522,13 +571,19 @@ def test_compare_notes_when_only_one_design_is_priced():
     assert "cost" not in unpriced["differences"] and unpriced["cost_note"] is None
 
 
-def test_fault_tree_explains_why_timed_proof_tests_have_no_tree():
+def test_fault_tree_explains_why_a_diagram_without_long_run_values_has_no_tree():
     from backend.services.rbd_fault_tree import fault_tree
 
+    crews = _series(_node("a", model=_w(1000, 2), repair=_ln(2, 0.5)),
+                    _node("b", model=_w(800, 1.5), repair=_ln(2, 0.5)))
+    crews["repair_crews"] = {"crews": 1}
+    with pytest.raises(AnalysisError, match="limited repair crews"):
+        fault_tree(crews)
+    # Proof tests that take time have numerical long-run values since
+    # RePyability 0.12 (#159), so their tree is drawn.
     timed = _series(_node("v", model=_exp(1e-4), instant_repair=True,
                           inspection={"interval": 1000, "duration": 5}))
-    with pytest.raises(AnalysisError, match="test time or a repair"):
-        fault_tree(timed)
+    assert fault_tree(timed)["unavailability"] > 0
     # Age and (since RePyability 0.10, #92) block replacement have exact
     # long-run values, so their trees are drawn.
     assert fault_tree(_wearing({"policy": "age", "interval": 580}))["unavailability"] > 0

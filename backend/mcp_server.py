@@ -327,7 +327,7 @@ current_state ({node_id: {"down": true, "since": <time into the repair>} or {"ag
 over t_max (e.g. the next 720 hours). The Monte-Carlo simulation adds only what it alone gives \
 (distributions, P(no outage), percentiles, criticality indices) and is a paid feature; a saved result is \
 served when one exists. When the response says the exact figures are simulation-only for a diagram (e.g. \
-proof tests that take time), say so.
+one repair crew for wear-out lives), say so.
 - Non-repairable RBDs: analyze_rbd's current_state ({node_id: {"failed": true} or {"age": <time run>}}) \
 gives the remaining life from now; target_reliability gives the design life (e.g. R ≥ 90% until t).
 - Every artifact has a url; share it so the user can open the result in Reliafy.
@@ -1468,7 +1468,9 @@ class BlockModel(BaseModel):
     params: Optional[list[Param]] = Field(None, description=(
         "By SurPyval name: weibull [alpha (scale), beta (shape)], exponential [failure_rate], "
         "normal/lognormal [mu, sigma], gamma [alpha, beta]."))
-    saved_model_id: Optional[str] = Field(None, description="A saved life model id (list_models) instead of inline params.")
+    saved_model_id: Optional[str] = Field(None, description=(
+        "A saved life model id (list_models) instead of inline params: a parametric (or proportional-hazards) "
+        "model, not a non-parametric one (Kaplan-Meier etc.), which RBD blocks don't take."))
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
 
 
@@ -2153,7 +2155,7 @@ def analyze_rbd(
     (Pro or purchased credits): a saved result is always served; otherwise, without entitlement, the
     response carries `simulation: {available: false, message}` — relay it, and offer export_rbd_python to
     run the simulation locally. A diagram whose figures are simulation-only (exact.status
-    'simulation_only', e.g. proof tests that take time) returns available=false without entitlement; asked
+    'simulation_only', e.g. limited repair crews for wear-out lives) returns available=false without entitlement; asked
     with simulate=false (and no saved result matching the diagram as it is now) it returns available=false,
     needs_simulation=true, code 'needs_simulation' and a reason naming what needs the simulation, with no
     figure fields — call again with simulate=true (Pro or credits) or offer export_rbd_python."""
