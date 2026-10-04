@@ -567,6 +567,27 @@ def test_token_scopes_on_mcp_tools(client):
     assert "scope" not in _err(_call(write, "delete_model", {"model_id": "nope"}))
 
 
+def test_mcp_imports_check_the_token_scope_then_the_import_guard(client, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from backend.services import import_guard, tokens
+    from backend.tests.test_mcp import _call, _err, _ok
+
+    monkeypatch.setattr(import_guard, "WAIT_SECONDS", 0.0)
+    client.act_as(B)
+    db = client.db
+    read = tokens.create_token(db, B, "r", ["read"])["token"]
+    write = tokens.create_token(db, B, "rw", ["read", "write"])["token"]
+    dft = 'toplevel "S";\n"S" or "A" "B";\n"A" lambda=1e-3;\n"B" lambda=2e-3;\n'
+    args = {"content": dft, "format": "galileo", "save": False}
+
+    assert "write" in _err(_call(read, "import_rbd", args))
+    _ok(_call(write, "import_rbd", args))
+    db.import_locks.insert_one({"_id": B, "nonce": "busy",
+                                "until": datetime.now(timezone.utc) + timedelta(minutes=1)})
+    assert "Another import" in _err(_call(write, "import_rbd", args))
+
+
 def test_tool_scope_follows_annotations():
     from backend import mcp_server
 
