@@ -216,7 +216,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
         returns={`{ "interval": 176.4, "method": "…", "mttf": 8760, "target_availability": 0.99 }`}
       />
       <ClientFn
-        sig="strategy.demonstration_test(reliability, *, confidence=0.95, mission_time=None, failures=0, test_multiple=1.0, shape=None, units=None, method='attribute', mtbf=None, unit=None)"
+        sig="strategy.demonstration_test(reliability, *, confidence=0.95, mission_time=None, failures=0, test_multiple=1.0, shape=None, units=None, method='attribute', mtbf=None, design_reliability=None, design_mtbf=None, producer_risk=None, unit=None)"
         endpoint="POST /api/v1/strategy/demonstration-test"
         desc="Plan a reliability demonstration test: units to test, test time per unit, allowed failures."
         params={[
@@ -226,8 +226,10 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
           { name: "failures", type: "int", req: false, desc: "Failures allowed, default 0 (success run)." },
           { name: "test_multiple / shape", type: "number", req: false, desc: "Test each unit k missions, Weibull shape known." },
           { name: "units", type: "int", req: false, desc: "Units available: solve for test time per unit (needs shape)." },
+          { name: "design_reliability / design_mtbf", type: "number", req: false, desc: "A good design's true reliability (or MTBF): its chance of passing." },
+          { name: "producer_risk", type: "number", req: false, desc: "With the good design: the most chance of failing it, e.g. 0.2. The plan keeps both risks and chooses the failures allowed." },
         ]}
-        returns={`{ "units": 59, "test_time_per_unit": 1000, "summary": "Test 59 units for 1,000 hours each…", "tradeoff": {…} }`}
+        returns={`{ "units": 128, "failures": 8, "consumer_risk": 0.097, "producer_risk": 0.192, "summary": "Test 128 units…", "oc_curve": {…}, "tradeoff": {…} }`}
       />
 
       <h3>reliafy.fleet</h3>
@@ -526,7 +528,8 @@ const MCP_TOOLS = [
   ["create_rbd", "Build and save a diagram — series, parallel, k-of-n, standby, sub-systems — which opens in the RBD builder."],
   ["edit_rbd", "Change a saved diagram with a short batch of edits — add a block in series or parallel, remove one, swap a model on several blocks at once — all or nothing, instead of rebuilding it."],
   ["clone_rbd", "Copy a sample or one of your diagrams into your workspace, to edit or to make a variant."],
-  ["analyze_rbd", "System reliability, MTTF, B-lives and importance; availability for repairable diagrams (a paid feature, saved results are reused). For a non-repairable diagram, current_state (blocks failed, or running for some time) gives the remaining life from now, target_reliability the design life (e.g. R ≥ 90% until when), and confidence intervals on them from fitted blocks."],
+  ["analyze_rbd", "System reliability, MTTF, B-lives and importance; availability for repairable diagrams (a paid feature, saved results are reused). For a non-repairable diagram, current_state (blocks failed, or running for some time) gives the remaining life from now (its mean residual life exact), target_reliability the design life (e.g. R ≥ 90% until when), and confidence intervals on them from fitted blocks. For a repairable one, current_state with the simulation gives the time to the next system failure from now: its mean (the mean residual life), percentiles and the blocks that most often cause it."],
+  ["cheapest_design", "For a repairable diagram with purchase prices: how many copies of each block own the system at the lowest total cost — buying and running them against the lost production they save — optionally above a minimum availability, scored exactly. A discount rate (% a year, or the diagram’s own) makes the totals present values; analyze_rbd takes one too, for its total cost of ownership. Pro, as in the app."],
   ["export_rbd_python", "A diagram as a standalone SurPyval + RePyability script."],
   ["export_rbd_json", "A diagram in RePyability’s JSON format — load it in Python with rbd_from_json, change it in code, and bring it back with import_rbd. Labels, layout, the time unit and links to saved models ride in the file’s “reliafy” part, which RePyability ignores; blocks on a fitted proportional-hazards, non-parametric or load-sharing model can’t be exported (use export_rbd_python)."],
   ["upload_outage_log / system_history", "Save a real outage log (asset, down, back up) — as CSV text, or a CSV or Excel file sent with create_upload — against one of your diagrams, then read the system’s observed availability, its outages each with the block that caused it, and the blocks ranked by downtime share."],
@@ -536,7 +539,7 @@ const MCP_TOOLS = [
   ["import_excel", "Import an Excel workbook: a sheet as a dataset, an FMEA / RCM worksheet into a new or existing RCM study, or the RBD template as a diagram. Given an existing diagram (rbd_id), the import is saved as a new copy of it and the original is left unchanged, unless replace=true overwrites it; the result says which, with the saved diagram’s id."],
   ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function. For a saved Weibull fitted to data, the answer at each end of the shape’s 95% interval too, with a note when it makes the recommendation less firm."],
   ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model. For a Crow-AMSAA model fitted to data, the answer at each end of the growth shape’s 95% interval too, with a note when it makes the recommendation less firm."],
-  ["plan_demonstration_test", "Plan a reliability demonstration test — units, test time per unit and allowed failures to show a reliability at a confidence — with a units-vs-failures trade-off table. Needs no saved data."],
+  ["plan_demonstration_test", "Plan a reliability demonstration test — units, test time per unit and allowed failures to show a reliability at a confidence — with a units-vs-failures trade-off table. With producer_risk and a good design, a plan that keeps both risks. Needs no saved data."],
   ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items."],
   ["list_fleet_alerts / create_fleet_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API."],
   ["delete_model / delete_dataset / delete_rbd", "Permanently delete your own models, datasets and diagrams (never shared samples; Claude asks first). A dataset still used by a model can’t be deleted, nor a model a fleet forecast runs on."],

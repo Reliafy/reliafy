@@ -108,6 +108,7 @@ from backend.services import tokens as tokens_service
 from backend.services import uploads as uploads_service
 from backend.services import usage as usage_service
 from backend.services import rbd_analysis
+from backend.services import rbd_costs
 from backend.services import rbd_export
 from backend.services.rbd_analysis import AnalysisError
 from backend.services.strategy import StrategyError
@@ -275,7 +276,9 @@ with the point values. Bounds are null, with bounds_note saying why, where a mod
 B-lives, importance; availability for repairable diagrams), export_rbd_python (a standalone script), \
 export_rbd_json (RePyability's JSON: rbd_from_json loads it; import_rbd takes it back). Edit, \
 don't rebuild: to change a saved diagram, send edit_rbd one batch of ops (add/remove/update blocks and \
-edges) rather than re-creating it; clone_rbd copies a sample or makes a variant to edit.
+edges) rather than re-creating it; clone_rbd copies a sample or makes a variant to edit. cheapest_design \
+finds a repairable diagram's redundancy with the lowest total cost of ownership; a discount_rate (percent a \
+year: 7 = 7%) makes its totals, and analyze_rbd's, present values.
 - Observed history: upload_outage_log saves a real outage log (asset, start, end; blank end = still down) \
 against one of the user's diagrams; system_history then gives the system's actual availability over the \
 window, its outages each attributed to the block that took it down, and the blocks ranked by downtime share.
@@ -291,7 +294,8 @@ and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert m
 fleet's expected failures.
 - Test planning: plan_demonstration_test sizes a reliability demonstration test — units, test time per unit \
 and allowed failures to show reliability R over a mission at confidence C (success run / binomial; a longer \
-test per unit with a known Weibull shape; or an MTBF test). It needs no saved data.
+test per unit with a known Weibull shape; or an MTBF test); with producer_risk and a good design it keeps both \
+risks. It needs no saved data.
 - Housekeeping: delete_model, delete_dataset and delete_rbd permanently delete the user's own artifacts \
 (never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
 Only on the user's explicit \
@@ -325,11 +329,13 @@ availability and the window's expected system failures, outages, downtime and co
 numerical: deterministic, no simulation), plus the long-run figures — from new, or from now with \
 current_state ({node_id: {"down": true, "since": <time into the repair>} or {"age": <time since new>}}), \
 over t_max (e.g. the next 720 hours). The Monte-Carlo simulation adds only what it alone gives \
-(distributions, P(no outage), percentiles, criticality indices) and is a paid feature; a saved result is \
+(distributions, P(no outage), percentiles, criticality indices; from current_state, next_failure: the time \
+to the next system failure, its mean residual life and likely cause) and is a paid feature; a saved result is \
 served when one exists. When the response says the exact figures are simulation-only for a diagram (e.g. \
 one repair crew for wear-out lives), say so.
 - Non-repairable RBDs: analyze_rbd's current_state ({node_id: {"failed": true} or {"age": <time run>}}) \
-gives the remaining life from now; target_reliability gives the design life (e.g. R ≥ 90% until t).
+gives the remaining life from now (mean_residual_life, exact); target_reliability gives the design life \
+(e.g. R ≥ 90% until t).
 - Every artifact has a url; share it so the user can open the result in Reliafy.
 
 Plans: using Reliafy from AI agents (these tools) is part of Reliafy Pro, which includes everything with \
@@ -1668,13 +1674,26 @@ class MaintenanceGroup(BaseModel):
     system_down: Optional[bool] = Field(None, description="Every system outage is also a stop of the group.")
 
 
+class DiagramCosts(BaseModel):
+    """A repairable diagram's own costs (#99, #219); 0 clears a field."""
+    model_config = ConfigDict(extra="forbid")
+    downtime_rate: Optional[float] = Field(None, ge=0, description=(
+        "Cost per unit time (diagram unit) the WHOLE system is down: lost production."))
+    horizon: Optional[float] = Field(None, ge=0, description=(
+        "How long the system is owned (diagram unit), for the total cost of ownership; e.g. 87600 h = 10 years."))
+    discount_rate: Optional[float] = Field(None, ge=0, le=100, description=(
+        "Percent a year, e.g. 7 for 7% (not 0.07): the total cost of ownership is then a present value. Needs a "
+        "calendar time unit (hours … years)."))
+
+
 class RbdNode(BaseModel):
     id: str = Field(description="Unique node id. The diagram needs exactly one 'input' and one 'output' node.")
     type: Literal["input", "output", "component", "series", "parallel", "knode", "standby", "subsystem"] = Field(
         description="component = one block; series/parallel = n identical blocks sharing one model; knode = "
                     "k-of-n voting gate (n = required, k = branches feeding it); standby = spare(s) idle until "
                     "the running unit fails (repairable: identical units, each repaired after it fails); "
-                    "subsystem = embed a saved RBD. Repairable diagrams take component, standby and knode.")
+                    "subsystem = embed a saved RBD. Repairable diagrams take component, standby and knode (a vote "
+                    "can sit anywhere, e.g. two 2-of-3 stages in series).")
     label: Optional[str] = None
     model: Optional[BlockModel] = Field(None, description="Life model (component, series, parallel, standby).")
     repair: Optional[BlockModel] = Field(None, description="Repairable diagrams only: time-to-repair distribution "
@@ -1946,6 +1965,8 @@ class SetOp(_Op):
         "Replaces the maintenance groups' options ({} clears them)."))
     safety_function: Optional[bool] = None
     target_sil: Optional[int] = Field(None, ge=0, le=4, description="0 clears it.")
+    costs: Optional[DiagramCosts] = Field(None, description=(
+        "Repairable: the diagram's downtime cost, ownership horizon and discount rate; fields left out are kept."))
 
 
 class AddCcfOp(_Op):
@@ -2047,7 +2068,8 @@ def edit_rbd(
       nodes); clear removes block settings. A node's type can't change: remove and re-add.
     - add_edge / remove_edge {source, target}
     - set {name?, unit?, repairable?, repair_crews? (0 = as many as needed), maintenance_groups?,
-      safety_function?, target_sil? (0 clears)}
+      safety_function?, target_sil? (0 clears), costs? {downtime_rate?, horizon?, discount_rate? (% a year); 0
+      clears}}
     - add_ccf {members, beta, basis?, id?} / remove_ccf {id} — common-cause (beta-factor) groups (basis 'rate',
       the default, for lifetime analysis); in a repairable diagram they enter a safety function's PFDavg.
     Removing a node drops it from its common-cause group (and the group if under 2 members remain).
@@ -2179,6 +2201,9 @@ def _as_of_now_summary(result: dict, labels: dict) -> dict:
             nid: {**v, "label": labels.get(nid, nid)} for nid, v in result["current_state"].items()}
         out["reliability_now"] = result.get("reliability_now")
         out["from"] = "now"
+        if result.get("mean_residual_life"):
+            # The mean remaining life from now (#221), exact where RePyability gives it.
+            out["mean_residual_life"] = result["mean_residual_life"]
     if result.get("design_life"):
         out["design_life"] = result["design_life"]
     band = result.get("band")
@@ -2232,7 +2257,53 @@ def _availability_summary(result: dict) -> dict:
         for k in ("n_simulations", "precision", "per_node", "criticality", "cached", "computed_at"):
             out.pop(k, None)
     out["exact"] = _exact_summary(result.get("exact"))
+    if result.get("next_failure") and result.get("has_simulation", True):
+        out.update(_next_failure_summary(result["next_failure"]))
+    costs = _costs_summary(result.get("costs"))
+    if costs:
+        out["costs"] = costs
     return out
+
+
+_COST_KEYS = ("cost_rate", "cost_rate_basis", "downtime_cost_rate", "by_category", "acquisition_cost", "horizon",
+              "horizon_basis", "running_cost", "total_cost", "discount_rate", "discount_rate_per_unit",
+              "undiscounted_total_cost")
+
+
+def _costs_summary(costs: dict | None) -> dict | None:
+    """The cost of ownership for an agent (#99, #219): the long-run cost rate
+    and its categories, the total over the horizon — a present value when
+    discounted — the ten costliest blocks, and the window's cost."""
+    if not costs:
+        return None
+    out = {k: costs[k] for k in _COST_KEYS if costs.get(k) is not None}
+    out["present_value"] = bool(costs.get("discount_rate"))
+    if out.get("by_category"):
+        out["by_category"] = {k: v for k, v in out["by_category"].items() if v}
+    blocks = [{k: b.get(k) for k in ("id", "label", "rate", "cost_share", "acquisition")}
+              for b in costs.get("blocks") or []]
+    if blocks:
+        out["blocks"] = blocks[:10]
+    sim = costs.get("simulated")
+    if sim:
+        out["window_cost"] = {k: sim.get(k) for k in ("mean", "mean_basis", "t_simulation", "percentiles")}
+    return out
+
+
+def _next_failure_summary(nf: dict) -> dict:
+    """As of now with the simulation (#220, #221): the time to the next
+    system failure from the blocks' states — its mean (the mean residual
+    life), percentiles, P(failure) at 21 times and the blocks that cause it."""
+    curve = nf.get("curve") or {}
+    points = _downsample(curve.get("t") or [], curve.get("cdf") or [])
+    keys = ("window", "n_simulations", "down_now", "failed_share", "mean", "mean_is_lower_bound", "mean_lower",
+            "mean_upper", "confidence", "percentiles", "time_limited")
+    out = {"method": "simulated", **{k: nf.get(k) for k in keys if k in nf},
+           "p_failed_by": [{"t": p["t"], "p": p["reliability"]} for p in points],
+           "causes": [{k: c.get(k) for k in ("label", "count", "share")} for c in nf.get("causes") or []]}
+    mrl = {"value": nf.get("mean"), "method": "simulated", "lower": nf.get("mean_lower"),
+           "upper": nf.get("mean_upper"), "lower_bound": bool(nf.get("mean_is_lower_bound"))}
+    return {"next_failure": out, "mean_residual_life": mrl}
 
 
 class BlockState(BaseModel):
@@ -2266,9 +2337,11 @@ def analyze_rbd(
     current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
         "Blocks' states now, keyed by node id; blocks left out are new. Repairable: {down: true, since: "
         "<time into the repair>} or {age: <time since new>}; the figures then run from now over t_max "
-        "(e.g. the next 720 hours). Never replaces the saved from-new result. Non-repairable: {failed: "
+        "(e.g. the next 720 hours); with the simulation, next_failure gives the time to the next system "
+        "failure from now (its mean is mean_residual_life) and the blocks that cause it. Never replaces the "
+        "saved from-new result. Non-repairable: {failed: "
         "true} or {age: <time it has run>} on component blocks; the reliability curve, MTTF, B-lives and "
-        "design life are then the remaining life from now."))] = None,
+        "design life are then the remaining life from now (mean_residual_life: exact)."))] = None,
     compute_exact: Annotated[bool, Field(description=(
         f"Repairable diagrams over {rbd_analysis.EXACT_AUTO_MAX_BLOCKS} blocks: compute the exact figures "
         "over time anyway (from several seconds to a minute or so)."))] = False,
@@ -2281,6 +2354,9 @@ def analyze_rbd(
     include_curves: Annotated[bool, Field(description=(
         "Non-repairable with common-cause groups: also return ccf.curve_without, the system reliability without "
         "the groups at the times of `curve`. Off by default to keep the answer small."))] = False,
+    discount_rate: Annotated[Optional[float], Field(ge=0, le=100, description=(
+        "Repairable with costs: price costs.total_cost as a present value at this percent a year (7 = 7%; 0 = "
+        "undiscounted) instead of the diagram's own discount rate. Nothing is saved or re-run."))] = None,
 ) -> dict[str, Any]:
     """Analyse a saved RBD. Non-repairable diagrams: system reliability curve, MTTF, B-lives (B10/B50),
     component importance (Birnbaum, Fussell–Vesely, RAW/RRW) and minimal cut/path sets — from new, or from
@@ -2291,7 +2367,10 @@ def analyze_rbd(
     Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety), and (in
     `exact`) the availability over time A(t), mission availability and the window's expected system
     failures, outages, downtime and cost — each with its method (exact / numerical; no simulation) — from
-    new or from current_state. The Monte-Carlo simulation (distributions, criticality) is a paid feature
+    new or from current_state. A priced diagram adds `costs`: the long-run cost rate, and the total cost of
+    ownership over its horizon (a present value when discounted: discount_rate, or the diagram's own, set
+    with edit_rbd's set costs). The Monte-Carlo simulation (distributions, criticality; from current_state,
+    next_failure and mean_residual_life: the time to the next system failure and its cause) is a paid feature
     (Pro or purchased credits): a saved result is always served; otherwise, without entitlement, the
     response carries `simulation: {available: false, message}` — relay it, and offer export_rbd_python to
     run the simulation locally. A diagram whose figures are simulation-only (exact.status
@@ -2322,6 +2401,9 @@ def analyze_rbd(
     if graph.get("repairable") and (target_reliability is not None or confidence is not None):
         raise ToolError("target_reliability and confidence apply to non-repairable diagrams; this one is "
                         "repairable (analysed for availability).")
+    if discount_rate is not None and not graph.get("repairable"):
+        raise ToolError("discount_rate prices a repairable diagram's total cost of ownership; this diagram is "
+                        "non-repairable (analysed for reliability) and has no costs.")
     if current_state and conditional_age and not graph.get("repairable"):
         raise ToolError("Give either conditional_age (the whole system's age) or current_state (each block's "
                         "state now), not both.")
@@ -2353,6 +2435,8 @@ def analyze_rbd(
                 message = _simulation_message(plan) if plan != "pro" else payload.get("detail")
                 return {**head, "kind": "repairable", "available": False, "code": payload.get("code"),
                         "message": message}
+            if discount_rate is not None and payload.get("costs"):
+                payload = {**payload, "costs": rbd_costs.with_discount(payload["costs"], graph, discount_rate)}
             out = {**head, "available": True, **_availability_summary(payload)}
             sim_state = (payload.get("simulation_status") or {}).get("state")
             if sim_state == "pro_required" and (simulate or recompute):
@@ -2425,6 +2509,55 @@ def export_rbd_json(
     return {"filename": filename, "json": text, "notes": list(rbd_json.EXPORT_NOTES),
             "load": ("from repyability.rbd.serialisation import rbd_from_json; "
                      f"rbd = rbd_from_json(open({filename!r}).read())")}
+
+
+@_tool("cheapest_design", _READ, "Cheapest redundancy of a repairable RBD")
+def cheapest_design(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="A repairable RBD id from list_rbds.")],
+    horizon: Annotated[Optional[float], Field(gt=0, description=(
+        "How long the system is owned (diagram unit); default the diagram's own horizon."))] = None,
+    min_availability: Annotated[Optional[float], Field(gt=0, lt=1, description=(
+        "Only designs at least this available in the long run, e.g. 0.9995."))] = None,
+    blocks: Annotated[Optional[list[str]], Field(max_length=rbd_costs.MAX_BLOCKS, description=(
+        "Component block ids that may be given copies; default every block with a purchase price."))] = None,
+    discount_rate: Annotated[Optional[float], Field(ge=0, le=100, description=(
+        "Percent a year (7 = 7%; 0 = undiscounted): the totals are present values and the design with the "
+        "lowest is chosen. Default the diagram's own discount rate."))] = None,
+) -> dict[str, Any]:
+    """The redundancy that owns a repairable diagram at the lowest total cost (RePyability's
+    allocate_redundancy, scored exactly): how many active, independently repaired copies of each priced block
+    to fit, weighing each copy's purchase price and running costs against the system downtime (lost
+    production) it saves, optionally keeping the long-run availability at least min_availability. Returns the
+    design as drawn and the cheapest side by side (total cost, purchase, running cost rate, availability), the
+    copies per block and the saving; the totals are present values when discounted. Needs block purchase prices
+    and the diagram's downtime cost (edit_rbd: update_node costs.acquisition, set costs). Nothing is saved:
+    add the copies with edit_rbd (add_node parallel_to), or open the diagram's Design tab to draw them. Pro
+    (or purchased credits), as in the app."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    rbd = _get_rbd(db, uid, rbd_id)
+    graph = rbd.graph or {}
+    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
+    if not graph.get("repairable"):
+        raise ToolError(f"“{rbd.name}” is non-repairable (analysed for reliability): the cheapest design prices "
+                        "a repairable diagram's ownership. Its redundancy for reliability is the app's Design tab.")
+    if not billing_service.premium_compute_allowed(db, user):
+        _soft_refusal("pro_only")
+        return {**head, "available": False, "code": "pro_required",
+                "message": (f"The cheapest design is part of Reliafy Pro ({PRO_PRICE}; purchased AI credits "
+                            f"unlock it too), as in the app — upgrade at {_billing_url()} (or call upgrade_link). "
+                            "analyze_rbd's exact availability and cost figures stay free.")}
+    owners = [*_owners(uid), rbd.owner_id]
+    result = rbd_costs.cheapest_design(
+        graph, lambda mid: models_service.get_live_model(db, mid, owners), horizon=horizon,
+        min_availability=min_availability, blocks=blocks, discount_rate=discount_rate)
+    keep = ("unit", "horizon", "min_availability", "discount_rate", "method", "max_copies", "current", "saving",
+            "changed", "note")
+    out = {**head, "available": True, **{k: result[k] for k in keep}}
+    out["present_value"] = result["discount_rate"] is not None
+    out["design"] = {k: v for k, v in result["design"].items() if k != "units"}
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -2624,7 +2757,8 @@ def _lean_demonstration(out: dict) -> dict:
     """The demonstration plan without the app's plotting fields: the trade-off
     table as {row label: values by allowed failures}."""
     keep = ("method", "solve_for", "summary", "units", "test_time_per_unit", "total_test_time",
-            "test_multiple", "failures", "unit", "consumer_risk", "pass_probability", "assumptions")
+            "test_multiple", "failures", "unit", "consumer_risk", "pass_probability", "producer_risk",
+            "producer_risk_target", "design_reliability", "design_mtbf", "assumptions")
     lean = {k: out[k] for k in keep if out.get(k) is not None}
     t = out.get("tradeoff") or {}
     lean["tradeoff"] = {
@@ -2661,20 +2795,30 @@ def plan_demonstration_test(
                                                                       "rate, total test time, chi-squared).")]
     = "attribute",
     mtbf: Annotated[Optional[float], Field(gt=0, description="MTBF to demonstrate (method='mtbf').")] = None,
-    design_reliability: Annotated[Optional[float], Field(gt=0, lt=1, description="Optional: a design's true "
-                                                                                 "reliability, to report its "
-                                                                                 "chance of passing.")] = None,
+    design_reliability: Annotated[Optional[float], Field(gt=0, lt=1, description="Optional: a good design's "
+                                                                                 "true reliability, to report "
+                                                                                 "its chance of passing (needed "
+                                                                                 "with producer_risk).")] = None,
     unit: _UNIT = None,
+    design_mtbf: Annotated[Optional[float], Field(gt=0, description="method='mtbf': a good design's true MTBF "
+                                                                    "(needed with producer_risk).")] = None,
+    producer_risk: Annotated[Optional[float], Field(gt=0, lt=1, description=(
+        "Optional, e.g. 0.2: the most chance of FAILING the good design (design_reliability / design_mtbf). "
+        "Plans the smallest test keeping BOTH risks (consumer's <= 1 - confidence, producer's <= this) and "
+        "chooses the failures allowed itself (failures is ignored)."))] = None,
 ) -> dict[str, Any]:
     """Plan a reliability demonstration test: how many units to test, for how long, with how many failures
     allowed, to show reliability R over a mission at confidence C (success run / binomial; Weibayes with a
-    known Weibull shape to trade test time for units; or an MTBF chi-squared test). Returns a one-line plan,
-    the assumptions and a units-vs-failures(-vs-test-length) trade-off table."""
+    known Weibull shape to trade test time for units; or an MTBF chi-squared test). With producer_risk and a
+    good design's reliability (or MTBF), the plan keeps both the consumer's and the producer's risk (a
+    success run alone often fails a good design). Returns a one-line plan, both risks, the assumptions and a
+    units-vs-failures(-vs-test-length) trade-off table."""
     _caller(ctx)
     out = strategy_store.compute("demonstration_test", {
         "method": method, "reliability": reliability, "confidence": confidence, "mission_time": mission_time,
         "failures": failures, "test_multiple": test_multiple, "shape": shape, "units": units, "mtbf": mtbf,
-        "design_reliability": design_reliability, "unit": unit or ""})
+        "design_reliability": design_reliability, "design_mtbf": design_mtbf, "producer_risk": producer_risk,
+        "unit": unit or ""})
     return _lean_demonstration(out)
 
 
