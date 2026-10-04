@@ -326,7 +326,7 @@ def availability_payload(
     endpoints below and the MCP server, so both apply the same paid gate.
     Raises :class:`AnalysisError` for an invalid current state.
     """
-    from backend.services import rbd_analysis
+    from backend.services import rbd_analysis, rbd_policies
 
     state = rbd_analysis.parse_current_state(graph, current_state)
     doc = session.rbds.find_one({"_id": rbd.id}) if rbd is not None else None
@@ -371,7 +371,12 @@ def availability_payload(
         can_simulate=entitled,
         can_recompute=entitled,
     )
-    return 200, out
+    # Common-cause groups the availability figures leave out (#185), said
+    # beside them; RePyability's reasons in Reliafy's words, saved ones too (#186).
+    common_cause = rbd_policies.common_cause_note(graph, out)
+    if common_cause is not None:
+        out["common_cause"] = common_cause
+    return 200, rbd_analysis.plain_reasons(out)
 
 
 def _availability(

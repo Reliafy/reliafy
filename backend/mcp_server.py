@@ -82,6 +82,7 @@ from backend import recurrent as recurrent_fit
 from backend import storage
 from backend.fitting import FitError
 from backend.services import access as access_service
+from backend.services import availability_answer
 from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
@@ -2054,7 +2055,7 @@ def analyze_rbd(
                 }
             else:
                 out["simulation"] = {"available": bool(payload.get("has_simulation")), "state": sim_state}
-            return out
+            return availability_answer.finish(out, payload)
 
         result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
                                             at_times=times)
