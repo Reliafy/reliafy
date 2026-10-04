@@ -103,10 +103,12 @@ def test_staggered_tests_match_repyability_and_halve_the_cost():
     assert out["plan"]["pfd_avg"] == pytest.approx(0.0004925, abs=5e-8)
     assert out["plan"]["cost_rate"] == pytest.approx(staggered.cost_rate, rel=1e-12)
     assert out["plan"]["sil"] == 3 and out["plan"]["meets_target"] is True
-    # The best with both tested at once: v2 twice a year, and a third dearer.
+    # The best with both tested at once: one valve twice a year, and a third
+    # dearer. The valves are identical, so which one is a tie that the
+    # platform's floating point breaks (v2 on macOS, v1 on Linux CI).
     t = out["together"]
     assert t["met"] is True and {r["id"]: r["interval"] for r in t["blocks"]} == together.intervals
-    assert together.intervals == {"v1": 8760.0, "v2": 4380.0}
+    assert sorted(together.intervals.values()) == [4380.0, 8760.0]
     assert t["cost_rate"] == pytest.approx(together.cost_rate, rel=1e-12)
     assert out["plan"]["cost_rate"] < 0.7 * t["cost_rate"]
     # As drawn (yearly, together) misses the target; the groups are in the PFDavg.
