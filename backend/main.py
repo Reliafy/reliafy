@@ -42,6 +42,7 @@ from backend.auth import get_current_user
 from backend.routers import auth as auth_router
 from backend.routers import models as models_router
 from backend.routers import rbds as rbds_router
+from backend.routers import rbd_jobs as rbd_jobs_router
 from backend.routers import rbd_compare as rbd_compare_router
 from backend.routers import rbd_fault_tree as rbd_fault_tree_router
 from backend.routers import rbd_design as rbd_design_router
@@ -184,6 +185,8 @@ async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
 app.include_router(auth_router.router)
 app.include_router(models_router.router)
 app.include_router(rbds_router.router)
+# Analysis jobs (#146): polling, and the compute service's callback.
+app.include_router(rbd_jobs_router.router)
 app.include_router(rbd_compare_router.router)
 app.include_router(rbd_fault_tree_router.router)
 app.include_router(rbd_design_router.router)

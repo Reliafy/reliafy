@@ -10,12 +10,15 @@ import os
 from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 
+from backend import config
 from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import billing as billing_service
 from backend.routers import excel as excel_router
+from backend.services import free_sims as free_sims_service
 from backend.services import import_guard
 from backend.services import rbd_import
+from backend.services import rbd_jobs as rbd_jobs_service
 from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
@@ -265,9 +268,10 @@ def delete_rbd(
 
 
 # The availability simulation (repairable RBDs) runs thousands of Monte-Carlo
-# replications on a one-CPU service, so running it is a paid feature. Every
-# user gets the exact figures (#154: long-run, and over time where RePyability
-# has an exact route), and any saved (cached) simulation result.
+# replications, so running it is a paid feature. Every user gets the exact
+# figures (#154: long-run, and over time where RePyability has an exact
+# route), and any saved (cached) simulation result; in the app a user without
+# Pro can run a quick, time-capped simulation (#147), a few a day.
 AVAILABILITY_PRO_PAYLOAD = {
     "detail": (
         "Availability simulation is a paid feature. Subscribe to Pro or buy AI "
@@ -276,6 +280,14 @@ AVAILABILITY_PRO_PAYLOAD = {
     "code": "pro_required",
     "upgrade": True,
 }
+
+
+def quick_sims_allowed(surface: str) -> bool:
+    """Whether a user without premium compute may run quick simulations on
+    this surface: always in the app; over MCP only with MCP_FREE_QUICK_SIMS."""
+    if int(config.FREE_SIMS_PER_DAY) <= 0 or float(config.FREE_SIM_SECONDS) <= 0:
+        return False
+    return surface == "app" or config.MCP_FREE_QUICK_SIMS
 
 
 SIMULATION_PRO_MESSAGE = (
@@ -329,6 +341,7 @@ def _has_figures(payload: dict) -> bool:
 def availability_payload(
     session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners,
     *, simulate: bool | None = None, current_state=None, exact: bool = False,
+    quick: bool = False, surface: str = "app",
 ) -> tuple[int, dict]:
     """A repairable (availability) analysis as ``(status, payload)``.
 
@@ -352,9 +365,22 @@ def availability_payload(
     without touching the owner's document. ``exact`` asks for the figures
     over time of a diagram above the automatic size cap. Shared by the REST
     endpoints below and the MCP server, so both apply the same paid gate.
+
+    Free quick runs (#147): where quick runs are allowed (``surface``: "app",
+    or "mcp" with ``MCP_FREE_QUICK_SIMS``), a user who isn't entitled sees
+    ``simulation_status.quick`` (seconds, runs left today) beside the exact
+    figures — or, for a simulation-only diagram, in the 402 — and asking with
+    ``quick`` (and ``simulate`` not false) runs one: 429 ``free_sim_cap`` once
+    the day's runs are used.
+
+    The simulation runs in-process, or — with the compute queue configured —
+    as a job (#146): then the answer is 202, the exact figures with ``job``
+    ``{job_id, status, queue_position}`` to poll at
+    ``GET /api/rbd-jobs/{job_id}``, whose result is the whole payload (see
+    :func:`rbd_jobs.availability_out`).
     Raises :class:`AnalysisError` for an invalid current state.
     """
-    from backend.services import rbd_analysis, rbd_policies
+    from backend.services import rbd_analysis
 
     state = rbd_analysis.parse_current_state(graph, current_state)
     doc = session.rbds.find_one({"_id": rbd.id}) if rbd is not None else None
@@ -368,57 +394,76 @@ def availability_payload(
     cached = rbds_service.cached_availability(doc, key) if state is None else None
     wanted = bool(force) or (entitled if simulate is None else bool(simulate))
     run = entitled and wanted and (cached is None or bool(force))
+    # A free quick run (#147): asked for, allowed here, and nothing saved to show.
+    quick_ok = not entitled and quick_sims_allowed(surface)
+    run_quick = quick_ok and bool(quick) and simulate is not False and cached is None
     sim = None
-    if run:
-        result = rbds_service.analyze_graph(session, graph, resolve_owners, t_max=t_max, state=state)
-        computed_at = None
-        if state is None and writable and rbds_service.should_store_availability(
-                doc, key, session, resolve_owners):
-            computed_at = rbds_service.store_availability(session, rbd.id, key, result, ctx.uid)
-        sim = {**result, "cached": False, "computed_at": computed_at}
-        status = {"state": "done"}
+    job = None
+    if run or run_quick:
+        code, res = rbd_jobs_service.run_availability(
+            session,
+            uid=ctx.uid,
+            graph=graph,
+            cache_key=key,
+            t_max=t_max,
+            resolve_owners=resolve_owners,
+            rbd_id=rbd.id if rbd is not None else None,
+            # Never a result from a current state on the diagram.
+            store=writable and state is None,
+            entitled=entitled,
+            quick=run_quick,
+            force=force,
+            state=state,
+            context={"exact": free.get("exact")},
+        )
+        if code == 200:
+            sim = res
+            status = {"state": "done"}
+        elif code == 202:
+            job = res
+            status = {"state": res["status"], "job_id": res["job_id"]}
+        else:  # 429 (today's free runs used) or 503 (the queue is unavailable)
+            return code, res
     elif cached is not None:
         sim = cached
         status = {"state": "saved"}
     elif not entitled:
         status = {"state": "pro_required", "message": SIMULATION_PRO_MESSAGE}
+        if quick_ok:
+            status["quick"] = free_sims_service.summary(session, ctx.uid)
     else:
         status = {"state": "not_run"}
 
-    if sim is None and not entitled and not _has_figures(free):
-        # Simulation-only diagram (no exact figures at all): the paywall, as before.
+    if sim is None and job is None and not entitled and not _has_figures(free):
+        # Simulation-only diagram (no exact figures at all): the paywall, as
+        # before — with the free quick run where it's allowed.
+        if quick_ok:
+            return 402, {**AVAILABILITY_PRO_PAYLOAD, "quick": free_sims_service.summary(session, ctx.uid)}
         return 402, AVAILABILITY_PRO_PAYLOAD
 
-    if sim is not None:
-        out = {**sim, "exact": free.get("exact"), "has_simulation": True}
-    else:
-        out = {**free, "has_simulation": False, "cached": False, "computed_at": None}
-    out.update(
-        simulation_status=status,
-        current_state=state,
-        # ``can_simulate`` / ``can_recompute`` let the UI offer "Run simulation"
-        # and "Re-run" to entitled users, and the Pro offer to the rest.
-        can_simulate=entitled,
-        can_recompute=entitled,
-    )
-    # Common-cause groups the availability figures leave out (#185), said
-    # beside them; RePyability's reasons in Reliafy's words, saved ones too (#186).
-    common_cause = rbd_policies.common_cause_note(graph, out)
-    if common_cause is not None:
-        out["common_cause"] = common_cause
-    return 200, rbd_analysis.plain_reasons(out)
+    out = rbd_jobs_service.availability_out(
+        sim, free, status=status, state=state, entitled=entitled, graph=graph)
+    if sim is not None and sim.get("free_sims"):
+        out["free_sims"] = sim["free_sims"]
+    if job is not None:
+        out["job"] = {k: job.get(k) for k in ("job_id", "status", "queue_position", "quick")}
+        if job.get("free_sims"):
+            out["free_sims"] = job["free_sims"]
+        return 202, out
+    return 200, out
 
 
 def _availability(
     session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners,
-    simulate: bool | None = None, current_state=None, exact: bool = False,
+    simulate: bool | None = None, current_state=None, exact: bool = False, quick: bool = False,
 ) -> JSONResponse:
     # The exact figures (free) unless the simulation runs or meets the paywall.
     usage_service.set_feature("availability_exact")
     status, payload = availability_payload(
         session, ctx, graph, t_max, rbd, force, resolve_owners,
-        simulate=simulate, current_state=current_state, exact=exact)
-    if status == 402 or (payload.get("simulation_status") or {}).get("state") == "done":
+        simulate=simulate, current_state=current_state, exact=exact, quick=quick, surface="app")
+    sim_state = (payload.get("simulation_status") or {}).get("state")
+    if status in (202, 402) or sim_state == "done":
         usage_service.set_feature("availability_sim")
     return JSONResponse(status_code=status, content=payload)
 
@@ -436,6 +481,7 @@ def analyze_graph(
     current_state: dict | None = Body(default=None),
     exact: bool = Body(default=False),
     target_reliability: float | None = Body(default=None),
+    quick: bool = Body(default=False),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -455,7 +501,8 @@ def analyze_graph(
     (entitled users only); ``simulate`` false skips the simulation, true asks
     for it; ``current_state`` (``{node_id: {"down": true, "since": …} |
     {"age": …}}``) starts the figures from now, over ``t_max``; ``exact``
-    computes the figures over time of a diagram above the automatic size cap.
+    computes the figures over time of a diagram above the automatic size cap;
+    ``quick`` runs a free, time-capped simulation (users without Pro, #147).
 
     Non-repairable graphs (#173): ``current_state`` (``{node_id: {"failed":
     true} | {"age": …}}``) analyses the diagram as of now — the curves, MTTF
@@ -469,7 +516,8 @@ def analyze_graph(
             if rbd_id:
                 rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
             return _availability(session, ctx, graph, t_max, rbd, force, ctx.read_owners,
-                                 simulate=simulate, current_state=current_state, exact=exact)
+                                 simulate=simulate, current_state=current_state, exact=exact,
+                                 quick=quick)
         return JSONResponse(
             content=rbds_service.analyze_graph(
                 session,
@@ -499,6 +547,7 @@ def analyze_rbd(
     force: bool = False,
     simulate: bool | None = None,
     exact: bool = False,
+    quick: bool = False,
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -512,7 +561,7 @@ def analyze_rbd(
     try:
         if graph.get("repairable"):
             return _availability(session, ctx, graph, t_max, rbd, force, owners,
-                                 simulate=simulate, exact=exact)
+                                 simulate=simulate, exact=exact, quick=quick)
         return JSONResponse(
             content=rbds_service.analyze_graph(session, graph, owners, t_max=t_max)
         )

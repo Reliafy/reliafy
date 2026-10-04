@@ -150,6 +150,15 @@ def init_db() -> None:
     # MCP tool calls per user per UTC day (the retired Agent plan's quota): one
     # document per user per day, keyed by id; TTL drops it after the reset.
     db.mcp_usage.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Free quick availability simulations per user per UTC day (#147).
+    db.free_sim_usage.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Analysis jobs on the compute service (#146): queue position counts
+    # in-flight jobs by age; the app resumes a diagram's newest job; TTL drops
+    # finished jobs RBD_JOB_TTL_DAYS after they finish.
+    db.rbd_jobs.create_index([("status", 1), ("created_at", 1)])
+    db.rbd_jobs.create_index([("uid", 1), ("rbd_id", 1), ("created_at", -1)])
+    db.rbd_jobs.create_index([("uid", 1), ("cache_key", 1), ("created_at", -1)])
+    db.rbd_jobs.create_index([("expires_at", 1)], expireAfterSeconds=0)
     # Metered AI calls (backend/services/billing.py): credit holds, looked up
     # per user and by whether they're settled; per-user concurrency slots,
     # dropped by TTL if a holder never released one; and which user uploaded
