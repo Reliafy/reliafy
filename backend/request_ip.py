@@ -19,9 +19,14 @@ which only the infrastructure between the client and the app appends, are
 skipped, as is anything in ``TRUSTED_PROXY_CIDRS``. The first remaining
 entry from the right is the client.
 
-If Hosting's own egress address turns out to be the right-most public entry
-on proxied requests, list Hosting's ranges in ``TRUSTED_PROXY_CIDRS`` so the
-next entry left (the visitor, as Hosting recorded it) is used instead.
+Requests through Firebase Hosting reach Cloud Run from Google's own front-end
+addresses (seen in the request logs: 66.249/16, 66.102/16, 74.125/16,
+192.178/16, 142.250/16, 64.233/16 …), so the right-most public entry there is
+Hosting's, not the visitor's. Addresses in Google's published ranges
+(``goog.json``) that are not Google Cloud customer ranges (``cloud.json``)
+are therefore proxy hops too (``TRUST_GOOGLE_FRONTENDS``, on by default); the
+snapshot lives in ``backend/google_ip_ranges.json``. Extra ranges go in
+``TRUSTED_PROXY_CIDRS``.
 
 ``TRUST_X_FORWARDED_FOR=false`` ignores the header entirely and uses the
 socket peer, for deployments reachable without a proxy in front.
@@ -30,7 +35,9 @@ socket peer, for deployments reachable without a proxy in front.
 from __future__ import annotations
 
 import ipaddress
+import json
 from functools import lru_cache
+from pathlib import Path
 
 from backend import config
 
@@ -66,10 +73,35 @@ _INTERNAL = tuple(ipaddress.ip_network(n) for n in (
 ))
 
 
+_RANGES_FILE = Path(__file__).resolve().parent / "google_ip_ranges.json"
+
+
+@lru_cache(maxsize=1)
+def _google_ranges():
+    """(Google's networks, Google Cloud customer networks) from the snapshot."""
+    try:
+        data = json.loads(_RANGES_FILE.read_text())
+    except (OSError, ValueError):
+        return (), ()
+    return (_trusted_networks(tuple(data.get("google", []))),
+            _trusted_networks(tuple(data.get("google_cloud_customers", []))))
+
+
+@lru_cache(maxsize=4096)
+def _is_google_frontend(addr) -> bool:
+    """A Google-owned address that isn't a Google Cloud customer's: a front end
+    (e.g. Firebase Hosting) appending the hop it connected from."""
+    google, customers = _google_ranges()
+    inside = lambda nets: any(addr.version == n.version and addr in n for n in nets)
+    return inside(google) and not inside(customers)
+
+
 def _is_proxy_hop(addr, nets) -> bool:
     if getattr(addr, "ipv4_mapped", None):
         addr = addr.ipv4_mapped
-    return any(addr.version == n.version and addr in n for n in (*_INTERNAL, *nets))
+    if any(addr.version == n.version and addr in n for n in (*_INTERNAL, *nets)):
+        return True
+    return bool(config.TRUST_GOOGLE_FRONTENDS) and _is_google_frontend(addr)
 
 
 def from_forwarded_for(header: str, peer: str = "") -> str:

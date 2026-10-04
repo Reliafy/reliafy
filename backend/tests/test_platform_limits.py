@@ -432,3 +432,22 @@ def test_unexpected_alt_fit_errors_return_a_generic_message(client, monkeypatch)
                     files={"file": ("a.csv", df.to_csv(index=False).encode(), "text/csv")})
     assert r.status_code == 500
     assert "internal detail" not in r.text
+
+
+# ---- Client address behind Google's front ends --------------------------------------
+
+def test_client_address_skips_google_front_end_hops(monkeypatch):
+    from backend import config, request_ip
+
+    monkeypatch.setattr(config, "TRUST_GOOGLE_FRONTENDS", True)
+    monkeypatch.setattr(config, "TRUSTED_PROXY_CIDRS", [])
+    # Through Firebase Hosting: the visitor, then Hosting's Google egress hop.
+    assert request_ip.from_forwarded_for("203.0.113.7, 66.102.8.34") == "203.0.113.7"
+    assert request_ip.from_forwarded_for("198.51.100.4, 74.125.215.65, 169.254.1.1") == "198.51.100.4"
+    # A client-written entry further left is ignored.
+    assert request_ip.from_forwarded_for("1.2.3.4, 203.0.113.7, 66.102.8.34") == "203.0.113.7"
+    # A Google Cloud customer address (e.g. a VM) is a visitor, not a hop.
+    assert request_ip.from_forwarded_for("34.116.0.10") == "34.116.0.10"
+    # Off: the right-most public entry, as before.
+    monkeypatch.setattr(config, "TRUST_GOOGLE_FRONTENDS", False)
+    assert request_ip.from_forwarded_for("203.0.113.7, 66.102.8.34") == "66.102.8.34"

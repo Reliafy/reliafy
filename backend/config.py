@@ -80,6 +80,10 @@ TRUST_X_FORWARDED_FOR = _truthy(os.environ.get("TRUST_X_FORWARDED_FOR", "true"))
 TRUSTED_PROXY_CIDRS = [
     c.strip() for c in os.environ.get("TRUSTED_PROXY_CIDRS", "").split(",") if c.strip()
 ]
+# Treat Google's own front-end addresses (goog.json minus Google Cloud
+# customer ranges; snapshot in backend/google_ip_ranges.json) as proxy
+# hops: requests through Firebase Hosting reach Cloud Run from them.
+TRUST_GOOGLE_FRONTENDS = _truthy(os.environ.get("TRUST_GOOGLE_FRONTENDS", "true"))
 
 # ---- Response security headers ------------------------------------------------
 # Extra sources for the Content-Security-Policy connect-src (space-separated):
