@@ -78,6 +78,29 @@ def test_run_reaches_the_precision_target_and_reports_it():
     json.dumps(res)
 
 
+def test_the_window_mean_is_exact_and_the_interval_the_simulations(monkeypatch):
+    """RePyability 0.12 gives a run's mean interval as the exact mean with no
+    error by default, which would stop a run to a tolerance after one batch.
+    The app simulates plainly: the stopping rule, curve and criticality stay
+    the simulation's, and the window's mean is the exact mission availability
+    beside the simulated interval."""
+    monkeypatch.setattr(ra, "_AVAIL_BATCH", 40)
+    monkeypatch.setattr(ra, "_AVAIL_SIMS", 400)
+    monkeypatch.setattr(ra, "_AVAIL_REL_TOLERANCE", 0.02)  # more than one batch's worth
+    graph = _pumps()
+    res = ra.analyze_availability(graph)
+    prec = res["precision"]
+    assert prec["standard_error"] > 0 and prec["lower"] < prec["upper"]
+    assert res["n_simulations"] > 40  # not stopped by a zero-width interval
+    rbd, _, gates, working, broken = ra._build_repairable_rbd(graph)
+    exact = rbd.mission_availability(res["t_simulation"], working_nodes=working | gates, broken_nodes=broken)
+    assert prec["window_availability_basis"] in ("exact", "numerical")
+    assert prec["window_availability"] == pytest.approx(float(exact), rel=1e-12)
+    assert prec["simulated_window_availability"] != prec["window_availability"]
+    assert prec["lower"] <= prec["simulated_window_availability"] <= prec["upper"]
+    assert res["criticality"]
+
+
 def test_run_stops_at_the_limit_when_the_target_is_out_of_reach(monkeypatch):
     monkeypatch.setattr(ra, "_AVAIL_BATCH", 40)
     monkeypatch.setattr(ra, "_AVAIL_SIMS", 120)

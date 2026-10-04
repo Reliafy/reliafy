@@ -4,8 +4,10 @@ import { getDistributions, listModels, getModel } from "../api.js";
 
 // Inline life-model picker: choose a saved (plain-distribution) model or enter
 // parameters. Emits the model object (same shape used on RBD nodes) via
-// onChange, or null when the selection is incomplete.
-export default function ModelPicker({ label, value, onChange }) {
+// onChange, or null when the selection is incomplete. `rbdBlock` leaves out
+// non-parametric (KM/NA) saved models: an RBD block needs a distribution
+// (RePyability 0.12 refuses an empirical one).
+export default function ModelPicker({ label, value, onChange, rbdBlock = false }) {
   const [source, setSource] = useState(value?.source === "saved" ? "saved" : "params");
   const [dists, setDists] = useState([]);
   const [saved, setSaved] = useState([]);
@@ -31,9 +33,9 @@ export default function ModelPicker({ label, value, onChange }) {
     // as plain parameters, but a node can reference a saved one and supply
     // covariate values on the calculator.
     listModels()
-      .then((d) => setSaved(d.models))
+      .then((d) => setSaved(rbdBlock ? d.models.filter((m) => m.kind !== "nonparametric") : d.models))
       .catch(() => {});
-  }, []);
+  }, [rbdBlock]);
 
   const dist = useMemo(() => dists.find((d) => d.id === distId), [dists, distId]);
 

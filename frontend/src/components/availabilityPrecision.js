@@ -27,10 +27,16 @@ export function precisionNote(result) {
   const conf = Math.round((p.confidence || 0.95) * 100);
   const d = pctDigits(p.half_width || p.tolerance);
   const n = (p.n_simulations ?? result.n_simulations)?.toLocaleString();
-  const interval = p.lower != null && p.upper != null
-    ? ` (${conf}% CI ${pctAt(p.lower, d)} to ${pctAt(p.upper, d)})`
-    : "";
-  const lead = ` Over that window the system was up ${pctAt(p.window_availability, d)} of the time${interval}`;
+  // Exact (RePyability's mission availability) where it can be; the interval
+  // is the simulation's own, which sets its precision.
+  const exact = p.window_availability_basis === "exact" || p.window_availability_basis === "numerical";
+  const ci = p.lower != null && p.upper != null ? `${conf}% CI ${pctAt(p.lower, d)} to ${pctAt(p.upper, d)}` : "";
+  const interval = exact
+    ? ` (exact${ci ? `; the simulation's ${ci}` : ""})`
+    : ci ? ` (${ci})` : "";
+  const lead = exact
+    ? ` Over that window the system is up ${pctAt(p.window_availability, d)} of the time${interval}`
+    : ` Over that window the system was up ${pctAt(p.window_availability, d)} of the time${interval}`;
   const target = `±${Math.abs(p.tolerance * 100).toFixed(pctDigits(p.tolerance))}-point`;
   if (p.mode === "fixed") return `${lead}, from a fixed ${n} replications.`;
   if (p.reached) return `${lead}: within the ${target} precision target, reached after ${n} replications.`;

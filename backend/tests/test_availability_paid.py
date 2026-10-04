@@ -220,11 +220,12 @@ def test_free_user_gets_exact_figures_not_the_simulation_and_cache_when_it_match
 
 
 def test_free_user_meets_the_paywall_on_a_simulation_only_diagram(client):
-    """Proof tests that take time have no exact figures at all (long-run or
-    over time): the paywall, as before #154."""
+    """One repair crew for wear-out lives has no exact figures at all
+    (long-run or over time): the paywall, as before #154. (Proof tests that
+    take time were the example until RePyability 0.12 made them numerical.)"""
     client.act_as(FREE)
     graph = _rbd_graph(repairable=True)
-    graph["nodes"][2]["data"]["inspection"] = {"interval": 500, "duration": 2}
+    graph["repair_crews"] = {"crews": 1}
     r = _analyze(client, graph)
     assert r.status_code == 402 and r.json() == PRO_PAYLOAD
     assert client.sims["n"] == 0

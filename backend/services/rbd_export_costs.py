@@ -2,8 +2,8 @@
 maintenance (#99, #100): the RePyability component specs, the system downtime
 cost, and the cost report — so the script reproduces the app's cost rate,
 total cost of ownership and simulated window cost, and still runs when the
-exact long-run values don't exist (proof tests whose tests or repairs take
-time).
+exact long-run values don't exist (limited repair crews for wear-out
+lives, say).
 
 A diagram without any of these exports exactly as before: every hook below
 expands to the original text.
@@ -239,8 +239,8 @@ _EXACT = '''    # Exact long-run figures (independent blocks; Birnbaum/Vesely fo
         birnbaum = rbd.birnbaum_importance(**overrides)
 '''
 _EXACT_OR_NOT = '''    # Exact long-run figures (independent blocks; Birnbaum/Vesely formula).
-    # Proof tests whose tests or repairs take time have none: the
-    # simulation gives them.
+    # Some diagrams (limited repair crews for wear-out lives, say) have
+    # none: the simulation gives them.
     try:
         with np.errstate(all="ignore"):
             availability = float(rbd.mean_availability(**overrides))
@@ -279,7 +279,7 @@ _HELPERS = '''
 def pilot_unavailability(overrides):
     """A quick simulated unavailability (as Reliafy sets the precision target
     when there is no exact value)."""
-    run = dict(t_simulation=T_SIMULATION, method="c", seed=1)
+    run = dict(t_simulation=T_SIMULATION, method="c", seed=1, control_variate=False, conditional=False)
     try:
         pilot = rbd.availability(mc_samples=PILOT_SIMS, antithetic=True, **run, **overrides)
     except NotImplementedError:
@@ -314,8 +314,15 @@ def report_costs(sim, overrides):
         for category, value in cost.by_category.items():
             if value:
                 print(f"    {category.replace('_', ' ')}: {value:,.6g}")
+        # The window's mean cost, exact where RePyability works it out (as
+        # in Reliafy); the interval and percentiles stay the simulation's.
+        mean, mean_basis = (window_mean(overrides, "expected_cost") if rbd.has_costs
+                            else (None, "simulation"))
+        if mean is not None:
+            print(f"  expected cost of the window ({mean_basis}): {mean:,.6g}")
         out["simulated"] = {
-            "mean": cost.mean, "lower": window.lower, "upper": window.upper,
+            "mean": cost.mean if mean is None else mean, "mean_basis": mean_basis,
+            "simulated_mean": cost.mean, "lower": window.lower, "upper": window.upper,
             "percentiles": {"10": p10, "50": p50, "90": p90},
             "by_category": dict(cost.by_category),
         }

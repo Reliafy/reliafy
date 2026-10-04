@@ -3,7 +3,7 @@
 An outage log is a table of real outages — which asset, when it went down,
 when it came back (blank = still down), and optionally why and whether it was
 planned — linked to one of the owner's RBDs. Each asset name maps to a block
-of the diagram. From it, RePyability 0.11's timelines
+of the diagram. From it, RePyability's timelines
 (:mod:`repyability.timelines`) give
 
 * each block's up/down history (``Timeline.from_outages``);

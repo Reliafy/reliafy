@@ -51,7 +51,7 @@ from backend.fitting import DISTRIBUTIONS
 from backend.services import rbd_analysis, rbd_repeats
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.22", "repyability": "0.11"}
+_DEFAULT_VERSIONS = {"surpyval": "0.22", "repyability": "0.12"}
 _SURPYVAL_GIT = "https://github.com/derrynknife/SurPyval.git"
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
@@ -60,7 +60,7 @@ _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 _RESERVED = {
     "np", "os", "json", "surv", "plt", "rbd", "rbd_independent", "main",
     "missing_model", "voting_gate", "mean_time_to_failure", "b_life",
-    "save_results", "results", "exact_over_window", "node_states",
+    "save_results", "results", "exact_over_window", "node_states", "window_mean",
 }
 
 
@@ -294,10 +294,10 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
         )
     if kind == "nonparametric":
         raise _Missing(
-            f"Block '{label}' uses a non-parametric model ({what}) fitted to "
-            "a saved dataset, which isn't included in this script. Set a "
-            "parametric life model here, or refit it with e.g. "
-            "surv.KaplanMeier.fit(x, c)."
+            f"Block '{label}' uses a non-parametric model ({what}), which "
+            "an RBD doesn't take (RePyability 0.12 refuses one). Fit a "
+            "parametric distribution to the same data and set it here, "
+            "e.g. surv.Weibull.fit(x, c)."
         )
     if model.get("_unresolved"):
         raise _Missing(
@@ -1472,7 +1472,11 @@ def availability_tolerance(unavailability):
 def simulate(availability, tolerance, overrides):
     """The seeded availability simulation, in antithetic pairs: N_SIMS
     histories when set, else run to the tolerance."""
-    run = dict(t_simulation=T_SIMULATION, method="c", seed=1, antithetic=True)
+    # A plain simulation, as in Reliafy: RePyability 0.12's default intervals
+    # are the exact mean's, with no error, so a run to the tolerance would
+    # stop after one batch.
+    run = dict(t_simulation=T_SIMULATION, method="c", seed=1, antithetic=True,
+               control_variate=False, conditional=False)
     if N_SIMS:
         return rbd.availability(mc_samples=N_SIMS + N_SIMS % 2, **run, **overrides)
     max_n = max(2, MAX_SIMS - MAX_SIMS % 2)
@@ -1493,6 +1497,22 @@ def node_states():
                if s.get("down") else NodeState(age=float(s.get("age") or 0.0)))
         for node, s in STATE.items()
     } or None
+
+
+def window_mean(overrides, name):
+    """``(value, basis)``: the simulated window's expected availability
+    (``"mission_availability"``) or cost (``"expected_cost"``), exact where
+    RePyability works it out (basis "exact" or "numerical"), as Reliafy
+    reports it beside the simulation's interval; ``(None, "simulation")``
+    otherwise."""
+    route = rbd.analysis_routes()[name].route
+    if route not in ("exact", "numerical"):
+        return None, "simulation"
+    with np.errstate(all="ignore"):
+        if name == "expected_cost":
+            return float(rbd.expected_cost(T_SIMULATION, **overrides).mean), route
+        value = float(rbd.mission_availability(T_SIMULATION, **overrides))
+    return min(1.0, max(0.0, value)), route
 
 
 def exact_over_window(overrides):
@@ -1583,6 +1603,11 @@ def main():
     print(f"  window mean availability: {window.estimate:.6f} "
           f"({CONFIDENCE:.0%} CI {window.lower:.6f} to {window.upper:.6f}, "
           f"{sim.n_simulations} histories)")
+    # The window's mean, exact where RePyability works it out (as in
+    # Reliafy); the interval above stays the simulation's.
+    window_exact, window_basis = window_mean(overrides, "mission_availability")
+    if window_exact is not None:
+        print(f"  window mean availability ({window_basis}): {window_exact:.6f}")
     print(f"  simulated mean up time: {sim.mean_up_time:,.6g}{unit}")
     print(f"  simulated mean down time: {sim.mean_down_time:,.6g}{unit}")
     print(f"  simulated failure frequency: {sim.failure_frequency:.6g}")
@@ -1614,7 +1639,9 @@ def main():
         "t_simulation": T_SIMULATION,
         "n_simulations": int(sim.n_simulations),
         "precision": {
-            "window_availability": window.estimate,
+            "window_availability": window.estimate if window_exact is None else window_exact,
+            "window_availability_basis": window_basis,
+            "simulated_window_availability": window.estimate,
             "lower": window.lower,
             "upper": window.upper,
             "standard_error": window.standard_error,

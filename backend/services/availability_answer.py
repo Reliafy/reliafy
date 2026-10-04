@@ -102,7 +102,12 @@ def _headline(out: dict, payload: dict) -> Optional[dict]:
                 "what": "the long-run (steady-state) availability"}
     precision = payload.get("precision") or {}
     if payload.get("has_simulation") and precision.get("window_availability") is not None:
-        return {"value": precision["window_availability"], "basis": "simulation",
+        # RePyability 0.12: the window's mean is exact where it can be (the
+        # interval stays the simulation's).
+        window_basis = precision.get("window_availability_basis") or "simulation"
+        exact_window = window_basis in ("exact", "numerical")
+        return {"value": precision["window_availability"], "basis": "exact" if exact_window else "simulation",
+                **({"method": window_basis} if exact_window else {}),
                 "lower": precision.get("lower"), "upper": precision.get("upper"),
                 "confidence": precision.get("confidence"),
                 "what": (f"the mean availability over the simulated window of {payload.get('t_simulation'):g} "
