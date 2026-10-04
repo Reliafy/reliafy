@@ -15,7 +15,7 @@ Ops (plain dicts, already shape-checked by the MCP layer's pydantic models)::
     {"op": "add_edge", "source": ..., "target": ...}
     {"op": "remove_edge", "source": ..., "target": ...}
     {"op": "set", "name"?, "unit"?, "repairable"?, "repair_crews"?, "maintenance_groups"?,
-     "safety_function"?, "target_sil"?}
+     "safety_function"?, "target_sil"?, "costs"?: {"downtime_rate"?, "horizon"?, "discount_rate"?}}
     {"op": "add_ccf", "members": [...], "beta": ..., "basis"?, "id"?}
     {"op": "remove_ccf", "id": ...}
 
@@ -349,16 +349,41 @@ class _Editor:
         parts += self._set_repairable_settings(op)
         if not parts:
             raise EditError("nothing to set — give name, unit, repairable, repair_crews, maintenance_groups, "
-                            "safety_function and/or target_sil.")
+                            "safety_function, target_sil and/or costs.")
         return "; ".join(parts)
 
-    def _set_repairable_settings(self, op: dict) -> list[str]:
-        """``set``'s repairable-diagram settings (#156, #157)."""
+    def _set_costs(self, costs: dict) -> list[str]:
+        """``set``'s diagram costs (#99, #219): each field given replaces the
+        diagram's, 0 clears it."""
+        merged = dict(self.graph.get("costs") or {})
         parts = []
-        given = [k for k in ("repair_crews", "maintenance_groups", "safety_function", "target_sil")
+        names = {"downtime_rate": "system downtime cost", "horizon": "ownership horizon",
+                 "discount_rate": "discount rate"}
+        for key, name in names.items():
+            if costs.get(key) is None:
+                continue
+            value = float(costs[key])
+            if value:
+                merged[key] = value
+                parts.append(f"{name} {value:g}" + ("% a year" if key == "discount_rate" else ""))
+            else:
+                merged.pop(key, None)
+                parts.append(f"{name} cleared")
+        if merged:
+            self.graph["costs"] = merged
+        else:
+            self.graph.pop("costs", None)
+        return parts
+
+    def _set_repairable_settings(self, op: dict) -> list[str]:
+        """``set``'s repairable-diagram settings (#156, #157) and costs (#219)."""
+        parts = []
+        given = [k for k in ("repair_crews", "maintenance_groups", "safety_function", "target_sil", "costs")
                  if op.get(k) is not None]
         if given and not self.graph.get("repairable"):
             raise EditError(f"{', '.join(given)} apply to repairable diagrams only — set repairable true too.")
+        if op.get("costs") is not None:
+            parts += self._set_costs(op["costs"])
         if op.get("repair_crews") is not None:
             crews = int(op["repair_crews"])
             if crews:
