@@ -88,8 +88,8 @@ def test_fewer_crews_lower_availability_with_the_exact_markov_value():
 
 
 def test_crews_with_a_voting_gate_still_solve_the_chain():
-    """A k-of-n gate is a (pinned, never-failing) component too: its stand-in
-    is exponential so the crews' chain covers it, and it adds nothing."""
+    """A k-of-n gate is a junction (#224), no component: the crews' chain has
+    only the pumps, and the gate adds nothing."""
     nodes = [*_pumps(3), {"id": "vote", "type": "knode", "position": {"x": 400, "y": 0},
                           "data": {"label": "2oo3", "n": 2, "k": 3}}]
     edges = [e for p in ("p1", "p2", "p3") for e in ({"source": "input", "target": p},
