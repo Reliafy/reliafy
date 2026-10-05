@@ -1604,6 +1604,8 @@ def _alt_brief(results: dict) -> dict:
     def ci(items):
         return [{"name": p["name"], "value": _finite(p["value"]), "ci_95": p.get("ci")} for p in items or []]
 
+    # A fit saved before #262: positive coefficients' intervals on the log scale.
+    results = alt_fit.positive_coefficient_intervals(results)
     out = {
         "distribution": results.get("distribution"),
         "life_model": results.get("life_model"),
@@ -2052,7 +2054,8 @@ class BlockCosts(BaseModel):
     repair: Optional[Cost] = Field(None, description="Per failure (labour); a number or {min, max} drawn uniformly.")
     replace: Optional[Cost] = Field(None, description="Per failure (parts); a number or {min, max}.")
     downtime: Optional[float] = Field(None, ge=0, description="Per unit time THIS block is down.")
-    acquisition: Optional[float] = Field(None, ge=0, description="Purchase price, once.")
+    acquisition: Optional[float] = Field(None, ge=0, description=(
+        "Purchase price, once. cheapest_design copies the blocks that have one."))
 
 
 class Preventive(BaseModel):
@@ -2097,9 +2100,11 @@ class DiagramCosts(BaseModel):
     """A repairable diagram's own costs (#99, #219); 0 clears a field."""
     model_config = ConfigDict(extra="forbid")
     downtime_rate: Optional[float] = Field(None, ge=0, description=(
-        "Cost per unit time (diagram unit) the WHOLE system is down: lost production."))
+        "Cost per unit time (diagram unit) the WHOLE system is down: lost production. cheapest_design weighs "
+        "extra copies against it (without it, copies only add cost)."))
     horizon: Optional[float] = Field(None, ge=0, description=(
-        "How long the system is owned (diagram unit), for the total cost of ownership; e.g. 87600 h = 10 years."))
+        "How long the system is owned (diagram unit), for the total cost of ownership; e.g. 87600 h = 10 years. "
+        "cheapest_design prices over it (its own horizon argument overrides it)."))
     discount_rate: Optional[float] = Field(None, ge=0, le=100, description=(
         "Percent a year, e.g. 7 for 7% (not 0.07): the total cost of ownership is then a present value. Needs a "
         "calendar time unit (hours … years)."))
@@ -2215,6 +2220,11 @@ def create_rbd(
         "with common cause, and its SIL band."))] = False,
     target_sil: Annotated[Optional[int], Field(ge=1, le=4, description="With safety_function: the SIL it must meet."
                                                )] = None,
+    costs: Annotated[Optional[DiagramCosts], Field(description=(
+        "Repairable only: the diagram's own costs — downtime_rate (lost production per unit time the whole system "
+        "is down), horizon (how long it is owned) and discount_rate (% a year). Blocks carry their own costs "
+        "(repair, replace, downtime, acquisition). cheapest_design needs block acquisition prices, a horizon "
+        "and a downtime_rate; edit_rbd's set costs changes these later."))] = None,
 ) -> dict[str, Any]:
     """Build, validate and save a reliability block diagram to the user's workspace. Layout is automatic.
 
@@ -2237,8 +2247,9 @@ def create_rbd(
     Repairable diagrams: every block needs `repair` (graph form) or repair_distribution + repair_params
     (stages form), e.g. a lognormal time to repair. Blocks may carry costs, preventive (age/block/condition-
     based replacement), inspection (hidden failures with proof tests: staggered via offset, imperfect via
-    coverage + full_test), maintenance_group and crew_priority; the diagram repair_crews, maintenance_groups,
-    safety_function and target_sil. Common-cause groups (edit_rbd add_ccf) enter a safety function's PFDavg.
+    coverage + full_test), maintenance_group and crew_priority (graph form; add them to a stages-form diagram
+    with edit_rbd update_node); the diagram repair_crews, maintenance_groups, safety_function, target_sil and
+    costs. Common-cause groups (edit_rbd add_ccf) enter a safety function's PFDavg.
     Returns the node ids (the stages form generates them); change the diagram later with edit_rbd."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
@@ -2248,7 +2259,7 @@ def create_rbd(
     if stages is not None and edges:
         raise ToolError("edges belong to the graph form (nodes + edges); the stages form is wired automatically. "
                         "Give exactly one form.")
-    settings = _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil)
+    settings = _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil, costs)
     if settings and not repairable:
         raise ToolError(f"{', '.join(settings)} apply to repairable diagrams only — set repairable=true.")
     if stages is not None:
@@ -2271,10 +2282,14 @@ def create_rbd(
     return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), **_rbd_outline(graph, check, include_graph)}
 
 
-def _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil) -> dict:
-    """create_rbd's repairable-diagram settings (#156, #157) as graph keys,
-    only those given."""
+def _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil, costs=None) -> dict:
+    """create_rbd's repairable-diagram settings (#156, #157) and costs (#262)
+    as graph keys, only those given (a 0 cost field is left out)."""
     out: dict[str, Any] = {}
+    if costs is not None:
+        given = {k: v for k, v in costs.model_dump(exclude_none=True).items() if v}
+        if given:
+            out["costs"] = given
     if repair_crews:
         out["repair_crews"] = {"crews": int(repair_crews)}
     if maintenance_groups:
@@ -2385,7 +2400,8 @@ class SetOp(_Op):
     safety_function: Optional[bool] = None
     target_sil: Optional[int] = Field(None, ge=0, le=4, description="0 clears it.")
     costs: Optional[DiagramCosts] = Field(None, description=(
-        "Repairable: the diagram's downtime cost, ownership horizon and discount rate; fields left out are kept."))
+        "Repairable: the diagram's own costs — downtime_rate, horizon, discount_rate; fields left out are kept, "
+        "0 clears one. A block's costs (repair, replace, downtime, acquisition) are update_node costs."))
 
 
 class AddCcfOp(_Op):
@@ -2551,8 +2567,8 @@ def edit_rbd(
     if rbds_service.availability_outdated_by(saved_sim, rbd.graph or {}, graph, db, owners):
         out["simulation_note"] = (
             ("Saving this edit would put" if dry_run else "This edit puts")
-            + " the saved availability simulation out of date; analyze_rbd gives the exact figures, "
-            "simulate=true re-runs it.")
+            + " the saved availability simulation out of date; analyze_rbd gives the exact figures, with "
+            "simulate=true a new simulation.")
     return out
 
 
@@ -2676,12 +2692,60 @@ def _availability_summary(result: dict) -> dict:
         # The simulation's own figures aren't there: don't list empty ones.
         for k in ("n_simulations", "precision", "per_node", "criticality", "cached", "computed_at"):
             out.pop(k, None)
+    if out.get("per_node"):
+        out["per_node"], note = _per_node_per_run(out["per_node"], result.get("n_simulations"))
+        if note:
+            out["per_node_note"] = note
+    if isinstance(out.get("precision"), dict):
+        out["precision"] = _precision_centred(out["precision"])
     out["exact"] = _exact_summary(result.get("exact"))
     if result.get("next_failure") and result.get("has_simulation", True):
         out.update(_next_failure_summary(result["next_failure"]))
     costs = _costs_summary(result.get("costs"))
     if costs:
         out["costs"] = costs
+    return out
+
+
+def _per_node_per_run(rows: list, n_simulations) -> tuple[list, Optional[str]]:
+    """The simulation's per-block downtime (#262): RePyability sums it over
+    every run, so each row gets ``downtime_per_run`` (the mean over one
+    window) beside ``downtime_total_all_runs``; ``downtime`` stays the total,
+    as before, for clients that read it."""
+    try:
+        n = int(n_simulations or 0)
+    except (TypeError, ValueError):
+        n = 0
+    out = []
+    for row in rows:
+        row = dict(row)
+        total = row.get("downtime")
+        row["downtime_total_all_runs"] = total
+        row["downtime_per_run"] = (total / n) if (n > 0 and isinstance(total, (int, float))) else None
+        out.append(row)
+    if n <= 0:
+        return out, None
+    return out, (f"downtime_per_run is each block's mean downtime in one simulated window; "
+                 f"downtime_total_all_runs (and downtime, kept for older clients) is the sum over all {n:,} "
+                 "runs. share is of the blocks' own downtime: a redundant block can be down without taking the "
+                 "system down.")
+
+
+def _precision_centred(precision: dict) -> dict:
+    """The simulation's precision with the centre of its interval said
+    (#262): where the window's mean is exact, ``lower``/``upper`` are the
+    simulation's interval around its own mean
+    (``simulated_window_availability``), not around the exact value."""
+    out = dict(precision)
+    basis = out.get("window_availability_basis")
+    if basis in ("exact", "numerical"):
+        out["interval_centre"] = "simulated_window_availability"
+        out["note"] = (f"window_availability is {basis} (the headline value); lower and upper are the simulation's "
+                       "interval around its own mean, simulated_window_availability, and show how precise the "
+                       "run was.")
+    elif out.get("window_availability") is not None:
+        out.setdefault("simulated_window_availability", out["window_availability"])
+        out["interval_centre"] = "window_availability"
     return out
 
 
@@ -2775,10 +2839,12 @@ def analyze_rbd(
         "Non-repairable: condition on the system having already survived to this age."))] = None,
     recompute: Annotated[bool, Field(description=(
         "Repairable: re-run the simulation even when a saved result matches (paid feature)."))] = False,
-    simulate: Annotated[bool, Field(description=(
-        "Repairable: also run the Monte-Carlo simulation (paid: Pro or credits) for distributions, "
-        "P(no outage), percentiles and criticality. False = the exact figures only (faster). Ignored "
-        "without entitlement: the exact figures come anyway."))] = True,
+    simulate: Annotated[Optional[bool], Field(description=(
+        "Repairable: the Monte-Carlo simulation (paid: Pro or credits), for distributions, P(no outage), "
+        "percentiles and criticality. Omitted: only where a figure needs it — when every figure from new is "
+        "exact or numerical, none runs (a matching saved one is still served) and simulation.on_request says "
+        "so. true = run it; false = the exact figures only. Ignored without entitlement: the exact figures "
+        "come anyway."))] = None,
     current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
         "Blocks' states now, keyed by node id; blocks left out are new. Repairable: {down: true, since: "
         "<time into the repair>} or {age: <time since new>}; the figures then run from now over t_max "
@@ -2816,7 +2882,10 @@ def analyze_rbd(
     ownership over its horizon (a present value when discounted: discount_rate, or the diagram's own, set
     with edit_rbd's set costs). The Monte-Carlo simulation (distributions, criticality; from current_state,
     next_failure and mean_residual_life: the time to the next system failure and its cause) is a paid feature
-    (Pro or purchased credits): a saved result is always served; otherwise, without entitlement, the
+    (Pro or purchased credits) and, unless simulate=true, runs only where a figure needs it (a diagram whose
+    figures from new are all exact or numerical answers without one: simulation.on_request). Its per_node rows
+    give each block's downtime per run (downtime_per_run; downtime_total_all_runs is over all n_simulations
+    runs). A saved result is always served; otherwise, without entitlement, the
     response carries `simulation: {available: false, message}` — relay it, and offer export_rbd_python to
     run the simulation locally. A diagram whose figures are simulation-only (exact.status
     'simulation_only', e.g. limited repair crews for wear-out lives) returns available=false without entitlement; asked
@@ -2874,10 +2943,12 @@ def analyze_rbd(
             # MCP_FREE_QUICK_SIMS on; off in production), an agent can't click
             # "Run quick simulation", so asking for the simulation is the click.
             # Entitled users get full runs.
+            # simulate omitted (#262): only where a figure needs it.
+            asked = bool(simulate or recompute)
             status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners,
-                                                   simulate=simulate or recompute, current_state=state,
-                                                   exact=compute_exact, quick=simulate or recompute,
-                                                   surface="mcp")
+                                                   simulate=True if asked else simulate, current_state=state,
+                                                   exact=compute_exact, quick=asked, surface="mcp",
+                                                   auto=simulate is None)
             pending = None
             if status == 202:
                 # Queued on the calculation service: wait a little, then hand
@@ -2908,10 +2979,21 @@ def analyze_rbd(
             if discount_rate is not None and payload.get("costs"):
                 payload = {**payload, "costs": rbd_costs.with_discount(payload["costs"], graph, discount_rate)}
             out = {**head, "available": True, **_availability_summary(payload)}
-            sim_state = (payload.get("simulation_status") or {}).get("state")
+            sim_status = payload.get("simulation_status") or {}
+            sim_state = sim_status.get("state")
+            on_request = bool(sim_status.get("on_request")) and not payload.get("has_simulation")
             if pending is not None:
                 out["simulation"] = {"available": False, "state": pending["status"], **pending}
-            elif sim_state == "pro_required" and (simulate or recompute):
+            elif on_request:
+                # Every figure is exact (#262): no simulation ran; say how to ask.
+                lead = ("Every figure here is exact or numerical, so no simulation was run: it would add only the "
+                        "spread (percentiles, P(no outage), criticality). Call analyze_rbd with simulate=true for "
+                        "it.")
+                out["simulation"] = {"available": False, "state": sim_state, "on_request": True, "message": lead}
+                if sim_state == "pro_required":
+                    out["simulation"].update(code="pro_required", message=lead + " " + (
+                        _simulation_message(plan) if plan != "pro" else (sim_status.get("message") or "")).strip())
+            elif sim_state == "pro_required" and (asked or simulate is None):
                 out["simulation"] = {
                     "available": False, "code": "pro_required",
                     "message": (_simulation_message(plan) if plan != "pro"
@@ -3027,6 +3109,26 @@ def export_rbd_json(
                      f"rbd = rbd_from_json(open({filename!r}).read())")}
 
 
+# What to send to give cheapest_design what it needs (#262): the app's
+# messages name its Cost & maintenance section, an agent needs the fields.
+_COSTS_HOW = {
+    "acquisition": "With edit_rbd: {op: 'update_node', id: <block id>, costs: {acquisition: <price>}}.",
+    "horizon": "With edit_rbd: {op: 'set', costs: {horizon: <time, diagram unit>}} — or pass horizon here.",
+    "downtime_rate": ("With edit_rbd: {op: 'set', costs: {downtime_rate: <cost per unit time the system is "
+                      "down>}}."),
+}
+
+
+def _cheapest_design_hint(message: str) -> str:
+    """cheapest_design's refusal, with the edit_rbd op that supplies what's
+    missing."""
+    if "purchase price" in message:
+        return f"{message} {_COSTS_HOW['acquisition']}"
+    if "the horizon" in message:
+        return f"{message} {_COSTS_HOW['horizon']}"
+    return message
+
+
 @_tool("cheapest_design", _READ, "Cheapest redundancy of a repairable RBD")
 def cheapest_design(
     ctx: Context,
@@ -3054,7 +3156,8 @@ def cheapest_design(
     whole trains of blocks are copied too (design.trains gives each train's copies, 1 = as drawn). Returns the
     design as drawn and the cheapest side by side (total cost, purchase, running cost rate, availability), the
     copies per block and the saving; the totals are present values when discounted. Needs block purchase prices
-    and the diagram's downtime cost (edit_rbd: update_node costs.acquisition, set costs). Nothing is saved:
+    (edit_rbd update_node costs.acquisition), an ownership horizon and the system downtime cost (edit_rbd set
+    costs.horizon and costs.downtime_rate; create_rbd takes the same costs). Nothing is saved:
     add the copies with edit_rbd (add_node parallel_to), or open the diagram's Design tab to draw them. Pro
     (or purchased credits), as in the app."""
     user, db = _caller(ctx), _db()
@@ -3072,12 +3175,17 @@ def cheapest_design(
                             f"unlock it too), as in the app — upgrade at {_billing_url()} (or call upgrade_link). "
                             "analyze_rbd's exact availability and cost figures stay free.")}
     owners = [*_owners(uid), rbd.owner_id]
-    result = rbd_costs.cheapest_design(
-        graph, lambda mid: models_service.get_live_model(db, mid, owners), horizon=horizon,
-        min_availability=min_availability, blocks=blocks, discount_rate=discount_rate, trains=trains)
+    try:
+        result = rbd_costs.cheapest_design(
+            graph, lambda mid: models_service.get_live_model(db, mid, owners), horizon=horizon,
+            min_availability=min_availability, blocks=blocks, discount_rate=discount_rate, trains=trains)
+    except AnalysisError as exc:
+        raise ToolError(_cheapest_design_hint(str(exc))) from None
     keep = ("unit", "horizon", "min_availability", "discount_rate", "method", "max_copies", "current", "saving",
             "changed", "note")
     out = {**head, "available": True, **{k: result[k] for k in keep}}
+    if out.get("note") and "no system downtime cost" in out["note"]:
+        out["note"] += " " + _COSTS_HOW["downtime_rate"]
     out["present_value"] = result["discount_rate"] is not None
     out["design"] = {k: v for k, v in result["design"].items() if k != "units"}
     return out
@@ -3086,6 +3194,14 @@ def cheapest_design(
 def _fault_tree_name(row: dict) -> str:
     """An event's (or gate's) label with the sub-systems it sits in."""
     return " › ".join([*(row.get("path") or []), str(row.get("label") or row.get("id"))])
+
+
+#: What a cut set's share is, and why the shares don't add up (#262).
+_CUT_SET_NOTE = (
+    "share_alone is one cut set's probability divided by the top event's, as if it were the only way to fail. "
+    "Cut sets overlap (they share events and can occur together), so the shares don't add up to 1 and "
+    "probability_sum, the rare-event approximation over the cut sets, can exceed top_event_probability. "
+    "`share` is the same number under its old name.")
 
 
 @_tool("rbd_fault_tree", _READ, "Fault tree and ranked cut sets of an RBD")
@@ -3106,7 +3222,8 @@ def rbd_fault_tree(
     """The diagram as a fault tree (the app's Fault tree tab): series blocks become OR gates, parallel blocks
     AND gates, k-of-n blocks VOTE gates, sub-systems developed into their own gates. Returns the top event
     probability (unreliability F(t) at t, or a repairable diagram's long-run unavailability, equal to
-    analyze_rbd's), the minimal cut sets ranked by probability with each one's share of the top event, the basic
+    analyze_rbd's), the minimal cut sets ranked by probability with each one's share_alone of the top event (its
+    probability over the top event's; cut sets overlap, so these don't add up to 1 — see cut_sets.note), the basic
     events ranked by criticality with Birnbaum, Fussell–Vesely, RAW and RRW, and common_cause: each common-cause
     group's shared cause, drawn as one basic event under every member (each member fails on its own OR by the
     shared cause), so it appears in the cut sets as a cut set of its own (common_cause=true on the row), with its
@@ -3122,8 +3239,10 @@ def rbd_fault_tree(
     events = {e["id"]: e for e in res["events"]}
 
     def cut_row(c: dict) -> dict:
+        # share_alone (#262): the cut set's own probability over the top
+        # event's; `share` is the same number under its old name.
         return {"events": [_fault_tree_name(events.get(e, {"id": e})) for e in c["events"]], "order": c["order"],
-                "probability": c["probability"], "share": c["share"],
+                "probability": c["probability"], "share_alone": c["share"], "share": c["share"],
                 "common_cause": any((events.get(e) or {}).get("node_type") == "ccf" for e in c["events"])}
 
     ranked = sorted(res["events"], key=lambda e: -((e.get("importance") or {}).get("criticality") or 0.0))
@@ -3138,6 +3257,7 @@ def rbd_fault_tree(
             **({"max_order": cuts["max_order"]} if cuts.get("max_order") else {}),
             "probability_sum": cuts["probability_sum"],
             "listed": [cut_row(c) for c in cuts["listed"][:max_cut_sets]],
+            "note": _CUT_SET_NOTE,
         },
         "events": [
             {"name": _fault_tree_name(e), "kind": e.get("node_type"), "probability": e["probability"],

@@ -399,7 +399,12 @@ def test_pro_and_purchased_credits_simulate_and_the_saved_result_is_served_after
     from backend.services import billing
 
     rid = _repairable(env, PRO, "Pumps")
+    # Every figure is exact: no simulation unless asked (#262)...
     out = _ok(_call(env.oauth[PRO], "analyze_rbd", {"rbd_id": rid}))
+    assert out["has_simulation"] is False and out["simulation"]["on_request"] is True
+    assert "simulate=true" in out["simulation"]["message"] and env.simulations["n"] == 0
+    # ...and asked, it runs.
+    out = _ok(_call(env.oauth[PRO], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
     assert out["available"] and out["cached"] is False and env.simulations["n"] == 1
     assert out["has_simulation"] is True and out["simulation"]["available"] is True
     assert out["exact"]["status"] == "ok" and out["precision"]
@@ -411,7 +416,7 @@ def test_pro_and_purchased_credits_simulate_and_the_saved_result_is_served_after
     # An Agent user who bought credits is entitled, as in the app...
     billing.grant_credits(env.db, AGENT, 500, "purchase")
     rid = _repairable(env, AGENT, "Compressors")
-    out = _ok(_call(env.oauth[AGENT], "analyze_rbd", {"rbd_id": rid}))
+    out = _ok(_call(env.oauth[AGENT], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
     assert out["available"] and out["cached"] is False and env.simulations["n"] == 2
     # ...and without the entitlement still gets the saved result, never a re-run.
     env.db.credit_ledger.delete_many({"uid": AGENT, "reason": "purchase"})

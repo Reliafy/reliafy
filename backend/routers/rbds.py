@@ -331,6 +331,29 @@ def exact_payload(session, graph: dict, t_max, state, doc, writable: bool, resol
     return {**result, "exact": {**result["exact"], "cached": False}}
 
 
+#: Routes a simulation would add nothing to when they're all exact or
+#: numerical; ``availability`` is the simulation's own route (always simulated).
+_SIMULATION_ROUTE = "availability"
+
+
+def exact_complete(payload: dict) -> bool:
+    """Whether a free payload already holds every figure exactly (#262): the
+    long-run values and the figures over time, each by an exact or numerical
+    route — a simulation would add only their spread (percentiles, P(no
+    outage), criticality)."""
+    exact = payload.get("exact") or {}
+    routes = exact.get("routes")
+    if exact.get("status") != "ok" or not isinstance(routes, dict) or not routes:
+        return False
+    if payload.get("steady_state_availability") is None:
+        return False
+    method = (payload.get("long_run_method") or {}).get("route")
+    if method is not None and method not in ("exact", "numerical"):
+        return False
+    return all((r or {}).get("route") in ("exact", "numerical")
+               for key, r in routes.items() if key != _SIMULATION_ROUTE)
+
+
 def _has_figures(payload: dict) -> bool:
     """Whether a free payload has anything to show: the exact long-run
     availability, or the figures over time (computed, or on request)."""
@@ -341,7 +364,7 @@ def _has_figures(payload: dict) -> bool:
 def availability_payload(
     session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners,
     *, simulate: bool | None = None, current_state=None, exact: bool = False,
-    quick: bool = False, surface: str = "app",
+    quick: bool = False, surface: str = "app", auto: bool = False,
 ) -> tuple[int, dict]:
     """A repairable (availability) analysis as ``(status, payload)``.
 
@@ -378,6 +401,13 @@ def availability_payload(
     ``{job_id, status, queue_position}`` to poll at
     ``GET /api/rbd-jobs/{job_id}``, whose result is the whole payload (see
     :func:`rbd_jobs.availability_out`).
+
+    ``auto`` (the MCP's default, #262), with ``simulate`` None and no
+    ``force``: run the simulation only where it adds a figure. A diagram from
+    new whose figures are all exact or numerical (:func:`exact_complete`)
+    gets them without one (a matching saved one is still served), and
+    ``simulation_status.on_request`` says one can be asked for; otherwise it
+    runs as asked for (``quick`` included). The app never passes it.
     Raises :class:`AnalysisError` for an invalid current state.
     """
     from backend.services import rbd_analysis
@@ -387,6 +417,12 @@ def availability_payload(
     writable = rbd is not None and access_service.can_write(ctx, rbd.owner_id)
     entitled = billing_service.premium_compute_allowed(session, ctx.user)
     free = exact_payload(session, graph, t_max, state, doc, writable, resolve_owners, exact)
+    on_request = False
+    if auto and simulate is None and not force:
+        if state is None and exact_complete(free):
+            simulate, on_request = False, True
+        else:
+            simulate, quick = True, True
 
     # The simulation: the saved one (from new only), or a run.
     models = rbds_service.model_fingerprints(session, graph, resolve_owners)
@@ -433,6 +469,8 @@ def availability_payload(
             status["quick"] = free_sims_service.summary(session, ctx.uid)
     else:
         status = {"state": "not_run"}
+    if on_request and sim is None:
+        status["on_request"] = True
 
     if sim is None and job is None and not entitled and not _has_figures(free):
         # Simulation-only diagram (no exact figures at all): the paywall, as
