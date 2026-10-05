@@ -399,7 +399,7 @@ function CutSetTable({ result }) {
                 <th>Cut set — these fail together</th>
                 <th title="Number of basic events in the cut set">Order</th>
                 <th title="Probability that every event in the cut set has occurred">Probability</th>
-                <th title="The cut set's probability as a share of the top event probability">Share of top event</th>
+                <th title="The cut set's probability on its own as a share of the top event probability. Cut sets overlap, so these shares don't add up to 100%.">Share of top event (alone)</th>
               </tr>
             </thead>
             <tbody>
@@ -437,9 +437,10 @@ function CutSetTable({ result }) {
         </button>
       )}
       <p className="muted-line ft-note">
-        A cut set's probability is the product of its events' — shares can add to more than 100%
-        because cut sets overlap.
-        {cuts.basis === "all" && ` Their sum (${fmtP(cuts.probability_sum)}) is the rare-event approximation of the exact top event probability.`}
+        A cut set's probability is the product of its events', and its share is that probability alone over the
+        top event's. Cut sets overlap (they share events and can happen together), so the shares don't add up to
+        100% — they can add to more.
+        {cuts.basis === "all" && ` Their probabilities' sum (${fmtP(cuts.probability_sum)}) is the rare-event approximation: an upper bound that can exceed the exact top event probability.`}
       </p>
     </div>
   );

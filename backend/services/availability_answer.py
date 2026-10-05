@@ -106,9 +106,15 @@ def _headline(out: dict, payload: dict) -> Optional[dict]:
         # interval stays the simulation's).
         window_basis = precision.get("window_availability_basis") or "simulation"
         exact_window = window_basis in ("exact", "numerical")
+        # The interval is the simulation's, around its own mean: say so when
+        # the value beside it is exact (#262).
+        centre = ({"simulated_window_availability": precision.get("simulated_window_availability"),
+                   "interval_note": ("value is exact; lower and upper are the simulation's interval around its "
+                                     "own mean (simulated_window_availability), showing the run's precision.")}
+                  if exact_window else {})
         return {"value": precision["window_availability"], "basis": "exact" if exact_window else "simulation",
                 **({"method": window_basis} if exact_window else {}),
-                "lower": precision.get("lower"), "upper": precision.get("upper"),
+                "lower": precision.get("lower"), "upper": precision.get("upper"), **centre,
                 "confidence": precision.get("confidence"),
                 "what": (f"the mean availability over the simulated window of {payload.get('t_simulation'):g} "
                          f"{payload.get('unit') or ''}".rstrip() if payload.get("t_simulation") else

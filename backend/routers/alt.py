@@ -195,7 +195,9 @@ def get_model(model_id: str, session=Depends(get_session), ctx: AccessCtx = Depe
     doc, _ = access_service.fetch_readable(session, "alt_models", AltModelDoc, model_id, ctx)
     if doc is None or doc.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
-    return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": doc.results})
+    # A fit saved before #262 gets its positive coefficients' intervals on the log scale.
+    results = alt_fit.positive_coefficient_intervals(doc.results)
+    return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": results})
 
 
 @router.patch("/alt/models/{model_id}")
