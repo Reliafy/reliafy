@@ -4,6 +4,7 @@ import Select from "./Select.jsx";
 import { compareRbds, listRbds } from "../api.js";
 import { pctAt, pctDigits, pointsAt } from "./availabilityPrecision.js";
 import { fmtMoney } from "./AvailabilityCosts.jsx";
+import { unitInText } from "./unitText.js";
 
 // "Compare with…" on a repairable diagram's availability results (#104): pick
 // another saved repairable diagram — typically a copy of this one with one
@@ -125,7 +126,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
     setPhase("idle");
   };
 
-  const u = graph.unit ? ` ${graph.unit}` : "";
+  const u = graph.unit ? ` ${unitInText(graph.unit)}` : "";
   const c = comparison;
   const nameA = c?.designs?.a?.name || THIS;
   const nameB = c?.designs?.b?.name || "the other diagram";

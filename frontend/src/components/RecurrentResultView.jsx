@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
 import RecurrentCalculator from "./RecurrentCalculator.jsx";
+import { unitInText } from "./unitText.js";
 
 const fmt = (v, d = 2) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: d });
@@ -25,7 +26,7 @@ const TABS = [
 export default function RecurrentResultView({ results }) {
   const r = results || {};
   const [tab, setTab] = useState("mcf");
-  const unit = r.unit ? ` ${r.unit}` : "";
+  const unit = r.unit ? ` ${unitInText(r.unit)}` : "";
   const xTitle = r.unit ? `Time (${r.unit})` : "Time";
   const obs = r.mcf?.observed || {};
   const fit = r.mcf?.fitted || {};

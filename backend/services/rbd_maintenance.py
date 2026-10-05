@@ -424,7 +424,7 @@ def discount(graph: dict, annual=None) -> Optional[dict]:
     the diagram's time units in a year. Returns ``{"annual", "per_unit",
     "unit"}``. A diagram whose time unit isn't a calendar one (cycles, km, or
     none) can't be discounted, and the error says so."""
-    from backend.services.rbd_analysis import normalize_unit
+    from backend.units import normalize_unit
 
     rate = annual_discount(annual) if not _blank(annual) else diagram_costs(graph)["discount_rate"]
     if not rate:

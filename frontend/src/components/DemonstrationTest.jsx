@@ -2,6 +2,7 @@ import { useState } from "react";
 import DemoTestResult from "./DemoTestResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { demonstrationTest } from "../api.js";
+import { unitInText } from "./unitText.js";
 
 const num = (s) => (s === "" || s == null ? null : Number(s));
 const frac = (s) => (s === "" || s == null ? null : Number(s) / 100);
@@ -82,7 +83,7 @@ export default function DemonstrationTest() {
 
   const defaultName = result
     ? result.method === "mtbf"
-      ? `MTBF test — ${result.mtbf} ${result.unit || ""}`.trim()
+      ? `MTBF test — ${result.mtbf} ${unitInText(result.unit)}`.trim()
       : `Demonstration test — R ${(result.reliability * 100).toFixed(4).replace(/\.?0+$/, "")}% at ${(
           result.confidence * 100
         ).toFixed(4).replace(/\.?0+$/, "")}%`

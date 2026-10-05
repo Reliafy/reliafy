@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from backend import config
 from backend.db import get_session
 from backend.http_limits import read_upload
-from backend.fitting import FitError, options_from_form, per_demand_batches_from_df
+from backend.fitting import FitError, covariate_units_from_form, options_from_form, per_demand_batches_from_df
 from backend import storage
 from backend.routers import excel as excel_router
 from backend.services import billing as billing_service
@@ -227,17 +227,14 @@ def delete_dataset(
     if dataset is None or dataset.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
 
-    models = datasets_service.models_for_dataset(session, dataset_id, ctx.read_owners, ctx.hidden)
+    # Every model kind that refits from its dataset (#265: ALT, recurrent and
+    # degradation models too, not only life and regression models).
+    models = datasets_service.dependents_for_dataset(session, dataset_id, ctx.read_owners, ctx.hidden)
     if models:
-        names = ", ".join(m.name for m in models[:3])
-        more = "" if len(models) <= 3 else f" and {len(models) - 3} more"
         return JSONResponse(
             status_code=409,
             content={
-                "detail": (
-                    f"Dataset is used by {len(models)} model(s): {names}{more}. "
-                    "Delete those models first."
-                ),
+                "detail": f"{datasets_service.dependents_message(models)} Delete those models first.",
                 "model_count": len(models),
             },
         )
@@ -290,11 +287,14 @@ def save_model(
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
     include_mixtures: str | None = Form(default=None),
+    covariate_units: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Fit and persist a model from a fit spec and either an uploaded CSV
-    (``file``) or an existing saved dataset (``dataset_id``)."""
+    (``file``) or an existing saved dataset (``dataset_id``).
+    ``covariate_units`` (optional, regression): a JSON object of each
+    covariate's unit, ``{"temp_C": "°C"}``."""
     denied = _creation_denied(session, ctx, "models")
     if denied is not None:
         return denied
@@ -324,6 +324,7 @@ def save_model(
                 offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
                 include_mixtures=include_mixtures,
             ),
+            covariate_units=covariate_units_from_form(covariate_units),
         )
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
@@ -455,10 +456,12 @@ def update_model_fit(
     how: str | None = Body(default=None),
     c_invert: bool = Body(default=False),
     include_mixtures: bool = Body(default=False),
+    covariate_units: dict | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    """Refit a saved model in place with an edited fit spec (same dataset)."""
+    """Refit a saved model in place with an edited fit spec (same dataset).
+    ``covariate_units`` omitted keeps the model's covariate units."""
     existing, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if existing is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
@@ -475,6 +478,7 @@ def update_model_fit(
             {k: (v or None) for k, v in mapping.items()},
             covariates, formula, unit,
             options if any(options.values()) else None,
+            covariate_units=covariate_units,
         )
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:

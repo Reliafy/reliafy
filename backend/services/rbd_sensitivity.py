@@ -75,6 +75,7 @@ import numpy as np
 from backend.services import rbd_analysis as ra
 from backend.services.method_labels import route_reason
 from backend.services.rbd_analysis import AnalysisError
+from backend.units import unit_in_text
 
 #: The default step: each lever moved 10% of its value (a 10% longer mean life).
 DEFAULT_STEP = 0.10
@@ -944,7 +945,7 @@ def _money(v: float) -> str:
 
 
 def _per(unit: str) -> str:
-    u = (unit or "").strip().lower()
+    u = unit_in_text(unit)
     if not u:
         return "per unit time"
     return "per " + (u[:-1] if u.endswith("s") else u)
@@ -1022,7 +1023,7 @@ def finish_rows(result: dict) -> dict:
     unit-specific words are known)."""
     unit = result.get("unit") or ""
     for row in result.get("levers") or []:
-        row["unit_word"] = (" " + unit.lower()) if unit and row.get("kind") in ("mean", "time") else ""
+        row["unit_word"] = (" " + unit_in_text(unit)) if unit and row.get("kind") in ("mean", "time") else ""
         row["per_word"] = _per(unit)
         row["_rank_by"] = result.get("rank_by")
         row["plain"] = plain_effect(row)

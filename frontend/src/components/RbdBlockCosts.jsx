@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getRcmMaintenanceTasks, listRcmStudies } from "../api.js";
+import { unitInText } from "./unitText.js";
 
 // A repairable block's costs and maintenance (#99, #100, #156, #157), edited in
 // the block's model dialog, collapsed by default. Stored on the node as
@@ -266,7 +267,7 @@ const TARGET_LABEL = { preventive: "Scheduled replacement", inspection: "Proof t
 
 // What an RCM task fills, in words: "every 580 h · age replacement · cost 200".
 function filledText(fill, unit, sources = {}, analysis) {
-  const u = unit ? ` ${unit}` : "";
+  const u = unit ? ` ${unitInText(unit)}` : "";
   const parts = [`every ${fmt(fill.interval)}${u}${sources.interval === "analysis" ? " (from its analysis)" : ""}`];
   if (fill.policy) parts.push(`${fill.policy} replacement`);
   if (fill.cost != null) parts.push(`cost ${fmt(fill.cost)}${analysis ? ` (from “${analysis}”)` : ""}`);
@@ -365,7 +366,7 @@ function RcmPicker({ unit, onPick, onClose }) {
 // block's priority); ``groups``: the diagram's maintenance group names;
 // ``mode="standby"``: a standby group, which takes only costs and a priority.
 export function BlockCostSection({ initial, onChange, unit = "", crews = false, groups = [], mode = "component" }) {
-  const u = unit ? unit.replace(/s$/, "") : "time unit";
+  const u = unit ? unitInText(unit).replace(/s$/, "") : "time unit";
   const [s, setS] = useState(() => initialState(initial));
   const [picking, setPicking] = useState(false);
   const [open, setOpen] = useState(

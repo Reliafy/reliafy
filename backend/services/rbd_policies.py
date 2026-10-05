@@ -286,6 +286,69 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
     return out
 
 
+#: A safety function with no proof-tested block (#265): every failure is then
+#: revealed (and repaired) at once, so the PFDavg is the plain unavailability.
+NO_PROOF_TESTS = ("No proof tests configured: PFDavg assumes failures are revealed and repaired at once, which is "
+                  "optimistic for a low-demand safety function. Add proof-test intervals to the blocks whose "
+                  "failures stay hidden until tested.")
+SIL_OPTIMISTIC = ("The SIL band is optimistic: with no proof tests the PFDavg leaves out the time a hidden failure "
+                  "waits to be found.")
+
+
+def proof_tested_labels(graph: dict) -> list[str]:
+    """The labels of a diagram's blocks with proof tests (hidden failures)."""
+    return [(n.get("data") or {}).get("label") or n.get("id") for n in rm.maintained_blocks(graph or {})
+            if isinstance((n.get("data") or {}).get("inspection"), dict)]
+
+
+def proof_test_note(graph: dict) -> Optional[str]:
+    """One line on why A(t) saw-tooths (#265): it falls between proof tests as
+    hidden failures build up and recovers at each test."""
+    labels = proof_tested_labels(graph)
+    if not labels:
+        return None
+    shown = ", ".join(f"“{x}”" for x in labels[:6]) + (f" and {len(labels) - 6} more" if len(labels) > 6 else "")
+    return (f"A(t) oscillates with the proof-test cycle on {shown}: it falls between tests as hidden failures "
+            "build up and recovers at each test; the long-run figures are its mean over the cycle.")
+
+
+def safety_notes(graph: dict, payload: dict) -> dict:
+    """An availability payload with what a safety function's figures need
+    said beside them (#265), also on a result saved before:
+
+    * no block proof-tested: ``NO_PROOF_TESTS`` in ``warnings`` and in
+      ``safety.warning``, with ``safety.proof_tests: "none"`` and, when a
+      band is given, ``safety.sil_optimistic`` and its note;
+    * common-cause groups: ``safety.common_cause_included`` at the top of the
+      safety summary;
+    * any proof-tested block: ``proof_test_note`` (A(t) oscillates).
+
+    Idempotent; a payload without ``safety`` only gets the proof-test note."""
+    out = dict(payload)
+    note = proof_test_note(graph)
+    if note:
+        out["proof_test_note"] = note
+    safety = out.get("safety")
+    if not isinstance(safety, dict):
+        return out
+    safety = dict(safety)
+    if not proof_tested_labels(graph):
+        safety["proof_tests"] = "none"
+        safety["warning"] = NO_PROOF_TESTS
+        if safety.get("sil") is not None:
+            safety["sil_optimistic"] = True
+            safety["sil_note"] = SIL_OPTIMISTIC
+        warnings = list(out.get("warnings") or [])
+        if NO_PROOF_TESTS not in warnings:
+            out["warnings"] = [NO_PROOF_TESTS, *warnings]
+    common = safety.get("common_cause")
+    if isinstance(common, dict):
+        # Lead the summary with it: is the PFDavg (and SIL) with common cause?
+        safety = {"common_cause_included": bool(common.get("included")), **safety}
+    out["safety"] = safety
+    return out
+
+
 def common_cause_note(graph: dict, result: dict) -> Optional[dict]:
     """Beside the availability figures, the common-cause groups they leave
     out (#185): RePyability's availability analysis and simulation can't take
@@ -423,4 +486,6 @@ def validation_warnings(graph: dict) -> list[str]:
             "Common-cause groups enter the safety function's PFDavg (RePyability needs their "
             "members' lives to be exponential); the availability figures and simulation leave "
             "them out.")
+    if graph.get("safety_function") and graph.get("repairable") and not proof_tested_labels(graph):
+        warnings.append(NO_PROOF_TESTS)
     return warnings

@@ -1,6 +1,7 @@
 import Select from "./Select.jsx";
 import { useState } from "react";
 import Modal from "./Modal.jsx";
+import { withUnit } from "./stressName.js";
 
 // Edit the covariate values for every node backed by a proportional-hazards
 // model. Edits go into a draft and are only committed on Apply.
@@ -38,7 +39,7 @@ export default function CovariatesModal({ covNodes, values, onApply, onClose }) 
           <div className="calc-cov-fields">
             {node.covariates.map((c) => (
               <label className="calc-cov" key={c.name}>
-                <span>{c.name}</span>
+                <span>{withUnit(c.name, c.unit)}</span>
                 {c.type === "category" ? (
                   <Select
                     value={get(node, c)}

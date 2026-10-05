@@ -17,6 +17,7 @@ import {
   updateOutageLog,
 } from "../api.js";
 import "./OutageHistory.css";
+import { unitInText } from "./unitText.js";
 
 const FIELDS = [
   { key: "asset", label: "Asset", help: "The block (its label or id) each outage belongs to", req: true },
@@ -146,7 +147,7 @@ function ImportPanel({ rbdId, unit, blocks: initialBlocks, onSaved, onCancel }) 
       <p className="hint">
         One row per outage: the asset, when it went down and when it came back (blank = still down), with an
         optional reason and planned flag. Dates (ISO or day/month/year) are converted to the diagram's unit
-        {unit ? ` (${unit})` : ""}; plain numbers are read as times in it.
+        {unit ? ` (${unitInText(unit)})` : ""}; plain numbers are read as times in it.
       </p>
       <div className="outage-import-src">
         <textarea
@@ -596,7 +597,7 @@ function FitPanel({ rbdId, logId, readOnly, onApplyModels }) {
 function HistoryView({ history, labels }) {
   const k = history.kpis;
   const unit = history.unit || "";
-  const u = unit ? ` ${unit}` : "";
+  const u = unit ? ` ${unitInText(unit)}` : "";
   return (
     <div className="rbd-avail">
       <div className="rbd-avail-hero">

@@ -49,6 +49,7 @@ import numpy as np
 
 from backend.fitting import DISTRIBUTIONS
 from backend.services import rbd_analysis, rbd_next_failure, rbd_repeats, rbd_sensitivity
+from backend.units import unit_in_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_VERSIONS = {"surpyval": "0.23", "repyability": "0.12"}
@@ -897,7 +898,7 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
         "Set RELIAFY_RESULTS_JSON=results.json to also save the numbers as "
         "JSON.", 79)
     lines.append("")
-    lines.append(f"Times are in {unit}." if unit else
+    lines.append(f"Times are in {unit_in_text(unit)}." if unit else
                  "Times are in the diagram's time unit (none was set).")
     if placeholders:
         lines.append("")
@@ -1062,6 +1063,7 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
     out.append("# The calculation")
     out.append("# " + "-" * 75)
     out.append(f"UNIT = {_lit(script.unit)}")
+    out.append(f"UNIT_TEXT = {_lit(unit_in_text(script.unit))}  # the unit in sentences")
     out.append("# Upper bound for the time axis: the longest-lived block's "
                "99th-percentile")
     out.append("# life. The axis itself ends where the SYSTEM's reliability "
@@ -1174,7 +1176,7 @@ def save_results(results):
 
 def main():
     overrides = {"working_nodes": WORKING_NODES, "broken_nodes": BROKEN_NODES}
-    unit = f" {UNIT}" if UNIT else ""
+    unit = f" {UNIT_TEXT}" if UNIT_TEXT else ""
 
     # System reliability R(t) over the time axis.
     t_max = system_horizon(rbd, T_MAX_CEILING, **overrides)
@@ -1440,6 +1442,7 @@ def _repairable_body(script: _Script, graph) -> str:
     out.append("# The calculation")
     out.append("# " + "-" * 75)
     out.append(f"UNIT = {_lit(script.unit)}")
+    out.append(f"UNIT_TEXT = {_lit(unit_in_text(script.unit))}  # the unit in sentences")
     out.append("# Reliafy's default simulation length: 10x the largest "
                "parameter in the")
     out.append("# diagram, long enough to reach steady state.")
@@ -1509,7 +1512,7 @@ def report_next_failure(overrides):
     """The time to the next system failure from STATE (simulated, as in
     Reliafy): its mean, the mean residual life (a lower bound while some
     histories haven't failed in the window), percentiles and causes."""
-    unit = f" {UNIT}" if UNIT else ""
+    unit = f" {UNIT_TEXT}" if UNIT_TEXT else ""
     runs, antithetic, window, _, _ = next_failure_simulation(
         rbd, T_SIMULATION, {**overrides, "state": node_states()})
     times, causes, up_now = first_failures(runs)
@@ -1630,7 +1633,7 @@ def exact_over_window(overrides):
     Reliafy's free figures: A(t) on the app's grid, the mission availability,
     and the expected system failures, outages, downtime and cost. None when
     RePyability's analysis_routes() has no exact route for this diagram."""
-    unit = f" {UNIT}" if UNIT else ""
+    unit = f" {UNIT_TEXT}" if UNIT_TEXT else ""
     routes = rbd.analysis_routes()
     for name in ("point_availability", "expected_events"):
         if routes[name].route not in ("exact", "numerical"):
@@ -1681,7 +1684,7 @@ def exact_over_window(overrides):
 def main():
     # Voting gates (the ids in K) are junctions: perfect, and never pinned.
     overrides = {"working_nodes": WORKING_NODES, "broken_nodes": BROKEN_NODES}
-    unit = f" {UNIT}" if UNIT else ""
+    unit = f" {UNIT_TEXT}" if UNIT_TEXT else ""
     blocks = [n for n in LABELS if n not in K]  # voting gates aren't blocks
 
     # Exact long-run figures (independent blocks; Birnbaum/Vesely formula).

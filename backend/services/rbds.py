@@ -14,6 +14,7 @@ from backend.db import from_doc, to_doc
 from backend.schema import Rbd
 from backend.services import models as models_service
 from backend.services import rbd_analysis
+from backend.units import canonical_unit
 
 
 
@@ -42,8 +43,12 @@ def save_rbd(db, name: str, graph: dict, owner_id: str, rbd_id: str | None = Non
     from backend.services.rbd_graph import check_limits
 
     check_limits(graph)
+    existing = db.rbds.find_one({"_id": rbd_id, "owner_id": owner_id}) if rbd_id else None
+    # One spelling per known unit (#265), keeping an existing diagram's own.
+    unit = stored_unit(graph.get("unit"), (existing or {}).get("graph"))
+    if unit != (graph.get("unit") or ""):
+        graph = {**graph, "unit": unit}
     if rbd_id:
-        existing = db.rbds.find_one({"_id": rbd_id, "owner_id": owner_id})
         if existing is not None:
             query = {"_id": rbd_id, "owner_id": owner_id}
             if expected_updated_at and existing.get("updated_at") is not None:
@@ -348,8 +353,51 @@ def _analysis_data(data: dict) -> dict:
     return _strip_ui({k: v for k, v in data.items() if k not in _PROVENANCE_KEYS})
 
 
-def canonical_analysis_graph(graph: dict) -> dict:
-    """The analysis-relevant part of a graph, in a canonical order."""
+def _key_unit(graph: dict, spelling: str | None = None) -> str:
+    """The unit a cache key holds: the canonical spelling (#265: "hours" and
+    "Hours" are one unit), or ``spelling`` — a diagram's stored spelling from
+    before units were normalised — when it is the same unit, so results saved
+    under it keep matching (see :func:`_stored_spellings`)."""
+    canon = canonical_unit(graph.get("unit"))
+    if spelling is not None and canonical_unit(spelling) == canon:
+        return str(spelling).strip()
+    return canon
+
+
+def _stored_spellings(doc: dict | None, graph: dict | None = None) -> list:
+    """The unit spellings to key a saved diagram's results with: None (the
+    canonical one) and, for a diagram stored with a known unit spelt otherwise
+    ("hours"), that spelling — its results were saved under it."""
+    raw = str(((doc or {}).get("graph") or {}).get("unit") or "").strip()
+    out: list = [None]
+    if raw and raw != canonical_unit(raw) and (
+            graph is None or canonical_unit(graph.get("unit")) == canonical_unit(raw)):
+        out.append(raw)
+    return out
+
+
+def stored_unit(unit, existing_graph: dict | None = None) -> str:
+    """The unit to store (#265): the canonical spelling — except that a
+    diagram already stored with the same unit spelt otherwise keeps its
+    spelling, so its saved results' keys still match (stored units are never
+    rewritten in bulk; reads show the canonical one)."""
+    canon = canonical_unit(unit)
+    old = str((existing_graph or {}).get("unit") or "").strip()
+    if old and canonical_unit(old) == canon:
+        return old
+    return canon
+
+
+def display_graph(graph: dict | None) -> dict:
+    """A stored graph as shown (#265): its unit in the canonical spelling."""
+    graph = graph or {}
+    unit = canonical_unit(graph.get("unit"))
+    return graph if unit == (graph.get("unit") or "") else {**graph, "unit": unit}
+
+
+def canonical_analysis_graph(graph: dict, unit: str | None = None) -> dict:
+    """The analysis-relevant part of a graph, in a canonical order (its unit
+    canonical, or ``unit``: see :func:`_key_unit`)."""
     graph = graph or {}
     nodes = [
         {
@@ -371,7 +419,7 @@ def canonical_analysis_graph(graph: dict) -> dict:
     out = {
         "nodes": nodes,
         "edges": [list(e) for e in edges],
-        "unit": (graph.get("unit") or "").strip(),
+        "unit": _key_unit(graph, unit),
         "repairable": bool(graph.get("repairable")),
         "ccf_groups": graph.get("ccf_groups") or [],
     }
@@ -463,13 +511,15 @@ def model_fingerprints(db, graph: dict, owner_id) -> dict:
 
 
 def availability_cache_key(graph: dict, t_simulation: float | None = None,
-                           models: dict | None = None) -> str:
+                           models: dict | None = None, unit: str | None = None) -> str:
     """Deterministic key for an availability result: sha256 of the canonical
     JSON of the analysis graph plus the simulation settings, and the fits of
-    the saved models it references (``models``: :func:`model_fingerprints`)."""
+    the saved models it references (``models``: :func:`model_fingerprints`).
+    ``unit``: a stored spelling of the graph's unit to key with (see
+    :func:`_key_unit`); the canonical one by default."""
     payload = {
         "v": AVAILABILITY_CACHE_VERSION,
-        "graph": canonical_analysis_graph(graph),
+        "graph": canonical_analysis_graph(graph, unit),
         "t_simulation": _t_sim(t_simulation),
     }
     # Only when the graph references saved models, so other keys are unchanged.
@@ -479,11 +529,22 @@ def availability_cache_key(graph: dict, t_simulation: float | None = None,
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def cached_availability(doc: dict | None, key: str) -> dict | None:
-    """The saved result on a raw RBD doc if its key matches, as a response
+def availability_cache_keys(doc: dict | None, graph: dict, t_simulation: float | None = None,
+                            models: dict | None = None) -> list[str]:
+    """The keys a saved result for ``graph`` may be under on ``doc``: the
+    canonical one first, then the one with the doc's own unit spelling when it
+    isn't canonical (a diagram saved as "hours" before #265)."""
+    return [availability_cache_key(graph, t_simulation, models, unit)
+            for unit in _stored_spellings(doc, graph)]
+
+
+def cached_availability(doc: dict | None, key) -> dict | None:
+    """The saved result on a raw RBD doc if its key matches (``key``: one key,
+    or a list of them — :func:`availability_cache_keys`), as a response
     payload (``cached: True`` + ``computed_at``); else None."""
+    keys = [key] if isinstance(key, str) else list(key or [])
     entry = (doc or {}).get("availability_cache") or {}
-    if not entry or entry.get("key") != key or not isinstance(entry.get("result"), dict):
+    if not entry or entry.get("key") not in keys or not isinstance(entry.get("result"), dict):
         return None
     return {**entry["result"], "cached": True, "computed_at": entry.get("computed_at")}
 
@@ -505,8 +566,9 @@ def availability_outdated_by(doc: dict | None, old_graph: dict, new_graph: dict,
     new_models = model_fingerprints(db, new_graph or {}, owner_id)
     windows = [None, ((entry.get("result") or {}).get("t_simulation"))]
     for t in windows:
-        if availability_cache_key(old_graph or {}, t, old_models) == key:
-            return availability_cache_key(new_graph or {}, t, new_models) != key
+        for unit in _stored_spellings(doc, old_graph or {}):
+            if availability_cache_key(old_graph or {}, t, old_models, unit) == key:
+                return availability_cache_key(new_graph or {}, t, new_models, unit) != key
     return False
 
 
@@ -556,13 +618,13 @@ _exact_lock = threading.Lock()
 
 
 def exact_cache_key(graph: dict, horizon: float | None, state: dict | None,
-                    models: dict | None = None) -> str:
+                    models: dict | None = None, unit: str | None = None) -> str:
     """sha256 of the canonical analysis graph, the window (None: the default
     horizon), the canonical current state and the referenced models' fits
     (``models``, as for :func:`availability_cache_key`)."""
     payload = {
         "v": EXACT_CACHE_VERSION,
-        "graph": canonical_analysis_graph(graph),
+        "graph": canonical_analysis_graph(graph, unit),
         "horizon": _t_sim(horizon),
         "state": state or {},
     }
@@ -576,12 +638,24 @@ def _scope(owner_id) -> tuple:
     return tuple(sorted(str(o) for o in (owner_id if isinstance(owner_id, (list, tuple, set)) else [owner_id])))
 
 
-def cached_exact(doc: dict | None, key: str, owner_id=None) -> dict | None:
-    """A cached exact payload for ``key``: from the RBD doc, else this
-    process's LRU (in ``owner_id``'s scope; None reads the doc only)."""
-    entry = ((doc or {}).get("exact_cache") or {}).get(key)
-    if isinstance(entry, dict) and isinstance(entry.get("result"), dict):
-        return entry["result"]
+def exact_cache_keys(doc: dict | None, graph: dict, horizon: float | None, state: dict | None,
+                     models: dict | None = None) -> list[str]:
+    """As :func:`availability_cache_keys`, for the exact figures."""
+    return [exact_cache_key(graph, horizon, state, models, unit) for unit in _stored_spellings(doc, graph)]
+
+
+def cached_exact(doc: dict | None, key, owner_id=None) -> dict | None:
+    """A cached exact payload for ``key`` (one key, or a list: the first is
+    the canonical one, the LRU's): from the RBD doc, else this process's LRU
+    (in ``owner_id``'s scope; None reads the doc only)."""
+    keys = [key] if isinstance(key, str) else list(key or [])
+    if not keys:
+        return None
+    for k in keys:
+        entry = ((doc or {}).get("exact_cache") or {}).get(k)
+        if isinstance(entry, dict) and isinstance(entry.get("result"), dict):
+            return entry["result"]
+    key = keys[0]
     if owner_id is None:
         return None
     with _exact_lock:
@@ -657,11 +731,11 @@ def should_store_availability(doc: dict | None, key: str, db=None, owner_id=None
     if doc is None:
         return False
     graph = doc.get("graph") or {}
-    saved_key = availability_cache_key(graph, models=model_fingerprints(db, graph, owner_id))
-    if key == saved_key:
+    saved_keys = availability_cache_keys(doc, graph, models=model_fingerprints(db, graph, owner_id))
+    if key == saved_keys[0]:
         return True
     entry = doc.get("availability_cache") or {}
-    return entry.get("key") != saved_key
+    return entry.get("key") not in saved_keys
 
 
 def save_availability_result(db, rbd_id: str, key: str, result: dict, uid: str | None,
@@ -680,10 +754,12 @@ def save_availability_result(db, rbd_id: str, key: str, result: dict, uid: str |
     if not should_store_availability(doc, key, db, scope):
         return None
     entry = (doc or {}).get("availability_cache") or {}
-    if (
-        result.get("quick")
-        and entry.get("key") == key
-        and not (entry.get("result") or {}).get("quick")
-    ):
+    same = entry.get("key") == key
+    if not same and result.get("quick") and entry.get("key"):
+        # A full result saved under the diagram's own unit spelling (#265).
+        graph = (doc or {}).get("graph") or {}
+        keys = availability_cache_keys(doc, graph, models=model_fingerprints(db, graph, scope))
+        same = key == keys[0] and entry.get("key") in keys
+    if result.get("quick") and same and not (entry.get("result") or {}).get("quick"):
         return None
     return store_availability(db, rbd_id, key, result, uid)

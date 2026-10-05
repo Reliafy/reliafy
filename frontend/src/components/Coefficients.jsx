@@ -16,7 +16,11 @@ export default function Coefficients({ coefficients, ratioLabel }) {
         const ratio = c.ratio ?? c.hazard_ratio;
         return (
           <div className="gofr" key={c.name}>
-            <span className="gk">{c.name}</span>
+            <span className="gk">
+              {c.name}
+              {/* #265: a coefficient is per unit of its covariate. */}
+              {c.covariate_unit && <span className="muted"> (per {c.covariate_unit})</span>}
+            </span>
             <span className="gv-col">
               <span className="gv">β = {fmt(c.value)}</span>
               {c.ci && (

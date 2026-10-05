@@ -19,6 +19,7 @@ from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.fitting import FitError
 from backend.schema import RecurrentModelDoc
+from backend.units import canonical_unit
 from backend.services import datasets as datasets_service
 
 _LIVE: "OrderedDict[str, str]" = OrderedDict()
@@ -78,7 +79,7 @@ def save_from_params(db, name: str, model_id: str, params: list, horizon, unit: 
             "model_id": model_id,
             "params": [{"name": p["name"], "value": float(p["value"])} for p in params],
             "horizon": float(horizon),
-            "unit": (unit or "").strip(),
+            "unit": canonical_unit(unit),
         },
         results=payload,
         serialized=recurrent_fit.serialize_live(cache_id),

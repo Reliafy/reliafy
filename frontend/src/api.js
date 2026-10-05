@@ -167,7 +167,16 @@ function appendMapping(form, mapping) {
 // Fit a model: distribution id, a data source (an uploaded `file` or a saved
 // `datasetId`), a column mapping (see appendMapping), and optional covariates
 // (array of column names) or a formula string for proportional-hazards models.
-export function fitModel(distribution, file, mapping, { covariates, formula, unit, datasetId, fitOptions } = {}) {
+// Optional covariate units (#265): {column: unit}, sent as JSON with only the
+// ticked covariates that have one.
+function appendCovariateUnits(form, covariates, units) {
+  const picked = Object.fromEntries(
+    (covariates || []).map((c) => [c, String((units || {})[c] || "").trim()]).filter(([, u]) => u)
+  );
+  if (Object.keys(picked).length) form.append("covariate_units", JSON.stringify(picked));
+}
+
+export function fitModel(distribution, file, mapping, { covariates, covariateUnits, formula, unit, datasetId, fitOptions } = {}) {
   const form = new FormData();
   if (datasetId) form.append("dataset_id", datasetId);
   else if (file) form.append("file", file);
@@ -177,6 +186,7 @@ export function fitModel(distribution, file, mapping, { covariates, formula, uni
     form.append("formula", formula);
   } else if (covariates) {
     for (const col of covariates) form.append("z", col);
+    appendCovariateUnits(form, covariates, covariateUnits);
   }
   appendFitOptions(form, fitOptions);
   return withEvent(
@@ -264,7 +274,7 @@ export function saveModel(
   distribution,
   file,
   mapping,
-  { covariates, formula, unit, datasetId, fitOptions } = {}
+  { covariates, covariateUnits, formula, unit, datasetId, fitOptions } = {}
 ) {
   const form = new FormData();
   if (datasetId) form.append("dataset_id", datasetId);
@@ -277,6 +287,7 @@ export function saveModel(
     form.append("formula", formula);
   } else if (covariates) {
     for (const col of covariates) form.append("z", col);
+    appendCovariateUnits(form, covariates, covariateUnits);
   }
   appendFitOptions(form, fitOptions);
   return withEvent(request("/api/models", { method: "POST", body: form }), "model_save");
@@ -317,8 +328,12 @@ export function createModelFromParams(name, distribution, params, { unit, extras
 
 // Refit a saved model in place with an edited spec (same dataset, same id --
 // everything referencing the model sees the updated fit).
-export function updateModelFit(id, { distribution, mapping, covariates, formula, unit, fitOptions } = {}) {
+export function updateModelFit(id, { distribution, mapping, covariates, covariateUnits, formula, unit, fitOptions } = {}) {
   const { c_invert, ...columns } = mapping || {};
+  // Covariate units (#265): omitted keeps the model's own.
+  const units = covariateUnits === undefined ? undefined : Object.fromEntries(
+    (covariates || []).map((c) => [c, String(covariateUnits[c] || "").trim()]).filter(([, u]) => u)
+  );
   return request(`/api/models/${id}/fit`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -337,6 +352,7 @@ export function updateModelFit(id, { distribution, mapping, covariates, formula,
       fixed: fitOptions?.fixed && Object.keys(fitOptions.fixed).length ? fitOptions.fixed : null,
       how: fitOptions?.how || null,
       include_mixtures: !!fitOptions?.include_mixtures,
+      ...(units !== undefined ? { covariate_units: units } : {}),
     }),
   });
 }
@@ -971,6 +987,9 @@ function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, un
   // stress = [{col,label}, …]; s1 required, s2 optional.
   if (stress[0]) { form.append("s1", stress[0].col); if (stress[0].label) form.append("s1_label", stress[0].label); }
   if (stress[1]) { form.append("s2", stress[1].col); if (stress[1].label) form.append("s2_label", stress[1].label); }
+  // Optional stress units, e.g. "K" or "kV" (#265).
+  if (stress[0]?.unit?.trim()) form.append("s1_unit", stress[0].unit.trim());
+  if (stress[1]?.unit?.trim()) form.append("s2_unit", stress[1].unit.trim());
   if (distribution) form.append("distribution", distribution);
   if (lifeModel) form.append("life_model", lifeModel);
   if (unit) form.append("unit", unit);

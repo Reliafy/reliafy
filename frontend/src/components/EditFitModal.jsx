@@ -22,6 +22,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
   });
   const [unit, setUnit] = useState(spec.unit || "");
   const [covariates, setCovariates] = useState(spec.covariates || []);
+  const [covUnits, setCovUnits] = useState(spec.covariate_units || {}); // #265
   const [advanced, setAdvanced] = useState(!!spec.formula);
   const [formula, setFormula] = useState(spec.formula || "");
   const [distributions, setDistributions] = useState([]);
@@ -70,6 +71,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
         distribution,
         mapping,
         covariates: hasCovariates && !advanced ? covariates : [],
+        covariateUnits: hasCovariates && !advanced ? covUnits : {},
         formula: hasCovariates && advanced ? formula : null,
         unit,
         fitOptions: hasCovariates ? null : fitOpts,
@@ -114,6 +116,8 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
             formula={formula}
             onSetFormula={setFormula}
             disabledColumns={mappedColumns}
+            units={covUnits}
+            onSetUnit={(col, u) => setCovUnits((prev) => ({ ...prev, [col]: u }))}
           />
           <div style={{ marginTop: "0.9rem" }}>
             <DistributionStep

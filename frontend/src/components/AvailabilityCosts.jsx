@@ -1,3 +1,5 @@
+import { unitInText } from "./unitText.js";
+
 // Cost of ownership (#99) and the failures/maintenance downtime split (#100)
 // in a repairable diagram's availability results. Shown only when the diagram
 // prices or maintains something (``result.costs`` / ``result.downtime``).
@@ -22,7 +24,7 @@ export const fmtMoney = (v) =>
       : Number(v.toPrecision(3)).toLocaleString();
 const fmtPct = (v, d = 1) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(d)}%`);
 const fmtT = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(5)).toLocaleString());
-const per = (unit) => (unit ? ` /${unit.replace(/s$/, "")}` : " per unit time");
+const per = (unit) => (unit ? ` /${unitInText(unit).replace(/s$/, "")}` : " per unit time");
 const basisTag = (basis) => (
   <span className={"rbd-basis " + (basis || "")}>{basis === "simulation" ? "simulated" : "exact"}</span>
 );
@@ -33,7 +35,7 @@ export function DowntimeSplit({ result, unit }) {
   if (!d) return null;
   const total = d.total || 0;
   const share = (v) => (total > 0 ? v / total : 0);
-  const u = unit ? ` ${unit}` : "";
+  const u = unit ? ` ${unitInText(unit)}` : "";
   return (
     <div className="rbd-avail-nodes rbd-downtime-split">
       <div className="ds-section-h">
@@ -66,7 +68,7 @@ export function DowntimeSplit({ result, unit }) {
 export default function AvailabilityCosts({ result, unit }) {
   const c = result.costs;
   if (!c) return null;
-  const u = unit ? ` ${unit}` : "";
+  const u = unit ? ` ${unitInText(unit)}` : "";
   const sim = c.simulated;
   // The window's mean cost is exact (RePyability's expected_cost) where it can
   // be; the interval and percentiles are the simulation's.

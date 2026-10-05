@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { altBounds, evaluateAlt, getRbdJob } from "../api.js";
+import { stressName } from "./stressName.js";
+import { unitInText } from "./unitText.js";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
@@ -188,7 +190,7 @@ export default function AltCalculator({ modelId, results }) {
   const af = res?.acceleration_factor;
   const bl = bounds?.b_lives || {};
   const mb = bounds?.mission;
-  const u = unit ? ` ${unit}` : "";
+  const u = unit ? ` ${unitInText(unit)}` : "";
   const lower = (b) => (b && b.lower != null ? <small className="alt-lower">≥ {fmt(b.lower)}{u} at {levelText}</small> : null);
 
   return (
@@ -197,7 +199,7 @@ export default function AltCalculator({ modelId, results }) {
         <div className="alt-stress-grid">
           {stresses.map((s, j) => (
             <label key={s.key} className="login-field">
-              <span>Use-level {s.label}</span>
+              <span>Use-level {stressName(s)}</span>
               <input type="number" value={use[j]} inputMode="decimal"
                      onChange={(e) => setUse((cur) => cur.map((v, k) => (k === j ? e.target.value : v)))} />
             </label>
@@ -211,7 +213,7 @@ export default function AltCalculator({ modelId, results }) {
           <div className="alt-stress-grid">
             {stresses.map((s, j) => (
               <label key={s.key} className="login-field">
-                <span>Reference {s.label}</span>
+                <span>Reference {stressName(s)}</span>
                 <input type="number" value={ref[j]} inputMode="decimal"
                        onChange={(e) => setRef((cur) => cur.map((v, k) => (k === j ? e.target.value : v)))} />
               </label>

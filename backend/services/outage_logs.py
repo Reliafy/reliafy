@@ -48,6 +48,7 @@ import numpy as np
 import pandas as pd
 
 from backend.services import access
+from backend.units import unit_in_text
 
 # Row cap per log: far beyond any real plant log of one diagram, and keeps a
 # document well inside MongoDB's 16 MB.
@@ -604,10 +605,12 @@ def parse_log(
         if unit and log_unit and _norm_name(unit) != _norm_name(log_unit):
             if source is None or target is None:
                 raise OutageLogError(
-                    f"The times are in {unit} but the diagram's unit is {log_unit}, and one of them isn't a clock "
+                    f"The times are in {unit_in_text(unit)} but the diagram's unit is {unit_in_text(log_unit)}, "
+                    "and one of them isn't a clock "
                     "unit, so they can't be converted. Give the times in the diagram's unit.")
             factor = _unit_factor(source, target)
-            notes.append(f"Times converted from {unit} to the diagram's unit ({log_unit}).")
+            notes.append(f"Times converted from {unit_in_text(unit)} to the diagram's unit "
+                         f"({unit_in_text(log_unit)}).")
         dur_factor = factor
         origin = None
     else:
@@ -1232,7 +1235,8 @@ def system_history(graph: dict, log: dict) -> dict:
                      f"{'was' if one else 'were'} merged.")
     diagram_unit = str((graph or {}).get("unit") or "").strip()
     if diagram_unit and log.get("unit") and _norm_name(diagram_unit) != _norm_name(log["unit"]):
-        notes.append(f"The log's times are in {log['unit']}, but the diagram's unit is now {diagram_unit}: "
+        notes.append(f"The log's times are in {unit_in_text(log['unit'])}, but the diagram's unit is now "
+                     f"{unit_in_text(diagram_unit)}: "
                      "re-import the log in the diagram's unit.")
     if any(b["type"] == "subsystem" for b in blocks.values()):
         notes.append("Sub-system blocks are each taken whole: an outage mapped to one means the whole sub-system "

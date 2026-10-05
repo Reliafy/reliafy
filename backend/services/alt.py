@@ -65,6 +65,7 @@ def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> AltModelDoc
         life_model_id=spec.get("life_model_id", "arrhenius"),
         unit=spec.get("unit", ""),
         stress_labels=spec.get("stress_labels"),
+        stress_units=spec.get("stress_units"),
     )
     model_id = uuid.uuid4().hex
     doc = AltModelDoc(
@@ -146,11 +147,17 @@ BOOTSTRAP_PRO_PAYLOAD = {
 }
 
 
+# #265: a model whose dataset is gone still has its saved fit (Wald bounds,
+# the use-level calculator); only what refits from the data can't run.
+DATASET_DELETED = ("The dataset this model was fitted to was deleted, so likelihood-ratio and bootstrap "
+                   "bounds (which refit the model from its data) aren't available. Wald bounds still work.")
+
+
 def _fit_inputs(db, doc: AltModelDoc) -> dict:
     """The saved model's data as :func:`backend.alt.build_inputs` reads it."""
     dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
     if dataset is None:
-        raise FitError("The dataset this model was fitted to is no longer available.")
+        raise FitError(DATASET_DELETED)
     spec = doc.spec or {}
     return alt_fit.build_inputs(datasets_service.load_dataframe(dataset), spec.get("mapping", {}),
                                 spec.get("stress_cols", []))
@@ -242,7 +249,8 @@ def get_live_model(db, model_id: str, owner_id):
 def _refit(db, doc: AltModelDoc):
     dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
     if dataset is None:
-        raise ModelNotFound(doc.id)
+        # The model exists; its data doesn't (#265) — say so, not "not found".
+        raise FitError(DATASET_DELETED)
     df = datasets_service.load_dataframe(dataset)
     spec = doc.spec or {}
     _, cache_id = alt_fit.fit(
@@ -253,6 +261,7 @@ def _refit(db, doc: AltModelDoc):
         life_model_id=spec.get("life_model_id", "arrhenius"),
         unit=spec.get("unit", ""),
         stress_labels=spec.get("stress_labels"),
+        stress_units=spec.get("stress_units"),
     )
     _remember_live(doc.id, cache_id)
     return alt_fit.get_live(cache_id)

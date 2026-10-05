@@ -24,6 +24,8 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from backend.units import unit_in_text
+
 #: Figures a simulation-only diagram can't give without the simulation.
 _FIGURES = ("steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
             "failure_frequency", "figures_basis", "importance", "t_simulation")
@@ -117,15 +119,57 @@ def _headline(out: dict, payload: dict) -> Optional[dict]:
                 "lower": precision.get("lower"), "upper": precision.get("upper"), **centre,
                 "confidence": precision.get("confidence"),
                 "what": (f"the mean availability over the simulated window of {payload.get('t_simulation'):g} "
-                         f"{payload.get('unit') or ''}".rstrip() if payload.get("t_simulation") else
+                         f"{unit_in_text(payload.get('unit'))}".rstrip() if payload.get("t_simulation") else
                          "the mean availability over the simulated window")}
     exact = payload.get("exact") or {}
     if exact.get("status") == "ok" and exact.get("mission_availability") is not None:
         return {"value": exact["mission_availability"], "basis": "exact",
                 "method": (exact.get("method") or {}).get("mission_availability"),
                 "what": f"the mean availability over the window of {exact.get('window'):g} "
-                        f"{exact.get('unit') or ''}".rstrip()}
+                        f"{unit_in_text(exact.get('unit'))}".rstrip()}
     return None
+
+
+#: The app's "no proof tests" warning (rbd_policies.NO_PROOF_TESTS) as an
+#: agent acts on it: the edit_rbd op that adds them (#265).
+NO_PROOF_TESTS_AGENT = (
+    "No proof tests configured: PFDavg assumes failures are revealed and repaired at once, which is optimistic "
+    "for a low-demand safety function. Add proof-test intervals (edit_rbd update_node inspection: {op: "
+    "'update_node', id: <block id>, inspection: {interval: <time between tests>}})."
+)
+
+
+def agent_text(text):
+    """A warning the app words for its own buttons, as an agent acts on it."""
+    from backend.services.rbd_policies import NO_PROOF_TESTS
+
+    return NO_PROOF_TESTS_AGENT if text == NO_PROOF_TESTS else text
+
+
+def _safety_headline(headline: dict, payload: dict, common: dict) -> dict:
+    """A safety function whose PFDavg includes its common-cause groups (#265):
+    lead with the availability with them (1 − PFDavg), the figure the safety
+    summary is on, and keep the one without them alongside."""
+    safety = payload.get("safety") or {}
+    route = safety.get("basis")
+    without = {k: v for k, v in headline.items() if k not in ("common_cause_included", "with_common_cause")}
+    return {
+        "value": common["availability_with_common_cause"],
+        "basis": "simulation" if route == "simulated" else "exact",
+        **({"method": route} if route in ("exact", "numerical") else {}),
+        "what": "the long-run availability with the common-cause groups (1 − PFDavg), as the safety summary",
+        "common_cause_included": True,
+        "with_common_cause": common["availability_with_common_cause"],
+        "without_common_cause": without,
+    }
+
+
+def _lead_with(out: dict, keys: tuple) -> dict:
+    """``out`` with ``keys`` moved up to just after the head fields."""
+    head = ("rbd_id", "name", "url", "placeholders", "warning", "available")
+    first = {k: out[k] for k in head if k in out}
+    first.update({k: out[k] for k in keys if k in out})
+    return {**first, **{k: v for k, v in out.items() if k not in first}}
 
 
 def finish(out: dict, payload: dict) -> dict:
@@ -137,6 +181,16 @@ def finish(out: dict, payload: dict) -> dict:
         out["exact"] = dict(out["exact"])
         if isinstance(out["exact"].get("routes"), dict):
             out["exact"]["routes"] = {k: dict(v) for k, v in out["exact"]["routes"].items()}
+
+    # #265: the payload's own warnings (a safety function without proof
+    # tests), worded for an agent, and A(t)'s proof-test saw-tooth.
+    if payload.get("warnings"):
+        out["warnings"] = list(dict.fromkeys(
+            [*(out.get("warnings") or []), *(agent_text(w) for w in payload["warnings"])]))
+    if isinstance(out.get("safety"), dict) and out["safety"].get("warning"):
+        out["safety"] = {**out["safety"], "warning": agent_text(out["safety"]["warning"])}
+    if payload.get("proof_test_note"):
+        out["proof_test_note"] = payload["proof_test_note"]
 
     # #185: common-cause groups the figures leave out, beside them and as a warning.
     common = payload.get("common_cause")
@@ -174,5 +228,11 @@ def finish(out: dict, payload: dict) -> dict:
             headline["common_cause_included"] = False
             if common.get("availability_with_common_cause") is not None:
                 headline["with_common_cause"] = common["availability_with_common_cause"]
+                if payload.get("safety"):
+                    headline = _safety_headline(headline, payload, common)
         out["availability"] = headline
+    if isinstance(out.get("safety"), dict) and common:
+        # A safety function with common-cause groups (#265): the headline and
+        # the safety summary first, with whether common cause is in them.
+        out = _lead_with(out, ("availability", "safety", "common_cause"))
     return out

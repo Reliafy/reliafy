@@ -1,5 +1,6 @@
 import Plot from "./Plot.jsx";
 import MethodTag from "./MethodTag.jsx";
+import { unitInText } from "./unitText.js";
 
 // As of now with the simulation (#220, #221): the time to the next system
 // failure from the blocks' states, its mean (the mean residual life),
@@ -17,7 +18,7 @@ export function meanResidualLife(nf) {
 export default function RbdNextFailure({ result, unit }) {
   const nf = result?.next_failure;
   if (!nf) return null;
-  const u = unit ? ` ${unit}` : "";
+  const u = unit ? ` ${unitInText(unit)}` : "";
   const pc = nf.percentiles || {};
   const conf = Math.round((nf.confidence || 0.95) * 100);
   const curve = nf.curve || {};

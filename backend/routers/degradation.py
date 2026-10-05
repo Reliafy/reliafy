@@ -11,6 +11,7 @@ from backend import degradation as degradation_fit
 from backend.db import get_session
 from backend.http_limits import read_upload
 from backend.fitting import DISTRIBUTIONS, FitError
+from backend.units import canonical_unit
 from backend.services import billing as billing_service
 from backend.services import datasets as datasets_service
 from backend.services import degradation as degradation_service
@@ -119,7 +120,7 @@ def _spec_from_form(i, x, y, threshold, path, distribution, population_method, u
         "path": path or "best",
         "distribution_id": distribution or "weibull",
         "population_method": population_method or "moments",
-        "unit": (unit or "").strip(),
+        "unit": canonical_unit(unit),
         "measurement_unit": (measurement_unit or "").strip(),
     }
 

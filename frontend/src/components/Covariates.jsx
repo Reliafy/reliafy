@@ -1,7 +1,9 @@
 // Covariate selection for proportional-hazards models. Two modes:
 //   - simple: tick CSV columns to use as covariates (Z)
 //   - advanced: write a formulaic formula (e.g. "age + sex + age:sex")
-// The two are mutually exclusive.
+// The two are mutually exclusive. ``units``/``onSetUnit`` (optional, #265)
+// give each ticked covariate a unit ("°C", "kN"), shown with its calculator
+// input and coefficient.
 export default function Covariates({
   columns,
   selected,
@@ -11,6 +13,8 @@ export default function Covariates({
   formula,
   onSetFormula,
   disabledColumns,
+  units,
+  onSetUnit,
 }) {
   const isMapped = (col) => !!disabledColumns && disabledColumns.has(col);
   return (
@@ -77,6 +81,23 @@ export default function Covariates({
               </label>
             );
           })}
+        </div>
+      )}
+      {!advanced && onSetUnit && selected.length > 0 && (
+        <div className="cov-units">
+          <span className="map-help">Units (optional) — shown with each covariate's input and coefficient.</span>
+          {selected.map((col) => (
+            <label className="cov-unit" key={col}>
+              <span>{col}</span>
+              <input
+                type="text"
+                maxLength={24}
+                placeholder="e.g. °C"
+                value={(units || {})[col] || ""}
+                onChange={(e) => onSetUnit(col, e.target.value)}
+              />
+            </label>
+          ))}
         </div>
       )}
     </div>
