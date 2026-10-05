@@ -26,6 +26,7 @@ import pandas as pd
 
 from backend.fitting import FitError, _json_safe
 from backend.services.method_labels import hides_solver_names, note_fit
+from backend.units import canonical_unit
 from surpyval.recurrent import CrowAMSAA, Duane, HPP, NonParametricCounting, laplace
 
 # Parametric recurrence models offered (all power-law / Poisson intensities).
@@ -242,7 +243,7 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
     cis = param_intervals(model_id, para)
     payload = {
         "kind": "recurrent",
-        "unit": (unit or "").strip(),
+        "unit": canonical_unit(unit),
         "n_systems": n_systems,
         "n_events": n_events,
         "model": {"id": model_id, "name": MODELS[model_id]["name"]},
@@ -347,7 +348,7 @@ def _params_payload(para, model_id: str, values: list, horizon: float, unit: str
     growth = "improving" if beta < 0.95 else "deteriorating" if beta > 1.05 else "stable"
     payload = {
         "kind": "recurrent",
-        "unit": (unit or "").strip(),
+        "unit": canonical_unit(unit),
         "n_systems": None,
         "n_events": None,
         "model": {"id": model_id, "name": MODELS[model_id]["name"]},
@@ -592,7 +593,7 @@ def projection_payload(ins: dict, fef: dict, bc: list, unit: str = "", test_end=
         "T": gp.T,
         "systems": gp.systems,
         "total_time": total,
-        "unit": (unit or "").strip(),
+        "unit": canonical_unit(unit),
         "failures": dict(gp.failures),
         "n_bd_modes": int(len(table)),
         "demonstrated": {"intensity": gp.demonstrated_intensity, "mtbf": gp.demonstrated_mtbf},

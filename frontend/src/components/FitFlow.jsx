@@ -99,6 +99,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [mapping, setMapping] = useState(EMPTY_MAPPING);
   const [unit, setUnit] = useState("");
   const [covariates, setCovariates] = useState([]);
+  const [covUnits, setCovUnits] = useState({}); // optional unit per covariate (#265)
   const [advanced, setAdvanced] = useState(false);
   const [formula, setFormula] = useState("");
   const [distributions, setDistributions] = useState([]);
@@ -287,7 +288,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       const opts = {
         unit,
         ...(datasetId ? { datasetId } : {}),
-        ...(hasCovariates ? (advanced ? { formula } : { covariates }) : {}),
+        ...(hasCovariates ? (advanced ? { formula } : { covariates, covariateUnits: covUnits }) : {}),
         ...(hasCovariates ? {} : { fitOptions: fitOpts }),
       };
       const res = await fitModel(distribution, file, mapping, opts);
@@ -310,7 +311,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       const saved = await saveModel(name.trim(), distribution, file, mapping, {
         unit,
         datasetId: datasetId || undefined,
-        ...(hasCovariates ? (advanced ? { formula } : { covariates }) : { fitOptions: fitOpts }),
+        ...(hasCovariates
+          ? (advanced ? { formula } : { covariates, covariateUnits: covUnits })
+          : { fitOptions: fitOpts }),
       });
       onSaved?.(saved);
     } catch (err) {
@@ -529,6 +532,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             formula={formula}
             onSetFormula={setFormula}
             disabledColumns={mappedColumns}
+            units={covUnits}
+            onSetUnit={(col, u) => setCovUnits((prev) => ({ ...prev, [col]: u }))}
           />
           {!mappingValid && (
             <p className="hint">

@@ -6,6 +6,7 @@ import GoodnessOfFit from "./GoodnessOfFit.jsx";
 import Coefficients from "./Coefficients.jsx";
 import ModelValidation from "./ModelValidation.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
+import CiNote from "./CiNote.jsx";
 import { distColor } from "../instrument.js";
 
 const DISTRIBUTION_TABS = [
@@ -304,6 +305,7 @@ export default function ResultView({ result, hideHead = false, modelId = null })
           )}
         </div>
       )}
+      {!hasPlot && !paramsInRail && <CiNote params={result.params} note={result.ci_note} />}
       <div className="tabs">
         {tabs.map((t) => (
           <button
@@ -352,6 +354,7 @@ export default function ResultView({ result, hideHead = false, modelId = null })
                       <span className="gv">{p.value.toPrecision(4)}</span>
                     </div>
                   ))}
+                  <CiNote params={result.params} note={result.ci_note} />
                 </div>
               )}
               {result.fit_warning && !result.no_finite_maximum && (

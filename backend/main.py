@@ -32,6 +32,7 @@ from backend.fitting import (
     ModelNotFound,
     bind_owner,
     confidence_bounds,
+    covariate_units_from_form,
     evaluate,
     fit,
     options_from_form,
@@ -368,6 +369,7 @@ def fit_endpoint(
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
     include_mixtures: str | None = Form(default=None),
+    covariate_units: str | None = Form(default=None),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
@@ -404,7 +406,7 @@ def fit_endpoint(
         )
         result = fit(
             distribution, df, mapping, covariates=z, formula=formula, unit=unit,
-            options=options,
+            options=options, covariate_units=covariate_units_from_form(covariate_units),
         )
     except FitError as exc:
         # The message goes to the user; log it too, or the most informative

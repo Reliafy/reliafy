@@ -83,6 +83,8 @@ from surpyval import (
 from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
+from backend import param_intervals
+from backend.units import canonical_unit, prose_unit
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
 from backend.services.method_labels import hides_solver_names, note_fit
@@ -848,6 +850,20 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None)
     }
 
 
+def covariate_units_from_form(text: Optional[str]) -> Optional[dict]:
+    """The optional ``covariate_units`` form field (#265): a JSON object,
+    ``{"temp_C": "°C"}``; blank gives None."""
+    if not text or not str(text).strip():
+        return None
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        raise FitError('covariate_units must be a JSON object, e.g. {"temp_C": "°C"}.')
+    if not isinstance(value, dict):
+        raise FitError('covariate_units must be a JSON object, e.g. {"temp_C": "°C"}.')
+    return value
+
+
 def options_from_form(
     offset: Optional[str] = None,
     zi: Optional[str] = None,
@@ -1127,12 +1143,15 @@ def fit(
     formula: Optional[str] = None,
     unit: Optional[str] = None,
     options: Optional[dict] = None,
+    covariate_units: Optional[dict] = None,
 ) -> dict:
     """Fit ``distribution`` (plain or proportional hazards) and build the payload.
 
     If ``distribution`` is a regression model it is fit with covariate columns
     (``covariates``) or a ``formula``; otherwise the plain distribution path is
-    used. ``unit`` is the (optional) unit of ``x`` carried through for display.
+    used. ``unit`` is the (optional) unit of ``x`` carried through for display;
+    ``covariate_units`` (optional, regression only) the unit of each covariate,
+    ``{"temp_C": "°C"}``, shown with its calculator input and coefficient.
     ``options`` (plain distributions only) may hold ``offset``/``zi``/``lfp``
     booleans and a ``fixed`` mapping. ``options["c_invert"]`` applies to every
     model kind: it flips a 1 = failed censor column into the convention before
@@ -1145,7 +1164,7 @@ def fit(
         df = invert_censor_column(df, mapping["c"])
     options = normalize_options(distribution, options)
     if distribution in REGRESSION_MODELS:
-        result = _fit_regression(distribution, df, mapping, covariates, formula)
+        result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units)
     elif distribution == BEST_ID:
         result = _fit_best(df, mapping, options)
     elif distribution in NONPARAMETRIC:
@@ -1162,9 +1181,13 @@ def fit(
             f"Unknown model '{distribution}'. Available: "
             f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
         )
-    result["unit"] = (unit or "").strip()
+    result["unit"] = canonical_unit(unit)  # #265: "hours", "hrs" → "Hours"
+    if result.get("kind") in ("distribution", "discrete", "regression") and param_intervals.note_for(
+            result.get("params")):
+        result["ci_note"] = param_intervals.CI_NOTE
     if result.get("mixture_summary") and result["unit"]:
-        result["mixture_summary"] = mixture_summary(result, result["unit"]) or result["mixture_summary"]
+        result["mixture_summary"] = (mixture_summary(result, prose_unit(result["unit"]))
+                                     or result["mixture_summary"])
     if c_invert:
         # Persist alongside the other fit options so a saved model's spec
         # re-fits the data the same way round (see models_service._refit).
@@ -1323,7 +1346,7 @@ def result_from_params(
         "plot": None,
         "functions": {"meta": FUNCTIONS, "curves": _function_curves(model)},
         "gof": [],
-        "unit": (unit or "").strip(),
+        "unit": canonical_unit(unit),
         "params_only": True,
     }
     if kwargs:
@@ -2026,7 +2049,7 @@ def _fit_distribution(
         or getattr(dist, "parameter_names", None)
         or [f"p{i}" for i in range(len(model.params))]
     )
-    params = _params_with_uncertainty(model, param_names)
+    params = _params_with_uncertainty(model, param_names, param_intervals.bounds_of(dist))
     if no_max:
         params = without_intervals(params)
 
@@ -2150,7 +2173,7 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
         or getattr(dist, "parameter_names", None)
         or [f"p{i}" for i in range(len(model.params))]
     )
-    params = _params_with_uncertainty(model, param_names)
+    params = _params_with_uncertainty(model, param_names, param_intervals.bounds_of(dist))
 
     cache_id = _store_model(model, np.asarray(curves["x"], dtype=float), [])
     return {
@@ -2229,13 +2252,15 @@ def _life_metrics(model) -> dict:
     return {"median": q(0.5), "b10": q(0.1), "mttf": mttf}
 
 
-def _params_with_uncertainty(model, param_names) -> list[dict]:
-    """Parameter estimates with standard errors and 95% CIs from the fit's
-    covariance matrix (plain normal approximation, ``value ± 1.96·se``).
+def _params_with_uncertainty(model, param_names, bounds: Optional[dict] = None) -> list[dict]:
+    """Parameter estimates with standard errors and 95% Wald CIs from the
+    fit's covariance matrix.
 
-    Kept on the natural scale for transparency; for positive parameters with
-    small samples a log-scale interval would differ slightly near boundaries —
-    acceptable for v1 and documented where the verdict is consumed.
+    ``bounds`` (``{name: (lower, upper)}``, SurPyval's declared parameter
+    bounds) puts a positive parameter's interval on the log scale and a
+    (0, 1) one's on the logit scale, so neither leaves its support: a small
+    sample's Weibull shape no longer gets a negative lower bound (#265). An
+    unbounded parameter keeps ``value ± 1.96·se``.
     """
     values = np.atleast_1d(np.asarray(model.params, dtype=float))
     ses = [None] * len(values)
@@ -2245,13 +2270,14 @@ def _params_with_uncertainty(model, param_names) -> list[dict]:
             diag = np.diag(cov)
             ses = [float(np.sqrt(d)) if d > 0 else None for d in diag]
 
-    z = 1.959963984540054  # 95%
+    bounds = bounds or {}
     out = []
     for name, value, se in zip(param_names, values, ses):
         entry = {"name": name, "value": float(value)}
         if se is not None and math.isfinite(se):
             entry["se"] = se
-            entry["ci"] = [float(value - z * se), float(value + z * se)]
+            lower, upper = (tuple(bounds.get(name) or ()) + (None, None))[:2]
+            entry["ci"] = param_intervals.wald_interval(float(value), se, lower, upper)
         else:
             entry["se"] = None
             entry["ci"] = None
@@ -2294,6 +2320,7 @@ def _fit_regression(
     mapping: dict,
     covariates: Optional[list],
     formula: Optional[str],
+    covariate_units: Optional[dict] = None,
 ) -> dict:
     entry = REGRESSION_MODELS[distribution]
     fitter = entry["fitter"]
@@ -2357,21 +2384,22 @@ def _fit_regression(
     except Exception:  # noqa: BLE001
         ses = None
 
-    _Z95 = 1.959963984540054
-
-    def _ci(i):
+    def _ci(i, bounds=(None, None)):
         if ses is None or not np.isfinite(ses[i]):
             return None
-        v = float(params_arr[i])
-        return [v - _Z95 * float(ses[i]), v + _Z95 * float(ses[i])]
+        # A positive baseline parameter's interval on the log scale (#265);
+        # the coefficients are unbounded, so theirs is symmetric.
+        return param_intervals.wald_interval(float(params_arr[i]), float(ses[i]), *bounds[:2])
 
     # Baseline distribution parameters (empty for semi-parametric Cox).
     base_dist = getattr(model, "distribution", None)
     base_names = getattr(base_dist, "parameter_names", None) or [
         f"p{i}" for i in range(k_dist)
     ]
+    base_bounds = param_intervals.bounds_of(base_dist)
     baseline = [
-        {"name": name, "value": float(params_arr[i]), "ci": _ci(i)}
+        {"name": name, "value": float(params_arr[i]),
+         "ci": _ci(i, tuple(base_bounds.get(name) or (None, None)))}
         for i, name in enumerate(base_names)
     ]
 
@@ -2411,6 +2439,13 @@ def _fit_regression(
     # so the frontend can re-evaluate at other covariate values.
     raw_vars = _raw_covariates(model, covariates)
     fields = _covariate_fields(df, raw_vars)
+    units = clean_covariate_units(covariate_units, raw_vars)
+    if units:
+        # Optional units (#265): on each calculator input and on the
+        # coefficient of a covariate entered as it is (per unit of it).
+        fields = [{**f, "unit": units[f["name"]]} if f["name"] in units else f for f in fields]
+        coefficients = [{**c, "covariate_unit": units[c["name"]]} if c["name"] in units else c
+                        for c in coefficients]
     hi = float(x_vals.max()) * 1.2 if x_vals.size else 1.0
     grid = np.linspace(0.0, hi, 300)
     default_row = pd.DataFrame({f["name"]: [f["default"]] for f in fields})
@@ -2444,6 +2479,16 @@ def _fit_regression(
         extra["gof_note"] = (
             "A Cox model's log-likelihood, AIC and BIC are on its partial likelihood: compare them "
             "only with other Cox models on the same data, never with a parametric model's.")
+    # #265: a regression model has no single median / B10 / MTTF — they
+    # depend on the covariates. Say so, and give them at the covariate means
+    # (the calculator's defaults), clearly labelled.
+    extra["metrics_note"] = REGRESSION_METRICS_NOTE
+    if not no_max:
+        at_means = regression_metrics_at_defaults(model, fields)
+        if at_means is not None:
+            extra["at_covariate_means"] = at_means
+    if units:
+        extra["covariate_units"] = units
     return {
         **extra,
         "maximum": getattr(model, "maximum", None),
@@ -2470,6 +2515,66 @@ def _raw_covariates(model, covariates: Optional[list]) -> list:
     if required:
         return list(required)
     return list(covariates or [])
+
+
+REGRESSION_METRICS_NOTE = (
+    "Regression model: life metrics depend on the covariates; use reliability_at with covariates, "
+    "or the model's covariate means.")
+
+
+def clean_covariate_units(units, names=None) -> dict:
+    """``{covariate: unit}`` from an optional mapping (#265): units trimmed,
+    blanks dropped and, when ``names`` is given, only the model's own
+    covariates kept. Not a dict (or empty): {}."""
+    from backend.units import clean_label_unit
+
+    if not isinstance(units, dict):
+        return {}
+    keep = set(names) if names is not None else None
+    out = {}
+    for name, unit in units.items():
+        name, unit = str(name).strip(), clean_label_unit(unit)
+        if name and unit and (keep is None or name in keep):
+            out[name] = unit
+    return out
+
+
+def regression_metrics_at_defaults(model, fields: list) -> Optional[dict]:
+    """A parametric regression model's median, B10 and MTTF at the covariate
+    row the calculator opens on (each numeric covariate at its training-data
+    mean, a categorical one at its most common level), labelled with that
+    row; None for a model without a quantile function (Cox) or when they
+    can't be computed."""
+    qf = getattr(model, "qf", None)
+    if not callable(qf):
+        return None
+    Z = pd.DataFrame({f["name"]: [f["default"]] for f in fields}) if fields else None
+    try:
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            q = np.asarray(qf(np.array([0.5, 0.1, 1e-6, 1.0 - 1e-9]), Z), dtype=float).ravel()
+            median, b10, lo, hi = (float(v) for v in q[:4])
+            mttf = None
+            if np.isfinite(lo) and np.isfinite(hi) and 0 < lo < hi:
+                # The mean life, ∫ S(t) dt, on a geometric grid to where
+                # S ≈ 1e-9 (fine near 0 and over a long tail alike).
+                t = np.concatenate([[0.0], np.geomspace(lo, hi, 4000)])
+                s = np.asarray(model.sf(t, Z), dtype=float).ravel()
+                if s.size == t.size and np.all(np.isfinite(s)):
+                    mttf = float(np.trapezoid(s, t)) if hasattr(np, "trapezoid") else float(np.trapz(s, t))
+    except Exception:  # noqa: BLE001 - a convenience: absent rather than wrong
+        return None
+
+    def _ok(v):
+        return v if v is not None and np.isfinite(v) and v >= 0 else None
+
+    return {
+        "median": _ok(median), "b10": _ok(b10), "mttf": _ok(mttf),
+        "covariates": [{"name": f["name"], "value": f["default"],
+                        "basis": "mean" if f.get("type") == "number" else "most common level",
+                        **({"unit": f["unit"]} if f.get("unit") else {})} for f in fields],
+        "label": "At the training data's covariate means (a categorical covariate at its most common level).",
+    }
 
 
 def _covariate_fields(df: pd.DataFrame, raw_vars) -> list:

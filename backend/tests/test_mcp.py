@@ -241,7 +241,7 @@ def _direct_fit(times, flags, **options):
 def test_fit_inline_censored_matches_fitting(env):
     out = _ok(_call(env.token[A], "fit_distribution", {"data": TIMES, "censored": FLAGS, "unit": "hours"}))
     ref = _direct_fit(TIMES, FLAGS)
-    assert out["saved"] is False and out["distribution"] == "Weibull" and out["unit"] == "hours"
+    assert out["saved"] is False and out["distribution"] == "Weibull" and out["unit"] == "Hours"
     for got, want in zip(out["params"], ref["params"]):
         assert got["name"] == want["name"]
         assert got["value"] == pytest.approx(want["value"], rel=1e-9)

@@ -11,6 +11,7 @@ from backend import recurrent as recurrent_fit
 from backend.db import get_session
 from backend.http_limits import read_upload
 from backend.fitting import FitError
+from backend.units import canonical_unit
 from backend.services import datasets as datasets_service
 from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
@@ -30,7 +31,7 @@ def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=No
     for key, val in (("c", c), ("n", n), ("tl", tl), ("tr", tr or t), ("mode", mode)):
         if val:
             mapping[key] = val
-    return {"mapping": mapping, "model_id": (model or "crow_amsaa"), "unit": (unit or "").strip()}
+    return {"mapping": mapping, "model_id": (model or "crow_amsaa"), "unit": canonical_unit(unit)}
 
 
 def _model_summary(doc, ctx: AccessCtx) -> dict:

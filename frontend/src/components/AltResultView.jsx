@@ -2,6 +2,7 @@ import { useState } from "react";
 import Plot from "./Plot.jsx";
 import AltCalculator from "./AltCalculator.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
+import { stressName } from "./stressName.js";
 
 const fmt = (v, d = 4) =>
   v === null || v === undefined || !Number.isFinite(v)
@@ -99,6 +100,9 @@ export default function AltResultView({ results, modelId }) {
   return (
     <div className="alt-result">
       <NoMaximumNotice notice={r.no_finite_maximum} />
+      {(r.unit_warnings || []).map((w) => (
+        <div className="detail-note warn" key={w}>⚠ {w}</div>
+      ))}
       <div className="seg" style={{ alignSelf: "flex-start" }}>
         {TABS.map((t) => (
           <button key={t.id} className={"seg-btn" + (tab === t.id ? " active" : "")}
@@ -164,7 +168,7 @@ export default function AltResultView({ results, modelId }) {
               <table className="mini-table">
                 <thead>
                   <tr>
-                    {(r.stresses || []).map((s) => <th key={s.key}>{s.label}</th>)}
+                    {(r.stresses || []).map((s) => <th key={s.key}>{stressName(s)}</th>)}
                     <th>n</th><th>Characteristic life{r.unit ? ` (${r.unit})` : ""}</th>
                   </tr>
                 </thead>
