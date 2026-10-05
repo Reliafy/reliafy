@@ -24,8 +24,12 @@ function SafetyCard({ safety }) {
           <div className="rbd-sif-big">{fmtPfd(safety.pfd_avg)}</div>
           <div className="muted">PFDavg (average probability of failure on demand)</div>
         </div>
-        <div className={"rbd-sil-chip" + (safety.sil ? ` sil${safety.sil}` : " none")}>
+        <div
+          className={"rbd-sil-chip" + (safety.sil ? ` sil${safety.sil}` : " none")}
+          title={safety.sil_optimistic ? safety.sil_note : undefined}
+        >
           {safety.sil ? `SIL ${safety.sil}` : "No SIL"}
+          {safety.sil_optimistic ? " (optimistic)" : ""}
         </div>
         {safety.target_sil != null && (
           <div className={"rbd-sil-target " + (met ? "ok" : "no")}>
@@ -33,7 +37,20 @@ function SafetyCard({ safety }) {
           </div>
         )}
       </div>
+      {safety.proof_tests === "none" && (
+        <p className="rbd-sif-warning">
+          ⚠ No block is proof-tested, so this PFDavg treats every failure as revealed and repaired at once.
+          {safety.sil_optimistic ? " The SIL band is optimistic." : ""} Give the blocks with hidden failures proof
+          tests (double-click a block → Cost &amp; maintenance).
+        </p>
+      )}
       <ul className="rbd-policy-notes">
+        {safety.common_cause_included != null && (
+          <li>
+            <b>Common cause {safety.common_cause_included ? "included" : "not included"}</b> in this PFDavg
+            {safety.common_cause_included ? "" : " — it is optimistic by the groups' contribution"}.
+          </li>
+        )}
         <li>
           {safety.basis === "simulated" ? "Simulated" : safety.basis === "numerical" ? "Numerical" : "Exact"} — the
           long-run unavailability averaged over the proof-test cycle (low-demand SIL bands, IEC 61508).

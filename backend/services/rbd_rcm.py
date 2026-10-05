@@ -33,6 +33,7 @@ from typing import Any, Optional
 
 from backend.services import rcm as rcm_service
 from backend.services import strategy_store
+from backend.units import unit_in_text
 
 OUTCOME_LABELS = {
     "fixed_interval": "Fixed-interval replacement",
@@ -122,8 +123,8 @@ def map_decision(decision: Optional[dict], analysis, unit: str) -> dict:
                           "analysis that computes it."}
     here, there = rcm_service._norm_unit(unit), rcm_service._norm_unit(interval_unit)
     if here and there and here != there:
-        return {"reason": f"The task's interval is in {interval_unit} but this diagram is in "
-                          f"{unit} — convert it and enter it by hand."}
+        return {"reason": f"The task's interval is in {unit_in_text(interval_unit)} but this diagram is in "
+                          f"{unit_in_text(unit)} — convert it and enter it by hand."}
 
     if outcome == "fixed_interval":
         fill["policy"] = "age"

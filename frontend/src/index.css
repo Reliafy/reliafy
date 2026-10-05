@@ -3142,6 +3142,15 @@ button.secondary:hover:not(:disabled) {
   box-shadow: 0 0 0 3px rgba(47, 109, 246, 0.18);
 }
 
+/* Optional covariate units (#265) */
+.cov-units { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; align-items: center; margin-top: 0.6rem; }
+.cov-units .map-help { flex: 1 0 100%; }
+.cov-unit { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text); }
+.cov-unit input {
+  width: 6.5rem; max-width: 100%; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); padding: 0.3rem 0.5rem; font-size: 0.85rem; font-family: inherit;
+}
+
 /* Coefficients table */
 .coef-table {
   border-collapse: collapse;
@@ -5645,6 +5654,13 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
   color: var(--faint);
   margin-top: 2px;
 }
+/* How the intervals are taken (#265) */
+.param-ci-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--faint);
+}
 .verdict-line {
   margin: 0.4rem 0 0;
   font-size: 13px;
@@ -6696,6 +6712,7 @@ button.danger:hover { background: #fdeeee; }
   flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line, #d7dee7);
   border-radius: 8px; font-size: 13px; font-family: inherit;
 }
+.alt-map-label.alt-map-unit { flex: 0 0 110px; }
 
 /* Use-level calculator */
 .alt-calc { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 24px; align-items: start; }
@@ -7359,6 +7376,11 @@ button.danger:hover { background: #fdeeee; }
 }
 .rbd-sil-chip.sil1 { background: rgba(224, 136, 59, 0.12); color: #b45309; border-color: rgba(224, 136, 59, 0.4); }
 .rbd-sil-chip.none { background: rgba(180, 35, 24, 0.08); color: #b42318; border-color: rgba(180, 35, 24, 0.3); }
+.rbd-sif-warning {
+  margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; font-size: 12.5px; line-height: 1.45;
+  background: rgba(224, 136, 59, 0.1); color: #9a3412; border: 1px solid rgba(224, 136, 59, 0.35);
+}
+.rbd-avail-ccf { margin: 2px 0 6px; font-size: 13px; }
 .rbd-sil-target { font-size: 12.5px; font-weight: 600; }
 .rbd-sil-target.ok { color: #15803d; }
 .rbd-sil-target.no { color: #b42318; }

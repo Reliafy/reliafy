@@ -54,6 +54,7 @@ from backend.services import rbd_analysis as ra
 from backend.services import rbd_maintenance as rm
 from backend.services import rbd_policies as rp
 from backend.services.rbd_analysis import AnalysisError
+from backend.units import normalize_unit, unit_in_text
 
 SCHEDULES = ("replacement", "proof_test")
 #: The most age-replaced blocks chosen at once (a gradient search: quick).
@@ -185,7 +186,7 @@ def maintained(graph: dict) -> dict:
 def calendar(graph: dict) -> Optional[list[float]]:
     """The default proof-test calendar (:data:`CALENDAR_MONTHS`) in the
     diagram's unit, or None for a unit that isn't a calendar one."""
-    per_year = rm.UNITS_PER_YEAR.get(ra.normalize_unit(graph.get("unit")) or "")
+    per_year = rm.UNITS_PER_YEAR.get(normalize_unit(graph.get("unit")) or "")
     if per_year is None:
         return None
     return [float(f"{m * per_year / 12.0:.6g}") for m in CALENDAR_MONTHS]
@@ -358,7 +359,7 @@ def _not_met(text: str, safety: bool, min_av, max_cost, unit: str) -> str:
             got = f" the most they give is {best:.6g}" if best is not None else ""
         return (f"No intervals to choose from meet {want}:{got}. Add shorter intervals to choose from, relax the "
                 "target" + (", or stagger the tests" if safety else "") + ".")
-    per = f" per {unit.rstrip('s')}" if unit else " per unit time"
+    per = f" per {unit_in_text(unit).rstrip('s')}" if unit else " per unit time"
     got = f" the least they cost is {best:.4g}{per}" if best is not None else ""
     return f"No intervals keep the cost rate within {max_cost:.4g}{per}:{got}. Raise the budget."
 

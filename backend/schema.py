@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def _now() -> datetime:
@@ -57,6 +57,29 @@ class Model(BaseModel):
     status: str = "ready"  # 'ready' | 'error'
     error: Optional[str] = None
 
+    @field_validator("results")
+    @classmethod
+    def _positive_intervals(cls, results: dict) -> dict:
+        """A fit saved before #265 holds symmetric parameter intervals, which
+        can go below zero for a positive parameter: every read of a saved
+        model (the app, get_model, share pages) serves them on the log scale,
+        as a new fit gives them. Its time unit is shown in the one canonical
+        spelling ("hours" → "Hours"). The stored document is left as it is."""
+        from backend.param_intervals import corrected_results
+
+        try:
+            results = corrected_results(results)
+        except Exception:  # noqa: BLE001 - never fail a read over the intervals
+            pass
+        return _canonical_unit(results)
+
+
+def _canonical_unit(results):
+    """Saved results with their time unit in its one spelling (#265)."""
+    from backend.units import canonical_results_unit
+
+    return canonical_results_unit(results)
+
 
 class Rbd(BaseModel):
     """A saved reliability block diagram (the React Flow graph: nodes+edges)."""
@@ -89,6 +112,11 @@ class DegradationModelDoc(BaseModel):
     status: str = "ready"
     error: Optional[str] = None
 
+    @field_validator("results")
+    @classmethod
+    def _results_unit(cls, results: dict) -> dict:
+        return _canonical_unit(results)  # #265: "hours" is shown "Hours"
+
 
 class RecurrentModelDoc(BaseModel):
     """A saved recurrent-event (repairable-system) model: the fit recipe
@@ -108,6 +136,11 @@ class RecurrentModelDoc(BaseModel):
     surpyval_version: Optional[str] = None
     status: str = "ready"
     error: Optional[str] = None
+
+    @field_validator("results")
+    @classmethod
+    def _results_unit(cls, results: dict) -> dict:
+        return _canonical_unit(results)  # #265: "hours" is shown "Hours"
 
 
 class AltModelDoc(BaseModel):
@@ -129,6 +162,11 @@ class AltModelDoc(BaseModel):
     surpyval_version: Optional[str] = None
     status: str = "ready"
     error: Optional[str] = None
+
+    @field_validator("results")
+    @classmethod
+    def _results_unit(cls, results: dict) -> dict:
+        return _canonical_unit(results)  # #265: "hours" is shown "Hours"
 
 
 class AgentSessionDoc(BaseModel):

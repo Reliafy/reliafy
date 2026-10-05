@@ -306,7 +306,7 @@ def pilot_unavailability(overrides):
 def report_costs(sim, overrides):
     """The long-run cost rate (exact where RePyability has it), the total cost
     of ownership over HORIZON, and the simulated cost of the window."""
-    unit = f" per {UNIT.rstrip('s')}" if UNIT else " per unit time"
+    unit = f" per {UNIT_TEXT.rstrip('s')}" if UNIT_TEXT else " per unit time"
     try:
         with np.errstate(all="ignore"):
             rate, basis = float(rbd.expected_cost_rate(**overrides)), "exact"

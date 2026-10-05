@@ -20,6 +20,7 @@ from backend.db import from_doc, to_doc
 from backend.schema import StrategyAnalysis
 from backend.services import strategy as strategy_service
 from backend.services.strategy import StrategyError
+from backend.units import unit_in_text
 
 KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration_test")
 
@@ -137,14 +138,14 @@ def headline(doc: StrategyAnalysis) -> str:
     r = doc.results or {}
     if doc.kind == "optimal_replacement":
         if r.get("beneficial"):
-            unit = f" {r['unit']}" if r.get("unit") else ""
+            unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
             t = r.get("optimal_time")
             return f"Replace at ~{strategy_service.fmt_num(t)}{unit}" if t is not None else "Beneficial"
         return "Run-to-failure is optimal (no beneficial interval)"
     if doc.kind == "compare_two":
         return (r.get("verdict") or {}).get("text") or "Comparison"
     if doc.kind == "failure_finding":
-        unit = f" {r['unit']}" if r.get("unit") else ""
+        unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
         i = r.get("interval")
         return f"Check every ~{strategy_service.fmt_num(i)}{unit}" if i is not None else "Failure-finding interval"
     if doc.kind == "demonstration_test":
@@ -155,7 +156,7 @@ def headline(doc: StrategyAnalysis) -> str:
 def demonstration_headline(r: dict) -> str:
     """'59 units × 1,000 hours, 0 failures' — the plan in a few words."""
     fmt = strategy_service.fmt_num
-    unit = f" {r['unit']}" if r.get("unit") else ""
+    unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
     failures = r.get("failures") or 0
     allowed = f"≤{failures} failure{'s' if failures != 1 else ''}" if failures else "0 failures"
     if r.get("method") == "mtbf":

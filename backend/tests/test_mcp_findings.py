@@ -196,7 +196,7 @@ def _saved_block_graph(model_id):
 def test_unit_mismatch_warns_on_create_and_analyze(samples):
     created = _ok(_call(samples.token[A], "create_rbd", {
         "name": "Mixed units", "unit": "Hours", **_saved_block_graph(PUMPS)}))
-    assert any("months" in w and "Hours" in w and "Pump" in w for w in created["warnings"])
+    assert any("fitted in months" in w and "unit is hours" in w and "Pump" in w for w in created["warnings"])
     out = _ok(_call(samples.token[A], "analyze_rbd", {"rbd_id": created["id"]}))
     assert any("months" in w for w in out["warnings"])
 
@@ -526,16 +526,18 @@ def _fitted_weibull(env, name, seed, beta, n=30, cutoff=7000.0):
 
 def test_optimal_replacement_flags_weak_wear_out_evidence(env):
     costs = {"planned_cost": 4000, "unplanned_cost": 25000}
-    weak, b = _fitted_weibull(env, "Weak", seed=1, beta=1.77)  # β ≈ 1.97, 95% CI ≈ [1.09, 2.84]
-    assert 1 < b["ci"][0] < 1.2
+    # β ≈ 1.97, 95% CI ≈ [1.26, 3.08] — on the log scale since #265 ([1.09, 2.84] symmetric before).
+    weak, b = _fitted_weibull(env, "Weak", seed=1, beta=1.77)
+    assert 1 < b["ci"][0] < 1.3
     out = _ok(_call(env.token[A], "optimal_replacement", {"model_id": weak, **costs}))
     assert out["beneficial"] is True
     su = out["shape_uncertainty"]
     assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
     assert su["at_beta_lower"]["savings"] < 0.5 * out["savings"] < su["at_beta_upper"]["savings"]
-    assert "reaches down to 1.09" in out["uncertainty_note"] and "weakly" in out["uncertainty_note"]
+    assert "reaches down to 1.26" in out["uncertainty_note"] and "weakly" in out["uncertainty_note"]
 
-    random_ish, b = _fitted_weibull(env, "Random-ish", seed=3, beta=1.77)  # CI ≈ [0.91, 2.23]
+    # β ≈ 1.49, log-scale CI ≈ [0.97, 2.31] (#265: seed 3's interval no longer reaches 1).
+    random_ish, b = _fitted_weibull(env, "Random-ish", seed=13, beta=1.77)
     assert b["ci"][0] < 1 < b["ci"][1]
     out = _ok(_call(env.token[A], "optimal_replacement", {"model_id": random_ish, **costs}))
     assert "includes 1" in out["uncertainty_note"]

@@ -221,7 +221,8 @@ def get_rbd(
     rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
     if rbd is None or rbd.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
-    return JSONResponse(content={**_summary(rbd, ctx), "graph": rbd.graph})
+    # Its unit in the one spelling the app shows (#265); the stored one is kept.
+    return JSONResponse(content={**_summary(rbd, ctx), "graph": rbds_service.display_graph(rbd.graph)})
 
 
 @router.patch("/rbds/{rbd_id}")
@@ -320,8 +321,9 @@ def exact_payload(session, graph: dict, t_max, state, doc, writable: bool, resol
     # The referenced saved models' fits are in the key, so a refit makes a
     # saved result stale (#92).
     models = rbds_service.model_fingerprints(session, graph, resolve_owners)
-    key = rbds_service.exact_cache_key(graph, t_max, state, models)
-    hit = rbds_service.cached_exact(doc, key, resolve_owners)
+    keys = rbds_service.exact_cache_keys(doc, graph, t_max, state, models)
+    key = keys[0]
+    hit = rbds_service.cached_exact(doc, keys, resolve_owners)
     if hit is not None:
         return {**hit, "exact": {**(hit.get("exact") or {}), "cached": True}}
     result = rbds_service.analyze_exact(session, graph, resolve_owners, t_max, state)
@@ -426,8 +428,9 @@ def availability_payload(
 
     # The simulation: the saved one (from new only), or a run.
     models = rbds_service.model_fingerprints(session, graph, resolve_owners)
-    key = rbds_service.availability_cache_key(graph, t_max, models)
-    cached = rbds_service.cached_availability(doc, key) if state is None else None
+    keys = rbds_service.availability_cache_keys(doc, graph, t_max, models)
+    key = keys[0]
+    cached = rbds_service.cached_availability(doc, keys) if state is None else None
     wanted = bool(force) or (entitled if simulate is None else bool(simulate))
     run = entitled and wanted and (cached is None or bool(force))
     # A free quick run (#147): asked for, allowed here, and nothing saved to show.

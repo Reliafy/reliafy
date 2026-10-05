@@ -187,6 +187,41 @@ def models_for_dataset(db, dataset_id: str, owner_id: str, hidden=frozenset()) -
     ]
 
 
+# Every saved model kind that keeps a reference to the dataset it was fitted
+# to, and refits from it (life and regression models, ALT, recurrent and
+# degradation models).
+DEPENDENT_COLLECTIONS = (
+    ("models", "model"),
+    ("alt_models", "ALT model"),
+    ("recurrent_models", "recurrent model"),
+    ("degradation_models", "degradation model"),
+)
+
+
+def dependents_for_dataset(db, dataset_id: str, owner_id, hidden=frozenset()) -> list[dict]:
+    """``[{kind, collection, id, name}]``: every saved model of any kind fitted
+    to this dataset that this owner can see — what deleting the dataset would
+    leave unable to refit (#265). Hidden samples are left out."""
+    out = []
+    for collection, kind in DEPENDENT_COLLECTIONS:
+        for d in db[collection].find(
+            {"dataset_id": dataset_id, "owner_id": {"$in": access.owner_in(owner_id)}}
+        ).sort("created_at", -1):
+            if d["_id"] in hidden:
+                continue
+            out.append({"kind": kind, "collection": collection, "id": d["_id"], "name": d.get("name") or ""})
+    return out
+
+
+def dependents_message(dependents: list[dict]) -> str:
+    """"Dataset is used by 2 model(s): “Seal ALT” (ALT model), …" — the
+    refusal both delete paths give."""
+    shown = ", ".join(f"“{d['name']}”" + ("" if d["kind"] == "model" else f" ({d['kind']})")
+                      for d in dependents[:3])
+    more = "" if len(dependents) <= 3 else f" and {len(dependents) - 3} more"
+    return f"Dataset is used by {len(dependents)} model(s): {shown}{more}."
+
+
 def update_details(db, dataset_id: str, owner_id: str, name: str | None = None,
                    notes: str | None = None) -> Dataset | None:
     """Rename an owned dataset and/or set its notes (``notes=""`` clears them).

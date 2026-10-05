@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
+from backend.units import unit_in_text
 from repyability.non_repairable import NonRepairable
 from surpyval import KaplanMeier, logrank
 
@@ -178,7 +179,7 @@ def optimal_replacement(
             "replace on failure (run-to-failure)."
         )
     elif beneficial:
-        unit_s = f" {unit}" if unit else ""
+        unit_s = f" {unit_in_text(unit)}" if unit else ""
         recommendation = (
             f"Replace preventively at about {fmt_num(t_opt)}{unit_s}. "
             f"This lowers the long-run cost rate by {savings:.0%} versus "
@@ -412,7 +413,7 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
     valid = np.isfinite(diff)
     g, d = grid[valid], diff[valid]
     la, lb = a["label"], b["label"]
-    us = f" {unit}" if unit else ""
+    us = f" {unit_in_text(unit)}" if unit else ""
     cross = None
 
     # Ignore differences smaller than 1 reliability-point so near-equal regions
@@ -484,7 +485,7 @@ def failure_finding(
         raise StrategyError("Couldn't compute a finite MTTF for this model.")
 
     interval = 2.0 * (1.0 - availability) * mttf
-    unit_s = f" {unit.strip()}" if unit and unit.strip() else ""
+    unit_s = f" {unit_in_text(unit)}" if unit and unit.strip() else ""
     return {
         "distribution": name,
         "unit": (unit or "").strip(),
@@ -650,7 +651,7 @@ def _failures_phrase(r: int) -> str:
 
 
 def _time_phrase(t: float, unit: str) -> str:
-    return f"{fmt_num(t)} {unit}" if unit else fmt_num(t)
+    return f"{fmt_num(t)} {unit_in_text(unit)}" if unit else fmt_num(t)
 
 
 def _multiple_phrase(k: float) -> str:

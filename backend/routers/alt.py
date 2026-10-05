@@ -11,6 +11,7 @@ from backend import alt as alt_fit
 from backend.db import get_session
 from backend.http_limits import read_upload
 from backend.fitting import FitError
+from backend.units import canonical_unit
 from backend.services import datasets as datasets_service
 from backend.services import alt as alt_service
 from backend.services import billing as billing_service
@@ -25,7 +26,8 @@ router = APIRouter(prefix="/api")
 
 
 def _spec_from_form(x, s1, s2, distribution, life_model, unit, *, c=None, n=None,
-                    xl=None, xr=None, tl=None, tr=None, s1_label=None, s2_label=None) -> dict:
+                    xl=None, xr=None, tl=None, tr=None, s1_label=None, s2_label=None,
+                    s1_unit=None, s2_unit=None) -> dict:
     # The failure time ``x``, or inspection data's interval ``xl``/``xr``
     # (#237); build_inputs checks it's one or the other.
     mapping = {"x": x} if x else {}
@@ -34,13 +36,16 @@ def _spec_from_form(x, s1, s2, distribution, life_model, unit, *, c=None, n=None
             mapping[key] = val
     stress_cols = [s1] + ([s2] if s2 else [])
     stress_labels = [s1_label or s1] + ([s2_label or s2] if s2 else [])
+    # Optional stress units (#265): "K", "kV", … — kept only when one is given.
+    stress_units = [(s1_unit or "").strip()] + ([(s2_unit or "").strip()] if s2 else [])
     return {
         "mapping": mapping,
         "stress_cols": stress_cols,
         "stress_labels": stress_labels,
+        **({"stress_units": stress_units} if any(stress_units) else {}),
         "distribution_id": (distribution or "weibull"),
         "life_model_id": (life_model or "arrhenius"),
-        "unit": (unit or "").strip(),
+        "unit": canonical_unit(unit),
     }
 
 
@@ -112,6 +117,8 @@ def fit_preview(
     distribution: str = Form(default="weibull"),
     life_model: str = Form(default="arrhenius"),
     unit: str | None = Form(default=None),
+    s1_unit: str | None = Form(default=None),
+    s2_unit: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -120,12 +127,14 @@ def fit_preview(
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(x, s1, s2, distribution, life_model, unit,
                                c=c, n=n, xl=xl, xr=xr, tl=tl, tr=tr,
-                               s1_label=s1_label, s2_label=s2_label)
+                               s1_label=s1_label, s2_label=s2_label,
+                               s1_unit=s1_unit, s2_unit=s2_unit)
         df = datasets_service.load_dataframe(dataset)
         payload, _ = alt_fit.fit(
             df, spec["mapping"], spec["stress_cols"],
             distribution_id=spec["distribution_id"], life_model_id=spec["life_model_id"],
             unit=spec["unit"], stress_labels=spec["stress_labels"],
+            stress_units=spec.get("stress_units"),
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
@@ -156,6 +165,8 @@ def save_model(
     distribution: str = Form(default="weibull"),
     life_model: str = Form(default="arrhenius"),
     unit: str | None = Form(default=None),
+    s1_unit: str | None = Form(default=None),
+    s2_unit: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -167,7 +178,8 @@ def save_model(
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(x, s1, s2, distribution, life_model, unit,
                                c=c, n=n, xl=xl, xr=xr, tl=tl, tr=tr,
-                               s1_label=s1_label, s2_label=s2_label)
+                               s1_label=s1_label, s2_label=s2_label,
+                               s1_unit=s1_unit, s2_unit=s2_unit)
         doc = alt_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "alt_models", doc.id, ctx)
     except FitError as exc:

@@ -1,9 +1,11 @@
+import { unitInText } from "./unitText.js";
+
 const fmt = (v) =>
   v == null ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 });
 
 // Presentational renderer for a failure-finding-interval result.
 export default function FfiResult({ result }) {
-  const u = result?.unit ? ` ${result.unit}` : "";
+  const u = result?.unit ? ` ${unitInText(result.unit)}` : "";
   return (
     <>
       <div className="strategy-reco">

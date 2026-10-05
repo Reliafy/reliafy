@@ -285,6 +285,9 @@ export default function AltNewPage() {
                   <Select value={s.col} onChange={(v) => setStressAt(j, { col: v })} options={colOpts} placeholder="column…" />
                   <input className="alt-map-label" type="text" placeholder="label (optional)"
                          value={s.label} onChange={(e) => setStressAt(j, { label: e.target.value })} />
+                  <input className="alt-map-label alt-map-unit" type="text" placeholder="unit, e.g. K"
+                         aria-label={`Stress ${j + 1} unit (optional)`} maxLength={24}
+                         value={s.unit || ""} onChange={(e) => setStressAt(j, { unit: e.target.value })} />
                 </div>
               ))}
               <div className="alt-map-row">

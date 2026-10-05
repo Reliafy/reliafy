@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Modal from "./Modal.jsx";
+import { unitInText } from "./unitText.js";
 
 // Diagram-level costs of a repairable RBD (#99): what an hour (unit) of system
 // downtime costs — lost production — and how long the system is owned, for the
@@ -73,7 +74,7 @@ export default function RbdCostsModal({ initial, unit, onClose, onSubmit }) {
           {!discountOk && <li>The discount rate must be a percentage a year, from 0 to 100.</li>}
           {discountOk && !calendarOk && (
             <li>A discount rate is a percentage a year, so it needs the diagram in a calendar time unit
-              (hours, days, weeks, months or years){unit ? `, not ${unit}` : ""}.</li>
+              (hours, days, weeks, months or years){unit ? `, not ${unitInText(unit)}` : ""}.</li>
           )}
         </ul>
       )}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getModelValidation } from "../api.js";
+import { unitInText } from "./unitText.js";
 
 // "How good is this model?" for regression models (#176): Harrell's C, the
 // integrated Brier score against one Kaplan-Meier curve for every unit, and
@@ -28,7 +29,7 @@ export default function ModelValidation({ validation, modelId, unit }) {
   }, [needsFetch, modelId]);
 
   const v = validation || fetched;
-  const u = unit ? ` ${unit}` : "";
+  const u = unit ? ` ${unitInText(unit)}` : "";
 
   let body;
   if (!v && needsFetch && !error) {

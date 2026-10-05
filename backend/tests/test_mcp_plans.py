@@ -493,7 +493,7 @@ def test_save_model_from_parameters(env):
         "params": [{"name": "beta", "value": 2.5}, {"name": "alpha", "value": 1200}],
         "dataset_id": ds["id"], "notes": "surpyval.Weibull.fit, MLE"}))
     mid = saved["model_id"]
-    assert saved["distribution_id"] == "weibull" and saved["unit"] == "hours"
+    assert saved["distribution_id"] == "weibull" and saved["unit"] == "Hours"
     assert saved["params"] == [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
     assert saved["url"].endswith(f"/modelling/m/{mid}") and saved["dataset_id"] == ds["id"]
     ref = surpyval.Weibull.from_params([1200, 2.5])

@@ -119,7 +119,7 @@ def test_instrument_air_design_matches_app(tmp_path):
                 assert got == pytest.approx(value, abs=1e-9)
     # Matches the app to the printed precision (RePyability 0.11's exact
     # cold-standby sums moved it from 9,206.01 h to 9,205.98 h; both agree).
-    assert f"MTTF: {app['mttf']:,.2f} Hours" in proc.stdout
+    assert f"MTTF: {app['mttf']:,.2f} hours" in proc.stdout
 
 
 def test_pump_station_matches_app_including_importance(tmp_path):

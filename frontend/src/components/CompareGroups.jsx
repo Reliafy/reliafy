@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Select from "./Select.jsx";
 import Plot from "./Plot.jsx";
 import { compareGroups } from "../api.js";
+import { unitInText } from "./unitText.js";
 
 // Compare groups within one dataset (#175): split by a column, overlay each
 // group's Kaplan–Meier curve, test the difference (log-rank; Gray's test per
@@ -156,7 +157,7 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
 }
 
 function CompareGroupsResult({ result }) {
-  const u = result.unit ? ` ${result.unit}` : "";
+  const u = result.unit ? ` ${unitInText(result.unit)}` : "";
   const colorOf = Object.fromEntries(result.groups.map((g, i) => [g.group, COLORS[i % COLORS.length]]));
   const diffs = Object.fromEntries(result.rmst_differences.map((d) => [d.group, d]));
   const v = result.verdict;

@@ -35,6 +35,7 @@ import pandas as pd
 from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
 from backend.services import rbd_repeats
 from backend.services.method_labels import generic_engine_fields, hide_engine_names, route_reason
+from backend.units import normalize_unit, unit_in_text
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 from repyability.rbd.repairable_rbd import RepairableRBD
@@ -906,29 +907,6 @@ def validate_graph(
     }
 
 
-# Spellings of the same time unit, so "Hours", "hrs" and "h" compare equal.
-_UNIT_ALIASES = {
-    "h": "hour", "hr": "hour", "hrs": "hour", "hours": "hour",
-    "s": "second", "sec": "second", "secs": "second", "seconds": "second",
-    "min": "minute", "mins": "minute", "minutes": "minute",
-    "d": "day", "days": "day",
-    "wk": "week", "wks": "week", "weeks": "week",
-    "mo": "month", "mon": "month", "mth": "month", "mths": "month", "months": "month",
-    "y": "year", "yr": "year", "yrs": "year", "years": "year",
-    "cycles": "cycle", "kms": "km", "kilometre": "km", "kilometres": "km",
-    "kilometer": "km", "kilometers": "km", "miles": "mile", "mi": "mile",
-}
-
-
-def normalize_unit(unit) -> Optional[str]:
-    """A comparable form of a time unit, or None when it is blank/unspecified
-    (unknown — never treated as a mismatch)."""
-    key = str(unit or "").strip().lower().rstrip(".")
-    if not key or key in ("-", "unit", "units", "unspecified", "none", "n/a"):
-        return None
-    return _UNIT_ALIASES.get(key, key)
-
-
 def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
     """Warn when a block's saved life model was fitted in a different time unit
     from the diagram's. Parameters are read in the diagram's unit, so e.g. a
@@ -949,10 +927,11 @@ def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
             continue
         label = (labels or {}).get(node.get("id")) or data.get("label") or node.get("id")
         name = f" “{model['name']}”" if model.get("name") else ""
+        in_diagram = unit_in_text(graph.get("unit"))
         out.append(
-            f"“{label}” uses the saved model{name}, fitted in {str(model.get('unit')).strip()}, but the "
-            f"diagram's unit is {str(graph.get('unit')).strip()} — its parameters are read as "
-            f"{str(graph.get('unit')).strip()}, not converted. Use a model in the diagram's unit, or "
+            f"“{label}” uses the saved model{name}, fitted in {unit_in_text(model.get('unit'))}, but the "
+            f"diagram's unit is {in_diagram} — its parameters are read as "
+            f"{in_diagram}, not converted. Use a model in the diagram's unit, or "
             "change the diagram's unit.")
     return out
 
