@@ -917,6 +917,15 @@ _UNIT_ALIASES = {
     "y": "year", "yr": "year", "yrs": "year", "years": "year",
     "cycles": "cycle", "kms": "km", "kilometre": "km", "kilometres": "km",
     "kilometer": "km", "kilometers": "km", "miles": "mile", "mi": "mile",
+    "operations": "operation", "ops": "operation", "rounds": "round",
+}
+
+# The one spelling a known unit is stored and shown in (#265): the app's unit
+# pickers' (RbdBuilder TIME_UNITS, ColumnMapper COMMON_UNITS).
+_CANONICAL_UNITS = {
+    "second": "Seconds", "minute": "Minutes", "hour": "Hours", "day": "Days", "week": "Weeks",
+    "month": "Months", "year": "Years", "cycle": "Cycles", "km": "Kilometres", "mile": "Miles",
+    "operation": "Operations", "round": "Rounds",
 }
 
 
@@ -927,6 +936,15 @@ def normalize_unit(unit) -> Optional[str]:
     if not key or key in ("-", "unit", "units", "unspecified", "none", "n/a"):
         return None
     return _UNIT_ALIASES.get(key, key)
+
+
+def canonical_unit(unit) -> str:
+    """A diagram's unit in its one stored and shown spelling (#265): a known
+    unit as the app's unit picker spells it ("hours", "hrs", "h" → "Hours";
+    "km" → "Kilometres"), anything else as typed (trimmed), blank as blank."""
+    text = str(unit or "").strip()
+    key = normalize_unit(text)
+    return _CANONICAL_UNITS.get(key, text) if key else text
 
 
 def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:

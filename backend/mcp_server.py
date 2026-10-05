@@ -1992,7 +1992,7 @@ def _rbd_brief(rbd) -> dict:
         "id": rbd.id,
         "name": rbd.name,
         "repairable": bool(g.get("repairable")),
-        "unit": g.get("unit") or "",
+        "unit": rbd_analysis.canonical_unit(g.get("unit")),  # one spelling per known unit (#265)
         "n_blocks": sum(1 for n in g.get("nodes") or [] if n.get("type") not in ("input", "output")),
         "is_sample": samples_service.is_sample(rbd.owner_id),
         "updated_at": rbd.updated_at.isoformat(),
@@ -2004,7 +2004,10 @@ def _get_rbd(db, uid: str, rbd_id: str):
     rbd = rbds_service.get_rbd(db, rbd_id, _owners(uid))
     if rbd is None:
         raise ToolError("RBD not found.")
-    return rbd
+    # Its unit as shown (#265: "hours" reads "Hours"); the stored spelling is
+    # kept on a save, so saved results stay matched.
+    shown = rbds_service.display_graph(rbd.graph)
+    return rbd if shown is rbd.graph else rbd.model_copy(update={"graph": shown})
 
 
 @_tool("list_rbds", _READ, "List RBDs")
@@ -2163,6 +2166,17 @@ class StageComponent(BaseModel):
     repair_distribution: Optional[str] = Field(None, description="Repairable RBDs only: time-to-repair distribution id.")
     repair_params: Optional[list[Param]] = None
     placeholder: bool = Field(False, description="True ONLY for guessed starting-point values.")
+    # As a graph-form node (and edit_rbd update_node) takes them (#265).
+    costs: Optional[BlockCosts] = Field(None, description="Repairable RBDs only: the block's costs.")
+    preventive: Optional[Preventive] = Field(None, description=(
+        "Repairable RBDs only: scheduled (age/block) or condition-based replacement. Not with inspection."))
+    inspection: Optional[ProofTest] = Field(None, description=(
+        "Repairable RBDs only: failures HIDDEN until a proof test finds them (e.g. a safety function's "
+        "channels). Not with preventive."))
+
+
+#: A stage component's block settings, copied onto its node as given.
+_STAGE_BLOCK_KEYS = ("costs", "preventive", "inspection")
 
 
 class Stage(BaseModel):
@@ -2185,12 +2199,28 @@ class Stage(BaseModel):
 def _stage_graph(db, uid: str, stages: list[Stage], repairable: bool) -> dict:
     from backend.services.reliability_agent import _build_rbd_graph
 
-    graph = _build_rbd_graph(db, uid, [s.model_dump(exclude_none=True) for s in stages], repairable)
+    for si, stage in enumerate(stages):
+        for comp in stage.components:
+            given = [k for k in _STAGE_BLOCK_KEYS if getattr(comp, k) is not None]
+            if given and not repairable:
+                raise ToolError(f"“{comp.label}”: {', '.join(given)} apply to repairable diagrams only — set "
+                                "repairable=true.")
+            if comp.preventive is not None and comp.inspection is not None:
+                raise ToolError(f"“{comp.label}”: give preventive (scheduled replacement) or inspection (proof "
+                                "tests), not both.")
+    stage_dicts = [{**s.model_dump(exclude_none=True),
+                    "components": [c.model_dump(exclude_none=True, exclude=set(_STAGE_BLOCK_KEYS))
+                                   for c in s.components]} for s in stages]
+    graph = _build_rbd_graph(db, uid, stage_dicts, repairable)
     for si, stage in enumerate(stages):
         for ci, comp in enumerate(stage.components):
+            node = next(n for n in graph["nodes"] if n["id"] == f"s{si}c{ci}")
             if comp.placeholder:
-                node = next(n for n in graph["nodes"] if n["id"] == f"s{si}c{ci}")
                 node["data"]["model"]["placeholder"] = True
+            for key in _STAGE_BLOCK_KEYS:
+                value = getattr(comp, key)
+                if value is not None:
+                    node["data"][key] = value.model_dump(exclude_none=True)
     return graph
 
 
@@ -2199,7 +2229,8 @@ def create_rbd(
     ctx: Context,
     name: Annotated[str, Field(min_length=1, description="A short name for the diagram.")],
     unit: Annotated[str, Field(description="The diagram's time unit ('Hours', 'Days', 'Cycles', …); every "
-                                           "model's parameters are read in it.")] = "Hours",
+                                           "model's parameters are read in it. A known unit is stored as the "
+                                           "app spells it ('hrs' → 'Hours'); others as typed.")] = "Hours",
     repairable: Annotated[bool, Field(description="True = a repairable system analysed for AVAILABILITY (uptime); "
                                                   "every block then also needs a repair model. False = reliability "
                                                   "over time.")] = False,
@@ -2248,10 +2279,14 @@ def create_rbd(
     Repairable diagrams: every block needs `repair` (graph form) or repair_distribution + repair_params
     (stages form), e.g. a lognormal time to repair. Blocks may carry costs, preventive (age/block/condition-
     based replacement), inspection (hidden failures with proof tests: staggered via offset, imperfect via
-    coverage + full_test), maintenance_group and crew_priority (graph form; add them to a stages-form diagram
-    with edit_rbd update_node); the diagram repair_crews, maintenance_groups, safety_function, target_sil and
-    costs. Common-cause groups (edit_rbd add_ccf) enter a safety function's PFDavg.
-    Returns the node ids (the stages form generates them); change the diagram later with edit_rbd."""
+    coverage + full_test), maintenance_group and crew_priority (graph form; a stage component takes costs,
+    preventive and inspection too, the rest are added with edit_rbd update_node); the diagram repair_crews,
+    maintenance_groups, safety_function, target_sil and costs. A safety function needs its proof tests
+    (inspection) — without them its PFDavg treats every failure as revealed at once. Common-cause groups
+    (edit_rbd add_ccf) enter a safety function's PFDavg.
+    Returns the node ids (the stages form generates them) and structure_summary, the diagram in one line
+    (e.g. "PLC → (Pump A ∥ Pump B)"; 2-of-3(…) for voting) — check it matches what the user described; change
+    the diagram later with edit_rbd."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     owners = _owners(uid)
@@ -2305,12 +2340,33 @@ def _diagram_settings(repair_crews, maintenance_groups, safety_function, target_
     return out
 
 
+def _structure_summary(graph: dict) -> str:
+    """The diagram in one line (#265), e.g. "PLC → (Pump A ∥ Pump B)", so a
+    wrong structure shows at once — as the import preview gives it (#195).
+    A bridge (or other wiring that isn't series-parallel) says so instead."""
+    try:
+        line = rbd_structure.structure_line(graph)
+    except Exception:  # noqa: BLE001 - a summary never fails the write
+        line = None
+    if line:
+        return line
+    nodes = graph.get("nodes") or []
+    n_blocks = sum(1 for n in nodes if n.get("type") not in ("input", "output", "knode"))
+    if not n_blocks:
+        return "No blocks yet."
+    if n_blocks > rbd_structure.MAX_BLOCKS:
+        return f"{n_blocks} blocks: too many to write in one line — read the edges with get_rbd."
+    return (f"Not series-parallel (e.g. a bridge): {n_blocks} blocks, {len(graph.get('edges') or [])} connections "
+            "— read the edges with get_rbd to check the wiring.")
+
+
 def _rbd_outline(graph: dict, check: dict, include_graph: bool) -> dict:
     """What a write tool returns about a diagram: validation warnings,
     placeholders and a concise node list ({id, type, label}) — the full
     compact graph only on request (get_rbd reads it any time)."""
     out = {
-        "warnings": check.get("warnings") or [],
+        "structure_summary": _structure_summary(graph),
+        "warnings": [availability_answer.agent_text(w) for w in check.get("warnings") or []],
         "placeholders": rbd_graph.placeholder_labels(graph),
         "nodes": [{"id": n.get("id"), "type": n.get("type"), "label": (n.get("data") or {}).get("label")}
                   for n in graph.get("nodes") or []],
@@ -2509,7 +2565,8 @@ def edit_rbd(
     - add_ccf {members, beta, basis?, id?} / remove_ccf {id} — common-cause (beta-factor) groups (basis 'rate',
       the default, for lifetime analysis); in a repairable diagram they enter a safety function's PFDavg.
     Removing a node drops it from its common-cause group (and the group if under 2 members remain).
-    Changing connections re-lays out the diagram automatically. Returns one line per op, the validation
+    Changing connections re-lays out the diagram automatically. Returns one line per op, structure_summary
+    (the diagram after the edit in one line, e.g. "PLC → (Pump A ∥ Pump B)"), the validation
     warnings this edit introduced (warnings_unchanged counts the rest), the node ids, and simulation_note when
     the edit puts the diagram's saved availability simulation out of date; read the full graph with get_rbd."""
     user, db = _caller(ctx), _db()
@@ -2555,7 +2612,8 @@ def edit_rbd(
     # diagram was created, cloned or last edited, and repeating them on every
     # small edit would cost more tokens than the edit itself.
     try:
-        known = set(rbds_service.validate_graph(db, rbd.graph or {}, owners).get("warnings") or [])
+        known = {availability_answer.agent_text(w)
+                 for w in rbds_service.validate_graph(db, rbd.graph or {}, owners).get("warnings") or []}
     except Exception:  # pragma: no cover - a malformed saved draft: report everything
         known = set()
     unchanged = [w for w in out["warnings"] if w in known]
@@ -2564,7 +2622,7 @@ def edit_rbd(
         out["warnings_unchanged"] = len(unchanged)
     # A saved availability simulation that matched the diagram before this
     # edit no longer does: say so once, briefly.
-    saved_sim = db.rbds.find_one({"_id": rbd.id}, {"availability_cache": 1})
+    saved_sim = db.rbds.find_one({"_id": rbd.id}, {"availability_cache": 1, "graph.unit": 1})
     if rbds_service.availability_outdated_by(saved_sim, rbd.graph or {}, graph, db, owners):
         out["simulation_note"] = (
             ("Saving this edit would put" if dry_run else "This edit puts")
@@ -2791,6 +2849,83 @@ def _next_failure_summary(nf: dict) -> dict:
     return {"next_failure": out, "mean_residual_life": mrl}
 
 
+#: What analyze_rbd's summary_only keeps (#265), besides the head fields.
+_SUMMARY_KEYS = (
+    "available", "kind", "unit",
+    # Non-repairable.
+    "mttf", "b_life", "reliability_at", "conditional_age", "from", "reliability_now", "mean_residual_life",
+    "design_life",
+    # Repairable.
+    "availability", "steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
+    "failure_frequency", "has_simulation", "cached", "needs_simulation", "code", "reason",
+    "proof_test_note", "importance_note", "warnings",
+)
+_SUMMARY_EXACT = ("status", "from", "window", "unit", "mission_availability", "availability_min",
+                  "expected_failures", "expected_outages", "downtime", "cost")
+_SUMMARY_SAFETY = ("common_cause_included", "pfd_avg", "sil", "target_sil", "meets_target", "basis", "proof_tests",
+                   "proof_tested_blocks", "sil_optimistic", "warning")
+_SUMMARY_COSTS = ("cost_rate", "total_cost", "horizon", "present_value")
+_TOP_BLOCKS = 3
+
+
+def _top_importance(out: dict) -> Optional[dict]:
+    """The blocks that matter most (#265): by Fussell–Vesely — their share of
+    the system's unreliability (unavailability) — at the importance time."""
+    imp = out.get("importance")
+    if not isinstance(imp, dict) or not imp:
+        return None
+    if out.get("kind") == "non_repairable":
+        for measure in ("fussell_vesely", "criticality", "birnbaum"):
+            values = imp.get(measure)
+            if isinstance(values, dict) and values:
+                rows = [(label, v) for label, v in values.items() if isinstance(v, (int, float))]
+                break
+        else:
+            return None
+        head = {"measure": measure, **({"time": imp["time"]} if "time" in imp else {})}
+    else:
+        for measure in ("fussell_vesely", "criticality", "birnbaum"):
+            rows = [(r.get("label") or nid, r.get(measure)) for nid, r in imp.items()
+                    if isinstance(r, dict) and isinstance(r.get(measure), (int, float))]
+            if rows:
+                break
+        else:
+            return None
+        head = {"measure": measure}
+    rows.sort(key=lambda r: -r[1])
+    return {**head, "blocks": [{"label": label, "value": v} for label, v in rows[:_TOP_BLOCKS]]}
+
+
+def _summary_only(out: dict) -> dict:
+    """analyze_rbd's summary_only answer (#265): the headline figures without
+    the curves, full importance tables and route details."""
+    head = ("rbd_id", "name", "url", "placeholders", "warning")
+    lean: dict[str, Any] = {k: out[k] for k in head if k in out}
+    lean.update({k: out[k] for k in _SUMMARY_KEYS if k in out})
+    if isinstance(out.get("safety"), dict):
+        lean["safety"] = {k: out["safety"][k] for k in _SUMMARY_SAFETY if k in out["safety"]}
+    if isinstance(out.get("common_cause"), dict):
+        lean["common_cause"] = {k: v for k, v in out["common_cause"].items() if k != "note"}
+    if isinstance(out.get("ccf"), dict):  # non-repairable common cause
+        lean["ccf"] = {k: v for k, v in out["ccf"].items()
+                       if k not in ("curve_without", "curve_omitted")}
+    if isinstance(out.get("exact"), dict):
+        lean["exact"] = {k: out["exact"][k] for k in _SUMMARY_EXACT if k in out["exact"]}
+    if isinstance(out.get("costs"), dict):
+        lean["costs"] = {k: out["costs"][k] for k in _SUMMARY_COSTS if k in out["costs"]}
+    if isinstance(out.get("confidence"), dict):
+        lean["confidence"] = {k: out["confidence"].get(k) for k in ("level", "mttf", "b_life")}
+    if isinstance(out.get("simulation"), dict):
+        lean["simulation"] = {k: v for k, v in out["simulation"].items() if k in ("available", "state", "code",
+                                                                                 "job_id")}
+    top = _top_importance(out)
+    if top:
+        lean["top_importance"] = top
+    lean["summary_only"] = ("Headline figures only: call analyze_rbd again without summary_only for the curves, "
+                            "the full importance tables, cut sets and how each figure was computed.")
+    return lean
+
+
 class BlockState(BaseModel):
     failed: Optional[bool] = Field(None, description=(
         "Non-repairable: true if the block has failed (it stays failed)."))
@@ -2831,7 +2966,9 @@ def analyze_rbd(
     ctx: Context,
     rbd_id: Annotated[str, Field(description="An RBD id from list_rbds or create_rbd.")],
     times: Annotated[Optional[list[float]], Field(max_length=200, description=(
-        "Non-repairable: times (diagram unit) to report system reliability at."))] = None,
+        "Non-repairable: times (diagram unit) to report system reliability at, each evaluated exactly, in "
+        "reliability_at. They don't change `curve`, which is always ~21 points over an automatic axis (sized to "
+        "the system; t_max sets its end): to read the curve at given times, pass them here."))] = None,
     t_max: Annotated[Optional[float], Field(description=(
         "Non-repairable: end of the time axis (default sized to the system; with current_state, to its "
         "remaining life). Repairable: the window and simulated horizon (default long enough to settle; with "
@@ -2869,14 +3006,23 @@ def analyze_rbd(
     discount_rate: Annotated[Optional[float], Field(ge=0, le=100, description=(
         "Repairable with costs: price costs.total_cost as a present value at this percent a year (7 = 7%; 0 = "
         "undiscounted) instead of the diagram's own discount rate. Nothing is saved or re-run."))] = None,
+    summary_only: Annotated[bool, Field(description=(
+        "Only the headline figures: availability (or reliability_at), MTTF or mean up/down time, PFDavg and SIL, "
+        "B-lives, the top blocks by importance, costs' totals and the warnings — no curves, full importance "
+        "tables or how each figure was computed. For a quick answer, or a big repairable diagram."))] = False,
 ) -> dict[str, Any]:
     """Analyse a saved RBD. Non-repairable diagrams: system reliability curve, MTTF, B-lives (B10/B50),
     component importance (Birnbaum, Fussell–Vesely, RAW/RRW) and minimal cut/path sets — from new, or from
     now with current_state (failed and aged blocks: the remaining life); target_reliability adds the design
-    life (the time to that reliability) and confidence adds intervals from fitted blocks. Repairable
+    life (the time to that reliability) and confidence adds intervals from fitted blocks; `curve` is ~21
+    points on an automatic axis, and the reliability at chosen times comes from `times` (in reliability_at).
+    summary_only gives just the headline figures (any diagram). Repairable
     diagrams, on every plan: the exact long-run availability, mean up/down time and failure frequency, how
     the long-run values were found (long_run_method: exact / numerical / simulated, e.g. the repair crews'
-    Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety), and (in
+    Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety: whether common
+    cause is in it, common_cause_included; with no proof-tested block, a warning that the PFDavg and SIL are
+    optimistic — and with common cause in the PFDavg the headline `availability` is the one with it,
+    without_common_cause alongside), proof_test_note when A(t) saw-tooths with proof tests, and (in
     `exact`) the availability over time A(t), mission availability and the window's expected system
     failures, outages, downtime and cost — each with its method (exact / numerical; no simulation) — from
     new or from current_state. A priced diagram adds `costs`: the long-run cost rate, and the total cost of
@@ -3002,7 +3148,8 @@ def analyze_rbd(
                 }
             else:
                 out["simulation"] = {"available": bool(payload.get("has_simulation")), "state": sim_state}
-            return availability_answer.finish(out, payload)
+            done = availability_answer.finish(out, payload)
+            return _summary_only(done) if summary_only else done
 
         state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
                  if current_state else None)
@@ -3014,7 +3161,7 @@ def analyze_rbd(
         if result.get("warnings"):
             # RePyability's common-cause warnings, and why the MTTF is missing (#210).
             out["warnings"] = list(dict.fromkeys([*(head.get("warnings") or []), *result["warnings"]]))
-        return out
+        return _summary_only(out) if summary_only else out
     except (ToolError, *_USER_ERRORS, models_service.ModelNotFound, fitting.ModelNotFound,
             rbds_service.RbdNotFound):
         raise
@@ -3120,13 +3267,79 @@ _COSTS_HOW = {
 }
 
 
-def _cheapest_design_hint(message: str) -> str:
+#: The app's pointers in a refusal, which an agent can't follow (#265): it
+#: gets the edit_rbd ops instead.
+_APP_POINTERS = re.compile(r"\s*\((?:in its Cost & maintenance section|double-click (?:it|a block) → Cost & "
+                           r"maintenance)\)")
+
+
+def _without_app_pointers(message: str) -> str:
+    return _APP_POINTERS.sub("", message)
+
+
+def _component_ids(graph: Optional[dict], limit: int = 8) -> str:
+    ids = [n.get("id") for n in (graph or {}).get("nodes") or [] if n.get("type") == "component"]
+    return ", ".join(ids[:limit]) + (f" (+{len(ids) - limit} more)" if len(ids) > limit else "")
+
+
+def _cheapest_design_hint(message: str, graph: Optional[dict] = None) -> str:
     """cheapest_design's refusal, with the edit_rbd op that supplies what's
-    missing."""
+    missing (and no pointer into the app)."""
+    message = _without_app_pointers(message)
     if "purchase price" in message:
-        return f"{message} {_COSTS_HOW['acquisition']}"
+        ids = _component_ids(graph)
+        return f"{message} {_COSTS_HOW['acquisition']}" + (f" Component block ids: {ids}." if ids else "")
     if "the horizon" in message:
         return f"{message} {_COSTS_HOW['horizon']}"
+    return message
+
+
+#: Stand-ins in the edit_rbd ops a refusal gives, for the values to fill in.
+_TEST_COST = "<cost per test>"
+_DOWNTIME_RATE = "<cost per unit time the whole system is down>"
+
+
+def _ops_text(ops: list[dict]) -> str:
+    return json.dumps(ops, ensure_ascii=False)
+
+
+def _intervals_hint(message: str, graph: dict) -> str:
+    """optimise_maintenance_intervals' refusal (#265) with the exact edit_rbd
+    ops that supply what's missing — field names and the blocks' own
+    schedules (update_node replaces a whole schedule, so each op carries it) —
+    and no pointer into the app."""
+    from backend.services import rbd_intervals
+
+    message = _without_app_pointers(message)
+    found = rbd_intervals.maintained(graph)
+    nodes = {n.get("id"): (n.get("data") or {}) for n in graph.get("nodes") or []}
+
+    def schedule_op(row: dict, key: str, extra: dict, drop=()) -> dict:
+        own = (nodes.get(row["id"]) or {}).get(key)
+        spec = {k: v for k, v in (own if isinstance(own, dict) else {}).items()
+                if v not in (None, "") and k not in drop}
+        return {"op": "update_node", "id": row["id"], key: {**spec, **extra}}
+
+    if "Nothing is priced" in message:
+        ops = [schedule_op(r, "inspection", {"cost": _TEST_COST}) for r in found["proof_test"][:6]]
+        ops += [schedule_op(r, "preventive", {"cost": "<cost per replacement>"}) for r in found["replacement"][:6]]
+        ops.append({"op": "set", "costs": {"downtime_rate": _DOWNTIME_RATE}})
+        return (f"{message} With edit_rbd, price the tests or replacements (each op carries the block's own "
+                f"schedule, which update_node replaces whole) and/or the system downtime cost — any one is enough: "
+                f"{_ops_text(ops)}. A block's repair costs are update_node costs: {{repair, replace}}.")
+    if "tests miss some failures" in message:
+        ops = [schedule_op(r, "inspection", {}, drop=("coverage", "full_test")) for r in found["partial"][:6]]
+        return (f"{message} With edit_rbd, full-coverage proof tests (coverage and full_test left out): "
+                f"{_ops_text(ops)}.")
+    if message.startswith("No block has"):
+        ids = _component_ids(graph)
+        ops = [{"op": "update_node", "id": "<block id>", "inspection": {"interval": "<time between tests>",
+                                                                         "cost": _TEST_COST}},
+               {"op": "update_node", "id": "<block id>", "preventive": {"policy": "age",
+                                                                        "interval": "<replacement age>",
+                                                                        "cost": "<cost per replacement>"}}]
+        return (f"{message} With edit_rbd: proof tests (hidden failures) {_ops_text(ops[:1])}, or age replacement "
+                f"{_ops_text(ops[1:])}." + (f" Component block ids: {ids}." if ids else ""))
     return message
 
 
@@ -3181,7 +3394,7 @@ def cheapest_design(
             graph, lambda mid: models_service.get_live_model(db, mid, owners), horizon=horizon,
             min_availability=min_availability, blocks=blocks, discount_rate=discount_rate, trains=trains)
     except AnalysisError as exc:
-        raise ToolError(_cheapest_design_hint(str(exc))) from None
+        raise ToolError(_cheapest_design_hint(str(exc), graph)) from None
     keep = ("unit", "horizon", "min_availability", "discount_rate", "method", "max_copies", "current", "saving",
             "changed", "note")
     out = {**head, "available": True, **{k: result[k] for k in keep}}
@@ -3560,7 +3773,9 @@ def optimise_maintenance_intervals(
     its PFDavg. With limited repair crews it needs assume_unlimited_crews (the intervals are chosen as if no
     repair waits) and simulate_with_crews gives the plan's availability and PFDavg with the crews (with_crews).
     Free (exact); a large proof-test search runs as a job (call get_job). Nothing is saved: apply the plan with
-    edit_rbd using edit_rbd_ops."""
+    edit_rbd using edit_rbd_ops. It needs blocks with proof tests (inspection) or age replacement (preventive)
+    and something priced to weigh (their costs, or the system downtime_rate); a refusal gives the exact
+    edit_rbd ops that add what's missing."""
     from backend.routers.rbd_intervals import intervals_payload
     from backend.services import rbd_intervals
     from backend.services.access import PERSONAL, AccessCtx
@@ -3577,10 +3792,14 @@ def optimise_maintenance_intervals(
     owners = [*_owners(uid), rbd.owner_id]
     actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid, read_owners=_owners(uid),
                      list_owners=uid, share_fallback=False)
-    status, payload = intervals_payload(
-        db, actx, graph, rbd, owners, schedule=schedule, blocks=blocks, min_availability=min_availability,
-        max_cost_rate=max_cost_rate, max_pfd=max_pfd, target_sil=target_sil, allowed=allowed_intervals,
-        stagger=stagger_tests, assume_unlimited_crews=assume_unlimited_crews)
+    try:
+        status, payload = intervals_payload(
+            db, actx, graph, rbd, owners, schedule=schedule, blocks=blocks, min_availability=min_availability,
+            max_cost_rate=max_cost_rate, max_pfd=max_pfd, target_sil=target_sil, allowed=allowed_intervals,
+            stagger=stagger_tests, assume_unlimited_crews=assume_unlimited_crews)
+    except AnalysisError as exc:
+        # The edit_rbd ops that supply what's missing, not the app's buttons (#265).
+        raise ToolError(_intervals_hint(str(exc), graph)) from None
     if status == 503:
         raise ToolError(payload.get("detail") or rbd_jobs_service.QUEUE_UNAVAILABLE)
     if status == 202:
@@ -3588,7 +3807,7 @@ def optimise_maintenance_intervals(
         if job is None:
             raise ToolError("The calculation was lost. Run optimise_maintenance_intervals again.")
         if job.get("status") == "failed":
-            raise ToolError(job.get("error") or rbd_jobs_service.FAILED_ERROR)
+            raise ToolError(_intervals_hint(job.get("error") or rbd_jobs_service.FAILED_ERROR, graph))
         if job.get("status") != "done":
             return {**head, "available": False, **_job_pending(db, job),
                     "note": "The interval search is running on Reliafy's calculation service. Call get_job with "

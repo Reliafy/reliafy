@@ -87,7 +87,7 @@ def test_rbd_link_public_read_carries_graph_and_analysis(client):
     assert data["shared_by"] == "Alice"
     a = data["artifact"]
     assert a["name"] == "Cooling loop"
-    assert a["graph"]["unit"] == "hours"
+    assert a["graph"]["unit"] == "Hours"  # stored "hours", shown in the app's spelling (#265)
     assert {n["id"] for n in a["graph"]["nodes"]} == {"input", "output", "ctrl", "pumpA", "pumpB"}
     assert len(a["graph"]["edges"]) == 5
     # Positions survive so the public canvas matches the owner's layout.
@@ -97,7 +97,7 @@ def test_rbd_link_public_read_carries_graph_and_analysis(client):
     an = a["analysis"]
     assert a["analysis_error"] is None
     assert an.get("kind") != "repairable"
-    assert an["unit"] == "hours"
+    assert an["unit"] == "Hours"  # shown in the app's spelling (#265)
     assert an["mttf"] > 0 and an["blife"]["b10"] > 0
     assert len(an["time"]) == len(an["system"]["sf"]) > 10
     assert an["structure"]["min_cut_sets"]

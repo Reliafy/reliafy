@@ -59,8 +59,8 @@ def candidates(db) -> list[dict]:
             continue
         graph = doc.get("graph") or {}
         models = rbds_service.model_fingerprints(db, graph, owner_id)
-        key = rbds_service.availability_cache_key(graph, models=models)
-        if rbds_service.cached_availability(doc, key) is not None:
+        keys = rbds_service.availability_cache_keys(doc, graph, models=models)
+        if rbds_service.cached_availability(doc, keys) is not None:
             continue
         if owner_id not in entitled:
             user = _owner_user(db, owner_id)
@@ -71,7 +71,7 @@ def candidates(db) -> list[dict]:
             "id": doc["_id"],
             "name": doc.get("name") or "",
             "owner_id": owner_id,
-            "key": key,
+            "key": keys[0],
             "n_nodes": len((doc.get("graph") or {}).get("nodes") or []),
         })
     return out

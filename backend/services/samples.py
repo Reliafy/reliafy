@@ -308,6 +308,7 @@ def _pump_station_graph() -> dict:
             {"id": "e-a-out", "source": "pumpA", "target": "output"},
             {"id": "e-b-out", "source": "pumpB", "target": "output"},
         ],
+        "unit": "Hours",
     }
 
 
@@ -744,7 +745,12 @@ def seed_samples(db) -> None:
 
     for spec in SAMPLE_RBDS:
         try:
-            if db.rbds.find_one({"_id": spec["id"]}) is not None:
+            existing = db.rbds.find_one({"_id": spec["id"]}, {"graph.unit": 1})
+            if existing is not None:
+                # A sample seeded without a unit gets its explicit one (#265).
+                unit = spec["graph"].get("unit")
+                if unit and not str(((existing.get("graph") or {}).get("unit")) or "").strip():
+                    db.rbds.update_one({"_id": spec["id"]}, {"$set": {"graph.unit": unit}})
                 continue
             rbd = Rbd(id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER,
                       graph=spec["graph"])

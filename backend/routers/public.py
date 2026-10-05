@@ -141,11 +141,11 @@ def _with_rbd_analysis(session, payload: dict, rbd_id: str, owner_id: str, ctx) 
             # saved before a refit is stale, not served.
             models = rbds_service.model_fingerprints(session, graph, [*ctx.read_owners, owner_id])
             analysis = rbds_service.cached_availability(
-                doc, rbds_service.availability_cache_key(graph, models=models)
+                doc, rbds_service.availability_cache_keys(doc, graph, models=models)
             )
             # The owner's saved exact figures (#154) ride along, or stand in
             # for a simulation that hasn't been run: read, never computed here.
-            exact = rbds_service.cached_exact(doc, rbds_service.exact_cache_key(graph, None, None, models))
+            exact = rbds_service.cached_exact(doc, rbds_service.exact_cache_keys(doc, graph, None, None, models))
             if analysis is not None:
                 analysis = {**analysis, "has_simulation": True,
                             **({"exact": exact["exact"]} if exact else {})}
@@ -153,6 +153,11 @@ def _with_rbd_analysis(session, payload: dict, rbd_id: str, owner_id: str, ctx) 
                 analysis = {**exact, "has_simulation": False, "cached": False, "computed_at": None}
             else:
                 note = AVAILABILITY_NOT_RUN
+            if analysis is not None:
+                from backend.services import rbd_policies
+
+                # As in the builder (#265): no proof tests, common cause, A(t)'s saw-tooth.
+                analysis = rbd_policies.safety_notes(graph, analysis)
         else:
             analysis = rbds_service.analyze_graph(session, graph, [*ctx.read_owners, owner_id])
         error = None
@@ -163,7 +168,7 @@ def _with_rbd_analysis(session, payload: dict, rbd_id: str, owner_id: str, ctx) 
         analysis, error = None, "This diagram couldn't be analysed."
     return {
         **payload,
-        "graph": rbds_service.public_graph(graph),
+        "graph": rbds_service.public_graph(rbds_service.display_graph(graph)),
         "analysis": generic_engine_fields(analysis),
         "analysis_error": error,
         "analysis_note": note,

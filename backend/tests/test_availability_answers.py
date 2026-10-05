@@ -107,11 +107,16 @@ def test_common_cause_left_out_of_the_availability_is_said(env):
     assert safety["common_cause"]["included"] is True
     assert cc["groups"] == 1 and cc["included"] is False
     assert cc["availability_with_common_cause"] == pytest.approx(1 - safety["pfd_avg"], rel=1e-12)
-    # The CCF-free headline is lower in unavailability than the PFDavg, and says so.
+    # The CCF-free figures are lower in unavailability than the PFDavg, and say so.
     assert out["unavailability"] < safety["pfd_avg"]
+    # A safety function leads with the figure with common cause (#265), the
+    # one without it alongside.
     head = out["availability"]
-    assert head["common_cause_included"] is False
-    assert head["with_common_cause"] == pytest.approx(cc["availability_with_common_cause"])
+    assert head["common_cause_included"] is True
+    assert head["value"] == head["with_common_cause"] == pytest.approx(cc["availability_with_common_cause"])
+    assert head["without_common_cause"]["value"] == out["steady_state_availability"]
+    assert "common_cause_included" not in head["without_common_cause"]
+    assert safety["common_cause_included"] is True
     assert any("leave out the diagram's 1 common-cause group" in w and "pfd_avg includes" in w
                for w in out["warnings"])
     # Without groups there's nothing to say.

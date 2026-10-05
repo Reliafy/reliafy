@@ -268,6 +268,9 @@ def availability_out(sim: Optional[dict], free: dict, *, status: dict, state: Op
     common_cause = rbd_policies.common_cause_note(graph, out)
     if common_cause is not None:
         out["common_cause"] = common_cause
+    # A safety function without proof tests, common cause in its PFDavg, and
+    # A(t)'s proof-test saw-tooth (#265) — said on saved results too.
+    out = rbd_policies.safety_notes(graph, out)
     return rbd_analysis.plain_reasons(out)
 
 
