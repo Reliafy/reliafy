@@ -757,6 +757,13 @@ def _fit_summary(result: dict) -> dict:
                 "mixture_summary"):
         if result.get(key):
             out[key] = result[key]
+    # #265: how the parameter intervals are taken; why a regression model has
+    # no single median / B10 / MTTF, and those at the covariate means; units.
+    for key in ("ci_note", "metrics_note", "covariate_units"):
+        if result.get(key):
+            out[key] = result[key]
+    if result.get("at_covariate_means") and not no_max and not failed:
+        out["at_covariate_means"] = result["at_covariate_means"]
     if result.get("selection"):
         out["selection"] = result["selection"]
         if result["selection"].get("summary"):
@@ -820,6 +827,14 @@ def get_model(
             out["covariates"] = r["functions"]["covariates"]
         if m.kind == "regression":
             out["validation"] = models_service.ensure_validation(db, m)
+        # #265: interval scale, regression life metrics and covariate units.
+        for key in ("ci_note", "metrics_note", "covariate_units"):
+            if r.get(key):
+                out[key] = r[key]
+        if m.kind == "regression" and not out.get("metrics"):
+            at_means = models_service.metrics_at_covariate_means(db, m, owners)
+            if at_means is not None:
+                out["at_covariate_means"] = at_means
         if (m.spec or {}).get("notes"):
             out["notes"] = m.spec["notes"]
         for key in ("maximum", "gof_note"):
@@ -900,6 +915,10 @@ _FitTruncRightCol = Annotated[Optional[str], Field(
 _FitCovariates = Annotated[Optional[list[str]], Field(
     description="Dataset covariate columns — regression (proportional-hazards etc.) distributions only.")]
 _FitUnit = Annotated[Optional[str], Field(description="Time unit of the data, e.g. 'hours', 'cycles', 'km'.")]
+_FitCovariateUnits = Annotated[Optional[dict[str, str]], Field(
+    description="Optional: the unit of each covariate, e.g. {\"temp_C\": \"°C\", \"load\": \"kN\"} — regression "
+                "fits only. Shown with the coefficients (per unit of the covariate) and the covariate inputs, and "
+                "kept with a saved model.")]
 _FitIncludeMixtures = Annotated[bool, Field(
     description="With distribution='best' only: let two-component Weibull and LogNormal mixtures compete "
                 "with the single distributions (two failure modes in one dataset, an S-curve on probability "
@@ -1019,9 +1038,17 @@ def _per_row(values, n: int, label: str) -> list:
 def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, dataset_id, time_column,
               censor_column, count_column, covariates, unit, data_right, trunc_left, trunc_right,
               time_right_column, trunc_left_column, trunc_right_column, method,
-              save: bool, name: str | None, include_mixtures: bool = False) -> dict[str, Any]:
+              save: bool, name: str | None, include_mixtures: bool = False,
+              covariate_units: dict | None = None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
+    if covariate_units:
+        # #265: units name the covariates being fitted, nothing else.
+        unknown = sorted(set(covariate_units) - set(covariates or []))
+        if unknown:
+            raise ToolError(f"covariate_units names {', '.join(unknown)}, which "
+                            f"{'is' if len(unknown) == 1 else 'are'} not in covariates "
+                            f"({', '.join(covariates or []) or 'none given'}).")
     known = {fitting.BEST_ID, fitting.MIXTURE_ID, *fitting.DISTRIBUTIONS, *fitting.DISCRETE,
              *fitting.NONPARAMETRIC, *fitting.REGRESSION_MODELS}
     dist = (distribution or "weibull").strip()
@@ -1094,7 +1121,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
 
     checks = _censor_checks(df, mapping, c_invert, censor_column)
     if not save:
-        result = fitting.fit(dist, df, mapping, covariates=covariates, unit=unit, options=options)
+        result = fitting.fit(dist, df, mapping, covariates=covariates, unit=unit, options=options,
+                             covariate_units=covariate_units)
         summary = _with_censor_checks(_fit_summary(result), checks)
         return {**_fit_lead(summary), "saved": False, **_censoring(checks), **summary}
 
@@ -1115,6 +1143,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
     try:
         model = models_service.save_model(
             db, name, dataset, dist, mapping, covariates, None, unit, owner_id=uid, options=options,
+            covariate_units=covariate_units,
         )
     except Exception:
         # A refused fit mustn't leave the dataset it just created behind.
@@ -1156,6 +1185,7 @@ def fit_distribution(
     method: _FitMethod = None,
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
+    covariate_units: _FitCovariateUnits = None,
 ) -> dict[str, Any]:
     """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
     goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Saves nothing — use
@@ -1173,7 +1203,7 @@ def fit_distribution(
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=False, name=None)
+                include_mixtures=include_mixtures, save=False, name=None, covariate_units=covariate_units)
 
 
 @_tool("fit_and_save_model", _WRITE, "Fit and save a model")
@@ -1199,6 +1229,7 @@ def fit_and_save_model(
     method: _FitMethod = None,
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
+    covariate_units: _FitCovariateUnits = None,
     demand_batches: Annotated[Optional[list[DemandBatch]], Field(
         min_length=1, description=(
             "Save a per-demand (one-shot) model instead of a life distribution: one {demands, failures, "
@@ -1230,7 +1261,7 @@ def fit_and_save_model(
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=True, name=name)
+                include_mixtures=include_mixtures, save=True, name=name, covariate_units=covariate_units)
 
 
 def _per_demand_summary(result: dict) -> dict:
@@ -1625,6 +1656,19 @@ def _alt_brief(results: dict) -> dict:
         out["interval_censored"] = True
     if results.get("no_finite_maximum"):
         out["no_finite_maximum"] = results["no_finite_maximum"]
+    out.update(_alt_stress_units(results))
+    return out
+
+
+def _alt_stress_units(results: dict) -> dict:
+    """#265: the stresses' units (one per stress, in order; "" for none) and
+    any warning about them, when the model has units at all."""
+    units = [s.get("unit") or "" for s in results.get("stresses") or []]
+    out: dict[str, Any] = {}
+    if any(units):
+        out["stress_units"] = units
+    if results.get("unit_warnings"):
+        out["unit_warnings"] = results["unit_warnings"]
     return out
 
 
@@ -1660,6 +1704,10 @@ def fit_alt_model(
     trunc_left_column: _FitTruncLeftCol = None,
     trunc_right_column: _FitTruncRightCol = None,
     unit: _FitUnit = None,
+    stress_units: Annotated[Optional[list[str]], Field(
+        max_length=2, description="Optional: the unit of each stress, in order — e.g. ['K'] or ['K', 'V'] "
+                                  "(blank for none). Shown with the stresses and use levels; a thermal model "
+                                  "given °C or °F is warned about (it needs kelvin).")] = None,
 ) -> dict[str, Any]:
     """Fit an accelerated life test (ALT) model — failure times at several elevated stress levels plus a
     life-stress relationship (Arrhenius, Eyring, inverse power, …) — and save it, so alt_use_level can
@@ -1737,6 +1785,11 @@ def fit_alt_model(
         df = fitting.invert_censor_column(df, mapping["c"])
     spec = {"mapping": mapping, "stress_cols": stress_cols, "stress_labels": labels,
             "distribution_id": distribution, "life_model_id": life_model, "unit": (unit or "").strip()}
+    if stress_units and any((u or "").strip() for u in stress_units):
+        try:
+            spec["stress_units"] = alt_fit.clean_stress_units(stress_units, entry["n_stress"])
+        except FitError as exc:
+            raise ToolError(str(exc)) from None
     try:
         # Checked before anything is stored, with the same message the save gives.
         alt_fit.build_inputs(df, mapping, stress_cols)
@@ -1837,6 +1890,7 @@ def alt_use_level(
         "metrics": {k: _finite(v) for k, v in m.items()},
         "acceleration_factor": (out.get("acceleration_factor") or {}).get("value"),
         "bounds_methods": out.get("bounds_methods"),
+        **_alt_stress_units(results),
     }
     if out.get("no_finite_maximum"):
         answer["no_finite_maximum"] = out["no_finite_maximum"]
@@ -4579,9 +4633,11 @@ def _rbds_referencing(db, uid: str, predicate) -> list[dict]:
 @_tool("delete_model", _WRITE, "Delete a model")
 def delete_model(
     ctx: Context,
-    model_id: Annotated[str, Field(description="One of the user's own model ids (list_models) — life or recurrent.")],
+    model_id: Annotated[str, Field(description="One of the user's own model ids (list_models) — life, recurrent, "
+                                               "ALT (fit_alt_model) or degradation.")],
 ) -> dict[str, Any]:
-    """Permanently delete one of the user's own saved models (life or recurrent). Shared samples can't be
+    """Permanently delete one of the user's own saved models (life, recurrent, ALT or degradation — a
+    degradation model's tracked items go with it, as in the app). Shared samples can't be
     deleted, and neither can a model a fleet forecast runs on: the answer names those fleets, which must be
     relinked or deleted in the app first. RBDs that used the model are listed in the response. Always confirm
     with the user first, naming the model — this can't be undone."""
@@ -4610,7 +4666,8 @@ def delete_model(
     else:
         doc = recurrent_service.get_model(db, model_id, _owners(uid))
         if doc is None:
-            raise ToolError("Model not found.")
+            # #265: ALT and degradation models too.
+            return _delete_alt_or_degradation_model(db, uid, model_id)
         if samples_service.is_sample(doc.owner_id):
             raise _sample_refusal("model", doc.name)
         fleets = [f for f in fleet_service.list_fleets(db, uid)
@@ -4633,6 +4690,52 @@ def delete_model(
     return out
 
 
+def _fleet_refusal(name: str, fleets: list) -> ToolError:
+    names = ", ".join(f"“{f.name}” ({_url(f'/fleet/forecasts/{f.id}')})" for f in fleets)
+    return ToolError(
+        f"Model “{name}” can't be deleted: {len(fleets)} fleet forecast"
+        f"{'s' if len(fleets) != 1 else ''} run{'' if len(fleets) != 1 else 's'} on it ({names}). "
+        "Relink or delete those fleets in the app first, then delete the model.")
+
+
+def _delete_alt_or_degradation_model(db, uid: str, model_id: str) -> dict[str, Any]:
+    """delete_model for an ALT or a degradation model (#265), with the same
+    rules as the others: owner only, never a sample, and an ALT model a fleet
+    forecast runs on (#234) is refused with those fleets named."""
+    from backend.services import degradation as degradation_service
+
+    doc = alt_service.get_model(db, model_id, _owners(uid))
+    if doc is not None:
+        if samples_service.is_sample(doc.owner_id):
+            raise _sample_refusal("model", doc.name)
+        fleets = [f for f in fleet_service.list_fleets(db, uid) if f.model_kind == "alt" and f.model_id == doc.id]
+        if fleets:
+            raise _fleet_refusal(doc.name, fleets)
+        try:
+            alt_service.delete_model(db, doc.id, uid)
+        except alt_service.ModelNotFound:
+            raise ToolError("Model not found.") from None
+        return {"deleted": True, "model_id": doc.id, "name": doc.name, "kind": "alt"}
+    doc = degradation_service.get_model(db, model_id, _owners(uid))
+    if doc is None:
+        raise ToolError("Model not found.")
+    if samples_service.is_sample(doc.owner_id):
+        raise _sample_refusal("model", doc.name)
+    items = db.tracked_items.count_documents({"model_id": doc.id, "owner_id": uid})
+    tracked = [{"id": f["_id"], "name": f.get("name", "")}
+               for f in db.tracked_fleets.find({"model_id": doc.id, "owner_id": uid})]
+    try:
+        degradation_service.delete_model(db, doc.id, uid)  # its tracked items go with it, as in the app
+    except degradation_service.ModelNotFound:
+        raise ToolError("Model not found.") from None
+    out: dict[str, Any] = {"deleted": True, "model_id": doc.id, "name": doc.name, "kind": "degradation"}
+    if items or tracked:
+        out["affected"] = {k: v for k, v in (("tracked_items_deleted", items), ("tracked_fleets", tracked)) if v}
+        out["note"] = ("The model's tracked items were deleted with it, as in the app; tracked fleets that "
+                       "monitored them are left empty.")
+    return out
+
+
 @_tool("delete_dataset", _WRITE, "Delete a dataset")
 def delete_dataset(
     ctx: Context,
@@ -4648,11 +4751,11 @@ def delete_dataset(
         raise ToolError("Dataset not found.")
     if samples_service.is_sample(ds.owner_id):
         raise _sample_refusal("dataset", ds.name)
-    models = datasets_service.models_for_dataset(db, ds.id, _owners(uid))
+    # Every model kind that refits from its dataset (#265: ALT, recurrent and
+    # degradation models too).
+    models = datasets_service.dependents_for_dataset(db, ds.id, _owners(uid))
     if models:
-        names = ", ".join(f"“{m.name}”" for m in models[:3])
-        more = "" if len(models) <= 3 else f" and {len(models) - 3} more"
-        raise ToolError(f"Dataset is used by {len(models)} model(s): {names}{more}. Delete those models first "
+        raise ToolError(f"{datasets_service.dependents_message(models)} Delete those models first "
                         "(delete_model), or keep the dataset.")
     if not datasets_service.delete_dataset(db, ds.id, uid):
         raise ToolError("Dataset not found.")

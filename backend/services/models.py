@@ -19,6 +19,7 @@ from backend import fitting
 from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.schema import Model
+from backend.units import canonical_unit
 from backend.services import datasets as datasets_service
 
 # Maps a persistent model id -> the ephemeral fitting cache id of its live,
@@ -54,11 +55,15 @@ def save_model(
     unit: str | None = None,
     owner_id: str = "",
     options: dict | None = None,
+    covariate_units: dict | None = None,
 ) -> Model:
-    """Fit and persist a model. Raises ``fitting.FitError`` on a bad fit."""
+    """Fit and persist a model. Raises ``fitting.FitError`` on a bad fit.
+    ``covariate_units`` (optional, regression only: ``{column: unit}``) is
+    kept in the spec, so a refit shows the same units (#265)."""
     df = datasets_service.load_dataframe(dataset)
     result = fitting.fit(
-        distribution_id, df, mapping, covariates, formula, unit, options=options
+        distribution_id, df, mapping, covariates, formula, unit, options=options,
+        covariate_units=covariate_units,
     )
     # "Best fit" resolves to a concrete winner at fit time: persist that, so
     # the saved model (and its refit-on-demand spec) is stable forever.
@@ -82,8 +87,9 @@ def save_model(
             "mapping": {k: v for k, v in mapping.items() if v},
             "covariates": list(covariates or []),
             "formula": formula or None,
-            "unit": (unit or "").strip(),
+            "unit": canonical_unit(unit),
             "options": result.get("options") or None,
+            **({"covariate_units": result["covariate_units"]} if result.get("covariate_units") else {}),
         },
         results=result,
         serialized=serialized,
@@ -156,7 +162,7 @@ def import_model(
         if v is not None and float(v) != default:
             clean[key] = float(v)
     result = fitting.result_from_params(distribution_id, params, clean or None, unit)
-    spec = {"distribution_id": distribution_id, "unit": (unit or "").strip(),
+    spec = {"distribution_id": distribution_id, "unit": canonical_unit(unit),
             "params_only": True, "options": result.get("options") or None}
     if (notes or "").strip():
         spec["notes"] = notes.strip()
@@ -238,13 +244,15 @@ def update_fit(
     formula: str | None,
     unit: str | None,
     options: dict | None,
+    covariate_units: dict | None = None,
 ) -> Model:
     """Refit a saved model in place with a new fit spec (same dataset).
 
     The model keeps its id, so everything that references it — RCM evidence,
     RBD blocks, fleet forecasts — sees the updated fit live, exactly like the
     rest of the evidence-linking behaviour. Raises ``fitting.FitError`` on a
-    bad fit (the stored model is untouched in that case).
+    bad fit (the stored model is untouched in that case). ``covariate_units``
+    None keeps the model's own (#265); ``{}`` clears them.
     """
     model = get_model(db, model_id, owner_id)
     if model is None or model.owner_id != owner_id:
@@ -254,9 +262,12 @@ def update_fit(
         raise fitting.FitError(
             "The model's dataset no longer exists, so it can't be refit."
         )
+    if covariate_units is None:
+        covariate_units = (model.spec or {}).get("covariate_units")
     df = datasets_service.load_dataframe(dataset)
     result = fitting.fit(
-        distribution_id, df, mapping, covariates, formula, unit, options=options
+        distribution_id, df, mapping, covariates, formula, unit, options=options,
+        covariate_units=covariate_units,
     )
     resolved_id = result.get("distribution_id", distribution_id)
 
@@ -268,8 +279,9 @@ def update_fit(
         "mapping": {k: v for k, v in mapping.items() if v},
         "covariates": list(covariates or []),
         "formula": formula or None,
-        "unit": (unit or "").strip(),
+        "unit": canonical_unit(unit),
         "options": result.get("options") or None,
+        **({"covariate_units": result["covariate_units"]} if result.get("covariate_units") else {}),
     }
     model.updated_at = datetime.now(timezone.utc)
     fcache = (result.get("functions") or {}).get("model_id")
@@ -335,6 +347,9 @@ def public_results(model: Model) -> dict:
     pointed at this saved model (so the calculator re-evaluates and recomputes
     confidence bounds via the persistent id)."""
     results = dict(model.results or {})
+    if model.kind == "regression" and not results.get("metrics_note"):
+        # #265: a model saved before says why it has no median / B10 / MTTF too.
+        results["metrics_note"] = fitting.REGRESSION_METRICS_NOTE
     functions = results.get("functions")
     if functions and functions.get("model_id"):
         functions = dict(functions)
@@ -514,6 +529,26 @@ def get_live_model(db, model_id: str, owner_id: str | list[str]) -> dict | None:
     return fitting._MODEL_STORE.get(_live_cache_id(db, model_id, owner_id))
 
 
+def metrics_at_covariate_means(db, model: Model, owner_id) -> dict | None:
+    """A regression model's median / B10 / MTTF at its covariate means (#265):
+    as stored with the fit, or — for a model saved before — from the live
+    model. None for another kind, a Cox model, or when it can't be had."""
+    if model.kind != "regression":
+        return None
+    stored = (model.results or {}).get("at_covariate_means")
+    if stored:
+        return stored
+    if (model.results or {}).get("no_finite_maximum"):
+        return None
+    try:
+        entry = get_live_model(db, model.id, owner_id)
+    except Exception:  # noqa: BLE001 - dataset gone / no longer fits: none
+        return None
+    if not entry or entry.get("model") is None:
+        return None
+    return fitting.regression_metrics_at_defaults(entry["model"], entry.get("fields") or [])
+
+
 def _refit(model: Model) -> str:
     """Re-fit the model and return the ephemeral fitting cache id of the live
     model."""
@@ -543,6 +578,7 @@ def _refit_result(model: Model, dataset) -> dict:
         spec.get("formula"),
         spec.get("unit"),
         options=spec.get("options"),
+        covariate_units=spec.get("covariate_units"),
     )
     return result
 

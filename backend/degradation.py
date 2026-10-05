@@ -23,6 +23,7 @@ import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS, FitError, _json_safe
 from backend.services.method_labels import hides_solver_names, note_fit
+from backend.units import canonical_unit
 from surpyval.degradation import PATH_MODELS as _SURPYVAL_PATHS
 from surpyval.degradation import DegradationAnalysis
 
@@ -231,7 +232,7 @@ def _build_payload(model, distribution_id: str, unit: str, measurement_unit: str
     payload = {
         "kind": "degradation",
         "threshold": float(model.threshold),
-        "unit": (unit or "").strip(),
+        "unit": canonical_unit(unit),
         "measurement_unit": (measurement_unit or "").strip(),
         "n_units": int(len(model.units)),
         "n_measurements": int(len(model.x)),

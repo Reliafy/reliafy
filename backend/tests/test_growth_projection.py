@@ -176,7 +176,7 @@ def test_api_projection_saved_with_the_model(monkeypatch):
         assert r.status_code == 200, r.text
         assert r.json()["saved"] is True
         assert r.json()["result"]["projected"]["mtbf"] == pytest.approx(62.8, abs=0.01)
-        assert r.json()["result"]["unit"] == "hours"
+        assert r.json()["result"]["unit"] == "Hours"  # #265: one spelling
         doc = test_db.recurrent_models.find_one({"_id": mid})
         assert doc["spec"]["projection"] == {"mode_column": "m", "fef": FEF, "bc": [], "test_end": 400.0}
         assert doc["results"]["projection"]["projected"]["mtbf"] == pytest.approx(62.8, abs=0.01)
@@ -257,7 +257,7 @@ def test_mcp_growth_projection_from_a_saved_model(env):
 def test_mcp_growth_projection_inline(env):
     out = _ok(_call(env.token[A], "growth_projection", {"x": X, "modes": MODES, "fef": FEF, "test_end": 400,
                                                         "unit": "hours"}))
-    assert out["growth_potential"]["mtbf"] == pytest.approx(78.43, abs=0.01) and out["unit"] == "hours"
+    assert out["growth_potential"]["mtbf"] == pytest.approx(78.43, abs=0.01) and out["unit"] == "Hours"
     assert "test_end" in _err(_call(env.token[A], "growth_projection", {"x": X, "modes": MODES, "fef": FEF}))
     assert "same length" in _err(_call(env.token[A], "growth_projection", {"x": X, "modes": MODES[:3],
                                                                            "fef": FEF, "test_end": 400}))
@@ -350,5 +350,5 @@ def test_mcp_next_failure(env):
     ref = CrowAMSAA.from_params([50.0, 1.3])
     mu = float(ref.cif(500.0) - ref.cif(400.0))
     assert out["within"][0]["expected_failures"] == pytest.approx(mu, rel=1e-12)
-    assert out["unit"] == "hours" and out["model_id"] == doc.id and "Minimal repair" in out["assumption"]
+    assert out["unit"] == "Hours" and out["model_id"] == doc.id and "Minimal repair" in out["assumption"]
     assert "not found" in _err(_call(env.token[B], "next_failure", {"model_id": doc.id, "age": 400}))

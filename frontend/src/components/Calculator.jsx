@@ -1,5 +1,7 @@
 import Select from "./Select.jsx";
 import Modal from "./Modal.jsx";
+import { withUnit } from "./stressName.js";
+import CiNote from "./CiNote.jsx";
 import { useEffect, useRef, useState } from "react";
 import Plot from "./Plot.jsx";
 import { confidenceAt, evaluateAt } from "../api.js";
@@ -90,7 +92,7 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
           <div className="calc-cov-fields">
             {covariates.map((c) => (
               <label className="calc-cov" key={c.name}>
-                <span>{c.name}</span>
+                <span>{withUnit(c.name, c.unit)}</span>
                 {c.type === "category" ? (
                   <Select
                     value={s.values[c.name]}
@@ -256,7 +258,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
 
   const labelOf = (s) =>
     s.values
-      ? covariates.map((c) => `${c.name}=${s.values[c.name]}`).join(", ")
+      ? covariates.map((c) => `${c.name}=${s.values[c.name]}${c.unit ? ` ${c.unit}` : ""}`).join(", ")
       : "Model";
 
   // Per-series curves, conditioned on the survived age when set.
@@ -544,6 +546,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                     </span>
                   </div>
                 ))}
+                <CiNote params={params} />
               </div>
             )}
             {hasCov && (

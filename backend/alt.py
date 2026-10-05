@@ -41,6 +41,7 @@ from backend.fitting import (
     without_intervals,
 )
 from backend.services.method_labels import hides_solver_names, note_fit
+from backend.units import canonical_unit
 from surpyval import AcceleratedLife
 from surpyval.univariate.regression import accelerated_life as _al
 
@@ -278,8 +279,12 @@ def fit(
     life_model_id: str = "arrhenius",
     unit: str = "",
     stress_labels: Optional[list] = None,
+    stress_units: Optional[list] = None,
 ) -> tuple[dict, str]:
     """Fit an ALT model and build the JSON-safe results payload.
+
+    ``stress_units`` (optional, one per stress column: "K", "kV", "°C", or
+    blank) label the stresses wherever they are shown (#265).
 
     Returns ``(payload, cache_id)`` addressing the live model.
     """
@@ -300,6 +305,7 @@ def fit(
             f"“{entry['name']}” needs {need} stress column"
             f"{'' if need == 1 else 's'}, but {len(stress_cols)} were mapped."
         )
+    units = clean_stress_units(stress_units, len(stress_cols))
 
     inputs = build_inputs(df, mapping, stress_cols)
     dist = DISTRIBUTIONS[distribution_id]["dist"]
@@ -322,8 +328,13 @@ def fit(
         raise FitError(msg or str(exc) or f"{type(exc).__name__}") from exc
 
     payload = _build_payload(
-        model, inputs, distribution_id, life_model_id, unit, stress_cols, stress_labels
+        model, inputs, distribution_id, life_model_id, unit, stress_cols, stress_labels,
+        stress_units=units,
     )
+    if any(units):
+        warned = stress_unit_warnings(life_model_id, payload["stresses"])
+        if warned:
+            payload["unit_warnings"] = warned
     # No finite maximum (#230): an ALT fit with the failures at too few stress
     # levels; the use-level extrapolation of such a fit means nothing.
     pm = getattr(entry["model"], "phi_param_map", {}) or {}
@@ -335,6 +346,55 @@ def fit(
         payload["params"] = without_intervals(payload["params"])
         payload["coefficients"] = without_intervals(payload["coefficients"])
     return payload, store_live(model)
+
+
+def clean_stress_units(stress_units, n: int) -> list:
+    """One unit per stress column (#265): trimmed, case kept ("K" isn't
+    "k"), blank where none was given. Not a list, or the wrong length: a
+    FitError naming the stresses' count; None: all blank."""
+    from backend.units import clean_label_unit
+
+    if stress_units is None:
+        return [""] * n
+    if isinstance(stress_units, str) or not isinstance(stress_units, (list, tuple)):
+        raise FitError("stress_units must be a list with one unit per stress column (blank for none).")
+    if len(stress_units) > n:
+        raise FitError(f"stress_units has {len(stress_units)} entries but the model has {n} stress "
+                       f"column{'' if n == 1 else 's'}.")
+    units = [clean_label_unit(u) for u in stress_units]
+    return units + [""] * (n - len(units))
+
+
+def stress_display_label(label: str, unit: str) -> str:
+    """A stress's label with its unit, "Temperature (K)" — as it is when the
+    label already names the unit ("Voltage (kV)") or there is none."""
+    label, unit = str(label or ""), str(unit or "").strip()
+    if not unit or f"({unit})" in label or label.strip() == unit:
+        return label
+    return f"{label} ({unit})"
+
+
+# Life-stress models whose first stress enters as exp(a / T): it must be an
+# absolute temperature.
+_THERMAL_FIRST_STRESS = {"arrhenius", "eyring", "power_exponential", "dual_exponential"}
+_RELATIVE_TEMPERATURE = {"°c", "c", "degc", "deg c", "celsius", "°f", "f", "degf", "deg f", "fahrenheit",
+                         "℃", "℉"}
+
+
+def stress_unit_warnings(life_model_id: str, stresses: list) -> list:
+    """A warning when a thermal model's temperature stress is given in °C or
+    °F: exp(a / T) needs absolute temperature (K), so a Celsius column fits
+    the wrong curve and extrapolates wrongly."""
+    if life_model_id not in _THERMAL_FIRST_STRESS or not stresses:
+        return []
+    first = stresses[0]
+    unit = str(first.get("unit") or "").strip()
+    if unit.lower() not in _RELATIVE_TEMPERATURE:
+        return []
+    name = LIFE_MODELS[life_model_id]["name"]
+    return [f"“{first.get('label') or first.get('column')}” is in {unit}, but the {name} model's exp(a / T) "
+            f"needs absolute temperature: convert it to kelvin (K = °C + 273.15) and refit, or the "
+            f"coefficients and any use-level extrapolation are wrong."]
 
 
 def refit(inputs: dict, distribution_id: str, life_model_id: str):
@@ -363,7 +423,7 @@ def _characteristic_life(model, Z: np.ndarray) -> np.ndarray:
 
 
 def _build_payload(
-    model, inputs, distribution_id, life_model_id, unit, stress_cols, stress_labels
+    model, inputs, distribution_id, life_model_id, unit, stress_cols, stress_labels, stress_units=None
 ) -> dict:
     entry = LIFE_MODELS[life_model_id]
     dist_name = DISTRIBUTIONS[distribution_id]["name"]
@@ -411,8 +471,13 @@ def _build_payload(
             coeffs.append({"name": name, "value": float(params[idx]), "ci": _ci(idx)})
 
     labels = stress_labels or list(stress_cols)
-    stresses = [{"key": f"s{j + 1}", "column": stress_cols[j], "label": labels[j]}
+    units = list(stress_units or []) + [""] * len(stress_cols)
+    stresses = [{"key": f"s{j + 1}", "column": stress_cols[j], "label": labels[j],
+                 **({"unit": units[j]} if units[j] else {})}
                 for j in range(len(stress_cols))]
+    # The plots' axis and legend labels carry the unit (#265), unless the
+    # label already names it ("Voltage (kV)").
+    labels = [stress_display_label(labels[j], units[j]) for j in range(len(stress_cols))]
 
     # Per test-stress level: the fitted characteristic life at each unique stress
     # combination present in the data, plus the observed count.
@@ -428,7 +493,7 @@ def _build_payload(
 
     payload = {
         "kind": "alt",
-        "unit": (unit or "").strip(),
+        "unit": canonical_unit(unit),
         "distribution": dist_name,
         "distribution_id": distribution_id,
         "life_model": entry["name"],
@@ -938,23 +1003,19 @@ def bounded_wald_interval(value: float, se: float, lower, upper, confidence: flo
     interval never leaves its support: ``lower + d·exp(±z·se/d)`` with
     ``d = value - lower`` (mirrored for an upper bound). None when the
     estimate sits on the bound or the standard error isn't usable; an
-    interval-bounded parameter (both bounds) isn't handled here."""
+    interval-bounded parameter (both bounds) isn't handled here. The
+    distribution fits use the same helper,
+    :func:`backend.param_intervals.wald_interval` (#265)."""
     from scipy.stats import norm
+
+    from backend.param_intervals import wald_interval
 
     if lower is not None and upper is not None:
         return None
-    if not (np.isfinite(value) and np.isfinite(se) and se >= 0):
+    if lower is None and upper is None:
         return None
     z = float(norm.ppf(0.5 + confidence / 2.0))
-    if lower is not None:
-        d = float(value) - float(lower)
-        if d <= 0:
-            return None
-        return [float(lower) + d * math.exp(-z * se / d), float(lower) + d * math.exp(z * se / d)]
-    d = float(upper) - float(value)
-    if d <= 0:
-        return None
-    return [float(upper) - d * math.exp(z * se / d), float(upper) - d * math.exp(-z * se / d)]
+    return wald_interval(value, se, lower, upper, z=z)
 
 
 def _bounded_wald(model, name: str, confidence: float):

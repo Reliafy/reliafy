@@ -84,17 +84,31 @@ _SEAL_ALT_CSV = (
 # test, with repair (failure) times. Gaps between failures SHRINK over each
 # system's life — a deteriorating repairable fleet (Crow-AMSAA β ≈ 2), the
 # textbook reliability-growth / repairable-systems demo.
+#
+# Each repair carries its failure mode (#265), so the reliability growth
+# projection runs on the sample as it is: discharge valves fail most (15 of
+# 30, from the start — the dominant mode, and the one a redesign would fix),
+# then shaft seals (5), bearings (6, wear-out: none before 3,400 h) and
+# electrical faults (4). The sample's default projection treats the valve
+# and seal as BD modes (fixed after the test, FEF 0.7 and 0.8) and the rest as
+# A modes, taking the demonstrated MTBF of ~667 h to a projected ~1,250 h.
 _COMPRESSOR_EVENTS_CSV = (
-    "compressor,hours,test_end\n"
-    "CMP-1,1150,5000\nCMP-1,2050,5000\nCMP-1,2800,5000\nCMP-1,3400,5000\n"
-    "CMP-1,3900,5000\nCMP-1,4350,5000\nCMP-1,4700,5000\nCMP-1,4980,5000\n"
-    "CMP-2,1400,5000\nCMP-2,2350,5000\nCMP-2,3100,5000\nCMP-2,3650,5000\n"
-    "CMP-2,4150,5000\nCMP-2,4550,5000\nCMP-2,4900,5000\n"
-    "CMP-3,980,5000\nCMP-3,1850,5000\nCMP-3,2600,5000\nCMP-3,3250,5000\n"
-    "CMP-3,3800,5000\nCMP-3,4250,5000\nCMP-3,4650,5000\nCMP-3,4950,5000\n"
-    "CMP-4,1250,5000\nCMP-4,2200,5000\nCMP-4,2950,5000\nCMP-4,3550,5000\n"
-    "CMP-4,4050,5000\nCMP-4,4500,5000\nCMP-4,4850,5000\n"
+    "compressor,hours,test_end,failure_mode\n"
+    "CMP-1,1150,5000,valve\nCMP-1,2050,5000,seal\nCMP-1,2800,5000,valve\nCMP-1,3400,5000,bearing\n"
+    "CMP-1,3900,5000,valve\nCMP-1,4350,5000,electrical\nCMP-1,4700,5000,valve\nCMP-1,4980,5000,bearing\n"
+    "CMP-2,1400,5000,seal\nCMP-2,2350,5000,valve\nCMP-2,3100,5000,electrical\nCMP-2,3650,5000,valve\n"
+    "CMP-2,4150,5000,bearing\nCMP-2,4550,5000,valve\nCMP-2,4900,5000,seal\n"
+    "CMP-3,980,5000,valve\nCMP-3,1850,5000,electrical\nCMP-3,2600,5000,seal\nCMP-3,3250,5000,valve\n"
+    "CMP-3,3800,5000,valve\nCMP-3,4250,5000,bearing\nCMP-3,4650,5000,valve\nCMP-3,4950,5000,valve\n"
+    "CMP-4,1250,5000,electrical\nCMP-4,2200,5000,valve\nCMP-4,2950,5000,seal\nCMP-4,3550,5000,bearing\n"
+    "CMP-4,4050,5000,valve\nCMP-4,4500,5000,valve\nCMP-4,4850,5000,bearing\n"
 ).encode()
+
+# The sample's default growth-projection settings (#265): valve and seal are
+# BD modes (fixed after the test), bearing and electrical A modes; the test
+# end comes from the data's test_end column.
+_COMPRESSOR_PROJECTION = {"mode_column": "failure_mode", "fef": {"valve": 0.7, "seal": 0.8},
+                          "bc": [], "test_end": None}
 
 # Nelson's classic insulating-fluid accelerated life test: time to breakdown of
 # an insulating fluid between electrodes held at constant voltage — the textbook
@@ -170,9 +184,10 @@ SAMPLE_RECURRENT_MODELS = [
         "name": "Compressor fleet — Crow-AMSAA (sample)",
         "dataset_id": "sample-ds-compressor-events",
         "spec": {
-            "mapping": {"i": "compressor", "x": "hours", "t": "test_end"},
+            "mapping": {"i": "compressor", "x": "hours", "t": "test_end", "mode": "failure_mode"},
             "model_id": "crow_amsaa",
             "unit": "hours",
+            "projection": _COMPRESSOR_PROJECTION,
         },
     },
 ]
@@ -192,6 +207,7 @@ SAMPLE_ALT_MODELS = [
             "mapping": {"x": "minutes"},
             "stress_cols": ["kV"],
             "stress_labels": ["Voltage (kV)"],
+            "stress_units": ["kV"],
             "distribution_id": "weibull",
             "life_model_id": "inverse_power",
             "unit": "minutes",
@@ -647,6 +663,58 @@ def _seed_availability_results(db) -> None:
             logger.warning("Failed to seed availability for %r: %s", rbd_id, exc)
 
 
+def _upgrade_sample_dataset(db, spec: dict, existing: dict) -> None:
+    """Bring an already-seeded shared sample dataset up to date when this
+    release's copy ADDS columns to it (#265: the compressor history's
+    failure_mode). Samples are seeded once and shared by every user, so a
+    changed CSV in code otherwise never reaches a running deployment. Only
+    added columns trigger it — rows and existing columns are the same data —
+    so models fitted to the sample stay valid."""
+    have = {str(c.get("name")) for c in existing.get("columns") or [] if isinstance(c, dict)}
+    df = fitting.read_dataframe(spec["csv"])
+    if not set(map(str, df.columns)) - have:
+        return
+    db.datasets.update_one({"_id": spec["id"]}, {"$set": {
+        "data": spec["csv"],
+        "checksum": storage.checksum(spec["csv"]),
+        "n_rows": int(df.shape[0]),
+        "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
+    }})
+    logger.info("Upgraded sample dataset %r (new columns).", spec["id"])
+
+
+def _upgrade_sample_recurrent(db, spec: dict, existing: dict) -> None:
+    """A seeded sample recurrent model whose spec predates a mapping key or
+    the default growth-projection settings this release ships (#265: the
+    compressor model's failure-mode column): map them, and store the
+    projection, so growth_projection and the app's Projection panel work on
+    it straight away. The fit itself doesn't change (the mode column isn't
+    part of it). Settings a sample already has are kept."""
+    from backend import recurrent as recurrent_fit  # local: heavy import
+
+    s = spec["spec"]
+    old = existing.get("spec") or {}
+    if (old.get("mapping") or {}) == s["mapping"] and (old.get("projection") or not s.get("projection")):
+        return
+    ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
+    if ds_doc is None:
+        return
+    df = fitting.read_dataframe(bytes(from_doc(Dataset, ds_doc).data))
+    if s["mapping"].get("mode") and s["mapping"]["mode"] not in df.columns:
+        return  # the dataset upgrade didn't land: leave the model as it was
+    update = {"spec.mapping": s["mapping"]}
+    if s["mapping"].get("mode"):
+        update["results.failure_modes"] = recurrent_fit.failure_modes(df, s["mapping"])
+    settings = old.get("projection") or s.get("projection")
+    if settings and not old.get("projection"):
+        update["spec.projection"] = settings
+        update["results.projection"] = recurrent_fit.growth_projection(
+            df, s["mapping"], settings.get("fef") or {}, bc=settings.get("bc") or [],
+            test_end=settings.get("test_end"), unit=s.get("unit", ""), saved_model=s.get("model_id"))
+    db.recurrent_models.update_one({"_id": spec["id"]}, {"$set": update})
+    logger.info("Upgraded sample recurrent model %r (mapping / projection).", spec["id"])
+
+
 def is_sample(owner_id: str | None) -> bool:
     """True if a record belongs to the shared sample owner (read-only)."""
     return owner_id == SAMPLE_OWNER
@@ -667,7 +735,9 @@ def seed_samples(db) -> None:
 
     for spec in SAMPLE_DATASETS:
         try:
-            if db.datasets.find_one({"_id": spec["id"]}) is not None:
+            existing = db.datasets.find_one({"_id": spec["id"]})
+            if existing is not None:
+                _upgrade_sample_dataset(db, spec, existing)
                 continue
             df = fitting.read_dataframe(spec["csv"])
             columns = [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns]
@@ -822,7 +892,9 @@ def seed_samples(db) -> None:
 
     for spec in SAMPLE_RECURRENT_MODELS:
         try:
-            if db.recurrent_models.find_one({"_id": spec["id"]}) is not None:
+            existing = db.recurrent_models.find_one({"_id": spec["id"]})
+            if existing is not None:
+                _upgrade_sample_recurrent(db, spec, existing)
                 continue
             ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
             if ds_doc is None:
@@ -835,6 +907,12 @@ def seed_samples(db) -> None:
             df = fitting.read_dataframe(bytes(dataset.data))
             s = spec["spec"]
             payload, _ = recurrent_fit.fit(df, s["mapping"], s["model_id"], s["unit"])
+            settings = s.get("projection")
+            if settings:
+                # #265: ship the sample's growth projection with it.
+                payload["projection"] = recurrent_fit.growth_projection(
+                    df, s["mapping"], settings.get("fef") or {}, bc=settings.get("bc") or [],
+                    test_end=settings.get("test_end"), unit=s["unit"], saved_model=s["model_id"])
             doc = RecurrentModelDoc(
                 id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER,
                 dataset_id=spec["dataset_id"], spec=s, results=payload,
@@ -848,7 +926,17 @@ def seed_samples(db) -> None:
 
     for spec in SAMPLE_ALT_MODELS:
         try:
-            if db.alt_models.find_one({"_id": spec["id"]}) is not None:
+            existing = db.alt_models.find_one({"_id": spec["id"]})
+            if existing is not None:
+                units = spec["spec"].get("stress_units")
+                if units and not (existing.get("spec") or {}).get("stress_units"):
+                    # #265: label an already-seeded sample's stresses with their
+                    # units (no refit: the fit doesn't depend on them).
+                    stresses = [{**st, "unit": u} if u else st for st, u in
+                                zip((existing.get("results") or {}).get("stresses") or [], units)]
+                    db.alt_models.update_one({"_id": spec["id"]}, {"$set": {
+                        "spec.stress_units": units, "results.stresses": stresses}})
+                    logger.info("Upgraded sample ALT model %r (stress units).", spec["id"])
                 continue
             ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
             if ds_doc is None:
@@ -864,6 +952,7 @@ def seed_samples(db) -> None:
                 df, s["mapping"], s["stress_cols"],
                 distribution_id=s["distribution_id"], life_model_id=s["life_model_id"],
                 unit=s["unit"], stress_labels=s.get("stress_labels"),
+                stress_units=s.get("stress_units"),
             )
             fns = dict(payload.get("functions") or {})
             fns["evaluate_path"] = f"/api/alt/models/{spec['id']}/evaluate"

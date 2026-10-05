@@ -67,7 +67,7 @@ def test_equal_rates_match_surpyval_forecast(session):
     assert per_item == pytest.approx(list(ref.per_unit[:, -1]), rel=1e-12)
     assert [r["prob_any"] for r in out["per_item"]] == pytest.approx(list(ref.probability[:, -1]), rel=1e-12)
     assert sum(out["per_period"]) == pytest.approx(out["expected"])
-    assert "minimal repair" in out["note"] and out["unit"] == "hours"
+    assert "minimal repair" in out["note"] and out["unit"] == "Hours"
 
 
 def test_per_item_rates_next_service_and_idle_items(session):
