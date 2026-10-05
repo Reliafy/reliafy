@@ -236,9 +236,16 @@ def _product(lists: list[list[frozenset]]) -> list[frozenset]:
     return _minimize(frozenset().union(*combo) for combo in product(*lists))
 
 
-def describe(graph: dict) -> dict:
+def structure_line(graph: dict) -> Optional[str]:
+    """Just the one-line structure of :func:`describe` (no cut sets): for
+    create_rbd / edit_rbd results (#265). ``None`` when it can't be given."""
+    return describe(graph, cut_sets=False)["structure"]
+
+
+def describe(graph: dict, cut_sets: bool = True) -> dict:
     """``{"structure", "cut_sets", "n_cut_sets"}`` for a persisted graph
-    (see the module docstring); fields that can't be given are ``None``."""
+    (see the module docstring); fields that can't be given are ``None``.
+    ``cut_sets=False``: the structure line alone."""
     nodes = graph.get("nodes") or []
     blocks = [n for n in nodes if n.get("type") not in ("input", "output", "knode")]
     out: dict = {"structure": None, "cut_sets": None, "n_cut_sets": None}
@@ -268,6 +275,8 @@ def describe(graph: dict) -> dict:
         return out
     line = _render(expr, drawn)
     out["structure"] = line if len(line) <= _MAX_LINE else line[:_MAX_LINE - 1] + "…"
+    if not cut_sets:
+        return out
     try:
         cuts = _cuts(expr, ident)
     except (_TooBig, RecursionError):

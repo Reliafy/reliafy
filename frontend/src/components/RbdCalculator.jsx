@@ -725,6 +725,16 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           {simulatedOnly && result.quick && <QuickTag />}
         </div>
       </div>
+      {/* A safety function whose PFDavg includes its common-cause groups (#265): the figure with them. */}
+      {result.safety && result.common_cause?.availability_with_common_cause != null && (
+        <p className="rbd-avail-ccf">
+          <b>{pct(result.common_cause.availability_with_common_cause)}</b> with the common-cause groups (1 − PFDavg,
+          as the safety function below). The figures here leave them out.
+        </p>
+      )}
+      {(result.warnings || []).map((w) => (
+        <p className="muted-line" key={w}>⚠ {w}</p>
+      ))}
       <div className="rbd-avail-metrics">
         <div className="alt-metric"><span className="k">Unavailability</span><span className="v">{pct(simulatedOnly ? (a == null ? null : 1 - a) : result.unavailability)}</span></div>
         <div className="alt-metric" title={basisNote("mean_up_time")}><span className="k">Mean up time</span><span className="v">{fmt(result.mean_up_time)}{u}</span></div>
@@ -742,6 +752,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         onCompute={onCompute}
         computing={busy === "exact"}
       />
+      {exactOk && result.proof_test_note && <p className="muted-line">{result.proof_test_note}</p>}
 
       {!exactOk && <DowntimeBars rows={simPer} title="What drives downtime" />}
 
