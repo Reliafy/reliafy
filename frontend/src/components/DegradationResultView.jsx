@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Plot from "./Plot.jsx";
 import { degradationReliability } from "../api.js";
+import { unitInText } from "./unitText.js";
 
 // Instrument-ish categorical palette for per-item traces.
 const COLORS = [
@@ -182,7 +183,7 @@ export default function DegradationResultView({ results, modelId }) {
         <div className="stat"><div className="k">Path model</div><div className="v sm">{r.path_model?.name || "—"}</div></div>
         <div className="stat"><div className="k">Items</div><div className="v">{r.n_units ?? "—"}</div></div>
         <div className="stat"><div className="k">Threshold</div><div className="v sm">{fmt(r.threshold)}{r.measurement_unit ? ` ${r.measurement_unit}` : ""}</div></div>
-        <div className="stat"><div className="k">Mean life</div><div className="v sm">{fmt(life.mean, 0)}{r.unit ? ` ${r.unit}` : ""}</div></div>
+        <div className="stat"><div className="k">Mean life</div><div className="v sm">{fmt(life.mean, 0)}{r.unit ? ` ${unitInText(r.unit)}` : ""}</div></div>
       </div>
 
       <div className="card" style={{ marginTop: "1rem" }}>
@@ -230,10 +231,10 @@ export default function DegradationResultView({ results, modelId }) {
           <div className="design-life-readout">
             With <strong>{fmt(confPct, 0)}% confidence</strong>,{" "}
             <strong>{fmt(relPct, 0)}%</strong> of the population survive to at least{" "}
-            <strong>{fmt(designLife, 0)}{r.unit ? ` ${r.unit}` : ""}</strong>
+            <strong>{fmt(designLife, 0)}{r.unit ? ` ${unitInText(r.unit)}` : ""}</strong>
             {pointLife != null && (
               <span className="muted-line" style={{ display: "block", marginTop: "0.2rem" }}>
-                Best estimate (ignoring uncertainty): {fmt(pointLife, 0)}{r.unit ? ` ${r.unit}` : ""}.
+                Best estimate (ignoring uncertainty): {fmt(pointLife, 0)}{r.unit ? ` ${unitInText(r.unit)}` : ""}.
               </span>
             )}
           </div>

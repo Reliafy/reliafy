@@ -19,6 +19,7 @@ from backend.services import degradation as degradation_service
 from backend.services import models as models_service
 from backend.services import strategy_store
 from backend.services.strategy import fmt_num
+from backend.units import unit_in_text
 
 
 
@@ -74,8 +75,9 @@ def _unit_mismatch(decision: dict, evidence_unit) -> dict | None:
         return {
             "status": "inconclusive",
             "reason": (
-                f"Unit mismatch: the task interval is in {decision.get('interval_unit')} "
-                f"but the linked analysis is in {evidence_unit}. Align the units to validate this decision."
+                f"Unit mismatch: the task interval is in {unit_in_text(decision.get('interval_unit'))} "
+                f"but the linked analysis is in {unit_in_text(evidence_unit)}. Align the units to validate "
+                "this decision."
             ),
         }
     return None
@@ -397,7 +399,7 @@ def _resolve_decision(decision: dict, fetch) -> dict:
             return {**base, **mismatch}
         interval = r.get("interval")
         if interval is not None:
-            unit = f" {r['unit']}" if r.get("unit") else ""
+            unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
             return {**base, "status": "supported",
                     "summary": f"Check every ~{fmt_num(interval)}{unit} for {r.get('target_availability', 0):.0%} availability."}
         return {**base, "status": "inconclusive", "reason": "The analysis has no computed interval."}
@@ -444,7 +446,7 @@ def _check_replacement(analysis, want_beneficial: bool) -> dict:
                 "reason": "The linked analysis isn't an optimal-replacement calculation."}
     r = analysis.results or {}
     beneficial = bool(r.get("beneficial"))
-    unit = f" {r['unit']}" if r.get("unit") else ""
+    unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
     if beneficial and want_beneficial:
         t = r.get("optimal_time")
         savings = r.get("savings") or 0

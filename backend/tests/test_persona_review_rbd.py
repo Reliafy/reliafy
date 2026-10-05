@@ -13,8 +13,8 @@ import json
 import pytest
 
 from backend.services import availability_answer, rbd_jobs, rbd_policies
-from backend.services import rbd_analysis as ra
 from backend.services import rbds as rbds_service
+from backend.units import canonical_unit
 from backend.tests.test_availability_answers import _saved, _sif
 from backend.tests.test_mcp import GRAPH, REPAIRABLE_STAGES, A, _call, _err, _ok, _run, env  # noqa: F401
 from backend.tests.test_mcp_check_oct5 import pro  # noqa: F401 - a fixture
@@ -295,7 +295,7 @@ def test_proof_test_note_without_a_safety_function():
     ("furlongs", "furlongs"), ("", ""), ("units", "units"),
 ])
 def test_canonical_unit(typed, stored):
-    assert ra.canonical_unit(typed) == stored
+    assert canonical_unit(typed) == stored
 
 
 def test_units_are_stored_in_one_spelling(env):

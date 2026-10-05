@@ -12,6 +12,7 @@ import { precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
 import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
 import WhatToImprove from "./WhatToImprove.jsx";
+import { unitInText } from "./unitText.js";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -58,7 +59,7 @@ const fmtPctLevel = (v) => `${Number((v * 100).toPrecision(4))}%`;
 export function DesignLife({ result }) {
   const dl = result.design_life;
   if (!dl) return null;
-  const unit = result.unit ? ` ${result.unit}` : "";
+  const unit = result.unit ? ` ${unitInText(result.unit)}` : "";
   const iv = result.band?.design_life;
   const level = result.band?.level;
   const lead = dl.from === "now" ? "for the next" : dl.from === "age" ? "for a further" : "until";
@@ -88,7 +89,7 @@ export function DesignLife({ result }) {
 // What "as of now" assumed (#173): the failed and running blocks, and the
 // system's reliability now.
 function AsOfNote({ result, idToLabel }) {
-  const unit = result.unit ? ` ${result.unit}` : "";
+  const unit = result.unit ? ` ${unitInText(result.unit)}` : "";
   const parts = Object.entries(result.current_state || {}).map(([id, st]) =>
     st.failed ? `${idToLabel[id] || id} failed` : `${idToLabel[id] || id} running ${fmtLife(st.age)}${unit}`
   );
@@ -234,7 +235,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
           <span>to</span>
           <span className="drop">{(result.ccf.reliability_with * 100).toFixed(1)}%</span>
           <span className="muted-line" style={{ margin: 0 }}>
-            ({result.ccf.groups.map((g) => `${g.members.join(" & ")} β=${g.beta}`).join("; ")}, at t={fmt(result.ccf.time)}{unit ? ` ${unit}` : ""})
+            ({result.ccf.groups.map((g) => `${g.members.join(" & ")} β=${g.beta}`).join("; ")}, at t={fmt(result.ccf.time)}{unit ? ` ${unitInText(unit)}` : ""})
           </span>
         </div>
       )}
@@ -469,7 +470,7 @@ function DowntimeBars({ rows, title, note }) {
 // The exact figures over time (#154), from new or from the current state
 // (#155): the window's figures, each labelled with its method, and A(t).
 function ExactSection({ exact, steady, unit, onCompute, computing }) {
-  const u = unit ? ` ${unit}` : "";
+  const u = unit ? ` ${unitInText(unit)}` : "";
   const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
   if (!exact) return null;
   if (exact.status === "on_request") {
@@ -672,7 +673,7 @@ function QuickTag() {
 
 export function AvailabilityView({ result, unit, graph = null, onSimulate = null, onCompute = null, busy = null,
                                   onQuick = null, capMessage = null, job = null }) {
-  const u = unit ? ` ${unit}` : "";
+  const u = unit ? ` ${unitInText(unit)}` : "";
   const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
   // A result saved before #154 is a simulation result (no has_simulation flag).
   const hasSim = result.has_simulation !== false;

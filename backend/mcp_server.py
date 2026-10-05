@@ -115,6 +115,7 @@ from backend.services import rbd_costs
 from backend.services import rbd_export
 from backend.services.rbd_analysis import AnalysisError
 from backend.services.strategy import StrategyError
+from backend.units import canonical_unit, unit_in_text
 
 logger = logging.getLogger(__name__)
 
@@ -2046,7 +2047,7 @@ def _rbd_brief(rbd) -> dict:
         "id": rbd.id,
         "name": rbd.name,
         "repairable": bool(g.get("repairable")),
-        "unit": rbd_analysis.canonical_unit(g.get("unit")),  # one spelling per known unit (#265)
+        "unit": canonical_unit(g.get("unit")),  # one spelling per known unit (#265)
         "n_blocks": sum(1 for n in g.get("nodes") or [] if n.get("type") not in ("input", "output")),
         "is_sample": samples_service.is_sample(rbd.owner_id),
         "updated_at": rbd.updated_at.isoformat(),
@@ -4065,7 +4066,7 @@ def _ffi_shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, 
     ends = [e for e in (low, high) if e is not None and e["interval"] is not None]
     shortest = min(ends, key=lambda e: e["interval"], default=None)
     if shortest is not None and point.get("interval") and shortest["interval"] < _FFI_SHORTER * point["interval"]:
-        u = f" {point['unit']}" if point.get("unit") else ""
+        u = f" {unit_in_text(point['unit'])}" if point.get("unit") else ""
         out["uncertainty_note"] = (
             f"Across the shape's 95% interval [{lo:.3g}, {hi:.3g}] the interval could need to be as short as "
             f"{shortest['interval']:.3g}{u} (β = {shortest['beta']:.3g}) vs {point['interval']:.3g}{u} at the "
@@ -4255,7 +4256,7 @@ def _projection_out(payload: dict) -> dict:
     if len(modes) > _PROJECTION_MODES:
         out["modes"] = modes[:_PROJECTION_MODES]
         out["modes_note"] = f"The {_PROJECTION_MODES} modes with the most failures of {len(modes)}."
-    u = f" {payload['unit']}" if payload.get("unit") else ""
+    u = f" {unit_in_text(payload['unit'])}" if payload.get("unit") else ""
     d, p, g = (payload.get(k, {}).get("mtbf") for k in ("demonstrated", "projected", "growth_potential"))
     note = payload.get("basis_note")
     if note:

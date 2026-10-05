@@ -24,6 +24,8 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from backend.units import unit_in_text
+
 #: Figures a simulation-only diagram can't give without the simulation.
 _FIGURES = ("steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
             "failure_frequency", "figures_basis", "importance", "t_simulation")
@@ -117,14 +119,14 @@ def _headline(out: dict, payload: dict) -> Optional[dict]:
                 "lower": precision.get("lower"), "upper": precision.get("upper"), **centre,
                 "confidence": precision.get("confidence"),
                 "what": (f"the mean availability over the simulated window of {payload.get('t_simulation'):g} "
-                         f"{payload.get('unit') or ''}".rstrip() if payload.get("t_simulation") else
+                         f"{unit_in_text(payload.get('unit'))}".rstrip() if payload.get("t_simulation") else
                          "the mean availability over the simulated window")}
     exact = payload.get("exact") or {}
     if exact.get("status") == "ok" and exact.get("mission_availability") is not None:
         return {"value": exact["mission_availability"], "basis": "exact",
                 "method": (exact.get("method") or {}).get("mission_availability"),
                 "what": f"the mean availability over the window of {exact.get('window'):g} "
-                        f"{exact.get('unit') or ''}".rstrip()}
+                        f"{unit_in_text(exact.get('unit'))}".rstrip()}
     return None
 
 

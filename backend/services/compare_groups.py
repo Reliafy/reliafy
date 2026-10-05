@@ -26,6 +26,7 @@ import pandas as pd
 
 from backend import fitting
 from backend.services.strategy import fmt_num
+from backend.units import unit_in_text
 from surpyval import KaplanMeier, gray_test, logrank, rmst_diff
 
 ALPHA = 0.05
@@ -272,7 +273,7 @@ def compare_groups(
         raise CompareGroupsError("Every time in one group is 0: there is no window to average life over.")
 
     # With no unit, say "time units" rather than leave a bare number (#211).
-    us = f" {unit.strip()}" if unit and unit.strip() else " time units"
+    us = f" {unit_in_text(unit)}" if unit and unit.strip() else " time units"
     summaries = []
     for g in order:
         m = lab == g

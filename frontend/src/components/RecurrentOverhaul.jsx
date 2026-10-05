@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
 import { recurrentOverhaul } from "../api.js";
+import { unitInText } from "./unitText.js";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
@@ -98,7 +99,7 @@ export default function RecurrentOverhaul({ modelId, unit }) {
           <div className="strategy-reco">
             <span className="strategy-reco-icon">✓</span>
             <span>
-              Overhaul every <b>{fmt(opt.interval)}{unit ? ` ${unit}` : ""}</b> — about{" "}
+              Overhaul every <b>{fmt(opt.interval)}{unit ? ` ${unitInText(unit)}` : ""}</b> — about{" "}
               {fmt(opt.expected_failures_per_cycle)} repairs expected between overhauls.
             </span>
           </div>
@@ -113,7 +114,7 @@ export default function RecurrentOverhaul({ modelId, unit }) {
             </div>
             <div className="stat">
               <div className="value">{fmt(none?.cost_rate)}</div>
-              <div className="name">no overhaul (repairs only, to {fmt(none?.horizon)}{unit ? ` ${unit}` : ""})</div>
+              <div className="name">no overhaul (repairs only, to {fmt(none?.horizon)}{unit ? ` ${unitInText(unit)}` : ""})</div>
             </div>
             <div className="stat">
               <div className="value">{result.saving_pct == null ? "—" : `${result.saving_pct.toFixed(0)}%`}</div>

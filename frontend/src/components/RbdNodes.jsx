@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext } from "react";
 import { Handle, Position, useStore } from "reactflow";
 import { MaintenanceChips } from "./RbdBlockCosts.jsx";
+import { unitInText } from "./unitText.js";
 
 // The React Flow node components of a reliability block diagram, shared by the
 // builder (interactive) and the public read-only view (/p/:token). Pure
@@ -31,7 +32,7 @@ export function unitWarning(model, rbdUnit) {
   if (!rbdUnit || !model) return null;
   const u = (model.unit || "").trim();
   if (!u || u === rbdUnit) return null;
-  return `Unit mismatch — model is ${u}, RBD is ${rbdUnit}`;
+  return `Unit mismatch — model is ${unitInText(u)}, RBD is ${unitInText(rbdUnit)}`;
 }
 
 function UnitWarn({ title }) {

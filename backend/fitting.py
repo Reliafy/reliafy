@@ -84,7 +84,7 @@ from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
 from backend import param_intervals
-from backend.units import canonical_unit, prose_unit
+from backend.units import canonical_unit, unit_in_text
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
 from backend.services.method_labels import hides_solver_names, note_fit
@@ -1186,7 +1186,7 @@ def fit(
             result.get("params")):
         result["ci_note"] = param_intervals.CI_NOTE
     if result.get("mixture_summary") and result["unit"]:
-        result["mixture_summary"] = (mixture_summary(result, prose_unit(result["unit"]))
+        result["mixture_summary"] = (mixture_summary(result, unit_in_text(result["unit"]))
                                      or result["mixture_summary"])
     if c_invert:
         # Persist alongside the other fit options so a saved model's spec

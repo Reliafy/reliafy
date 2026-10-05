@@ -196,9 +196,9 @@ def _saved_block_graph(model_id):
 def test_unit_mismatch_warns_on_create_and_analyze(samples):
     created = _ok(_call(samples.token[A], "create_rbd", {
         "name": "Mixed units", "unit": "Hours", **_saved_block_graph(PUMPS)}))
-    assert any("Months" in w and "Hours" in w and "Pump" in w for w in created["warnings"])
+    assert any("fitted in months" in w and "unit is hours" in w and "Pump" in w for w in created["warnings"])
     out = _ok(_call(samples.token[A], "analyze_rbd", {"rbd_id": created["id"]}))
-    assert any("Months" in w for w in out["warnings"])
+    assert any("months" in w for w in out["warnings"])
 
     same = _ok(_call(samples.token[A], "create_rbd", {
         "name": "Same units", "unit": "Months", **_saved_block_graph(PUMPS)}))

@@ -8,6 +8,7 @@ import Select from "./Select.jsx";
 import { modelSummary } from "./RbdNodes.jsx";
 import { graphSignature } from "./RbdValidation.jsx";
 import "./RbdDesignPanel.css";
+import { unitInText } from "./unitText.js";
 
 // "Design for a target" (redundancy allocation, #98): how many copies of each
 // block a non-repairable diagram needs — the most reliable design within a
@@ -444,7 +445,7 @@ export default function RbdDesignPanel({ graph, onApply, onView }) {
         <div className="card note rbd-design-applied" role="status">
           <p>
             <b>Drawn on the diagram — not saved.</b> Its reliability at t = {fmtN(result.t)}
-            {unit} is {fmtR(applied.reliability)}. Review it on the Builder tab, then Save RBD to keep it.
+            {unit && ` ${unitInText(unit)}`} is {fmtR(applied.reliability)}. Review it on the Builder tab, then Save RBD to keep it.
           </p>
           {applied.notes.map((note) => <p key={note}>{note}</p>)}
           <div className="rbd-design-applied-actions">

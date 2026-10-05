@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Select from "./Select.jsx";
 import { getRecurrentProjection, runRecurrentProjection } from "../api.js";
+import { unitInText } from "./unitText.js";
 
 const fmt = (v, d = 4) =>
   v == null || !Number.isFinite(v)
@@ -215,7 +216,7 @@ export default function RecurrentProjection({ modelId, unit }) {
           <div className="strategy-reco">
             <span className="strategy-reco-icon">✓</span>
             <span>
-              {result.systems} system{result.systems === 1 ? "" : "s"} to T = {fmt(result.T)}{u}:{" "}
+              {result.systems} system{result.systems === 1 ? "" : "s"} to T = {fmt(result.T)}{u && ` ${unitInText(unit)}`}:{" "}
               {result.failures?.A ?? 0} A, {result.failures?.BC ?? 0} BC and {result.failures?.BD ?? 0} BD
               failures ({result.n_bd_modes} BD mode{result.n_bd_modes === 1 ? "" : "s"}, mean FEF{" "}
               {fmt(result.mean_fef, 3)}). New BD modes were still appearing at h(T) ={" "}

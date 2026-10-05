@@ -41,6 +41,7 @@ from backend.services import alt as alt_service
 from backend.services import models as models_service
 from backend.services import recurrent as recurrent_service
 from backend.services.strategy import _model_from_params, StrategyError
+from backend.units import unit_in_text
 
 
 class FleetNotFound(KeyError):
@@ -758,7 +759,7 @@ def _forecast_single(model, ages, rates, periods, items, *, Z=None, limits=None,
             f"{n_doomed} item{'s' if many else ''} ({names}{', …' if n_doomed > 5 else ''}) "
             f"{'are' if many else 'is'} past the age the model says any unit survives to, so "
             f"{'they are' if many else 'it is'} counted as certain to fail in the first period. "
-            f"Check the current use is in the model's unit{f' ({unit})' if unit else ''}."
+            f"Check the current use is in the model's unit{f' ({unit_in_text(unit)})' if unit else ''}."
         ]
     return out
 

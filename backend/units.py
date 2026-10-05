@@ -1,15 +1,17 @@
-"""One spelling per time unit (#265).
+"""One spelling per time unit (#265) — the single definition.
 
-"hours", "Hours", "hrs" and "h" are one unit, but saved models, the samples
-and agents over MCP spell it every way. :func:`canonical_unit` gives the one
-spelling a known unit is stored and shown in — the app's unit pickers'
-("Hours", "Months", "Cycles", …: ColumnMapper/Units/RecurrentColumnMapper
-COMMON_UNITS, RbdBuilder TIME_UNITS); anything else is kept as typed
-(trimmed), and a blank unit stays blank.
+"hours", "Hours", "hrs" and "h" are one unit, but saved models, diagrams, the
+samples and agents over MCP spell it every way. :func:`normalize_unit` gives
+the comparable form ("hour"); :func:`canonical_unit` gives the one spelling a
+known unit is stored and shown in — the app's unit pickers' ("Hours",
+"Months", "Cycles", …: ColumnMapper/Units/RecurrentColumnMapper COMMON_UNITS,
+RbdBuilder TIME_UNITS); anything else is kept as typed (trimmed), and a blank
+unit stays blank. :func:`unit_in_text` is the form for running text ("in
+hours", "per month"), so a sentence never reads "in Hours".
 
-The alias and canonical lists are the RBD side's (``rbd_analysis``'s
-``normalize_unit``/``canonical_unit``, #265), kept here so models, datasets
-and fleets share them without importing the RBD analysis.
+Models, datasets, fleets and the RBD analysis (``rbd_analysis``, ``rbds``,
+``rbd_maintenance``, ``rbd_intervals``) all import from here; don't copy
+these tables elsewhere.
 """
 
 from __future__ import annotations
@@ -58,9 +60,11 @@ def canonical_unit(unit) -> str:
     return CANONICAL_UNITS.get(key, text) if key else text
 
 
-def prose_unit(unit) -> str:
-    """A unit for running text: a known unit lower-case ("median life 77
-    hours"), anything else as given."""
+def unit_in_text(unit) -> str:
+    """A unit for running text — notes, verdicts, summaries, warnings: a
+    known unit lower-case ("median life 77 hours", "fitted in months"),
+    anything else as given (a typed "kWh" or "Flights" is left alone); blank
+    as blank. Labels, headers and the ``unit`` field stay canonical."""
     text = str(unit or "").strip()
     return text.lower() if normalize_unit(text) in CANONICAL_UNITS else text
 

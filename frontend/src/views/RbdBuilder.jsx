@@ -49,6 +49,7 @@ import {
   StructureNode,
 } from "../components/RbdNodes.jsx";
 import { lazy, Suspense } from "react";
+import { unitInText } from "../components/unitText.js";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -1014,7 +1015,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
               onClick={() => setModal("costs")}
               title={
                 diagramCosts?.downtime_rate != null
-                  ? `System downtime costs ${Number(diagramCosts.downtime_rate).toLocaleString()} per ${(rbdUnit || "time unit").replace(/s$/, "")} — click to edit`
+                  ? `System downtime costs ${Number(diagramCosts.downtime_rate).toLocaleString()} per ${(unitInText(rbdUnit) || "time unit").replace(/s$/, "")} — click to edit`
                   : "System downtime cost and ownership horizon (block costs are on each block)"
               }
             >

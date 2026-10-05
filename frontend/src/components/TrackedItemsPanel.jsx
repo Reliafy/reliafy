@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Modal from "./Modal.jsx";
 import { createTrackedItem, addTrackedMeasurement } from "../api.js";
+import { unitInText } from "./unitText.js";
 
 const fmt = (v, digits = 0) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -19,7 +20,7 @@ export function healthBadge(pred) {
 export function rulText(pred, unit) {
   if (!pred || pred.method === "error") return "—";
   if (pred.rul === null || pred.rul === undefined) return "—";
-  const u = unit ? ` ${unit}` : "";
+  const u = unit ? ` ${unitInText(unit)}` : "";
   const base = `${fmt(pred.rul)}${u}`;
   const [lo, hi] = pred.rul_interval || [null, null];
   if (lo === null && hi === null) return base;
@@ -89,7 +90,7 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
                   <td className="lib-n">
                     {pred.failure_time === null || pred.failure_time === undefined
                       ? "—"
-                      : `${fmt(pred.failure_time)}${unit ? ` ${unit}` : ""}`}
+                      : `${fmt(pred.failure_time)}${unit ? ` ${unitInText(unit)}` : ""}`}
                   </td>
                   <td className="lib-n">{it.n_measurements}</td>
                   <td className="lib-actions">
@@ -185,7 +186,7 @@ function AddMeasurementModal({ model, item, onClose, onAdded }) {
     >
       {last && (
         <p className="muted-line" style={{ marginTop: 0 }}>
-          Last reading: {last.y}{mUnit ? ` ${mUnit}` : ""} at {last.t}{unit ? ` ${unit}` : ""}.
+          Last reading: {last.y}{mUnit ? ` ${mUnit}` : ""} at {last.t}{unit ? ` ${unitInText(unit)}` : ""}.
         </p>
       )}
       <div className="row" style={{ gap: "0.6rem" }}>

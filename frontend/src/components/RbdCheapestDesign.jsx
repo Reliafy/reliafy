@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { cheapestRbdDesign } from "../api.js";
 import { graphSignature } from "./RbdValidation.jsx";
 import { fmtMoney } from "./AvailabilityCosts.jsx";
+import { unitInText } from "./unitText.js";
 
 // The Design tab for a repairable diagram (#99): how many copies of each block
 // with a purchase price own the system at the lowest total cost over a
@@ -45,7 +46,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
   const [needsPro, setNeedsPro] = useState(false);
   const [applied, setApplied] = useState(null); // {prev, sig}
   const sig = graphSignature(graph);
-  const unit = graph.unit ? ` ${graph.unit}` : "";
+  const unit = graph.unit ? ` ${unitInText(graph.unit)}` : "";
 
   const find = async () => {
     setPhase("working");

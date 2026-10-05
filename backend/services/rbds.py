@@ -14,6 +14,7 @@ from backend.db import from_doc, to_doc
 from backend.schema import Rbd
 from backend.services import models as models_service
 from backend.services import rbd_analysis
+from backend.units import canonical_unit
 
 
 
@@ -357,8 +358,8 @@ def _key_unit(graph: dict, spelling: str | None = None) -> str:
     "Hours" are one unit), or ``spelling`` — a diagram's stored spelling from
     before units were normalised — when it is the same unit, so results saved
     under it keep matching (see :func:`_stored_spellings`)."""
-    canon = rbd_analysis.canonical_unit(graph.get("unit"))
-    if spelling is not None and rbd_analysis.canonical_unit(spelling) == canon:
+    canon = canonical_unit(graph.get("unit"))
+    if spelling is not None and canonical_unit(spelling) == canon:
         return str(spelling).strip()
     return canon
 
@@ -369,8 +370,8 @@ def _stored_spellings(doc: dict | None, graph: dict | None = None) -> list:
     ("hours"), that spelling — its results were saved under it."""
     raw = str(((doc or {}).get("graph") or {}).get("unit") or "").strip()
     out: list = [None]
-    if raw and raw != rbd_analysis.canonical_unit(raw) and (
-            graph is None or rbd_analysis.canonical_unit(graph.get("unit")) == rbd_analysis.canonical_unit(raw)):
+    if raw and raw != canonical_unit(raw) and (
+            graph is None or canonical_unit(graph.get("unit")) == canonical_unit(raw)):
         out.append(raw)
     return out
 
@@ -380,9 +381,9 @@ def stored_unit(unit, existing_graph: dict | None = None) -> str:
     diagram already stored with the same unit spelt otherwise keeps its
     spelling, so its saved results' keys still match (stored units are never
     rewritten in bulk; reads show the canonical one)."""
-    canon = rbd_analysis.canonical_unit(unit)
+    canon = canonical_unit(unit)
     old = str((existing_graph or {}).get("unit") or "").strip()
-    if old and rbd_analysis.canonical_unit(old) == canon:
+    if old and canonical_unit(old) == canon:
         return old
     return canon
 
@@ -390,7 +391,7 @@ def stored_unit(unit, existing_graph: dict | None = None) -> str:
 def display_graph(graph: dict | None) -> dict:
     """A stored graph as shown (#265): its unit in the canonical spelling."""
     graph = graph or {}
-    unit = rbd_analysis.canonical_unit(graph.get("unit"))
+    unit = canonical_unit(graph.get("unit"))
     return graph if unit == (graph.get("unit") or "") else {**graph, "unit": unit}
 
 
