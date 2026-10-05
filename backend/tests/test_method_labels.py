@@ -192,7 +192,8 @@ def test_mcp_analyze_rbd_and_get_job_name_no_engine(custom_engine, env, monkeypa
     tasks, dispatch = _mcp_queue(env, monkeypatch)
     token = env.oauth[MCP_PRO]
     rid = _repairable(env, MCP_PRO, "Pumps")
-    queued = _ok(_call(token, "analyze_rbd", {"rbd_id": rid}))
+    # Every figure here is exact: the simulation runs on request (#262).
+    queued = _ok(_call(token, "analyze_rbd", {"rbd_id": rid, "simulate": True}))
     job_id = queued["simulation"]["job_id"]
     assert len(tasks) == 1 and ENGINE not in _text(tasks)  # what goes to the compute service
     dispatch()
