@@ -64,7 +64,7 @@ import time
 from datetime import timedelta
 from contextlib import asynccontextmanager, contextmanager
 from typing import Annotated, Any, Callable, Literal, Optional, Union
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import anyio
 import numpy as np
@@ -309,9 +309,10 @@ window, its outages each attributed to the block that took it down, and the bloc
 diagram, an Excel workbook, a CSV of failure times or outages): create_upload, then send the file with the \
 curl PUT it returns, inspect_upload if you need its sheets, columns or diagrams, then import_rbd / \
 import_excel / upload_dataset / upload_outage_log with the upload_id. Paste only small text formats \
-(import_rbd's content, upload_dataset's csv). If the PUT can't reach Reliafy from your environment (a \
-proxy 403, no network), follow create_upload's fallback: paste a small text file (at most 200 KB) instead, \
-or ask the user to upload the file in the app. Relay the import notes: they say what was approximated.
+(import_rbd's content, upload_dataset's csv). If the PUT can't connect or a proxy refuses the host (e.g. \
+CONNECT 403), retry the same PUT once on create_upload's url_fallback, when it gives one (on reliafy.com; \
+slower for large files). If that fails too (no network), follow create_upload's fallback: paste a small text file (at most \
+200 KB) instead, or ask the user to upload the file in the app. Relay the import notes: they say what was approximated.
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
@@ -4614,6 +4615,13 @@ _UPLOAD_FALLBACK = (
     "retry it: a small text file (at most 200 KB) can be passed as text instead — upload_dataset csv, "
     "upload_outage_log csv, import_rbd content (Open-PSA XML or Galileo .dft). Anything else (an .xlsx "
     "workbook, a BlockSim project, a larger file): ask the user to upload it in the Reliafy app ({app}).")
+# #212: url is the app's direct service address (fast, but sandboxes and
+# corporate egress proxies often refuse its host); the same path on the public
+# site reaches the same handler, slower for large files. One retry there first.
+_UPLOAD_FALLBACK_URL = (
+    "If the PUT to url can't connect, or a proxy refuses its host (e.g. CONNECT tunnel failed, 403), send the "
+    "same PUT once to url_fallback (curl_fallback) instead: the same single-use link on {site}, slower for large "
+    "files. The link is only used up when a PUT reaches Reliafy, so a refused first attempt doesn't spend it. ")
 _UPLOAD_APP_PAGES = {"rbd_import": ("/rbds/list", "RBDs › Import"), "dataset": ("/datasets/list", "Datasets"),
                      "excel": ("/datasets/list", "Datasets, RCM or RBDs › Import"),
                      "outage_log": ("/rbds/list", "the diagram's Outage history tab")}
@@ -4697,9 +4705,27 @@ def _upload_table_text(db, uid: str, upload_id: str, sheet: Optional[str]) -> tu
     return doc, uploads_service.as_text(data)
 
 
-def _upload_fallback(purpose: str) -> str:
+def _upload_fallback(purpose: str, site: Optional[str] = None) -> str:
+    """What to do when the PUT can't get through: with ``site`` (the public
+    origin, when it differs from the upload URL's), retry there first."""
     path, where = _UPLOAD_APP_PAGES[purpose]
-    return _UPLOAD_FALLBACK.format(app=f"{where}: {_url(path)}")
+    text = _UPLOAD_FALLBACK.format(app=f"{where}: {_url(path)}")
+    if site:
+        text = _UPLOAD_FALLBACK_URL.format(site=urlsplit(site).netloc or site) + text.replace(
+            "If the PUT can't reach this URL from your environment",
+            "If that can't get through either", 1)
+    return text
+
+
+def upload_urls(path: str) -> tuple[str, Optional[str]]:
+    """An upload link's URL — on ``UPLOAD_BASE_URL`` (the direct service
+    address, for speed) when set — and the same path on the public site as a
+    fallback (#212), or None when the two are the same."""
+    public = _url(path)
+    if not config.UPLOAD_BASE_URL:
+        return public, None
+    direct = f"{config.UPLOAD_BASE_URL}{path}"
+    return direct, (public if public != direct else None)
 
 
 @_tool("create_upload", _WRITE, "Get a file upload link")
@@ -4721,8 +4747,10 @@ def create_upload(
     tool with upload_id: import_rbd (diagram files), import_excel (workbooks), upload_dataset or
     upload_outage_log. inspect_upload shows a workbook's sheets and columns, or a diagram file's diagrams,
     before importing. The URL expires in 15 minutes and works once; the file is deleted after its import, or
-    after an hour. Never read a file into your context to paste it: use this. If your environment can't reach
-    the URL (a proxy 403, no network), don't retry: pass a small text file (at most 200 KB) as text instead
+    after an hour. Never read a file into your context to paste it: use this. If the PUT to url can't connect
+    or a proxy refuses its host (e.g. CONNECT 403), retry the same PUT once on url_fallback (curl_fallback),
+    when given: the same link on reliafy.com, slower for large files, and still unused after a refused attempt.
+    If your environment can't reach that either, don't retry: pass a small text file (at most 200 KB) as text instead
     (upload_dataset / upload_outage_log csv, import_rbd content), and ask the user to upload anything else in
     the Reliafy app — the response's fallback says where."""
     user, db = _caller(ctx), _db()
@@ -4730,19 +4758,28 @@ def create_upload(
         db, user["uid"], purpose, filename, size_bytes,
         plan=_usage_plan(user), client=usage_service.client_of(user))
     path = f"/api/uploads/{doc['_id']}?t={token}"
-    url = f"{config.UPLOAD_BASE_URL}{path}" if config.UPLOAD_BASE_URL else _url(path)
-    return {
+    url, alt = upload_urls(path)
+
+    def curl(target: str) -> str:
+        return (f"curl -sS -X PUT --data-binary @{shlex.quote(doc['filename'])} "
+                f"-H \"Content-Type: application/octet-stream\" \"{target}\"")
+
+    out = {
         "upload_id": doc["_id"],
         "url": url,
         "method": "PUT",
         "headers": {"Content-Type": "application/octet-stream"},
         "max_bytes": doc["max_bytes"],
         "expires_at": doc["expires_at"].isoformat(),
-        "curl": (f"curl -sS -X PUT --data-binary @{shlex.quote(doc['filename'])} "
-                 f"-H \"Content-Type: application/octet-stream\" \"{url}\""),
+        "curl": curl(url),
         "note": _UPLOAD_NOTE + " Replace the @file in curl with the file's path.",
-        "fallback": _upload_fallback(purpose),
+        "fallback": _upload_fallback(purpose, _url("") if alt else None),
     }
+    if alt:
+        # #212: the same link on the public site, for when url's host is refused.
+        out["url_fallback"] = alt
+        out["curl_fallback"] = curl(alt)
+    return out
 
 
 @_tool("inspect_upload", _READ, "Inspect an uploaded file")
