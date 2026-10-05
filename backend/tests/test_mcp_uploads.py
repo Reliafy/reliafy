@@ -589,6 +589,60 @@ def test_token_is_single_use_and_checked(env):
     assert "no-store" in again.headers["cache-control"]
 
 
+def test_fallback_url_on_the_public_site_when_the_direct_host_is_refused(env, monkeypatch):
+    """#212: url is the direct service address (UPLOAD_BASE_URL), which egress
+    proxies often refuse; url_fallback is the same single-use link on the
+    public site. A PUT through either works once; the other is then refused."""
+    from backend import config, mcp_server
+
+    monkeypatch.setattr(config, "UPLOAD_BASE_URL", "https://direct.example.run.app")
+    link = _ok(_call(env.token[A], "create_upload", {"purpose": "rbd_import", "filename": "s.dft"}))
+    path = f"/api/uploads/{link['upload_id']}?t="
+    assert link["url"].startswith("https://direct.example.run.app" + path)
+    assert link["url_fallback"].startswith("https://reliafy.example" + path)
+    assert _target(link["url"]) == _target(link["url_fallback"])  # the same link
+    assert link["curl_fallback"] == link["curl"].replace(link["url"], link["url_fallback"])
+    fallback = link["fallback"]
+    assert fallback.startswith("If the PUT to url can't connect") and "url_fallback" in fallback
+    assert "reliafy.example" in fallback and "proxy 403" in fallback and "don't retry" in fallback
+    assert "url_fallback" in mcp_server.INSTRUCTIONS
+
+    client = _http()
+    # The direct PUT was refused by a proxy: it never reached us, so the
+    # link is still unused, and the fallback (the public host) takes the file.
+    assert env.db.uploads.find_one({"_id": link["upload_id"]})["status"] == "pending"
+    r = client.put(_target(link["url_fallback"]), content=GALILEO.encode(),
+                   headers={"Host": "reliafy.example", "Content-Type": "application/octet-stream"})
+    assert r.status_code == 200, r.text
+    again = client.put(_target(link["url"]), content=b"other bytes",
+                       headers={"Host": "direct.example.run.app"})
+    assert again.status_code == 409 and "already been used" in again.json()["detail"]
+
+    # The other way round: the direct PUT works, then the fallback is refused.
+    other = _ok(_call(env.token[A], "create_upload", {"purpose": "rbd_import", "filename": "t.dft"}))
+    assert client.put(_target(other["url"]), content=GALILEO.encode(),
+                      headers={"Host": "direct.example.run.app"}).status_code == 200
+    refused = client.put(_target(other["url_fallback"]), content=b"x", headers={"Host": "reliafy.example"})
+    assert refused.status_code == 409
+
+    # A first attempt that reached us but failed (too large) leaves the link usable on the fallback.
+    big = _ok(_call(env.token[A], "create_upload", {"purpose": "dataset", "filename": "lives.csv"}))
+    too_big = client.put(_target(big["url"]), content=b"x" * (big["max_bytes"] + 1))
+    assert too_big.status_code == 413
+    assert client.put(_target(big["url_fallback"]), content=b"hours\n1\n2\n").status_code == 200
+
+
+def test_no_fallback_url_when_uploads_use_the_public_site(env, monkeypatch):
+    from backend import config
+
+    for base in (None, "https://reliafy.example"):
+        monkeypatch.setattr(config, "UPLOAD_BASE_URL", base)
+        link = _ok(_call(env.token[A], "create_upload", {"purpose": "dataset", "filename": "lives.csv"}))
+        assert link["url"].startswith("https://reliafy.example/api/uploads/")
+        assert "url_fallback" not in link and "curl_fallback" not in link
+        assert link["fallback"].startswith("If the PUT can't reach this URL") and "url_fallback" not in link["fallback"]
+
+
 def test_expired_link_is_refused(env):
     link = _ok(_call(env.token[A], "create_upload", {"purpose": "rbd_import", "filename": "s.dft"}))
     past = datetime.now(timezone.utc) - timedelta(seconds=1)

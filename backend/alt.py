@@ -20,6 +20,7 @@ for persistence and rehydrated without re-fitting.
 
 from __future__ import annotations
 
+import math
 import uuid
 import warnings
 from collections import OrderedDict
@@ -382,12 +383,15 @@ def _build_payload(
         if ses is None or not np.isfinite(ses[i]):
             return None
         # SurPyval's own 95% Wald interval (#231): on the log scale for a
-        # positive shape parameter, so it stays inside its support; the
-        # life-stress coefficients are unbounded, so theirs is symmetric.
+        # positive shape parameter, so it stays inside its support; a
+        # positive life-stress coefficient (Arrhenius' b) on the log scale
+        # too (#262); the unbounded coefficients' is symmetric.
         if i < len(model_names):
             ci = param_interval(model, model_names[i], 0.95, "wald")
             if ci is not None:
                 return ci
+            if _bounded_coefficient(model, model_names[i]) is not None:
+                return None  # never a symmetric interval that leaves its support
         return [float(params[i] - _Z95 * ses[i]), float(params[i] + _Z95 * ses[i])]
 
     # Distribution shape parameters: everything after the substituted scale
@@ -895,9 +899,134 @@ def _quantiles(model, Zuse: np.ndarray, probs: list) -> list:
     return [float(v) if np.isfinite(v) else None for v in q]
 
 
+def parameter_bounds(model) -> list:
+    """``(lower, upper)`` for every entry of ``model.params``: the
+    distribution's support bounds, then the bounds SurPyval's life model
+    declares for its coefficients (``phi_bounds``: Arrhenius' ``b``, the
+    inverse power law's ``a`` and the dual models' constants are positive).
+    Unknown entries are unbounded."""
+    names = list(getattr(model, "parameter_names", []) or [])
+    try:
+        dist_bounds = list(model.distribution.bounds)
+        phi = getattr(getattr(model, "reg_model", None), "phi_bounds", None)
+        if callable(phi):
+            phi = phi(np.asarray(model.data.Z))
+        bounds = dist_bounds + list(phi or [])
+    except Exception:  # noqa: BLE001 - e.g. a model without a life model
+        bounds = []
+    bounds = [tuple(b) if b is not None else (None, None) for b in bounds]
+    return (bounds + [(None, None)] * len(names))[:max(len(names), len(bounds))]
+
+
+def _bounded_coefficient(model, name: str) -> Optional[tuple]:
+    """A life-stress coefficient's ``(lower, upper)`` when SurPyval declares
+    it bounded (e.g. positive), else None. Distribution parameters are left
+    to SurPyval's own ``param_cb``, which already keeps them in support."""
+    names = list(getattr(model, "parameter_names", []) or [])
+    if name not in names:
+        return None
+    idx = names.index(name)
+    if idx < int(getattr(model, "k_dist", 1) or 1):
+        return None
+    lower, upper = parameter_bounds(model)[idx]
+    return None if lower is None and upper is None else (lower, upper)
+
+
+def bounded_wald_interval(value: float, se: float, lower, upper, confidence: float) -> Optional[list]:
+    """A two-sided Wald interval computed on the log of the distance to a
+    one-sided bound and transformed back (#262), so a positive coefficient's
+    interval never leaves its support: ``lower + d·exp(±z·se/d)`` with
+    ``d = value - lower`` (mirrored for an upper bound). None when the
+    estimate sits on the bound or the standard error isn't usable; an
+    interval-bounded parameter (both bounds) isn't handled here."""
+    from scipy.stats import norm
+
+    if lower is not None and upper is not None:
+        return None
+    if not (np.isfinite(value) and np.isfinite(se) and se >= 0):
+        return None
+    z = float(norm.ppf(0.5 + confidence / 2.0))
+    if lower is not None:
+        d = float(value) - float(lower)
+        if d <= 0:
+            return None
+        return [float(lower) + d * math.exp(-z * se / d), float(lower) + d * math.exp(z * se / d)]
+    d = float(upper) - float(value)
+    if d <= 0:
+        return None
+    return [float(upper) - d * math.exp(z * se / d), float(upper) - d * math.exp(-z * se / d)]
+
+
+def _bounded_wald(model, name: str, confidence: float):
+    """The log-scale Wald interval of a bounded life-stress coefficient, or
+    the string ``"unbounded"`` when the coefficient isn't bounded (SurPyval's
+    own symmetric interval then stands)."""
+    support = _bounded_coefficient(model, name)
+    if support is None:
+        return "unbounded"
+    names = list(model.parameter_names)
+    idx = names.index(name)
+    try:
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            var = float(np.asarray(model.covariance(), dtype=float)[idx, idx])
+    except Exception:  # noqa: BLE001 - no covariance
+        return None
+    if not np.isfinite(var) or var < 0:
+        return None
+    return bounded_wald_interval(float(np.asarray(model.params, dtype=float)[idx]), math.sqrt(var),
+                                 support[0], support[1], confidence)
+
+
+def positive_coefficient_intervals(results: dict) -> dict:
+    """A saved fit's results with its bounded life-stress coefficients' 95%
+    intervals on the log scale (#262). Fits saved before then hold
+    SurPyval's symmetric Wald interval, ``value ± z·se``, which can go below
+    zero for a positive coefficient (Arrhenius' ``b``): the standard error is
+    read back from its width and the interval rebuilt as a new fit gives it.
+    Anything else is returned unchanged."""
+    entry = LIFE_MODELS.get((results or {}).get("life_model_id"))
+    coeffs = (results or {}).get("coefficients")
+    if entry is None or not isinstance(coeffs, list):
+        return results
+    pm = getattr(entry["model"], "phi_param_map", {}) or {}
+    declared = getattr(entry["model"], "phi_bounds", None)
+    if not pm or callable(declared) or not declared:
+        return results
+    changed = False
+    fixed = []
+    for c in coeffs:
+        off = pm.get(c.get("name")) if isinstance(c, dict) else None
+        ci = c.get("ci") if isinstance(c, dict) else None
+        if off is None or off >= len(declared) or not (isinstance(ci, list) and len(ci) == 2):
+            fixed.append(c)
+            continue
+        lower, upper = declared[off]
+        try:
+            value, lo, hi = float(c["value"]), float(ci[0]), float(ci[1])
+        except (TypeError, ValueError, KeyError):
+            fixed.append(c)
+            continue
+        symmetric = abs((lo + hi) / 2.0 - value) <= 1e-9 * max(1.0, abs(value), abs(hi - lo))
+        if (lower is None and upper is None) or not symmetric or hi <= lo:
+            fixed.append(c)
+            continue
+        new = bounded_wald_interval(value, (hi - lo) / (2.0 * _Z95), lower, upper, 0.95)
+        fixed.append({**c, "ci": new})
+        changed = True
+    return {**results, "coefficients": fixed} if changed else results
+
+
 def param_interval(model, name: str, confidence: float, method: str = "wald", **boot) -> Optional[list]:
     """A two-sided interval on one fitted parameter from SurPyval's
-    ``param_cb``, or None where it has none."""
+    ``param_cb``, or None where it has none. A Wald interval on a life-stress
+    coefficient SurPyval declares positive (Arrhenius' ``b``, say) is taken
+    on the log scale and transformed back, so it stays positive (#262);
+    SurPyval's Wald treats every coefficient as unbounded."""
+    if method == "wald":
+        bounded = _bounded_wald(model, name, confidence)
+        if bounded != "unbounded":
+            return bounded
     try:
         with np.errstate(all="ignore"), warnings.catch_warnings():
             warnings.simplefilter("ignore")

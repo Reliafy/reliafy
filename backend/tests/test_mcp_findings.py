@@ -857,3 +857,65 @@ def test_every_argument_a_tool_takes_is_in_its_published_schema(env):
     compare = tools["compare_groups"].input_schema["properties"]
     assert "-1" not in compare["c_invert"]["description"]
     assert "right-censored only" in compare["censored"]["description"]
+
+
+def _reads(fn, var: str) -> set:
+    """The keys a server function reads from ``var`` (``var.get("key")`` /
+    ``var["key"]``): what it accepts, found from its source."""
+    import inspect
+    import re
+
+    src = inspect.getsource(fn)
+    return set(re.findall(rf'\b{var}\.get\("(\w+)"', src)) | set(re.findall(rf'\b{var}\["(\w+)"\]', src))
+
+
+def _props(schema: dict, name: str) -> set:
+    return set(schema["$defs"][name]["properties"])
+
+
+def test_every_rbd_field_the_server_reads_is_in_the_published_schema(env):
+    """#262: edit_rbd's set accepted costs.horizon etc. that an agent couldn't
+    discover. Every field the server reads in edit_rbd's ops and create_rbd's
+    nodes and diagram settings must be published, with a description."""
+    from backend.services import rbd_edit, rbd_graph, rbd_maintenance, rbd_policies
+    from backend.tests.test_mcp import _run
+
+    tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
+    edit, create = tools["edit_rbd"].input_schema, tools["create_rbd"].input_schema
+
+    # set: every op field, and the diagram's costs.
+    set_reads = _reads(rbd_edit._Editor.set, "op") | _reads(rbd_edit._Editor._set_repairable_settings, "op")
+    assert set_reads <= _props(edit, "SetOp"), set_reads - _props(edit, "SetOp")
+    cost_reads = _reads(rbd_maintenance.diagram_costs, "costs") | _reads(rbd_edit._Editor._set_costs, "costs")
+    assert cost_reads == {"downtime_rate", "horizon", "discount_rate"}
+    for schema in (edit, create):
+        assert cost_reads <= _props(schema, "DiagramCosts")
+    # The diagram settings a graph holds: set and create_rbd both take each one.
+    assert set(rbd_graph.DIAGRAM_KEYS) <= _props(edit, "SetOp")
+    assert set(rbd_graph.DIAGRAM_KEYS) <= set(create["properties"])
+    assert set(rbd_policies.GROUP_KEYS) <= _props(edit, "MaintenanceGroup")
+
+    # Blocks: update_node and create_rbd's nodes take the same fields.
+    assert set(rbd_edit.UPDATE_FIELDS) <= _props(edit, "UpdateNodeOp")
+    assert set(rbd_edit.UPDATE_FIELDS) <= _props(create, "RbdNode")
+    clear = edit["$defs"]["UpdateNodeOp"]["properties"]["clear"]["anyOf"][0]["items"]["enum"]
+    assert set(clear) == set(rbd_edit.CLEARABLE)
+    preventive = _reads(rbd_maintenance.preventive_spec, "pm")
+    proof_test = _reads(rbd_maintenance.inspection_spec, "test")
+    assert {"policy", "threshold", "opportunity"} <= preventive and {"offset", "full_test"} <= proof_test
+    assert {"name", "costs", "repair_crews"} <= set_reads
+    for schema in (edit, create):
+        assert set(rbd_maintenance.COST_KEYS) == _props(schema, "BlockCosts")
+        assert preventive <= _props(schema, "Preventive")
+        assert proof_test <= _props(schema, "ProofTest")
+
+    # Each cost and maintenance field says what it is.
+    for model in ("DiagramCosts", "BlockCosts", "Preventive", "ProofTest", "MaintenanceGroup"):
+        for field, spec in edit["$defs"][model]["properties"].items():
+            assert spec.get("description"), (model, field)
+    costs = edit["$defs"]["SetOp"]["properties"]["costs"]
+    assert "downtime_rate" in costs["description"] and "horizon" in costs["description"]
+    assert "acquisition" in create["properties"]["costs"]["description"]
+    # cheapest_design names the fields it needs.
+    desc = tools["cheapest_design"].description
+    assert "costs.acquisition" in desc and "costs.horizon" in desc and "costs.downtime_rate" in desc

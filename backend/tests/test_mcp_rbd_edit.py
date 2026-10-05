@@ -421,7 +421,8 @@ def test_saved_availability_goes_stale_after_an_edit(env, monkeypatch):
     nodes = [n if n["type"] in ("input", "output") else {**n, "repair": REPAIR} for n in GRAPH["nodes"]]
     rid = _create(env, {"nodes": nodes, "edges": GRAPH["edges"]}, repairable=True)["id"]
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: True)
-    assert _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))["available"]
+    # Every figure is exact here, so the simulation runs only when asked (#262).
+    assert _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": True}))["available"]
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: False)
     assert _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))["cached"] is True
 

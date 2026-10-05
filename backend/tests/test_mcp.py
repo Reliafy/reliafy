@@ -394,9 +394,10 @@ def test_repairable_analysis_follows_the_paid_gate_and_cache(env, monkeypatch):
     assert "Pro" in out["simulation"]["message"]
     assert not env.db.rbds.find_one({"_id": rid}).get("availability_cache")
 
-    # Entitled: computes and stores the result on the owner's diagram.
+    # Entitled and asked (every figure here is exact, so only on request,
+    # #262): computes and stores the result on the owner's diagram.
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: True)
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))
+    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
     assert out["available"] and out["kind"] == "repairable"
     assert 0 < out["steady_state_availability"] <= 1 and out["cached"] is False
     assert env.db.rbds.find_one({"_id": rid}).get("availability_cache")

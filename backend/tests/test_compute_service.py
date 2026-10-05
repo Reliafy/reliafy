@@ -968,7 +968,8 @@ def test_mcp_free_quick_sims_flag_switches_them_on(env, monkeypatch):
     monkeypatch.setattr(config, "MCP_FREE_QUICK_SIMS", True)
     monkeypatch.setattr(config, "FREE_SIM_SECONDS", 0.05)
     rid = _repairable(env, MCP_FREE, "Pumps")
-    out = _ok(_call(env.oauth[MCP_FREE], "analyze_rbd", {"rbd_id": rid}))
+    # Every figure here is exact: the simulation runs on request (#262).
+    out = _ok(_call(env.oauth[MCP_FREE], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
     assert out["available"] is True and out["quick"] is True and out["precision"]["half_width"] > 0
     assert out["simulation"]["available"] is True
 
@@ -1003,7 +1004,8 @@ def test_mcp_analyze_waits_then_hands_back_a_job_and_get_job_finishes_it(env, mo
     monkeypatch.setattr(config, "MCP_JOB_WAIT_S", 0.2)
     tasks, dispatch = _mcp_queue(env, monkeypatch)
     rid = _repairable(env, MCP_PRO, "Pumps")
-    out = _ok(_call(env.oauth[MCP_PRO], "analyze_rbd", {"rbd_id": rid}))
+    # Every figure here is exact: the simulation runs on request (#262).
+    out = _ok(_call(env.oauth[MCP_PRO], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
     # The exact figures now; the simulation as a job to fetch.
     assert out["available"] is True and out["exact"]["status"] == "ok"
     sim = out["simulation"]
@@ -1046,7 +1048,8 @@ def test_mcp_analyze_returns_the_result_when_the_job_finishes_in_time(env, monke
     t = threading.Thread(target=worker, daemon=True)
     t.start()
     try:
-        out = _ok(_call(env.oauth[MCP_PRO], "analyze_rbd", {"rbd_id": rid}))
+        # Every figure here is exact: the simulation runs on request (#262).
+        out = _ok(_call(env.oauth[MCP_PRO], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
     finally:
         stop.set()
         t.join(5)

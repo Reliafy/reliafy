@@ -31,8 +31,12 @@ export function precisionNote(result) {
   // is the simulation's own, which sets its precision.
   const exact = p.window_availability_basis === "exact" || p.window_availability_basis === "numerical";
   const ci = p.lower != null && p.upper != null ? `${conf}% CI ${pctAt(p.lower, d)} to ${pctAt(p.upper, d)}` : "";
+  // With an exact headline the interval is centred on the simulation's own
+  // mean, not on the exact value: show that mean beside it (#262).
+  const simMean = p.simulated_window_availability;
+  const own = simMean != null ? `simulated ${pctAt(simMean, d)}, ` : "";
   const interval = exact
-    ? ` (exact${ci ? `; the simulation's ${ci}` : ""})`
+    ? ` (exact${ci ? `; the simulation's own estimate: ${own}${ci}` : ""})`
     : ci ? ` (${ci})` : "";
   const lead = exact
     ? ` Over that window the system is up ${pctAt(p.window_availability, d)} of the time${interval}`

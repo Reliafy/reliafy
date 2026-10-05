@@ -135,7 +135,7 @@ def test_analyze_rbd_on_r2_diagrams(env):
     assert all(0.0 <= v <= 1.0 for v in out["importance"]["fussell_vesely"].values() if v is not None)
 
     rid = _saved(env, REPAIRABLE, name="Plant")
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))
+    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
     # Billing is off in these tests, so the (paid) simulation runs.
     assert out["kind"] == "repairable" and out["available"]
     assert 0.0 < out["steady_state_availability"] < 1.0
