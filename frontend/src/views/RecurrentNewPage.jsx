@@ -22,6 +22,7 @@ const MODEL_DESC = {
   crow_amsaa: "NHPP power-law (Crow-AMSAA) — the standard reliability-growth model. β < 1 improving, β > 1 worsening.",
   duane: "Duane growth model — a log–log fit of cumulative MTBF against cumulative time.",
   hpp: "Homogeneous Poisson — a constant failure rate with no trend; the null model.",
+  cox_lewis: "Cox-Lewis log-linear NHPP — the rate changes by a fixed proportion per unit time. β > 0 worsening, β < 0 improving.",
 };
 
 const STEPS = ["Source", "Data", "Model", "Result"];
@@ -238,7 +239,7 @@ export default function RecurrentNewPage() {
               <span className="ds-choice-h">Fit to event data</span>
               <span className="ds-choice-b">
                 Upload or pick a saved dataset of a repairable fleet's failure history —
-                fit an MCF and a Crow-AMSAA / Duane growth model with a trend test.
+                fit an MCF and a growth model with confidence bounds, trend tests and a goodness-of-fit test.
               </span>
             </button>
             <button className="ds-choice" onClick={() => setMode("params")}>

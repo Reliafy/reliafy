@@ -2105,6 +2105,12 @@ button.secondary:hover:not(:disabled) {
   overflow: hidden;
 }
 
+/* Recurrent "Trend & fit" cards wrap side by side (#81). */
+.detail-panel .gof-card.rec-detail-card {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
 .detail-panel .gof-card .gofh {
   font-family: var(--mono);
   font-size: 10.5px;
@@ -7657,6 +7663,11 @@ button.danger:hover { background: #fdeeee; }
   }
   .detail-panel .aside {
     width: auto;
+  }
+  /* Recurrent "Trend & fit" cards: stacked, each as tall as its content
+     (a 260px basis would be its height in a column). */
+  .detail-panel .gof-card.rec-detail-card {
+    flex: 0 0 auto;
   }
   /* RBD builder: a tighter frame, and a compact toolbar so the diagram keeps
      most of the canvas. */

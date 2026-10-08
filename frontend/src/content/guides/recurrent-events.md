@@ -51,6 +51,8 @@ columns, and choose a model:
 - **Duane** — the classic log-log formulation of the same idea.
 - **Homogeneous Poisson (HPP)** — a constant failure rate with no trend. Useful
   mainly as a null model to compare against.
+- **Cox-Lewis (log-linear NHPP)** — a rate that changes by a fixed proportion
+  per unit time. An alternative when the trend doesn't follow a power law.
 
 You can also build one **from parameters** if you already know α and β and just
 want the calculator — handy for growth planning before you have data.
@@ -69,20 +71,30 @@ means they're slowing; a straight line means a steady rate.
 The number that formalises this is **β**:
 
 - **β < 1** — improving. Failures are getting rarer. Reliability growth is real.
-- **β ≈ 1** — stable. A constant rate; repairs are restoring the system to
+- **β = 1** — stable. A constant rate; repairs are restoring the system to
   roughly where it was.
 - **β > 1** — deteriorating. Failures are accelerating. The system is wearing out
   faster than repairs restore it, and there's usually a decision waiting at the
   end of that trend.
 
-Reliafy states the verdict in words alongside the number, plus the current
-**ROCOF** (rate of occurrence of failures) and the instantaneous **MTBF** — the
-honest MTBF for a repairable system, which is a *current* rate rather than a
-lifetime average.
+β comes with its **95% confidence interval**, and the verdict is read from the
+interval rather than the point estimate: *deteriorating* only when the whole
+interval is above 1, *improving* only when it's all below, and *stable* when it
+includes 1 — the data can't tell the trend from a constant rate.
 
-A **trend test** (Laplace) tells you whether the trend is statistically
-significant or whether you're reading noise. Worth checking before you take a
-deteriorating verdict to a capital-expenditure meeting.
+Reliafy states the verdict in words alongside the number, plus the **ROCOF**
+(rate of occurrence of failures) and the instantaneous **MTBF** at the end of
+observation, each with 95% bounds — the honest MTBF for a repairable system,
+which is a *current* rate rather than a lifetime average. For a growth test it
+also gives the **demonstrated MTBF** as a 90% lower bound ("MTBF ≥ X at 90%"),
+using Crow's exact bounds from MIL-HDBK-189C when the test design allows.
+
+Two **trend tests** — Laplace and MIL-HDBK-189C — tell you whether the trend is
+statistically significant or whether you're reading noise. Worth checking before
+you take a deteriorating verdict to a capital-expenditure meeting. A
+**Cramér-von Mises goodness-of-fit test** checks the fitted model against the
+event times, and with several systems the **Systems vs the model** table shows
+the ones failing more often than the fleet model expects — your bad actors.
 
 ## The calculator
 

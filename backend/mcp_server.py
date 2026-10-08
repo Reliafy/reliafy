@@ -318,7 +318,9 @@ slower for large files). If that fails too (no network), follow create_upload's 
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
 - Repairable systems (recurrent models): next_failure gives a system's chance of failing within a time and \
-the time to its next failure; growth_projection projects a growth test's MTBF once its fixes are in.
+the time to its next failure; growth_projection projects a growth test's MTBF once its fixes are in. \
+get_model on a recurrent model gives the growth verdict with β's 95% interval, the ROCOF and MTBF with bounds, \
+the demonstrated MTBF's 90% lower bound, Laplace and MIL-HDBK-189C trend tests and a goodness-of-fit test.
 - Test planning: plan_demonstration_test sizes a reliability demonstration test — units, test time per unit \
 and allowed failures to show reliability R over a mission at confidence C (success run / binomial; a longer \
 test per unit with a known Weibull shape; or an MTBF test); with producer_risk and a good design it keeps both \
@@ -686,6 +688,61 @@ def _recurrent_brief(doc) -> dict:
     }
 
 
+_RESIDUAL_SYSTEMS = 10  # get_model lists this many systems, most excess failures first
+
+
+def _recurrent_evidence(r: dict) -> dict:
+    """A recurrent model's evidence (#81): the growth verdict and what it
+    rests on (β's 95% interval against 1), the ROCOF and instantaneous MTBF at
+    the end of observation with 95% bounds, the demonstrated MTBF's 90% lower
+    bound, both trend tests, the goodness of fit (AIC/BIC and the Cramér-von
+    Mises test) and the systems failing most above the model."""
+    out: dict[str, Any] = {}
+    basis = r.get("growth_basis")
+    if basis:
+        sym = f"{basis.get('symbol', 'β')} ({basis.get('what')})"
+        if basis.get("ci"):
+            lo, hi = basis["ci"]
+            excludes = "excludes" if (lo > basis["no_trend"] or hi < basis["no_trend"]) else "includes"
+            reading = (f"{sym} = {basis['estimate']:.4g}, 95% interval [{lo:.4g}, {hi:.4g}] {excludes} "
+                       f"{basis['no_trend']:g} (no trend)")
+        else:
+            reading = (f"{sym} = {basis['estimate']:.4g} (no interval: built from parameters or the "
+                       "information matrix is singular, so the estimate decides)")
+        out["growth_basis"] = reading
+    if r.get("beta_ci"):
+        out["beta_ci_95"] = [_sig(v) for v in r["beta_ci"]]
+    if r.get("end_of_observation") is not None:
+        out["end_of_observation"] = _sig(r["end_of_observation"])
+    out["rocof"] = _sig(r.get("rocof"))
+    if r.get("rocof_ci"):
+        out["rocof_ci_95"] = [_sig(v) for v in r["rocof_ci"]]
+    out["mtbf"] = _sig(r.get("mtbf"))
+    if r.get("mtbf_ci"):
+        out["mtbf_ci_95"] = [_sig(v) for v in r["mtbf_ci"]]
+    dm = r.get("demonstrated_mtbf")
+    if dm:
+        method = "Crow's exact bound (MIL-HDBK-189C)" if dm.get("method") == "crow" else "Wald bound"
+        out["demonstrated_mtbf"] = {
+            "mtbf": _sig(dm.get("mtbf")), "lower_bound": _sig(dm.get("lower")),
+            "confidence": dm.get("confidence"), "at": _sig(dm.get("at")), "method": method}
+    if r.get("trend_tests"):
+        out["trend_tests"] = [{k: (_sig(v) if isinstance(v, float) else v) for k, v in t.items() if k != "id"}
+                              for t in r["trend_tests"]]
+    elif r.get("trend"):
+        out["trend"] = r["trend"]
+    out["gof"] = {g["id"]: _sig(g["value"]) for g in r.get("gof") or []}
+    cvm = r.get("gof_test")
+    if cvm:
+        out["gof_test"] = {k: (_sig(v) if isinstance(v, float) else v) for k, v in cvm.items() if k != "null"}
+    rows = r.get("system_residuals")
+    if rows:
+        out["systems_vs_model"] = [
+            {"system": row["system"], "failures": _sig(row["failures"]), "expected": _sig(row["expected"])}
+            for row in rows[:_RESIDUAL_SYSTEMS]]
+    return out
+
+
 def _live_metrics(cache_id: str | None) -> dict | None:
     """Median / MTTF / B10 from a live fitted model, when it has them."""
     entry = fitting._MODEL_STORE.get(cache_id) if cache_id else None
@@ -804,6 +861,11 @@ def get_model(
     """Read one saved model in full: fitted parameters with 95% confidence intervals, goodness of fit
     (log-likelihood, AIC, BIC), life metrics (median, MTTF, B10), regression coefficients for
     proportional-hazards models, and the time unit. Works for life and recurrent models.
+    Recurrent (repairable-system) models report the growth verdict and its basis (β's 95% interval
+    excluding 1 or not), the ROCOF and MTBF at the end of observation with 95% bounds, the demonstrated
+    MTBF's 90% lower bound (Crow's exact bound for a time-terminated test), the Laplace and MIL-HDBK-189C
+    trend tests, AIC/BIC with a Cramér-von Mises goodness-of-fit test, and the systems failing most above
+    the model (systems_vs_model).
     Regression models also report `validation` (how good is this model?): Harrell's C with a plain
     reading (0.5 = coin toss, 1 = perfect ranking), the integrated Brier score against one
     Kaplan-Meier curve for every unit (lower is better), and the time-dependent AUC at the failure-time
@@ -852,8 +914,9 @@ def get_model(
         return out
     doc = recurrent_service.get_model(db, model_id, owners)
     if doc is not None:
+        doc = recurrent_service.ensure_diagnostics(db, doc)  # #81: bounds and tests for older saves
         r = doc.results or {}
-        out = {**_recurrent_brief(doc), "params": r.get("params"), "gof": r.get("gof"), "trend": r.get("trend")}
+        out = {**_recurrent_brief(doc), "params": r.get("params"), **_recurrent_evidence(r)}
         if r.get("projection"):
             out["growth_projection"] = _projection_brief(r["projection"],
                                                          recurrent_service.saved_model_kind(doc))
@@ -4235,7 +4298,7 @@ _PROJECTION_MODES = 50  # growth_projection lists this many modes, most failures
 def _projection_brief(p: dict, saved_model: str | None = None) -> dict:
     """The headline of a growth projection: the three MTBFs and h(T), and
     (#232) what it was projected with — a Crow-AMSAA fit, said plainly when
-    the saved model is Duane or HPP."""
+    the saved model is another kind (Duane, HPP or Cox-Lewis)."""
     basis = recurrent_fit.projection_basis(saved_model or p.get("saved_model"))
     lead = {"note": basis["basis_note"]} if basis["basis_note"] else {}
     return {
@@ -4275,8 +4338,8 @@ def growth_projection(
     ctx: Context,
     model_id: Annotated[Optional[str], Field(description=(
         "A saved RECURRENT model fitted to the growth test's event data (list_models kind=recurrent) whose "
-        "dataset has a failure-mode column — Crow-AMSAA, Duane or HPP. The projection is always a "
-        "Crow-AMSAA fit to that data; for a Duane or HPP model the result's note says so "
+        "dataset has a failure-mode column — Crow-AMSAA, Duane, HPP or Cox-Lewis. The projection is always a "
+        "Crow-AMSAA fit to that data; for any other model the result's note says so "
         "(projected_with, saved_model). Give this OR inline x + modes."))] = None,
     fef: Annotated[Optional[dict[str, float]], Field(description=(
         "The BD modes (fixed after the test) and each one's fix-effectiveness factor, the fraction of its "
@@ -4365,7 +4428,7 @@ def next_failure(
     quantiles: Annotated[Optional[list[float]], Field(max_length=20, description=(
         "Quantiles of the time to the next failure, each in (0, 1); default 0.1, 0.5, 0.9."))] = None,
 ) -> dict[str, Any]:
-    """A repairable system's next failure from a saved recurrent-event model (Crow-AMSAA, Duane or HPP;
+    """A repairable system's next failure from a saved recurrent-event model (Crow-AMSAA, Duane, HPP or Cox-Lewis;
     minimal repair, so its failures are the model's Poisson process): the current failure intensity (ROCOF)
     and instantaneous MTBF at its age, the mean and quantiles of the time to its next failure, and the chance
     of at least one failure (and the expected number) within each time ahead. Exact, closed form."""
