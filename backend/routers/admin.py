@@ -11,6 +11,7 @@ from backend.auth import get_current_user
 from backend.config import SAMPLE_OWNER
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.services import email_campaigns as email_campaigns_service
 from backend.services import metrics as metrics_service
 from backend.services import usage as usage_service
 
@@ -58,6 +59,19 @@ def traffic(
     if not billing_service.is_admin_user(user):
         return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
     return JSONResponse(content=metrics_service.traffic(session, days=days))
+
+
+@router.get("/email-campaigns")
+def email_campaigns(
+    days: int = 90,
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """What each email brought in (#269): recipients, tagged visitors and the
+    pages they reached, and recipients active within a few days of the send."""
+    if not billing_service.is_admin_user(user):
+        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
+    return JSONResponse(content=email_campaigns_service.report(session, days=days))
 
 
 @router.get("/usage")

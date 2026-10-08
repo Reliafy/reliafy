@@ -136,6 +136,11 @@ def init_db() -> None:
     # sent that update.
     db.users.create_index([("email_unsub_token", 1)], unique=True, sparse=True)
     db.update_sends.create_index([("update_slug", 1), ("uid", 1)], unique=True)
+    # Lifecycle emails (#272): one row per (kind, uid) — at most one each.
+    from backend.services import lifecycle_emails
+
+    lifecycle_emails.ensure_indexes(db)
+    db.users.create_index([("created_at", 1)])
     # OAuth for the MCP server (backend/services/oauth.py). Only hashes are
     # stored; TTL indexes drop expired consent requests and codes, unused
     # dynamically registered clients, and grants past their refresh expiry.

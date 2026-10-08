@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAdminStats, getAdminTraffic } from "../api.js";
+import { getAdminEmailCampaigns, getAdminStats, getAdminTraffic } from "../api.js";
 import Select from "../components/Select.jsx";
 import UsageSection from "../components/UsageSection.jsx";
 
@@ -55,6 +55,60 @@ function TopList({ title, rows, empty }) {
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+// What each email brought in (#269): one row per update / lifecycle email.
+// Visitors are visitor-days (daily-hashed), pages are those reached in a
+// tagged visit, and "Active" counts recipients using the app within a few
+// days of their send.
+function EmailCampaigns() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    getAdminEmailCampaigns().then(setData).catch((e) => setError(e.message));
+  }, []);
+  const rows = data?.campaigns || [];
+  return (
+    <div className="card" style={{ marginTop: "1rem" }}>
+      <h2>Email campaigns (last {data?.days ?? 90} days)</h2>
+      {error ? (
+        <p className="muted-line">{error}</p>
+      ) : !data ? (
+        <p className="muted-line">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="muted-line">No emails sent or tagged visits yet.</p>
+      ) : (
+        <div className="usage-table-wrap">
+          <table className="usage-table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Sent</th>
+                <th>Visitors</th>
+                <th>Pageviews</th>
+                <th>Active ≤{data.active_days}d</th>
+                <th style={{ textAlign: "left" }}>Pages reached</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={`${r.medium}:${r.campaign}`}>
+                  <td className="usage-key">{r.medium} · {r.campaign}</td>
+                  <td>{r.sent}</td>
+                  <td>{r.visitors}</td>
+                  <td>{r.pageviews}</td>
+                  <td>{r.active == null ? "—" : r.active}</td>
+                  <td style={{ textAlign: "left" }}>
+                    {r.top_pages.map((p) => `${p.key} (${p.count})`).join(", ") || "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -140,6 +194,8 @@ export default function AdminPage() {
       {traffic && traffic.events.length > 0 && (
         <TopList title="Product events" rows={traffic.events} empty="" />
       )}
+
+      <EmailCampaigns />
 
       <UsageSection />
 
