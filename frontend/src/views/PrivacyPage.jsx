@@ -10,7 +10,7 @@ export default function PrivacyPage() {
       <PublicNav />
       <article className="blog-article">
         <header className="blog-article-head">
-          <div className="blog-card-meta"><time>Effective 24 September 2026</time></div>
+          <div className="blog-card-meta"><time>Effective 8 October 2026</time></div>
           <h1>Privacy Policy</h1>
         </header>
         <div className="blog-prose">

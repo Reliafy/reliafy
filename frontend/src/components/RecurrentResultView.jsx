@@ -167,7 +167,7 @@ export default function RecurrentResultView({ results }) {
                 </span>
               </div>
               <div className="gofr">
-                <span className="gk">MTBF</span>
+                <span className="gk" title="1 ÷ the failure rate at the end of observation. If the system is deteriorating this is below the average over the test.">MTBF now (end of test)</span>
                 <span className="gv-col">
                   <span className="gv">{fmt(r.mtbf, 1)}{unit}</span>
                   {r.mtbf_ci && <span className="param-ci">95% CI {ciText(r.mtbf_ci)}</span>}
@@ -175,10 +175,10 @@ export default function RecurrentResultView({ results }) {
               </div>
               {dm && dm.lower != null && (
                 <div className="gofr">
-                  <span className="gk">Demonstrated MTBF</span>
+                  <span className="gk" title="One-sided lower bound on the MTBF at the end of the test (MIL-HDBK-189C).">MTBF now, lower bound</span>
                   <span className="gv-col">
                     <span className="gv">≥ {fmt(dm.lower, 1)}{unit}</span>
-                    <span className="param-ci">instantaneous, at {Math.round((dm.confidence || 0.9) * 100)}% · {dm.method === "crow" ? "Crow exact (MIL-HDBK-189C)" : "Wald"}</span>
+                    <span className="param-ci">demonstrated, at {Math.round((dm.confidence || 0.9) * 100)}% · {dm.method === "crow" ? "Crow exact (MIL-HDBK-189C)" : "Wald"}</span>
                   </span>
                 </div>
               )}
@@ -285,8 +285,8 @@ export default function RecurrentResultView({ results }) {
         <div className="result-foot">
           <p className="verdict-line">
             <b>{growth.label}</b> — {growth.note}{basis ? ` (${basis})` : ""}. ROCOF {sig(r.rocof)} per{unit || " unit"}
-            {r.mtbf != null ? `, MTBF ≈ ${fmt(r.mtbf, 1)}${unit}` : ""}
-            {dm && dm.lower != null ? `; demonstrated MTBF ≥ ${fmt(dm.lower, 1)}${unit} at ${Math.round((dm.confidence || 0.9) * 100)}%` : ""}.
+            {r.mtbf != null ? `, MTBF now ≈ ${fmt(r.mtbf, 1)}${unit}` : ""}
+            {dm && dm.lower != null ? `; demonstrated MTBF now ≥ ${fmt(dm.lower, 1)}${unit} at ${Math.round((dm.confidence || 0.9) * 100)}%` : ""}.
           </p>
         </div>
       )}

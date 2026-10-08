@@ -202,7 +202,7 @@ export default function RecurrentProjection({ modelId, unit }) {
           <div className="params gp-mtbfs">
             <div className="stat">
               <div className="value">{fmt(result.demonstrated?.mtbf)}</div>
-              <div className="name">demonstrated MTBF{u}</div>
+              <div className="name" title="Total test time ÷ failures: the average over the whole test (MIL-HDBK-189C demonstrated MTBF). The MTBF now, at the end of the test, is on the Rates card.">average MTBF over the test{u}</div>
             </div>
             <div className="stat gp-projected">
               <div className="value">{fmt(result.projected?.mtbf)}</div>
