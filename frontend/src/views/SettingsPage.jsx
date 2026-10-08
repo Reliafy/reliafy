@@ -67,7 +67,7 @@ function EmailPreferences() {
           disabled={updates === null || saving}
         />
         <span>
-          <b>Product update emails</b> — a short monthly note on what's new.
+          <b>Product update emails</b> — a short monthly note on what's new, and a couple of getting-started tips when you join.
         </span>
       </label>
       <p className="muted-line" style={{ marginBottom: 0 }}>

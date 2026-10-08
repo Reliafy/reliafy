@@ -78,7 +78,7 @@ export default function Unsubscribe() {
           <>
             <h1 className="login-h1">You're unsubscribed</h1>
             <p className="login-sub">
-              You've been unsubscribed from Reliafy product updates
+              You've been unsubscribed from Reliafy product updates and tips
               {email ? <> (<strong>{email}</strong>)</> : null}. You'll still get
               emails you trigger yourself, like team invites and shares.
             </p>

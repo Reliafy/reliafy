@@ -385,3 +385,16 @@ FREE_SIM_MAX_REPLICATIONS = _int("FREE_SIM_MAX_REPLICATIONS", 2000)
 # Quick simulations on the Free / Agent MCP plans. Off: those plans get no
 # simulations over MCP (Derryn, 29 Sep / 3 Oct); switch on to extend them.
 MCP_FREE_QUICK_SIMS = _truthy(os.environ.get("MCP_FREE_QUICK_SIMS", "false"))
+
+# ---- Lifecycle emails (#272) -----------------------------------------------
+# A welcome email on a new account's first verified sign-in, and a tip email
+# on day 3. Off until the copy is approved: set LIFECYCLE_EMAILS=true to send.
+# Both respect the product-update opt-out and skip test domains; each goes to
+# a user at most once (the ``lifecycle_emails`` send log).
+LIFECYCLE_EMAILS = _truthy(os.environ.get("LIFECYCLE_EMAILS", "false"))
+# The day-3 run is triggered daily by Cloud Scheduler: POST
+# /internal/lifecycle/day3 with an OIDC token. The token must be Google-signed,
+# for this audience (the endpoint's run.app URL), and of this service account.
+# Either unset = the endpoint refuses every call. See ops/lifecycle-emails.md.
+LIFECYCLE_CRON_AUDIENCE = (os.environ.get("LIFECYCLE_CRON_AUDIENCE") or "").strip() or None
+LIFECYCLE_CRON_SA = (os.environ.get("LIFECYCLE_CRON_SA") or "").strip() or None
