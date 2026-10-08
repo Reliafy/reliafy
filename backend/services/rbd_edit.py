@@ -427,8 +427,8 @@ class _Editor:
             self.graph.pop("ccf_groups", None)
 
     def add_ccf(self, op: dict) -> str:
-        # In a repairable diagram a group enters a safety function's PFDavg
-        # (RePyability 0.11, #136); validation warns when it would be ignored.
+        # In a repairable diagram a group is followed over time (RePyability
+        # 0.12, #226) where its chains take it; validation says when not.
         try:
             beta = float(op.get("beta"))
         except (TypeError, ValueError):

@@ -76,7 +76,8 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
   const appliedCurrent = applied && applied.sig === sig;
   const stale = run != null && run.sig !== sig && !appliedCurrent;
   const apply = () => {
-    const prev = { nodes: graph.nodes, edges: graph.edges };
+    // Common-cause groups too: a grouped block's copies join its group (#226).
+    const prev = { nodes: graph.nodes, edges: graph.edges, ccf_groups: graph.ccf_groups || [] };
     onApply(result.graph);
     setApplied({ prev, sig: graphSignature({ ...graph, ...result.graph }) });
   };
@@ -238,6 +239,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
             </table>
           </div>
           {result.note && <p className="hint" style={{ margin: 0 }}>{result.note}</p>}
+          {result.common_cause?.note && <p className="hint" style={{ margin: 0 }}>{result.common_cause.note}</p>}
           {result.changed && (!stale || appliedCurrent) && (
             <div className="rbd-calc-actions">
               {appliedCurrent ? (

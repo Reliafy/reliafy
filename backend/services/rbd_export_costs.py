@@ -385,10 +385,16 @@ def report_safety(sim, overrides):
     RePyability's chain covers them; else without them, else simulated."""
     pfd, basis, ccf = None, None, False
     if RBD_CCF is not None:
+        # The long run alone: a group the long-run chain covers is in the
+        # PFDavg, even where the other figures leave it out (as in Reliafy).
+        left_out = long_run_refusal(RBD_CCF, WORKING_NODES, BROKEN_NODES)
         try:
+            if left_out:
+                raise NotImplementedError(left_out)
             pfd = float(RBD_CCF.mean_unavailability(**overrides))
             basis, ccf = RBD_CCF.analysis_routes()["mean_unavailability"].route, True
         except (NotImplementedError, ValueError) as exc:
+            pfd = None
             print(f"(Common cause left out of the PFDavg: {exc})")
     if pfd is None:
         try:
@@ -421,8 +427,8 @@ def safety_constants(graph: dict, ccf_expr: Optional[str]) -> list[str]:
         "# SIL it must meet (None: no target).",
         f"SIL_BANDS = ({bands})",
         f"TARGET_SIL = {target}",
-        "# The same diagram with its common-cause groups, for the PFDavg (RePyability's",
-        "# simulation doesn't take them in, so the availability figures leave them out).",
+        "# The same diagram with its common-cause groups, for the PFDavg: it takes them",
+        "# in wherever RePyability's long-run chain covers them.",
         f"RBD_CCF = {ccf_expr or 'None'}",
     ]
 

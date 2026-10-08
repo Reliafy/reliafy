@@ -458,27 +458,34 @@ def optimise(graph: dict, resolve_model=None, **raw) -> dict:
     if opts.get("stagger") and schedule == "proof_test" and not stagger:
         notes.append("Staggering needs two or more proof-tested blocks chosen together; there's nothing to "
                      "stagger.")
+    # The intervals are chosen by the exact long-run values, which take the
+    # common-cause groups in wherever RePyability's long-run chain covers
+    # them (#136, #226): for any diagram, a safety function's PFDavg or not.
     groups = _ccf_count(drawn)
-    with_ccf = safety and groups > 0
+    with_ccf = "long_run" if groups > 0 else False
     common_cause = None
-    if groups:
-        common_cause = {"groups": groups, "included": with_ccf, "note": None}
-        if not safety:
-            common_cause["note"] = ("The common-cause groups are left out, as in the availability figures: mark "
-                                    "the diagram as a safety function to choose the intervals by its PFDavg with "
-                                    "them.")
+    labels = {n.get("id"): _label(n) for n in drawn.get("nodes") or []}
+
+    def left_out(reason: str) -> dict:
+        what = "PFDavg is" if safety else "figures are"
+        return {"groups": groups, "included": False,
+                "note": f"The common-cause groups are left out: {reason.rstrip('.')}. The {what} optimistic by "
+                        "their contribution."}
+
     try:
         result = _choose(drawn, resolve_model, with_ccf, schedule, ids, allowed, stagger, min_av, max_cost,
                          opts, safety, unit)
     except NotImplementedError as exc:
-        if not (with_ccf and str(exc).startswith("Common-cause")):
+        if not (with_ccf and str(exc).startswith(("Common-cause", "Node(s)"))):
             raise
-        labels = {n.get("id"): _label(n) for n in drawn.get("nodes") or []}
-        common_cause = {"groups": groups, "included": False,
-                        "note": ("The common-cause groups are left out: " + ra._component_message(str(exc), labels)
-                                 + " The PFDavg is optimistic by their contribution.")}
+        common_cause = left_out(ra._component_message(str(exc), labels))
         result = _choose(drawn, resolve_model, False, schedule, ids, allowed, stagger, min_av, max_cost, opts,
                          safety, unit)
+    if groups and common_cause is None:
+        status = result.pop("common_cause_status", None) or {}
+        common_cause = ({"groups": groups, "included": True, "note": None} if status.get("included")
+                        else left_out(status.get("reason") or "RePyability's long-run chain doesn't cover them."))
+    result.pop("common_cause_status", None)
     if result.get("status") == "crews_limited":
         return {"kind": "maintenance_intervals", "schedule": schedule, "unit": unit, **result}
 
@@ -515,6 +522,7 @@ def _choose(drawn: dict, resolve_model, with_ccf: bool, schedule: str, ids: list
     groups), and the figures as drawn and with the plan, exactly (as if every
     repair started at once where the crews are limited)."""
     rbd, labels, gate_ids, _, _ = ra._build_repairable_rbd(drawn, resolve_model, with_ccf=with_ccf)
+    ccf_status = ra.common_cause_status(rbd)
     crews = rp.crews_summary(rbd, drawn, labels, gate_ids)
     waits = bool(rbd._crews_couple())
     if crews is not None:
@@ -530,9 +538,11 @@ def _choose(drawn: dict, resolve_model, with_ccf: bool, schedule: str, ids: list
                 "message": crews["note"] + " Choose the intervals as if every repair started at once "
                            "(assume_unlimited_crews), then simulate the plan with the crews to see what the "
                            "waiting costs."}
-    # The diagram with as many crews as jobs: the figures the choice is made by.
-    twin = rbd if not waits else ra._build_repairable_rbd({**drawn, "repair_crews": None}, resolve_model,
-                                                          with_ccf=with_ccf)[0]
+    # The diagram with as many crews as jobs: the figures the choice is made by
+    # (with the common-cause groups only where the choice has them too).
+    twin = rbd if not waits else ra._build_repairable_rbd(
+        {**drawn, "repair_crews": None}, resolve_model,
+        with_ccf=with_ccf if (ccf_status or {}).get("included") else False)[0]
     kw = {"min_availability": min_av, "max_cost_rate": max_cost, "assume_unlimited_crews": waits}
     try:
         with np.errstate(all="ignore"):
@@ -587,4 +597,5 @@ def _choose(drawn: dict, resolve_model, with_ccf: bool, schedule: str, ids: list
         "together": together,
         "basis": basis,
         "crews": crews,
+        "common_cause_status": ccf_status,
     }

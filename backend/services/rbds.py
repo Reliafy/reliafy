@@ -433,6 +433,11 @@ def canonical_analysis_graph(graph: dict, unit: str | None = None) -> dict:
     for key in ("repair_crews", "maintenance_groups", "safety_function", "target_sil"):
         if graph.get(key):
             out[key] = graph[key]
+    # A repairable diagram's common-cause groups are followed over time since
+    # #226: its results saved before then left them out, so they're redone.
+    if out["repairable"] and any(len((g or {}).get("members") or []) >= 2 for g in out["ccf_groups"]
+                                 if isinstance(g, dict)):
+        out["ccf_over_time"] = 1
     return out
 
 

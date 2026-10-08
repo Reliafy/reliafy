@@ -239,7 +239,12 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
                    t_sim: float) -> Optional[dict]:
     """PFDavg of a diagram marked as a safety function: its long-run
     unavailability (the mean over the proof-test cycle), with its common-cause
-    groups (#136) where RePyability's chain covers them, and the SIL band."""
+    groups (#136) where RePyability's chain covers them, and the SIL band.
+
+    Since #226 ``rbd`` holds the groups wherever RePyability follows them in
+    every figure, and the PFDavg is then its own; otherwise a twin built for
+    the long run alone takes them where the long-run chain covers them (an
+    as-of-now run, say, whose members start from a state)."""
     if not graph.get("safety_function"):
         return None
     from backend.services import rbd_analysis as ra
@@ -248,15 +253,22 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
     out: dict[str, Any] = {"target_sil": target_sil(graph), "common_cause": None}
     pfd = basis = reason = None
     if groups:
+        labels = {n.get("id"): (n.get("data") or {}).get("label") or n.get("id")
+                  for n in graph.get("nodes") or []}
         note = None
+        status = ra.common_cause_status(rbd) or {}
         try:
-            twin = ra._build_repairable_rbd(graph, resolve_model, with_ccf=True)[0]
-            with np.errstate(all="ignore"):
-                pfd = float(twin.mean_unavailability(**overrides))
-            basis, reason = _route_basis(twin)
+            twin = rbd if status.get("included") else ra._build_repairable_rbd(
+                graph, resolve_model, with_ccf="long_run")[0]
+            twin_status = ra.common_cause_status(twin) or {}
+            if not twin_status.get("included"):
+                note = twin_status.get("reason") or None
+            else:
+                with np.errstate(all="ignore"):
+                    pfd = float(twin.mean_unavailability(**overrides))
+                basis, reason = _route_basis(twin)
         except (NotImplementedError, ValueError, AnalysisError) as exc:
-            labels = {n.get("id"): (n.get("data") or {}).get("label") or n.get("id")
-                      for n in graph.get("nodes") or []}
+            pfd = None
             note = _named(str(exc), labels)
         out["common_cause"] = {"groups": len(groups), "included": pfd is not None, "note": note}
     if pfd is None and steady is not None:
@@ -350,36 +362,53 @@ def safety_notes(graph: dict, payload: dict) -> dict:
 
 
 def common_cause_note(graph: dict, result: dict) -> Optional[dict]:
-    """Beside the availability figures, the common-cause groups they leave
-    out (#185): RePyability's availability analysis and simulation can't take
-    the groups yet, while a safety function's PFDavg includes them where the
-    proof-test chain covers them. None for a diagram without groups.
+    """Beside the availability figures, whether they take the diagram's
+    common-cause groups in (#185, #226). None for a diagram without groups.
 
-    ``availability_with_common_cause`` (1 − PFDavg) is the long-run value
-    with the groups, when the PFDavg includes them."""
+    Since #226 the analysis says so itself (``result["common_cause"]``, from
+    :func:`rbd_analysis.common_cause_summary`): the groups are in every
+    figure — the long run, the figures over time, the simulation and the
+    costs — or, where RePyability refuses them, in none, with its reason
+    (``note``). Left out of a safety function's figures, its PFDavg may still
+    take them (the long-run chain alone): ``availability_with_common_cause``
+    (1 − PFDavg) is then the long-run value with them.
+
+    A result saved before #226 left the groups out of every availability
+    figure: it says so, and that a new run takes them in."""
     groups = [g for g in (graph or {}).get("ccf_groups") or [] if len(g.get("members") or []) >= 2]
     if not groups:
         return None
+    from backend.services import rbd_analysis as ra
+
     n = len(groups)
     them = f"{n} common-cause group{'s' if n != 1 else ''}"
     safety = (result or {}).get("safety") or {}
     ccf = safety.get("common_cause") or {}
     pfd = safety.get("pfd_avg")
-    out: dict[str, Any] = {"groups": n, "included": False}
-    left_out = (f"The availability figures (steady_state_availability, unavailability, the figures over time "
-                f"and the simulation) leave out the diagram's {them}")
+    common = (result or {}).get("common_cause")
+    if isinstance(common, dict) and "reason" in common:
+        out: dict[str, Any] = {k: v for k, v in common.items() if k not in ("note", "availability_with_common_cause")}
+        if out.get("included"):
+            out["note"] = None
+            return out
+        note = ra.common_cause_left_out(n, out.get("reason"), bool(safety and ccf.get("included")))
+        if ccf.get("included") and pfd is not None:
+            out["availability_with_common_cause"] = 1.0 - float(pfd)
+            note += (f" With them, the long-run availability is {1.0 - float(pfd):.6g} (1 − PFDavg): quote that one "
+                     "for the safety function.")
+        out["note"] = note
+        return out
+    out = {"groups": n, "included": False}
+    left_out = (f"This result was worked out before Reliafy followed common cause over time: its availability "
+                f"figures leave out the diagram's {them}")
     if ccf.get("included") and pfd is not None:
         out["availability_with_common_cause"] = 1.0 - float(pfd)
         out["note"] = (f"{left_out}; safety.pfd_avg includes them. With them, the long-run availability is "
-                       f"{1.0 - float(pfd):.6g} (1 − PFDavg): quote that one for the safety function.")
-    elif safety:
-        out["note"] = (f"{left_out}, and so does safety.pfd_avg"
-                       + (f": {ccf['note']}" if ccf.get("note") else ".")
-                       + " The figures are optimistic by the groups' contribution.")
+                       f"{1.0 - float(pfd):.6g} (1 − PFDavg): quote that one for the safety function. Run the "
+                       "analysis again to take them into every figure.")
     else:
-        out["note"] = (f"{left_out}: RePyability takes common cause in a repairable diagram only in a safety "
-                       "function's PFDavg (mark the diagram as a safety function). The figures are optimistic by "
-                       "the groups' contribution.")
+        out["note"] = (f"{left_out}. Run the analysis again to take them in; until then the figures are optimistic "
+                       "by the groups' contribution.")
     return out
 
 
@@ -477,15 +506,9 @@ def validation_warnings(graph: dict) -> list[str]:
     for name in options:
         if name not in used:
             warnings.append(f"Maintenance group “{name}” has no blocks, so its set-up cost is never charged.")
-    if graph.get("ccf_groups") and not graph.get("safety_function"):
-        warnings.append(
-            "Common-cause groups enter a repairable diagram only through a safety function's "
-            "PFDavg — mark the diagram as a safety function, or they are ignored.")
-    elif graph.get("ccf_groups"):
-        warnings.append(
-            "Common-cause groups enter the safety function's PFDavg (RePyability needs their "
-            "members' lives to be exponential); the availability figures and simulation leave "
-            "them out.")
+    # Common-cause groups (#226) are in every figure where RePyability follows
+    # them; the Validate step says when it doesn't, and why
+    # (rbd_analysis.common_cause_left_out).
     if graph.get("safety_function") and graph.get("repairable") and not proof_tested_labels(graph):
         warnings.append(NO_PROOF_TESTS)
     return warnings
