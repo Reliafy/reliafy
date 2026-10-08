@@ -25,8 +25,26 @@ whole answer:
 * **rising** — deterioration. Repairs are not restoring the system, and you're
   heading toward overhaul or replacement.
 
-Reliafy fits all three models below to the same event history, so the comparison
-between them is direct.
+Reliafy fits any of the models below to the same event history, so the
+comparison between them is direct.
+
+**How Reliafy reads the trend.** A fit to data reports the growth parameter with
+its 95% confidence interval, and the verdict comes from that interval, not from
+the point estimate alone: *deteriorating* when the whole interval is above the
+no-trend value (β = 1), *improving* when it is all below, and *stable* when it
+includes it — the data don't show a trend either way. Two trend tests run
+alongside, each testing every system over its own observation window: the
+**Laplace** test and the **MIL-HDBK-189C** test (the chi-squared test of the
+power-law shape). A **Cramér-von Mises** test, with a bootstrap p-value, checks
+the fitted model against the event times; a small p-value means the model's
+shape doesn't match the data.
+
+The ROCOF and the instantaneous MTBF are reported at the end of observation
+with 95% bounds, along with the **demonstrated MTBF** — its one-sided 90% lower
+bound, "MTBF ≥ X at 90%". For a Crow-AMSAA fit to a time-terminated test (every
+system from 0 to the same end) or one system run to its last failure these are
+Crow's exact bounds, as tabulated in MIL-HDBK-189C; otherwise they are Wald
+(delta-method) bounds.
 
 ## crow_amsaa
 
@@ -90,3 +108,25 @@ calculations.
 **Watch out:** assuming an HPP when the rate is genuinely rising is how
 deterioration gets missed until it's expensive. Always look at the trend before
 settling on a constant rate.
+
+## cox_lewis
+
+**A log-linear trend in the failure rate** — the Cox-Lewis non-homogeneous
+Poisson process, where the rate changes by a fixed *proportion* per unit time
+rather than following a power of time.
+
+```
+λ(t) = exp(α + β·t)
+M(t) = exp(α) · (exp(β·t) − 1) / β
+```
+
+Here `β` is a slope, not a shape: `β > 0` is deteriorating, `β < 0` improving,
+and `β = 0` is the HPP. The verdict uses its 95% interval against 0.
+
+**Use it as** the alternative to Crow-AMSAA when the trend doesn't look like a
+power law — a rate that was already well above zero at the start and grows
+steadily, as wear-out in an old system often does. Compare the two by AIC and
+the goodness-of-fit test. **Watch out:** with `β < 0` the expected total number
+of failures levels off at `exp(α) / −β`, so long-range predictions from an
+improving fit can be optimistic; and growth projection and the demonstrated-MTBF
+exact bounds are Crow-AMSAA methods only.

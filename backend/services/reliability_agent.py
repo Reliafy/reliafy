@@ -314,7 +314,8 @@ def tools() -> list:
                     "time_column": {"type": "string", "description": "Event time column (surpyval x)."},
                     "model": {"type": "string", "enum": list(rec_fit.MODEL_CHOICES),
                               "description": "crow_amsaa = the standard NHPP power-law growth model (default); "
-                                             "duane = the log-log cumulative-MTBF fit; hpp = constant rate, the null model."},
+                                             "duane = the log-log cumulative-MTBF fit; hpp = constant rate, the null model; "
+                                             "cox_lewis = log-linear NHPP, an alternative trend shape."},
                     "censored_column": {"type": "string", "description": "Optional censoring column (surpyval c) — marks the end-of-observation row per system."},
                     "count_column": {"type": "string", "description": "Optional counts column (surpyval n)."},
                     "left_truncation_column": {"type": "string", "description": "Optional left-truncation column (surpyval tl)."},
@@ -934,9 +935,13 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
             doc = recurrent_service.save_model(
                 db, (inp.get("name") or "model").strip() or "model", ds, spec, uid)
             r = doc.results or {}
+            dm = r.get("demonstrated_mtbf") or {}
             return {"ok": True, "model_id": doc.id, "kind": "recurrent",
                     "model": (r.get("model") or {}).get("name"), "beta": r.get("beta"),
-                    "growth": r.get("growth"),
+                    "beta_ci": r.get("beta_ci"), "growth": r.get("growth"),
+                    "trend_tests": [{"test": t["test"], "p_value": t["p_value"], "trend": t["trend"]}
+                                    for t in r.get("trend_tests") or []],
+                    "mtbf": r.get("mtbf"), "demonstrated_mtbf_lower_90": dm.get("lower"),
                     "summary": f"Created recurrent model “{doc.name}” — "
                                f"{(r.get('model') or {}).get('name')}, {r.get('growth') or 'no trend'}."}
 
