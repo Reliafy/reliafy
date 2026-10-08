@@ -146,6 +146,59 @@ def check_limits(graph) -> None:
         check_counts(str(raw.get("type") or ""), fields, f"node '{label}'")
 
 
+# A diagram with nothing to analyse yet (#271): only Input and Output, or
+# blocks with no path through them from Input to Output. Every analysis
+# answers these in the same plain words (a 422 for the API and MCP callers);
+# the app shows its own empty state and doesn't ask.
+NO_BLOCKS = "no_blocks"
+NOT_CONNECTED = "not_connected"
+GAP_MESSAGES = {
+    NO_BLOCKS: "The diagram has no blocks yet. Add blocks between Input and Output, and connect them.",
+    NOT_CONNECTED: ("The diagram's blocks aren't connected from Input to Output yet. Connect them so at least "
+                    "one path runs from Input, through the blocks, to Output."),
+}
+
+
+def diagram_gap(graph) -> Optional[str]:
+    """:data:`NO_BLOCKS` when the diagram has no blocks besides Input and
+    Output, :data:`NOT_CONNECTED` when no block lies on a path from Input to
+    Output, else None. A diagram without exactly one Input and one Output is
+    left to the analyses' own messages (None)."""
+    if not isinstance(graph, dict):
+        return None
+    nodes = [n for n in graph.get("nodes") or [] if isinstance(n, dict)]
+    blocks = {n.get("id") for n in nodes if n.get("type") not in ("input", "output")}
+    if not blocks:
+        return NO_BLOCKS
+    ends = {kind: [n.get("id") for n in nodes if n.get("type") == kind] for kind in ("input", "output")}
+    if len(ends["input"]) != 1 or len(ends["output"]) != 1:
+        return None
+    forward: dict = {}
+    backward: dict = {}
+    for e in graph.get("edges") or []:
+        if isinstance(e, dict) and e.get("source") is not None and e.get("target") is not None:
+            forward.setdefault(e["source"], []).append(e["target"])
+            backward.setdefault(e["target"], []).append(e["source"])
+
+    def reach(start, adjacency) -> set:
+        seen, stack = {start}, [start]
+        while stack:
+            for nxt in adjacency.get(stack.pop(), ()):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        return seen
+
+    on_path = reach(ends["input"][0], forward) & reach(ends["output"][0], backward) & blocks
+    return None if on_path else NOT_CONNECTED
+
+
+def gap_message(graph) -> Optional[str]:
+    """The plain message for :func:`diagram_gap`, or None."""
+    gap = diagram_gap(graph)
+    return GAP_MESSAGES[gap] if gap else None
+
+
 def layout_graph(nodes: list[dict], edges: list[dict]) -> list[dict]:
     """Longest-path layered layout (mirrors the builder's Auto-arrange)."""
     ids = {n["id"] for n in nodes}

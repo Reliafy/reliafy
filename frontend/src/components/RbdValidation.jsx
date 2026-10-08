@@ -1,5 +1,6 @@
 // Shared RBD validation feedback, used on both the Builder and Calculator tabs.
 import MethodTag from "./MethodTag.jsx";
+import { NO_BLOCKS } from "../rbdReadiness.js";
 
 // A structural signature of the diagram (ignoring node positions) so callers
 // can tell when it has changed since the last validation.
@@ -33,6 +34,20 @@ export default function ValidationPanel({ validation, stale }) {
         <div>
           <strong>The diagram has changed since the last check.</strong>
           <p className="rbd-check-note">Validate again to refresh the result.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Nothing to check yet (#271): only Input and Output, or no block on a
+  // path between them. A next step, not an error.
+  if (validation.empty) {
+    return (
+      <div className="rbd-check rbd-check-todo">
+        <span className="rbd-check-icon">+</span>
+        <div>
+          <strong>{validation.empty === NO_BLOCKS ? "Nothing to check yet." : "Not connected yet."}</strong>
+          <p className="rbd-check-note">{validation.errors?.[0]}</p>
         </div>
       </div>
     );

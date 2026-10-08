@@ -31,7 +31,7 @@ from backend.services import rbd_sensitivity
 from backend.services import rbds as rbds_service
 from backend.services import usage as usage_service
 from backend.services.access import AccessCtx, get_access
-from backend.services.rbd_analysis import AnalysisError
+from backend.services.rbd_analysis import AnalysisError, require_blocks
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -57,6 +57,7 @@ def sensitivity_payload(session, ctx: AccessCtx, graph: dict, rbd: Optional[Rbd]
     the diagram needs it (an entitled user's click). Shared by the REST
     endpoint and the MCP server. Raises :class:`AnalysisError` for bad
     input or a diagram the availability analysis can't build."""
+    require_blocks(graph)
     if not (graph or {}).get("repairable"):
         raise AnalysisError("What to improve is for repairable (availability) diagrams — give the blocks "
                             "repair times and mark the diagram repairable.")

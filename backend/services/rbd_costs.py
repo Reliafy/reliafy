@@ -417,6 +417,7 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
     fourth train of a 2-out-of-3 makes it 2-out-of-4). With trains, the
     blocks copied one at a time default to the priced blocks outside them
     (``blocks=[]``: none)."""
+    ra.require_blocks(graph)
     if not (graph or {}).get("repairable"):
         raise AnalysisError("The cheapest design is for repairable (availability) diagrams.")
     diagram = rm.diagram_costs(graph)
