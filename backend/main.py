@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, UploadFile, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.db import get_session, init_db
@@ -503,10 +503,99 @@ def contained_path(path: Path, root: Path) -> Path | None:
     return resolved if resolved.is_relative_to(root.resolve()) else None
 
 
+# The first path segment of every route the React app draws itself
+# (frontend/src/App.jsx, AppShell.jsx and productPages.jsx; a test keeps this
+# in step with them). These get the SPA shell, which routes on the client —
+# an unknown slug under one (/blog/<slug>) is the app's to answer, since a
+# post can go live by date between builds. Any other path that isn't a built
+# file or a prerendered page is a real 404 (#118): crawlers and agents asking
+# for /llms.txt-style paths used to get the shell with a 200.
+SPA_ROOTS = frozenset({
+    # Public pages (cloud builds) and sign-in.
+    "blog", "whats-new", "learn", "guides", "reference", "api-docs", "p", "terms", "privacy",
+    "unsubscribe", "login", "oauth",
+    "weibull-analysis-software", "rcm-software", "reliability-block-diagram-software",
+    "reliability-analysis-software",
+    # The signed-in app.
+    "modelling", "rbds", "datasets", "strategy", "fleet", "agent", "rcm", "team", "settings",
+    "tokens", "admin", "billing",
+})
+
+
+def is_spa_route(full_path: str) -> bool:
+    """Whether ``full_path`` (no leading slash) is one of the app's routes."""
+    first = full_path.strip("/").split("/", 1)[0]
+    return first == "" or first in SPA_ROOTS
+
+
+_NOT_FOUND_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Page not found — Reliafy</title>
+<style>
+  body { margin: 0; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+         color: #14171c; background: #fbfbf9; }
+  main { max-width: 34rem; margin: 18vh auto 0; padding: 0 1.25rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+  p { margin: 0 0 1rem; color: #6c727c; }
+  a { color: #2f6df6; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Page not found</h1>
+  <p>There's nothing at this address. It may have moved, or the link may be mistyped.</p>
+  <p><a href="/">Go to the home page</a> &middot; <a href="/modelling">Open the app</a> &middot;
+     <a href="/blog">Read the blog</a></p>
+</main>
+</body>
+</html>
+"""
+
+
+def not_found(full_path: str) -> Response:
+    """A real 404: JSON under /api (and for the other machine paths), a small
+    page for everything else."""
+    if full_path.startswith(("api/", "internal/", "mcp/", ".well-known/")) or full_path in ("api", "mcp"):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    return HTMLResponse(_NOT_FOUND_HTML, status_code=404, headers=_NO_CACHE)
+
+
+# HTML is always revalidated: a stale page references hashed chunks a later
+# deploy has deleted, and the app then crashes on load. (main.jsx also
+# reloads once on vite:preloadError, for pages already open or cached.)
+_NO_CACHE = {"Cache-Control": "no-cache"}
+
+
+def spa_response(full_path: str, dist: Path) -> Response:
+    """What ``GET /<full_path>`` answers from the built frontend in ``dist``.
+
+    A prerendered page (``dist/static/<route>/index.html``: the landing,
+    blog, terms/privacy… generated at build time for search indexing) wins;
+    then a built file (``/llms.txt``, ``/robots.txt``, images…); then the SPA
+    shell, for the app's own routes (:data:`SPA_ROOTS`) only. Anything else is
+    a real 404 (#118). Never serves a file from outside ``dist``.
+    """
+    root = dist.resolve()
+    prerendered = contained_path(dist / "static" / (full_path or ".") / "index.html", root)
+    if prerendered is not None and prerendered.is_file():
+        return FileResponse(prerendered, headers=_NO_CACHE)
+    candidate = contained_path(dist / full_path, root)
+    if full_path and candidate is not None and candidate.is_file():
+        headers = _NO_CACHE if candidate.suffix == ".html" else None
+        return FileResponse(candidate, headers=headers)
+    if is_spa_route(full_path):
+        return FileResponse(dist / "index.html", headers=_NO_CACHE)
+    return not_found(full_path)
+
+
 if FRONTEND_DIST.is_dir():
     # Hashed assets (JS/CSS/images) from the Vite build. Their names change
     # whenever their content does, so they can be cached forever; HTML must not
-    # be (see _NO_CACHE below).
+    # be (see _NO_CACHE).
     class _ImmutableAssets(StaticFiles):
         async def get_response(self, path, scope):
             response = await super().get_response(path, scope)
@@ -520,33 +609,11 @@ if FRONTEND_DIST.is_dir():
         name="assets",
     )
 
-    # HTML is always revalidated: a stale page references hashed chunks a later
-    # deploy has deleted, and the app then crashes on load. (main.jsx also
-    # reloads once on vite:preloadError, for pages already open or cached.)
-    _NO_CACHE = {"Cache-Control": "no-cache"}
-    _DIST_ROOT = FRONTEND_DIST.resolve()
-
-    def _within_dist(path: Path) -> Path | None:
-        return contained_path(path, _DIST_ROOT)
-
     @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str) -> FileResponse:
-        """Serve static files, falling back to index.html for SPA routing.
-
-        Marketing pages (landing, blog, terms/privacy) may have prerendered
-        HTML under ``dist/static/<route>/index.html`` — generated at build
-        time for search indexing — which wins over the SPA shell there.
-        """
-        prerendered = _within_dist(
-            FRONTEND_DIST / "static" / (full_path or ".") / "index.html"
-        )
-        if prerendered is not None and prerendered.is_file():
-            return FileResponse(prerendered, headers=_NO_CACHE)
-        candidate = _within_dist(FRONTEND_DIST / full_path)
-        if full_path and candidate is not None and candidate.is_file():
-            headers = _NO_CACHE if candidate.suffix == ".html" else None
-            return FileResponse(candidate, headers=headers)
-        return FileResponse(FRONTEND_DIST / "index.html", headers=_NO_CACHE)
+    async def serve_spa(full_path: str) -> Response:
+        """Static files, prerendered pages and the SPA shell, or a real 404
+        (see :func:`spa_response`)."""
+        return spa_response(full_path, FRONTEND_DIST)
 
 else:  # pragma: no cover - only hit before the frontend is built
 
