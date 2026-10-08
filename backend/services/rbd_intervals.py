@@ -438,6 +438,7 @@ def optimise(graph: dict, resolve_model=None, **raw) -> dict:
     the crews and common-cause notes; or ``status: "crews_limited"`` when the
     crews are limited and ``assume_unlimited_crews`` wasn't given. Raises
     :class:`AnalysisError`."""
+    ra.require_blocks(graph)
     if not (graph or {}).get("repairable"):
         raise AnalysisError("Interval optimisation is for repairable (availability) diagrams.")
     opts = options(**raw)

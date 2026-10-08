@@ -28,6 +28,7 @@ def test_contained_path(tmp_path):
 )
 def test_spa_route_does_not_leave_dist(path):
     r = TestClient(main.app).get(path)
-    assert r.status_code == 200
+    # Outside the app's routes: a real 404 page (#118), never the file.
+    assert r.status_code == 404
     assert r.headers["content-type"].startswith("text/html")
     assert b"import" not in r.content[:200]

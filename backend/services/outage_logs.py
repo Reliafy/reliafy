@@ -942,6 +942,11 @@ def _structure(graph: dict):
     observed history needs none), its blocks, and its vote gates."""
     from repyability import RBD
 
+    from backend.services.rbd_graph import gap_message
+
+    gap = gap_message(graph)
+    if gap:
+        raise OutageLogError(gap)
     nodes = (graph or {}).get("nodes") or []
     edges = [(str(e["source"]), str(e["target"])) for e in (graph or {}).get("edges") or []
              if e.get("source") and e.get("target")]

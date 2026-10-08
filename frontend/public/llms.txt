@@ -1,0 +1,39 @@
+# Reliafy
+
+> Reliafy is a reliability-engineering workspace on the web, built on the open-source SurPyval and RePyability Python libraries. Engineers and their AI agents fit life distributions to failure data (censored, truncated, with covariates), build and analyse reliability block diagrams (reliability, availability, fault trees, cut sets, importance), plan maintenance (replacement, overhaul, proof-test intervals) and forecast fleet failures.
+
+Agents can work in a user's Reliafy account through the MCP server or the HTTP API, both signed in as that user: they see the user's own data plus the shared sample library. On Reliafy Cloud, MCP and the API are part of the Pro plan; Free accounts get 20 MCP tool calls a month to try it.
+
+Conventions agents should follow:
+
+- Censoring flags: 0 = failed at that time, 1 = still running (right-censored), -1 = left-censored. Data coded 1 = failed should be passed with the inverted-flags option rather than rewritten.
+- Times and parameters are in the model's (or diagram's) time unit; always state the unit.
+- Distribution parameters use SurPyval's names, e.g. Weibull alpha (scale) and beta (shape).
+
+## Connect an agent
+
+- [MCP server](https://reliafy.com/mcp): remote Model Context Protocol server over Streamable HTTP. Sign in with OAuth (discovered from the server; dynamic client registration supported) or send a personal token as `Authorization: Bearer rlf_...`.
+- [Use Reliafy from Claude (MCP)](https://reliafy.com/api-docs#mcp): how to connect from claude.ai, the Claude apps, Claude Code and other MCP clients, and what every tool does.
+- [OAuth protected-resource metadata](https://reliafy.com/.well-known/oauth-protected-resource/mcp): the MCP server's authorization discovery document.
+
+## API
+
+- [API reference](https://reliafy.com/api-docs): the HTTP API (`/api/v1`) for models, reliability, datasets, fitting, fleet forecasts and strategy calculators, the ingestion API for pushing usage and failure data, and the `reliafy-client` Python package (`pip install reliafy-client`).
+- [OpenAPI schema](https://reliafy.com/openapi.json): machine-readable spec of the HTTP endpoints.
+
+## Reference
+
+- [Model reference](https://reliafy.com/reference): every model Reliafy fits (life distributions, non-parametric estimators, survival regression, accelerated-life relationships, recurrent-event models), with parameters, functional forms and when to use each.
+- [Guides](https://reliafy.com/guides): task-by-task walkthroughs of the app (repairable RBDs and availability, common-cause failures, accelerated-life models and more).
+- [Blog and Learn](https://reliafy.com/blog): articles on reliability methods (Weibull analysis, RBDs, RCM, maintenance optimisation).
+
+## Optional
+
+- [What's new](https://reliafy.com/whats-new): release notes ([RSS](https://reliafy.com/whats-new/feed.xml)).
+- [Blog RSS](https://reliafy.com/blog/feed.xml)
+- [Weibull analysis software](https://reliafy.com/weibull-analysis-software)
+- [Reliability block diagram software](https://reliafy.com/reliability-block-diagram-software)
+- [RCM software](https://reliafy.com/rcm-software)
+- [Reliability analysis software](https://reliafy.com/reliability-analysis-software)
+- [Source code](https://github.com/Reliafy/reliafy): Reliafy is open source and self-hostable.
+- [Terms](https://reliafy.com/terms) and [Privacy](https://reliafy.com/privacy)
