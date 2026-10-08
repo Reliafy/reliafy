@@ -1041,7 +1041,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
               they collided with the zoom controls and the hint bubble; a chip
               keeps the overlay one row tall so it doesn't cover the top of the
               diagram either. */}
-          {(!repairable || policies.safety_function) && ccfGroups.length > 0 && (
+          {ccfGroups.length > 0 && (
             <div className="rbd-ccf-menu">
               <button
                 className={"rbd-ccf-toggle" + (ccfListOpen ? " open" : "")}
@@ -1114,7 +1114,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
             {validating ? "Validating…" : "Validate"}
           </button>
           </div>
-        {(!repairable || policies.safety_function) && selectedComponentIds.length >= 2 && (
+        {selectedComponentIds.length >= 2 && (
           <div className="rbd-toolbar-float">
             <button className="rbd-btn accent" onClick={openCcfForSelection}
                     title="Couple these redundant components by a shared failure cause">

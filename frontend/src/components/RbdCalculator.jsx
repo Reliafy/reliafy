@@ -728,12 +728,27 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           {simulatedOnly && result.quick && <QuickTag />}
         </div>
       </div>
+      {/* Common-cause groups (#226): in every figure here, or left out of them all and why. */}
+      {result.common_cause?.included && (
+        <p className="rbd-avail-ccf">
+          Includes the diagram's {result.common_cause.groups} common-cause
+          group{result.common_cause.groups === 1 ? "" : "s"} in every figure
+          {result.common_cause.availability_without_common_cause != null && (
+            <> — without {result.common_cause.groups === 1 ? "it" : "them"} the long-run availability would
+              be <b>{pct(result.common_cause.availability_without_common_cause)}</b></>
+          )}.
+        </p>
+      )}
       {/* A safety function whose PFDavg includes its common-cause groups (#265): the figure with them. */}
-      {result.safety && result.common_cause?.availability_with_common_cause != null && (
+      {result.safety && !result.common_cause?.included && result.common_cause?.availability_with_common_cause != null && (
         <p className="rbd-avail-ccf">
           <b>{pct(result.common_cause.availability_with_common_cause)}</b> with the common-cause groups (1 − PFDavg,
           as the safety function below). The figures here leave them out.
         </p>
+      )}
+      {result.common_cause && !result.common_cause.included && result.common_cause.note
+        && !(result.warnings || []).includes(result.common_cause.note) && (
+        <p className="muted-line">⚠ {result.common_cause.note}</p>
       )}
       {(result.warnings || []).map((w) => (
         <p className="muted-line" key={w}>⚠ {w}</p>

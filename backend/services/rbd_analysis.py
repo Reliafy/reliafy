@@ -25,6 +25,7 @@ from __future__ import annotations
 import re
 import time
 import warnings
+import weakref
 from itertools import combinations
 from math import comb
 from typing import Any, Callable, Optional
@@ -614,20 +615,21 @@ def _build_rbd(
 #: ``BetaFactor`` basis, #210): each member's failure *rate* — a lifetime
 #: model, right over the whole life — or its failure *probability*, the PRA
 #: basic-event split, valid only while that probability is small (a mission
-#: or a proof-test interval). Non-repairable (lifetime) analysis defaults to
-#: the rate; a repairable diagram's groups (a safety function's PFDavg) keep
-#: the probability default, which RePyability's Markov chain ignores anyway
-#: (a repairable component's failures are a rate).
+#: or a proof-test interval). Both kinds of diagram default to the rate
+#: (#226): a repairable diagram's groups are followed over time, and
+#: RePyability's chains split a repairable component's failure rate whatever
+#: the basis says, so its figures are the same on either.
 CCF_BASES = ("rate", "probability")
 
 
 def ccf_basis(group: dict, repairable: bool = False) -> str:
     """A common-cause group's basis: its own ``basis`` when set, else the
-    default for the diagram kind (rate for lifetime analysis). Raises
-    :class:`AnalysisError` for a basis that isn't one of :data:`CCF_BASES`."""
+    rate (``repairable`` is kept for callers; both kinds default to the rate
+    since #226). Raises :class:`AnalysisError` for a basis that isn't one of
+    :data:`CCF_BASES`."""
     basis = (group or {}).get("basis") if isinstance(group, dict) else None
     if basis in (None, ""):
-        return "probability" if repairable else "rate"
+        return "rate"
     if basis not in CCF_BASES:
         raise AnalysisError(
             f"A common-cause group's basis must be 'rate' or 'probability'; got {basis!r}.")
@@ -866,9 +868,9 @@ def validate_graph(
     repairable = bool(graph.get("repairable"))
     if repairable:
         # Availability mode is a distinct contract: every component needs a
-        # repair-time distribution, only component + k-of-n blocks are supported,
-        # and common-cause coupling is reliability-only. Check that here so the
-        # Validate step reflects what Calculate will actually accept.
+        # repair-time distribution and only component + k-of-n blocks are
+        # supported. Check that here so the Validate step reflects what
+        # Calculate will actually accept.
         if repeats:
             errors.append(rbd_repeats.repairable_message(nodes, repeats))
         for node in nodes:
@@ -907,10 +909,14 @@ def validate_graph(
         # ``analytic`` describes the reliability curve and stays False here;
         # how each availability figure is computed (#154: exact, numerical or
         # only by simulation) comes from RePyability's analysis_routes().
+        routes, ccf_status = _availability_routes(graph, with_status=True) if valid else (None, None)
+        if ccf_status is not None and not ccf_status["included"]:
+            warnings.append(common_cause_left_out(ccf_status["groups"], ccf_status["reason"],
+                                                  bool(graph.get("safety_function"))))
         return {
             "valid": valid, "analytic": False, "can_calculate": valid,
             "errors": errors, "warnings": warnings, "non_analytic_nodes": {},
-            "availability_routes": _availability_routes(graph) if valid else None,
+            "availability_routes": routes,
         }
 
     # Non-repairable (reliability): common-cause groups should couple identical
@@ -2008,15 +2014,21 @@ def _repair_distribution(data: dict, label: str, resolve_model=None):
     return _build_distribution(spec, f"{label} (repair)", resolve_model, None)
 
 
-def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf: bool = False):
+def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state: Optional[dict] = None):
     """Translate a builder graph into a RepairableRBD (availability).
 
     Supports component nodes (each a life model + repair, with costs and
     maintenance), standby groups (#156) and k-of-n voting gates; other node
     types raise a clear error. The diagram's repair crews and maintenance
-    groups (#156, #157) are passed on; its common-cause groups only with
-    ``with_ccf`` (a safety function's PFDavg, #136), since RePyability 0.11's
-    simulations don't take them in. Nodes pinned
+    groups (#156, #157) are passed on, and its common-cause groups (#226):
+    with ``with_ccf`` True (the default) when RePyability takes them into
+    every figure — the long run, the values over time from ``state`` (a
+    canonical current state, :func:`parse_current_state`) and the simulation
+    (:func:`rbd_ccf.common_cause_refusal`); with ``"long_run"`` when its
+    long-run values take them (a safety function's PFDavg, #136, and the
+    interval choices); never with False. Where they're refused the diagram
+    is built without them: :func:`common_cause_status` says which, and why.
+    Nodes pinned
     working/failed (``data.state``) are forced via RePyability's native
     ``working_nodes``/``broken_nodes`` overrides; a pinned node needs no life
     or repair model (validation doesn't ask for one), so a never-failing
@@ -2028,6 +2040,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf: bool = Fals
     """
     from backend.services import rbd_maintenance, rbd_policies
 
+    current_state = state  # the blocks' states now (the loop below reads each block's pin as ``state``)
     _check_limits(graph)
     require_blocks(graph)
     nodes = graph.get("nodes") or []
@@ -2118,26 +2131,93 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf: bool = Fals
         "repair_crews": rbd_policies.repair_crews(graph),
         "maintenance_groups": rbd_policies.maintenance_groups(graph, members),
     }
-    if with_ccf:
-        extra["ccf_groups"] = _ccf_groups(graph, components, repairable=True) or None
+    groups = _ccf_groups(graph, components, repairable=True)
     input_node = "input" if "input" in node_ids else None
     output_node = "output" if "output" in node_ids else None
-    try:
-        rbd = RepairableRBD(
-            edges, components, k=k, input_node=input_node, output_node=output_node,
-            downtime_cost_rate=rbd_maintenance.downtime_cost_rate(graph), **extra,
-        )
-    except ValueError as exc:
-        text = str(exc)
-        if text.startswith(("Component ", "Maintenance group", "maintenance_groups", "The members of a CCF",
-                            "CCF group", "Common-cause")):
-            # A block's settings RePyability refuses (already worded for a user).
-            raise AnalysisError(_component_message(text, labels)) from exc
-        raise AnalysisError(
-            "The diagram isn't a valid reliability block diagram: "
-            f"{_repyability_message(exc)}. Check that every component is wired between the input and output."
-        ) from exc
+
+    def build(ccf_groups):
+        try:
+            return RepairableRBD(
+                edges, components, k=k, input_node=input_node, output_node=output_node,
+                downtime_cost_rate=rbd_maintenance.downtime_cost_rate(graph), ccf_groups=ccf_groups or None,
+                **extra,
+            )
+        except ValueError as exc:
+            text = str(exc)
+            if text.startswith(("Component ", "Maintenance group", "maintenance_groups", "The members of a CCF",
+                                "CCF group", "Common-cause")):
+                # A block's settings RePyability refuses (already worded for a user).
+                raise AnalysisError(_component_message(text, labels)) from exc
+            raise AnalysisError(
+                "The diagram isn't a valid reliability block diagram: "
+                f"{_repyability_message(exc)}. Check that every component is wired between the input and output."
+            ) from exc
+
+    rbd = build(groups if with_ccf else None)
+    if groups:
+        from backend.services import rbd_ccf
+
+        reason = None
+        if not with_ccf:
+            reason = "Left out on request."
+        elif with_ccf == "long_run":
+            reason = rbd_ccf.long_run_refusal(rbd, working_nodes, broken_nodes)
+        else:
+            reason = rbd_ccf.common_cause_refusal(rbd, working_nodes, broken_nodes,
+                                                  _node_states(current_state, labels))
+        if reason is not None and with_ccf:
+            rbd = build(None)
+            reason = _with_labels(reason, labels)
+        _CCF_STATUS[rbd] = {"groups": len(groups), "included": reason is None, "reason": reason,
+                            "mode": "long_run" if with_ccf == "long_run" else "all"}
     return rbd, labels, gate_ids, working_nodes, broken_nodes
+
+
+#: Whether each built RBD has its diagram's common-cause groups in it (see
+#: :func:`common_cause_status`); weakly keyed, so it goes with the RBD.
+_CCF_STATUS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+
+def common_cause_status(rbd) -> Optional[dict]:
+    """For an RBD :func:`_build_repairable_rbd` built from a diagram with
+    common-cause groups: ``{"groups", "included", "reason", "mode"}`` —
+    whether the groups are in it and, when not, RePyability's reason in the
+    blocks' labels. None for a diagram without groups."""
+    try:
+        return _CCF_STATUS.get(rbd)
+    except TypeError:
+        return None
+
+
+def common_cause_summary(rbd, overrides: Optional[dict] = None, graph: Optional[dict] = None) -> Optional[dict]:
+    """The ``common_cause`` an availability result carries (#185, #226): how
+    many groups, whether every figure includes them, the reason when they're
+    left out and, when included, the exact long-run availability without
+    them (what the groups cost). None for a diagram without groups."""
+    status = common_cause_status(rbd)
+    if status is None:
+        return None
+    out: dict[str, Any] = {"groups": status["groups"], "included": status["included"],
+                           "reason": status["reason"]}
+    if graph is not None:
+        bases = {ccf_basis(g) for g in graph.get("ccf_groups") or []
+                 if isinstance(g, dict) and len(g.get("members") or []) >= 2}
+        out["basis"] = bases.pop() if len(bases) == 1 else ("mixed" if bases else "rate")
+    if status["included"]:
+        out["availability_without_common_cause"] = _without_groups_availability(rbd, overrides or {})
+    return out
+
+
+def _without_groups_availability(rbd, overrides: dict) -> Optional[float]:
+    """The exact long-run availability of ``rbd`` without its common-cause
+    groups (None where there's no exact value)."""
+    try:
+        twin = RepairableRBD(**{**rbd._init_args, "ccf_groups": None})
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            return _f(twin.mean_availability(**overrides))
+    except Exception:  # noqa: BLE001 - only a comparison figure
+        return None
 
 
 def _component_message(text: str, labels: dict) -> str:
@@ -2642,10 +2722,12 @@ def analyze_availability(
     if quick:
         fixed_n = True  # a quick run is a fixed run of what fits its budget
     rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(
-        graph, resolve_model
+        graph, resolve_model, state=state
     )
     # Voting gates are junctions (#224): exactly perfect, and never pinned.
     overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
+    # Common-cause groups (#226): in every figure below, or in none (and why).
+    common_cause = common_cause_summary(rbd, overrides, graph)
     # The simulation alone takes the current state (the long-run figures and
     # importance are the same whatever the blocks' states now).
     node_states = _node_states(state, labels)
@@ -2841,6 +2923,7 @@ def analyze_availability(
         },
         "curve": curve,
         **extras,
+        **({"common_cause": common_cause} if common_cause is not None else {}),
         # Whether the figures above include a simulation (``simulate=False``:
         # the exact long-run figures only), and the state it started from.
         "has_simulation": res is not None,
@@ -3158,22 +3241,42 @@ def _routes_summary(routes: dict, labels: dict) -> dict:
     return out
 
 
-def _availability_routes(graph: dict) -> Optional[dict]:
+def _availability_routes(graph: dict, with_status: bool = False):
     """For the Validate panel: how a repairable diagram's long-run figures,
     figures over time and simulation are computed (route + reason), or None
     when the diagram can't be built from the graph alone (a saved model
-    that needs resolving, say)."""
+    that needs resolving, say). ``with_status``: ``(routes, common-cause
+    status)`` (:func:`common_cause_status`)."""
     try:
         rbd, labels, *_ = _build_repairable_rbd(graph)
         summary = _routes_summary(rbd.analysis_routes(), labels)
     except Exception:  # noqa: BLE001 - only a label; Calculate reports problems
-        return None
-    return {
+        return (None, None) if with_status else None
+    routes = {
         "long_run": summary.get("mean_availability"),
         "over_time": summary.get("point_availability"),
         "window": summary.get("expected_events"),
         "simulation": summary.get("availability"),
     }
+    return (routes, common_cause_status(rbd)) if with_status else routes
+
+
+def common_cause_left_out(groups: int, reason: Optional[str], safety: bool = False) -> str:
+    """Why a repairable diagram's figures leave its common-cause groups out
+    (#226): RePyability's reason, and what that means for the figures."""
+    them = f"{groups} common-cause group{'s' if groups != 1 else ''}"
+    why = (reason or "").strip()
+    # "Common-cause group [“A”, “B”]: its chain needs …" — the group once.
+    named = re.match(r"^Common-cause group \[(.*?)\]:\s*(.*)$", why, re.S)
+    if named:
+        them += f" ({named.group(1)})"
+        why = named.group(2)
+    if why and not why.endswith("."):
+        why += "."
+    why = why[:1].upper() + why[1:] if named else why
+    return (f"The availability figures leave out the diagram's {them}. {why} They're optimistic by the groups' "
+            "contribution" + ("; the safety function's PFDavg still takes them in where RePyability's long-run "
+                              "chain covers them." if safety else "."))
 
 
 def _exact_grid(horizon: float) -> np.ndarray:
@@ -3201,9 +3304,10 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
     This is the one function the compute service (#149) will run: it takes
     the graph and returns plain JSON."""
     started = time.perf_counter()
-    rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(graph, resolve_model)
+    rbd, labels, gate_ids, working_nodes, broken_nodes = _build_repairable_rbd(graph, resolve_model, state=state)
     overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
     node_states = _node_states(state, labels)
+    ccf_status = common_cause_status(rbd)
     chosen, _ = chosen_horizon(horizon, graph)
     window = chosen if chosen is not None else float(_availability_horizon(graph, state))
     routes = rbd.analysis_routes()
@@ -3216,6 +3320,9 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
         "n_blocks": count_blocks(graph),
         "routes": summary,
     }
+    if ccf_status is not None:
+        # Whether these figures take the diagram's common-cause groups (#226).
+        base["common_cause_included"] = ccf_status["included"]
 
     def simulation_only(reason: str) -> dict:
         return {

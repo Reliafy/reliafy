@@ -169,10 +169,11 @@ def test_validation_checks_the_basis():
         ra.analyze(_repro(basis="hazard"))
 
 
-def test_repairable_groups_keep_the_probability_default():
-    """A safety function's PFDavg comes from RePyability's Markov chain, which
-    splits the rate whatever the basis: the default stays as it was."""
-    assert ra.ccf_basis({"beta": 0.1}, repairable=True) == "probability"
+def test_repairable_groups_default_to_the_rate_too():
+    """A repairable diagram's groups are followed over time (#226): the rate,
+    as RePyability's chains split it whatever the basis says."""
+    assert ra.ccf_basis({"beta": 0.1}, repairable=True) == "rate"
+    assert ra.ccf_basis({"beta": 0.1, "basis": "probability"}, repairable=True) == "probability"
     assert ra.ccf_basis({"beta": 0.1}) == "rate"
     assert ra.ccf_basis({"beta": 0.1, "basis": "rate"}, repairable=True) == "rate"
 

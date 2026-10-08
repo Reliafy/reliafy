@@ -76,6 +76,8 @@ def _design(graph: dict, resolve_model) -> dict:
         "priced": bool(rbd.has_costs),
         "cost_rate": cost_rate,
         "blocks": {nid for nid in rbd.components if nid not in gate_ids},
+        # Common-cause groups (#226): in the design's figures, or not and why.
+        "common_cause": ra.common_cause_status(rbd),
     }
 
 
@@ -282,6 +284,9 @@ def compare_availability(
                 "priced": design["priced"],
                 "cost_rate": ra._f(design["cost_rate"]) if design["cost_rate"] is not None else None,
                 "window_cost": ra._f(np.mean(costs)) if costed and len(costs) else None,
+                **({"common_cause_included": design["common_cause"]["included"],
+                    "common_cause_reason": design["common_cause"]["reason"]}
+                   if design["common_cause"] is not None else {}),
             }
             for key, exact, arr, design, costs in (
                 ("a", exact_a, fa_arr, a, ca), ("b", exact_b, fb_arr, b, cb))

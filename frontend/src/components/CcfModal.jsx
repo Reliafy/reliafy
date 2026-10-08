@@ -58,6 +58,14 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
           than it is, and the MTTF isn't given.
         </p>
       )}
+      {repairable && (
+        <p className="hint">
+          β splits each member's failure rate. The group is followed over time in every availability
+          figure — the long run, A(t), events and costs, the simulation — when its members have exponential
+          lives (revealed failures, or proof tests and repairs that take no time), no scheduled maintenance
+          and a crew for every repair. Otherwise it's left out of every figure, and Validate says why.
+        </p>
+      )}
       <p className="hint">
         {pct}% of each component's failures are shared-cause — they take out all{" "}
         {n} at once; the remaining {100 - pct}% are independent. Higher β erodes

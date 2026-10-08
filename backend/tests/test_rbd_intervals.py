@@ -163,10 +163,15 @@ def test_common_cause_left_out_when_the_chain_cannot_take_it():
         n["data"]["model"] = _w(500000, 1.5)
     out = ri.optimise(g, allowed=CAL)
     assert out["common_cause"]["included"] is False and "exponential" in out["common_cause"]["note"]
-    # Not a safety function: the groups are left out, as in the availability figures.
+    # Not a safety function: the groups are in the long run the intervals are
+    # chosen by all the same (#226).
     out = ri.optimise({**_sif(), "safety_function": False}, allowed=CAL)
-    assert out["common_cause"]["included"] is False and "safety function" in out["common_cause"]["note"]
+    assert out["common_cause"] == {"groups": 1, "included": True, "note": None}
     assert "pfd_avg" not in out["plan"]
+    assert out["plan"]["availability"] == pytest.approx(
+        _direct_sif().with_intervals(out["intervals"] if "intervals" in out else
+                                     {r["id"]: r["interval"] for r in out["blocks"]}).mean_availability(),
+        rel=1e-12)
 
 
 # ---------------------------------------------------------------------------

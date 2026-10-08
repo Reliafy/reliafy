@@ -640,8 +640,9 @@ def test_a_group_left_with_one_member_is_removed():
 
 def test_a_repairable_diagram_with_a_group_gets_its_cheapest_design():
     """Repairable diagrams' Design tab is the cheapest design (#99), on the
-    availability analysis, which leaves common-cause groups out (as do
-    RePyability's repairable allocations): a group changes nothing there."""
+    availability analysis, which takes common-cause groups in since #226 (as
+    RePyability 0.12's allocations do): the group costs more, and its
+    copies join it."""
     from backend.services import rbd_costs
 
     def pump(nid, y):
@@ -654,8 +655,9 @@ def test_a_repairable_diagram_with_a_group_gets_its_cheapest_design():
     plain = rbd_costs.cheapest_design(graph, horizon=87600)
     grouped = rbd_costs.cheapest_design({**graph, "ccf_groups": [{"members": ["a", "b"], "beta": 0.1}]},
                                         horizon=87600)
-    assert grouped["design"]["units"] == plain["design"]["units"]
-    assert grouped["design"]["total_cost"] == pytest.approx(plain["design"]["total_cost"])
+    assert grouped["common_cause"]["included"] is True and plain["common_cause"] is None
+    assert grouped["design"]["total_cost"] > plain["design"]["total_cost"]
+    assert grouped["design"]["availability"] < plain["design"]["availability"]
 
 
 # ---------------------------------------------------------------------------
