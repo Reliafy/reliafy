@@ -761,6 +761,10 @@
         {
           "id": "hpp",
           "name": "Homogeneous Poisson (HPP)"
+        },
+        {
+          "id": "cox_lewis",
+          "name": "Cox-Lewis (log-linear NHPP)"
         }
       ]
     }
@@ -792,5 +796,5 @@
       "applies_to": "Plain continuous distributions, 2-4 components"
     }
   ],
-  "total": 59
+  "total": 60
 }

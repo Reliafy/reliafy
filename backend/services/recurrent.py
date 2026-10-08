@@ -200,6 +200,34 @@ def shape_interval(db, doc: RecurrentModelDoc) -> dict | None:
             "ci": [float(ci[0]), float(ci[1])]}
 
 
+def ensure_diagnostics(db, doc: RecurrentModelDoc) -> RecurrentModelDoc:
+    """A data-fitted model saved before #81 (no ``trend_tests`` in its
+    results): re-fit it from its dataset once to add the growth verdict from
+    β's interval, the ROCOF / MTBF bounds, the demonstrated MTBF, both trend
+    tests and the goodness-of-fit test, and store them with the model. Saved
+    results the fit doesn't produce (a growth projection) are kept. The doc
+    comes back unchanged for a model built from parameters, one already
+    current, or one whose dataset is gone."""
+    spec = doc.spec or {}
+    results = doc.results or {}
+    if spec.get("params_only") or "trend_tests" in results or not doc.dataset_id:
+        return doc
+    try:
+        dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
+        if dataset is None:
+            return doc
+        payload, cache_id = recurrent_fit.fit(
+            datasets_service.load_dataframe(dataset), spec.get("mapping", {}),
+            model_id=spec.get("model_id", "crow_amsaa"), unit=spec.get("unit", ""))
+    except Exception:  # noqa: BLE001 - the data no longer fits: leave the model as saved
+        return doc
+    fresh = {**results, **payload}
+    db.recurrent_models.update_one({"_id": doc.id}, {"$set": {"results": fresh}})
+    _remember_live(doc.id, cache_id)
+    doc.results = fresh
+    return doc
+
+
 # ---- Reliability growth projection (#232) ---------------------------------------
 
 def _dataset_frame(db, doc: RecurrentModelDoc):
@@ -299,6 +327,7 @@ def _refit(db, doc: RecurrentModelDoc):
         df, spec.get("mapping", {}),
         model_id=spec.get("model_id", "crow_amsaa"),
         unit=spec.get("unit", ""),
+        gof_test=False,  # only the live model is wanted
     )
     _remember_live(doc.id, cache_id)
     return recurrent_fit.get_live(cache_id)

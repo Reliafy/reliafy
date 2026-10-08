@@ -15,6 +15,10 @@ render. This script turns one into an email and sends it.
     python -m backend.scripts.send_update --update october-2026 --send
     python -m backend.scripts.send_update --update october-2026 --send --yes --limit 50
 
+Links to the site carry ``utm_source=email&utm_medium=update&utm_campaign=
+<slug>`` (#269); the operator dashboard's "Email campaigns" card counts what
+each update brought in.
+
 Every send is recorded in ``update_sends`` (one row per update and user), so
 a re-run only reaches people not yet sent — failed sends are retried. Users
 who opted out, test-domain accounts, and ``--exclude`` addresses are skipped.
@@ -42,6 +46,7 @@ REPLY_TO = "hello@reliafy.com"
 TEST_DOMAINS = ("example.com", "reliafy.test", "local")
 TEST_TOKEN = "test"  # not a valid token: the unsubscribe endpoint 404s on it
 MAX_CONSECUTIVE_FAILURES = 5
+UTM_MEDIUM = "update"  # utm_campaign is the update's slug (#269)
 
 
 # ---- The update file ------------------------------------------------------
@@ -158,6 +163,7 @@ def render(update: Update, name: str | None, token: str,
            logo_src: str | None = None) -> Rendered:
     """Subject, plain text and branded HTML for one recipient. ``logo_src``
     overrides the hosted logo (e.g. ``cid:...`` for a pre-deploy test)."""
+    from backend.services import email_links
     from backend.services import email_templates as tpl
     from backend.services.email import _app_url
 
@@ -205,6 +211,10 @@ def render(update: Update, name: str | None, token: str,
         "List-Unsubscribe": f"<{unsub_api}>, <mailto:{REPLY_TO}?subject=unsubscribe>",
         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     }
+    # Campaign tags on every link to the site (#269); the unsubscribe links,
+    # mailto: and other sites are left alone.
+    text = email_links.tag_text(text, medium=UTM_MEDIUM, campaign=update.slug)
+    html = email_links.tag_html(html, medium=UTM_MEDIUM, campaign=update.slug)
     return Rendered(subject=update.subject, text=text, html=html, headers=headers)
 
 

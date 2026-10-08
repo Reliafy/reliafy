@@ -225,6 +225,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   );
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
   const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'tree' | 'design' | 'outages'
+  // A tab's empty state (#271) sends the user back to the canvas.
+  const toBuilder = useCallback(() => setTab("builder"), []);
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
   const [checkedSig, setCheckedSig] = useState(null);
@@ -1496,6 +1498,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         validation={validation}
         stale={validationStale}
         rbdId={savedRbdId}
+        onBuild={toBuilder}
       />
     </div>
     <div
@@ -1508,6 +1511,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         stale={validationStale}
         active={tab === "tree"}
         name={savedRbdName}
+        onBuild={toBuilder}
       />
     </div>
     <div
@@ -1517,6 +1521,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       <RbdDesignPanel
         graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         onApply={applyDesign}
+        onBuild={toBuilder}
         onView={() => {
           setTab("builder");
           // Once the canvas is shown again (it can't be fitted while hidden).
@@ -1531,6 +1536,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
             rbdId={savedRbdId}
             graph={{ nodes, edges, unit: rbdUnit }}
             readOnly={savedRbdReadOnly}
+            onBuild={toBuilder}
             onApplyModels={(updates) =>
               // Models fitted from the log, put on their blocks (unsaved).
               setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: { ...n.data, ...updates[n.id] } } : n)))

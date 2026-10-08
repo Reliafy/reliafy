@@ -7,9 +7,12 @@ is the system getting better or worse, and how often will it fail?
 Wraps :mod:`surpyval.recurrent`. From long-format event data (one row per
 event: which system, at what time) plus each system's observation window, we
 fit a nonparametric **MCF** (mean cumulative function, with confidence bounds),
-a parametric **Crow-AMSAA** power-law NHPP (the reliability-growth model), and a
-**trend test** (Laplace) — and derive the current ROCOF / MTBF and a plain
-growth verdict from the Crow-AMSAA shape β.
+a parametric model (the **Crow-AMSAA** power-law NHPP by default — the
+reliability-growth model — or Duane, HPP or the Cox-Lewis log-linear NHPP),
+two **trend tests** (Laplace and MIL-HDBK-189C) and a **goodness-of-fit** test
+(Cramér-von Mises) — and derive the ROCOF / MTBF at the end of observation with
+confidence bounds, the demonstrated MTBF, and a growth verdict from the growth
+parameter's 95% interval (#81).
 
 Like the other fits, live surpyval objects can't be pickled, so they're kept in
 a bounded in-memory store and re-fitted on demand from the dataset + spec.
@@ -27,15 +30,35 @@ import pandas as pd
 from backend.fitting import FitError, _json_safe
 from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
-from surpyval.recurrent import CrowAMSAA, Duane, HPP, NonParametricCounting, laplace
+from surpyval.recurrent import CoxLewis, CrowAMSAA, Duane, HPP, NonParametricCounting
 
-# Parametric recurrence models offered (all power-law / Poisson intensities).
+# Parametric recurrence models offered: the power-law (Crow-AMSAA, Duane) and
+# constant (HPP) intensities, and the Cox-Lewis log-linear intensity
+# exp(alpha + beta·t) as an alternative trend shape.
 MODELS = {
     "crow_amsaa": {"name": "Crow-AMSAA (NHPP)", "fitter": CrowAMSAA},
     "duane": {"name": "Duane", "fitter": Duane},
     "hpp": {"name": "Homogeneous Poisson (HPP)", "fitter": HPP},
+    "cox_lewis": {"name": "Cox-Lewis (log-linear NHPP)", "fitter": CoxLewis},
 }
 MODEL_CHOICES = list(MODELS.keys())
+# The models the (alpha = scale, beta = shape) parameter form builds: the power laws.
+FROM_PARAMS_MODELS = ("crow_amsaa", "duane")
+
+# Each model's growth parameter and its no-trend value. The growth verdict is
+# "deteriorating" when the parameter's 95% interval lies wholly above that
+# value, "improving" when wholly below, else "stable" (#81). Duane's shape is
+# SurPyval's ``alpha``; Cox-Lewis's ``beta`` is a log-linear slope (0 = flat).
+_GROWTH_PARAM = {
+    "crow_amsaa": {"param": "beta", "symbol": "β", "what": "growth shape", "no_trend": 1.0},
+    "duane": {"param": "alpha", "symbol": "β", "what": "growth shape", "no_trend": 1.0},
+    "cox_lewis": {"param": "beta", "symbol": "β", "what": "log-linear slope", "no_trend": 0.0},
+}
+CI_LEVEL = 0.95            # parameter, ROCOF and MTBF intervals
+DEMONSTRATED_LEVEL = 0.90  # the one-sided demonstrated-MTBF bound (MIL-HDBK-189C's usual level)
+_CVM_BUDGET = 400_000      # events x bootstrap replicates for the Cramér-von Mises p-value (about 4 s)
+_CVM_MAX_BOOT, _CVM_MIN_BOOT = 200, 40
+_RESIDUAL_ROWS = 50        # systems kept in the per-system residual table, most excess failures first
 
 _STORE: "OrderedDict[str, object]" = OrderedDict()
 _STORE_MAX = 64
@@ -129,29 +152,32 @@ def build_inputs(df: pd.DataFrame, mapping: dict) -> dict:
 
 
 @hides_solver_names
-def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str = "") -> tuple[dict, str]:
+def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str = "",
+        gof_test: bool = True) -> tuple[dict, str]:
     """Fit the recurrent model and build the JSON-safe results payload.
 
     Returns ``(payload, cache_id)`` addressing the live parametric model.
+    ``gof_test=False`` skips the (bootstrapped) Cramér-von Mises test, for a
+    re-fit that only wants the live model.
     """
     if model_id not in MODELS:
         raise FitError(f"Unknown model '{model_id}'. Choose one of: {', '.join(MODEL_CHOICES)}.")
     inputs = build_inputs(df, mapping)
-    x, i = inputs["x"], inputs["i"]
     # The nonparametric MCF estimator doesn't support right truncation (tr) —
     # the parametric fitter does. Give each what it accepts.
     np_inputs = {k: v for k, v in inputs.items() if k != "tr"}
 
     try:
-        np_model = note_fit(NonParametricCounting.fit(**np_inputs))
-        fitter = MODELS[model_id]["fitter"]
-        para = note_fit(fitter.fit(**inputs))
+        with np.errstate(all="ignore"):
+            np_model = note_fit(NonParametricCounting.fit(**np_inputs))
+            fitter = MODELS[model_id]["fitter"]
+            para = note_fit(fitter.fit(**inputs))
     except FitError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
         raise FitError(str(exc)) from exc
 
-    payload = _build_payload(np_model, para, x, i, model_id, unit)
+    payload = _build_payload(np_model, para, inputs, model_id, unit, gof_test=gof_test)
     if mapping.get("mode"):
         # The failure modes a growth projection classifies (#232).
         try:
@@ -172,7 +198,7 @@ def _power_law(model_id: str, params) -> tuple:
     was labelled "improving" and its ROCOF/MTBF were meaningless (#88).
     """
     p = np.asarray(params, dtype=float)
-    if p.size < 2:
+    if p.size < 2 or model_id == "cox_lewis":  # HPP has no shape; Cox-Lewis isn't a power law
         return None, None
     if model_id == "duane":
         shape, b = float(p[0]), float(p[1])
@@ -187,7 +213,8 @@ def _param_names(model_id: str, n: int) -> list:
     return names if len(names) == n else [f"p{k}" for k in range(n)]
 
 
-def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
+def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_test: bool = True) -> dict:
+    x, i = inputs["x"], inputs["i"]
     n_systems = int(len(set(i.tolist())))
     n_events = int(len(x))
 
@@ -209,38 +236,17 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
     with np.errstate(all="ignore"):
         fitted = np.asarray(para.mcf(grid), dtype=float)
 
-    # Crow-AMSAA / power-law shape: MCF(t) = (t/alpha)^beta, so the current
-    # rate of occurrence of failures (ROCOF) at the end is analytic.
-    beta, alpha = _power_law(model_id, params_arr)
-    rocof = mtbf = None
-    growth = None
-    if beta is not None and alpha and t_hi > 0:
-        with np.errstate(all="ignore"):
-            rocof = float((beta / alpha) * (t_hi / alpha) ** (beta - 1.0))
-        if np.isfinite(rocof) and rocof > 0:
-            mtbf = 1.0 / rocof
-        growth = "improving" if beta < 0.95 else "deteriorating" if beta > 1.05 else "stable"
-
-    # Trend test (Laplace): is the failure rate trending up/down?
-    trend = None
-    try:
-        tt = laplace(x=x, i=i)
-        signif = tt.p_value < 0.05
-        direction = getattr(tt, "trend", None)
-        if direction == "none":  # SurPyval 0.22 says "none"; the app and API say "no trend"
-            direction = "no trend"
-        trend = {
-            "test": getattr(tt, "test", "Laplace"),
-            "statistic": float(tt.statistic),
-            "p_value": float(tt.p_value),
-            "trend": direction,
-            "significant": bool(signif),
-        }
-    except Exception:  # pragma: no cover - defensive
-        trend = None
+    # The end of observation: the last event or end-of-test row, or the
+    # latest observation window. The current ROCOF / MTBF and their bounds
+    # are reported there — for a growth test, the demonstrated MTBF.
+    t_end = end_of_observation(inputs)
+    beta, _ = _power_law(model_id, params_arr)
+    rocof, mtbf = _rates_at(para, t_end)
 
     param_names = _param_names(model_id, params_arr.size)
     cis = param_intervals(model_id, para)
+    growth, growth_basis = growth_verdict(model_id, params_arr, cis)
+    tests = trend_tests(para)
     payload = {
         "kind": "recurrent",
         "unit": canonical_unit(unit),
@@ -250,26 +256,216 @@ def _build_payload(np_model, para, x, i, model_id: str, unit: str) -> dict:
         "params": [{"name": n, "value": float(v), **({"ci": cis[n]} if n in cis else {})}
                    for n, v in zip(param_names, params_arr)],
         "beta": beta,
+        "beta_ci": _shape_ci(model_id, cis),
         "growth": growth,
+        "growth_basis": growth_basis,
+        "end_of_observation": t_end,
         "rocof": rocof,
         "mtbf": mtbf,
+        **rate_bounds(model_id, para, t_end),
         "mcf": {
             "observed": {"x": nx.tolist(), "mcf": mcf_obs.tolist(), "lower": lower, "upper": upper},
             "fitted": {"x": grid.tolist(), "mcf": fitted.tolist()},
         },
-        "trend": trend,
+        # ``trend`` (Laplace) is kept for older readers; ``trend_tests`` has both.
+        "trend": next((t for t in tests if t["id"] == "laplace"), None),
+        "trend_tests": tests,
         "gof": _gof(para),
+        "gof_test": cramer_von_mises(para, n_events) if gof_test else None,
+        "system_residuals": system_residuals(para) if n_systems > 1 else None,
     }
     return _json_safe(payload)
 
 
+def end_of_observation(inputs: dict) -> float:
+    """The latest time any system was observed: its last event (or end-of-
+    test row), or its observation window (``tr``) when that's later."""
+    t = float(np.max(inputs["x"])) if np.size(inputs["x"]) else 0.0
+    tr = inputs.get("tr")
+    if tr is not None and np.size(tr):
+        t = max(t, float(np.nanmax(tr)))
+    return t
+
+
+def _first(values) -> float | None:
+    v = float(np.asarray(values, dtype=float).ravel()[0])
+    return v if np.isfinite(v) else None
+
+
+def _rates_at(model, t: float) -> tuple:
+    """``(rocof, mtbf)``: the fitted intensity at ``t`` and its reciprocal,
+    the instantaneous MTBF (``None`` where not finite and positive)."""
+    if not t or t <= 0:
+        return None, None
+    try:
+        with np.errstate(all="ignore"):
+            rocof = _first(model.iif(np.array([float(t)])))
+    except Exception:  # noqa: BLE001 - no intensity: no rates
+        return None, None
+    if rocof is None or rocof <= 0:
+        return rocof, None
+    return rocof, 1.0 / rocof
+
+
+def _shape_ci(model_id: str, cis: dict) -> list | None:
+    """The 95% interval on the power-law growth shape β (Crow-AMSAA's
+    ``beta``, Duane's ``alpha``); None for HPP and Cox-Lewis."""
+    if model_id not in ("crow_amsaa", "duane"):
+        return None
+    return cis.get(_GROWTH_PARAM[model_id]["param"])
+
+
+def growth_verdict(model_id: str, params, cis: dict | None = None) -> tuple:
+    """``(growth, basis)``: improving / stable / deteriorating, and why.
+
+    With the growth parameter's 95% interval (a fit to data), the verdict is
+    whether that interval excludes the no-trend value (β = 1 for a power law,
+    a slope of 0 for Cox-Lewis): wholly above is deteriorating, wholly below
+    improving, and an interval that includes it is "stable" — the data don't
+    show a trend. A model built from known parameters has no interval, so the
+    value itself decides. ``(None, None)`` for HPP (no trend by construction)."""
+    g = _GROWTH_PARAM.get(model_id)
+    if g is None:
+        return None, None
+    names = _param_names(model_id, len(params))
+    if g["param"] not in names:
+        return None, None
+    value = float(params[names.index(g["param"])])
+    null = g["no_trend"]
+    ci = (cis or {}).get(g["param"])
+    basis = {"parameter": g["param"], "symbol": g["symbol"], "what": g["what"], "estimate": value,
+             "no_trend": null}
+    if ci:
+        lo, hi = float(ci[0]), float(ci[1])
+        growth = "deteriorating" if lo > null else "improving" if hi < null else "stable"
+        return growth, {**basis, "ci": [lo, hi], "level": CI_LEVEL, "rule": "interval"}
+    if not np.isfinite(value):
+        return None, None
+    growth = "deteriorating" if value > null else "improving" if value < null else "stable"
+    return growth, {**basis, "ci": None, "level": None, "rule": "value"}
+
+
+def rate_bounds(model_id: str, model, t_end: float) -> dict:
+    """Confidence bounds at the end of observation (#81): the 95% intervals on
+    the ROCOF and the instantaneous MTBF, and the demonstrated MTBF's one-
+    sided 90% lower bound ("demonstrated MTBF ≥ X at 90%").
+
+    A Crow-AMSAA fit to a time-terminated test (every system observed from 0
+    to the same end) or a failure-terminated test of one system gets Crow's
+    exact bounds, as MIL-HDBK-189C tabulates; any other data, or another
+    model, gets Wald (delta-method) bounds. ``bounds_method`` says which."""
+    out = {"rocof_ci": None, "mtbf_ci": None, "demonstrated_mtbf": None, "bounds_method": None}
+    if not t_end or t_end <= 0:
+        return out
+    t = np.array([float(t_end)])
+    methods = ("crow", "wald") if model_id == "crow_amsaa" else ("wald",)
+    for method in methods:
+        try:
+            with warnings.catch_warnings(), np.errstate(all="ignore"):
+                warnings.simplefilter("ignore")
+                mtbf_ci = np.asarray(model.mtbf_cb(t, alpha_ci=1 - CI_LEVEL, method=method), dtype=float).ravel()
+                rocof_ci = np.asarray(model.iif_cb(t, alpha_ci=1 - CI_LEVEL, method=method), dtype=float).ravel()
+                lower = _first(model.mtbf_cb(t, alpha_ci=1 - DEMONSTRATED_LEVEL, bound="lower", method=method))
+        except Exception:  # noqa: BLE001 - Crow's bounds don't apply here (or no likelihood): next method
+            continue
+        point = _rates_at(model, t_end)[1]
+        return {
+            "rocof_ci": [float(rocof_ci[0]), float(rocof_ci[1])],
+            "mtbf_ci": [float(mtbf_ci[0]), float(mtbf_ci[1])],
+            "demonstrated_mtbf": {"at": float(t_end), "mtbf": point, "lower": lower,
+                                  "confidence": DEMONSTRATED_LEVEL, "method": method},
+            "bounds_method": method,
+        }
+    return out
+
+
+_TREND_TESTS = (("laplace", "Laplace"), ("mil_hdbk_189c", "MIL-HDBK-189C"))
+
+
+def trend_tests(model) -> list:
+    """The Laplace and MIL-HDBK-189C trend tests (null: a homogeneous Poisson
+    process) of the data the model was fitted to — each system tested on its
+    own observation window, from its entry (``tl``) to its close (#81).
+    ``trend`` is the trend concluded at 5% ("no trend" when not
+    significant); ``direction`` the sign of the statistic either way."""
+    out = []
+    for test_id, label in _TREND_TESTS:
+        try:
+            with warnings.catch_warnings(), np.errstate(all="ignore"):
+                warnings.simplefilter("ignore")
+                tt = model.trend_test(test_id)
+        except Exception:  # noqa: BLE001 - no data (built from parameters) or too few events
+            continue
+        p = float(tt.p_value)
+        trend = getattr(tt, "trend", None)
+        row = {
+            "id": test_id,
+            "test": label,
+            "statistic": float(tt.statistic),
+            "p_value": p,
+            "trend": "no trend" if trend in (None, "none") else trend,
+            "direction": getattr(tt, "direction", None),
+            "significant": bool(p < 0.05),
+        }
+        if getattr(tt, "dof", None) is not None:
+            row["dof"] = int(tt.dof)
+        out.append(row)
+    return out
+
+
+def cramer_von_mises(model, n_events: int) -> dict | None:
+    """The Cramér-von Mises goodness-of-fit test of the fitted intensity, its
+    p-value by parametric bootstrap (a fixed seed, so a refit reads the
+    same). The replicates shrink as the data grow, to keep it to a few
+    seconds; past that it's skipped with a reason. None with no data."""
+    n_boot = min(_CVM_MAX_BOOT, _CVM_BUDGET // max(int(n_events), 1))
+    base = {"test": "Cramér-von Mises", "null": "the events follow the fitted intensity"}
+    if n_boot < _CVM_MIN_BOOT:
+        return {**base, "statistic": None, "p_value": None, "n_boot": 0, "adequate": None,
+                "reason": f"Skipped: with {n_events:,} events the bootstrap p-value would take too long."}
+    try:
+        with warnings.catch_warnings(), np.errstate(all="ignore"):
+            warnings.simplefilter("ignore")
+            g = model.cramer_von_mises(n_boot=n_boot, random_state=0)
+    except Exception:  # noqa: BLE001 - no data or likelihood (built from parameters, restored)
+        return None
+    p = float(g.p_value)
+    return {**base, "statistic": float(g.statistic), "p_value": p, "n_boot": int(g.n_boot),
+            "adequate": bool(p >= 0.05)}
+
+
+def system_residuals(model) -> list | None:
+    """Each system's failures against the model's expectation over its own
+    observation window — SurPyval's martingale residuals (observed minus
+    expected) — most excess failures first, capped at the top 50: the
+    systems failing more (or less) than the fleet model explains."""
+    try:
+        with warnings.catch_warnings(), np.errstate(all="ignore"):
+            warnings.simplefilter("ignore")
+            res = np.asarray(model.residuals("martingale"), dtype=float)
+        data = model.data
+        items = list(data.items)
+    except Exception:  # noqa: BLE001 - no data
+        return None
+    c = np.asarray(data.c)
+    n = np.asarray(data.n) if getattr(data, "n", None) is not None else np.ones(len(c))
+    ids = np.asarray(data.i)
+    rows = []
+    for item, r in zip(items, res):
+        observed = float(n[(ids == item) & (c == 0)].sum())
+        rows.append({"system": str(item), "failures": observed, "expected": observed - float(r),
+                     "excess": float(r)})
+    rows.sort(key=lambda row: -row["excess"])
+    return rows[:_RESIDUAL_ROWS]
+
+
 def param_intervals(model_id: str, model) -> dict:
     """``{name: [lower, upper]}``: the 95% confidence interval on each of a
-    Crow-AMSAA fit's parameters (SurPyval's Wald bounds from the observed
-    information, kept inside each parameter's support). Only a maximum-
-    likelihood fit to data has them: {} for another model family, a model
-    built from its parameters, or one restored without its data."""
-    if model_id != "crow_amsaa":
+    fit's parameters (SurPyval's Wald bounds from the observed information,
+    kept inside each parameter's support). Only a maximum-likelihood fit to
+    data has them: {} for a model built from its parameters or one restored
+    without its data."""
+    if model_id not in MODELS:
         return {}
     out = {}
     for name in getattr(model, "parameter_names", None) or []:
@@ -286,7 +482,7 @@ def param_intervals(model_id: str, model) -> dict:
 
 def _gof(model) -> list:
     out = []
-    for attr, label in (("aic", "AIC"), ("neg_ll", "Neg. log-likelihood")):
+    for attr, label in (("aic", "AIC"), ("bic", "BIC"), ("neg_ll", "Neg. log-likelihood")):
         v = getattr(model, attr, None)
         if callable(v):
             try:
@@ -307,8 +503,8 @@ def fit_from_params(model_id: str, params: list, horizon: float, unit: str = "")
     if model_id not in MODELS:
         raise FitError(f"Unknown model '{model_id}'. Choose one of: {', '.join(MODEL_CHOICES)}.")
     fitter = MODELS[model_id]["fitter"]
-    if not hasattr(fitter, "from_params"):
-        raise FitError(f"“{MODELS[model_id]['name']}” can't be built from parameters.")
+    if model_id not in FROM_PARAMS_MODELS or not hasattr(fitter, "from_params"):
+        raise FitError(f"“{MODELS[model_id]['name']}” can't be built from parameters: fit it to event data.")
     values = [float(p["value"]) for p in (params or []) if p.get("value") is not None]
     if len(values) < 2:
         raise FitError("Provide both parameters (alpha and beta).")
@@ -337,15 +533,11 @@ def _params_payload(para, model_id: str, values: list, horizon: float, unit: str
     grid = np.linspace(0.0, horizon, 200)
     with np.errstate(all="ignore"):
         fitted = np.asarray(para.mcf(grid), dtype=float)
-    beta, alpha = _power_law(model_id, values)
-    # Same power-law ROCOF/MTBF (at the horizon) and growth verdict as a data fit.
-    rocof = mtbf = None
-    with np.errstate(all="ignore"):
-        if alpha:
-            rocof = float((beta / alpha) * (horizon / alpha) ** (beta - 1.0))
-    if rocof is not None and np.isfinite(rocof) and rocof > 0:
-        mtbf = 1.0 / rocof
-    growth = "improving" if beta < 0.95 else "deteriorating" if beta > 1.05 else "stable"
+    beta, _ = _power_law(model_id, values)
+    # The ROCOF/MTBF at the horizon. Known parameters have no interval, so
+    # the growth verdict is β against 1 itself.
+    rocof, mtbf = _rates_at(para, horizon)
+    growth, growth_basis = growth_verdict(model_id, values)
     payload = {
         "kind": "recurrent",
         "unit": canonical_unit(unit),
@@ -354,11 +546,14 @@ def _params_payload(para, model_id: str, values: list, horizon: float, unit: str
         "model": {"id": model_id, "name": MODELS[model_id]["name"]},
         "params": [{"name": n, "value": float(v)} for n, v in zip(_param_names(model_id, len(values)), values)],
         "beta": beta,
+        "beta_ci": None,
         "growth": growth,
+        "growth_basis": growth_basis,
         "rocof": rocof,
         "mtbf": mtbf,
         "mcf": {"observed": None, "fitted": {"x": grid.tolist(), "mcf": fitted.tolist()}},
         "trend": None,
+        "trend_tests": [],  # trend tests, bounds and goodness of fit need event data
         "gof": [],  # no likelihood for a params-built model
         "from_params": True,
         "horizon": horizon,
@@ -516,7 +711,7 @@ def clean_projection_settings(fef, bc=None) -> tuple[dict, list]:
     return clean_fef, clean_bc
 
 
-_SHORT_NAMES = {"crow_amsaa": "Crow-AMSAA", "duane": "Duane", "hpp": "HPP"}
+_SHORT_NAMES = {"crow_amsaa": "Crow-AMSAA", "duane": "Duane", "hpp": "HPP", "cox_lewis": "Cox-Lewis"}
 
 
 def projection_basis(saved_model: str | None = None) -> dict:
@@ -713,6 +908,11 @@ def _cif_at(model, t: float) -> float:
     return float(np.asarray(model.cif(np.array([float(t)])), dtype=float).ravel()[0])
 
 
+def _is_log_linear(model) -> bool:
+    """A Cox-Lewis (log-linear intensity) model."""
+    return getattr(getattr(model, "dist", None), "name", None) == "Cox-Lewis"
+
+
 def _growth_exponent(model) -> float:
     """Local log–log slope of the cumulative intensity, d ln Λ / d ln t, taken
     where Λ ≈ 1. For the power-law models Reliafy fits (Crow-AMSAA, Duane, HPP)
@@ -773,20 +973,37 @@ def optimal_overhaul(model_or_params, cost_repair, cost_overhaul, t_max=None, ho
         return _json_safe({**base, "optimal": None, "reason": reason,
                            "never_overhaul": {"limit_cost_rate": limit}})
 
-    if not np.isfinite(shape):
+    if _is_log_linear(model):
+        # Cox-Lewis, λ(t) = exp(α + β·t): no constant shape. Its slope β decides —
+        # rising intensity (β > 0) always has a finite optimum.
+        slope = float(np.asarray(model.params, dtype=float)[1])
+        base = {**base, "shape": None, "log_linear_slope": slope}
+        if not np.isfinite(slope):
+            return _none("The model's slope can't be evaluated, so no overhaul interval can be computed.", None)
+        if slope < -1e-12:
+            return _none(
+                f"The failure intensity is decreasing (log-linear slope β = {slope:.3g} < 0): failures get rarer "
+                "with age, so an overhaul never pays — the cost rate keeps falling the longer you run between "
+                "overhauls.", 0.0)
+        if slope <= 1e-12:
+            return _none(
+                "The failure intensity is constant (slope β = 0): an overhaul doesn't lower the failure rate, so it "
+                "only adds cost. Repair on failure; don't overhaul.", cr * _cif_at(model, t_ref) / t_ref)
+    elif not np.isfinite(shape):
         return _none("The model's cumulative intensity can't be evaluated, so no overhaul interval can be computed.", None)
-    if shape < 1.0 - 1e-6:
+    elif shape < 1.0 - 1e-6:
         return _none(
             f"The failure intensity is decreasing (β = {shape:.3g} < 1): failures get rarer with age, so an "
             "overhaul never pays — the cost rate keeps falling the longer you run between overhauls.", 0.0)
-    if shape <= 1.0 + 1e-6:
+    elif shape <= 1.0 + 1e-6:
         return _none(
             "The failure intensity is constant (β = 1, e.g. HPP): an overhaul doesn't lower the failure rate, "
             "so it only adds cost. Repair on failure; don't overhaul.", cr * _cif_at(model, t_ref) / t_ref)
 
     rep = Repairable(model)
     rep.set_repair_and_overhaul_costs(cr, co)
-    policy = rep.optimal_overhaul_policy()
+    with np.errstate(all="ignore"):  # the search can overflow a log-linear Λ far out
+        policy = rep.optimal_overhaul_policy()
     t_star = float(policy.interval)
     if not np.isfinite(t_star) or t_star <= 0:
         return _none("Overhauling never pays for this model: the cost rate keeps falling the longer you run.",

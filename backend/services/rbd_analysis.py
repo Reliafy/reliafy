@@ -387,6 +387,15 @@ def _node_reliability(
             raise AnalysisError(
                 f"{label}: sub-system '{ref.get('name', sub_id)}' was not found."
             )
+        from backend.services.rbd_graph import NO_BLOCKS, diagram_gap
+
+        gap = diagram_gap(sub_graph)
+        if gap:
+            name = ref.get("name", sub_id)
+            raise AnalysisError(
+                f"{label}: sub-system '{name}' has no blocks yet." if gap == NO_BLOCKS else
+                f"{label}: sub-system '{name}' has no blocks connected from its Input to its Output yet."
+            )
         rbd, *_ = _build_rbd(
             sub_graph,
             resolve_subsystem,
@@ -474,6 +483,17 @@ def _check_limits(graph: dict) -> None:
         raise AnalysisError(str(exc)[:1].upper() + str(exc)[1:]) from None
 
 
+def require_blocks(graph: dict, error: Optional[type] = None) -> None:
+    """Refuse a diagram with nothing to analyse yet — no blocks, or none on a
+    path from Input to Output (#271) — in plain words (raised as ``error``,
+    default :class:`AnalysisError`)."""
+    from backend.services.rbd_graph import gap_message
+
+    message = gap_message(graph)
+    if message:
+        raise (error or AnalysisError)(message)
+
+
 def _build_rbd(
     graph: dict,
     resolve_subsystem: Optional[Callable[[str], dict]] = None,
@@ -490,6 +510,7 @@ def _build_rbd(
     """
     visited = visited or set()
     _check_limits(graph)
+    require_blocks(graph)
     nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
     edges = [
@@ -733,6 +754,16 @@ def validate_graph(
     errors: list[str] = []
     warnings: list[str] = []
     non_analytic: dict[str, str] = {}
+
+    # Nothing to check yet (#271): one plain prompt, flagged ``empty`` so the
+    # app shows it as the next step rather than as errors.
+    from backend.services.rbd_graph import GAP_MESSAGES, diagram_gap
+
+    gap = diagram_gap(graph)
+    if gap:
+        empty = {"valid": False, "analytic": False, "can_calculate": False, "errors": [GAP_MESSAGES[gap]],
+                 "warnings": [], "non_analytic_nodes": {}, "empty": gap}
+        return {**empty, "availability_routes": None} if graph.get("repairable") else empty
 
     nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
@@ -1998,6 +2029,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf: bool = Fals
     from backend.services import rbd_maintenance, rbd_policies
 
     _check_limits(graph)
+    require_blocks(graph)
     nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
     edges = [

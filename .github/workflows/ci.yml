@@ -38,5 +38,5 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - run: node --test src/csv.test.js
+      - run: node --test src/csv.test.js src/rbdReadiness.test.js
       - run: npm run build

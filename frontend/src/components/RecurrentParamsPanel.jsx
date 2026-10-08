@@ -28,8 +28,9 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
   const na = Number(alpha), nb = Number(beta), nh = Number(horizon);
   const ok = (s, v) => s !== "" && !Number.isNaN(v) && v > 0;
   const valid = name.trim() && ok(alpha, na) && ok(beta, nb) && ok(horizon, nh) && !busy;
+  // Known parameters have no interval: β itself against 1 decides (as the server does).
   const growth = ok(beta, nb)
-    ? (nb < 0.95 ? "improving — failures slowing" : nb > 1.05 ? "deteriorating — failures accelerating" : "stable — roughly constant rate")
+    ? (nb < 1 ? "improving — failures slowing" : nb > 1 ? "deteriorating — failures accelerating" : "stable — constant rate")
     : null;
 
   const onSave = async () => {

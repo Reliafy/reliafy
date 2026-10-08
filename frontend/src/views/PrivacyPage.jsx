@@ -10,7 +10,7 @@ export default function PrivacyPage() {
       <PublicNav />
       <article className="blog-article">
         <header className="blog-article-head">
-          <div className="blog-card-meta"><time>Effective 24 September 2026</time></div>
+          <div className="blog-card-meta"><time>Effective 8 October 2026</time></div>
           <h1>Privacy Policy</h1>
         </header>
         <div className="blog-prose">
@@ -72,10 +72,14 @@ export default function PrivacyPage() {
 
           <h2>Emails we send</h2>
           <p>
-            We occasionally send account holders short product-update emails about
-            changes to the Service. Every one has an unsubscribe link, and you can
-            also turn them off in Settings. Emails you trigger yourself, like team
-            invites and shares, are separate and aren't affected.
+            We may send account holders a few short emails: a welcome when you sign
+            up, a getting-started tip a few days later, and occasional product
+            updates about changes to the Service. Links in them are tagged with the
+            email they came from, so we can count what each email brings in through
+            the first-party analytics described above. Every one has an
+            unsubscribe link, and you can also turn them off in Settings. Emails
+            you trigger yourself, like team invites and shares, are separate and
+            aren't affected.
           </p>
 
           <h2>Who processes it (subprocessors)</h2>
