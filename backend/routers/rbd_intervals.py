@@ -29,7 +29,7 @@ from backend.services import rbd_intervals
 from backend.services import rbd_jobs as rbd_jobs_service
 from backend.services import rbds as rbds_service
 from backend.services.access import AccessCtx, get_access
-from backend.services.rbd_analysis import AnalysisError
+from backend.services.rbd_analysis import AnalysisError, require_blocks
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -41,6 +41,7 @@ def intervals_payload(session, ctx: AccessCtx, graph: dict, rbd: Optional[Rbd], 
     ``status: "crews_limited"``), 202 with a job to poll, 503 when the queue
     can't take it. Shared by the REST endpoint and the MCP server. Raises
     :class:`AnalysisError` for bad input or a diagram that can't be built."""
+    require_blocks(graph)
     if not (graph or {}).get("repairable"):
         raise AnalysisError("Interval optimisation is for repairable (availability) diagrams — give the blocks "
                             "repair times and mark the diagram repairable.")

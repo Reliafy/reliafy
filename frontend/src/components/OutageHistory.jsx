@@ -7,6 +7,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
 import Select from "./Select.jsx";
+import RbdEmptyState from "./RbdEmptyState.jsx";
+import { diagramGap } from "../rbdReadiness.js";
 import {
   deleteOutageLog,
   fitOutageModels,
@@ -627,7 +629,7 @@ function HistoryView({ history, labels }) {
   );
 }
 
-export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels }) {
+export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels, onBuild }) {
   const [logs, setLogs] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [history, setHistory] = useState(null);
@@ -670,6 +672,12 @@ export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels })
     return () => { live = false; };
   }, [rbdId, activeId]);
 
+  // Nothing to match outages to, or merge them through, yet (#271). A log
+  // already kept with the diagram is still shown.
+  const gap = diagramGap(graph);
+  if (gap && !logs?.length) {
+    return <RbdEmptyState gap={gap} goal="import an outage history" onBuild={onBuild} />;
+  }
   if (!rbdId) {
     return (
       <div className="outage-empty card note">

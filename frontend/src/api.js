@@ -1544,6 +1544,11 @@ export function getAdminTraffic(days = 14) {
   return request(`/api/admin/traffic?days=${days}`);
 }
 
+// Operator-only: what each update / lifecycle email brought in (#269).
+export function getAdminEmailCampaigns(days = 90) {
+  return request(`/api/admin/email-campaigns?days=${days}`);
+}
+
 // Operator-only product usage (app / MCP / API, the MCP plan wall).
 export function getAdminUsage(days = 30, includeAdmin = false) {
   return request(`/api/admin/usage?days=${days}${includeAdmin ? "&include_admin=true" : ""}`);

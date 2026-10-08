@@ -3,6 +3,8 @@ import Plot from "./Plot.jsx";
 import { applyRbdDesign, designRbd } from "../api.js";
 import RbdCheapestDesign from "./RbdCheapestDesign.jsx";
 import RbdIntervals from "./RbdIntervals.jsx";
+import RbdEmptyState from "./RbdEmptyState.jsx";
+import { diagramGap } from "../rbdReadiness.js";
 import LifeModelModal from "./LifeModelModal.jsx";
 import Select from "./Select.jsx";
 import { modelSummary } from "./RbdNodes.jsx";
@@ -79,7 +81,7 @@ function arrangement(b) {
   return `${b.copies} active in parallel`;
 }
 
-export default function RbdDesignPanel({ graph, onApply, onView }) {
+export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
   const nodes = graph.nodes || [];
   // A component drawn in several places (a repeated block, #102) — the copy
   // or its original — can't be given copies; it stays as drawn.
@@ -130,6 +132,19 @@ export default function RbdDesignPanel({ graph, onApply, onView }) {
     0
   );
   const budgetCost = budget.cost === "" ? String(Number((2 * currentCost).toPrecision(4))) : budget.cost;
+
+  // Nothing to design yet (#271) — nor, on a repairable diagram, any
+  // intervals to choose: one next step for the whole tab.
+  const gap = diagramGap(graph);
+  if (gap) {
+    return (
+      <RbdEmptyState
+        gap={gap}
+        goal={graph.repairable ? "design it and choose its maintenance intervals" : "design for a target"}
+        onBuild={onBuild}
+      />
+    );
+  }
 
   if (graph.repairable) {
     // Repairable diagrams: the copies with the lowest total cost of ownership

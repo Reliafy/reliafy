@@ -428,6 +428,7 @@ def design_redundancy(
     to maximise reliability within it, or a ``target`` reliability to find the
     cheapest design reaching it (within the budget's limits, if any).
     """
+    rbd_analysis.require_blocks(graph, DesignError)
     t = _number(t, "The mission time", strict=True)
     parsed = _parse_blocks(graph, blocks)
     budget = {r: v for r, v in (budget or {}).items() if v not in (None, "")}

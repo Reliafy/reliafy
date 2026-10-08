@@ -336,4 +336,4 @@ def test_api_resolves_saved_subsystems_in_the_callers_scope(client):
 def test_api_reports_conversion_problems_as_422(client):
     r = client.post("/api/rbds/fault-tree", json={"graph": {"nodes": _io_nodes(), "edges": []}})
     assert r.status_code == 422
-    assert "no connections" in r.json()["detail"]
+    assert r.json()["detail"] == "The diagram has no blocks yet. Add blocks between Input and Output, and connect them."

@@ -205,13 +205,19 @@ def test_message_contents(test_db, outbox):
     assert msg.get_content_type() == "multipart/alternative"
     text = msg.get_body(("plain",)).get_content()
     html = msg.get_body(("html",)).get_content()
-    web = "https://reliafy.com/whats-new/test-update"
+    utm = "utm_source=email&utm_medium=update&utm_campaign=test-update"
+    web = f"https://reliafy.com/whats-new/test-update?{utm}"
     assert text.startswith("Hi Alice,")
-    assert f"Read it on the web: {web}" in text
-    assert f"Unsubscribe: https://reliafy.com/unsubscribe?t={token}" in text
-    assert "reference page (https://reliafy.com/reference/weibull)" in text
+    assert f"Read it on the web: {web}\n" in text
+    # The unsubscribe link is never tagged.
+    assert f"Unsubscribe: https://reliafy.com/unsubscribe?t={token} " in text
+    assert f"reference page (https://reliafy.com/reference/weibull?{utm})" in text
     assert "**" not in text and "## " not in text
-    assert web in html and 'href="https://reliafy.com/reference/weibull"' in html
+    amp = utm.replace("&", "&amp;")
+    assert f'href="https://reliafy.com/whats-new/test-update?{amp}"' in html
+    assert f'href="https://reliafy.com/reference/weibull?{amp}"' in html
+    assert f'href="https://reliafy.com/unsubscribe?t={token}"' in html
+    assert 'href="mailto:hello@reliafy.com"' in html
     # Name fell back to the email address -> no name in the greeting.
     outbox.clear()
     assert _run("--send", "--yes") == 0
@@ -286,3 +292,59 @@ def test_plain_send_is_backward_compatible(outbox, monkeypatch):
     assert plain.get_content_type() == "text/plain" and plain["Reply-To"] is None
     assert rich.get_content_type() == "multipart/alternative"
     assert rich["Reply-To"] == "r@x.org" and rich["X-Test"] == "1"
+
+
+# ---- Campaign tags (#269) --------------------------------------------------
+
+def _tag(url):
+    from backend.services.email_links import tag_url
+
+    return tag_url(url, medium="update", campaign="nov-2026")
+
+
+UTM = "utm_source=email&utm_medium=update&utm_campaign=nov-2026"
+
+
+def test_tag_url_keeps_query_and_anchor(test_db):
+    assert _tag("https://reliafy.com/whats-new") == f"https://reliafy.com/whats-new?{UTM}"
+    assert _tag("https://reliafy.com/m?mode=paste") == f"https://reliafy.com/m?mode=paste&{UTM}"
+    assert _tag("https://reliafy.com/api-docs#mcp") == f"https://reliafy.com/api-docs?{UTM}#mcp"
+    assert _tag("https://www.reliafy.com/a?b=1#c") == f"https://www.reliafy.com/a?b=1&{UTM}#c"
+    assert _tag("https://reliafy.com/a?") == f"https://reliafy.com/a?{UTM}"
+
+
+def test_tag_url_leaves_other_links_alone(test_db, monkeypatch):
+    from backend import config
+
+    for url in (
+        "https://reliafy.com/unsubscribe?t=" + "a" * 32,
+        "https://reliafy.com/api/email/unsubscribe?t=" + "a" * 32,
+        "https://reliafy.com/api/email/resubscribe?t=abc",
+        "https://github.com/derrynknife/SurPyval",
+        "https://claude.com/claude-code",
+        "mailto:hello@reliafy.com",
+        "https://reliafy.com/blog?utm_source=linkedin",  # already tagged
+        "https://reliafy.com.evil.example/x",
+        "/relative/path",
+    ):
+        assert _tag(url) == url
+    # The deploy's own origin counts as the site.
+    monkeypatch.setattr(config, "PUBLIC_BASE_URL", "https://staging.example.org")
+    assert _tag("https://staging.example.org/x") == f"https://staging.example.org/x?{UTM}"
+
+
+def test_tag_text_and_html(test_db):
+    from backend.services.email_links import tag_html, tag_text
+
+    text = ("See the guide (https://reliafy.com/guides/x). Or https://reliafy.com/a?b=1, "
+            "https://example.org/z and https://reliafy.com/unsubscribe?t=tok.")
+    assert tag_text(text, medium="update", campaign="nov-2026") == (
+        f"See the guide (https://reliafy.com/guides/x?{UTM}). "
+        f"Or https://reliafy.com/a?b=1&{UTM}, "
+        "https://example.org/z and https://reliafy.com/unsubscribe?t=tok.")
+    html = ('<a href="https://reliafy.com/a?b=1&amp;c=2#d">x</a> '
+            '<a href="https://example.org/">y</a> <img src="https://reliafy.com/logo.png">')
+    amp = UTM.replace("&", "&amp;")
+    assert tag_html(html, medium="update", campaign="nov-2026") == (
+        f'<a href="https://reliafy.com/a?b=1&amp;c=2&amp;{amp}#d">x</a> '
+        '<a href="https://example.org/">y</a> <img src="https://reliafy.com/logo.png">')

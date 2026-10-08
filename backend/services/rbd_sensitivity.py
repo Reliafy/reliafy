@@ -568,6 +568,7 @@ def analyze_sensitivity(
     route (the caller's paid gate). ``n_simulations`` / ``seed`` fix a
     simulation's size and streams (else a time budget sizes it)."""
     started = time.perf_counter()
+    ra.require_blocks(graph)
     if not (graph or {}).get("repairable"):
         raise AnalysisError("What to improve is for repairable (availability) diagrams.")
     step = parse_step(step)

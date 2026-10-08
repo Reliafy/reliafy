@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { analyzeRbd, getActiveRbdJob, getRbdJob } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
+import RbdEmptyState from "./RbdEmptyState.jsx";
+import { diagramGap } from "../rbdReadiness.js";
 import CovariatesModal from "./CovariatesModal.jsx";
 import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
@@ -977,7 +979,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
   );
 }
 
-export default function RbdCalculator({ graph, validation, stale, rbdId = null }) {
+export default function RbdCalculator({ graph, validation, stale, rbdId = null, onBuild }) {
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | calculating | error
   const [error, setError] = useState(null);
@@ -1247,6 +1249,21 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null }
 
   const setBlockState = (id, patch) =>
     setBlockStates((prev) => ({ ...prev, [id]: { mode: "new", value: "", ...prev[id], ...patch } }));
+
+  // Nothing to calculate yet (#271): a next step in place of the controls
+  // (and of any result from before the blocks went).
+  const gap = diagramGap(graph);
+  if (gap) {
+    return (
+      <div className="rbd-calc">
+        <RbdEmptyState
+          gap={gap}
+          goal={graph.repairable ? "calculate the system's availability" : "calculate the system's reliability"}
+          onBuild={onBuild}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="rbd-calc">

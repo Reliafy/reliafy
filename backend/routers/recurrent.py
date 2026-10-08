@@ -188,6 +188,7 @@ def get_model(model_id: str, session=Depends(get_session), ctx: AccessCtx = Depe
     doc, _ = access_service.fetch_readable(session, "recurrent_models", RecurrentModelDoc, model_id, ctx)
     if doc is None or doc.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    doc = recurrent_service.ensure_diagnostics(session, doc)  # #81: bounds and tests for older saves
     return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": doc.results})
 
 

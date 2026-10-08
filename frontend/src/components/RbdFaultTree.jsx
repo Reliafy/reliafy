@@ -10,6 +10,8 @@ import ReactFlow, {
 } from "reactflow";
 import { rbdFaultTree } from "../api.js";
 import ValidationPanel, { graphSignature } from "./RbdValidation.jsx";
+import RbdEmptyState from "./RbdEmptyState.jsx";
+import { diagramGap } from "../rbdReadiness.js";
 import "./RbdFaultTree.css";
 
 // The RBD builder's "Fault tree" tab (#101): a read-only view of the diagram's
@@ -539,17 +541,19 @@ function ImportanceTable({ result }) {
   );
 }
 
-export default function RbdFaultTree({ graph, validation, stale, active, name }) {
+export default function RbdFaultTree({ graph, validation, stale, active, name, onBuild }) {
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | loading | error
   const [error, setError] = useState(null);
   const [tInput, setTInput] = useState(""); // blank = the calculator's importance time
   const [fetchedSig, setFetchedSig] = useState(null);
 
+  // Nothing to draw yet (#271): an empty state, and no request.
+  const gap = useMemo(() => diagramGap(graph), [graph]);
   // The tree needs no separate validate step (the server explains what it
   // can't convert) — only a current check that failed holds it back.
   const blocked = !!validation && !stale && !validation.can_calculate;
-  const canCalculate = !blocked;
+  const canCalculate = !blocked && !gap;
   const unit = graph.unit || "";
   const u = unit ? ` ${unit}` : "";
   const sig = useMemo(
@@ -581,6 +585,14 @@ export default function RbdFaultTree({ graph, validation, stale, active, name })
 
   const availability = result?.kind === "availability";
   const tDirty = result && !availability && tInput !== "" && Number(tInput) !== result.t;
+
+  if (gap) {
+    return (
+      <div className="rbd-fault-tree">
+        <RbdEmptyState gap={gap} goal="see the fault tree" onBuild={onBuild} />
+      </div>
+    );
+  }
 
   return (
     <div className="rbd-fault-tree">

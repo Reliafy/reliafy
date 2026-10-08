@@ -18,6 +18,7 @@ import smtplib
 import threading
 import unicodedata
 from email.message import EmailMessage
+from email.utils import formataddr, parseaddr
 
 from backend import config
 
@@ -80,10 +81,14 @@ def build_message(
     html: str | None = None,
     reply_to: str | None = None,
     headers: dict[str, str] | None = None,
+    from_name: str | None = None,
 ) -> EmailMessage:
-    """Compose a message: plain text, or multipart/alternative with ``html``."""
+    """Compose a message: plain text, or multipart/alternative with ``html``.
+
+    ``from_name`` replaces the display name of ``EMAIL_FROM`` (the address,
+    and so the sending domain, stays the same)."""
     msg = EmailMessage()
-    msg["From"] = config.EMAIL_FROM
+    msg["From"] = _from_header(from_name)
     msg["To"] = to
     # A subject is one header line: user-supplied names inside it never break it.
     msg["Subject"] = clean_text(subject, 200)
@@ -97,6 +102,15 @@ def build_message(
     if html:
         msg.add_alternative(html, subtype="html")
     return msg
+
+
+def _from_header(from_name: str | None) -> str | None:
+    if not from_name:
+        return config.EMAIL_FROM
+    _, address = parseaddr(config.EMAIL_FROM or "")
+    if not address:
+        return config.EMAIL_FROM
+    return formataddr((clean_text(from_name, 60), address))
 
 
 def send(
@@ -128,13 +142,15 @@ def send_now(
     html: str | None = None,
     reply_to: str | None = None,
     headers: dict[str, str] | None = None,
+    from_name: str | None = None,
 ) -> EmailMessage:
     """Deliver one email synchronously, raising on failure (bulk sender).
 
     Unlike :func:`send` this does not check :func:`enabled` — the caller
     decides what an unconfigured server means.
     """
-    msg = build_message(to, subject, body, html=html, reply_to=reply_to, headers=headers)
+    msg = build_message(to, subject, body, html=html, reply_to=reply_to, headers=headers,
+                        from_name=from_name)
     _deliver(msg, raise_errors=True)
     return msg
 

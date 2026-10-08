@@ -164,6 +164,16 @@ def upsert_user(db, user: dict) -> dict:
             email_service.new_signup(email, user.get("name"))
         except Exception:  # noqa: BLE001 - notification must not fail signup
             logger.exception("new-signup notification failed")
+    # The welcome email (#272) goes on the first sign-in with a verified
+    # address, which for an email/password account may be a later login than
+    # the first. Off unless LIFECYCLE_EMAILS; sent once, off the request thread.
+    if config.LIFECYCLE_EMAILS and user.get("email_verified"):
+        try:
+            from backend.services import lifecycle_emails
+
+            lifecycle_emails.maybe_send_welcome(db, user["uid"])
+        except Exception:  # noqa: BLE001 - never fails a sign-in
+            logger.exception("welcome email check failed")
     return user
 
 

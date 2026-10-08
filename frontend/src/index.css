@@ -2105,6 +2105,12 @@ button.secondary:hover:not(:disabled) {
   overflow: hidden;
 }
 
+/* Recurrent "Trend & fit" cards wrap side by side (#81). */
+.detail-panel .gof-card.rec-detail-card {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
 .detail-panel .gof-card .gofh {
   font-family: var(--mono);
   font-size: 10.5px;
@@ -2510,6 +2516,42 @@ button.secondary:hover:not(:disabled) {
 .rbd-check-note {
   margin: 0.4rem 0 0;
   font-size: 0.85rem;
+}
+
+/* A check with nothing to check yet (#271): a next step, not an error. */
+.rbd-check-todo {
+  border-color: var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}
+.rbd-check-todo .rbd-check-icon { color: var(--accent); }
+
+/* A builder tab while the diagram has nothing to analyse (#271). */
+.rbd-empty {
+  max-width: 34rem;
+  margin: 2.5rem auto;
+  padding: 1.75rem 1.5rem;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.rbd-empty h3 { margin: 0.9rem 0 0.4rem; font-size: 1.05rem; line-height: 1.35; }
+.rbd-empty p { margin: 0 0 1rem; color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+.rbd-empty p:last-child { margin-bottom: 0; }
+.rbd-empty kbd {
+  font-family: inherit; font-size: 0.9em; font-weight: 600;
+  border: 1px solid var(--border); border-bottom-width: 2px;
+  border-radius: 4px; padding: 0 4px; background: var(--panel-2);
+}
+.rbd-empty-art { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
+.rbd-empty-end { fill: var(--panel-2); stroke: var(--muted); stroke-width: 1.5; }
+.rbd-empty-wire { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.rbd-empty-block { fill: var(--acc-t); stroke: var(--accent); stroke-width: 1.5; }
+.rbd-empty-wire.missing { stroke: var(--faint); stroke-dasharray: 4 4; }
+.rbd-empty-block.missing { fill: none; stroke: var(--faint); stroke-dasharray: 5 4; }
+@media (max-width: 520px) {
+  .rbd-empty { margin: 1.25rem 0; padding: 1.25rem 1rem; }
 }
 
 .rbd-check-type {
@@ -7621,6 +7663,11 @@ button.danger:hover { background: #fdeeee; }
   }
   .detail-panel .aside {
     width: auto;
+  }
+  /* Recurrent "Trend & fit" cards: stacked, each as tall as its content
+     (a 260px basis would be its height in a column). */
+  .detail-panel .gof-card.rec-detail-card {
+    flex: 0 0 auto;
   }
   /* RBD builder: a tighter frame, and a compact toolbar so the diagram keeps
      most of the canvas. */
