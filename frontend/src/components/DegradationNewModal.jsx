@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   getColumns,
   getDataset,
   getDegradationOptions,
-  fitDegradation,
   listDatasets,
+  saveDegradationModel,
   SPREADSHEET_ACCEPT,
 } from "../api.js";
+import { TIME_UNITS, distinctCount, guessMeasurementUnit, guessTimeUnit, usableForDegradation } from "../degradation.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
@@ -14,10 +15,15 @@ import PreviewTable from "./PreviewTable.jsx";
 
 // Three-step modal for fitting a degradation model, mirroring the FitFlow steps:
 // (1) pick a source (upload / saved dataset), (2) map item/time/measurement
-// columns + set the failure threshold, (3) choose path model + options → fit.
+// columns + set the failure threshold, (3) choose path model + options, then
+// fit and save in one go: ``onSaved(model)`` gets the saved model, so the
+// caller can open its page (the confidence inputs need a saved model).
 const STEPS = ["Source", "Data", "Model"];
 
-export default function DegradationNewModal({ onClose, onFitted }) {
+// "Brake pad wear (sample)" / "wear.csv" → "Brake pad wear" / "wear".
+const baseName = (s) => String(s || "").replace(/\s*\(sample\)\s*$/i, "").replace(/\.(csv|xlsx?|xlsm)$/i, "").trim();
+
+export default function DegradationNewModal({ onClose, onSaved }) {
   const [step, setStep] = useState(1);
   // An Excel workbook becomes a CSV of the chosen sheet before anything else.
   const { toCsv, modal: sheetModal } = useSpreadsheet();
@@ -27,8 +33,11 @@ export default function DegradationNewModal({ onClose, onFitted }) {
   const [csv, setCsv] = useState(null); // { columns, preview, n_rows }
   const [mapping, setMapping] = useState({ i: "", x: "", y: "" });
   const [threshold, setThreshold] = useState("");
-  const [unit, setUnit] = useState("");
-  const [measurementUnit, setMeasurementUnit] = useState("");
+  // null until typed: then the units read from the mapped columns' names
+  // ("hours" → Hours, "wear_mm" → mm) fill the fields.
+  const [unitTyped, setUnitTyped] = useState(null);
+  const [measurementUnitTyped, setMeasurementUnitTyped] = useState(null);
+  const [nameTyped, setNameTyped] = useState(null);
   const [options, setOptions] = useState({ paths: [], distributions: [], population_methods: [] });
   const [path, setPath] = useState("best");
   const [distribution, setDistribution] = useState("weibull");
@@ -44,15 +53,24 @@ export default function DegradationNewModal({ onClose, onFitted }) {
     listDatasets().then((d) => setDatasets(d.datasets)).catch(() => setDatasets([]));
   }, []);
 
-  // Rough distinct-count of the mapped item column from the preview rows, as a
-  // sanity hint (the fit needs at least 2 items).
-  const itemHint = useMemo(() => {
-    if (!csv || !mapping.i) return null;
-    const idx = csv.columns.indexOf(mapping.i);
-    if (idx === -1) return null;
-    const distinct = new Set((csv.preview || []).map((row) => row[idx]));
-    return distinct.size;
-  }, [csv, mapping.i]);
+  const unit = unitTyped ?? guessTimeUnit(mapping.x);
+  const measurementUnit = measurementUnitTyped ?? guessMeasurementUnit(mapping.y);
+  const pathName = (options.paths || []).find((p) => p.id === path)?.name;
+  const name = nameTyped ?? `${baseName(sourceName) || "Degradation"} — ${
+    path !== "best" && pathName ? `${pathName.toLowerCase()} degradation` : "degradation"}`;
+  // Only the saved datasets the fit can use: item id, time and measurement.
+  const usable = datasets.filter(usableForDegradation);
+
+  // Distinct ids in the mapped item column over every row (the fit needs at
+  // least 2 items); null when unknown, and then the wizard says nothing.
+  const itemCount = distinctCount(csv, mapping.i);
+
+  // A new source starts with units and name read afresh.
+  const resetTyped = () => {
+    setUnitTyped(null);
+    setMeasurementUnitTyped(null);
+    setNameTyped(null);
+  };
 
   const pickFile = async (picked) => {
     if (!picked) return;
@@ -61,6 +79,7 @@ export default function DegradationNewModal({ onClose, onFitted }) {
     setFile(f);
     setDatasetId(null);
     setSourceName(f.name);
+    resetTyped();
     setError(null);
     setLoading(true);
     try {
@@ -79,12 +98,13 @@ export default function DegradationNewModal({ onClose, onFitted }) {
     setFile(null);
     setDatasetId(d.id);
     setSourceName(d.name);
+    resetTyped();
     setError(null);
     setLoading(true);
     try {
       const full = await getDataset(d.id);
       const columns = full.preview_columns || [];
-      setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows });
+      setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows, n_unique: full.n_unique });
       setMapping({ i: columns[0] || "", x: columns[1] || "", y: columns[2] || "" });
       setStep(2);
     } catch (err) {
@@ -103,28 +123,27 @@ export default function DegradationNewModal({ onClose, onFitted }) {
   const mappingValid =
     mapping.i && mapping.x && mapping.y &&
     new Set([mapping.i, mapping.x, mapping.y]).size === 3 &&
-    threshold !== "" && Number.isFinite(Number(threshold));
+    threshold !== "" && Number.isFinite(Number(threshold)) &&
+    !(itemCount !== null && itemCount < 2);
 
   const onFit = async () => {
-    if (!file && !datasetId) return;
+    if ((!file && !datasetId) || !name.trim()) return;
     setLoading(true);
     setError(null);
-    const fit = {
-      datasetId,
-      mapping,
-      threshold: Number(threshold),
-      path,
-      distribution,
-      populationMethod,
-      unit,
-      measurementUnit,
-    };
     try {
-      const result = await fitDegradation(file, fit);
-      onFitted({ result, fit: { ...fit, file, datasetId: result.dataset_id } });
+      const saved = await saveDegradationModel(name.trim(), file, {
+        datasetId,
+        mapping,
+        threshold: Number(threshold),
+        path,
+        distribution,
+        populationMethod,
+        unit: unit.trim(),
+        measurementUnit: measurementUnit.trim(),
+      });
+      onSaved(saved);
     } catch (err) {
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -135,7 +154,7 @@ export default function DegradationNewModal({ onClose, onFitted }) {
   };
 
   const stepper = (
-    <div className="steps">
+    <div className="steps" style={{ flexWrap: "wrap", rowGap: 6 }}>
       {STEPS.map((label, i) => {
         const n = i + 1;
         return (
@@ -151,35 +170,25 @@ export default function DegradationNewModal({ onClose, onFitted }) {
     </div>
   );
 
+  // The stepper sits under the title; the footer holds only the next step.
   let footer;
   if (step === 1) {
-    footer = (
-      <>
-        {stepper}
-        <span className="hint">Upload a CSV or Excel file, or pick a dataset, to continue</span>
-      </>
-    );
+    footer = <span className="hint">Upload a CSV or Excel file, or pick a dataset, to continue</span>;
   } else if (step === 2) {
     footer = (
-      <>
-        {stepper}
-        <div className="row" style={{ margin: 0 }}>
-          <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-          <button onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
-        </div>
-      </>
+      <div className="row" style={{ margin: "0 0 0 auto" }}>
+        <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
+        <button onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
+      </div>
     );
   } else {
     footer = (
-      <>
-        {stepper}
-        <div className="row" style={{ margin: 0 }}>
-          <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-          <button onClick={onFit} disabled={loading}>
-            {loading ? "Fitting…" : "Fit degradation model"}
-          </button>
-        </div>
-      </>
+      <div className="row" style={{ margin: "0 0 0 auto" }}>
+        <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
+        <button onClick={onFit} disabled={loading || !name.trim()}>
+          {loading ? "Fitting…" : "Fit and save"}
+        </button>
+      </div>
     );
   }
 
@@ -207,6 +216,7 @@ export default function DegradationNewModal({ onClose, onFitted }) {
 
   return (
     <Modal title="Fit a degradation model" onClose={onClose} locked={loading} footer={footer}>
+      <div style={{ marginBottom: 20 }}>{stepper}</div>
       {step === 1 && (
         <>
           <div
@@ -235,10 +245,10 @@ export default function DegradationNewModal({ onClose, onFitted }) {
             {sheetModal}
           </div>
 
-          {datasets.length > 0 && (
+          {usable.length > 0 && (
             <div className="recent">
               <div className="recent-h">Or use a saved dataset</div>
-              {datasets.slice(0, 5).map((d) => (
+              {usable.slice(0, 5).map((d) => (
                 <button key={d.id} type="button" className="recent-row" disabled={loading} onClick={() => pickDataset(d)}>
                   <span className="recent-ic">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -273,17 +283,23 @@ export default function DegradationNewModal({ onClose, onFitted }) {
             </label>
             <label className="login-field" style={{ flex: 1 }}>
               <span>Time unit</span>
-              <input type="text" value={unit} placeholder="hours" onChange={(e) => setUnit(e.target.value)} />
+              <input type="text" list="deg-time-units" value={unit} placeholder="e.g. Hours"
+                     onChange={(e) => setUnitTyped(e.target.value)} />
+              <datalist id="deg-time-units">
+                {TIME_UNITS.map((u) => <option value={u} key={u} />)}
+              </datalist>
             </label>
             <label className="login-field" style={{ flex: 1 }}>
               <span>Measurement unit</span>
-              <input type="text" value={measurementUnit} placeholder="mm" onChange={(e) => setMeasurementUnit(e.target.value)} />
+              <input type="text" value={measurementUnit} placeholder="e.g. mm"
+                     onChange={(e) => setMeasurementUnitTyped(e.target.value)} />
             </label>
           </div>
-          {itemHint !== null && itemHint < 2 && (
-            <p className="hint">Only {itemHint} distinct item id in the preview — the fit needs at least 2 items.</p>
-          )}
-          {!mappingValid && (
+          {itemCount !== null && itemCount < 2 ? (
+            <p className="hint">
+              The item id column has {itemCount === 1 ? "only 1 distinct value" : "no values"}: the fit needs at least 2 items.
+            </p>
+          ) : !mappingValid && (
             <p className="hint" style={{ marginTop: "0.6rem" }}>
               Map three different columns and set a numeric threshold.
             </p>
@@ -302,6 +318,10 @@ export default function DegradationNewModal({ onClose, onFitted }) {
             {select("Life distribution", distribution, setDistribution, options.distributions)}
             {select("Population method", populationMethod, setPopulationMethod, options.population_methods)}
           </div>
+          <label className="login-field">
+            <span>Model name</span>
+            <input type="text" value={name} onChange={(e) => setNameTyped(e.target.value)} />
+          </label>
         </>
       )}
 
