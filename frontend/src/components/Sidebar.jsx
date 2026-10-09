@@ -12,7 +12,7 @@ const SignOutIcon = () => (
 );
 
 // Two-letter avatar from a display name or email.
-function initials(user) {
+export function initials(user) {
   const base = (user?.displayName || user?.email || "?").trim();
   const parts = base.split(/[\s@.]+/).filter(Boolean);
   const letters = parts.length >= 2 ? parts[0][0] + parts[1][0] : base.slice(0, 2);
