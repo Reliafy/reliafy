@@ -8,13 +8,6 @@ import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 
-const fmt = (v) =>
-  v == null
-    ? "—"
-    : Math.abs(v) >= 1e-4 || v === 0
-    ? Number(v).toPrecision(5)
-    : Number(v).toExponential(3);
-
 // Minimal CSV parse: pull a numeric column (and an optional 0/1 censor column).
 function parseColumn(text, col, censorCol) {
   const lines = text.replace(/\r/g, "").split("\n").filter((l) => l.trim());
@@ -200,18 +193,22 @@ export default function CompareTwoModels() {
         <button onClick={run} disabled={loading}>
           {loading ? "Comparing…" : "Compare"}
         </button>
-        {result && inputs && (
-          <SaveAnalysisButton
-            kind="compare_two"
-            inputs={inputs}
-            defaultName={`${result.a.label} vs ${result.b.label}`}
-          />
-        )}
       </div>
 
       {error && <div className="error">{error}</div>}
 
-      {result && <CompareResult result={result} />}
+      {result && (
+        <CompareResult
+          result={result}
+          actions={inputs && (
+            <SaveAnalysisButton
+              kind="compare_two"
+              inputs={inputs}
+              defaultName={`${result.a.label} vs ${result.b.label}`}
+            />
+          )}
+        />
+      )}
     </div>
   );
 }

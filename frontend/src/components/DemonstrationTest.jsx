@@ -165,9 +165,6 @@ export default function DemonstrationTest() {
           <button onClick={run} disabled={loading}>
             {loading ? "Computing…" : "Compute"}
           </button>
-          {result && inputs && (
-            <SaveAnalysisButton kind="demonstration_test" inputs={inputs} defaultName={defaultName} />
-          )}
         </div>
         {attribute && (
           <p className="hint">
@@ -178,14 +175,21 @@ export default function DemonstrationTest() {
         )}
         <p className="hint">
           {twoRisk
-            ? "Keeping both risks: a design at the target passes at most (100 − confidence)% of the time, and the good design fails at most the producer's risk. The plan chooses the failures allowed."
+            ? "With a producer’s risk, the plan chooses the failures allowed."
             : "A test sized for the consumer’s risk alone often fails a good design. Give a good design and a producer’s risk (e.g. 20%) for a plan that keeps both."}
         </p>
       </div>
 
       {error && <div className="error">{error}</div>}
 
-      {result && <DemoTestResult result={result} />}
+      {result && (
+        <DemoTestResult
+          result={result}
+          actions={inputs && (
+            <SaveAnalysisButton kind="demonstration_test" inputs={inputs} defaultName={defaultName} />
+          )}
+        />
+      )}
     </div>
   );
 }

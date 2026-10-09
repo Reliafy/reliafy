@@ -1,38 +1,45 @@
+import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
+import { formatNumber, formatPercent, formatWithUnit } from "../format.js";
 import { unitInText } from "./unitText.js";
 
-const fmt = (v) =>
-  v == null ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 });
+// Presentational renderer for a failure-finding-interval result — used by the
+// live tool, saved analyses and the public link. Answer first (#311): the
+// test interval in one sentence, the MTTF behind it, and the formula once,
+// under Details (#313). ``actions`` (the live tool's Save) sits with the answer.
+export default function FfiResult({ result, actions = null }) {
+  const unit = result?.unit ? unitInText(result.unit) : "";
+  const every = formatWithUnit(result.interval, unit);
+  const target = formatPercent(result.target_availability, { sig: 4 });
+  // The first-order formula is accurate for targets above about 90%.
+  const rough = result.target_availability < 0.9;
 
-// Presentational renderer for a failure-finding-interval result.
-export default function FfiResult({ result }) {
-  const u = result?.unit ? ` ${unitInText(result.unit)}` : "";
   return (
     <>
-      <div className="strategy-reco">
-        <span className="strategy-reco-icon">✓</span>
-        <span>{result.note}</span>
-      </div>
-      <div className="params">
-        <div className="stat">
-          <div className="value">{fmt(result.interval)}</div>
-          <div className="name">failure-finding interval{u}</div>
-        </div>
-        <div className="stat">
-          <div className="value">{(result.target_availability * 100).toFixed(1)}%</div>
-          <div className="name">target availability</div>
-        </div>
-        <div className="stat">
-          <div className="value">{fmt(result.mttf)}</div>
-          <div className="name">MTTF{u}</div>
-        </div>
-      </div>
-      <p className="muted-line">
-        Hidden failures (protective devices) stay undetected until the function
-        is demanded or checked. Checking every {fmt(result.interval)}{u} keeps
-        the average unavailability near {(100 * (1 - result.target_availability)).toFixed(1)}%.
-        Formula: FFI = 2 × (1 − A) × MTTF (first-order approximation, accurate
-        for availability targets above ~90%).
-      </p>
+      <ResultSummary
+        tone={rough ? "caveat" : "neutral"}
+        sentence={
+          <>
+            Test every <b>≈ {every}</b> to keep availability at <b>{target}</b>.
+          </>
+        }
+        stats={[
+          { label: "Test every", value: `≈ ${every}` },
+          { label: "MTTF", value: formatWithUnit(result.mttf, unit) },
+        ]}
+      >
+        {rough && "Below about 90% the approximation is conservative: the true interval can be longer."}
+      </ResultSummary>
+      {actions && <div className="rs-actions">{actions}</div>}
+
+      <ResultDetails>
+        <p className="rs-note">
+          A hidden failure (a protective device) stays undetected until the function is demanded or
+          checked. Testing every {every} keeps its average unavailability near{" "}
+          {formatPercent(1 - result.target_availability)}. Interval = 2 × (1 − availability) × MTTF ={" "}
+          2 × {formatNumber(1 - result.target_availability)} × {formatNumber(result.mttf, { sig: 4 })}, the
+          standard first-order approximation.
+        </p>
+      </ResultDetails>
     </>
   );
 }

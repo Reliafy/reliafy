@@ -75,19 +75,23 @@ export default function OptimalReplacement() {
           <button onClick={run} disabled={!canRun || loading}>
             {loading ? "Computing…" : "Compute"}
           </button>
-          {result && inputs && (
+        </div>
+      </div>
+
+      {error && <div className="error">{error}</div>}
+
+      {result && (
+        <ReplacementResult
+          result={result}
+          actions={inputs && (
             <SaveAnalysisButton
               kind="optimal_replacement"
               inputs={inputs}
               defaultName={`Replacement — ${result.distribution}`}
             />
           )}
-        </div>
-      </div>
-
-      {error && <div className="error">{error}</div>}
-
-      {result && <ReplacementResult result={result} />}
+        />
+      )}
     </div>
   );
 }

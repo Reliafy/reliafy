@@ -6,8 +6,9 @@ import { fitLine, optimumMarker, referenceLine } from "../plotTheme.js";
 // Presentational renderer for an optimal-replacement result — used by the live
 // tool and by saved analyses (which render the stored payload without refetch).
 // Answer first (#311): the replacement age and the saving, the cost-rate
-// curve, then the cost rates and MTTF under Details.
-export default function ReplacementResult({ result, name = null }) {
+// curve, then the cost rates and MTTF under Details. ``actions`` (the live
+// tool's Save) sits with the answer.
+export default function ReplacementResult({ result, name = null, actions = null }) {
   const unit = result?.unit || "";
   const u = unit ? ` (${unit})` : "";
   const c = result.curve;
@@ -64,6 +65,7 @@ export default function ReplacementResult({ result, name = null }) {
       ) : (
         <ResultSummary tone="caveat" sentence={result.recommendation} />
       )}
+      {actions && <div className="rs-actions">{actions}</div>}
 
       <Plot data={traces} layout={layout} download={`${name || "Optimal replacement"} — cost rate`} />
 

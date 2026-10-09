@@ -4,6 +4,7 @@ import Plot from "./Plot.jsx";
 import { COLORWAY, referenceShape } from "../plotTheme.js";
 import { compareGroups } from "../api.js";
 import { unitInText } from "./unitText.js";
+import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 
 // Compare groups within one dataset (#175): split by a column, overlay each
 // group's Kaplan–Meier curve, test the difference (log-rank; Gray's test per
@@ -180,10 +181,17 @@ function CompareGroupsResult({ result }) {
 
   return (
     <div className="cg-result">
-      <div className={"strategy-reco" + (v.significant ? "" : " strategy-reco-warn")}>
-        <span className="strategy-reco-icon">{v.significant ? "✓" : "≈"}</span>
-        <span>{v.text}</span>
-      </div>
+      <ResultSummary
+        tone={v.significant ? "neutral" : "caveat"}
+        sentence={v.text}
+        stats={[
+          // Two groups: each one's average life; more are in the table.
+          ...(result.groups.length === 2
+            ? result.groups.map((g) => ({ label: `Average life, ${g.group}`, value: `${fmt(g.rmst)}${u}` }))
+            : []),
+          { label: "Over the first", value: `${fmt(result.tau)}${u}` },
+        ]}
+      />
 
       <Plot data={traces} layout={layout} />
 
@@ -230,69 +238,71 @@ function CompareGroupsResult({ result }) {
         </table>
       </div>
 
-      <div className="ds-section-h cg-h">Is the difference real?</div>
-      <div className="demo-table-wrap">
-        <table className="calc-table cg-table">
-          <thead>
-            <tr><th>Test</th><th>χ²</th><th>dof</th><th>p-value</th></tr>
-          </thead>
-          <tbody>
-            {result.tests.map((t) => (
-              <tr key={t.id}>
-                <td className="calc-row-label">{t.label}{t.id === "log-rank" ? " ★" : ""}</td>
-                <td>{fmt(t.statistic)}</td>
-                <td>{t.dof}</td>
-                <td className={t.p_value < result.alpha ? "strategy-best" : ""}>{fmtP(t.p_value)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="muted-line">
-        A p-value under {result.alpha} means the groups' lives differ by more than chance. Gehan–Wilcoxon
-        weights early failures more; Tarone–Ware is in between. If the curves cross, trust the plot and the
-        average-life difference over the log-rank test.
-      </p>
+      <ResultDetails summary="Tests of the difference">
+        <div className="ds-section-h cg-h">Is the difference real?</div>
+        <div className="demo-table-wrap">
+          <table className="calc-table cg-table">
+            <thead>
+              <tr><th>Test</th><th>χ²</th><th>dof</th><th>p-value</th></tr>
+            </thead>
+            <tbody>
+              {result.tests.map((t) => (
+                <tr key={t.id}>
+                  <td className="calc-row-label">{t.label}{t.id === "log-rank" ? " ★" : ""}</td>
+                  <td>{fmt(t.statistic)}</td>
+                  <td>{t.dof}</td>
+                  <td className={t.p_value < result.alpha ? "strategy-best" : ""}>{fmtP(t.p_value)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="rs-note">
+          A p-value under {result.alpha} means the groups' lives differ by more than chance. Gehan–Wilcoxon
+          weights early failures more; Tarone–Ware is in between. If the curves cross, trust the plot and the
+          average-life difference over the log-rank test.
+        </p>
 
-      {result.competing_risks && (
-        <>
-          <div className="ds-section-h cg-h">By failure mode (Gray's test)</div>
-          {result.competing_risks.available ? (
-            <>
-              <div className="demo-table-wrap">
-                <table className="calc-table cg-table">
-                  <thead>
-                    <tr><th>Failure mode</th><th>Failures</th><th>χ²</th><th>p-value</th><th>Groups</th></tr>
-                  </thead>
-                  <tbody>
-                    {result.competing_risks.results.map((r) => (
-                      <tr key={r.mode}>
-                        <td className="calc-row-label">{r.mode}</td>
-                        <td>{r.failures.toLocaleString()}</td>
-                        <td>{r.error ? "—" : fmt(r.statistic)}</td>
-                        <td className={r.significant ? "strategy-best" : ""}>{r.error ? "—" : fmtP(r.p_value)}</td>
-                        <td>{r.error ? "could not test" : r.significant ? "differ" : "no clear difference"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="muted-line">
-                Each row asks whether the groups' chance of failing by that mode differs, with the other
-                modes competing.{result.competing_risks.note ? ` ${result.competing_risks.note}` : ""}
-              </p>
-            </>
-          ) : (
-            <p className="muted-line">{result.competing_risks.reason}</p>
-          )}
-        </>
-      )}
+        {result.competing_risks && (
+          <>
+            <div className="ds-section-h cg-h">By failure mode (Gray's test)</div>
+            {result.competing_risks.available ? (
+              <>
+                <div className="demo-table-wrap">
+                  <table className="calc-table cg-table">
+                    <thead>
+                      <tr><th>Failure mode</th><th>Failures</th><th>χ²</th><th>p-value</th><th>Groups</th></tr>
+                    </thead>
+                    <tbody>
+                      {result.competing_risks.results.map((r) => (
+                        <tr key={r.mode}>
+                          <td className="calc-row-label">{r.mode}</td>
+                          <td>{r.failures.toLocaleString()}</td>
+                          <td>{r.error ? "—" : fmt(r.statistic)}</td>
+                          <td className={r.significant ? "strategy-best" : ""}>{r.error ? "—" : fmtP(r.p_value)}</td>
+                          <td>{r.error ? "could not test" : r.significant ? "differ" : "no clear difference"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="rs-note">
+                  Each row asks whether the groups' chance of failing by that mode differs, with the other
+                  modes competing.{result.competing_risks.note ? ` ${result.competing_risks.note}` : ""}
+                </p>
+              </>
+            ) : (
+              <p className="rs-note">{result.competing_risks.reason}</p>
+            )}
+          </>
+        )}
 
-      {result.notes?.length > 0 && (
-        <ul className="cg-notes">
-          {result.notes.map((n) => <li key={n}>{n}</li>)}
-        </ul>
-      )}
+        {result.notes?.length > 0 && (
+          <ul className="cg-notes">
+            {result.notes.map((n) => <li key={n}>{n}</li>)}
+          </ul>
+        )}
+      </ResultDetails>
     </div>
   );
 }

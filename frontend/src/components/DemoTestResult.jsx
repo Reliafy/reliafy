@@ -1,23 +1,17 @@
+import { useEffect, useRef, useState } from "react";
 import Plot from "./Plot.jsx";
+import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
+import { formatNumber, formatWithUnit } from "../format.js";
+import { unitInText } from "./unitText.js";
 import { ACCENT, COLORWAY, DANGER, INK, SUCCESS, fitLine, optimumMarker, sentence } from "../plotTheme.js";
 
 // Series colours by allowed failures: the theme's order, never cycled (there
 // are at most five columns).
 const SERIES = COLORWAY;
 
-// A number for display: 3 significant figures, thousands separators from
-// 1,000 (the backend's fmt_num).
-export function fmtNum(v) {
-  if (v == null || !Number.isFinite(Number(v))) return "—";
-  const n = Number(v);
-  if (n === 0) return "0";
-  if (Math.abs(n) < 1e-3 || Math.abs(n) >= 1e9) return n.toPrecision(3);
-  const r = Number(n.toPrecision(3));
-  if (Math.abs(r) >= 1000) return Math.round(n).toLocaleString("en-US");
-  return String(r);
-}
-
 const pct = (p, dp = 1) => (p == null ? "—" : `${(p * 100).toFixed(dp).replace(/\.0+$/, "")}%`);
+// An input percentage as given: 0.999 → "99.9%", never rounded up to 100%.
+const pctIn = (p) => (p == null ? "—" : `${Number((p * 100).toFixed(4))}%`);
 const failuresLabel = (f) => `${f} failure${f === 1 ? "" : "s"}`;
 // The target is where the consumer's risk is read (red), the good design the
 // producer's (green).
@@ -68,23 +62,94 @@ function OcCurve({ result }) {
   return (
     <>
       <h3 className="demo-h">Operating characteristic</h3>
-      <p className="muted-line">
+      <p className="rs-note">
         The chance a design passes this test against its true {isMtbf ? "MTBF" : "reliability"}. At the target it
         is the consumer’s risk; one minus it at the good design is the producer’s risk.
       </p>
-      <Plot data={traces} layout={layout} />
+      <WhenShown>
+        <Plot data={traces} layout={layout} />
+      </WhenShown>
     </>
   );
 }
 
+// Mounts its children once it has a width: a chart folded under Details is
+// drawn when the fold opens, at the right size.
+function WhenShown({ children }) {
+  const ref = useRef(null);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || shown) return undefined;
+    if (typeof ResizeObserver === "undefined") { setShown(true); return undefined; }
+    const ro = new ResizeObserver(() => { if (el.offsetWidth > 0) setShown(true); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [shown]);
+  return <div ref={ref}>{shown && children}</div>;
+}
+
+// The plan in one sentence (#311): "Test 15 units for 100,000 cycles each;
+// pass if ≤ 3 fail."
+function planSentence(result, unit) {
+  const r = result.failures;
+  const time = (v) => <b>{formatWithUnit(v, unit)}</b>;
+  if (result.method === "mtbf") {
+    const pass = r === 0 ? <>pass with <b>no</b> failures</> : <>pass with <b>≤ {r}</b> failure{r === 1 ? "" : "s"}</>;
+    return result.units ? (
+      <>Test <b>{formatNumber(result.units, { sig: 7 })} units</b> for {time(result.test_time_per_unit)} each
+        ({formatWithUnit(result.total_test_time, unit)} in total); {pass}.</>
+    ) : (
+      <>Run {time(result.total_test_time)} of total test time; {pass}.</>
+    );
+  }
+  const n = <b>{formatNumber(result.units, { sig: 7 })} unit{result.units === 1 ? "" : "s"}</b>;
+  const each = result.test_time_per_unit != null
+    ? time(result.test_time_per_unit)
+    : result.test_multiple === 1
+    ? <b>one mission</b>
+    : <b>{formatNumber(result.test_multiple)}× the mission</b>;
+  const pass = r === 0 ? <>pass if <b>none</b> fail</> : <>pass if <b>≤ {r}</b> fail</>;
+  return <>Test {n} for {each} each; {pass}.</>;
+}
+
+// What the plan demonstrates, and its two risks, as one muted line.
+function planNote(result, unit) {
+  const conf = pctIn(result.confidence);
+  const target = result.method === "mtbf"
+    ? `MTBF ≥ ${formatWithUnit(result.mtbf, unit)}`
+    : result.mission_time != null
+    ? `≥ ${pctIn(result.reliability)} reliability over ${formatWithUnit(result.mission_time, unit)}`
+    : `≥ ${pctIn(result.reliability)} mission reliability`;
+  let risks = "";
+  if (result.consumer_risk != null) {
+    risks = ` A design at the target still passes ${pct(result.consumer_risk)} of the time`;
+    if (result.pass_probability != null) {
+      const good = result.method === "mtbf"
+        ? `an MTBF of ${formatWithUnit(result.design_mtbf, unit)}`
+        : `${pctIn(result.design_reliability)} reliability`;
+      risks += `; one with ${good} fails ${pct(result.producer_risk ?? 1 - result.pass_probability)}`;
+    }
+    risks += ".";
+  }
+  const shape = result.method !== "mtbf" && result.test_multiple !== 1 && result.shape != null
+    ? `, assuming a Weibull shape of ${formatNumber(result.shape)}`
+    : "";
+  return `Shows ${target} at ${conf} confidence${shape}.${risks}`;
+}
+
 // Presentational renderer for a demonstration-test plan — used by the live
 // tool, saved analyses and the public link (stored payload, no refetch).
-export default function DemoTestResult({ result }) {
-  const u = result.unit ? ` ${result.unit}` : "";
+// Answer first (#311): the plan in a sentence with three tiles and its risks
+// in one muted line (#313: said once), the trade-off chart, then the
+// trade-off table, operating characteristic and assumptions under Details.
+// ``actions`` (the live tool's Save) sits with the answer.
+export default function DemoTestResult({ result, actions = null }) {
+  const unit = result.unit ? unitInText(result.unit) : "";
   const t = result.tradeoff || { failures: [], rows: [] };
   const isMtbf = result.method === "mtbf";
   const isUnitsCell = t.solve_for === "units";
-  const cell = (v) => (v == null ? "—" : isUnitsCell ? Number(v).toLocaleString("en-US") : fmtNum(v));
+  const cell = (v) => (v == null ? "—" : formatNumber(v, { sig: isUnitsCell ? 7 : 3 }));
   const planCol = t.failures.indexOf(result.failures);
 
   // Chart: one line per allowed-failures count against test length (or
@@ -149,88 +214,86 @@ export default function DemoTestResult({ result }) {
     ...layoutAxes,
   };
 
-  const stats = isMtbf
-    ? [
-        [fmtNum(result.total_test_time), `total test time${u}`],
-        ...(result.units ? [[fmtNum(result.test_time_per_unit), `per unit (${result.units} units)${u}`]] : []),
-        [fmtNum(result.mtbf), `MTBF to show${u}`],
-        [String(result.failures), "failures allowed"],
-      ]
-    : [
-        [Number(result.units).toLocaleString("en-US"), result.solve_for === "test_time" ? "units on test" : "units to test"],
-        [
-          result.test_time_per_unit != null ? fmtNum(result.test_time_per_unit) : `${fmtNum(result.test_multiple)}×`,
-          result.test_time_per_unit != null ? `test time per unit${u}` : "missions per unit",
-        ],
-        [String(result.failures), "failures allowed"],
-        [pct(result.demonstrated_reliability, 2), "reliability shown"],
-      ];
-  if (result.pass_probability != null) {
-    // Both risks (#223); a plan saved before them has only the pass chance.
-    const producer = result.producer_risk ?? 1 - result.pass_probability;
-    const target = result.producer_risk_target;
-    stats.push([pct(result.consumer_risk), `consumer’s risk (≤ ${pct(1 - result.confidence)})`]);
-    stats.push([pct(producer), target != null ? `producer’s risk (≤ ${pct(target)})` : "producer’s risk"]);
-  }
+  const timeEach = result.test_time_per_unit != null
+    ? formatWithUnit(result.test_time_per_unit, unit)
+    : isMtbf
+    ? null
+    : result.test_multiple === 1
+    ? "1 mission"
+    : `${formatNumber(result.test_multiple)} missions`;
+  const stats = [
+    result.units
+      ? { label: "Units", value: formatNumber(result.units, { sig: 7 }) }
+      : { label: "Total test time", value: formatWithUnit(result.total_test_time, unit) },
+    timeEach && { label: "Time each", value: timeEach },
+    { label: "Failures allowed", value: String(result.failures) },
+  ].filter(Boolean);
+
+  // The risks are in the note line; the assumptions keep the rest.
+  const assumptions = (result.assumptions || []).filter((a) => !/the (consumer|producer)['’]s risk[,)]/.test(a));
+  const details = [
+    !isMtbf && { label: "Reliability shown", value: pct(result.demonstrated_reliability, 2) },
+    result.units && result.total_test_time != null && {
+      label: "Total test time", value: formatWithUnit(result.total_test_time, unit),
+    },
+    isMtbf && { label: "MTBF to show", value: formatWithUnit(result.mtbf, unit) },
+  ].filter(Boolean);
 
   return (
     <>
-      <div className="strategy-reco">
-        <span className="strategy-reco-icon">✓</span>
-        <span>{result.summary}</span>
-      </div>
-
-      <div className="params">
-        {stats.map(([v, name]) => (
-          <div className="stat" key={name}>
-            <div className="value">{v}</div>
-            <div className="name">{name}</div>
-          </div>
-        ))}
-      </div>
-
-      <h3 className="demo-h">Trade-off</h3>
-      <div className="demo-table-wrap">
-        <table className="calc-table strategy-table">
-          <thead>
-            <tr>
-              <th>{t.row_label || t.value_label}</th>
-              {t.failures.map((f) => (
-                <th key={f}>{failuresLabel(f)}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {t.rows.map((r) => (
-              <tr key={r.label} className={r.selected ? "demo-selected" : ""}>
-                <td className="calc-row-label">{r.label}</td>
-                {r.values.map((v, j) => (
-                  <td key={j} className={r.selected && j === planCol ? "strategy-best" : ""}>
-                    {cell(v)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {t.row_label && (
-        <p className="muted-line">
-          Cells: {t.value_label.charAt(0).toLowerCase() + t.value_label.slice(1)}. The highlighted
-          cell is this plan.
-        </p>
-      )}
+      <ResultSummary tone="neutral" sentence={planSentence(result, unit)} stats={stats}>
+        {planNote(result, unit)}
+      </ResultSummary>
+      {actions && <div className="rs-actions">{actions}</div>}
 
       <Plot data={traces} layout={layout} />
 
-      <OcCurve result={result} />
+      <ResultDetails rows={details}>
+        <h3 className="demo-h">Trade-off</h3>
+        <div className="demo-table-wrap">
+          <table className="calc-table strategy-table">
+            <thead>
+              <tr>
+                <th>{t.row_label || t.value_label}</th>
+                {t.failures.map((f) => (
+                  <th key={f}>{failuresLabel(f)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {t.rows.map((r) => (
+                <tr key={r.label} className={r.selected ? "demo-selected" : ""}>
+                  <td className="calc-row-label">{r.label}</td>
+                  {r.values.map((v, j) => (
+                    <td key={j} className={r.selected && j === planCol ? "strategy-best" : ""}>
+                      {cell(v)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {t.row_label && (
+          <p className="rs-note">
+            Cells: {t.value_label.charAt(0).toLowerCase() + t.value_label.slice(1)}. The highlighted
+            cell is this plan.
+          </p>
+        )}
 
-      <h3 className="demo-h">Assumptions</h3>
-      <ul className="demo-assumptions">
-        {(result.assumptions || []).map((a) => (
-          <li key={a}>{a}</li>
-        ))}
-      </ul>
+        <OcCurve result={result} />
+
+        {assumptions.length > 0 && (
+          <>
+            <h3 className="demo-h">Assumptions</h3>
+            <ul className="demo-assumptions">
+              {assumptions.map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </ResultDetails>
     </>
   );
 }

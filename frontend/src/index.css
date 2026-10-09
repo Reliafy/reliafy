@@ -637,31 +637,13 @@ h6 {
 .rs-dl dd { margin: 2px 0 0; font-size: var(--fs-14); color: var(--ink); font-variant-numeric: tabular-nums; }
 .rs-dl + * { margin-top: var(--sp-3); }
 
-.strategy-reco {
+/* A result's own actions (Save analysis), right under its answer. */
+.rs-actions {
   display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  border: 1px solid var(--ok-line);
-  background: var(--ok-bg);
-  color: var(--ok);
-  border-radius: var(--r);
-  padding: 0.7rem 0.9rem;
-  margin: 0.5rem 0 0.75rem;
-  font-size: var(--fs-14);
-}
-
-.strategy-reco-warn {
-  border-color: #fde68a;
-  background: var(--warn-bg);
-  color: var(--warn);
-}
-
-.strategy-reco-icon {
-  font-weight: 600;
-}
-
-.strategy-reco .muted-line {
-  display: inline;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: calc(-1 * var(--sp-2)) 0 var(--sp-4);
 }
 
 .strategy-table {
@@ -7736,8 +7718,6 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 .gp-table .gp-kind { min-width: 190px; }
 .gp-table .gp-fef { width: 72px; text-align: right; }
 .gp-actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1rem; }
-.gp-mtbfs { margin-bottom: 0.8rem; }
-.gp-mtbfs .gp-projected .value { color: var(--acc, #2f6df6); }
 .fleet-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .fleet-items { min-width: 680px; }
 .fleet-items.repairable { min-width: 940px; }
