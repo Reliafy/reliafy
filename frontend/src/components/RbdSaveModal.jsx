@@ -1,8 +1,8 @@
 import { useState } from "react";
 import Modal from "./Modal.jsx";
 
-// Name and save the current RBD.
-export default function RbdSaveModal({ initialName, onClose, onSubmit }) {
+// Name and save the current RBD — or (``asNew``) a copy of it under a new id.
+export default function RbdSaveModal({ initialName, onClose, onSubmit, asNew = false }) {
   const [name, setName] = useState(initialName || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -21,20 +21,22 @@ export default function RbdSaveModal({ initialName, onClose, onSubmit }) {
 
   const footer = (
     <>
-      <span className="hint">Saved RBDs can be embedded as sub-systems.</span>
+      <span className="hint">
+        {asNew ? "A separate copy: this diagram stays as it was last saved." : "Saved RBDs can be embedded as sub-systems."}
+      </span>
       <div className="row" style={{ margin: 0 }}>
         <button className="secondary" onClick={onClose} disabled={saving}>
           Cancel
         </button>
         <button onClick={submit} disabled={saving || !name.trim()}>
-          {saving ? "Saving…" : "Save RBD"}
+          {saving ? "Saving…" : asNew ? "Save as new" : "Save RBD"}
         </button>
       </div>
     </>
   );
 
   return (
-    <Modal title="Save RBD" onClose={onClose} locked={saving} footer={footer}>
+    <Modal title={asNew ? "Save as new RBD" : "Save RBD"} onClose={onClose} locked={saving} footer={footer}>
       {error && <div className="error">{error}</div>}
       <input
         className="save-name"

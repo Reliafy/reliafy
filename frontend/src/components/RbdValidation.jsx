@@ -1,5 +1,4 @@
 // Shared RBD validation feedback, used on both the Builder and Calculator tabs.
-import MethodTag from "./MethodTag.jsx";
 import { NO_BLOCKS } from "../rbdReadiness.js";
 
 // A structural signature of the diagram (ignoring node positions) so callers
@@ -66,7 +65,19 @@ export default function ValidationPanel({ validation, stale }) {
   const okClass = "rbd-check " + (hasWarnings ? "rbd-check-caveat" : "rbd-check-ok");
   const okIcon = hasWarnings ? "!" : "✓";
 
-  // A repairable diagram (#154): how each availability figure is computed.
+  // "exact", "numerical (no simulation)" or "simulated": a route in words (#313:
+// the method is said in a sentence, not a badge per figure).
+const ROUTE_WORDS = { exact: "exact", numerical: "numerical", simulated: "simulated", refused: "simulated" };
+function routesSentence(routes) {
+  const parts = [
+    ["Long-run figures", routes.long_run?.route],
+    ["availability over time", routes.over_time?.route],
+    ["expected failures and downtime", routes.window?.route],
+  ].filter(([, r]) => r);
+  return parts.map(([what, r]) => `${what} ${ROUTE_WORDS[r] || r}`).join("; ") + ".";
+}
+
+// A repairable diagram (#154): how each availability figure is computed.
   const routes = validation.availability_routes;
   if (valid && routes) {
     const overTime = routes.over_time?.route;
@@ -81,12 +92,10 @@ export default function ValidationPanel({ validation, stale }) {
               : "Valid — availability over time needs the simulation."}
           </strong>
           <p className="rbd-check-note">
-            Long-run figures <MethodTag method={routes.long_run?.route} /> · availability over time{" "}
-            <MethodTag method={overTime} /> · expected failures and downtime{" "}
-            <MethodTag method={routes.window?.route} />
+            {routesSentence(routes)}{" "}
             {exactOverTime
-              ? ". The simulation adds the spread of outcomes (distributions, criticality)."
-              : `. ${routes.over_time?.reason || ""}`}
+              ? "The simulation adds the spread of outcomes (distributions, criticality)."
+              : routes.over_time?.reason || ""}
           </p>
           {warnings && warnings.length > 0 && (
             <ul className="rbd-check-list rbd-check-warn">
