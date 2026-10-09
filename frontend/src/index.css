@@ -7591,9 +7591,8 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   vertical-align: bottom;
   white-space: nowrap;
 }
-/* The last (actions) column takes the slack, so the item's figures sit beside
-   its name. */
-.fleet-items .fleet-items-rest { width: 100%; }
+/* The item column takes the slack, so the table fills its card. */
+.fleet-items .fleet-items-act { width: 44px; }
 .fleet-items td {
   height: 40px;
   padding: 4px 8px;
@@ -7617,19 +7616,32 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .fleet-items .lib-acts { justify-content: flex-end; }
 .fleet-items-empty { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 .fleet-items-empty .muted-line { margin: 0; flex: 1 1 260px; }
-/* The assumptions line and the form it opens. */
+/* The assumptions line under the page header, and the form it opens. */
 .fleet-assume-line {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-3);
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  margin-top: var(--sp-3);
   font-size: var(--fs-14);
   color: var(--ink);
 }
 .fleet-assume-k { color: var(--muted); }
-.fleet-assume-line .link { flex: none; }
-.fleet-assume-form { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line2); }
+.fleet-assume-line button { flex: none; }
+/* Before the first computed save: what to do next, in one line. */
+.fleet-gate { margin: var(--sp-4) 0 0; font-size: var(--fs-14); color: var(--muted); }
+.fleet-gate.warn { color: var(--warn); }
 .trk-conf { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); color: var(--muted); }
+/* Tracking page header: the meta runs the full width, and the ⋯ menu (its
+   only action) stays beside the title on phones instead of on a row of its own. */
+.trk-header .ph-meta { max-width: none; }
+.page-header.trk-header { flex-wrap: nowrap; }
+.page-header.trk-header .ph-main { flex-basis: 0; }
+/* Register item: initial readings as a two-column grid of standard inputs. */
+.trk-readings { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-4); }
+.trk-readings-h { font-size: var(--fs-13); color: var(--muted); font-weight: 500; }
+.trk-readings-row { display: contents; }
+.trk-readings-row input { min-width: 0; }
 .fleet-assume-h { margin: var(--sp-4) 0 var(--sp-1); font-size: var(--fs-14); font-weight: 600; }
 .fleet-risk-list { margin: 0.2rem 0 0; padding-left: 1.3rem; }
 .fleet-risk-list li { padding: 0.3rem 0; border-bottom: 1px solid var(--line2); }
@@ -7641,6 +7653,11 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   .fleet-alert-row { flex-wrap: wrap; }
   .fleet-alert-main { flex-basis: 100%; }
   .fleet-alert-kinds { flex-direction: column; }
+}
+/* Phone: a narrower item column, so an item's figures show beside its name. */
+@media (max-width: 560px) {
+  .fleet-items { min-width: 480px; }
+  .fleet-items .fleet-item-name, .fleet-items .cell-input.fleet-item-name { min-width: 140px; }
 }
 /* Phone: 44px tap targets on the alert rows and form. */
 @media (max-width: 720px) {
