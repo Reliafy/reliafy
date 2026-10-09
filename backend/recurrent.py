@@ -761,6 +761,11 @@ def projection_payload(ins: dict, fef: dict, bc: list, unit: str = "", test_end=
             msg = ("A growth projection needs a time-terminated test: every system run from 0 to the same end "
                    "of test T. Give that time (the end of the test), or map each system's observation window "
                    "(tr) or its end-of-test row (c = 1) — all at the same time.")
+        elif "BC modes" in msg and "at least 2 failures" in msg:
+            # SurPyval 0.24 (#730): with BC modes the demonstrated MTBF uses
+            # the bias-corrected shape, (N - 1) / N of the estimate.
+            msg = ("With modes fixed during the test (BC), the demonstrated MTBF needs at least 2 failures; "
+                   "the test has 1. Classify the mode as BD or A, or add the test's other failures.")
         raise FitError(msg) from exc
 
     total = gp.systems * gp.T

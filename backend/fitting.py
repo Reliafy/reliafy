@@ -2547,14 +2547,27 @@ def clean_covariate_units(units, names=None) -> dict:
     return out
 
 
+def _is_step_regression(model) -> bool:
+    """A semi-parametric regression (Cox): a step-function baseline."""
+    try:
+        from surpyval.univariate.regression.semi_parametric_regression_model import (
+            SemiParametricRegressionModel,
+        )
+    except ImportError:  # pragma: no cover - a SurPyval that moved it
+        return type(model).__name__ == "SemiParametricRegressionModel"
+    return isinstance(model, SemiParametricRegressionModel)
+
+
 def regression_metrics_at_defaults(model, fields: list) -> Optional[dict]:
     """A parametric regression model's median, B10 and MTTF at the covariate
     row the calculator opens on (each numeric covariate at its training-data
     mean, a categorical one at its most common level), labelled with that
-    row; None for a model without a quantile function (Cox) or when they
-    can't be computed."""
+    row; None for a model without a quantile function or when they can't be
+    computed. A Cox model is left out: SurPyval 0.24 gives it a ``qf`` (#662),
+    but its curve is a step function that often stops short of 0, so a B10
+    is an event time and the mean has no tail to integrate."""
     qf = getattr(model, "qf", None)
-    if not callable(qf):
+    if not callable(qf) or _is_step_regression(model):
         return None
     Z = pd.DataFrame({f["name"]: [f["default"]] for f in fields}) if fields else None
     try:
