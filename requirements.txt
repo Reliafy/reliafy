@@ -10,8 +10,8 @@ numpy
 # proportion is ``lfp_p``; ``covariance()`` replaces ``cov_matrix``): #238.
 git+https://github.com/derrynknife/SurPyval.git@v0.23
 # RePyability is installed --no-deps in the Dockerfile (and CI), pinned to a
-# git tag (v0.12, which works with SurPyval 0.22 and 0.23), so the SurPyval
-# pin above stays authoritative: it declares surpyval>=0.22 (uncapped), but
+# git tag (v0.13, which requires SurPyval 0.23), so the SurPyval
+# pin above stays authoritative: it declares surpyval>=0.23 (uncapped), but
 # --no-deps also stops pip re-resolving surpyval from PyPI. backend/tests/test_rbd_analysis.py exercises the pairing,
 # so a real break would fail the suite rather than reach production.
 # RePyability's runtime deps (numpy/scipy via surpyval, networkx, tqdm) are

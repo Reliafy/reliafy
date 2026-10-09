@@ -52,7 +52,7 @@ from backend.services import rbd_analysis, rbd_ccf, rbd_next_failure, rbd_repeat
 from backend.units import unit_in_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.23", "repyability": "0.12"}
+_DEFAULT_VERSIONS = {"surpyval": "0.23", "repyability": "0.13"}
 _SURPYVAL_GIT = "https://github.com/derrynknife/SurPyval.git"
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
@@ -297,7 +297,7 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
     if kind == "nonparametric":
         raise _Missing(
             f"Block '{label}' uses a non-parametric model ({what}), which "
-            "an RBD doesn't take (RePyability 0.12 refuses one). Fit a "
+            "an RBD doesn't take (RePyability refuses one). Fit a "
             "parametric distribution to the same data and set it here, "
             "e.g. surv.Weibull.fit(x, c)."
         )
@@ -1622,7 +1622,7 @@ def availability_tolerance(unavailability):
 def simulate(availability, tolerance, overrides):
     """The seeded availability simulation, in antithetic pairs: N_SIMS
     histories when set, else run to the tolerance."""
-    # A plain simulation, as in Reliafy: RePyability 0.12's default intervals
+    # A plain simulation, as in Reliafy: RePyability's default intervals
     # are the exact mean's, with no error, so a run to the tolerance would
     # stop after one batch.
     # From the blocks' states now when STATE is set, as Reliafy's As of now.

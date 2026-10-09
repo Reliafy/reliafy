@@ -12,7 +12,7 @@
   in the diagram's unit, and the block's own interval), every combination
   tried up to RePyability's 2000 and a local search beyond. With ``stagger``
   the first tests' times are chosen too, as even shares of the interval
-  (``offsets="stagger"``): testing redundant channels apart finds a
+  (``offset_shares="stagger"``): testing redundant channels apart finds a
   common-cause failure sooner. The best plan with every test at the same time
   is found beside it, so the effect of staggering on the PFDavg and the cost
   shows.
@@ -551,7 +551,7 @@ def _choose(drawn: dict, resolve_model, with_ccf: bool, schedule: str, ids: list
                 offsets = None
             else:
                 found = rbd.optimal_inspection_intervals(
-                    ids, allowed=allowed, offsets="stagger" if stagger else None, **kw)
+                    ids, allowed=allowed, offset_shares="stagger" if stagger else None, **kw)
                 offsets = ({n: float(v) for n, v in found.offsets.items()} if found.offsets is not None else None)
             exact = {n: float(v) for n, v in found.intervals.items()}
             # A searched interval goes on the canvas to four significant figures
@@ -566,7 +566,7 @@ def _choose(drawn: dict, resolve_model, with_ccf: bool, schedule: str, ids: list
             together = None
             if stagger:
                 try:
-                    best = rbd.optimal_inspection_intervals(ids, allowed=allowed, offsets=[0.0], **kw)
+                    best = rbd.optimal_inspection_intervals(ids, allowed=allowed, offset_shares=[0.0], **kw)
                 except ValueError as exc:
                     if "cannot be met" not in str(exc):
                         raise

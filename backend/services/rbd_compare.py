@@ -83,7 +83,7 @@ def _design(graph: dict, resolve_model) -> dict:
 
 def _key(entropy) -> int:
     """A run's stream entropy, derived as ``RepairableRBD.compare`` derives it
-    from a seed (RePyability 0.11's ``_streams.entropy_of``): an int seed is
+    from a seed (RePyability's ``_streams.entropy_of``): an int seed is
     used as is, a list (``[seed, batch index]``) is first folded into one."""
     from repyability.rbd import _streams
 
@@ -92,32 +92,29 @@ def _key(entropy) -> int:
     return _streams.entropy_of(int(entropy))
 
 
-def _paired_run(design: dict, t_sim: float, n: int, key: int, widths: Optional[dict] = None):
+def _paired_run(design: dict, t_sim: float, n: int, key: int):
     """``(fractions, costs)``: each simulation's fraction of the window up and
     (for a priced design, else None) its cost, from streams seeded by ``key``
     and named by the block ids (common random numbers). This is
     ``RepairableRBD.compare``'s inner run, but with the diagram's pinned blocks
     and voting gates held as the analysis holds them — ``compare`` itself
-    takes no overrides. ``widths`` are the two designs' common stream widths
-    (``_common_widths``), so both draw the same uniforms from each stream."""
+    takes no overrides. Since RePyability 0.13 a stream's draws are a function
+    of the key, its name, the simulation and the draw alone (counter-based),
+    so both designs draw the same uniforms from each stream however their
+    runs are laid out. Raises NotImplementedError where a block's draws
+    can't be streamed."""
     ov = design["overrides"]
     tally = design["rbd"]._run(
         t_sim, set(ov["working_nodes"]), set(ov["broken_nodes"]), "c", n, False, None,
-        entropy=key, widths=widths, common=True,
+        entropy=key, common=True,
     )
     costs = np.asarray(tally.cost_samples, dtype=float) if design["priced"] else None
     return np.asarray(tally.uptimes, dtype=float) / t_sim, costs
 
 
-def _common_widths(a: dict, b: dict, t_sim: float) -> dict:
-    """The stream widths both designs draw with (RePyability's ``compare``)."""
-    return a["rbd"]._common_widths(b["rbd"], t_sim)
-
-
-def _paired_fractions(design: dict, t_sim: float, n: int, key: int,
-                      widths: Optional[dict] = None) -> np.ndarray:
+def _paired_fractions(design: dict, t_sim: float, n: int, key: int) -> np.ndarray:
     """Each simulation's fraction of the window up (see :func:`_paired_run`)."""
-    return _paired_run(design, t_sim, n, key, widths)[0]
+    return _paired_run(design, t_sim, n, key)[0]
 
 
 def _independent_run(design: dict, t_sim: float, n: int, seed: int):
@@ -136,8 +133,7 @@ def _batch_runs(a: dict, b: dict, t_sim: float, n: int, index: int, paired: bool
     same however it is split)."""
     key = _key([ra._AVAIL_SEED, index])
     if paired:
-        widths = _common_widths(a, b, t_sim)
-        return _paired_run(a, t_sim, n, key, widths), _paired_run(b, t_sim, n, key, widths)
+        return _paired_run(a, t_sim, n, key), _paired_run(b, t_sim, n, key)
     return (_independent_run(a, t_sim, n, key % 2**32),
             _independent_run(b, t_sim, n, (key + 1) % 2**32))
 

@@ -80,9 +80,9 @@ def filename(name: str) -> str:
 
 
 def _repyability_version() -> str:
-    from repyability._version import __version__
+    import repyability
 
-    return __version__
+    return repyability.__version__
 
 
 def _serialise(model) -> dict:

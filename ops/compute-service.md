@@ -42,11 +42,11 @@ browser polls GET /api/rbd-jobs/<id>; MCP waits up to 20 s, then get_job.
 - **Same image, different command.** `reliafy-compute` runs the web's image
   digest with `uvicorn backend.compute_app:app`. It runs the same function as
   the in-process path, `rbd_analysis.analyze_availability`, with RePyability
-  0.12 (`Dockerfile`: `RePyability.git@v0.12`, `--no-deps`; SurPyval `v0.22`
+  0.13 (`Dockerfile`: `RePyability.git@v0.13`, `--no-deps`; SurPyval `v0.23`
   in `requirements.txt`).
-- **Same seed, same result.** In RePyability 0.12 each simulation's draws are
-  seeded from the run's seed and the simulation's index alone, whatever the
-  engine. So a job gives the in-process result to the last bit.
+- **Same seed, same result.** In RePyability 0.13 each simulation's draws are
+  a function of the run's seed, the stream, the simulation's index and the
+  draw alone (counter-based), whatever the engine or the run's layout. So a job gives the in-process result to the last bit.
   `backend/tests/test_compute_service.py` checks this, through the whole app
   too. The one exception is a run whose size depends on the clock: a Pro run
   that the 20 s budget stops before its precision target, or a free quick run.
@@ -75,7 +75,7 @@ browser polls GET /api/rbd-jobs/<id>; MCP waits up to 20 s, then get_job.
 | Runs on `reliafy-compute` | Stays on the web service |
 |---|---|
 | Availability (and cost) simulations of repairable diagrams: full Pro runs and free quick runs, from the app, the REST API and MCP, from new or from a current state | The exact figures: long-run values, A(t), the window's expected failures, downtime and cost (#154), and everything non-repairable |
-| | Repairable diagrams with a block on a proportional-hazards / regression or non-parametric saved model, or a load-sharing / sub-system block. These need saved data, which can't be sent. RePyability 0.12 refuses a Kaplan–Meier block anyway, and in-process the user hears it at once. See `backend/services/compute_core.py` |
+| | Repairable diagrams with a block on a proportional-hazards / regression or non-parametric saved model, or a load-sharing / sub-system block. These need saved data, which can't be sent. RePyability (since 0.12) refuses a Kaplan–Meier block anyway, and in-process the user hears it at once. See `backend/services/compute_core.py` |
 | | "Compare with…" (`rbd_compare`), the cheapest design (`rbd_design`), and the cost endpoints' own simulations |
 | | The sample diagram's precomputed result at startup, and `backend/scripts/backfill_availability_cache.py` |
 
@@ -300,7 +300,7 @@ done
 curl -s -o /dev/null -w '%{http_code}\n' "$COMPUTE_URL/health"             # 403
 # … and an authorised one works (your account is project owner):
 curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" "$COMPUTE_URL/health"
-# {"ok":true,"repyability_version":"0.12"}
+# {"ok":true,"repyability_version":"0.13"}
 
 # The callback refuses anything without the compute SA's token.
 curl -s -o /dev/null -w '%{http_code}\n' -X POST -H 'Content-Type: application/json' \
@@ -365,7 +365,7 @@ Set the step 0 variables first.
    gcloud run deploy reliafy-compute --image "$IMAGE" --region "$REGION" --project "$PROJECT"
    ```
 4. Run step 7's checks: traffic on both, the same digest on both, and
-   `/health` reporting the RePyability version the Dockerfile pins (0.12 now).
+   `/health` reporting the RePyability version the Dockerfile pins (0.13 now).
 
 Between steps 1 and 3, compute runs the previous image for a minute. That's
 harmless unless the release changes the request format in

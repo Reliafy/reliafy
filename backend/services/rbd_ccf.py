@@ -3,12 +3,15 @@
 Since RePyability 0.12 a ``RepairableRBD``'s common-cause groups are followed
 over time (#158 there): the long-run figures and importance, A(t) and the
 window's events and costs, the simulation and the allocations take them in,
-each group a Markov chain of which members are down together. Where its
-chain or its simulation can't take a group — a member whose life isn't
-exponential, one with scheduled maintenance, imperfect repair or a
-maintenance group, members tested and repaired over time, limited repair
-crews, a member pinned working or failed, or one started from a current
-state — it refuses, with the reason.
+each group a Markov chain of which members are down together. Since 0.13
+(#220 there) proof-tested members' tests and repairs may take time — none, a
+fixed time or an exponential one — so the most common SIL case, a 1oo2 or
+2oo3 with a β and a mean repair time, is followed too. Where its chain or its
+simulation can't take a group — a member whose life isn't exponential, one
+with scheduled maintenance, imperfect repair or a maintenance group, revealed
+failures with non-exponential repairs, tests or repairs of another length,
+limited repair crews, a member pinned working or failed, or one started from
+a current state — it refuses, with the reason.
 
 Reliafy's rule: a repairable diagram's common cause is in **every** figure or
 in **none**. :func:`common_cause_refusal` asks RePyability whether its long
@@ -18,12 +21,12 @@ without them (as before #226) and the reason is said beside the figures, so
 the exact figures, the simulation and the costs never mix a with-common-cause
 value with one without. A safety function's PFDavg needs only the long run
 (:func:`long_run_refusal`), so it keeps its groups wherever the long-run
-chain covers them (#136).
+chain covers them (#136): proof tests that take time, say, whose failure
+frequency RePyability 0.13 doesn't work out with the groups yet.
 
-With limited repair crews RePyability 0.12's crew chain gives long-run values
-without the groups rather than refusing; :func:`long_run_refusal` checks the
-groups' chains, which refuse there, so those values are never reported as
-including common cause.
+With limited repair crews RePyability 0.13 refuses the groups itself, in
+every exact figure (#251 there; 0.12's crew chain dropped them), and the
+long-run check below refuses there too.
 
 The functions take an RBD and its pins only, so "Download as Python" copies
 them into its script (:func:`export_source`) and decides as the app does.

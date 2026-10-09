@@ -198,10 +198,12 @@ def test_paired_run_is_repyabilitys_compare():
     b = rbd_compare._design(_pumps(1.0), None)
     t = 5000.0
     key = rbd_compare._key(7)
-    widths = rbd_compare._common_widths(b, a, t)
-    ours = np.mean(rbd_compare._paired_fractions(b, t, 60, key, widths)
-                   - rbd_compare._paired_fractions(a, t, 60, key, widths))
-    theirs = b["rbd"].compare(a["rbd"], t, mc_samples=60, seed=7)
+    ours = np.mean(rbd_compare._paired_fractions(b, t, 60, key)
+                   - rbd_compare._paired_fractions(a, t, 60, key))
+    # control_variate=False: since RePyability 0.13 compare is exact where
+    # both designs' expected values are; this asks for its simulation.
+    theirs = b["rbd"].compare(a["rbd"], t, mc_samples=60, seed=7, control_variate=False)
+    assert theirs.method == "simulated"
     assert ours == pytest.approx(theirs.estimate, abs=1e-12)
 
 
