@@ -1498,6 +1498,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         validation={validation}
         stale={validationStale}
         rbdId={savedRbdId}
+        name={savedRbdName}
         onBuild={toBuilder}
       />
     </div>
