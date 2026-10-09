@@ -3,10 +3,10 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getDataset, deleteDataset } from "../api.js";
 import PreviewTable from "../components/PreviewTable.jsx";
 import CompareGroups from "../components/CompareGroups.jsx";
-import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { distColor, parseTimestamp } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 // Detail view for one dataset: schema, a preview of the rows, and the models
 // fitted from it.
@@ -45,41 +45,34 @@ export default function DatasetPage() {
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/datasets")}>Datasets</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/datasets/list")}>Files</button> /{" "}
-            <b>{ds ? ds.name : "Dataset"}</b>
-          </div>
-          <div className="title-row">
-            <h1>{ds ? ds.name : "Dataset"}</h1>
-          </div>
-          {ds && (
-            <p>
-              {ds.n_rows.toLocaleString()} rows · {ds.n_columns} columns · added{" "}
-              {parseTimestamp(ds.created_at).toLocaleString()}
-            </p>
-          )}
-          {ds && <CopyId id={ds.id} />}
-        </div>
-        {ds && (
-          <div className="head-actions">
-            {ds.n_columns >= 2 && !comparing && (
-              <button className="secondary" onClick={() => setComparing(true)}>Compare groups</button>
-            )}
+      <PageHeader
+        crumbs={[{ label: "Datasets", to: "/datasets" }, { label: "Files", to: "/datasets/list" }]}
+        title={ds ? ds.name : "Dataset"}
+        meta={ds && (
+          <>
+            {ds.n_rows.toLocaleString()} rows · {ds.n_columns} columns · added{" "}
+            {parseTimestamp(ds.created_at).toLocaleString()}
+          </>
+        )}
+        actions={ds && ds.n_columns >= 2 && !comparing && (
+          <button className="secondary" onClick={() => setComparing(true)}>Compare groups</button>
+        )}
+        id={ds?.id}
+        menu={ds && (
+          <>
             <ShareButton
               collection="datasets"
               artifactId={ds.id}
               name={ds.name}
               readOnly={ds.read_only}
+              className="ovm-item"
             />
-            <button className="secondary" onClick={onDelete}>
+            <button className="ovm-item danger" onClick={onDelete}>
               {ds.read_only ? "Remove from my view" : "Delete"}
             </button>
-          </div>
+          </>
         )}
-      </header>
+      />
 
       {error && <div className="card error">{error}</div>}
 

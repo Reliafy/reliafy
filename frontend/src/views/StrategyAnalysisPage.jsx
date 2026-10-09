@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import CopyId from "../components/CopyId.jsx";
+import { useParams } from "react-router-dom";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
@@ -8,6 +7,7 @@ import DemoTestResult from "../components/DemoTestResult.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getStrategyAnalysis } from "../api.js";
 import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
@@ -19,7 +19,6 @@ const KIND_LABEL = {
 // A saved strategy analysis, rendered read-only from its stored results.
 export default function StrategyAnalysisPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const [doc, setDoc] = useState(null);
   const [error, setError] = useState(null);
 
@@ -39,28 +38,27 @@ export default function StrategyAnalysisPage() {
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/strategy")}>Strategy</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/strategy/analyses")}>Saved analyses</button> /{" "}
-            <b>{doc.name}</b>
-          </div>
-          <h1>
-            {doc.name}
+      <PageHeader
+        crumbs={[{ label: "Strategy", to: "/strategy" }, { label: "Saved analyses", to: "/strategy/analyses" }]}
+        title={doc.name}
+        badges={
+          <>
             {doc.is_sample && <Chip>Sample</Chip>}
             {doc.shared_by && <Chip title={`Shared by ${doc.shared_by}`}>Shared</Chip>}
-          </h1>
-          <p>{KIND_LABEL[doc.kind] || doc.kind} — computed when saved; results are stored, not refreshed.</p>
-          <CopyId id={doc.id} />
-        </div>
-        <ShareButton
-          collection="strategy_analyses"
-          artifactId={doc.id}
-          name={doc.name}
-          readOnly={doc.read_only}
-        />
-      </header>
+          </>
+        }
+        meta={<>{KIND_LABEL[doc.kind] || doc.kind} · computed when saved; results are stored, not refreshed.</>}
+        id={doc.id}
+        menu={
+          <ShareButton
+            collection="strategy_analyses"
+            artifactId={doc.id}
+            name={doc.name}
+            readOnly={doc.read_only}
+            className="ovm-item"
+          />
+        }
+      />
 
       <div className="card">
         {doc.kind === "optimal_replacement" && <ReplacementResult result={doc.results} name={doc.name} />}

@@ -12,6 +12,7 @@ import {
 } from "../api.js";
 import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 const CONFIDENCE_LEVELS = [
   { value: "0.8", label: "80%" },
@@ -137,18 +138,12 @@ export default function StrategyTracking() {
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/fleet")}>Fleet</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/fleet/tracking")}>Degradation tracking</button> /{" "}
-            <b>{fleet.name}</b>
-          </div>
-          <h1>
-            {fleet.name}
-            {fleet.is_sample && <Chip>Sample</Chip>}
-          </h1>
-          <p>
+      <PageHeader
+        crumbs={[{ label: "Fleet", to: "/fleet" }, { label: "Degradation tracking", to: "/fleet/tracking" }]}
+        title={fleet.name}
+        badges={fleet.is_sample && <Chip>Sample</Chip>}
+        meta={
+          <>
             {model ? (
               <>
                 Against{" "}
@@ -160,12 +155,11 @@ export default function StrategyTracking() {
               "The linked degradation model is unavailable."
             )}
             {fleet.updated_by ? ` · last edited by ${fleet.updated_by}` : ""}
-          </p>
-        </div>
-        {!fleet.read_only && (
-          <button className="secondary" onClick={onRename}>Rename</button>
-        )}
-      </header>
+          </>
+        }
+        id={fleet.id}
+        menu={!fleet.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
+      />
 
       {error && <div className="card error">{error}</div>}
       {fleet.is_sample && (

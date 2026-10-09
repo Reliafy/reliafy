@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import ReactFlow, {
   Background,
   Controls,
@@ -33,7 +33,6 @@ import {
   saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP, downloadRbdJson, JSON_EXPORT_TIP,
 } from "../api.js";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import CopyId from "../components/CopyId.jsx";
 import { registerRbdCanvas } from "../rbdBridge.js";
 import { normalizeRbdGraph } from "../rbdGraph.js";
 import { isRepeat, makeRepeat, originalId, promoteRepeats } from "../rbdRepeats.js";
@@ -50,6 +49,7 @@ import {
 } from "../components/RbdNodes.jsx";
 import { lazy, Suspense } from "react";
 import { unitInText } from "../components/unitText.js";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -193,7 +193,7 @@ function policyFields(policies) {
   return out;
 }
 
-function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
+function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
@@ -210,6 +210,10 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   const [savedRbdName, setSavedRbdName] = useState("");
   const [savedRbdUpdatedAt, setSavedRbdUpdatedAt] = useState(null);
   const [savedRbdReadOnly, setSavedRbdReadOnly] = useState(false);
+  // The page header shows the diagram's name and holds Share / Copy ID.
+  useEffect(() => {
+    onMeta?.({ id: savedRbdId, name: savedRbdName, readOnly: savedRbdReadOnly });
+  }, [onMeta, savedRbdId, savedRbdName, savedRbdReadOnly]);
   const [rbdUnit, setRbdUnit] = useState("");
   // Repairable RBD: a distinct modelling choice — components carry a repair-time
   // distribution and the system is analysed for availability, not reliability.
@@ -1005,7 +1009,6 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       >
         <Panel position="top-left" className="rbd-toolbar">
           <div className="rbd-toolbar-row">
-          <span className="rbd-name">{savedRbdName || "Untitled RBD"}</span>
           <label className="rbd-unit-field">
             <span>Unit</span>
             <input
@@ -1095,15 +1098,6 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
           <button className="secondary sm" onClick={() => setModal("saverbd")}>
             Save RBD
           </button>
-          {savedRbdId && (
-            <ShareButton
-              collection="rbds"
-              artifactId={savedRbdId}
-              name={savedRbdName || "Untitled RBD"}
-              readOnly={savedRbdReadOnly}
-              className="secondary sm"
-            />
-          )}
           <span
             className="rbd-export-wrap"
             title={savedRbdId ? PYTHON_EXPORT_TIP : "Save the diagram first"}
@@ -1584,17 +1578,23 @@ export default function RbdBuilder() {
   const location = useLocation();
   const imported = id ? null : location.state?.imported || null;
   const [notesHidden, setNotesHidden] = useState(false);
+  const [meta, setMeta] = useState({});
   return (
     <div className="app rbd-app">
-      <header>
-        <div>
-          <div className="crumb">
-            <Link className="crumb-link" to="/rbds">RBDs</Link> / <b>Builder</b>
-          </div>
-          <h1>Reliability block diagram</h1>
-          <CopyId id={id} />
-        </div>
-      </header>
+      <PageHeader
+        crumbs={[{ label: "RBDs", to: "/rbds" }, { label: "Saved diagrams", to: "/rbds/list" }]}
+        title={meta.name || (id ? "" : "Untitled RBD")}
+        id={meta.id || id}
+        menu={meta.id && (
+          <ShareButton
+            collection="rbds"
+            artifactId={meta.id}
+            name={meta.name || "Untitled RBD"}
+            readOnly={meta.readOnly}
+            className="ovm-item"
+          />
+        )}
+      />
       {imported && !notesHidden && (
         <div className="card note rbd-import-note">
           <p>
@@ -1617,6 +1617,7 @@ export default function RbdBuilder() {
             onNew={() => navigate("/rbds/b")}
             onOpenLibrary={() => navigate("/rbds/list")}
             onSaved={(savedId) => navigate(`/rbds/b/${savedId}`, { replace: true })}
+            onMeta={setMeta}
           />
         </ReactFlowProvider>
       </div>

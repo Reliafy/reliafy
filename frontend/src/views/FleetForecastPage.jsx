@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import CopyId from "../components/CopyId.jsx";
+import { Link, useParams } from "react-router-dom";
 import Plot from "../components/Plot.jsx";
 import { ACCENT, INK, sentence } from "../plotTheme.js";
 import Select from "../components/Select.jsx";
@@ -10,6 +9,7 @@ import { getFleet, putFleetItems, renameFleet } from "../api.js";
 import { toCsv } from "../csv.js";
 import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -76,7 +76,6 @@ function CovariateInput({ field, value, placeholder, disabled, onChange, classNa
 // set and returns a freshly computed forecast (never stored server-side).
 export default function FleetForecastPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const [fleet, setFleet] = useState(null);
   const [settings, setSettings] = useState(null);
   const [items, setItems] = useState([]);
@@ -215,20 +214,18 @@ export default function FleetForecastPage() {
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/fleet")}>Fleet</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/fleet/forecasts")}>Failure forecasts</button> /{" "}
-            <b>{fleet.name}</b>
-          </div>
-          <h1>
-            {fleet.name}
+      <PageHeader
+        crumbs={[{ label: "Fleet", to: "/fleet" }, { label: "Failure forecasts", to: "/fleet/forecasts" }]}
+        title={fleet.name}
+        badges={
+          <>
             {fleet.is_sample && <Chip>Sample</Chip>}
             {fleet.shared_by && <Chip title={`Shared by ${fleet.shared_by}`}>Shared</Chip>}
             {dirty && <Chip tone="warning">Unsaved</Chip>}
-          </h1>
-          <p>
+          </>
+        }
+        meta={
+          <>
             Against{" "}
             <Link to={modelUrl} className="evidence-link">
               {forecast.model_name || "the linked model"}
@@ -236,20 +233,22 @@ export default function FleetForecastPage() {
             {forecast.model_kind === "alt" ? " (ALT)" : forecast.model_kind === "regression" ? " (regression)" : ""}
             {unit ? ` · time in ${unit}` : ""}
             {fleet.updated_by ? ` · last edited by ${fleet.updated_by}` : ""}
-          </p>
-          <CopyId id={fleet.id} />
-        </div>
-        <div className="head-actions">
-          <ShareButton collection="fleets" artifactId={fleet.id} name={fleet.name} readOnly={readOnly} />
-          {!readOnly && <button className="secondary" onClick={onRename}>Rename</button>}
-          <button className="secondary" onClick={exportCsv}>Export CSV</button>
-          {!readOnly && (
-            <button onClick={onSave} disabled={saving || !dirty}>
-              {saving ? "Computing…" : dirty ? "Save & forecast" : "Saved"}
-            </button>
-          )}
-        </div>
-      </header>
+          </>
+        }
+        actions={<button className="secondary" onClick={exportCsv}>Export CSV</button>}
+        primary={!readOnly && (
+          <button onClick={onSave} disabled={saving || !dirty}>
+            {saving ? "Computing…" : dirty ? "Save & forecast" : "Saved"}
+          </button>
+        )}
+        id={fleet.id}
+        menu={
+          <>
+            <ShareButton collection="fleets" artifactId={fleet.id} name={fleet.name} readOnly={readOnly} className="ovm-item" />
+            {!readOnly && <button className="ovm-item" onClick={onRename}>Rename</button>}
+          </>
+        }
+      />
 
       {error && (
         <div className="card error">

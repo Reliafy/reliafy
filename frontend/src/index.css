@@ -1206,28 +1206,6 @@ h6 {
 .rbd-sim-offer .rbd-job-status { margin: 10px 0 0; }
 .rbd-quick-cap { margin: 8px 0 0; font-size: var(--fs-13); color: var(--warn); }
 
-.rbd-name {
-  display: inline-block;
-  /* Bounded so a long diagram name can't push the toolbar row into the
-     buttons on the right. */
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
-  background: var(--surf);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 0.45rem 0.8rem;
-  font-size: var(--fs-14);
-  font-weight: 600;
-  color: var(--ink);
-  box-shadow: var(--shadow-card);
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* Right-click menu — matches the improved dropdowns (rounded card, 13px items,
    soft accent-tint hover). */
@@ -1562,6 +1540,21 @@ header p {
   max-width: 56ch;
 }
 
+/* PageHeader (#310; components/ui/PageHeader.jsx): breadcrumb, the item's
+   name, one muted meta line; actions on the right. */
+.page-header .ph-main { min-width: 0; flex: 1 1 22rem; }
+.page-header .title-row h1 { overflow-wrap: anywhere; }
+.ph-meta {
+  margin-top: 6px;
+  font-size: var(--fs-14);
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 72ch;
+}
+.ph-meta a { color: var(--acc); }
+.crumb-sep { color: var(--subtle); }
+.ph-chips { margin-top: var(--sp-2); }
+
 /* Breadcrumb above a page title. */
 .crumb {
   font-size: var(--fs-13);
@@ -1584,6 +1577,7 @@ header p {
   color: var(--muted);
   cursor: pointer;
   letter-spacing: inherit;
+  text-decoration: none;
 }
 
 /* Text-link hover: darken + underline, never the global dark-blue button fill
@@ -5861,58 +5855,33 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 
 /* ---- Model page: lean header + overflow actions ----------------------- */
-/* Inline, de-emphasised meta next to the title (relative save time / unit). */
-.page-meta {
-  font-size: var(--fs-13);
-  color: var(--muted);
-  white-space: nowrap;
-}
 .title-row { flex-wrap: wrap; }
 
-/* Copyable artifact ID chip (for the API / reliafy-client). */
-.copy-id {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 6px;
-  max-width: 100%;
-  padding: 3px 9px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surf);
-  color: var(--muted);
-  font-size: var(--fs-12);
-  cursor: pointer;
-}
-/* :not(:disabled) beats the global button:hover so the tint wins over the fill. */
-.copy-id:hover:not(:disabled) { border-color: var(--acc); background: rgba(47, 109, 246, 0.05); color: var(--acc); }
-.copy-id-k {
-  font-size: var(--fs-12);
-  font-weight: 500;
-  color: var(--muted);
-}
-.copy-id code {
+/* "Copy ID" in the ⋯ menu (#303): the label, then the ID in small mono. */
+.ovm-item.ovm-copy-id { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.ovm-copy-id code {
   font-family: var(--mono);
   font-size: var(--fs-12);
-  color: var(--ink);
+  color: var(--muted);
+  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.copy-id-done { color: var(--acc); font-weight: 600; }
+.ovm-item.ovm-copy-id:hover:not(:disabled) code { color: inherit; }
 /* Pull the result up: less gap under the header, and a tighter top padding so
    the tabs sit near the top of the card. */
 .model-page .card { margin-top: 0.85rem; padding-top: 1rem; }
 
-/* Overflow ("…") menu for secondary actions. Stretch the row so the trigger
-   matches the Edit button's height. */
-.model-page .head-actions { align-items: stretch; }
+/* Overflow ("…") menu for secondary actions. */
 .ovm { position: relative; display: inline-flex; }
 .ovm-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0 10px;
-  height: 100%;
+  min-width: 42px;
+  min-height: 42px;
 }
 .ovm-menu {
   position: absolute;
@@ -5948,7 +5917,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .ovm-item.danger:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger); }
 
 /* ---- RCM: study tree, decision flow, evidence -------------------------- */
-.head-actions { display: inline-flex; gap: 0.6rem; align-items: flex-start; }
+.head-actions { display: inline-flex; flex-wrap: wrap; gap: 0.6rem; align-items: stretch; }
 .card.note {
   font-size: var(--fs-13);
   color: var(--muted);
@@ -7654,13 +7623,9 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
   .rbd-tabs {
     padding: 0 0.5rem;
   }
-  .rbd-toolbar button.sm,
-  .rbd-toolbar .rbd-name {
+  .rbd-toolbar button.sm {
     padding: 0.3rem 0.55rem;
     font-size: var(--fs-13);
-  }
-  .rbd-toolbar .rbd-name {
-    max-width: 140px;
   }
   .rbd-toolbar .rbd-unit-input {
     width: 84px;

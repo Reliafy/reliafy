@@ -3,12 +3,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import RecurrentOverhaul from "../components/RecurrentOverhaul.jsx";
 import RecurrentProjection from "../components/RecurrentProjection.jsx";
-import OverflowMenu from "../components/OverflowMenu.jsx";
-import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getRecurrentModel, deleteRecurrentModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 const GROWTH_COLOR = { improving: "#2faa6a", stable: "#6c727c", deteriorating: "#d05a5a" };
 
@@ -35,46 +34,27 @@ export default function RecurrentModelPage() {
 
   return (
     <div className="app model-page">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/recurrent")}>Recurrent events</button> /{" "}
-            <b>{model ? model.name : "Model"}</b>
-          </div>
-          <div className="title-row">
-            <h1>{model ? model.name : "Model"}</h1>
-            {model && (
-              <Chip dot={GROWTH_COLOR[r.growth] || "#6c727c"}>
-                {r.model?.name || "Recurrent"}
-              </Chip>
-            )}
-            {model && (
-              <span className="page-meta">
-                Saved {relativeTime(model.created_at)}
-                {r.unit ? ` · ${r.unit}` : ""}
-              </span>
-            )}
-          </div>
-          {model && <CopyId id={model.id} />}
-        </div>
-        {model && (
-          <div className="head-actions">
-            <OverflowMenu>
-              <ShareButton
-                collection="recurrent_models"
-                artifactId={model.id}
-                name={model.name}
-                readOnly={model.read_only}
-                className="ovm-item"
-              />
-              <button className="ovm-item danger" onClick={onDelete}>
-                {model.read_only ? "Remove from my view" : "Delete"}
-              </button>
-            </OverflowMenu>
-          </div>
+      <PageHeader
+        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Recurrent events", to: "/modelling/recurrent" }]}
+        title={model ? model.name : "Model"}
+        badges={model && <Chip dot={GROWTH_COLOR[r.growth] || "#6c727c"}>{r.model?.name || "Recurrent"}</Chip>}
+        meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""}</>}
+        id={model?.id}
+        menu={model && (
+          <>
+            <ShareButton
+              collection="recurrent_models"
+              artifactId={model.id}
+              name={model.name}
+              readOnly={model.read_only}
+              className="ovm-item"
+            />
+            <button className="ovm-item danger" onClick={onDelete}>
+              {model.read_only ? "Remove from my view" : "Delete"}
+            </button>
+          </>
         )}
-      </header>
+      />
 
       {error && <div className="card error">{error}</div>}
       {model && (

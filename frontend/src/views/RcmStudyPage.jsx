@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import CopyId from "../components/CopyId.jsx";
+import { useParams } from "react-router-dom";
 import RcmTree from "../components/RcmTree.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
@@ -9,6 +8,7 @@ import { ShareButton } from "../components/ShareDialog.jsx";
 import { getRcmStudy, getRcmOptions, putRcmTree, renameRcmStudy } from "../api.js";
 import { toCsv } from "../csv.js";
 import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 function exportCsv(study, functions) {
   const header = [
@@ -44,7 +44,6 @@ function exportCsv(study, functions) {
 // PUTs the whole tree and comes back with freshly resolved evidence statuses.
 export default function RcmStudyPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const [study, setStudy] = useState(null);
   const [functions, setFunctions] = useState([]);
   const [options, setOptions] = useState(null);
@@ -142,60 +141,60 @@ export default function RcmStudyPage() {
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/rcm")}>RCM</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/rcm/studies")}>Studies</button> /{" "}
-            <b>{study.name}</b>
-          </div>
-          <h1>
-            {study.name}
+      <PageHeader
+        crumbs={[{ label: "RCM", to: "/rcm" }, { label: "Studies", to: "/rcm/studies" }]}
+        title={study.name}
+        badges={
+          <>
             {study.is_sample && <Chip>Sample</Chip>}
             {study.shared_by && <Chip title={`Shared by ${study.shared_by}`}>Shared</Chip>}
             {dirty && <Chip tone="warning">Unsaved</Chip>}
-          </h1>
-          {(study.system || study.description) && (
-            <p>{[study.system, study.description].filter(Boolean).join(" — ")}</p>
-          )}
-          <RollupBadges rollup={study.rollup} />
-          {study.updated_by && (
-            <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>
-              Last edited by {study.updated_by}
-            </p>
-          )}
-          <CopyId id={study.id} />
-        </div>
-        <div className="head-actions">
-          <ShareButton
-            collection="rcm_studies"
-            artifactId={study.id}
-            name={study.name}
-            readOnly={readOnly}
-          />
-          {!readOnly && (
-            <button className="secondary" onClick={onRename}>Rename</button>
-          )}
-          {!readOnly && (
-            <button
-              className="secondary"
-              onClick={() => setImportOpen(true)}
-              disabled={dirty}
-              title={dirty ? "Save or discard your edits first" : "Append or replace the worksheet from an FMEA / RCM spreadsheet"}
-            >
-              Import from Excel
-            </button>
-          )}
+          </>
+        }
+        meta={
+          (study.system || study.description || study.updated_by) && (
+            <>
+              {[study.system, study.description].filter(Boolean).join(" — ")}
+              {study.updated_by && <>{study.system || study.description ? " · " : ""}Last edited by {study.updated_by}</>}
+            </>
+          )
+        }
+        actions={
           <button className="secondary" onClick={() => exportCsv(study, functions)}>
             Export CSV
           </button>
-          {!readOnly && (
-            <button onClick={onSave} disabled={saving || !dirty}>
-              {saving ? "Saving…" : dirty ? "Save study" : "Saved"}
-            </button>
-          )}
-        </div>
-      </header>
+        }
+        primary={!readOnly && (
+          <button onClick={onSave} disabled={saving || !dirty}>
+            {saving ? "Saving…" : dirty ? "Save study" : "Saved"}
+          </button>
+        )}
+        id={study.id}
+        menu={
+          <>
+            <ShareButton
+              collection="rcm_studies"
+              artifactId={study.id}
+              name={study.name}
+              readOnly={readOnly}
+              className="ovm-item"
+            />
+            {!readOnly && <button className="ovm-item" onClick={onRename}>Rename</button>}
+            {!readOnly && (
+              <button
+                className="ovm-item"
+                onClick={() => setImportOpen(true)}
+                disabled={dirty}
+                title={dirty ? "Save or discard your edits first" : "Append or replace the worksheet from an FMEA / RCM spreadsheet"}
+              >
+                Import from Excel
+              </button>
+            )}
+          </>
+        }
+      >
+        {study.rollup && <div className="ph-chips"><RollupBadges rollup={study.rollup} /></div>}
+      </PageHeader>
 
       {error && (
         <div className="card error">
