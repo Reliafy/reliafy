@@ -505,7 +505,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
             RePyability {result.repyability_version} ·{" "}
             {kind === "replacement"
               ? "optimal_replacement_intervals: a gradient search over the exact long-run values, shown to four significant figures."
-              : `optimal_inspection_intervals${result.stagger ? " with offsets=\"stagger\" (first tests at even shares of the interval)" : ""}: every combination of the intervals to choose from, up to 2,000 (a local search beyond).`}
+              : `optimal_inspection_intervals${result.stagger ? " with offset_shares=\"stagger\" (first tests at even shares of the interval)" : ""}: every combination of the intervals to choose from, up to 2,000 (a local search beyond).`}
             {" "}Figures are {result.basis === "numerical" ? "numerical (deterministic)" : "exact"} long-run values{waits ? ", with no repair waiting for a crew" : ""}.
           </p>
         </div>

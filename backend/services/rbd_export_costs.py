@@ -350,7 +350,7 @@ def report_costs(sim, overrides):
                   f"more than the {EXACT_WINDOW_MEAN_MAX_BLOCKS} its exact window mean is computed for)")
         out["simulated"] = {
             "mean": cost.mean if mean is None else mean, "mean_basis": mean_basis,
-            "simulated_mean": cost.mean, "lower": window.lower, "upper": window.upper,
+            "simulated_mean": cost.sample_mean, "lower": window.lower, "upper": window.upper,
             "percentiles": {"10": p10, "50": p50, "90": p90},
             "by_category": dict(cost.by_category),
         }

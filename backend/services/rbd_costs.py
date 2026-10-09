@@ -56,9 +56,11 @@ _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
 
 
 def _mean_cost(cost) -> float:
-    from repyability.rbd.repairable_rbd import _mean_cost as mean
-
-    return float(mean(cost))
+    """A block's cost as RePyability prices it on average: the number, or
+    the mean of a cost range (surpyval's ``Uniform``)."""
+    if isinstance(cost, (int, float, np.number)):
+        return float(cost)
+    return float(np.ravel(cost.mean())[0])
 
 
 def _scalar(v) -> float:
@@ -162,7 +164,7 @@ def _simulated(cost, exact_mean: Optional[float] = None, mean_basis: str = "simu
     out: dict[str, Any] = {
         "mean": exact_mean if exact_mean is not None else ra._f(cost.mean),
         "mean_basis": mean_basis if exact_mean is not None else "simulation",
-        "simulated_mean": ra._f(cost.mean),
+        "simulated_mean": ra._f(cost.sample_mean),
         "std": ra._f(cost.std) if len(cost.samples) > 1 else None,
         "cost_rate": ra._f(cost.cost_rate),
         "t_simulation": ra._f(cost.t_simulation),
@@ -271,10 +273,10 @@ def present_value(acquisition: float, rate: Optional[float], horizon: float,
     ``total_cost`` (None without a rate), the discount (% a year, and the
     continuous rate per unit time RePyability takes; None undiscounted) and,
     discounted, the undiscounted total beside it."""
-    from repyability.rbd.repairable_rbd import _present_horizon
-
     r = disc["per_unit"] if disc else 0.0
-    present = _present_horizon(float(horizon), r)
+    # What a unit cost rate over the horizon is worth now, as total_cost
+    # counts it: the horizon itself undiscounted.
+    present = float(horizon) if r == 0.0 else -math.expm1(-r * float(horizon)) / r
     has_rate = rate is not None
     return {
         "running_cost": ra._f(rate * present) if has_rate else None,

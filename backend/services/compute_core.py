@@ -28,9 +28,10 @@ since RePyability 0.12, so the user hears it at once, not from a job).
 
 Same seed, same result. The compute service runs exactly
 :func:`rbd_analysis.analyze_availability`, the in-process path's function, on
-the same image: RePyability 0.12 seeds every simulation's draws from the run's
-seed and the simulation's index alone, whatever the engine, so a request
-gives the in-process result to the last bit. Only where a *time budget*
+the same image: since RePyability 0.13 every simulation's draws are a
+function of the run's seed, the stream, the simulation's index and the draw
+alone (counter-based), whatever the engine, so a request gives the
+in-process result to the last bit. Only where a *time budget*
 sizes the run (a Pro run to its precision target that the 20 s budget stops,
 or a free quick run) can the count of replications differ with the
 machine's speed; the result is then that of the count it reports.
@@ -194,7 +195,8 @@ def _validated_options(options: Any, graph: dict) -> dict:
         "t_simulation": _number(options, "t_simulation", 0.0, 1e300),
         "n_simulations": _number(options, "n_simulations", 1, _MAX_SIMULATIONS, integer=True),
         "time_budget_s": _number(options, "time_budget_s", 0.0, _MAX_BUDGET_S),
-        "seed": _number(options, "seed", 0, 2**63 - 1, integer=True),
+        # RePyability (since 0.13) takes a whole number from 0 to 2**32 - 1.
+        "seed": _number(options, "seed", 0, 2**32 - 1, integer=True),
         "max_replications": _number(options, "max_replications", 1, _MAX_SIMULATIONS, integer=True),
         # Canonical already; parsing again validates it against this graph
         # (AnalysisError: the user's input, reported as such).

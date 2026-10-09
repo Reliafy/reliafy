@@ -1,6 +1,6 @@
 """Maintenance and proof-test intervals chosen together (#172, #228): the
 diagram's repair crews (``assume_unlimited_crews``, then the plan simulated
-with them) and staggered tests (``offsets="stagger"``) on RePyability 0.12's
+with them) and staggered tests (``offset_shares="stagger"``) on RePyability's
 ``optimal_replacement_intervals`` / ``optimal_inspection_intervals``.
 
 Checked against RePyability directly (the same choice and figures, its own
@@ -94,8 +94,8 @@ def _rows(out):
 def test_staggered_tests_match_repyability_and_halve_the_cost():
     out = ri.optimise(_sif(), max_pfd=5e-4, allowed=CAL, stagger=True)
     direct = _direct_sif()
-    staggered = direct.optimal_inspection_intervals(allowed=CAL, min_availability=1 - 5e-4, offsets="stagger")
-    together = direct.optimal_inspection_intervals(allowed=CAL, min_availability=1 - 5e-4, offsets=[0.0])
+    staggered = direct.optimal_inspection_intervals(allowed=CAL, min_availability=1 - 5e-4, offset_shares="stagger")
+    together = direct.optimal_inspection_intervals(allowed=CAL, min_availability=1 - 5e-4, offset_shares=[0.0])
     rows = _rows(out)
     assert {n: rows[n]["interval"] for n in rows} == staggered.intervals == {"v1": 8760.0, "v2": 8760.0}
     assert {n: rows[n]["offset"] for n in rows} == staggered.offsets == {"v1": 0.0, "v2": 4380.0}
@@ -145,11 +145,11 @@ def test_staggering_can_be_the_only_way_to_the_target():
     same time they can't. The result says so."""
     allowed = [8760.0]
     direct = _direct_sif()
-    staggered = direct.optimal_inspection_intervals(allowed=allowed, offsets="stagger")
+    staggered = direct.optimal_inspection_intervals(allowed=allowed, offset_shares="stagger")
     assert staggered.offsets == {"v1": 0.0, "v2": 4380.0}  # same cost: the most available
     target = ((1 - staggered.availability) + direct.mean_unavailability()) / 2
     with pytest.raises(ValueError, match="cannot be met"):
-        direct.optimal_inspection_intervals(allowed=allowed, min_availability=1 - target, offsets=[0.0])
+        direct.optimal_inspection_intervals(allowed=allowed, min_availability=1 - target, offset_shares=[0.0])
     out = ri.optimise(_sif(), max_pfd=target, allowed=allowed, stagger=True)
     assert out["plan"]["meets_target"] is True
     assert out["plan"]["pfd_avg"] == pytest.approx(1 - staggered.availability, rel=1e-12)
