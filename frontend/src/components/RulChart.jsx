@@ -1,4 +1,5 @@
 import Plot from "./Plot.jsx";
+import { ACCENT, BAND_FILL, DANGER, DATA_INK, band, dataPoints, fitLine, referenceShape } from "../plotTheme.js";
 
 // One tracked item's outlook: its measurements, the projected degradation
 // path, the failure threshold, and the predicted crossing time with its 95%
@@ -15,75 +16,51 @@ export default function RulChart({ item, threshold, unit, measurementUnit }) {
   const traces = [];
   if (pred.projection?.lo && pred.projection?.hi) {
     // Credible band around the projected degradation path (posterior spread).
-    traces.push({
+    traces.push(band({
       x: [...pred.projection.x, ...[...pred.projection.x].reverse()],
       y: [...pred.projection.hi, ...[...pred.projection.lo].reverse()],
-      fill: "toself",
-      fillcolor: "rgba(47, 109, 246, 0.10)",
-      line: { color: "rgba(0,0,0,0)" },
-      hoverinfo: "skip",
-      name: "path credible band",
-      type: "scatter",
-    });
+      name: "Path credible band",
+    }));
   }
   if (pred.projection) {
-    traces.push({
-      x: pred.projection.x, y: pred.projection.y, mode: "lines", type: "scatter",
-      line: { color: "#2f6df6", width: 2, dash: "dot" }, name: "Projected path",
-    });
+    traces.push(fitLine({ x: pred.projection.x, y: pred.projection.y, line: { dash: "dot" }, name: "Projected path" }));
   }
-  traces.push({
-    x: meas.map((m) => m.t), y: meas.map((m) => m.y),
-    mode: "lines+markers", type: "scatter",
-    line: { color: "#2f6df6", width: 1.4 },
-    marker: { color: "#2f6df6", size: 8, line: { color: "#fff", width: 1.2 } },
+  traces.push(dataPoints({
+    x: meas.map((m) => m.t), y: meas.map((m) => m.y), mode: "lines+markers",
+    line: { color: DATA_INK, width: 1.25 },
     name: "Measurements",
-  });
+  }));
 
-  const shapes = [{
-    type: "line", xref: "paper", x0: 0, x1: 1, y0: threshold, y1: threshold,
-    line: { color: "#d05a5a", width: 1.6, dash: "dash" },
-  }];
+  // The failure threshold: red, it is where the item has failed.
+  const shapes = [referenceShape({ y: threshold, line: { color: DANGER, width: 1.5 } })];
   const annotations = [];
 
   const [lo, hi] = pred.failure_time_interval || [null, null];
   if (lo !== null && hi !== null) {
     shapes.push({
       type: "rect", yref: "paper", x0: lo, x1: hi, y0: 0, y1: 1,
-      fillcolor: "rgba(47, 109, 246, 0.08)", line: { width: 0 },
+      fillcolor: BAND_FILL, line: { width: 0 },
     });
     annotations.push({
       x: lo, yref: "paper", y: 0, yanchor: "top",
       text: `${ciPct}% interval`, showarrow: false, xanchor: "left",
-      font: { color: "#6c727c", size: 10 },
     });
   }
   if (pred.failure_time !== null && pred.failure_time !== undefined) {
-    shapes.push({
-      type: "line", yref: "paper", x0: pred.failure_time, x1: pred.failure_time, y0: 0, y1: 1,
-      line: { color: "#2f6df6", width: 1.4, dash: "dash" },
-    });
+    shapes.push(referenceShape({ x: pred.failure_time, line: { color: ACCENT, width: 1.5 } }));
     annotations.push({
-      x: pred.failure_time, yref: "paper", y: 1, yanchor: "bottom",
-      text: "expected crossing", showarrow: false, font: { color: "#2f6df6", size: 10 },
+      x: pred.failure_time, yref: "paper", y: 1, yanchor: "top", xanchor: "left", xshift: 4,
+      text: "Expected crossing", showarrow: false, font: { color: ACCENT },
     });
   }
 
   const layout = {
-    autosize: true,
     height: 360,
-    margin: { l: 60, r: 20, t: 28, b: 50 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "#ffffff",
-    font: { color: "#6c727c", family: "IBM Plex Mono, monospace", size: 11 },
-    legend: { orientation: "h", y: -0.2 },
-    xaxis: { title: { text: xTitle, standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false, rangemode: "tozero" },
-    yaxis: { title: { text: yTitle, standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false, rangemode: "tozero" },
+    xaxis: { title: { text: xTitle }, rangemode: "tozero" },
+    yaxis: { title: { text: yTitle }, rangemode: "tozero" },
     shapes,
     annotations,
   };
 
-  return (
-    <Plot data={traces} layout={layout} config={{ displayModeBar: false, responsive: true }} style={{ width: "100%" }} useResizeHandler />
-  );
+  return <Plot data={traces} layout={layout} />;
 }

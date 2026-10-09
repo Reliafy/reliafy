@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
+import { bandPair, fitLine } from "../plotTheme.js";
 import { altBounds, evaluateAlt, getRbdJob } from "../api.js";
 import { stressName } from "./stressName.js";
 import { unitInText } from "./unitText.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
@@ -166,24 +168,17 @@ export default function AltCalculator({ modelId, results }) {
       // R(t) bounds carry over to F(t) = 1 − R(t), the sides swapped.
       const lo = active === "sf" ? band.lower : flip(band.upper);
       const hi = active === "sf" ? band.upper : flip(band.lower);
-      out.push({ x: band.x, y: lo, mode: "lines", type: "scatter", line: { width: 0 },
-                 hoverinfo: "skip", showlegend: false });
-      out.push({ x: band.x, y: hi, mode: "lines", type: "scatter", line: { width: 0 }, fill: "tonexty",
-                 fillcolor: "rgba(47,109,246,0.16)", name: `${levelText} band`, hoverinfo: "skip" });
+      out.push(...bandPair(band.x, lo, hi, { name: `${levelText} band` }));
     }
-    out.push({ x: traceX, y: traceY, mode: "lines", type: "scatter", name: "Estimate",
-               line: { color: "#2f6df6", width: 2 } });
+    out.push(fitLine({ x: traceX, y: traceY, name: "Estimate" }));
     return out;
   }, [showBand, band, active, traceX, traceY, levelText]);
 
   const layout = useMemo(() => ({
-    autosize: true, height: 340,
-    margin: { l: 60, r: 20, t: 16, b: 46 },
-    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-    xaxis: { title: unit ? `Time (${unit})` : "Time", gridcolor: "#eef1f5", zeroline: false },
-    yaxis: { title: FUNCS.find((f) => f.id === active)?.y || "", gridcolor: "#eef1f5" },
+    height: 340,
+    xaxis: { title: { text: unit ? `Time (${unit})` : "Time" } },
+    yaxis: { title: { text: FUNCS.find((f) => f.id === active)?.y || "" } },
     showlegend: !!showBand,
-    legend: { orientation: "h", y: -0.2 },
   }), [active, unit, showBand]);
 
   const m = res?.metrics || {};
@@ -227,20 +222,19 @@ export default function AltCalculator({ modelId, results }) {
         </label>
         <div className="alt-bounds-pick">
           <span className="alt-bounds-k">Confidence bounds</span>
-          <div className="seg" role="radiogroup" aria-label="Confidence level">
-            {LEVELS.map((c) => (
-              <button key={c} type="button" role="radio" aria-checked={confidence === c}
-                      className={"seg-btn" + (confidence === c ? " active" : "")}
-                      onClick={() => setConfidence(c)}>{Math.round(c * 100)}%</button>
-            ))}
-          </div>
-          <div className="seg alt-method-seg" role="radiogroup" aria-label="Bounds method">
-            {METHODS.filter((x) => methods.includes(x.id)).map((x) => (
-              <button key={x.id} type="button" role="radio" aria-checked={method === x.id} title={x.hint}
-                      className={"seg-btn" + (method === x.id ? " active" : "")}
-                      onClick={() => pickMethod(x.id)}>{x.label}</button>
-            ))}
-          </div>
+          <SegmentedControl
+            label="Confidence level"
+            value={confidence}
+            onChange={setConfidence}
+            options={LEVELS.map((c) => ({ value: c, label: `${Math.round(c * 100)}%` }))}
+          />
+          <SegmentedControl
+            label="Bounds method"
+            className="alt-method-seg"
+            value={method}
+            onChange={pickMethod}
+            options={METHODS.filter((x) => methods.includes(x.id)).map((x) => ({ value: x.id, label: x.label, title: x.hint }))}
+          />
           <span className="muted alt-method-hint">
             {METHODS.find((x) => x.id === method)?.hint}
             {!methods.includes("bootstrap") && interval && " · Bootstrap bounds aren't available for inspection (interval) data."}
@@ -289,14 +283,14 @@ export default function AltCalculator({ modelId, results }) {
           )}
           {boundsError && <div className="calc-warn">{boundsError}</div>}
           {res.bounds_note && method === "wald" && !bounds && <div className="calc-warn">{res.bounds_note}</div>}
-          <div className="seg" style={{ alignSelf: "flex-start", flexWrap: "wrap", maxWidth: "100%" }}>
-            {FUNCS.map((f) => (
-              <button key={f.id} className={"seg-btn" + (active === f.id ? " active" : "")}
-                      onClick={() => setActive(f.id)}>{f.label}</button>
-            ))}
-          </div>
-          <Plot data={traces} layout={layout} useResizeHandler style={{ width: "100%" }}
-                config={{ displayModeBar: false, responsive: true }} />
+          <SegmentedControl
+            label="Function"
+            value={active}
+            onChange={setActive}
+            style={{ alignSelf: "flex-start", flexWrap: "wrap", maxWidth: "100%" }}
+            options={FUNCS.map((f) => ({ value: f.id, label: f.label }))}
+          />
+          <Plot data={traces} layout={layout} />
           {curves.warning && <div className="calc-warn">{curves.warning}</div>}
           {bounds && (
             <>

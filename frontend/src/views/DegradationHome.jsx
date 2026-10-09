@@ -7,22 +7,9 @@ import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import { FirstRunStrip } from "../components/FirstRun.jsx";
 import { useFirstRun } from "../firstRun.js";
-
-const PlusIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-);
-const OpenIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M7 17 17 7M9 7h8v8" />
-  </svg>
-);
-const TrashIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
-  </svg>
-);
+import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 
 // Landing page for degradation models: list, create (3-step modal + save bar),
 // open, delete. Lives inside the Modelling section.
@@ -69,30 +56,28 @@ export default function DegradationHome() {
 
   const onDelete = async (m) => {
     const msg = m.is_sample
-      ? `Remove the sample “${m.name}” from your workspace? It stays available to other users.`
+      ? `Remove the sample “${itemName(m)}” from your workspace? It stays available to other users and you won't see it again.`
       : `Delete “${m.name}” and its tracked items?`;
     if (!window.confirm(msg)) return;
-    await deleteDegradationModel(m.id);
-    refresh();
+    try {
+      await deleteDegradationModel(m.id);
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
   };
+
+  const open = (id) => navigate(`/modelling/degradation/${id}`);
+  const visible = (models || []).filter((m) => matches(query, m.name, m.path_model, m.id));
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> / <b>Degradation models</b>
-          </div>
-          <h1>Degradation models</h1>
-          <p>
-            Model how your assets wear toward a failure threshold. Individual
-            items are monitored under Fleet → Degradation tracking.
-          </p>
-        </div>
-        <button onClick={() => setModalOpen(true)}>
-          <PlusIcon /> New degradation model
-        </button>
-      </header>
+      <PageHeader
+        crumbs={[{ label: "Modelling", to: "/modelling" }]}
+        title="Degradation models"
+        meta="How assets wear toward a failure threshold. Track individual items under Fleet."
+        primary={<button onClick={() => setModalOpen(true)}><PlusIcon /> New model</button>}
+      />
 
       <FirstRunStrip info={firstRun} />
 
@@ -122,57 +107,50 @@ export default function DegradationHome() {
           <h2>No degradation models</h2>
           <p>Fit one from measurement histories to start predicting remaining useful life.</p>
           <button style={{ marginTop: "1rem" }} onClick={() => setModalOpen(true)}>
-            <PlusIcon /> New degradation model
+            <PlusIcon /> New model
           </button>
         </div>
       ) : (
-        <div className="lib">
+        <>
           <div className="tablebar">
+            <span className="count">{visible.length} of {models.length} models</span>
             <span className="grow" />
             <ListSearch value={query} onChange={setQuery} placeholder="Search models…" />
           </div>
-          <table className="lib-table">
-            <thead>
-              <tr>
-                <th style={{ width: "34%" }}>Model</th>
-                <th>Path</th>
-                <th style={{ width: 100 }}>Threshold</th>
-                <th style={{ width: 80 }}>Items</th>
-                <th style={{ width: 100 }}>Tracked</th>
-                <th>Saved</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {models.filter((m) => matches(query, m.name, m.path_model)).map((m) => (
-                <tr key={m.id} className="lib-row" onClick={() => navigate(`/modelling/degradation/${m.id}`)}>
-                  <td>
-                    <div className="lib-name">
-                      {m.name}
-                      {m.is_sample && <span className="sample-tag">Sample</span>}
-                      {m.shared_by && <span className="sample-tag shared" title={`Shared by ${m.shared_by}`}>Shared</span>}
-                    </div>
-                  </td>
-                  <td>{m.path_model || "—"}</td>
-                  <td className="lib-n">{m.threshold}{m.measurement_unit ? ` ${m.measurement_unit}` : ""}</td>
-                  <td className="lib-n">{m.n_units}</td>
-                  <td className="lib-n">{m.n_items}</td>
-                  <td className="lib-date">{relativeTime(m.updated_at || m.created_at)}</td>
-                  <td className="lib-actions">
-                    <div className="lib-acts">
-                      <button className="act" title="Open" onClick={(e) => { e.stopPropagation(); navigate(`/modelling/degradation/${m.id}`); }}>
-                        <OpenIcon />
-                      </button>
-                      <button className="act del" title="Delete" onClick={(e) => { e.stopPropagation(); onDelete(m); }}>
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  </td>
+          <div className="lib">
+            <table className="lib-table">
+              <thead>
+                <tr>
+                  <th style={{ width: "36%" }}>Model</th>
+                  <th>Path</th>
+                  <th className="lib-opt" style={{ width: 110 }}>Threshold</th>
+                  <th className="lib-opt" style={{ width: 80 }}>Items</th>
+                  <th className="lib-opt" style={{ width: 90 }}>Tracked</th>
+                  <th className="lib-opt">Saved</th>
+                  <th><span className="sr-only">Actions</span></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                <SampleGroups rows={visible} cols={7} render={(m) => (
+                  <tr key={m.id} className="lib-row" onClick={() => open(m.id)}>
+                    <td>
+                      <div className="lib-name">
+                        {itemName(m)}
+                        {m.shared_by && <Chip title={`Shared by ${m.shared_by}`}>Shared</Chip>}
+                      </div>
+                    </td>
+                    <td>{m.path_model || "—"}</td>
+                    <td className="lib-n lib-opt">{m.threshold}{m.measurement_unit ? ` ${m.measurement_unit}` : ""}</td>
+                    <td className="lib-n lib-opt">{m.n_units}</td>
+                    <td className="lib-n lib-opt">{m.n_items}</td>
+                    <td className="lib-date lib-opt">{relativeTime(m.updated_at || m.created_at)}</td>
+                    <RowActions item={m} onOpen={() => open(m.id)} onDelete={() => onDelete(m)} />
+                  </tr>
+                )} />
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {modalOpen && (

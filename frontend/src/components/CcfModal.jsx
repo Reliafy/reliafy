@@ -70,7 +70,7 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
         {pct}% of each component's failures are shared-cause — they take out all{" "}
         {n} at once; the remaining {100 - pct}% are independent. Higher β erodes
         the benefit of the redundancy.{" "}
-        <button type="button" className="link-btn" onClick={() => openGuide("common-cause-group")}>
+        <button type="button" className="link" onClick={() => openGuide("common-cause-group")}>
           How do I use this?
         </button>
       </p>

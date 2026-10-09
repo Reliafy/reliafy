@@ -1,3 +1,4 @@
+import Chip from "../components/ui/Chip.jsx";
 // Placeholder view for features that aren't built yet.
 export default function ComingSoon({ title, subtitle, description }) {
   return (
@@ -9,7 +10,7 @@ export default function ComingSoon({ title, subtitle, description }) {
         </div>
       </header>
       <div className="card empty">
-        <span className="soon-badge">Coming soon</span>
+        <Chip tone="accent" style={{ marginBottom: 16 }}>Coming soon</Chip>
         <h2>{title} aren’t available yet</h2>
         <p>{description}</p>
       </div>

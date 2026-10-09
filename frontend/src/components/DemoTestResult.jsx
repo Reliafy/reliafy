@@ -1,24 +1,21 @@
+import { useEffect, useRef, useState } from "react";
 import Plot from "./Plot.jsx";
+import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
+import { formatNumber, formatWithUnit } from "../format.js";
+import { unitInText } from "./unitText.js";
+import { ACCENT, COLORWAY, DANGER, INK, SUCCESS, SURFACE, fitLine, optimumMarker, sentence } from "../plotTheme.js";
 
-// Series colours by allowed failures (fixed order, never cycled); a fifth
-// column — the plan's own failures when above 3 — is slate.
-const SERIES = ["#0284c7", "#d97706", "#7c3aed", "#db2777", "#475569"];
-
-// A number for display: 3 significant figures, thousands separators from
-// 1,000 (the backend's fmt_num).
-export function fmtNum(v) {
-  if (v == null || !Number.isFinite(Number(v))) return "—";
-  const n = Number(v);
-  if (n === 0) return "0";
-  if (Math.abs(n) < 1e-3 || Math.abs(n) >= 1e9) return n.toPrecision(3);
-  const r = Number(n.toPrecision(3));
-  if (Math.abs(r) >= 1000) return Math.round(n).toLocaleString("en-US");
-  return String(r);
-}
+// Series colours by allowed failures: the theme's order, never cycled (there
+// are at most five columns).
+const SERIES = COLORWAY;
 
 const pct = (p, dp = 1) => (p == null ? "—" : `${(p * 100).toFixed(dp).replace(/\.0+$/, "")}%`);
+// An input percentage as given: 0.999 → "99.9%", never rounded up to 100%.
+const pctIn = (p) => (p == null ? "—" : `${Number((p * 100).toFixed(4))}%`);
 const failuresLabel = (f) => `${f} failure${f === 1 ? "" : "s"}`;
-const OC_POINT_COLOURS = { Target: "#dc2626", "Good design": "#16a34a" };
+// The target is where the consumer's risk is read (red), the good design the
+// producer's (green).
+const OC_POINT_COLOURS = { Target: DANGER, "Good design": SUCCESS };
 
 // The test's operating characteristic (#223): the chance of passing against
 // the design's true reliability (or MTBF), with the target and the good
@@ -31,16 +28,13 @@ function OcCurve({ result }) {
   const xs = isMtbf ? oc.x : oc.x.map((x) => x * 100);
   const xFmt = isMtbf ? "%{x:,.4~g}" : "%{x:.4~g}%";
   const traces = [
-    {
-      type: "scatter",
-      mode: "lines",
+    fitLine({
       name: "Chance of passing",
       showlegend: false,
       x: xs,
       y: oc.pass_probability,
-      line: { color: "#0284c7", width: 2.5 },
       hovertemplate: `${xFmt}: passes %{y:.1%}<extra></extra>`,
-    },
+    }),
     ...(oc.points || []).map((pt) => ({
       type: "scatter",
       mode: "markers",
@@ -48,60 +42,114 @@ function OcCurve({ result }) {
       x: [isMtbf ? pt.x : pt.x * 100],
       y: [pt.pass_probability],
       cliponaxis: false,
-      marker: { size: 11, color: OC_POINT_COLOURS[pt.label] || "#334155", line: { color: "#ffffff", width: 2 } },
+      marker: { size: 11, color: OC_POINT_COLOURS[pt.label] || INK, line: { color: SURFACE, width: 2 } },
       hovertemplate: `${pt.label}: ${xFmt}, passes %{y:.1%}<extra></extra>`,
     })),
   ];
   const layout = {
-    autosize: true,
     height: 360,
-    margin: { l: 70, r: 20, t: 16, b: 56 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "#ffffff",
-    font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
     showlegend: true,
-    legend: { orientation: "h", y: -0.3, yanchor: "top" },
     xaxis: {
-      title: { text: isMtbf ? `true MTBF${u}` : "true reliability over one mission (%)", standoff: 12 },
-      gridcolor: "#e2e8f0",
-      zeroline: false,
+      title: { text: isMtbf ? `True MTBF${u}` : "True reliability over one mission (%)" },
       nticks: 7,
-      automargin: true,
     },
     yaxis: {
-      title: { text: "chance of passing", standoff: 12 },
+      title: { text: "Chance of passing" },
       range: [0, 1.04],
       tickformat: ".0%",
-      gridcolor: "#e2e8f0",
-      zeroline: false,
     },
   };
   return (
     <>
       <h3 className="demo-h">Operating characteristic</h3>
-      <p className="muted-line">
+      <p className="rs-note">
         The chance a design passes this test against its true {isMtbf ? "MTBF" : "reliability"}. At the target it
         is the consumer’s risk; one minus it at the good design is the producer’s risk.
       </p>
-      <Plot
-        data={traces}
-        layout={layout}
-        config={{ displayModeBar: false, responsive: true }}
-        style={{ width: "100%" }}
-        useResizeHandler
-      />
+      <WhenShown>
+        <Plot data={traces} layout={layout} />
+      </WhenShown>
     </>
   );
 }
 
+// Mounts its children once it has a width: a chart folded under Details is
+// drawn when the fold opens, at the right size.
+function WhenShown({ children }) {
+  const ref = useRef(null);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || shown) return undefined;
+    if (typeof ResizeObserver === "undefined") { setShown(true); return undefined; }
+    const ro = new ResizeObserver(() => { if (el.offsetWidth > 0) setShown(true); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [shown]);
+  return <div ref={ref}>{shown && children}</div>;
+}
+
+// The plan in one sentence (#311): "Test 15 units for 100,000 cycles each;
+// pass if ≤ 3 fail."
+function planSentence(result, unit) {
+  const r = result.failures;
+  const time = (v) => <b>{formatWithUnit(v, unit)}</b>;
+  if (result.method === "mtbf") {
+    const pass = r === 0 ? <>pass with <b>no</b> failures</> : <>pass with <b>≤ {r}</b> failure{r === 1 ? "" : "s"}</>;
+    return result.units ? (
+      <>Test <b>{formatNumber(result.units, { sig: 7 })} units</b> for {time(result.test_time_per_unit)} each
+        ({formatWithUnit(result.total_test_time, unit)} in total); {pass}.</>
+    ) : (
+      <>Run {time(result.total_test_time)} of total test time; {pass}.</>
+    );
+  }
+  const n = <b>{formatNumber(result.units, { sig: 7 })} unit{result.units === 1 ? "" : "s"}</b>;
+  const each = result.test_time_per_unit != null
+    ? time(result.test_time_per_unit)
+    : result.test_multiple === 1
+    ? <b>one mission</b>
+    : <b>{formatNumber(result.test_multiple)}× the mission</b>;
+  const pass = r === 0 ? <>pass if <b>none</b> fail</> : <>pass if <b>≤ {r}</b> fail</>;
+  return <>Test {n} for {each} each; {pass}.</>;
+}
+
+// What the plan demonstrates, and its two risks, as one muted line.
+function planNote(result, unit) {
+  const conf = pctIn(result.confidence);
+  const target = result.method === "mtbf"
+    ? `MTBF ≥ ${formatWithUnit(result.mtbf, unit)}`
+    : result.mission_time != null
+    ? `≥ ${pctIn(result.reliability)} reliability over ${formatWithUnit(result.mission_time, unit)}`
+    : `≥ ${pctIn(result.reliability)} mission reliability`;
+  let risks = "";
+  if (result.consumer_risk != null) {
+    risks = ` A design at the target still passes ${pct(result.consumer_risk)} of the time`;
+    if (result.pass_probability != null) {
+      const good = result.method === "mtbf"
+        ? `an MTBF of ${formatWithUnit(result.design_mtbf, unit)}`
+        : `${pctIn(result.design_reliability)} reliability`;
+      risks += `; one with ${good} fails ${pct(result.producer_risk ?? 1 - result.pass_probability)}`;
+    }
+    risks += ".";
+  }
+  const shape = result.method !== "mtbf" && result.test_multiple !== 1 && result.shape != null
+    ? `, assuming a Weibull shape of ${formatNumber(result.shape)}`
+    : "";
+  return `Shows ${target} at ${conf} confidence${shape}.${risks}`;
+}
+
 // Presentational renderer for a demonstration-test plan — used by the live
 // tool, saved analyses and the public link (stored payload, no refetch).
-export default function DemoTestResult({ result }) {
-  const u = result.unit ? ` ${result.unit}` : "";
+// Answer first (#311): the plan in a sentence with three tiles and its risks
+// in one muted line (#313: said once), the trade-off chart, then the
+// trade-off table, operating characteristic and assumptions under Details.
+// ``actions`` (the live tool's Save) sits with the answer.
+export default function DemoTestResult({ result, actions = null }) {
+  const unit = result.unit ? unitInText(result.unit) : "";
   const t = result.tradeoff || { failures: [], rows: [] };
   const isMtbf = result.method === "mtbf";
   const isUnitsCell = t.solve_for === "units";
-  const cell = (v) => (v == null ? "—" : isUnitsCell ? Number(v).toLocaleString("en-US") : fmtNum(v));
+  const cell = (v) => (v == null ? "—" : formatNumber(v, { sig: isUnitsCell ? 7 : 3 }));
   const planCol = t.failures.indexOf(result.failures);
 
   // Chart: one line per allowed-failures count against test length (or
@@ -117,38 +165,24 @@ export default function DemoTestResult({ result }) {
       name: failuresLabel(f),
       x: lineRows.map((r) => r.x),
       y: lineRows.map((r) => r.values[j]),
-      line: { color: SERIES[Math.min(j, SERIES.length - 1)], width: 2 },
-      marker: { size: 8, color: SERIES[Math.min(j, SERIES.length - 1)] },
+      line: { color: SERIES[j], width: 2 },
+      marker: { size: 7, color: SERIES[j] },
       connectgaps: false,
       hovertemplate: `%{x:,.4~g}: %{y:,.4~g}<extra>${failuresLabel(f)}</extra>`,
     }));
     const sel = lineRows.find((r) => r.selected);
     if (sel && planCol >= 0 && sel.values[planCol] != null) {
-      traces.push({
-        type: "scatter",
-        mode: "markers",
+      traces.push(optimumMarker({
         name: "This plan",
         x: [sel.x],
         y: [sel.values[planCol]],
-        marker: { size: 13, symbol: "diamond", color: "#16a34a", line: { color: "#ffffff", width: 2 } },
+        marker: { size: 12 },
         hovertemplate: "This plan: %{y:,.4~g}<extra></extra>",
-      });
+      }));
     }
     layoutAxes = {
-      xaxis: {
-        title: { text: t.x_label, standoff: 12 },
-        gridcolor: "#e2e8f0",
-        zeroline: false,
-        tickangle: 0,
-        nticks: 6,
-        automargin: true,
-      },
-      yaxis: {
-        title: { text: t.value_label, standoff: 12 },
-        gridcolor: "#e2e8f0",
-        rangemode: "tozero",
-        zeroline: false,
-      },
+      xaxis: { title: { text: sentence(t.x_label) } },
+      yaxis: { title: { text: sentence(t.value_label) }, rangemode: "tozero" },
     };
   } else {
     const row = t.rows.find((r) => r.selected) || t.rows[0];
@@ -158,7 +192,8 @@ export default function DemoTestResult({ result }) {
           x: t.failures.map((f) => String(f)),
           y: row.values,
           marker: {
-            color: t.failures.map((f) => (f === result.failures ? "#0284c7" : "#93c5fd")),
+            // This plan's bar is the accent; the alternatives a tint of it.
+            color: t.failures.map((f) => (f === result.failures ? ACCENT : "rgba(47, 109, 246, 0.35)")),
           },
           text: row.values.map(cell),
           textposition: "outside",
@@ -168,111 +203,97 @@ export default function DemoTestResult({ result }) {
         }]
       : [];
     layoutAxes = {
-      xaxis: { title: { text: "allowed failures", standoff: 12 }, type: "category" },
-      yaxis: { title: { text: t.value_label, standoff: 12 }, gridcolor: "#e2e8f0", rangemode: "tozero", zeroline: false },
+      xaxis: { title: { text: "Allowed failures" }, type: "category" },
+      yaxis: { title: { text: sentence(t.value_label) }, rangemode: "tozero" },
     };
   }
   const layout = {
-    autosize: true,
     height: 340,
-    margin: { l: 70, r: 20, t: 24, b: 60 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "#ffffff",
-    font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
     showlegend: asLines,
-    legend: { orientation: "h", y: -0.3, yanchor: "top" },
     bargap: 0.45,
     ...layoutAxes,
   };
 
-  const stats = isMtbf
-    ? [
-        [fmtNum(result.total_test_time), `total test time${u}`],
-        ...(result.units ? [[fmtNum(result.test_time_per_unit), `per unit (${result.units} units)${u}`]] : []),
-        [fmtNum(result.mtbf), `MTBF to show${u}`],
-        [String(result.failures), "failures allowed"],
-      ]
-    : [
-        [Number(result.units).toLocaleString("en-US"), result.solve_for === "test_time" ? "units on test" : "units to test"],
-        [
-          result.test_time_per_unit != null ? fmtNum(result.test_time_per_unit) : `${fmtNum(result.test_multiple)}×`,
-          result.test_time_per_unit != null ? `test time per unit${u}` : "missions per unit",
-        ],
-        [String(result.failures), "failures allowed"],
-        [pct(result.demonstrated_reliability, 2), "reliability shown"],
-      ];
-  if (result.pass_probability != null) {
-    // Both risks (#223); a plan saved before them has only the pass chance.
-    const producer = result.producer_risk ?? 1 - result.pass_probability;
-    const target = result.producer_risk_target;
-    stats.push([pct(result.consumer_risk), `consumer’s risk (≤ ${pct(1 - result.confidence)})`]);
-    stats.push([pct(producer), target != null ? `producer’s risk (≤ ${pct(target)})` : "producer’s risk"]);
-  }
+  const timeEach = result.test_time_per_unit != null
+    ? formatWithUnit(result.test_time_per_unit, unit)
+    : isMtbf
+    ? null
+    : result.test_multiple === 1
+    ? "1 mission"
+    : `${formatNumber(result.test_multiple)} missions`;
+  const stats = [
+    result.units
+      ? { label: "Units", value: formatNumber(result.units, { sig: 7 }) }
+      : { label: "Total test time", value: formatWithUnit(result.total_test_time, unit) },
+    timeEach && { label: "Time each", value: timeEach },
+    { label: "Failures allowed", value: String(result.failures) },
+  ].filter(Boolean);
+
+  // The risks are in the note line; the assumptions keep the rest.
+  const assumptions = (result.assumptions || []).filter((a) => !/the (consumer|producer)['’]s risk[,)]/.test(a));
+  const details = [
+    !isMtbf && { label: "Reliability shown", value: pct(result.demonstrated_reliability, 2) },
+    result.units && result.total_test_time != null && {
+      label: "Total test time", value: formatWithUnit(result.total_test_time, unit),
+    },
+    isMtbf && { label: "MTBF to show", value: formatWithUnit(result.mtbf, unit) },
+  ].filter(Boolean);
 
   return (
     <>
-      <div className="strategy-reco">
-        <span className="strategy-reco-icon">✓</span>
-        <span>{result.summary}</span>
-      </div>
+      <ResultSummary tone="neutral" sentence={planSentence(result, unit)} stats={stats}>
+        {planNote(result, unit)}
+      </ResultSummary>
+      {actions && <div className="rs-actions">{actions}</div>}
 
-      <div className="params">
-        {stats.map(([v, name]) => (
-          <div className="stat" key={name}>
-            <div className="value">{v}</div>
-            <div className="name">{name}</div>
-          </div>
-        ))}
-      </div>
+      <Plot data={traces} layout={layout} />
 
-      <h3 className="demo-h">Trade-off</h3>
-      <div className="demo-table-wrap">
-        <table className="calc-table strategy-table">
-          <thead>
-            <tr>
-              <th>{t.row_label || t.value_label}</th>
-              {t.failures.map((f) => (
-                <th key={f}>{failuresLabel(f)}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {t.rows.map((r) => (
-              <tr key={r.label} className={r.selected ? "demo-selected" : ""}>
-                <td className="calc-row-label">{r.label}</td>
-                {r.values.map((v, j) => (
-                  <td key={j} className={r.selected && j === planCol ? "strategy-best" : ""}>
-                    {cell(v)}
-                  </td>
+      <ResultDetails rows={details}>
+        <h3 className="demo-h">Trade-off</h3>
+        <div className="demo-table-wrap">
+          <table className="calc-table strategy-table">
+            <thead>
+              <tr>
+                <th>{t.row_label || t.value_label}</th>
+                {t.failures.map((f) => (
+                  <th key={f}>{failuresLabel(f)}</th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {t.row_label && (
-        <p className="muted-line">
-          Cells: {t.value_label.charAt(0).toLowerCase() + t.value_label.slice(1)}. The highlighted
-          cell is this plan.
-        </p>
-      )}
+            </thead>
+            <tbody>
+              {t.rows.map((r) => (
+                <tr key={r.label} className={r.selected ? "demo-selected" : ""}>
+                  <td className="calc-row-label">{r.label}</td>
+                  {r.values.map((v, j) => (
+                    <td key={j} className={r.selected && j === planCol ? "strategy-best" : ""}>
+                      {cell(v)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {t.row_label && (
+          <p className="rs-note">
+            Cells: {t.value_label.charAt(0).toLowerCase() + t.value_label.slice(1)}. The highlighted
+            cell is this plan.
+          </p>
+        )}
 
-      <Plot
-        data={traces}
-        layout={layout}
-        config={{ displayModeBar: false, responsive: true }}
-        style={{ width: "100%" }}
-        useResizeHandler
-      />
+        <OcCurve result={result} />
 
-      <OcCurve result={result} />
-
-      <h3 className="demo-h">Assumptions</h3>
-      <ul className="demo-assumptions">
-        {(result.assumptions || []).map((a) => (
-          <li key={a}>{a}</li>
-        ))}
-      </ul>
+        {assumptions.length > 0 && (
+          <>
+            <h3 className="demo-h">Assumptions</h3>
+            <ul className="demo-assumptions">
+              {assumptions.map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </ResultDetails>
     </>
   );
 }

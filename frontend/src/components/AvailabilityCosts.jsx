@@ -39,7 +39,7 @@ export function DowntimeSplit({ result, unit }) {
   return (
     <div className="rbd-avail-nodes rbd-downtime-split">
       <div className="ds-section-h">
-        Downtime: failures vs maintenance {basisTag(d.basis)}
+        Downtime: failures vs maintenance
       </div>
       {[
         ["Failures", d.failures, "Unplanned: failures, including the time a hidden failure lies undetected until a proof test."],

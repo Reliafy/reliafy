@@ -6,8 +6,9 @@
 // fitted from the same log, ready to put on the blocks.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
+import { ACCENT, CATEGORY, DANGER, GRID } from "../plotTheme.js";
 import Select from "./Select.jsx";
-import RbdEmptyState from "./RbdEmptyState.jsx";
+import RbdEmptyState, { TabEmptyState } from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
 import {
   deleteOutageLog,
@@ -20,6 +21,7 @@ import {
 } from "../api.js";
 import "./OutageHistory.css";
 import { unitInText } from "./unitText.js";
+import Chip from "./ui/Chip.jsx";
 
 const FIELDS = [
   { key: "asset", label: "Asset", help: "The block (its label or id) each outage belongs to", req: true },
@@ -40,8 +42,8 @@ function unitSeconds(unit) {
   return UNIT_SECONDS[key] || null;
 }
 
-const FAIL = "#d0473a";
-const PLANNED = "#e0a030";
+const FAIL = DANGER;
+const PLANNED = CATEGORY.amber;
 
 function fmt(v, digits = 4) {
   if (v == null || !Number.isFinite(Number(v))) return "—";
@@ -335,7 +337,7 @@ function TimelineChart({ history, labels }) {
       name: "System",
       x: history.series.t.map(toX),
       y: history.series.up,
-      line: { shape: "hv", color: "#2f6df6", width: 2 },
+      line: { shape: "hv", color: ACCENT, width: 2 },
       hovertemplate: "%{y:.0f}<extra>System up (1) / down (0)</extra>",
       xaxis: "x",
       yaxis: "y2",
@@ -352,43 +354,34 @@ function TimelineChart({ history, labels }) {
       <Plot
         data={data}
         layout={{
-          autosize: true,
           height,
           margin: { l: 20, r: 12, t: 28, b: 36 },
-          paper_bgcolor: "rgba(0,0,0,0)",
-          plot_bgcolor: "rgba(0,0,0,0)",
           barmode: "overlay",
           bargap: 0.3,
           showlegend: true,
-          legend: { orientation: "h", x: 0, y: 1.0, yanchor: "bottom", font: { size: 11 } },
           xaxis: {
             type: dated ? "date" : "linear",
-            title: dated ? undefined : `Time (${unit || "diagram unit"})`,
+            title: dated ? undefined : { text: `Time (${unit || "diagram unit"})` },
             range: [toX(w0), toX(history.window.end)],
-            gridcolor: "#eef1f5",
-            zeroline: false,
+            // A timeline: the time grid helps read when; the rows need none.
+            showgrid: true,
+            gridcolor: GRID,
           },
           yaxis: {
             domain: [0, rows > 0 ? 0.74 : 0],
             categoryorder: "array",
             categoryarray: order.map((id) => labels[id] || id),
-            automargin: true,
-            gridcolor: "#f4f5f7",
+            showgrid: false,
           },
           yaxis2: {
             domain: [0.8, 1],
-            automargin: true,
             range: [-0.15, 1.15],
             tickvals: [0, 1],
             ticktext: ["Down", "Up"],
-            gridcolor: "#f4f5f7",
-            zeroline: false,
-            title: { text: "System", font: { size: 11 } },
+            showgrid: false,
+            title: { text: "System" },
           },
         }}
-        useResizeHandler
-        style={{ width: "100%" }}
-        config={{ displayModeBar: false, responsive: true }}
       />
     </div>
   );
@@ -420,8 +413,8 @@ function OutageTable({ history }) {
                 <td>{o.start_at ? when(o.start_at) : fmt(o.start, 6)}</td>
                 <td>
                   {fmt(o.duration)}
-                  {o.ongoing && <span className="outage-tag">still down</span>}
-                  {o.planned && <span className="outage-tag planned">planned</span>}
+                  {o.ongoing && <Chip tone="danger" style={{ marginLeft: 6 }}>Still down</Chip>}
+                  {o.planned && <Chip style={{ marginLeft: 6 }}>Planned</Chip>}
                 </td>
                 <td className="calc-row-label"><b>{o.cause_label}</b></td>
                 <td>{o.down_with_labels.join(", ") || "—"}</td>
@@ -629,8 +622,14 @@ function HistoryView({ history, labels }) {
   );
 }
 
-export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels, onBuild }) {
+// What the tab does, in one line (its empty states lead with it).
+const OUTAGE_TITLE = "Outage history: the diagram's observed availability, from a log of real outages";
+
+// ``onSave`` saves an unsaved diagram; ``onSaveCopy`` saves a copy of a
+// sample (whose logs can't be kept on it).
+export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels, onBuild, onSave = null, onSaveCopy = null }) {
   const [logs, setLogs] = useState(null);
+  const [sample, setSample] = useState(false); // a shared sample: no logs of its own
   const [activeId, setActiveId] = useState(null);
   const [history, setHistory] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -652,10 +651,12 @@ export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels, o
     setError(null);
     try {
       const r = await listOutageLogs(rbdId);
+      setSample(false);
       setLogs(r.logs);
       setActiveId((cur) => (cur && r.logs.some((l) => l.id === cur) ? cur : r.logs[0]?.id || null));
     } catch (err) {
-      setError(err.message);
+      if (err.code === "sample") setSample(true);
+      else setError(err.message);
       setLogs([]);
     }
   }, [rbdId]);
@@ -680,10 +681,21 @@ export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels, o
   }
   if (!rbdId) {
     return (
-      <div className="outage-empty card note">
-        <b>Save the diagram first.</b> An outage log is kept with a saved diagram: its assets are matched to the
-        blocks, and the outages are merged through the diagram's structure.
-      </div>
+      <TabEmptyState
+        title={OUTAGE_TITLE}
+        need="A log is kept with a saved diagram: save this one first."
+        action={onSave && { label: "Save…", onClick: onSave }}
+      />
+    );
+  }
+  // A shared sample keeps no logs: a neutral next step, not an error.
+  if (sample) {
+    return (
+      <TabEmptyState
+        title={OUTAGE_TITLE}
+        need="This is a shared sample: logs go on your own diagrams, so save a copy of it to import one."
+        action={onSaveCopy && { label: "Save a copy", onClick: onSaveCopy }}
+      />
     );
   }
   if (error && !logs?.length) return <div className="error">{error}</div>;

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getAdminEmailCampaigns, getAdminStats, getAdminTraffic } from "../api.js";
 import Select from "../components/Select.jsx";
 import UsageSection from "../components/UsageSection.jsx";
+import { CardHeader } from "../components/ui/Card.jsx";
 
 const LABELS = {
   datasets: "Datasets",
@@ -164,12 +165,14 @@ export default function AdminPage() {
       </div>
 
       <div className="card" style={{ marginTop: "1rem" }}>
-        <div className="bill-head">
-          <h2 style={{ margin: 0 }}>Traffic</h2>
-          <div style={{ width: 170 }}>
-            <Select value={days} onChange={setDays} options={RANGES} />
-          </div>
-        </div>
+        <CardHeader
+          title="Traffic"
+          actions={
+            <div style={{ width: 170 }}>
+              <Select value={days} onChange={setDays} options={RANGES} />
+            </div>
+          }
+        />
         {!traffic ? (
           <p className="muted-line">Loading…</p>
         ) : traffic.pageviews === 0 ? (

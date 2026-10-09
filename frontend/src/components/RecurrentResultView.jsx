@@ -1,20 +1,26 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
+import { DATA_INK, NEUTRAL_BAND_FILL, band, dataPoints, fitLine } from "../plotTheme.js";
 import RecurrentCalculator from "./RecurrentCalculator.jsx";
 import { unitInText } from "./unitText.js";
+import ResultSummary from "./ui/ResultSummary.jsx";
+import { formatNumber } from "../format.js";
 
 const fmt = (v, d = 2) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: d });
 // Significant figures, for rates and intervals that can be very small.
-const sig = (v, n = 4) =>
-  v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumSignificantDigits: n });
-const ciText = (ci, n = 3) => (ci ? `[${sig(ci[0], n)}, ${sig(ci[1], n)}]` : null);
+const sig = (v, n = 4) => formatNumber(v, { sig: n });
+const ciText = (ci, n = 3) => (ci ? `${sig(ci[0], n)}–${sig(ci[1], n)}` : null);
+// Plain names for the power-law parameters.
+const PARAM_LABEL = { alpha: "Scale α", beta: "Shape β" };
 const pText = (p) => (p < 0.001 ? "p < 0.001" : `p = ${sig(p, 2)}`);
 
+// ``summary``: the answer card's tone — green for the good verdict, amber
+// for the one to act on.
 const GROWTH = {
-  improving: { label: "Improving", note: "failures are slowing", cls: "health-green" },
-  stable: { label: "Stable", note: "no clear trend in the failure rate", cls: "health-grey" },
-  deteriorating: { label: "Deteriorating", note: "failures are accelerating", cls: "health-red" },
+  improving: { label: "Improving", note: "failures are slowing", summary: "good" },
+  stable: { label: "Stable", note: "no clear trend in the failure rate", summary: "neutral" },
+  deteriorating: { label: "Deteriorating", note: "failures are accelerating", summary: "caveat" },
 };
 
 // Why the verdict is what it is (#81): β's 95% interval against 1 (a slope
@@ -27,7 +33,7 @@ function basisText(b) {
   if (b.ci) {
     const [lo, hi] = b.ci;
     const where = lo > nul ? `wholly above ${nul}` : hi < nul ? `wholly below ${nul}` : `includes ${nul}`;
-    return `${sym}'s 95% interval ${ciText(b.ci)} ${where}`;
+    return `${sym}'s 95% interval, ${ciText(b.ci)}, ${where}`;
   }
   return `${sym} = ${sig(b.estimate)} (no interval — the value decides)`;
 }
@@ -39,11 +45,11 @@ const TABS = [
 ];
 
 // A fitted recurrent-event (repairable-system) model, laid out like the life-
-// data result view: a tabbed panel with the mean-cumulative-function plot (plus
-// a parameter side-rail) and a "Trend & fit" detail tab, and a growth verdict
-// footer. Handles both data fits and models built from parameters (no observed
-// step, trend tests, bounds or goodness of fit).
-export default function RecurrentResultView({ results }) {
+// data result view (#311): the growth verdict and four tiles first, then the
+// mean-cumulative-function plot, the calculator and a "Trend & fit" tab with
+// the parameters, intervals and tests. Handles both data fits and models built
+// from parameters (no observed step, trend tests, bounds or goodness of fit).
+export default function RecurrentResultView({ results, name = null }) {
   const r = results || {};
   const [tab, setTab] = useState("mcf");
   const unit = r.unit ? ` ${unitInText(r.unit)}` : "";
@@ -61,41 +67,54 @@ export default function RecurrentResultView({ results }) {
 
   const traces = [];
   if (obs.lower && obs.upper) {
-    traces.push({
+    // The band is on the observed MCF, so it is neutral, like the steps.
+    traces.push(band({
       x: [...obs.x, ...[...obs.x].reverse()],
       y: [...obs.upper, ...[...obs.lower].reverse()],
-      fill: "toself", fillcolor: "rgba(108,114,124,0.12)", line: { width: 0 },
-      hoverinfo: "skip", name: "95% band", type: "scatter",
-    });
+      fillcolor: NEUTRAL_BAND_FILL, name: "95% band",
+    }));
   }
   if (obs.x?.length) {
-    traces.push({
-      x: obs.x, y: obs.mcf, mode: "lines+markers", type: "scatter",
-      line: { color: "#6c727c", width: 1.4, shape: "hv" },
-      marker: { color: "#6c727c", size: 5 }, name: "observed (MCF)",
-    });
+    traces.push(dataPoints({
+      x: obs.x, y: obs.mcf, mode: "lines+markers",
+      line: { color: DATA_INK, width: 1.25, shape: "hv" },
+      marker: { size: 5, line: { width: 0 } }, name: "Observed (MCF)",
+    }));
   }
   if (fit.x) {
-    traces.push({
-      x: fit.x, y: fit.mcf, mode: "lines", type: "scatter",
-      line: { color: "#2f6df6", width: 2 }, name: `${r.model?.name || "fitted"}`,
-    });
+    traces.push(fitLine({ x: fit.x, y: fit.mcf, name: `${r.model?.name || "Fitted"}` }));
   }
 
   const layout = {
-    autosize: true, height: 420,
-    margin: { l: 60, r: 20, t: 20, b: 50 },
-    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-    font: { color: "#6c727c", family: "IBM Plex Mono, monospace", size: 11 },
-    legend: { orientation: "h", y: -0.18 },
-    xaxis: { title: { text: xTitle, standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false, rangemode: "tozero" },
-    yaxis: { title: { text: "Cumulative failures (MCF)", standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false, rangemode: "tozero" },
+    height: 420,
+    xaxis: { title: { text: xTitle }, rangemode: "tozero" },
+    yaxis: { title: { text: "Cumulative failures (MCF)" }, rangemode: "tozero" },
   };
 
   const anyCi = (r.params || []).some((p) => p.ci);
+  const hasBeta = (r.params || []).some((p) => p.name === "beta");
+  const perUnit = r.unit ? ` per ${unitInText(r.unit).replace(/s$/, "")}` : "";
 
   return (
     <>
+      <ResultSummary
+        tone={growth?.summary || "neutral"}
+        sentence={growth
+          ? <><b>{growth.label}</b> — {growth.note}{basis ? `: ${basis}` : ""}.</>
+          : <><b>{r.model?.name || "Recurrent model"}</b> fitted.</>}
+        stats={[
+          r.mtbf != null && {
+            label: `MTBF now${r.unit ? ` (${unitInText(r.unit)})` : ""}`,
+            value: sig(r.mtbf, 3),
+            hint: dm && dm.lower != null
+              ? `at least ${sig(dm.lower, 3)} at ${Math.round((dm.confidence || 0.9) * 100)}% confidence`
+              : null,
+          },
+          r.rocof != null && { label: "Failure rate now", value: sig(r.rocof, 3), hint: perUnit.trim() || null },
+          r.n_systems != null && { label: "Systems / failures", value: `${r.n_systems} / ${r.n_events}` },
+          { label: "Model", value: r.model?.name || "—" },
+        ]}
+      />
       <div className="tabs">
         {TABS.map((tb) => (
           <button
@@ -113,64 +132,53 @@ export default function RecurrentResultView({ results }) {
           <div className="detail-panel">
             <div className="plotwrap">
               <div className="plottitle">{r.model?.name || "Recurrent"} — mean cumulative function</div>
-              <Plot data={traces} layout={layout} config={{ displayModeBar: true, responsive: true }} style={{ width: "100%" }} useResizeHandler />
-            </div>
-            <div className="aside">
-              {(r.params || []).length > 0 && (
-                <div className="gof-card">
-                  <div className="gofh">Parameters</div>
-                  {r.params.map((p) => (
-                    <div className="gofr" key={p.name}>
-                      <span className="gk">{p.name}</span>
-                      <span className="gv-col">
-                        <span className="gv">{sig(p.value)}</span>
-                        {p.ci && <span className="param-ci">95% CI {ciText(p.ci)}</span>}
-                      </span>
-                    </div>
-                  ))}
-                  {r.beta != null && (
-                    <div className="gofr">
-                      <span className="gk">β (shape)</span>
-                      <span className="gv-col">
-                        <span className="gv">{sig(r.beta)}</span>
-                        {r.beta_ci && <span className="param-ci">95% CI {ciText(r.beta_ci)}</span>}
-                      </span>
-                    </div>
-                  )}
-                  {anyCi && (
-                    <p className="param-ci-note" style={{ padding: "0 16px 10px" }}>
-                      95% intervals from the fit's observed information.
-                    </p>
-                  )}
-                </div>
-              )}
-              <div className="detail-note">
+              <Plot data={traces} layout={layout} download={`${name || r.model?.name || "Recurrent model"} — mean cumulative function`} />
+              <p className="plot-caption">
                 {r.n_systems != null
-                  ? <>Fitted to <b>{r.n_events} events</b> across {r.n_systems} systems. The step is the observed MCF (95% band); the line is the fitted {r.model?.name || "model"}.</>
-                  : <>Built from parameters — the line is the fitted {r.model?.name || "model"}; there's no observed data.</>}
-              </div>
+                  ? <>Fitted to {r.n_events} failures across {r.n_systems} systems: the step is the observed MCF with its 95% band, the line the fitted {r.model?.name || "model"}.</>
+                  : <>Built from parameters: the line is the {r.model?.name || "model"}; there's no observed data.</>}
+              </p>
             </div>
           </div>
         )}
 
-        {tab === "calc" && <RecurrentCalculator r={r} />}
+        {tab === "calc" && <RecurrentCalculator r={r} name={name} />}
 
         {tab === "detail" && (
           <div className="detail-panel" style={{ flexWrap: "wrap", alignItems: "flex-start" }}>
+            {(r.params || []).length > 0 && (
+              <div className="gof-card rec-detail-card">
+                <div className="gofh">Parameters</div>
+                {r.params.map((p) => (
+                  <div className="gofr" key={p.name}>
+                    <span className="gk">{PARAM_LABEL[p.name] || p.name}{p.name === "alpha" && r.unit ? ` (${unitInText(r.unit)})` : ""}</span>
+                    <span className="gv-col">
+                      <span className="gv">{sig(p.value)}</span>
+                      {p.ci && <span className="param-ci">95% {ciText(p.ci)}</span>}
+                    </span>
+                  </div>
+                ))}
+                {r.beta != null && !hasBeta && (
+                  <div className="gofr">
+                    <span className="gk">Shape β</span>
+                    <span className="gv-col">
+                      <span className="gv">{sig(r.beta)}</span>
+                      {r.beta_ci && <span className="param-ci">95% {ciText(r.beta_ci)}</span>}
+                    </span>
+                  </div>
+                )}
+                {anyCi && (
+                  <p className="param-ci-note">95% intervals from the fit's observed information.</p>
+                )}
+              </div>
+            )}
             <div className="gof-card rec-detail-card">
               <div className="gofh">Rates{at != null ? ` at ${fmt(at, 1)}${unit}` : ""}</div>
-              <div className="gofr">
-                <span className="gk">Reliability growth</span>
-                <span className="gv-col">
-                  <span className="gv">{growth ? <span className={`health-badge ${growth.cls}`}>{growth.label}</span> : "—"}</span>
-                  {basis && <span className="param-ci">{basis}</span>}
-                </span>
-              </div>
               <div className="gofr">
                 <span className="gk" title="1 ÷ the failure rate at the end of observation. If the system is deteriorating this is below the average over the test.">MTBF now (end of test)</span>
                 <span className="gv-col">
                   <span className="gv">{fmt(r.mtbf, 1)}{unit}</span>
-                  {r.mtbf_ci && <span className="param-ci">95% CI {ciText(r.mtbf_ci)}</span>}
+                  {r.mtbf_ci && <span className="param-ci">95% {ciText(r.mtbf_ci)}</span>}
                 </span>
               </div>
               {dm && dm.lower != null && (
@@ -186,7 +194,7 @@ export default function RecurrentResultView({ results }) {
                 <span className="gk">ROCOF</span>
                 <span className="gv-col">
                   <span className="gv">{sig(r.rocof)}</span>
-                  {r.rocof_ci && <span className="param-ci">95% CI {ciText(r.rocof_ci)}</span>}
+                  {r.rocof_ci && <span className="param-ci">95% {ciText(r.rocof_ci)}</span>}
                 </span>
               </div>
               {r.n_systems != null && (
@@ -281,15 +289,6 @@ export default function RecurrentResultView({ results }) {
         )}
       </div>
 
-      {growth && (
-        <div className="result-foot">
-          <p className="verdict-line">
-            <b>{growth.label}</b> — {growth.note}{basis ? ` (${basis})` : ""}. ROCOF {sig(r.rocof)} per{unit || " unit"}
-            {r.mtbf != null ? `, MTBF now ≈ ${fmt(r.mtbf, 1)}${unit}` : ""}
-            {dm && dm.lower != null ? `; demonstrated MTBF now ≥ ${fmt(dm.lower, 1)}${unit} at ${Math.round((dm.confidence || 0.9) * 100)}%` : ""}.
-          </p>
-        </div>
-      )}
     </>
   );
 }

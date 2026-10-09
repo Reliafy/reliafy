@@ -2,19 +2,21 @@ import { useState } from "react";
 import Modal from "./Modal.jsx";
 import { createTrackedItem, addTrackedMeasurement } from "../api.js";
 import { unitInText } from "./unitText.js";
+import Chip from "./ui/Chip.jsx";
+import { CardHeader } from "./ui/Card.jsx";
 
 const fmt = (v, digits = 0) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: digits });
 
 // Health badge from a cached prediction: how worried should the owner be?
 export function healthBadge(pred) {
-  if (!pred || pred.method === "error") return { label: "monitoring", cls: "health-grey" };
-  if ((pred.prob_never_fails ?? 0) > 0.5) return { label: "may never fail", cls: "health-grey" };
+  if (!pred || pred.method === "error") return { label: "Monitoring", tone: "neutral" };
+  if ((pred.prob_never_fails ?? 0) > 0.5) return { label: "May never fail", tone: "neutral" };
   const p = pred.prob_failed;
-  if (p === null || p === undefined) return { label: "estimate", cls: "health-grey" };
-  if (p >= 0.5) return { label: "replace now", cls: "health-red" };
-  if (p >= 0.05) return { label: "plan replacement", cls: "health-amber" };
-  return { label: "healthy", cls: "health-green" };
+  if (p === null || p === undefined) return { label: "Estimate", tone: "neutral" };
+  if (p >= 0.5) return { label: "Replace now", tone: "danger" };
+  if (p >= 0.05) return { label: "Plan replacement", tone: "warning" };
+  return { label: "Healthy", tone: "success" };
 }
 
 export function rulText(pred, unit) {
@@ -37,91 +39,90 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
 
   return (
     <div className="card" style={{ marginTop: "1rem" }}>
-      <div className="bill-head">
-        <h2 style={{ margin: 0 }}>Tracked items</h2>
-        {!(model?.read_only && !model?.is_sample) && (
-        <button onClick={() => setRegistering(true)}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Register item
-        </button>
+      <CardHeader
+        title="Tracked items"
+        subtitle="Your monitored assets. Add measurements as inspections happen — the prediction updates each time."
+        actions={!(model?.read_only && !model?.is_sample) && (
+          <button className="secondary sm" onClick={() => setRegistering(true)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Register item
+          </button>
         )}
-      </div>
-      <p className="muted-line">
-        Your monitored assets. Add measurements as inspections happen — the
-        prediction updates each time.
-      </p>
+      />
 
       {items.length === 0 ? (
         <div className="empty" style={{ padding: "1.6rem" }}>
           <p>No tracked items yet. Register one to get its first prediction.</p>
         </div>
       ) : (
-        <table className="lib-table">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Health</th>
-              <th>Remaining life</th>
-              <th>Predicted crossing</th>
-              <th style={{ width: 90 }}>Readings</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it) => {
-              const badge = healthBadge(it.prediction);
-              const pred = it.prediction || {};
-              return (
-                <tr
-                  key={it.id}
-                  className={"lib-row" + (selectedId === it.id ? " selected-row" : "")}
-                  onClick={() => onSelect(it.id)}
-                >
-                  <td>
-                    <div className="lib-name">
-                      {it.name}
-                      {it.is_sample && <span className="sample-tag">Sample</span>}
-                    </div>
-                  </td>
-                  <td><span className={`health-badge ${badge.cls}`}>{badge.label}</span></td>
-                  <td className="lib-n">{rulText(pred, unit)}</td>
-                  <td className="lib-n">
-                    {pred.failure_time === null || pred.failure_time === undefined
-                      ? "—"
-                      : `${fmt(pred.failure_time)}${unit ? ` ${unitInText(unit)}` : ""}`}
-                  </td>
-                  <td className="lib-n">{it.n_measurements}</td>
-                  <td className="lib-actions">
-                    <div className="lib-acts">
-                      {!(it.read_only ?? it.is_sample) && (
+        <div className="table-scroll">
+          <table className="lib-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Health</th>
+                <th>Remaining life</th>
+                <th>Predicted crossing</th>
+                <th style={{ width: 90 }}>Readings</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => {
+                const badge = healthBadge(it.prediction);
+                const pred = it.prediction || {};
+                return (
+                  <tr
+                    key={it.id}
+                    className={"lib-row" + (selectedId === it.id ? " selected-row" : "")}
+                    onClick={() => onSelect(it.id)}
+                  >
+                    <td>
+                      <div className="lib-name">
+                        {it.name}
+                        {it.is_sample && <Chip>Sample</Chip>}
+                      </div>
+                    </td>
+                    <td><Chip tone={badge.tone}>{badge.label}</Chip></td>
+                    <td className="lib-n">{rulText(pred, unit)}</td>
+                    <td className="lib-n">
+                      {pred.failure_time === null || pred.failure_time === undefined
+                        ? "—"
+                        : `${fmt(pred.failure_time)}${unit ? ` ${unitInText(unit)}` : ""}`}
+                    </td>
+                    <td className="lib-n">{it.n_measurements}</td>
+                    <td className="lib-actions">
+                      <div className="lib-acts">
+                        {!(it.read_only ?? it.is_sample) && (
+                          <button
+                            className="act"
+                            title="Add measurement"
+                            onClick={(e) => { e.stopPropagation(); setMeasuring(it); }}
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 5v14M5 12h14" />
+                            </svg>
+                          </button>
+                        )}
                         <button
-                          className="act"
-                          title="Add measurement"
-                          onClick={(e) => { e.stopPropagation(); setMeasuring(it); }}
+                          className="act del"
+                          title={it.is_sample ? "Hide sample item" : "Delete item"}
+                          onClick={(e) => { e.stopPropagation(); onDelete(it); }}
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 5v14M5 12h14" />
+                            <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
                           </svg>
                         </button>
-                      )}
-                      <button
-                        className="act del"
-                        title={it.is_sample ? "Hide sample item" : "Delete item"}
-                        onClick={(e) => { e.stopPropagation(); onDelete(it); }}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
-                        </svg>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {registering && (

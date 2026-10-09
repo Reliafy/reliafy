@@ -31,7 +31,7 @@ export default function HeroPlot() {
 
   return (
     <svg className="hero-plot" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Weibull probability plot">
-      <text x={padL} y={20} className="hp-title">WEIBULL PROBABILITY PLOT</text>
+      <text x={padL} y={20} className="hp-title">Weibull probability plot</text>
       {yTicks.map(([lab, fy], i) => {
         const y = lerp(y0, y1, fy);
         return (

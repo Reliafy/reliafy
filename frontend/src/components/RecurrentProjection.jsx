@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import Select from "./Select.jsx";
 import { getRecurrentProjection, runRecurrentProjection } from "../api.js";
 import { unitInText } from "./unitText.js";
+import { CardHeader } from "./ui/Card.jsx";
+import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 
 const fmt = (v, d = 4) =>
   v == null || !Number.isFinite(v)
@@ -46,6 +48,7 @@ export default function RecurrentProjection({ modelId, unit }) {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const u = unit ? ` ${unit}` : "";
+  const ut = unit ? unitInText(unit) : "";
   const perUnit = unit ? ` per ${String(unit).replace(/s$/i, "").toLowerCase()}` : " per unit time";
 
   const load = (column) => {
@@ -94,11 +97,15 @@ export default function RecurrentProjection({ modelId, unit }) {
 
   return (
     <div className="strategy-tool growth-projection">
-      <div className="gofh">Reliability growth projection</div>
-      <p className="muted-line" style={{ margin: "0.3rem 0 0.6rem" }}>
-        The MTBF once the fixes found in the test are in (AMSAA-Crow, MIL-HDBK-189C). Mark each failure mode
-        A (not fixed), BD (fixed after the test, with a fix-effectiveness factor) or BC (fixed during it).
-      </p>
+      <CardHeader
+        title="Reliability growth projection"
+        subtitle={
+          <>
+            The MTBF once the fixes found in the test are in (AMSAA-Crow, MIL-HDBK-189C). Mark each failure mode
+            A (not fixed), BD (fixed after the test, with a fix-effectiveness factor) or BC (fixed during it).
+          </>
+        }
+      />
 
       {!view.available ? (
         <p className="hint">{view.reason}</p>
@@ -196,42 +203,43 @@ export default function RecurrentProjection({ modelId, unit }) {
 
       {result && (
         <>
-          {(result.basis_note || view.basis_note) && (
-            <p className="hint fleet-alert-warn gp-basis">{result.basis_note || view.basis_note}</p>
-          )}
-          <div className="params gp-mtbfs">
-            <div className="stat">
-              <div className="value">{fmt(result.demonstrated?.mtbf)}</div>
-              <div className="name" title="Total test time ÷ failures: the average over the whole test (MIL-HDBK-189C demonstrated MTBF). The MTBF now, at the end of the test, is on the Rates card.">average MTBF over the test{u}</div>
-            </div>
-            <div className="stat gp-projected">
-              <div className="value">{fmt(result.projected?.mtbf)}</div>
-              <div className="name">projected MTBF{u}</div>
-            </div>
-            <div className="stat">
-              <div className="value">{fmt(result.growth_potential?.mtbf)}</div>
-              <div className="name">growth potential{u}</div>
-            </div>
-          </div>
-          <div className="strategy-reco">
-            <span className="strategy-reco-icon">✓</span>
-            <span>
-              {result.systems} system{result.systems === 1 ? "" : "s"} to T = {fmt(result.T)}{u && ` ${unitInText(unit)}`}:{" "}
+          <ResultSummary
+            tone={result.basis_note || view.basis_note ? "caveat" : "neutral"}
+            sentence={
+              <>
+                With these fixes in, MTBF reaches about <b>{fmt(result.projected?.mtbf)}{ut && ` ${ut}`}</b>.
+              </>
+            }
+            stats={[
+              {
+                label: `Average over the test${u && ` (${unit})`}`,
+                value: fmt(result.demonstrated?.mtbf),
+                hint: "Test time ÷ failures",
+              },
+              { label: `Projected MTBF${u && ` (${unit})`}`, value: fmt(result.projected?.mtbf) },
+              { label: `Growth potential${u && ` (${unit})`}`, value: fmt(result.growth_potential?.mtbf) },
+            ]}
+          >
+            {result.basis_note || view.basis_note}
+          </ResultSummary>
+          <ResultDetails>
+            <p className="rs-note">
+              {result.systems} system{result.systems === 1 ? "" : "s"} to T = {fmt(result.T)}{u && ` ${ut}`}:{" "}
               {result.failures?.A ?? 0} A, {result.failures?.BC ?? 0} BC and {result.failures?.BD ?? 0} BD
               failures ({result.n_bd_modes} BD mode{result.n_bd_modes === 1 ? "" : "s"}, mean FEF{" "}
               {fmt(result.mean_fef, 3)}). New BD modes were still appearing at h(T) ={" "}
               {fmt(result.new_mode_intensity, 3)}{perUnit}; the projection allows for the ones not seen yet,
               which these fixes don’t reach.
-            </span>
-          </div>
-          <p className="hint">
-            Projected intensity {fmt(result.projected?.intensity, 3)} = {fmt(result.components?.unfixed, 3)} not
-            fixed (A{result.failures?.BC ? " and BC" : ""}) + {fmt(result.components?.bd_residual, 3)} left by the
-            BD fixes + {fmt(result.components?.unseen_bd, 3)} from BD modes not yet seen.
-            {result.demonstrated_basis === "crow_amsaa"
-              ? " With BC modes the demonstrated intensity is the Crow-AMSAA fit’s at T (Crow’s extended model)."
-              : ""}
-          </p>
+            </p>
+            <p className="rs-note">
+              Projected intensity {fmt(result.projected?.intensity, 3)} = {fmt(result.components?.unfixed, 3)} not
+              fixed (A{result.failures?.BC ? " and BC" : ""}) + {fmt(result.components?.bd_residual, 3)} left by the
+              BD fixes + {fmt(result.components?.unseen_bd, 3)} from BD modes not yet seen.
+              {result.demonstrated_basis === "crow_amsaa"
+                ? " With BC modes the demonstrated intensity is the Crow-AMSAA fit’s at T (Crow’s extended model)."
+                : ""}
+            </p>
+          </ResultDetails>
         </>
       )}
     </div>

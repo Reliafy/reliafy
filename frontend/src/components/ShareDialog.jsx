@@ -5,6 +5,7 @@ import {
   createShare, listShares, revokeShare,
   createPublicLink, listPublicLinks, updatePublicLink, revokePublicLink,
 } from "../api.js";
+import Chip from "./ui/Chip.jsx";
 
 // Collections with a public read-only renderer at /p/:token.
 const PUBLIC_LINKABLE = new Set([
@@ -65,7 +66,7 @@ function PassphraseNote({ phrase, onDismiss }) {
       <p>
         Shown only now. Send the password separately from the link (say, the
         link by email and the password by message).{" "}
-        <button type="button" className="linklike" onClick={onDismiss}>Done</button>
+        <button type="button" className="link" onClick={onDismiss}>Done</button>
       </p>
     </div>
   );
@@ -80,11 +81,11 @@ function LinkRow({ link, phrase, busy, onCopy, copied, onChange, onRevoke, onDis
       <div className="pl-link-head">
         <span className="pl-link-label">{link.label || "Public link"}</span>
         {link.protected && (
-          <span className="pl-badge pl-badge-lock" title="Viewers need the password">
+          <Chip tone="accent" title="Viewers need the password">
             <LockIcon /> Password
-          </span>
+          </Chip>
         )}
-        <span className="pl-badge">{link.expires_at ? `Expires ${fmtDate(link.expires_at)}` : "No expiry"}</span>
+        <Chip>{link.expires_at ? `Expires ${fmtDate(link.expires_at)}` : "No expiry"}</Chip>
         <button
           type="button"
           className="pl-revoke"
@@ -103,17 +104,17 @@ function LinkRow({ link, phrase, busy, onCopy, copied, onChange, onRevoke, onDis
       <div className="pl-link-acts">
         {link.protected ? (
           <>
-            <button type="button" className="linklike" disabled={busy}
+            <button type="button" className="link" disabled={busy}
               onClick={() => onChange(link, { generate_password: true })}>
               New password
             </button>
-            <button type="button" className="linklike" disabled={busy}
+            <button type="button" className="link" disabled={busy}
               onClick={() => onChange(link, { remove_password: true })}>
               Remove password
             </button>
           </>
         ) : (
-          <button type="button" className="linklike" disabled={busy}
+          <button type="button" className="link" disabled={busy}
             onClick={() => onChange(link, { generate_password: true })}>
             Add a password
           </button>

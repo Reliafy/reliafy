@@ -38,3 +38,23 @@ export default function RbdEmptyState({ gap, goal, onBuild }) {
     </div>
   );
 }
+
+// A tab with nothing to show for a reason other than the diagram's shape (no
+// costs or maintenance to design with, a sample that can't keep a log): one
+// line saying what the tab does, one saying what it needs, and one action.
+//   title   what the tab does
+//   need    what it needs
+//   action  { label, onClick } — the one way there (optional)
+export function TabEmptyState({ title, need, action = null }) {
+  return (
+    <div className="rbd-empty rbd-empty-tab" role="status">
+      <h3>{title}</h3>
+      <p>{need}</p>
+      {action && (
+        <button type="button" onClick={action.onClick}>
+          {action.label}
+        </button>
+      )}
+    </div>
+  );
+}

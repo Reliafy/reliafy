@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import CopyId from "../components/CopyId.jsx";
+import { useNavigate, useParams } from "react-router-dom";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getDegradationModel } from "../api.js";
+import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { itemName } from "../components/LibRows.jsx";
+import { relativeTime } from "../instrument.js";
 
-// One saved degradation model: the fitted paths + life model. The fleet of
-// tracked items lives under Fleet → Degradation tracking.
+// One saved degradation model: the fitted paths + life model, answer first.
+// The fleet of tracked items lives under Fleet → Degradation tracking ("Track
+// items").
 export default function DegradationModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -30,51 +34,38 @@ export default function DegradationModelPage() {
   if (!model) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const unit = model.results?.unit || "";
-  const mUnit = model.results?.measurement_unit || "";
   const nItems = (model.items || []).length;
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/degradation")}>Degradation</button> /{" "}
-            <b>{model.name}</b>
-          </div>
-          <h1>
-            {model.name}
-            {model.is_sample && <span className="sample-tag" style={{ verticalAlign: "middle" }}>Sample</span>}
-          </h1>
-          <p>
-            {model.path_model} degradation toward {model.threshold}
-            {mUnit ? ` ${mUnit}` : ""} · {model.n_units} historical items
-            {unit ? ` · time in ${unit}` : ""}
-          </p>
-          <CopyId id={model.id || id} />
-        </div>
-        <div className="head-actions">
+      <PageHeader
+        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Degradation", to: "/modelling/degradation" }]}
+        title={itemName(model)}
+        badges={model.is_sample && <Chip>Sample</Chip>}
+        meta={
+          <>
+            Saved {relativeTime(model.updated_at || model.created_at)}
+            {unit ? ` · ${unit}` : ""}
+          </>
+        }
+        primary={
+          <button onClick={() => navigate("/fleet/tracking")}>
+            Track items{nItems > 0 ? ` (${nItems})` : ""}
+          </button>
+        }
+        id={model.id || id}
+        menu={
           <ShareButton
             collection="degradation_models"
             artifactId={model.id}
             name={model.name}
             readOnly={model.read_only}
+            className="ovm-item"
           />
-          <button onClick={() => navigate("/fleet/tracking")}>
-            Track items{nItems > 0 ? ` (${nItems})` : ""}
-          </button>
-        </div>
-      </header>
+        }
+      />
 
-      <DegradationResultView results={model.results} modelId={model.id || id} />
-
-      <p className="muted-line" style={{ marginTop: "1rem" }}>
-        Monitor individual assets against this model under{" "}
-        <Link to="/fleet/tracking" className="evidence-link">
-          Fleet → Degradation tracking
-        </Link>
-        .
-      </p>
+      <DegradationResultView results={model.results} modelId={model.id || id} name={model.name} />
     </div>
   );
 }

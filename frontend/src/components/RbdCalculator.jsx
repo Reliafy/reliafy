@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
+import { COLORWAY, DANGER, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
 import { analyzeRbd, getActiveRbdJob, getRbdJob } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
@@ -9,12 +10,17 @@ import CovariatesModal from "./CovariatesModal.jsx";
 import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
 import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
-import AvailabilityPolicies from "./AvailabilityPolicies.jsx";
-import { precisionNote } from "./availabilityPrecision.js";
+import AvailabilityPolicies, { SafetyNotes } from "./AvailabilityPolicies.jsx";
+import { pctAt, pctDigits, precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
 import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
 import WhatToImprove from "./WhatToImprove.jsx";
 import { unitInText } from "./unitText.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
+import Chip from "./ui/Chip.jsx";
+import { ResultDetails } from "./ui/ResultSummary.jsx";
+import { formatNumber, formatPercent } from "../format.js";
+import { hoursPerUnit } from "./rbdModelText.js";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -44,7 +50,8 @@ const FUNCS = [
   { id: "sf", label: "Reliability, R(t)" },
   { id: "ff", label: "Unreliability, F(t)" },
 ];
-const NODE_COLORS = ["#0284c7", "#16a34a", "#db2777", "#d97706", "#7c3aed", "#0891b2"];
+// The system is the accent; its blocks take the next series colours.
+const NODE_COLORS = COLORWAY.slice(1);
 
 
 // "4,200" — a life to four significant figures, with thousands separators.
@@ -109,7 +116,7 @@ function AsOfNote({ result, idToLabel }) {
 // Reliability results (non-repairable RBD): headline MTTF / B-lives, the
 // system + per-node R(t)/F(t) curves, importance measures, and the structural
 // path/cut sets. Also used by the public read-only view.
-export function Results({ result, t, tMax, conditionalAge = 0 }) {
+export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
   const x = result.time;
   const [active, setActive] = useState("sf");
   const unit = result.unit;
@@ -146,18 +153,10 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
           : { lower: 1 - interp(x, band.sf_upper, Number(t)), upper: 1 - interp(x, band.sf_lower, Number(t)) })
       : null;
 
-  // System curve (bold) plus a faint curve per node.
+  // System curve plus a faint dotted curve per node.
   const traces = [
     ...bandTraces(band, x, active),
-    {
-      x,
-      y: sysY,
-      mode: "lines",
-      line: { color: "#0f172a", width: 3 },
-      name: "System",
-      type: "scatter",
-      connectgaps: false,
-    },
+    fitLine({ x, y: sysY, line: { width: 2.5 }, name: "System", connectgaps: false }),
   ];
   (result.nodes || []).forEach((n, i) => {
     const y = active === "sf" ? n.sf : n.sf.map((v) => (v == null ? null : 1 - v));
@@ -165,64 +164,27 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
       x,
       y,
       mode: "lines",
-      line: { color: NODE_COLORS[i % NODE_COLORS.length], width: 1.25, dash: "dot" },
+      // Past the series colours, blocks are plain ink (colours aren't reused).
+      line: { color: NODE_COLORS[i] || DATA_INK, width: 1.25, dash: "dot" },
       name: n.label,
       type: "scatter",
       connectgaps: false,
-      opacity: 0.7,
+      opacity: 0.8,
     });
   });
   if (sysAtT != null) {
-    traces.push({
-      x: [Number(t)],
-      y: [sysAtT],
-      mode: "markers",
-      marker: { color: "#0f172a", size: 9, line: { color: "#fff", width: 1 } },
-      type: "scatter",
-      showlegend: false,
-      hoverinfo: "y",
-    });
+    traces.push({ ...pointMarker(), x: [Number(t)], y: [sysAtT] });
   }
 
   const layout = {
-    autosize: true,
     height: 440,
-    margin: { l: 64, r: 20, t: 20, b: 70 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "#ffffff",
-    font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
     showlegend: true,
-    legend: { orientation: "h", y: -0.18 },
     xaxis: {
-      title: { text: tLabel, standoff: 12 },
-      automargin: true,
-      gridcolor: "#e2e8f0",
-      linecolor: "#cbd5e1",
+      title: { text: tLabel },
       range: [0, tMax != null ? Number(tMax) : x[x.length - 1]],
-      zeroline: false,
     },
-    yaxis: {
-      title: { text: activeLabel, standoff: 12 },
-      automargin: true,
-      gridcolor: "#e2e8f0",
-      linecolor: "#cbd5e1",
-      range: [0, 1.02],
-      zeroline: false,
-    },
-    shapes:
-      t == null
-        ? []
-        : [
-            {
-              type: "line",
-              x0: Number(t),
-              x1: Number(t),
-              yref: "paper",
-              y0: 0,
-              y1: 1,
-              line: { color: "#94a3b8", width: 1, dash: "dot" },
-            },
-          ],
+    yaxis: { title: { text: activeLabel }, range: [0, 1.02] },
+    shapes: t == null ? [] : [referenceShape({ x: Number(t), line: { dash: "dot" } })],
   };
 
   const importance = result.importance || {};
@@ -289,27 +251,15 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
       </div>
 
       <div className="calc-controls">
-        <div className="seg">
-          {FUNCS.map((f) => (
-            <button
-              key={f.id}
-              className={"seg-btn" + (active === f.id ? " active" : "")}
-              onClick={() => setActive(f.id)}
-              title={f.label}
-            >
-              {f.id === "sf" ? "R(t)" : "F(t)"}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Function"
+          value={active}
+          onChange={setActive}
+          options={FUNCS.map((f) => ({ value: f.id, label: f.id === "sf" ? "R(t)" : "F(t)", title: f.label }))}
+        />
       </div>
 
-      <Plot
-        data={traces}
-        layout={layout}
-        config={{ displayModeBar: true, responsive: true }}
-        style={{ width: "100%" }}
-        useResizeHandler
-      />
+      <Plot data={traces} layout={layout} download={`${name || "System"} — ${activeLabel}`} />
       <BandNote band={band} />
 
       {impNodes.length > 0 && (
@@ -444,11 +394,6 @@ function importanceRows(result) {
   return rows;
 }
 
-const fmtTime = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(4)).toLocaleString());
-const fmtCount = (v) =>
-  v == null || !Number.isFinite(v) ? "—" : v >= 100 ? Math.round(v).toLocaleString() : Number(v.toPrecision(3)).toString();
-const fmtMoney = (v) =>
-  v == null || !Number.isFinite(v) ? "—" : v >= 100 ? Math.round(v).toLocaleString() : Number(v.toPrecision(3)).toLocaleString();
 
 function DowntimeBars({ rows, title, note }) {
   if (!rows?.length) return null;
@@ -469,127 +414,301 @@ function DowntimeBars({ rows, title, note }) {
   );
 }
 
-// The exact figures over time (#154), from new or from the current state
-// (#155): the window's figures, each labelled with its method, and A(t).
-function ExactSection({ exact, steady, unit, onCompute, computing }) {
-  const u = unit ? ` ${unitInText(unit)}` : "";
-  const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
-  if (!exact) return null;
-  if (exact.status === "on_request") {
-    return (
-      <div className="card note rbd-exact-note" role="status">
-        <p style={{ margin: 0 }}>{exact.message}</p>
-        {onCompute && (
-          <div className="rbd-upgrade-actions">
-            <button type="button" onClick={onCompute} disabled={computing}>
-              {computing ? "Computing…" : "Compute exact figures"}
-            </button>
-          </div>
-        )}
-      </div>
-    );
+// A y-range fitted to the curves given (#308): from zero, availability reads
+// as a flat line at the top.
+function availabilityRange(...curves) {
+  const v = curves.flat().filter((y) => y != null && Number.isFinite(y));
+  if (!v.length) return undefined;
+  const lo = Math.min(...v);
+  const hi = Math.max(...v);
+  const pad = Math.max((hi - lo) * 0.12, 1e-5);
+  return [Math.max(0, lo - pad), Math.min(1, hi) + pad];
+}
+
+// "99.968%": an availability to three decimals, or more when `spread` (a
+// difference to show) needs them.
+const pctOf = (v, spread = null) =>
+  v == null || !Number.isFinite(v) ? "—" : pctAt(v, spread == null ? 3 : Math.max(3, pctDigits(spread)));
+
+// "2.8 h", "17 min": downtime in hours, small values in minutes.
+function hoursText(h) {
+  if (h == null || !Number.isFinite(h)) return null;
+  if (h > 0 && h < 1) return `${formatNumber(h * 60, { sig: 2 })} min`;
+  return `${formatNumber(h, { sig: 2 })} h`;
+}
+
+// The block with the largest share of system downtime (the failure-oriented
+// criticality, exact at the long-run availabilities) — the one "weakest link"
+// view kept (#313).
+export function weakestLink(result) {
+  let best = null;
+  for (const [id, i] of Object.entries(result.importance || {})) {
+    const share = i?.unavailability_criticality;
+    if (share == null || !Number.isFinite(share) || share <= 0) continue;
+    if (!best || share > best.share) best = { id, label: i.label || id, share };
   }
-  if (exact.status !== "ok") {
-    return (
-      <div className="card note rbd-exact-note" role="status">
-        <p style={{ margin: 0 }}>{exact.message}</p>
-      </div>
-    );
+  if (best || result.has_simulation === false) return best;
+  // No exact importance (a simulation-only diagram): the block with the
+  // largest simulated share of downtime.
+  for (const n of result.per_node || []) {
+    const share = n?.share;
+    if (share == null || !Number.isFinite(share) || share <= 0) continue;
+    if (!best || share > best.share) best = { id: n.id, label: n.label || n.id, share, simulated: true };
   }
-  const m = exact.method || {};
-  const fromNow = exact.from === "now";
-  const span = `${fmtTime(exact.window)}${u}`;
-  const c = exact.curve || {};
-  const traces = [
-    {
-      x: c.t, y: c.availability, mode: "lines", type: "scatter",
-      line: { color: "#2f6df6", width: 2 }, name: "A(t)",
-      hovertemplate: `t = %{x:.4g}${u}<br>A(t) = %{y:.5f}<extra></extra>`,
-    },
-  ];
-  const shapes = steady != null && c.t?.length
-    ? [{
-        type: "line", xref: "x", yref: "y", x0: c.t[0], x1: c.t[c.t.length - 1], y0: steady, y1: steady,
-        line: { color: "#94a3b8", width: 1, dash: "dash" },
-      }]
-    : [];
-  const routes = Object.entries(exact.routes || {});
+  return best;
+}
+
+// The answer card (#311): rows of label and value, toned by the verdict, with
+// an optional note and action. Built on ResultSummary's classes.
+function AnswerCard({ tone = "neutral", lead, rows = [], note, action, className = "" }) {
+  const shown = rows.filter(Boolean);
   return (
-    <div className="rbd-exact">
-      <div className="ds-section-h">
-        {fromNow ? `Over the next ${span}, from now` : `Over the first ${span}, from new`}
-        <MethodTag method={m.curve} />
+    <section className={`result-summary rs-${tone} rbd-answer ${className}`} aria-label="Result">
+      <div className="rs-answer">
+        <div className="rbd-answer-body">
+          {lead && <p className="rs-sentence">{lead}</p>}
+          {shown.length > 0 && (
+            <dl className="rbd-answer-rows">
+              {shown.map((r) => (
+                <div key={r.label}>
+                  <dt>{r.label}</dt>
+                  <dd>{r.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {note && <div className="rs-note">{note}</div>}
+          {action}
+        </div>
       </div>
-      <div className="rbd-avail-metrics rbd-exact-metrics">
-        <div className="alt-metric accent">
-          <span className="k">Mission availability <MethodTag method={m.mission_availability} /></span>
-          <span className="v">{pct(exact.mission_availability)}</span>
-        </div>
-        {fromNow && (
-          <div className="alt-metric" title={`Lowest point of A(t), at t = ${fmtTime(exact.availability_min_at)}${u}`}>
-            <span className="k">Lowest A(t) <MethodTag method={m.curve} /></span>
-            <span className="v">{pct(exact.availability_min)}</span>
-          </div>
-        )}
-        <div className="alt-metric">
-          <span className="k">Expected failures <MethodTag method={m.expected_failures} /></span>
-          <span className="v">{fmtCount(exact.expected_failures)}</span>
-        </div>
-        <div className="alt-metric" title="System failures plus planned outages (maintenance and tests that take the system down)">
-          <span className="k">Expected outages <MethodTag method={m.expected_outages} /></span>
-          <span className="v">{fmtCount(exact.expected_outages)}</span>
-        </div>
-        <div className="alt-metric">
-          <span className="k">Expected downtime <MethodTag method={m.downtime} /></span>
-          <span className="v">{fmtTime(exact.downtime)}{u}</span>
-        </div>
-        {exact.cost && (
-          <div className="alt-metric" title="Expected running cost over the window (repairs, maintenance, tests and downtime), excluding purchase">
-            <span className="k">Expected cost <MethodTag method={m.cost} /></span>
-            <span className="v">{fmtMoney(exact.cost.mean)}</span>
-          </div>
-        )}
-      </div>
-      {c.t?.length > 1 && (
-        <Plot
-          data={traces}
-          layout={{
-            autosize: true, height: 280, margin: { l: 56, r: 16, t: 12, b: 44 },
-            paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-            xaxis: { title: unit ? `Time ${fromNow ? "from now" : "from new"} (${unit})` : "Time", gridcolor: "#eef1f5", zeroline: false },
-            yaxis: { title: "Availability A(t)", gridcolor: "#eef1f5", rangemode: fromNow ? "tozero" : "normal" },
-            shapes, showlegend: false,
-          }}
-          useResizeHandler style={{ width: "100%" }} config={{ displayModeBar: false, responsive: true }}
-        />
-      )}
-      <DowntimeBars
-        rows={exact.per_node}
-        title="Block downtime over the window"
-        note={
-          "Each block's share of the blocks' own expected downtime. A redundant block can be down " +
-          "without taking the system down: its share of the system's downtime is under Block importance."
-        }
-      />
-      <p className="muted-line" style={{ margin: 0 }}>
-        Computed {fromNow ? "from the blocks' states now" : "with every block new at the start"}, with no
-        simulation{steady != null ? "; the dashed line is the long-run availability" : ""}.
-        {exact.cost_note ? ` No exact cost: ${exact.cost_note}` : ""}
-      </p>
-      {routes.length > 0 && (
-        <details className="rbd-routes">
-          <summary>How each figure is computed</summary>
-          <ul>
-            {routes.map(([k, r]) => (
-              <li key={k}>
-                <code>{k}</code> <MethodTag method={r.route} /> — {r.reason}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </div>
+    </section>
   );
+}
+
+// The SIL band a PFDavg falls in (low demand, IEC 61508): SIL n is
+// [10^-(n+1), 10^-n).
+const silLimit = (n) => 10 ** -n;
+
+// A safety function's answer (#298, #311): PFDavg with its SIL, the target,
+// the margin to the band limit and the risk reduction factor. Amber when the
+// PFDavg leaves something out (#305); red when the target isn't met.
+function SifAnswer({ safety }) {
+  const met = safety.meets_target;
+  const noTests = safety.proof_tests === "none";
+  const ccfLeftOut = safety.common_cause_included === false || (safety.common_cause && !safety.common_cause.included);
+  const optimistic = !!safety.sil_optimistic || noTests || ccfLeftOut;
+  const chipTone = !safety.sil ? "danger" : optimistic || safety.sil === 1 ? "warning" : "success";
+  const pfd = safety.pfd_avg;
+  const hasTarget = safety.target_sil != null;
+  const tone = hasTarget && !met ? "bad" : optimistic ? "caveat" : hasTarget && met ? "good" : "neutral";
+  // Margin to the target's limit, or (no target) to the achieved band's.
+  const ref = hasTarget ? safety.target_sil : safety.sil;
+  const ratio = ref && pfd != null ? pfd / silLimit(ref) : null;
+  const margin = ratio == null
+    ? null
+    : ratio <= 1
+    ? `${formatPercent(ratio)} of the SIL ${ref} limit (${formatNumber(silLimit(ref))})`
+    : `${formatNumber(ratio, { sig: 2 })}× the SIL ${ref} limit (${formatNumber(silLimit(ref))})`;
+  const rows = [
+    {
+      label: "PFDavg",
+      value: (
+        <span className="rbd-answer-big">
+          <b>{formatNumber(pfd)}</b>
+          <Chip tone={chipTone} title={safety.sil_optimistic ? safety.sil_note : undefined}>
+            {safety.sil ? `SIL ${safety.sil}` : "No SIL"}{safety.sil && optimistic ? " (optimistic)" : ""}
+          </Chip>
+        </span>
+      ),
+    },
+    hasTarget && {
+      label: "Target",
+      value: <>SIL {safety.target_sil}: <b>{!met ? "not met" : optimistic ? "met, but optimistic" : "met"}</b></>,
+    },
+    margin && { label: "Margin", value: margin },
+    pfd > 0 && { label: "Risk reduction", value: <>RRF <b>{formatNumber(1 / pfd)}</b></> },
+  ];
+  const note = (noTests || ccfLeftOut) && (
+    <>
+      {noTests && (
+        <p>
+          No block is proof-tested, so this PFDavg treats every failure as revealed and repaired at once. Give
+          the blocks with hidden failures proof tests (double-click a block → Proof test).
+        </p>
+      )}
+      {ccfLeftOut && (
+        <p>
+          Common cause is not included in this PFDavg, so it is optimistic by the groups&rsquo; contribution.
+          {safety.common_cause?.note ? ` ${safety.common_cause.note}` : ""}
+        </p>
+      )}
+    </>
+  );
+  return <AnswerCard tone={tone} rows={rows} note={note} className="rbd-sif-answer" />;
+}
+
+// A simulated A(t) as drawn: a centred rolling mean over 5% of its
+// horizon. A few hundred replications move A(t) in steps of a fraction of a
+// percent, which read as noise; the mean over a short window is the curve.
+// ``span`` is the window's length (null when the curve is too short to smooth).
+const SMOOTH_FRAC = 0.05;
+export function rollingMean(t, y, frac = SMOOTH_FRAC) {
+  const n = t?.length || 0;
+  if (n < 5 || y?.length !== n) return { y, span: null };
+  const span = (t[n - 1] - t[0]) * frac;
+  const half = span / 2;
+  const out = new Array(n);
+  let lo = 0;
+  let hi = 0;
+  let sum = 0;
+  let cnt = 0;
+  for (let i = 0; i < n; i++) {
+    for (; hi < n && t[hi] <= t[i] + half; hi++) {
+      if (y[hi] != null) { sum += y[hi]; cnt += 1; }
+    }
+    for (; t[lo] < t[i] - half; lo++) {
+      if (y[lo] != null) { sum -= y[lo]; cnt -= 1; }
+    }
+    out[i] = cnt ? sum / cnt : null;
+  }
+  return { y: out, span };
+}
+
+// "smoothed over ≈ 260 hours"
+function smoothedText(span, unit) {
+  return span ? `smoothed over ≈ ${formatNumber(span, { sig: 2 })}${unit ? ` ${unitInText(unit)}` : ""}` : "";
+}
+
+// One chart (#311, #313): the exact A(t) with any simulation over the same
+// window drawn on it — or, for a safety function, PFD(t) = 1 − A(t) with the
+// PFDavg and the target SIL's limit.
+function AvailabilityChart({ exact, steady, unit, sim = null, safety = null }) {
+  const u = unit ? ` ${unitInText(unit)}` : "";
+  const c = exact?.curve || {};
+  if (!(c.t?.length > 1)) return null;
+  const fromNow = exact.from === "now";
+  const xTitle = unit ? `Time ${fromNow ? "from now" : "from new"} (${unit})` : "Time";
+  if (safety) {
+    const pfd = c.availability.map((a) => (a == null ? null : 1 - a));
+    const limit = safety.target_sil ?? safety.sil;
+    const shapes = [
+      ...(safety.pfd_avg != null ? [referenceShape({ y: safety.pfd_avg })] : []),
+      ...(limit ? [referenceShape({ y: silLimit(limit), line: { color: DANGER, dash: "dot", width: 1 } })] : []),
+    ];
+    return (
+      <Plot
+        data={[fitLine({ x: c.t, y: pfd, name: "PFD(t)", hovertemplate: `t = %{x:,.4~g}${u}<br>PFD(t) = %{y:.3~g}<extra></extra>` })]}
+        layout={{
+          height: 300,
+          xaxis: { title: { text: xTitle } },
+          yaxis: { title: { text: "PFD(t)" }, rangemode: "tozero", exponentformat: "e" },
+          shapes,
+          showlegend: false,
+          annotations: limit
+            ? [{ x: 1, xref: "paper", y: silLimit(limit), yanchor: "bottom", xanchor: "right", showarrow: false,
+                 text: `SIL ${limit} limit`, font: { size: 12, color: DANGER } }]
+            : [],
+        }}
+      />
+    );
+  }
+  // The simulation over the same window, smoothed; the exact line as it is.
+  const simY = sim ? rollingMean(sim.curve.t, sim.curve.availability) : null;
+  const traces = [
+    ...(sim
+      ? [{
+          x: sim.curve.t, y: simY.y, mode: "lines", type: "scatter",
+          line: { color: DATA_INK, width: 1 },
+          name: `Simulated, ${smoothedText(simY.span, unit) || "as run"}`,
+          hovertemplate: `t = %{x:,.4~g}${u}<br>Simulated A(t), smoothed = %{y:.5f}<extra></extra>`,
+        }]
+      : []),
+    fitLine({
+      x: c.t, y: c.availability, name: sim ? "Exact" : "A(t)",
+      hovertemplate: `t = %{x:,.4~g}${u}<br>A(t) = %{y:.5f}<extra></extra>`,
+    }),
+  ];
+  const shapes = steady != null ? [referenceShape({ y: steady })] : [];
+  // The dashed line says what it is, at its right end.
+  const annotations = steady != null
+    ? [{ xref: "paper", x: 1, y: steady, xanchor: "right", yanchor: "bottom", showarrow: false,
+         text: `Long run ${pctOf(steady)}`, font: { size: 12, color: MUTED } }]
+    : [];
+  return (
+    <Plot
+      data={traces}
+      layout={{
+        height: sim ? 320 : 280,
+        xaxis: { title: { text: xTitle } },
+        // Auto-scaled: availability moves in the third decimal place.
+        yaxis: {
+          title: { text: "Availability A(t)" }, tickformat: ".4~%",
+          range: availabilityRange(c.availability, simY ? simY.y : [], steady != null ? [steady] : []),
+        },
+        shapes, annotations, showlegend: !!sim,
+      }}
+    />
+  );
+}
+
+// The simulated A(t) (with its band) when there's no exact curve to draw it
+// on: the curve and the band smoothed alike, and the axis says over how long.
+function SimulatedChart({ curve, unit }) {
+  if (!(curve?.t?.length > 1)) return null;
+  const hasBand = curve.lower?.length === curve.t.length && curve.upper?.length === curve.t.length;
+  const mid = rollingMean(curve.t, curve.availability);
+  const lower = hasBand ? rollingMean(curve.t, curve.lower).y : null;
+  const upper = hasBand ? rollingMean(curve.t, curve.upper).y : null;
+  const how = smoothedText(mid.span, unit);
+  const u = unit ? ` ${unitInText(unit)}` : "";
+  return (
+    <Plot
+      data={[
+        ...(hasBand ? bandPair(curve.t, lower, upper) : []),
+        fitLine({
+          x: curve.t, y: mid.y, name: "Simulated",
+          hovertemplate: `t = %{x:,.4~g}${u}<br>Simulated A(t)${how ? ", smoothed" : ""} = %{y:.5f}<extra></extra>`,
+        }),
+      ]}
+      layout={{
+        height: 300,
+        xaxis: { title: { text: `${unit ? `Time (${unit})` : "Time"}${how ? ` · simulated A(t), ${how}` : ""}` } },
+        // Auto-scaled, not from zero: availability moves in the third decimal
+        // place. The (smoothed) band sets the scale too, so what's left of the
+        // simulation's noise reads against its uncertainty.
+        yaxis: { title: { text: "Availability" }, tickformat: ".4~%", range: availabilityRange(mid.y, lower || [], upper || []) },
+        showlegend: false,
+      }}
+    />
+  );
+}
+
+// The method, said once (#313): how the figures on the page were found.
+function methodLine(result, exactOk, hasSim) {
+  const exact = result.exact || {};
+  const m = exact.method || {};
+  const word = (r) => (r === "simulated" || r === "simulation" || r === "refused" ? "simulated" : r || null);
+  const parts = [];
+  const longRun = result.availability_basis === "simulation" ? "simulated" : word(result.long_run_method?.route) || "exact";
+  parts.push(`long-run figures ${longRun === "numerical" ? "numerical" : longRun}`);
+  if (exactOk) {
+    const overTime = [m.curve, m.mission_availability, m.expected_failures, m.downtime].map(word).filter(Boolean);
+    const same = overTime.every((r) => r === overTime[0]);
+    if (overTime.length) {
+      parts.push(same
+        ? `A(t), expected failures and downtime ${overTime[0]}`
+        : `A(t) ${word(m.curve) || "—"}, expected failures ${word(m.expected_failures) || "—"}, downtime ${word(m.downtime) || "—"}`);
+    }
+  }
+  let tail = "";
+  if (hasSim) {
+    tail = ` The spread comes from ${result.n_simulations?.toLocaleString() || "the"} Monte-Carlo replications` +
+      `${result.quick ? " (a quick estimate)" : ""}.`;
+  } else if (!parts.some((p) => p.includes("simulated"))) {
+    tail = " No simulation.";
+  }
+  const s = parts.join("; ");
+  return `Method: ${s}.${tail}`;
 }
 
 // "Queued — 2 ahead of you…" / "Running…" while a simulation job is in flight.
@@ -608,32 +727,18 @@ const POLL_MAX_MS = 6000;
 // "~3 s" from a quick-run offer's seconds.
 const quickSeconds = (offer) => (offer ? Number(Number(offer.seconds).toPrecision(2)) : 3);
 
-// Shown in place of the simulation's results when none has been run: what it
-// adds over the exact figures, and the way to run it (Pro, or credits) — for a
-// user without Pro, a free quick run (#147) a few times a day. While a
-// simulation is queued or running on the calculation service (#146), its
-// place in the queue.
-function SimulationOffer({ canSimulate, onSimulate, simulating, graph, quick = null, capMessage = null,
-                           onQuick = null, job = null, fromNow = false }) {
+// The way to run the simulation (Pro, or credits) — for a user without Pro, a
+// free quick run (#147) a few times a day. While a simulation is queued or
+// running on the calculation service (#146), its place in the queue.
+// ``primary``: the simulation is this view's next step (no exact figures).
+function SimulationActions({ canSimulate, onSimulate, simulating, graph, quick = null, capMessage = null,
+                             onQuick = null, job = null, primary = false }) {
   const [upgrade, setUpgrade] = useState(false);
   if (!onSimulate) return null;
   const canQuick = !canSimulate && !!onQuick && quick && quick.remaining_today > 0 && !capMessage;
   const seconds = quickSeconds(quick);
   return (
-    <div className="card rbd-sim-offer">
-      <div className="ds-section-h" style={{ marginTop: 0 }}>Simulation</div>
-      <p style={{ margin: "4px 0 0" }}>
-        The figures above are exact. A Monte-Carlo simulation adds the spread of outcomes: the chance of no
-        outage, percentiles, criticality indices (which block trips the system, which restores it) and a
-        confidence band.{fromNow && " From now, it also gives the time to the next system failure, its mean residual life and its likely cause."}
-        {canQuick && (
-          <>
-            {" "}A quick estimate is free: it simulates for about {seconds} s and says how many replications it
-            ran and how precise it is.{" "}
-            <span className="muted">{quick.remaining_today} of {quick.per_day} free runs left today.</span>
-          </>
-        )}
-      </p>
+    <div className="rbd-sim-actions">
       {capMessage && !canSimulate && <p className="rbd-quick-cap">{capMessage}</p>}
       {!capMessage && !canSimulate && onQuick && quick && quick.remaining_today <= 0 && (
         <p className="rbd-quick-cap">
@@ -645,18 +750,21 @@ function SimulationOffer({ canSimulate, onSimulate, simulating, graph, quick = n
       ) : (
         <div className="rbd-upgrade-actions">
           {canQuick && (
-            <button type="button" onClick={onQuick} disabled={simulating}>
+            <button type="button" className={primary ? "" : "secondary"} onClick={onQuick} disabled={simulating}>
               {simulating ? "Simulating…" : `Run quick simulation (free, ~${seconds} s)`}
             </button>
           )}
           <button
             type="button"
-            className={canSimulate ? "" : "secondary"}
+            className={canSimulate && primary ? "" : "secondary"}
             disabled={simulating}
             onClick={() => (canSimulate ? onSimulate() : setUpgrade(true))}
           >
             {simulating && canSimulate ? "Simulating…" : canSimulate ? "Run simulation" : "Run full simulation (Pro)"}
           </button>
+          {canQuick && (
+            <span className="muted">{quick.remaining_today} of {quick.per_day} free runs left today</span>
+          )}
         </div>
       )}
       {upgrade && !canSimulate && <AvailabilityUpgrade graph={graph} />}
@@ -667,204 +775,367 @@ function SimulationOffer({ canSimulate, onSimulate, simulating, graph, quick = n
 // "Quick estimate": a free, time-capped simulation's result (#147).
 function QuickTag() {
   return (
-    <span className="rbd-quick-tag" title="A free, time-capped simulation: fewer replications than a full run">
+    <Chip tone="warning" style={{ marginLeft: 8 }} title="A free, time-capped simulation: fewer replications than a full run">
       Quick estimate
-    </span>
+    </Chip>
   );
 }
 
+// "1 year", "5 years", "730 hours": the window, in words.
+function windowWords(window, unit, label = null) {
+  if (label) return label.replace(/^1 /, "");
+  const hpu = hoursPerUnit(unit);
+  if (hpu) {
+    const years = (window * hpu) / 8760;
+    if (years >= 1) return `${formatNumber(years, { sig: 2 })} year${years === 1 ? "" : "s"}`;
+  }
+  return `${formatNumber(window)}${unit ? ` ${unitInText(unit)}` : ""}`;
+}
+
+// Availability results for a repairable diagram, answer first (#311): the
+// answer card (availability, weakest link, best improvement — or, for a safety
+// function, PFDavg and its SIL), one chart, What to improve, then everything
+// else folded under Details, with the method said once there.
+// ``windowLabel``: the window the user chose ("1 year"), null for the long
+// run; ``top``: What to improve's top lever ({lever, of}, {pending} while it
+// works, null for none);
+// ``improve`` and ``more`` are rendered after the chart and inside Details.
+// Also used by the public read-only view.
 export function AvailabilityView({ result, unit, graph = null, onSimulate = null, onCompute = null, busy = null,
-                                  onQuick = null, capMessage = null, job = null }) {
+                                  onQuick = null, capMessage = null, job = null, windowLabel = null, top = null,
+                                  improve = null, more = null }) {
   const u = unit ? ` ${unitInText(unit)}` : "";
-  const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
+  const hpu = hoursPerUnit(unit);
   // A result saved before #154 is a simulation result (no has_simulation flag).
   const hasSim = result.has_simulation !== false;
   const exact = result.exact || null;
   const exactOk = exact?.status === "ok";
-  // No exact long-run value (limited repair crews for wear-out lives, say):
-  // the headline is the simulated availability over the window.
+  // No exact long-run value (a standby group with non-exponential repairs,
+  // say): the headline is the simulated availability over the window.
   const simulatedOnly = result.availability_basis === "simulation";
-  const a = simulatedOnly ? result.precision?.window_availability : result.steady_state_availability;
+  const steady = simulatedOnly ? null : result.steady_state_availability;
   const curve = hasSim ? result.curve : null;
   const basis = result.figures_basis || {};
   const basisNote = (k) =>
     basis[k] === "exact"
       ? "Exact steady-state value"
       : `Simulation estimate over ${fmt(result.t_simulation)}${u}`;
-  const hasBand = curve && curve.lower?.length === curve.t?.length && curve.upper?.length === curve.t?.length;
   // The exact A(t) over the simulated one, when both cover the same window from the same start.
   const sameWindow =
     exactOk && curve && Math.abs((exact.window || 0) - (result.t_simulation || 0)) <= 1e-9 * (exact.window || 1);
-  const curveTraces = !curve
-    ? []
-    : [
-        ...(hasBand
-          ? [
-              { x: curve.t, y: curve.lower, mode: "lines", type: "scatter", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
-              {
-                x: curve.t, y: curve.upper, mode: "lines", type: "scatter", line: { width: 0 },
-                fill: "tonexty", fillcolor: "rgba(47, 109, 246, 0.15)", hoverinfo: "skip", showlegend: false,
-              },
-            ]
-          : []),
-        { x: curve.t, y: curve.availability, mode: "lines", type: "scatter", line: { color: "#2f6df6", width: 2 }, name: "Simulated" },
-        ...(sameWindow
-          ? [{ x: exact.curve.t, y: exact.curve.availability, mode: "lines", type: "scatter", line: { color: "#0f172a", width: 1, dash: "dot" }, name: "Exact" }]
-          : []),
-      ];
   const blocks = importanceRows(result);
-  // The simulation's columns only when it ran.
-  const impCols = hasSim ? IMP_COLS : IMP_COLS.filter((c) => !SIM_COLS.has(c.key));
+  // The simulation's columns only when it ran; a column nothing fills is left out.
+  const impCols = (hasSim ? IMP_COLS : IMP_COLS.filter((c) => !SIM_COLS.has(c.key)))
+    .filter((c) => blocks.some((b) => b[c.key] != null));
   const simPer = hasSim ? result.per_node || [] : [];
+  const fromNow = exact?.from === "now" || !!result.current_state;
+  const needsSim = simulatedOnly && !hasSim;
+  const safety = result.safety || null;
+  const simulateProps = {
+    canSimulate: !!result.can_simulate,
+    onSimulate,
+    simulating: busy === "simulate",
+    graph,
+    quick: result.simulation_status?.quick || null,
+    capMessage,
+    onQuick,
+    job,
+  };
+
+  // The headline availability and what it's over.
+  let a = null;
+  let over = "";
+  if (simulatedOnly) {
+    a = hasSim ? result.precision?.window_availability ?? null : null;
+    over = `over the simulated ${windowWords(result.t_simulation, unit)}`;
+  } else if (windowLabel && exactOk && exact.mission_availability != null) {
+    a = exact.mission_availability;
+    over = `${fromNow ? "over the next" : "over the first"} ${windowWords(exact.window, unit, windowLabel)}`;
+  } else {
+    a = steady;
+    over = "in the long run";
+  }
+  const downYear = a != null && hpu ? hoursText((1 - a) * 8760) : null;
+
+  const weakest = weakestLink(result);
+  let best = null;
+  if (top && top.lever) {
+    const d = top.lever.effect?.availability;
+    const base = top.of === "window" ? exact?.mission_availability : steady;
+    if (d != null && Number.isFinite(d)) {
+      const yearGain = hpu ? hoursText(Math.abs(d) * 8760) : null;
+      best = (
+        <>
+          <b>{top.lever.block}</b>: {top.lever.change || top.lever.name}{" "}
+          <span className="rbd-answer-gain">
+            {d >= 0 ? "+" : "−"}{formatNumber(Math.abs(d) * 100, { sig: 2 })} pp
+            {base != null && ` (${pctOf(base, d)} → ${pctOf(base + d, d)}${windowLabel && top.of !== "window" ? " in the long run" : ""})`}
+            {yearGain && d > 0 && ` · −${yearGain} downtime/yr`}
+          </span>
+        </>
+      );
+    }
+  }
+
+  const caveats = [
+    result.common_cause && !result.common_cause.included && result.common_cause.note
+      && !(result.warnings || []).includes(result.common_cause.note) ? result.common_cause.note : null,
+  ].filter(Boolean);
+
+  const answer = safety ? (
+    <SifAnswer safety={safety} />
+  ) : needsSim ? (
+    <AnswerCard
+      lead={
+        <>
+          This diagram needs a simulation: there&rsquo;s no exact route for{" "}
+          <b>{(result.long_run_method?.blocks || []).join(", ") || "its availability"}</b>.
+        </>
+      }
+      note={result.long_run_method?.reason}
+      action={<SimulationActions {...simulateProps} primary />}
+    />
+  ) : (
+    <AnswerCard
+      tone={caveats.length || result.quick ? "caveat" : "neutral"}
+      rows={[
+        {
+          label: "Availability",
+          value: (
+            <span className="rbd-answer-big">
+              <b>{pctOf(a)}</b>
+              <span className="rbd-answer-sub">
+                {over}{downYear && <> · ≈ {downYear} down per year</>}
+              </span>
+              {result.quick && <QuickTag />}
+            </span>
+          ),
+        },
+        weakest && {
+          label: "Weakest link",
+          value: (
+            <>
+              <b>{weakest.label}</b> — {formatPercent(weakest.share)} of the system&rsquo;s
+              {weakest.simulated ? " simulated" : ""} downtime
+            </>
+          ),
+        },
+        top?.pending
+          ? { label: "Best improvement", value: <span className="muted">Working it out…</span> }
+          : best && { label: "Best improvement", value: best },
+      ]}
+      note={caveats.length ? caveats.map((c) => <p key={c}>{c}</p>) : null}
+    />
+  );
+
+  // The chart: exact (with any simulation over the same window), else the simulated curve.
+  const chartOk = exactOk && exact.curve?.t?.length > 1;
+  const pfdChart = safety && chartOk
+    && (exact.common_cause_included !== false || safety.common_cause_included === false);
+  let chart = null;
+  if (chartOk) {
+    chart = (
+      <AvailabilityChart exact={exact} steady={steady} unit={unit} sim={sameWindow && !pfdChart ? { curve } : null}
+                         safety={pfdChart ? safety : null} />
+    );
+  } else if (curve) chart = <SimulatedChart curve={curve} unit={unit} />;
+
+  const pct3 = (v) => pctOf(v);
+  const kpis = [
+    !safety && !simulatedOnly && steady != null && windowLabel && { label: "Long-run availability", value: pctOf(steady) },
+    safety && { label: simulatedOnly ? "Availability (window)" : "Long-run availability", value: pctOf(simulatedOnly ? a : steady) },
+    { label: "Unavailability", value: pct3(simulatedOnly ? (a == null ? null : 1 - a) : result.unavailability), raw: simulatedOnly ? a : result.unavailability },
+    { label: "Mean up time", value: `${formatNumber(result.mean_up_time)}${u}`, raw: result.mean_up_time, title: basisNote("mean_up_time") },
+    { label: "Mean down time", value: `${formatNumber(result.mean_down_time)}${u}`, raw: result.mean_down_time, title: basisNote("mean_down_time") },
+    { label: "Failure frequency", value: `${formatNumber(result.failure_frequency)}${unit ? ` /${unitInText(unit).replace(/s$/, "")}` : ""}`, raw: result.failure_frequency },
+    hasSim && result.next_failure && { label: "Mean residual life", value: `${meanResidualLife(result.next_failure)}${u}` },
+  ].filter((r) => r && (r.raw === undefined || r.raw != null));
+  const span = exactOk ? `${formatNumber(exact.window)}${u}` : "";
+  const windowKpis = exactOk ? [
+    { label: `Mission availability (${fromNow ? "next" : "first"} ${span})`, value: pctOf(exact.mission_availability) },
+    fromNow && { label: "Lowest A(t)", value: pctOf(exact.availability_min) },
+    { label: "Expected failures", value: formatNumber(exact.expected_failures) },
+    { label: "Expected outages", value: formatNumber(exact.expected_outages) },
+    { label: "Expected downtime", value: `${formatNumber(exact.downtime)}${u}` },
+    exact.cost && { label: "Expected cost", value: formatNumber(exact.cost.mean) },
+  ].filter(Boolean) : [];
+  const routes = Object.entries(exact?.routes || {});
 
   return (
     <div className="rbd-avail">
-      <div className="rbd-avail-hero">
-        <div className="rbd-avail-big">{pct(a)}</div>
-        <div className="rbd-avail-cap">
-          {simulatedOnly
-            ? `Availability over the ${Number(result.t_simulation.toPrecision(5)).toLocaleString()}${u} window (simulated — no exact long-run value with this maintenance)`
-            : <>Steady-state availability (uptime) <MethodTag method={exact?.method?.steady_state || (basis.mean_up_time === "exact" ? "exact" : null)} /></>}
-          {simulatedOnly && result.quick && <QuickTag />}
+      {answer}
+      {/* No exact figures over time: said once, by the answer card or the
+          simulated chart, unless the exact ones are there to be asked for. */}
+      {exact && (exact.status === "on_request" || (exact.status !== "ok" && exact.status !== "simulation_only" && !needsSim && exact.message)) && (
+        <div className="card note rbd-exact-note" role="status">
+          <p style={{ margin: 0 }}>{exact.message}</p>
+          {exact.status === "on_request" && onCompute && (
+            <div className="rbd-upgrade-actions">
+              <button type="button" onClick={onCompute} disabled={busy === "exact"}>
+                {busy === "exact" ? "Computing…" : "Compute exact figures"}
+              </button>
+            </div>
+          )}
         </div>
-      </div>
-      {/* Common-cause groups (#226): in every figure here, or left out of them all and why. */}
-      {result.common_cause?.included && (
-        <p className="rbd-avail-ccf">
-          Includes the diagram's {result.common_cause.groups} common-cause
-          group{result.common_cause.groups === 1 ? "" : "s"} in every figure
-          {result.common_cause.availability_without_common_cause != null && (
-            <> — without {result.common_cause.groups === 1 ? "it" : "them"} the long-run availability would
-              be <b>{pct(result.common_cause.availability_without_common_cause)}</b></>
-          )}.
-        </p>
       )}
-      {/* A safety function whose PFDavg includes its common-cause groups (#265): the figure with them. */}
-      {result.safety && !result.common_cause?.included && result.common_cause?.availability_with_common_cause != null && (
-        <p className="rbd-avail-ccf">
-          <b>{pct(result.common_cause.availability_with_common_cause)}</b> with the common-cause groups (1 − PFDavg,
-          as the safety function below). The figures here leave them out.
-        </p>
-      )}
-      {result.common_cause && !result.common_cause.included && result.common_cause.note
-        && !(result.warnings || []).includes(result.common_cause.note) && (
-        <p className="muted-line">⚠ {result.common_cause.note}</p>
-      )}
-      {(result.warnings || []).map((w) => (
-        <p className="muted-line" key={w}>⚠ {w}</p>
-      ))}
-      <div className="rbd-avail-metrics">
-        <div className="alt-metric"><span className="k">Unavailability</span><span className="v">{pct(simulatedOnly ? (a == null ? null : 1 - a) : result.unavailability)}</span></div>
-        <div className="alt-metric" title={basisNote("mean_up_time")}><span className="k">Mean up time</span><span className="v">{fmt(result.mean_up_time)}{u}</span></div>
-        <div className="alt-metric" title={basisNote("mean_down_time")}><span className="k">Mean down time</span><span className="v">{fmt(result.mean_down_time)}{u}</span></div>
-        <div className="alt-metric" title={basisNote("failure_frequency")}><span className="k">Failure frequency</span><span className="v">{fmt(result.failure_frequency)}{u ? ` /${unit}` : ""}</span></div>
-        {hasSim && result.next_failure && (
-          <div className="alt-metric" title="Simulated mean time from now to the next system failure (see Next system failure from now)"><span className="k">Mean residual life</span><span className="v">{meanResidualLife(result.next_failure)}{u}</span></div>
+      {chart}
+      {!needsSim && improve}
+
+      <ResultDetails>
+        {(kpis.length > 0 || windowKpis.length > 0) && <ResultDetailsRows rows={[...kpis, ...windowKpis]} />}
+        {/* The method, said once (#313), with the figures it found. */}
+        {!needsSim && <p className="rbd-details-p">{methodLine(result, exactOk, hasSim)}</p>}
+        {(result.warnings || []).length > 0 && (
+          <ul className="rbd-details-notes">
+            {result.warnings.map((w) => <li key={w}>{w}</li>)}
+          </ul>
         )}
-      </div>
+        {/* Common-cause groups (#226): in every figure here, or left out of them all and why. */}
+        {result.common_cause?.included && (
+          <p className="rbd-details-p">
+            Includes the diagram's {result.common_cause.groups} common-cause
+            group{result.common_cause.groups === 1 ? "" : "s"} in every figure
+            {result.common_cause.availability_without_common_cause != null && (
+              <> — without {result.common_cause.groups === 1 ? "it" : "them"} the long-run availability would
+                be {pctOf(result.common_cause.availability_without_common_cause)}</>
+            )}.
+          </p>
+        )}
+        {safety && !result.common_cause?.included && result.common_cause?.availability_with_common_cause != null && (
+          <p className="rbd-details-p">
+            {pctOf(result.common_cause.availability_with_common_cause)} with the common-cause groups (1 − PFDavg).
+            The availability figures here leave them out.
+          </p>
+        )}
+        {safety && <SafetyNotes safety={safety} />}
 
-      <ExactSection
-        exact={exact}
-        steady={simulatedOnly ? null : result.steady_state_availability}
-        unit={unit}
-        onCompute={onCompute}
-        computing={busy === "exact"}
-      />
-      {exactOk && result.proof_test_note && <p className="muted-line">{result.proof_test_note}</p>}
-
-      {!exactOk && <DowntimeBars rows={simPer} title="What drives downtime" />}
-
-      <DowntimeSplit result={result} unit={unit} />
-      <AvailabilityCosts result={result} unit={unit} />
-      <AvailabilityPolicies result={result} />
-
-      {blocks.length > 0 && (
-        <div className="rbd-avail-imp">
-          <div className="ds-section-h">Block importance</div>
-          <div className="rbd-avail-imp-scroll">
-            <table className="calc-table">
-              <thead>
-                <tr>
-                  <th>Block</th>
-                  {impCols.map((c) => (
-                    <th key={c.key} title={c.help}>{c.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {blocks.map((b) => (
-                  <tr key={b.id}>
-                    <td className="calc-row-label">
-                      {b.label}
-                      {b.pinned && <span className="rbd-avail-pin">pinned {b.pinned}</span>}
-                    </td>
+        {blocks.length > 0 && impCols.length > 0 && (
+          <div className="rbd-avail-imp">
+            <div className="ds-section-h">Block importance</div>
+            <div className="rbd-avail-imp-scroll">
+              <table className="calc-table">
+                <thead>
+                  <tr>
+                    <th>Block</th>
                     {impCols.map((c) => (
-                      <td key={c.key}>{c.fmt(b[c.key])}</td>
+                      <th key={c.key} title={c.help}>{c.label}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {blocks.map((b) => (
+                    <tr key={b.id}>
+                      <td className="calc-row-label">
+                        {b.label}
+                        {b.pinned && <span className="rbd-avail-pin">pinned {b.pinned}</span>}
+                      </td>
+                      {impCols.map((c) => (
+                        <td key={c.key}>{c.fmt(b[c.key])}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ul className="rbd-avail-legend">
+              {impCols.map((c) => (
+                <li key={c.key}><b>{c.label}</b> — {c.help}</li>
+              ))}
+            </ul>
           </div>
-          <ul className="rbd-avail-legend">
-            {impCols.map((c) => (
-              <li key={c.key}><b>{c.label}</b> — {c.help}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+        )}
 
-      {hasSim ? (
-        <div className="rbd-sim">
-          <div className="ds-section-h">
-            Simulation{result.current_state ? " from now" : ""} <MethodTag method="simulated" />
-            {result.quick && <QuickTag />}
-          </div>
-          <RbdNextFailure result={result} unit={unit} />
-          {exactOk && <DowntimeBars rows={simPer} title="Simulated share of downtime" />}
-          {curve && curve.t?.length > 1 && (
-            <Plot
-              data={curveTraces}
-              layout={{
-                autosize: true, height: 300, margin: { l: 56, r: 16, t: 16, b: 44 },
-                paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-                xaxis: { title: unit ? `Time (${unit})` : "Time", gridcolor: "#eef1f5", zeroline: false },
-                yaxis: { title: "Availability", gridcolor: "#eef1f5", rangemode: "tozero" },
-                showlegend: sameWindow, legend: { orientation: "h", y: -0.25 },
-              }}
-              useResizeHandler style={{ width: "100%" }} config={{ displayModeBar: false, responsive: true }}
-            />
-          )}
-          <p className="muted-line" style={{ margin: 0 }}>
-            {result.quick ? "Quick estimate: availability" : "Availability"} curve estimated by{" "}
-            {result.n_simulations?.toLocaleString()} Monte-Carlo
-            replications{result.precision?.antithetic ? " (in antithetic pairs)" : ""}
-            {result.quick && result.time_budget_s ? `, a quick run of at most ${fmt3(result.time_budget_s)} s,` : ""}{" "}
-            over {fmt(result.t_simulation)}{u}
-            {hasBand ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}
-            {sameWindow ? "; the dotted line is the exact A(t)" : ""}.
-            {precisionNote(result)}
-            {result.horizon_shortened && " The window was shortened to keep the simulation quick; the long-run figures don't depend on it."}
-            {basis.mean_up_time === "exact" && " Mean up/down time and failure frequency are exact steady-state values."}
+        {exactOk && (
+          <DowntimeBars
+            rows={exact.per_node}
+            title="Each block's own downtime over the window"
+            note={
+              "Each block's share of the blocks' own expected downtime. A redundant block can be down " +
+              "without taking the system down: its share of the system's downtime is under Block importance."
+            }
+          />
+        )}
+        {!exactOk && <DowntimeBars rows={simPer} title="Simulated share of downtime" />}
+        {exactOk && (
+          <p className="rbd-details-p">
+            Figures over time are computed {fromNow ? "from the blocks' states now" : "with every block new at the start"}
+            {steady != null && chartOk && !pfdChart ? "; the dashed line on the chart is the long-run availability" : ""}
+            {pfdChart ? "; the dashed line on the chart is the PFDavg, the dotted one the SIL limit" : ""}
+            {sameWindow && !pfdChart ? "; the grey line is the simulation's estimate over the same window, smoothed" : ""}.
+            {exact.cost_note ? ` No exact cost: ${exact.cost_note}` : ""}
           </p>
-        </div>
-      ) : (
-        <SimulationOffer
-          canSimulate={!!result.can_simulate}
-          onSimulate={onSimulate}
-          simulating={busy === "simulate"}
-          graph={graph}
-          quick={result.simulation_status?.quick || null}
-          capMessage={capMessage}
-          onQuick={onQuick}
-          job={job}
-          fromNow={!!result.current_state}
-        />
-      )}
+        )}
+        {(exactOk && result.proof_test_note) && <p className="rbd-details-p">{result.proof_test_note}</p>}
+        {pfdChart && sameWindow && <SimulatedChart curve={curve} unit={unit} />}
+
+        <DowntimeSplit result={result} unit={unit} />
+        <AvailabilityCosts result={result} unit={unit} />
+        {/* Before the simulation runs, the answer card says why it's needed. */}
+        <AvailabilityPolicies result={result} showReason={!needsSim} />
+
+        {hasSim ? (
+          <div className="rbd-sim">
+            <div className="ds-section-h">
+              Simulation{result.current_state ? " from now" : ""}
+            </div>
+            <RbdNextFailure result={result} unit={unit} />
+            {exactOk && <DowntimeBars rows={simPer} title="Simulated share of downtime" />}
+            {/* With no exact curve the simulated one is the chart above. */}
+            {chartOk && !sameWindow && <SimulatedChart curve={curve} unit={unit} />}
+            <p className="rbd-details-p">
+              {result.quick ? "Quick estimate: availability" : "Availability"} curve estimated by{" "}
+              {result.n_simulations?.toLocaleString()} Monte-Carlo
+              replications{result.precision?.antithetic ? " (in antithetic pairs)" : ""}
+              {result.quick && result.time_budget_s ? `, a quick run of at most ${fmt3(result.time_budget_s)} s,` : ""}{" "}
+              over {fmt(result.t_simulation)}{u}
+              {curve?.lower?.length && !sameWindow ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}.
+              {precisionNote(result)}
+              {result.horizon_shortened && " The window was shortened to keep the simulation quick; the long-run figures don't depend on it."}
+            </p>
+          </div>
+        ) : !needsSim && onSimulate ? (
+          <div className="rbd-sim">
+            <div className="ds-section-h">Simulation</div>
+            <p className="rbd-details-p">
+              A Monte-Carlo simulation adds the spread of outcomes: the chance of no outage, percentiles,
+              criticality indices (which block trips the system, which restores it) and a confidence band.
+              {fromNow && " From now, it also gives the time to the next system failure, its mean residual life and its likely cause."}
+            </p>
+            <SimulationActions {...simulateProps} />
+          </div>
+        ) : null}
+
+        {routes.length > 0 && (
+          <details className="rbd-routes">
+            <summary>How each figure is computed</summary>
+            <ul>
+              {routes.map(([k, r]) => (
+                <li key={k}>
+                  <code>{k}</code> {r.route === "refused" ? "not available" : r.route} — {r.reason}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+        {more}
+      </ResultDetails>
     </div>
   );
 }
 
+// Details' two-column list of figures, with a hover note where there is one.
+function ResultDetailsRows({ rows }) {
+  return (
+    <dl className="rs-dl">
+      {rows.map((r) => (
+        <div key={r.label} title={r.title}>
+          <dt>{r.label}</dt>
+          <dd>{r.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 // "Saved result from 3 Oct 2026" for a cached availability result.
 export function savedOn(iso) {
@@ -994,7 +1265,14 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
   );
 }
 
-export default function RbdCalculator({ graph, validation, stale, rbdId = null, onBuild }) {
+// Window presets for a repairable diagram (#311), in hours.
+const WINDOW_PRESETS = [
+  { id: "month", label: "1 month", hours: 730 },
+  { id: "year", label: "1 year", hours: 8760 },
+  { id: "5y", label: "5 years", hours: 43800 },
+];
+
+export default function RbdCalculator({ graph, validation, stale, onValidate = null, rbdId = null, name = null, onBuild }) {
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | calculating | error
   const [error, setError] = useState(null);
@@ -1023,9 +1301,15 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
   // Non-repairable (#173): the design life, the time R(t) falls to this (%).
   const [targetPct, setTargetPct] = useState("90");
   const [busy, setBusy] = useState(null); // null | "exact" | "simulate": what the running request adds
+  const [checking, setChecking] = useState(false); // validating before a calculation
+  const [customWindow, setCustomWindow] = useState(false); // "Custom" chosen: its number input shows
+  const [top, setTop] = useState({ pending: true }); // What to improve's top lever, for the answer card
 
   const unitLabel = graph.unit ? ` (${graph.unit})` : "";
-  const canCalculate = !!validation?.can_calculate && !stale;
+  // Calculate validates first when the diagram hasn't been checked (#300), so
+  // it's only held back by a check that failed.
+  const blocked = !!validation && !stale && !validation.can_calculate;
+  const hpu = hoursPerUnit(graph.unit);
 
   // Blocks whose life model is a guessed starting point (the assistant marks
   // them placeholder:true). The numbers run fine; the results just aren't real.
@@ -1106,6 +1390,32 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
     now: statePayload(), target,
   });
   const dirty = result != null && calcSig != null && inputSig !== calcSig;
+
+  // The option the "Window" control shows — a preset, the long run, or
+  // Custom (any other window, typed) — and the automatic window in years
+  // (#300: "auto" chose 35,521 h when a year was wanted).
+  const matchedPreset = tMax === "" || tMaxAuto
+    ? "long"
+    : (hpu && WINDOW_PRESETS.find((w) => Math.abs(Number(tMax) * hpu - w.hours) < 1e-6 * w.hours)?.id) || null;
+  const windowPreset = customWindow || !matchedPreset ? "custom" : matchedPreset;
+  const autoWindow = (() => {
+    const w = result?.kind === "repairable" ? result.exact?.window ?? result.t_simulation : null;
+    if (!w || !hpu || !(tMax === "" || tMaxAuto)) return null;
+    const years = (w * hpu) / 8760;
+    return `≈ ${formatNumber(years, { sig: 2 })} year${years === 1 ? "" : "s"}`;
+  })();
+  // The window the shown result was calculated over, in words; null for the long run.
+  const sentWindowLabel = (() => {
+    let t = null;
+    try {
+      t = calcSig ? JSON.parse(calcSig).t : null;
+    } catch {
+      t = null;
+    }
+    if (t == null) return null;
+    const p = hpu && WINDOW_PRESETS.find((w) => Math.abs(t * hpu - w.hours) < 1e-6 * w.hours);
+    return p ? p.label : `${formatNumber(t)}${graph.unit ? ` ${unitInText(graph.unit)}` : ""}`;
+  })();
 
   // ``simulate`` asks for the (paid) simulation; ``exact`` for the exact
   // figures of a diagram above the automatic size cap. A plain Calculate of a
@@ -1197,6 +1507,23 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
     }
   };
 
+  // Validate first when the diagram hasn't been checked since it changed
+  // (#300: the check is lost on save, and the Builder tab was the only way).
+  const calculate = async (force = false, opts = {}) => {
+    let v = validation;
+    if ((!v || stale) && onValidate) {
+      setChecking(true);
+      try {
+        v = await onValidate();
+      } finally {
+        setChecking(false);
+      }
+    }
+    if (!v?.can_calculate) return;
+    setTop({ pending: true });
+    runCalculation(force, opts);
+  };
+
   // Poll the in-flight job until it finishes. Survives transient network
   // errors (keeps trying, more slowly); gives up after a run of failures.
   const jobId = job?.job_id;
@@ -1280,34 +1607,39 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
     );
   }
 
+  // The action comes after the settings it uses: settings, then Calculate,
+  // then the answer.
+  const action = (
+    <div className="rbd-calc-actions">
+      <button
+        // The next step until there's a current result; then the results'
+        // own action (a simulation, say) is the primary one.
+        className={result && !stale && !dirty ? "secondary" : ""}
+        onClick={() => calculate(false)}
+        disabled={blocked || checking || phase === "calculating"}
+        title={blocked ? "Fix the diagram's problems first (below)" : "Check the diagram and calculate"}
+      >
+        {checking
+          ? "Checking…"
+          : phase === "calculating"
+          ? "Calculating…"
+          : result && !stale
+          ? "Recalculate"
+          : "Calculate"}
+      </button>
+      {dirty && (
+        <span className="hint">Recalculate to apply your changes.</span>
+      )}
+      {job && (
+        <span className="rbd-job-status" role="status" aria-live="polite">
+          {jobStatusText(job)}
+        </span>
+      )}
+    </div>
+  );
+
   return (
     <div className="rbd-calc">
-      <div className="rbd-calc-actions">
-        <button
-          onClick={() => runCalculation(false)}
-          disabled={!canCalculate || phase === "calculating"}
-          title={
-            canCalculate
-              ? "Run the reliability calculation"
-              : "Validate the RBD on the Builder tab first"
-          }
-        >
-          {phase === "calculating"
-            ? "Calculating…"
-            : result && !stale
-            ? "Recalculate"
-            : "Calculate"}
-        </button>
-        {dirty && (
-          <span className="hint">Recalculate to apply your changes.</span>
-        )}
-        {job && (
-          <span className="rbd-job-status" role="status" aria-live="polite">
-            {jobStatusText(job)}
-          </span>
-        )}
-      </div>
-
       {placeholderCount > 0 && (
         <div className="rbd-placeholder-note" role="status">
           {placeholderCount === 1
@@ -1317,7 +1649,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
         </div>
       )}
 
-      {canCalculate && covNodes.length > 0 && (
+      {covNodes.length > 0 && (
         <div className="rbd-cov-bar">
           <button className="secondary" onClick={() => setShowCov(true)}>
             Set covariates
@@ -1338,7 +1670,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
         </div>
       )}
 
-      {canCalculate && !graph.repairable && (
+      {!graph.repairable && (
         <div className="calc-controls rbd-calc-inputs">
           <label className="calc-t">
             <span>To{unitLabel} — x-axis limit</span>
@@ -1398,10 +1730,11 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
             <input type="checkbox" checked={asOf} onChange={(e) => setAsOf(e.target.checked)} />
             <span>As of now</span>
           </label>
+          {!asOf && action}
         </div>
       )}
 
-      {canCalculate && !graph.repairable && asOf && (
+      {!graph.repairable && asOf && (
         <div className="rbd-asof">
           <AsOfPanel
             blocks={stateBlocks}
@@ -1410,30 +1743,57 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
             unitLabel={unitLabel}
             repairable={false}
           />
+          {action}
         </div>
       )}
 
-      {canCalculate && graph.repairable && (
+      {graph.repairable && (
         <div className="rbd-asof">
-          <div className="calc-controls rbd-calc-inputs">
-            <label className="calc-t">
-              <span>{asOf ? `Next${unitLabel} — window from now` : `Window${unitLabel}`}</span>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                placeholder="auto"
-                value={tMax}
-                onChange={(e) => {
-                  setTMax(e.target.value);
-                  setTMaxAuto(e.target.value === "");
-                }}
-              />
-            </label>
+          {/* One window control: the presets, the long run, or Custom
+              with one number; "As of now" beside it; then the action. */}
+          <div className="calc-controls rbd-calc-inputs rbd-window">
+            <SegmentedControl
+              label={asOf ? "Window from now" : "Window"}
+              showLabel
+              value={windowPreset}
+              onChange={(v) => {
+                if (v === "custom") {
+                  setCustomWindow(true);
+                  return;
+                }
+                setCustomWindow(false);
+                const p = WINDOW_PRESETS.find((w) => w.id === v);
+                setTMax(p ? String(Number((p.hours / hpu).toPrecision(6))) : "");
+                setTMaxAuto(!p);
+              }}
+              options={[
+                ...(hpu ? WINDOW_PRESETS.map((w) => ({ value: w.id, label: w.label })) : []),
+                { value: "long", label: "Long run", title: "The long-run (steady-state) availability; figures over time use an automatic window" },
+                { value: "custom", label: "Custom", title: "A window of your own length" },
+              ]}
+            />
+            {windowPreset === "custom" && (
+              <label className="rbd-window-custom">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  aria-label={`Window${unitLabel}`}
+                  placeholder={autoWindow ? `auto (${autoWindow})` : "length"}
+                  value={tMax === "" || tMaxAuto ? "" : tMax}
+                  onChange={(e) => {
+                    setTMax(e.target.value);
+                    setTMaxAuto(e.target.value === "");
+                  }}
+                />
+                {graph.unit && <span>{unitInText(graph.unit)}</span>}
+              </label>
+            )}
             <label className="rbd-asof-toggle">
               <input type="checkbox" checked={asOf} onChange={(e) => setAsOf(e.target.checked)} />
               <span>As of now</span>
             </label>
+            {!asOf && action}
           </div>
           {asOf && (
             <AsOfPanel
@@ -1444,22 +1804,18 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
               repairable
             />
           )}
+          {asOf && action}
         </div>
       )}
 
-      {!validation && (
-        <p className="muted-line">
-          Validate the RBD on the Builder tab before calculating.
-        </p>
+      {/* The check shows here only when it has something to say (#313):
+          problems, or warnings. */}
+      {validation && !stale && (!validation.can_calculate || validation.warnings?.length > 0) && (
+        <ValidationPanel validation={validation} stale={false} />
       )}
 
-      {validation && <ValidationPanel validation={validation} stale={stale} />}
-
-      {validation && !canCalculate && (
-        <p className="hint">
-          Calculation is disabled until the diagram validates — check it on
-          the Builder tab.
-        </p>
+      {result && stale && phase !== "calculating" && !checking && (
+        <p className="hint">The diagram has changed since these results: recalculate to update them.</p>
       )}
 
       {error && (
@@ -1518,6 +1874,10 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
           onQuick={() => runCalculation(false, { quick: true })}
           capMessage={capMessage}
           job={job}
+          windowLabel={sentWindowLabel}
+          top={top}
+          improve={<WhatToImprove graph={graph} rbdId={rbdId} result={result} onTop={setTop} />}
+          more={<AvailabilityCompare graph={graph} rbdId={rbdId} result={result} />}
         />
       )}
       {result && !stale && result.kind === "repairable" && result.quick && !result.can_recompute && (
@@ -1529,12 +1889,6 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
           <Link to="/billing">Pro runs the full simulation for a tighter estimate</Link>
         </div>
       )}
-      {result && !stale && result.kind === "repairable" && (
-        <WhatToImprove graph={graph} rbdId={rbdId} result={result} />
-      )}
-      {result && !stale && result.kind === "repairable" && (
-        <AvailabilityCompare graph={graph} rbdId={rbdId} result={result} />
-      )}
 
       {result && !stale && result.kind !== "repairable" && (
         <Results
@@ -1542,6 +1896,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
           t={evalT === "" ? null : Number(evalT)}
           tMax={tSent}
           conditionalAge={result.conditional_age || 0}
+          name={name}
         />
       )}
 

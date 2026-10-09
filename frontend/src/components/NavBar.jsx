@@ -6,6 +6,7 @@ import Select from "./Select.jsx";
 import HelpButton from "./HelpButton.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { createTeam } from "../api.js";
+import Chip from "./ui/Chip.jsx";
 
 // Instrument top bar: cobalt mark + wordmark on the left, the workspace
 // (Personal/team) selector on the right. Section navigation lives in the
@@ -137,14 +138,14 @@ export default function NavBar({ menuOpen = false, onMenu, menuButtonRef }) {
         <div className="nav-workspace">
           <HelpButton />
           {activeTeam && (activeTeam.frozen || activeTeam.can_edit === false) && (
-            <span
-              className="health-badge health-amber"
+            <Chip
+              tone="warning"
               title={activeTeam.frozen
                 ? "The team owner's Pro plan has lapsed — the workspace is read-only until it's renewed."
                 : "You can view everything in this team. Editing needs a Pro plan."}
             >
-              view-only
-            </span>
+              View only
+            </Chip>
           )}
           <Select
             className="nav-workspace-select"

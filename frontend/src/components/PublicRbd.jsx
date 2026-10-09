@@ -47,7 +47,7 @@ function Canvas({ graph }) {
       minZoom={0.2}
       proOptions={{ hideAttribution: true }}
     >
-      <Background gap={22} color="#e8e7e2" />
+      <Background gap={22} />
       <Controls showInteractive={false} />
     </ReactFlow>
   );
@@ -70,7 +70,7 @@ function DownloadPython({ token, unlock }) {
   };
   return (
     <span className="public-rbd-download">
-      <button className="rbd-btn" onClick={onClick} disabled={busy} title={PYTHON_EXPORT_TIP}>
+      <button className="secondary sm" onClick={onClick} disabled={busy} title={PYTHON_EXPORT_TIP}>
         {busy ? "Preparing…" : "Download as Python"}
       </button>
       {error && <span className="public-rbd-download-err" role="alert">{error}</span>}

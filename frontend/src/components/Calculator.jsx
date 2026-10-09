@@ -4,7 +4,10 @@ import { withUnit } from "./stressName.js";
 import CiNote from "./CiNote.jsx";
 import { useEffect, useRef, useState } from "react";
 import Plot from "./Plot.jsx";
+import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
 import { confidenceAt, evaluateAt } from "../api.js";
+import { formatNumber, formatPercent } from "../format.js";
+import { unitInText } from "./unitText.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
 // time, conditional age) live in the parent (ResultView) so they survive tab
@@ -30,8 +33,8 @@ export function initCalcState(functions) {
   };
 }
 
-// Distinct colours for covariate-combination series.
-const COLORS = ["#0284c7", "#16a34a", "#db2777", "#d97706", "#7c3aed", "#0891b2"];
+// Distinct colours for covariate-combination series, in the theme's order.
+const COLORS = COLORWAY;
 const MAX_SERIES = 6;
 
 // Linear interpolation of y at xq from the (x, y) grid; null y points are
@@ -52,8 +55,20 @@ function interp(x, y, xq) {
   return null;
 }
 
-const fmt = (v) =>
-  v == null ? "—" : Math.abs(v) >= 1e-4 || v === 0 ? v.toPrecision(5) : v.toExponential(3);
+// The five functions by their plain names (#313). ``lead`` starts the answer
+// sentence; probabilities read as percentages.
+const FUNCTIONS = {
+  sf: { label: "Reliability R(t)", axis: "Reliability, R(t)", pct: true },
+  ff: { label: "Probability of failure F(t)", axis: "Probability of failure, F(t)", pct: true },
+  hf: { label: "Hazard rate", axis: "Hazard rate, h(t)" },
+  Hf: { label: "Cumulative hazard", axis: "Cumulative hazard, H(t)" },
+  df: { label: "Density", axis: "Density, f(t)" },
+};
+const fnLabel = (id, meta) => FUNCTIONS[id]?.label || meta.find((m) => m.id === id)?.label || id;
+
+// A value of function ``id``: a probability as a percentage, else a number.
+const fmtFn = (id, v) =>
+  v == null ? "—" : FUNCTIONS[id]?.pct ? formatPercent(v, { sig: 3 }) : formatNumber(v, { sig: 4 });
 
 // Condition a set of curves on having already survived to age s: the time axis
 // becomes additional time t (= x - s) and each function is recomputed as the
@@ -135,7 +150,7 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
 // Calculator tab: chart any of the reliability functions and read them off at a
 // chosen t. For regression models you can add several covariate combinations,
 // each re-evaluated by the backend and overlaid on the chart.
-export default function Calculator({ functions, unit, params, state, setState, nextIdRef }) {
+export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
@@ -199,7 +214,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const view = (curves) => (cond > 0 && curves ? conditionalize(curves, cond) : curves);
   const xMaxView = cond > 0 ? x[x.length - 1] - cond : x[x.length - 1];
 
-  const baseLabel = meta.find((m) => m.id === active)?.label || active;
+  const baseLabel = FUNCTIONS[active]?.axis || fnLabel(active, meta);
   const activeLabel = cond > 0 ? `${baseLabel} | survived to ${sLabel}` : baseLabel;
   const tAxisLabel =
     cond > 0 ? `additional time${unit ? ` (${unit})` : ""}` : tLabel;
@@ -275,23 +290,16 @@ export default function Calculator({ functions, unit, params, state, setState, n
   // Chart: the active function for every series, plus a marker at t.
   const traces = [];
   if (band) {
-    // Lower first, then upper filling down to it (two-sided) — drawn under the
-    // fitted line, which is added next.
-    if (band.lower) {
+    // Two-sided: a shaded band under the fitted line (added next). One-sided:
+    // the bound alone, dashed.
+    const bandName = band.bound === "two-sided" ? `${ciLevel}% confidence band` : `${ciLevel}% ${band.bound} bound`;
+    if (band.lower && band.upper) {
+      traces.push(...bandPair(band.x, band.lower, band.upper, { name: bandName, connectgaps: false }));
+    } else {
       traces.push({
-        x: band.x, y: band.lower, mode: "lines", type: "scatter",
-        line: { color: "#0284c7", width: 1, dash: "dot" },
-        name: band.bound === "two-sided" ? `${ciLevel}% lower` : `${ciLevel}% ${band.bound}`,
-        connectgaps: false, hoverinfo: "skip",
-      });
-    }
-    if (band.upper) {
-      traces.push({
-        x: band.x, y: band.upper, mode: "lines", type: "scatter",
-        line: { color: "#0284c7", width: 1, dash: "dot" },
-        name: band.bound === "two-sided" ? `${ciLevel}% upper` : `${ciLevel}% ${band.bound}`,
-        fill: band.lower ? "tonexty" : undefined, fillcolor: "rgba(2,132,199,0.10)",
-        connectgaps: false, hoverinfo: "skip",
+        x: band.x, y: band.lower || band.upper, mode: "lines", type: "scatter",
+        line: { color: COLORS[0], width: 1.5, dash: "dash" },
+        name: bandName, connectgaps: false, hoverinfo: "skip",
       });
     }
   }
@@ -310,65 +318,69 @@ export default function Calculator({ functions, unit, params, state, setState, n
     });
     const y = interp(cv.x, cv[active], Number(t));
     if (y != null) {
-      traces.push({
-        x: [Number(t)],
-        y: [y],
-        mode: "markers",
-        marker: { color, size: 8, line: { color: "#fff", width: 1 } },
-        type: "scatter",
-        showlegend: false,
-        hoverinfo: "y",
-      });
+      traces.push({ ...pointMarker(color), x: [Number(t)], y: [y] });
     }
   });
 
-  const showLegend = multi || !!band;
+  // One curve needs no legend: the axis names it and the read-out above gives
+  // the band. Several (covariate combinations) get one inside the plot, in the
+  // corner the curves leave empty — top right where they fall (reliability,
+  // density), top left where they rise.
+  const showLegend = multi;
+  const falling = active === "sf" || active === "df";
 
   // Plot axis range: a single manual bound falls back to the data extent for
   // the other end.
   const xRange = manualX ? [xLoNum != null ? xLoNum : 0, xHiNum != null ? xHiNum : xMaxView] : undefined;
 
   const layout = {
-    autosize: true,
     height: 440,
-    margin: { l: 64, r: 20, t: 20, b: showLegend ? 70 : 46 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "#ffffff",
-    font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
     showlegend: showLegend,
-    legend: { orientation: "h", y: -0.18 },
+    margin: { t: 8, r: 12 },
+    legend: {
+      orientation: "v",
+      x: falling ? 0.985 : 0.015,
+      xanchor: falling ? "right" : "left",
+      y: 0.985,
+      yanchor: "top",
+      bgcolor: "rgba(255,255,255,0.85)",
+    },
     xaxis: {
-      title: { text: tAxisLabel, standoff: 12 },
-      automargin: true,
-      gridcolor: "#e2e8f0",
-      linecolor: "#cbd5e1",
-      zeroline: false,
+      title: { text: tAxisLabel },
       ...(manualX ? { range: xRange, autorange: false } : {}),
     },
-    yaxis: {
-      title: { text: activeLabel, standoff: 12 },
-      automargin: true,
-      gridcolor: "#e2e8f0",
-      linecolor: "#cbd5e1",
-      zeroline: false,
-    },
-    shapes: [
-      {
-        type: "line",
-        x0: Number(t),
-        x1: Number(t),
-        yref: "paper",
-        y0: 0,
-        y1: 1,
-        line: { color: "#94a3b8", width: 1, dash: "dot" },
-      },
-    ],
+    yaxis: { title: { text: activeLabel } },
+    shapes: [referenceShape({ x: Number(t), line: { dash: "dot" } })],
   };
 
   return (
     <div className="calc">
       <div className="calc-body">
         <div className="calc-main">
+      {/* The answer, read off the chart; every input sits in the card on the right. */}
+      <div className="calc-answer">
+        <span>
+          {fnLabel(active, meta)} {cond > 0 ? "for a further" : "at"}{" "}
+          <b>{Number(t).toLocaleString(undefined, { maximumFractionDigits: 6 })}{unit ? ` ${unitInText(unit)}` : ""}</b>
+          {cond > 0 ? `, having survived ${sLabel}` : ""}{multi ? "" : ":"}
+        </span>
+        {!multi && (
+          <span className="calc-answer-value">
+            <b>{fmtFn(active, interp(views[0]?.x, views[0]?.[active], Number(t)))}</b>
+            {band && (() => {
+              const lo = band.lower ? interp(band.x, band.lower, Number(t)) : null;
+              const hi = band.upper ? interp(band.x, band.upper, Number(t)) : null;
+              const text =
+                band.bound === "two-sided"
+                  ? `${fmtFn(active, lo).replace(/%$/, "")}–${fmtFn(active, hi)}`
+                  : band.bound === "lower"
+                  ? `lower bound ${fmtFn(active, lo)}`
+                  : `upper bound ${fmtFn(active, hi)}`;
+              return <span className="calc-answer-ci"> ({ciLevel}% {text})</span>;
+            })()}
+          </span>
+        )}
+      </div>
       {curveWarning && <p className="calc-warn">⚠ {curveWarning}</p>}
       {confidencePath && ci.error && (
         <p className="hint" style={{ margin: "0 0 0.4rem" }}>
@@ -392,7 +404,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
               </th>
               {meta.map((m) => (
                 <th key={m.id} title={m.label}>
-                  {m.id}
+                  {fnLabel(m.id, meta)}
                 </th>
               ))}
             </tr>
@@ -409,74 +421,33 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </td>
                 {meta.map((m) => (
                   <td key={m.id}>
-                    {fmt(interp(views[i]?.x, views[i]?.[m.id], Number(t)))}
+                    {fmtFn(m.id, interp(views[i]?.x, views[i]?.[m.id], Number(t)))}
                   </td>
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
-      ) : (
-        <>
-          <div className="calc-values">
-            {meta.map((m) => (
-              <div
-                className={"calc-cell" + (active === m.id ? " active" : "")}
-                key={m.id}
-              >
-                <div className="calc-cell-id">{m.id}</div>
-                <div className="calc-cell-val">
-                  {fmt(interp(views[0]?.x, views[0]?.[m.id], Number(t)))}
-                </div>
-              </div>
-            ))}
-          </div>
-          {band && (() => {
-            const lo = band.lower ? interp(band.x, band.lower, Number(t)) : null;
-            const hi = band.upper ? interp(band.x, band.upper, Number(t)) : null;
-            const range =
-              band.bound === "two-sided"
-                ? `[${fmt(lo)}, ${fmt(hi)}]`
-                : band.bound === "lower"
-                ? `≥ ${fmt(lo)}`
-                : `≤ ${fmt(hi)}`;
-            return (
-              <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>
-                {ciLevel}% {band.bound === "two-sided" ? "confidence interval" : `${band.bound} confidence bound`} on{" "}
-                {baseLabel} at {tAxisLabel} = {t}: <b>{range}</b>
-              </p>
-            );
-          })()}
-        </>
-      )}
+      ) : null}
 
-      <Plot
-        data={traces}
-        layout={layout}
-        config={{ displayModeBar: true, responsive: true }}
-        style={{ width: "100%" }}
-        useResizeHandler
-      />
+      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} />
         </div>
 
         <div className="calc-side-rail">
             <div className="calc-rail-card calc-eval-card">
-              <div className="gofh">Evaluate</div>
+              <div className="gofh">Inputs</div>
               <div className="calc-eval-body">
-                <div className="seg">
-                  {meta.map((m) => (
-                    <button
-                      key={m.id}
-                      className={"seg-btn" + (active === m.id ? " active" : "")}
-                      onClick={() => setActive(m.id)}
-                      title={m.label}
-                    >
-                      {m.id}
-                    </button>
-                  ))}
-                </div>
                 <label className="calc-t">
-                  <span>Evaluate at {tAxisLabel}</span>
+                  <span>Function</span>
+                  <Select
+                    value={active}
+                    onChange={setActive}
+                    className="calc-fn"
+                    options={meta.map((m) => ({ value: m.id, label: fnLabel(m.id, meta) }))}
+                  />
+                </label>
+                <label className="calc-t">
+                  <span>{cond > 0 ? "For a further" : "At"}{unit ? ` (${unitInText(unit)})` : ""}</span>
                   <input
                     type="number"
                     value={t}
@@ -500,19 +471,6 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </label>
                 {confidencePath && (
                   <>
-                    {ci.bound !== "none" && (
-                      <label className="calc-t">
-                        <span>Confidence level %</span>
-                        <input
-                          type="number"
-                          value={ci.level}
-                          min={1}
-                          max={99.9}
-                          step="any"
-                          onChange={(e) => setCi({ level: e.target.value })}
-                        />
-                      </label>
-                    )}
                     <label className="calc-t">
                       <span>Confidence bound</span>
                       <Select
@@ -526,8 +484,55 @@ export default function Calculator({ functions, unit, params, state, setState, n
                         ]}
                       />
                     </label>
+                    {ci.bound !== "none" && (
+                      <label className="calc-t">
+                        <span>Confidence level %</span>
+                        <input
+                          type="number"
+                          value={ci.level}
+                          min={1}
+                          max={99.9}
+                          step="any"
+                          onChange={(e) => setCi({ level: e.target.value })}
+                        />
+                      </label>
+                    )}
                   </>
                 )}
+                <details className="calc-axis" open={axisOpen} onToggle={(e) => setAxisOpen(e.currentTarget.open)}>
+                  <summary>Axis</summary>
+                  <div className="calc-axis-body">
+                    <label className="calc-cov">
+                      <span>Min{unit ? ` (${unit})` : ""}</span>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="auto"
+                        value={xMin}
+                        onChange={(e) => setXMin(e.target.value)}
+                      />
+                    </label>
+                    <label className="calc-cov">
+                      <span>Max{unit ? ` (${unit})` : ""}</span>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="auto"
+                        value={xMax}
+                        onChange={(e) => setXMax(e.target.value)}
+                      />
+                    </label>
+                    {(xMin !== "" || xMax !== "") && (
+                      <button
+                        type="button"
+                        className="secondary calc-axis-reset"
+                        onClick={() => { setXMin(""); setXMax(""); }}
+                      >
+                        Reset to auto
+                      </button>
+                    )}
+                  </div>
+                </details>
               </div>
             </div>
             {params && params.length > 0 && (
@@ -537,10 +542,10 @@ export default function Calculator({ functions, unit, params, state, setState, n
                   <div className="gofr" key={p.name}>
                     <span className="gk">{p.name}</span>
                     <span className="gv-col">
-                      <span className="gv">{Number(p.value).toPrecision(4)}</span>
+                      <span className="gv">{formatNumber(p.value, { sig: 4 })}</span>
                       {p.ci && (
                         <span className="param-ci">
-                          95% CI [{Number(p.ci[0]).toPrecision(3)}, {Number(p.ci[1]).toPrecision(3)}]
+                          95% {formatNumber(p.ci[0])}–{formatNumber(p.ci[1])}
                         </span>
                       )}
                     </span>
@@ -585,51 +590,6 @@ export default function Calculator({ functions, unit, params, state, setState, n
             </aside>
             )}
 
-            <div className={"calc-rail-card calc-axis-card" + (axisOpen ? "" : " collapsed")}>
-              <div className="calc-cov-rail-head">
-                <button
-                  type="button"
-                  className="cov-rail-toggle"
-                  onClick={() => setAxisOpen((o) => !o)}
-                  aria-expanded={axisOpen}
-                >
-                  <span>{axisOpen ? "▾" : "▸"}</span> X-axis limits
-                </button>
-              </div>
-              {axisOpen && (
-                <div className="calc-axis-body">
-                  <label className="calc-cov">
-                    <span>Min{unit ? ` (${unit})` : ""}</span>
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="auto"
-                      value={xMin}
-                      onChange={(e) => setXMin(e.target.value)}
-                    />
-                  </label>
-                  <label className="calc-cov">
-                    <span>Max{unit ? ` (${unit})` : ""}</span>
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="auto"
-                      value={xMax}
-                      onChange={(e) => setXMax(e.target.value)}
-                    />
-                  </label>
-                  {(xMin !== "" || xMax !== "") && (
-                    <button
-                      type="button"
-                      className="secondary calc-axis-reset"
-                      onClick={() => { setXMin(""); setXMax(""); }}
-                    >
-                      Reset to auto
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
       </div>
 

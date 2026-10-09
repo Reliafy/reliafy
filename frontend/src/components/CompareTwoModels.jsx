@@ -1,19 +1,12 @@
 import Select from "./Select.jsx";
 import { useRef, useState } from "react";
 import ModelPicker from "./ModelPicker.jsx";
-import CompareResult from "./CompareResult.jsx";
+import CompareResult, { COLORS } from "./CompareResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { getColumns, compareTwoModels, SPREADSHEET_ACCEPT } from "../api.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
-const COLORS = { a: "#0284c7", b: "#db2777" };
-
-const fmt = (v) =>
-  v == null
-    ? "—"
-    : Math.abs(v) >= 1e-4 || v === 0
-    ? Number(v).toPrecision(5)
-    : Number(v).toExponential(3);
 
 // Minimal CSV parse: pull a numeric column (and an optional 0/1 censor column).
 function parseColumn(text, col, censorCol) {
@@ -62,7 +55,7 @@ function SideEditor({ tag, side, onChange }) {
 
   return (
     <div className="compare-side">
-      <div className="compare-side-head" style={{ color: COLORS[tag] }}>
+      <div className="compare-side-head">
         <span className="combo-dot" style={{ background: COLORS[tag] }} />
         <input
           className="compare-label"
@@ -72,20 +65,15 @@ function SideEditor({ tag, side, onChange }) {
         />
       </div>
 
-      <div className="seg">
-        <button
-          className={"seg-btn" + (side.mode === "model" ? " active" : "")}
-          onClick={() => set({ mode: "model" })}
-        >
-          Model
-        </button>
-        <button
-          className={"seg-btn" + (side.mode === "data" ? " active" : "")}
-          onClick={() => set({ mode: "data" })}
-        >
-          Data (non-parametric)
-        </button>
-      </div>
+      <SegmentedControl
+        label="Source"
+        value={side.mode}
+        onChange={(mode) => set({ mode })}
+        options={[
+          { value: "model", label: "Model" },
+          { value: "data", label: "Data (non-parametric)" },
+        ]}
+      />
 
       {side.mode === "model" ? (
         <ModelPicker
@@ -205,18 +193,22 @@ export default function CompareTwoModels() {
         <button onClick={run} disabled={loading}>
           {loading ? "Comparing…" : "Compare"}
         </button>
-        {result && inputs && (
-          <SaveAnalysisButton
-            kind="compare_two"
-            inputs={inputs}
-            defaultName={`${result.a.label} vs ${result.b.label}`}
-          />
-        )}
       </div>
 
       {error && <div className="error">{error}</div>}
 
-      {result && <CompareResult result={result} />}
+      {result && (
+        <CompareResult
+          result={result}
+          actions={inputs && (
+            <SaveAnalysisButton
+              kind="compare_two"
+              inputs={inputs}
+              defaultName={`${result.a.label} vs ${result.b.label}`}
+            />
+          )}
+        />
+      )}
     </div>
   );
 }

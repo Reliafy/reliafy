@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
+import { ACCENT, DATA_INK, SURFACE, fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
 import { applyRbdDesign, designRbd } from "../api.js";
 import RbdCheapestDesign from "./RbdCheapestDesign.jsx";
-import RbdIntervals from "./RbdIntervals.jsx";
-import RbdEmptyState from "./RbdEmptyState.jsx";
+import RbdIntervals, { maintainedBlocks } from "./RbdIntervals.jsx";
+import RbdEmptyState, { TabEmptyState } from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
 import LifeModelModal from "./LifeModelModal.jsx";
 import Select from "./Select.jsx";
@@ -11,6 +12,7 @@ import { modelSummary } from "./RbdNodes.jsx";
 import { graphSignature } from "./RbdValidation.jsx";
 import "./RbdDesignPanel.css";
 import { unitInText } from "./unitText.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // "Design for a target" (redundancy allocation, #98): how many copies of each
 // block a non-repairable diagram needs — the most reliable design within a
@@ -81,7 +83,8 @@ function arrangement(b) {
   return `${b.copies} active in parallel`;
 }
 
-export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
+// ``readOnly``: a sample or a view-only share — ``onSaveCopy`` saves a copy to edit.
+export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOnly = false, onSaveCopy = null }) {
   const nodes = graph.nodes || [];
   // A component drawn in several places (a repeated block, #102) — the copy
   // or its original — can't be given copies; it stays as drawn.
@@ -147,6 +150,22 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
   }
 
   if (graph.repairable) {
+    // Nothing to design with yet — no purchase price, no scheduled
+    // maintenance: one line on what the tab does, one on what it needs, and
+    // the way there (a sample is read-only: a copy of it can be edited).
+    const maintained = maintainedBlocks(graph);
+    const priced = (graph.nodes || []).some((n) => n.type === "component" && Number(n.data?.costs?.acquisition) > 0);
+    if (!priced && !maintained.replacement.length && !maintained.proof_test.length) {
+      return (
+        <TabEmptyState
+          title="Design: the cheapest copies of each block, and the best maintenance intervals"
+          need="It needs a purchase price, age replacement or proof tests on a block (double-click it → Cost & maintenance)."
+          action={readOnly
+            ? onSaveCopy && { label: "Save a copy to edit", onClick: onSaveCopy }
+            : onBuild && { label: "Go to the Builder", onClick: onBuild }}
+        />
+      );
+    }
     // Repairable diagrams: the copies with the lowest total cost of ownership
     // (#99), and the maintenance and proof-test intervals chosen together (#228).
     return (
@@ -252,22 +271,15 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
         </label>
         <div className="calc-t">
           <span>Goal</span>
-          <div className="seg">
-            <button
-              type="button"
-              className={"seg-btn" + (goal === "budget" ? " active" : "")}
-              onClick={() => setGoal("budget")}
-            >
-              Most reliable within a budget
-            </button>
-            <button
-              type="button"
-              className={"seg-btn" + (goal === "target" ? " active" : "")}
-              onClick={() => setGoal("target")}
-            >
-              Cheapest to reach a target
-            </button>
-          </div>
+          <SegmentedControl
+            label="Goal"
+            value={goal}
+            onChange={setGoal}
+            options={[
+              { value: "budget", label: "Most reliable within a budget" },
+              { value: "target", label: "Cheapest to reach a target" },
+            ]}
+          />
         </div>
         {goal === "budget" ? (
           <label className="calc-t">
@@ -383,7 +395,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
                     <td>
                       <button
                         type="button"
-                        className="link-btn"
+                        className="link"
                         disabled={off || r.types.length >= MAX_TYPES}
                         onClick={() => {
                           update(n.id, {
@@ -401,7 +413,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
                       <td className="rbd-design-block">
                         <span className="rbd-design-type-name">
                           <input value={ty.name} disabled={off} onChange={(e) => updateType(n.id, i, { name: e.target.value })} aria-label="Type name" />
-                          <button type="button" className="link-btn" disabled={off} onClick={() => setModelFor({ id: n.id, index: i })}>
+                          <button type="button" className="link" disabled={off} onClick={() => setModelFor({ id: n.id, index: i })}>
                             {ty.model ? modelSummary(ty.model) : "Set life model"}
                           </button>
                         </span>
@@ -417,7 +429,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
                       <td colSpan={3} className="rbd-design-type-note">alternative type</td>
                       <td>
                         <button
-                          type="button" className="link-btn" disabled={off}
+                          type="button" className="link" disabled={off}
                           onClick={() => update(n.id, { types: r.types.filter((_, j) => j !== i) })}
                         >
                           Remove
@@ -510,48 +522,37 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
   );
   const front = result.front || [];
   const traces = [
-    {
+    fitLine({
       x: front.map((d) => d.cost),
       y: front.map((d) => d.reliability),
-      type: "scatter",
       mode: "lines+markers",
-      line: { color: "#2f6df6", width: 2, shape: "hv" },
-      marker: { color: "#2f6df6", size: 7 },
+      line: { shape: "hv" },
+      marker: { color: ACCENT, size: 7 },
       name: "Best design for its cost",
-      hovertemplate: "Cost %{x}<br>R(t) %{y:.6f}<extra>click to inspect</extra>",
-    },
+      hovertemplate: "Cost %{x:,}<br>R(t) %{y:.6f}<extra>click to inspect</extra>",
+    }),
     {
       x: [result.current.cost],
       y: [result.current.reliability],
       type: "scatter",
       mode: "markers",
-      marker: { color: "#94a3b8", size: 11, symbol: "diamond" },
+      marker: { color: DATA_INK, size: 10, symbol: "diamond", line: { color: SURFACE, width: 1.5 } },
       name: "As drawn",
-      hovertemplate: "As drawn<br>Cost %{x}<br>R(t) %{y:.6f}<extra></extra>",
+      hovertemplate: "As drawn<br>Cost %{x:,}<br>R(t) %{y:.6f}<extra></extra>",
     },
-    {
+    optimumMarker({
       x: [shown.cost],
       y: [shown.reliability],
-      type: "scatter",
       mode: "markers",
-      marker: { color: "#db2777", size: 15, symbol: "star", line: { color: "#fff", width: 1 } },
+      marker: { size: 12 },
       name: picked == null ? (result.mode === "target" ? "Cheapest reaching the target" : "Best within the budget") : "Selected design",
-      hovertemplate: "Cost %{x}<br>R(t) %{y:.6f}<extra></extra>",
-    },
+      showlegend: true,
+      hovertemplate: "Cost %{x:,}<br>R(t) %{y:.6f}<extra></extra>",
+    }),
   ];
   const shapes = [];
-  if (result.mode === "budget" && result.budget.cost != null) {
-    shapes.push({
-      type: "line", x0: result.budget.cost, x1: result.budget.cost, yref: "paper", y0: 0, y1: 1,
-      line: { color: "#64748b", width: 1, dash: "dash" },
-    });
-  }
-  if (result.mode === "target") {
-    shapes.push({
-      type: "line", y0: result.target, y1: result.target, xref: "paper", x0: 0, x1: 1,
-      line: { color: "#64748b", width: 1, dash: "dash" },
-    });
-  }
+  if (result.mode === "budget" && result.budget.cost != null) shapes.push(referenceShape({ x: result.budget.cost }));
+  if (result.mode === "target") shapes.push(referenceShape({ y: result.target }));
   return (
     <div className="rbd-design-result">
       <div className="params">
@@ -598,7 +599,7 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
             : "Selected from the trade-off curve"}
         </div>
         {picked != null && (
-          <button type="button" className="link-btn" onClick={() => onPick(null)}>
+          <button type="button" className="link" onClick={() => onPick(null)}>
             Back to the {result.mode === "target" ? "cheapest" : "best"} design
           </button>
         )}
@@ -640,21 +641,12 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
           <Plot
             data={traces}
             layout={{
-              autosize: true,
               height: 380,
-              margin: { l: 70, r: 20, t: 16, b: 60 },
-              paper_bgcolor: "rgba(0,0,0,0)",
-              plot_bgcolor: "#ffffff",
-              font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
-              legend: { orientation: "h", y: -0.2 },
-              xaxis: { title: { text: "Cost", standoff: 10 }, gridcolor: "#e2e8f0", zeroline: false },
-              yaxis: { title: { text: `R(t = ${fmtN(result.t)}${unit})`, standoff: 10 }, gridcolor: "#e2e8f0", zeroline: false },
+              xaxis: { title: { text: "Cost" } },
+              yaxis: { title: { text: `R(t = ${fmtN(result.t)}${unit})` } },
               shapes,
               hovermode: "closest",
             }}
-            config={{ displayModeBar: false, responsive: true }}
-            style={{ width: "100%" }}
-            useResizeHandler
             onClick={(ev) => {
               const p = ev?.points?.[0];
               if (p && p.curveNumber === 0) onPick(p.pointIndex);

@@ -10,6 +10,12 @@ import {
   addTrackedMeasurement,
   getItemPrediction,
 } from "../api.js";
+import Chip from "../components/ui/Chip.jsx";
+import { CardHeader } from "../components/ui/Card.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import ResultSummary from "../components/ui/ResultSummary.jsx";
+import { unitInText } from "../components/unitText.js";
+import { itemName } from "../components/LibRows";
 
 const CONFIDENCE_LEVELS = [
   { value: "0.8", label: "80%" },
@@ -132,21 +138,18 @@ export default function StrategyTracking() {
   const badge = selected ? healthBadge(activePred) : null;
   const confPct = Math.round(Number(confidence) * 100);
   const [ftLo, ftHi] = activePred?.failure_time_interval || [null, null];
+  const ut = unit ? ` ${unitInText(unit)}` : "";
+  // The item's health colours its answer: green healthy, amber to plan or act.
+  const tone = { success: "good", warning: "caveat", danger: "caveat" }[badge?.tone] || "neutral";
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/fleet")}>Fleet</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/fleet/tracking")}>Degradation tracking</button> /{" "}
-            <b>{fleet.name}</b>
-          </div>
-          <h1>
-            {fleet.name}
-            {fleet.is_sample && <span className="sample-tag" style={{ verticalAlign: "middle" }}>Sample</span>}
-          </h1>
-          <p>
+      <PageHeader
+        crumbs={[{ label: "Fleet", to: "/fleet" }, { label: "Degradation tracking", to: "/fleet/tracking" }]}
+        title={itemName(fleet)}
+        badges={fleet.is_sample && <Chip>Sample</Chip>}
+        meta={
+          <>
             {model ? (
               <>
                 Against{" "}
@@ -158,12 +161,11 @@ export default function StrategyTracking() {
               "The linked degradation model is unavailable."
             )}
             {fleet.updated_by ? ` · last edited by ${fleet.updated_by}` : ""}
-          </p>
-        </div>
-        {!fleet.read_only && (
-          <button className="secondary" onClick={onRename}>Rename</button>
-        )}
-      </header>
+          </>
+        }
+        id={fleet.id}
+        menu={!fleet.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
+      />
 
       {error && <div className="card error">{error}</div>}
       {fleet.is_sample && (
@@ -188,15 +190,22 @@ export default function StrategyTracking() {
 
       {selected && (
         <div className="card" style={{ marginTop: "1rem" }}>
-          <div className="bill-head">
-            <h2 style={{ margin: 0 }}>
-              {selected.name}
-              {badge && <span className={`health-badge ${badge.cls}`} style={{ marginLeft: 10 }}>{badge.label}</span>}
-            </h2>
-            <span className="muted-line" style={{ margin: 0 }}>
-              Remaining life: <b>{rulText(activePred, unit)}</b>
-            </span>
-          </div>
+          <CardHeader
+            title={
+              <>
+                {selected.name}
+                {badge && <Chip tone={badge.tone} style={{ marginLeft: 10 }}>{badge.label}</Chip>}
+              </>
+            }
+            actions={activePred?.method === "bayesian" && (
+              <label className="trk-conf">
+                <span>Confidence</span>
+                <div style={{ width: 96 }}>
+                  <Select value={confidence} onChange={setConfidence} options={CONFIDENCE_LEVELS} />
+                </div>
+              </label>
+            )}
+          />
           {selected.prediction?.method === "error" && (
             <p className="muted-line">
               Not enough data to predict yet ({selected.prediction.detail}) — add
@@ -204,27 +213,27 @@ export default function StrategyTracking() {
             </p>
           )}
 
-          {activePred?.method === "bayesian" && (
-            <>
-              <div className="row" style={{ gap: "0.7rem", alignItems: "center", margin: "1rem 0 0.6rem" }}>
-                <span className="muted-line" style={{ margin: 0 }}>Crossing confidence</span>
-                <div style={{ width: 96 }}>
-                  <Select value={confidence} onChange={setConfidence} options={CONFIDENCE_LEVELS} />
-                </div>
-                {previewBusy && <span className="muted-line" style={{ margin: 0 }}>Computing…</span>}
-              </div>
-              <div className="design-life-readout">
-                Expected crossing at{" "}
-                <strong>{fmt(activePred.failure_time)}{unit ? ` ${unit}` : ""}</strong>.
-                {ftLo != null && ftHi != null && (
-                  <span>
-                    {" "}With <strong>{confPct}%</strong> confidence it crosses between{" "}
-                    <strong>{fmt(ftLo)}</strong> and <strong>{fmt(ftHi)}{unit ? ` ${unit}` : ""}</strong>
-                    {" "}— plan for the earliest, <strong>{fmt(ftLo)}{unit ? ` ${unit}` : ""}</strong>.
-                  </span>
-                )}
-              </div>
-            </>
+          {activePred?.method === "bayesian" ? (
+            <ResultSummary
+              tone={tone}
+              sentence={
+                <>
+                  Expected to cross the limit at <b>{fmt(activePred.failure_time)}{ut}</b>.
+                  {ftLo != null && ftHi != null && (
+                    <>
+                      {" "}With {confPct}% confidence it crosses between {fmt(ftLo)} and {fmt(ftHi)}{ut} — plan
+                      for the earliest, <b>{fmt(ftLo)}{ut}</b>.
+                    </>
+                  )}
+                </>
+              }
+            >
+              {previewBusy ? "Computing…" : <>Remaining life: {rulText(activePred, unit)}</>}
+            </ResultSummary>
+          ) : (
+            activePred && activePred.method !== "error" && (
+              <ResultSummary tone={tone} sentence={<>Remaining life: <b>{rulText(activePred, unit)}</b></>} />
+            )
           )}
 
           <RulChart

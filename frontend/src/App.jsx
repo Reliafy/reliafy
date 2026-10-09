@@ -5,6 +5,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigationType,
 } from "react-router-dom";
 import Login from "./views/Login.jsx";
 import Landing from "./views/Landing.jsx";
@@ -50,6 +51,19 @@ function RequireAuth({ children }) {
   return children;
 }
 
+// A new page opens at the top (#309): the router keeps the window's scroll
+// across a link, so a page could open part-way down with its title under the
+// bar. Back and forward (POP) leave the browser's own restoration alone, and
+// an in-page #anchor keeps its target.
+function ScrollToTop() {
+  const { pathname, hash } = useLocation();
+  const navType = useNavigationType();
+  useEffect(() => {
+    if (navType !== "POP" && !hash) window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
+
 function PageViews() {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -63,6 +77,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <PageViews />
+      <ScrollToTop />
       <ConfigProvider>
         <AuthProvider>
           <Routes>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { analyzeRbd, getRbdJob, optimiseIntervals } from "../api.js";
 import { graphSignature } from "./RbdValidation.jsx";
 import { fmtMoney } from "./AvailabilityCosts.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // Maintenance and proof-test intervals chosen together (#172, #228), on the
 // Design tab of a repairable diagram: RePyability's
@@ -59,7 +60,8 @@ export function applyIntervals(graph, rows) {
   return { ...graph, nodes };
 }
 
-function maintainedBlocks(graph) {
+// The blocks with age replacement and with (full-coverage) proof tests.
+export function maintainedBlocks(graph) {
   const out = { replacement: [], proof_test: [] };
   for (const n of graph.nodes || []) {
     if (n.type !== "component") continue;
@@ -261,12 +263,15 @@ export default function RbdIntervals({ graph, onApply, onView }) {
       </p>
 
       {kinds.length > 1 && (
-        <div className="seg" role="group" aria-label="Intervals">
-          <button type="button" className={"seg-btn" + (kind === "proof_test" ? " active" : "")}
-                  onClick={() => setSchedule("proof_test")}>Proof tests</button>
-          <button type="button" className={"seg-btn" + (kind === "replacement" ? " active" : "")}
-                  onClick={() => setSchedule("replacement")}>Replacement ages</button>
-        </div>
+        <SegmentedControl
+          label="Intervals"
+          value={kind}
+          onChange={setSchedule}
+          options={[
+            { value: "proof_test", label: "Proof tests" },
+            { value: "replacement", label: "Replacement ages" },
+          ]}
+        />
       )}
 
       <div className="param-fields rbd-cheapest-inputs">
