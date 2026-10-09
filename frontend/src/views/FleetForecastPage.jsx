@@ -250,7 +250,7 @@ export default function FleetForecastPage() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Fleet", to: "/fleet" }, { label: "Failure forecasts", to: "/fleet/forecasts" }]}
+        crumbs={[{ label: "Fleet", to: "/fleet" }]}
         title={fleet.name}
         badges={
           <>

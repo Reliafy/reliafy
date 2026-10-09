@@ -39,7 +39,7 @@ export default function StrategyAnalysisPage() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Strategy", to: "/strategy" }, { label: "Saved analyses", to: "/strategy/analyses" }]}
+        crumbs={[{ label: "Strategy", to: "/strategy" }]}
         title={doc.name}
         badges={
           <>

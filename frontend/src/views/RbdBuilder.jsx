@@ -1736,7 +1736,7 @@ export default function RbdBuilder() {
   return (
     <div className={"app rbd-app" + (tab === "builder" ? "" : " rbd-app-scroll")}>
       <PageHeader
-        crumbs={[{ label: "RBDs", to: "/rbds" }, { label: "Saved diagrams", to: "/rbds/list" }]}
+        crumbs={[{ label: "RBDs", to: "/rbds" }]}
         title={meta.name || (id ? "" : "Untitled RBD")}
         id={meta.id || id}
         menu={meta.id && (
@@ -1769,7 +1769,7 @@ export default function RbdBuilder() {
             rbdId={id}
             imported={imported}
             onNew={() => navigate("/rbds/b")}
-            onOpenLibrary={() => navigate("/rbds/list")}
+            onOpenLibrary={() => navigate("/rbds")}
             onSaved={(savedId) => navigate(`/rbds/b/${savedId}`, { replace: true })}
             onMeta={setMeta}
             onTab={setTab}
