@@ -8,9 +8,9 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
 import { relativeTime } from "../instrument.js";
 
-// One saved degradation model: the fitted paths + life model, answer first.
-// The fleet of tracked items lives under Fleet → Degradation tracking ("Track
-// items").
+// One saved degradation model, in the life model page's shape: the header,
+// then one card with the tabs, each chart beside its side panel. The fleet of
+// tracked items lives under Fleet → Degradation tracking ("Track items").
 export default function DegradationModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -37,7 +37,7 @@ export default function DegradationModelPage() {
   const nItems = (model.items || []).length;
 
   return (
-    <div className="app">
+    <div className="app model-page">
       <PageHeader
         crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Degradation", to: "/modelling/degradation" }]}
         title={itemName(model)}
@@ -65,7 +65,9 @@ export default function DegradationModelPage() {
         }
       />
 
-      <DegradationResultView results={model.results} modelId={model.id || id} name={model.name} />
+      <div className="card">
+        <DegradationResultView results={model.results} modelId={model.id || id} name={model.name} />
+      </div>
     </div>
   );
 }

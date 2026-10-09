@@ -318,7 +318,7 @@ export default function DegradationNewModal({ onClose, onSaved }) {
             {select("Life distribution", distribution, setDistribution, options.distributions)}
             {select("Population method", populationMethod, setPopulationMethod, options.population_methods)}
           </div>
-          <label className="login-field">
+          <label className="login-field" style={{ marginTop: "0.8rem" }}>
             <span>Model name</span>
             <input type="text" value={name} onChange={(e) => setNameTyped(e.target.value)} />
           </label>
