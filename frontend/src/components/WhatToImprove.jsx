@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { getRbdJob, rbdSensitivity } from "../api.js";
-import MethodTag from "./MethodTag.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // "What to improve" on a repairable diagram's availability results (#225):
@@ -26,7 +25,6 @@ const num = (v) => {
 const signed = (v, f) => (v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${f(Math.abs(v))}`);
 const money = (v) => (Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : Number(v.toPrecision(3)).toLocaleString());
 const per = (unit) => (unit ? `/${unit.toLowerCase().replace(/s$/, "")}` : "/unit time");
-const BASIS_TAG = { exact: "exact", numerical: "numerical", simulation: "simulated" };
 
 const BASIS_TEXT = {
   exact:
@@ -58,7 +56,9 @@ function span(row, unit) {
   return `${num(row.shown_value)} → ${num(row.shown_to)}${u}`;
 }
 
-export default function WhatToImprove({ graph, rbdId = null, result: availability }) {
+// ``onTop`` hears the top lever for the calculator's answer card (#311):
+// {lever, of} once ranked, {pending: true} while working, null when there's none.
+export default function WhatToImprove({ graph, rbdId = null, result: availability, onTop = null }) {
   const [step, setStep] = useState(0.1);
   const [rankBy, setRankBy] = useState("availability");
   const [over, setOver] = useState("long_run"); // long_run | window
@@ -181,13 +181,18 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
   const hasTypedCosts = positive(costs);
   const basis = data?.basis;
   const sim = basis === "simulation" && data?.status === "ok";
-  const tag = BASIS_TAG[basis];
+  const topLever = ranked.find((r) => r.rank === 1) || ranked[0] || null;
+  const busy = phase === "running" || !!job;
+  useEffect(() => {
+    if (!onTop) return;
+    if (busy) onTop({ pending: true });
+    else onTop(topLever ? { lever: topLever, of: data?.of || over } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, topLever, data]);
 
   return (
     <div className="rbd-improve">
-      <div className="ds-section-h">
-        What to improve {tag && <MethodTag method={tag} />}
-      </div>
+      <div className="ds-section-h">What to improve</div>
       <p className="hint" style={{ margin: 0 }}>
         Each lever moved one step the way that helps — a {Math.round(step * 100)}% longer mean life, a{" "}
         {Math.round(step * 100)}% shorter mean repair time or test interval, one more repair crew — and ranked by
@@ -282,12 +287,6 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
         </div>
       )}
       {data?.status === "too_large" && <div className="card note" role="status">{data.message}</div>}
-
-      {data?.status === "ok" && data.top && (
-        <p className="rbd-improve-top">
-          <b>Top:</b> {data.top}
-        </p>
-      )}
 
       {visible.length > 0 && (
         <div className="rbd-avail-imp-scroll">

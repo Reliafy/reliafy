@@ -1099,12 +1099,6 @@ h6 {
 /* Common-cause groups: a chip in the toolbar row that drops the list beneath
    it. Absolutely positioned so the overlay stays one row tall when collapsed. */
 .rbd-ccf-menu { position: relative; }
-.rbd-ccf-toggle {
-  background: rgba(208, 118, 47, 0.12); color: var(--warn); border: 1px solid rgba(208, 118, 47, 0.35);
-  border-radius: var(--r-sm); padding: 6px 10px; font-size: var(--fs-13); font-weight: 600;
-  cursor: pointer; box-shadow: none; white-space: nowrap;
-}
-.rbd-ccf-toggle:hover, .rbd-ccf-toggle.open { background: #d0762f; border-color: #d0762f; color: #fff; }
 
 .rbd-unit-field {
   display: inline-flex;
@@ -1263,7 +1257,7 @@ h6 {
 /* Free quick simulations (#147) and queued jobs (#146). */
 .rbd-quick-note a { font-size: var(--fs-13); }
 .rbd-job-status { font-size: var(--fs-13); color: var(--muted); }
-.rbd-sim-offer .rbd-job-status { margin: 10px 0 0; }
+.rbd-sim-actions .rbd-job-status { margin: 10px 0 0; }
 .rbd-quick-cap { margin: 8px 0 0; font-size: var(--fs-13); color: var(--warn); }
 
 
@@ -1313,10 +1307,12 @@ h6 {
   bottom: 14px;
   transform: translateX(-50%);
   z-index: 5;
+  max-width: calc(100% - 120px);
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: rgba(255, 255, 255, 0.9);
-  border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  padding: 0.35rem 0.9rem;
+  padding: 0.3rem 0.75rem;
   font-size: var(--fs-13);
   color: var(--muted);
   pointer-events: none;
@@ -2582,10 +2578,13 @@ h1 .chip,
 }
 
 .rbd-calc-panel {
-  flex: 1 1 auto;
-  overflow: auto;
   padding: 1rem 1.25rem 1.5rem;
 }
+
+/* The result tabs (Calculator, Fault tree, …) scroll with the page (#311);
+   only the Builder's canvas fills the frame. */
+.rbd-app.rbd-app-scroll { height: auto; overflow: visible; }
+.rbd-app-scroll .rbd-wrap { overflow: visible; flex: none; }
 
 .rbd-calc-actions {
   display: flex;
@@ -2631,37 +2630,8 @@ h1 .chip,
   color: var(--ink);
 }
 
-/* Validation feedback card on the builder canvas */
-.rbd-validate-card {
-  position: relative;
-  max-width: 460px;
-  background: var(--surf);
-  border-radius: var(--r);
-  box-shadow: var(--shadow-overlay);
-  padding: 0.35rem;
-}
 
-.rbd-validate-close {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  z-index: 1;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  line-height: 1;
-  font-size: var(--fs-16);
-  border: none;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
 
-.rbd-validate-close:hover {
-  background: var(--surf-2);
-  color: var(--ink);
-}
 
 .rbd-check {
   display: flex;
@@ -4779,7 +4749,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .public-rbd-meta b { color: var(--ink); font-weight: 600; }
 .public-rbd-download { margin-left: auto; display: inline-flex; align-items: center; gap: 0.6rem; }
 .public-rbd-download-err { color: #b3261e; }
-.rbd-export-wrap { display: inline-flex; }
 @media (max-width: 700px) {
   .public-rbd-canvas { height: 46vh; min-height: 280px; }
 }
@@ -7037,11 +7006,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 
 /* Repairable RBD — component repair line + availability results */
-.rbd-comp-repair {
-  font-size: var(--fs-12); color: var(--muted); margin-top: 2px;
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.rbd-comp-repair svg { width: 12px; height: 12px; vertical-align: -2px; }
 .rbd-comp-empty.warn { color: #c67a1e; }
 
 .rbd-avail { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
@@ -7069,11 +7033,11 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 
 /* Exact availability over time (#154) and "As of now" (#155). */
 .rbd-exact, .rbd-sim { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.rbd-exact .ds-section-h, .rbd-sim .ds-section-h { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
-.rbd-exact-metrics { justify-content: flex-start; }
-.rbd-exact-metrics .alt-metric .k { display: flex; align-items: center; flex-wrap: wrap; }
-.rbd-exact-note p, .rbd-sim-offer p { font-size: var(--fs-13); }
-.rbd-sim-offer { display: flex; flex-direction: column; gap: 4px; }
+.rbd-sim .ds-section-h { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.rbd-exact-note p { font-size: var(--fs-13); }
+.rbd-sim-actions { display: flex; flex-direction: column; gap: 4px; }
+.rbd-sim-actions .rbd-upgrade-actions { align-items: center; }
+.rbd-sim-actions .muted { font-size: var(--fs-13); color: var(--muted); }
 .rbd-routes { font-size: var(--fs-12); color: var(--muted); }
 .rbd-routes summary { cursor: pointer; }
 .rbd-routes ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
@@ -7136,7 +7100,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-improve { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); min-width: 0; }
 .rbd-improve .ds-section-h { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
 .rbd-improve-controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
-.rbd-improve-top { margin: 0; padding: 8px 12px; border-radius: var(--r-sm); font-size: var(--fs-14); background: var(--surf-2, #eef1f5); border-left: 3px solid #16a34a; }
 .rbd-improve-table td, .rbd-improve-table th { font-variant-numeric: tabular-nums; vertical-align: top; }
 .rbd-improve-table th:nth-child(2), .rbd-improve-table td.rbd-improve-lever { text-align: left; }
 .rbd-improve-table td.rbd-improve-lever { min-width: 220px; white-space: normal; }
@@ -7159,17 +7122,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   .rbd-improve-wide { display: none; }
   .rbd-improve-narrow { display: inline; }
 }
-@media (prefers-color-scheme: dark) {
-  .rbd-improve-top { background: #232a33; }
-}
 
 /* Common-cause failure groups (RBD builder) */
-.rbd-comp.ccf-member { box-shadow: 0 0 0 2px rgba(208, 118, 47, 0.55), 0 0 0 5px rgba(208, 118, 47, 0.18); }
-/* On the canvas: pinned to the block's corner in the CCF colour. */
-.chip.rbd-ccf-chip {
-  position: absolute; top: -9px; right: -4px;
-  font-weight: 600; background: #d0762f; color: #fff; border-color: #d0762f;
-}
 /* The common-cause action wears the CCF colour it creates on the canvas. */
 button.secondary.ccf { color: #a85a1c; border-color: rgba(208, 118, 47, 0.55); background: #fdf4ec; }
 button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762f; background: #fbe9da; }
@@ -7381,11 +7335,6 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 
 /* RBD builder: the C-to-connect shortcut — key cap in the hint bar, and the
    transient confirmation that replaces the hint after a press. */
-.rbd-hint kbd {
-  font-family: inherit; font-size: 0.9em; font-weight: 600;
-  border: 1px solid var(--line, #dde3ea); border-bottom-width: 2px;
-  border-radius: var(--r-sm); padding: 0 4px; margin: 0 1px; background: var(--surf, #fff);
-}
 .rbd-hint-flash { font-weight: 600; color: var(--acc); }
 
 /* RBD junction — a k-node with n = 1, drawn as a bare dot rather than a full
@@ -7588,27 +7537,30 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 .rbd-band-note b { color: var(--ink); font-weight: 600; }
 
 /* Repairable RBDs: costs and maintenance (#99, #100) */
-.rbd-costs-toggle {
-  background: var(--surf); color: var(--muted); border: 1px solid var(--line);
-  border-radius: var(--r-sm); padding: 6px 10px; font-size: var(--fs-13); font-weight: 600;
-  cursor: pointer; box-shadow: none; white-space: nowrap;
-}
-.rbd-costs-toggle:hover { color: var(--ink); border-color: var(--acc); }
-.rbd-costs-toggle.set { color: var(--acc-d); background: var(--acc-t); border-color: rgba(47, 109, 246, 0.35); }
 .rbd-instant-repair { display: flex; align-items: center; gap: 8px; font-size: var(--fs-13); margin: 0 0 0.8rem; cursor: pointer; }
 .rbd-instant-repair input { width: auto; margin: 0; }
-.rbd-costs-section { margin-top: 1.1rem; border: 1px solid var(--line); border-radius: var(--r); padding: 0 12px; background: var(--surf-2); }
-.rbd-costs-section > summary { cursor: pointer; padding: 10px 0; font-size: var(--fs-14); font-weight: 600; list-style-position: inside; }
-.rbd-costs-section > summary .muted { font-weight: 400; color: var(--muted); }
-.rbd-costs-body { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; }
-.rbd-costs-body .param-fields { margin-top: 0; }
-.rbd-costs-body .hint { margin: 0; }
+/* The block dialog's sections (#314): Failure · Repair · Maintenance (or
+   Proof test) · Costs, the last two folding when nothing is set. */
+.rbd-dlg-sec { display: flex; flex-direction: column; gap: 8px; }
+.rbd-dlg-sec + .rbd-dlg-sec, .rbd-dlg-sec + .rbd-dlg-fold, .rbd-dlg-fold + .rbd-dlg-fold, .rbd-dlg-fold + .rbd-dlg-sec {
+  margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--line2);
+}
+.rbd-dlg-sec > h3 { margin: 0; font-size: var(--fs-16); font-weight: 600; color: var(--ink); }
+.rbd-dlg-sec .param-fields, .rbd-dlg-fold-body .param-fields { margin-top: 0; }
+.rbd-dlg-sec .hint, .rbd-dlg-fold-body .hint { margin: 0; }
+.rbd-dlg-sec .rbd-instant-repair { margin: 0; }
+.rbd-dlg-fold > summary { cursor: pointer; font-size: var(--fs-16); font-weight: 600; color: var(--ink); border-radius: var(--r-sm); }
+.rbd-dlg-fold > summary .muted { font-size: var(--fs-13); font-weight: 400; color: var(--muted); }
+.rbd-dlg-fold-body { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; }
+.rbd-dlg-echo { margin: 0; font-size: var(--fs-13); color: var(--muted); font-variant-numeric: tabular-nums; }
+.rbd-maint-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rbd-maint-head .seg { flex-wrap: wrap; }
+.rbd-maint-head button.link { font-size: var(--fs-13); }
 .rbd-costs-h { font-size: var(--fs-12); font-weight: 600; color: var(--ink); margin-top: 4px; }
 .rbd-costs-h .muted { font-weight: 400; color: var(--muted); }
 .rbd-cost-field input { width: 116px; }
 .rbd-cost-field span { font-family: inherit; }
 .rbd-cost-field small { color: var(--muted); font-size: var(--fs-12); }
-.rbd-costs-body > .seg { align-self: flex-start; flex-wrap: wrap; }
 /* Costs as ranges and "Fill from RCM study" (#100) */
 .rbd-cost-label { display: flex; align-items: baseline; gap: 6px; }
 .rbd-range-toggle {
@@ -7622,8 +7574,6 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 .rbd-range-inputs input::-webkit-outer-spin-button,
 .rbd-range-inputs input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .rbd-cost-field.rbd-filled input { border-color: rgba(47, 109, 246, 0.55); background: var(--acc-t); }
-.rbd-costs-h-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.rbd-costs-h-row button.link { font-size: var(--fs-12); font-weight: 600; }
 .rbd-rcm-picker {
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
   border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf);
@@ -7649,15 +7599,15 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 .rbd-rcm-source button.link { font-size: var(--fs-12); }
 .rbd-rcm-edited { color: var(--warn); font-weight: 600; }
 .rbd-costs-errors { margin: 0; padding-left: 18px; color: var(--danger); font-size: var(--fs-13); }
-/* Overhang the card's bottom edge (like the placeholder chip) so the card keeps its size. */
-.rbd-maint-chips { position: absolute; bottom: -8px; left: 8px; display: flex; gap: 4px; z-index: 2; }
-.rbd-maint-chip {
-  font-size: 9.5px; font-weight: 600; border-radius: var(--r-sm); padding: 1px 6px;
-  border: 1px solid transparent; white-space: nowrap;
+/* A block's chips (#314): one neutral style with an icon each, overhanging
+   the card's bottom edge so the card keeps its size; big enough to read at
+   fit-to-view. */
+.rbd-chips { position: absolute; bottom: -11px; left: 8px; right: 8px; display: flex; gap: 4px; z-index: 2; overflow: hidden; }
+.rbd-chip {
+  font-size: var(--fs-12); font-weight: 500; line-height: 18px; border-radius: var(--r-sm); padding: 0 6px;
+  color: var(--ink); background: var(--surf); border: 1px solid var(--line); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-.rbd-maint-chip.pm { background: #e8f6ee; color: var(--ok); border-color: rgba(22, 163, 74, 0.35); }
-.rbd-maint-chip.test { background: #f1ebfd; color: #6d28d9; border-color: rgba(124, 58, 237, 0.35); }
-.rbd-maint-chip.group { background: #fdf3e7; color: var(--warn); border-color: rgba(224, 136, 59, 0.4); }
 /* Repair crews, groups and safety (#156, #157). */
 .rbd-groups-table { width: 100%; margin: 4px 0 10px; }
 .rbd-groups-table input[type="number"] { width: 100%; max-width: 160px; }
@@ -7667,24 +7617,40 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 .rbd-policy-card p.muted { margin: 2px 0; font-size: var(--fs-13); }
 .rbd-policy-reason { line-height: 1.45; }
 .rbd-policy-notes { margin: 6px 0 0; padding-left: 18px; font-size: var(--fs-13); color: var(--muted); }
-.rbd-sif-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; }
-.rbd-sif-big { font-size: var(--fs-28); font-weight: 600; letter-spacing: -0.01em; }
-.rbd-sil-chip { font-size: var(--fs-14); font-weight: 600; line-height: 22px; padding: 2px 10px; }
-/* A band from a PFDavg that leaves something out (#305): amber, not green. */
-.rbd-sif-warning {
-  margin: 8px 0 0; padding: 6px 10px; border-radius: var(--r-sm); font-size: var(--fs-13); line-height: 1.45;
-  background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-line);
+/* The calculator's answer card (#311): rows of label and value on
+   ResultSummary's card — availability, weakest link, best improvement; or a
+   safety function's PFDavg, SIL, target, margin and RRF. Red only when a
+   target isn't met. */
+.rs-bad .rs-answer { background: var(--danger-bg); border-color: var(--danger-line); }
+.rbd-answer-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.rbd-answer-rows { margin: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.rbd-answer-rows > div { display: grid; grid-template-columns: 136px 1fr; gap: var(--sp-3); align-items: baseline; }
+.rbd-answer-rows dt { font-size: var(--fs-13); color: var(--muted); }
+.rbd-answer-rows dd { margin: 0; font-size: var(--fs-14); line-height: 1.5; color: var(--ink); min-width: 0; }
+.rbd-answer-rows dd b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.rbd-answer-big { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.rbd-answer-big > b { font-size: var(--fs-20); font-weight: 600; font-variant-numeric: tabular-nums; }
+.rbd-answer-sub { color: var(--muted); font-size: var(--fs-13); }
+.rbd-answer-gain { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rbd-answer .rs-note p { margin: 0; }
+.rbd-answer .rs-note p + p { margin-top: 4px; }
+.rbd-answer .rbd-sim-actions .rbd-upgrade-actions { margin-top: 0; }
+@media (max-width: 600px) {
+  .rbd-answer-rows > div { grid-template-columns: 1fr; gap: 2px; }
+  .rbd-answer-gain { white-space: normal; }
 }
-.rbd-sif-warning p { margin: 0; }
-.rbd-sif-warning p + p { margin-top: 4px; }
-.rbd-avail-ccf { margin: 2px 0 6px; font-size: var(--fs-13); }
-.rbd-sil-target { font-size: var(--fs-13); font-weight: 600; }
-.rbd-sil-target.ok { color: var(--ok); }
-.rbd-sil-target.caveat { color: var(--warn); }
-.rbd-sil-target.no { color: var(--danger); }
+/* Details and the method line under the results (#311, #313). */
+.rbd-details-p { margin: 0; font-size: var(--fs-13); line-height: 1.5; color: var(--muted); }
+.rbd-details-notes { margin: 0; padding-left: 18px; font-size: var(--fs-13); line-height: 1.5; color: var(--muted); }
+.rbd-avail .rs-details { margin-top: 0; }
+.rbd-avail .rs-details-body { display: flex; flex-direction: column; gap: var(--sp-4); }
+.rbd-avail .rs-dl + * { margin-top: 0; }
+.rbd-method-line { margin: 0; font-size: var(--fs-12); color: var(--subtle); }
+.rbd-window { gap: var(--sp-3) var(--sp-4); justify-content: flex-start; }
+.rbd-window .rbd-asof-toggle { margin-left: auto; }
 .rbd-basis {
-  display: inline-block; margin-left: 4px; font-size: var(--fs-12); font-weight: 600; padding: 0 5px; border-radius: var(--r-sm); vertical-align: 1px;
-  background: rgba(22, 163, 74, 0.12); color: var(--ok);
+  display: inline-block; margin-left: 4px; font-size: var(--fs-12); font-weight: 500; padding: 0 5px; border-radius: var(--r-sm); vertical-align: 1px;
+  background: var(--surf-2); color: var(--muted);
 }
 .rbd-basis.simulation { background: rgba(224, 136, 59, 0.14); color: var(--warn); }
 .rbd-costs { display: flex; flex-direction: column; gap: 10px; }
@@ -7732,7 +7698,27 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
   pointer-events: none;
 }
 .rbd-toolbar > * { pointer-events: auto; }
-.rbd-toolbar-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-left: auto; }
+.rbd-toolbar-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-left: auto; align-items: center; }
+/* Save ▾, ⋯ and the validation status (#314). */
+.rbd-tb-trigger { min-height: 32px; }
+.rbd-tb-caret { display: inline-flex; margin-left: 2px; color: var(--muted); }
+.rbd-tb-menu .ovm-menu { min-width: 200px; }
+.rbd-tb-menu .ovm-item:disabled { color: var(--subtle); cursor: not-allowed; }
+button.rbd-valid-toggle {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px;
+  font-size: var(--fs-13); font-weight: 500; border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: var(--surf); color: var(--ink); box-shadow: none; cursor: pointer; white-space: nowrap;
+}
+button.rbd-valid-toggle.is-ok, button.rbd-valid-toggle.is-ok:hover:not(:disabled) { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-line); }
+button.rbd-valid-toggle.is-caveat, button.rbd-valid-toggle.is-caveat:hover:not(:disabled) { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+button.rbd-valid-toggle.is-bad, button.rbd-valid-toggle.is-bad:hover:not(:disabled) { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-line); }
+button.rbd-valid-toggle:hover:not(:disabled) { border-color: currentColor; }
+button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); background: var(--surf); }
+.ovm-menu.rbd-valid-pop { width: min(440px, calc(100vw - 48px)); padding: 8px; gap: 8px; align-items: flex-start; }
+.rbd-valid-pop .rbd-check { width: 100%; box-sizing: border-box; }
+/* The toolbar's settings inside ⋯: a phone's (#301); hidden on a wide screen. */
+.rbd-ovm-settings { display: none; }
+.rbd-mode-select .sel-trigger { min-height: 32px; box-shadow: var(--shadow-card); }
 .rbd-toolbar-float { flex-basis: 100%; display: flex; justify-content: center; pointer-events: none; }
 .rbd-toolbar-float > * { pointer-events: auto; }
 .rbd-toolbar .rbd-toolbar-row { flex-wrap: wrap; row-gap: 0.4rem; min-width: 0; }
@@ -7954,13 +7940,16 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
   .rbd-tabs {
     padding: 0 0.5rem;
   }
-  .rbd-toolbar button.sm {
-    padding: 0.3rem 0.55rem;
-    font-size: var(--fs-13);
+  /* The toolbar collapses to its actions (#301): the unit and mode move
+     into ⋯, so the canvas keeps the screen. */
+  .rbd-toolbar .rbd-tb-settings { display: none; }
+  .rbd-toolbar button.sm, .rbd-toolbar button.rbd-valid-toggle { min-height: 40px; }
+  .rbd-ovm-settings {
+    display: flex; flex-direction: column; gap: 8px; padding: 6px 8px 10px;
+    margin-bottom: 4px; border-bottom: 1px solid var(--line2);
   }
-  .rbd-toolbar .rbd-unit-input {
-    width: 84px;
-  }
+  .rbd-ovm-settings label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-13); color: var(--muted); }
+  .rbd-ovm-settings input, .rbd-ovm-settings select { font-size: 16px; min-height: 40px; }
   /* The minimap would cover a third of the canvas, and the standing hint
      (right-click, shift-click, keys) is for a mouse and keyboard: on a phone,
      show the diagram. A flashed hint (connect feedback) still shows. */
