@@ -226,7 +226,8 @@ def dependents_for_dataset(db, dataset_id: str, owner_id, hidden=frozenset()) ->
         ).sort("created_at", -1):
             if d["_id"] in hidden:
                 continue
-            out.append({"kind": kind, "collection": collection, "id": d["_id"], "name": d.get("name") or ""})
+            out.append({"kind": kind, "collection": collection, "id": d["_id"], "name": d.get("name") or "",
+                        "owner_id": d.get("owner_id")})
     return out
 
 

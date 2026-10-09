@@ -107,7 +107,8 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
     # ALT, recurrent and degradation models fitted to it (life models are
     # "models", with their distribution).
     others = [
-        {"kind": d["kind"], "collection": d["collection"], "id": d["id"], "name": d["name"]}
+        {"kind": d["kind"], "collection": d["collection"], "id": d["id"], "name": d["name"],
+         "is_sample": samples_service.is_sample(d["owner_id"])}
         for d in datasets_service.dependents_for_dataset(session, dataset.id, ctx.read_owners, ctx.hidden)
         if d["collection"] != "models"
     ]
