@@ -1416,17 +1416,7 @@ h6 {
   white-space: nowrap;
 }
 
-/* Save bar (unsaved fit) */
-.save-bar {
-  display: flex;
-  gap: 0.6rem;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-bottom: 1.25rem;
-  padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--line);
-}
-
+/* Save-name field (the diagram save dialog) */
 .save-name {
   flex: 1;
   min-width: 200px;
