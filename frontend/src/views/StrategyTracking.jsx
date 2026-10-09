@@ -15,6 +15,7 @@ import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import ResultSummary from "../components/ui/ResultSummary.jsx";
 import { unitInText } from "../components/unitText.js";
+import { itemName } from "../components/LibRows";
 
 const CONFIDENCE_LEVELS = [
   { value: "0.8", label: "80%" },
@@ -145,7 +146,7 @@ export default function StrategyTracking() {
     <div className="app">
       <PageHeader
         crumbs={[{ label: "Fleet", to: "/fleet" }, { label: "Degradation tracking", to: "/fleet/tracking" }]}
-        title={fleet.name}
+        title={itemName(fleet)}
         badges={fleet.is_sample && <Chip>Sample</Chip>}
         meta={
           <>

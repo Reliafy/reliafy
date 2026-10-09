@@ -320,6 +320,9 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
   );
 }
 
+// Shared samples are stored with a "(sample)" suffix; the header says so with a chip.
+const SAMPLE_SUFFIX = /\s*\(sample\)\s*$/i;
+
 function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -1737,7 +1740,8 @@ export default function RbdBuilder() {
     <div className={"app rbd-app" + (tab === "builder" ? "" : " rbd-app-scroll")}>
       <PageHeader
         crumbs={[{ label: "RBDs", to: "/rbds" }]}
-        title={meta.name || (id ? "" : "Untitled RBD")}
+        title={(meta.name || "").replace(SAMPLE_SUFFIX, "") || (id ? "" : "Untitled RBD")}
+        badges={SAMPLE_SUFFIX.test(meta.name || "") && <Chip>Sample</Chip>}
         id={meta.id || id}
         menu={meta.id && (
           <ShareButton

@@ -12,6 +12,7 @@ import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import ResultSummary, { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import { formatNumber } from "../format.js";
+import { itemName } from "../components/LibRows";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -251,7 +252,7 @@ export default function FleetForecastPage() {
     <div className="app">
       <PageHeader
         crumbs={[{ label: "Fleet", to: "/fleet" }]}
-        title={fleet.name}
+        title={itemName(fleet)}
         badges={
           <>
             {fleet.is_sample && <Chip>Sample</Chip>}

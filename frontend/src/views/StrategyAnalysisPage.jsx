@@ -8,6 +8,7 @@ import { ShareButton } from "../components/ShareDialog.jsx";
 import { getStrategyAnalysis } from "../api.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { itemName } from "../components/LibRows";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
@@ -40,7 +41,7 @@ export default function StrategyAnalysisPage() {
     <div className="app">
       <PageHeader
         crumbs={[{ label: "Strategy", to: "/strategy" }]}
-        title={doc.name}
+        title={itemName(doc)}
         badges={
           <>
             {doc.is_sample && <Chip>Sample</Chip>}

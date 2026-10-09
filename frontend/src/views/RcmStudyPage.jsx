@@ -9,6 +9,7 @@ import { getRcmStudy, getRcmOptions, putRcmTree, renameRcmStudy } from "../api.j
 import { toCsv } from "../csv.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { itemName } from "../components/LibRows";
 
 function exportCsv(study, functions) {
   const header = [
@@ -143,7 +144,7 @@ export default function RcmStudyPage() {
     <div className="app">
       <PageHeader
         crumbs={[{ label: "RCM", to: "/rcm" }]}
-        title={study.name}
+        title={itemName(study)}
         badges={
           <>
             {study.is_sample && <Chip>Sample</Chip>}
