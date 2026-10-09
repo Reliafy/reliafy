@@ -3,6 +3,8 @@ import Plot from "./Plot.jsx";
 import { COLORWAY, DANGER, DATA_INK, bandPair, dataPoints, fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
 import { degradationReliability } from "../api.js";
 import { unitInText } from "./unitText.js";
+import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
+import { formatNumber } from "../format.js";
 
 // Per-item colours: the theme's series colours while each item can have its
 // own; past that, every item is plain ink (colours are never reused).
@@ -65,8 +67,10 @@ function buildRelTraces(curves, xTitle, rel, pointLife, designLife) {
   return { data, layout };
 }
 
-// The fitted degradation model: per-item measurement paths + fitted lines
-// against the failure threshold, plus the derived life model and diagnostics.
+// The fitted degradation model, answer first (#311): the mean life and the
+// design life (at the chosen confidence and reliability), then the per-item
+// paths against the failure threshold, the reliability curve with its inputs,
+// and the pseudo failure times and life model folded under Details.
 // `modelId` (saved models only) enables re-fetching the confidence band at a
 // different confidence level.
 export default function DegradationResultView({ results, modelId, name = null }) {
@@ -141,14 +145,36 @@ export default function DegradationResultView({ results, modelId, name = null })
   const designLife = curves?.lower ? crossing(curves.x, curves.lower, rel) : null;
   const relTraces = curves ? buildRelTraces(curves, xTitle, rel, pointLife, designLife) : null;
 
+  const tUnit = r.unit ? ` ${unitInText(r.unit)}` : "";
+  const mUnit = r.measurement_unit ? ` ${r.measurement_unit}` : "";
+
   return (
     <>
-      <div className="stats">
-        <div className="stat"><div className="k">Path model</div><div className="v sm">{r.path_model?.name || "—"}</div></div>
-        <div className="stat"><div className="k">Items</div><div className="v">{r.n_units ?? "—"}</div></div>
-        <div className="stat"><div className="k">Threshold</div><div className="v sm">{fmt(r.threshold)}{r.measurement_unit ? ` ${r.measurement_unit}` : ""}</div></div>
-        <div className="stat"><div className="k">Mean life</div><div className="v sm">{fmt(life.mean, 0)}{r.unit ? ` ${unitInText(r.unit)}` : ""}</div></div>
-      </div>
+      <ResultSummary
+        sentence={
+          <>
+            <b>{r.path_model?.name || "Degradation"}</b> wear reaches the <b>{fmt(r.threshold)}{mUnit}</b> threshold
+            at a mean life of <b>{formatNumber(life.mean)}{tUnit}</b>
+            {designLife != null && (
+              <>
+                ; <b>{fmt(relPct, 0)}%</b> of the population survive to at least{" "}
+                <b>{formatNumber(designLife)}{tUnit}</b> at {fmt(confPct, 0)}% confidence
+              </>
+            )}
+            .
+          </>
+        }
+        stats={[
+          { label: `Mean life${r.unit ? ` (${unitInText(r.unit)})` : ""}`, value: formatNumber(life.mean) },
+          designLife != null && {
+            label: `Design life${r.unit ? ` (${unitInText(r.unit)})` : ""}`,
+            value: formatNumber(designLife),
+            hint: `${fmt(relPct, 0)}% survive, ${fmt(confPct, 0)}% confidence`,
+          },
+          { label: "Items", value: r.n_units ?? "—" },
+          { label: "Threshold", value: `${fmt(r.threshold)}${mUnit}` },
+        ]}
+      />
 
       <div className="card" style={{ marginTop: "1rem" }}>
         <Plot data={traces} layout={layout} download={`${name || "Degradation model"} — degradation paths`} />
@@ -192,16 +218,12 @@ export default function DegradationResultView({ results, modelId, name = null })
 
           {cbError && <div className="error">{cbError}</div>}
 
-          <div className="design-life-readout">
-            With <strong>{fmt(confPct, 0)}% confidence</strong>,{" "}
-            <strong>{fmt(relPct, 0)}%</strong> of the population survive to at least{" "}
-            <strong>{fmt(designLife, 0)}{r.unit ? ` ${unitInText(r.unit)}` : ""}</strong>
-            {pointLife != null && (
-              <span className="muted-line" style={{ display: "block", marginTop: "0.2rem" }}>
-                Best estimate (ignoring uncertainty): {fmt(pointLife, 0)}{r.unit ? ` ${unitInText(r.unit)}` : ""}.
-              </span>
-            )}
-          </div>
+          {pointLife != null && (
+            <p className="muted-line" style={{ margin: "0.2rem 0 0" }}>
+              Design life above: {fmt(relPct, 0)}% survive at {fmt(confPct, 0)}% confidence. Best estimate,
+              ignoring uncertainty: {formatNumber(pointLife)}{tUnit}.
+            </p>
+          )}
 
           <Plot
             data={relTraces.data} layout={relTraces.layout} style={{ marginTop: "0.6rem" }}
@@ -210,55 +232,57 @@ export default function DegradationResultView({ results, modelId, name = null })
         </div>
       )}
 
-      <div className="row" style={{ gap: "1rem", alignItems: "flex-start", marginTop: "1rem" }}>
-        <div className="card" style={{ flex: 1 }}>
-          <h2 style={{ marginTop: 0 }}>Pseudo failure times</h2>
-          <p className="muted-line">When each item's fitted path crosses the threshold. The life model is fitted to these.</p>
-          <table className="lib-table">
-            <thead><tr><th>Item</th><th>Crossing{r.unit ? ` (${r.unit})` : ""}</th><th /></tr></thead>
-            <tbody>
-              {units.map((u) => (
-                <tr key={u.id}>
-                  <td>{u.id}</td>
-                  <td className="lib-n">{u.pseudo_failure_time === null ? "never (censored)" : fmt(u.pseudo_failure_time, 0)}</td>
-                  <td className="lib-date">{u.censored ? "censored" : ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <ResultDetails summary="Pseudo failure times and life model">
+        <div className="row" style={{ gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 280px", minWidth: 0 }}>
+            <p className="rs-note" style={{ marginTop: 0 }}>
+              When each item's fitted path crosses the threshold. The life model is fitted to these.
+            </p>
+            <table className="lib-table">
+              <thead><tr><th>Item</th><th>Crossing{r.unit ? ` (${r.unit})` : ""}</th><th /></tr></thead>
+              <tbody>
+                {units.map((u) => (
+                  <tr key={u.id}>
+                    <td>{u.id}</td>
+                    <td className="lib-n">{u.pseudo_failure_time === null ? "never (censored)" : formatNumber(u.pseudo_failure_time, { sig: 4 })}</td>
+                    <td className="lib-date">{u.censored ? "censored" : ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-        <div className="card" style={{ flex: 1 }}>
-          <h2 style={{ marginTop: 0 }}>Life model</h2>
-          <p className="muted-line">
-            {life.distribution || "—"} fitted to the pseudo failure times.
-          </p>
-          <table className="lib-table">
-            <tbody>
-              {(life.params || []).map((p) => (
-                <tr key={p.name}><td>{p.name}</td><td className="lib-n">{fmt(p.value, 3)}</td></tr>
-              ))}
-              <tr><td>mean</td><td className="lib-n">{fmt(life.mean, 1)}</td></tr>
-            </tbody>
-          </table>
+          <div style={{ flex: "1 1 280px", minWidth: 0 }}>
+            <p className="rs-note" style={{ marginTop: 0 }}>
+              {life.distribution || "—"} fitted to the pseudo failure times.
+            </p>
+            <table className="lib-table">
+              <tbody>
+                {(life.params || []).map((p) => (
+                  <tr key={p.name}><td>{p.name}</td><td className="lib-n">{formatNumber(p.value, { sig: 4 })}</td></tr>
+                ))}
+                <tr><td>mean</td><td className="lib-n">{formatNumber(life.mean, { sig: 4 })}</td></tr>
+              </tbody>
+            </table>
 
-          {r.path_selection && (
-            <>
-              <h2 style={{ marginTop: "1.2rem" }}>Path selection (AICc)</h2>
-              <table className="lib-table">
-                <tbody>
-                  {r.path_selection.slice(0, 5).map((row, i) => (
-                    <tr key={row.id}>
-                      <td>{row.name || row.id}{i === 0 ? " ✓" : ""}</td>
-                      <td className="lib-n">{fmt(row.aicc, 1)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          )}
+            {r.path_selection && (
+              <>
+                <p className="rs-note">Path selection (AICc, lower is better)</p>
+                <table className="lib-table">
+                  <tbody>
+                    {r.path_selection.slice(0, 5).map((row, i) => (
+                      <tr key={row.id}>
+                        <td>{row.name || row.id}{i === 0 ? " ✓" : ""}</td>
+                        <td className="lib-n">{fmt(row.aicc, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      </ResultDetails>
     </>
   );
 }

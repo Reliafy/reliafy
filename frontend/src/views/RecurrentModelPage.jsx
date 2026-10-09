@@ -8,11 +8,11 @@ import { getRecurrentModel, deleteRecurrentModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { itemName } from "../components/LibRows.jsx";
 
-const GROWTH_COLOR = { improving: "#2faa6a", stable: "#6c727c", deteriorating: "#d05a5a" };
-
-// A saved recurrent-event model — mirrors the life-data model page: title row
-// with a growth pill + saved meta, and its MCF / Crow-AMSAA result view.
+// A saved recurrent-event model — mirrors the life-data model page: title and
+// saved meta, then its MCF / Crow-AMSAA result view, which leads with the
+// growth verdict.
 export default function RecurrentModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -36,8 +36,8 @@ export default function RecurrentModelPage() {
     <div className="app model-page">
       <PageHeader
         crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Recurrent events", to: "/modelling/recurrent" }]}
-        title={model ? model.name : "Model"}
-        badges={model && <Chip dot={GROWTH_COLOR[r.growth] || "#6c727c"}>{r.model?.name || "Recurrent"}</Chip>}
+        title={model ? itemName(model) : "Model"}
+        badges={model?.is_sample && <Chip>Sample</Chip>}
         meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""}</>}
         id={model?.id}
         menu={model && (

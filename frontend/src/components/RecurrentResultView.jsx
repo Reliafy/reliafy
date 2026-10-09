@@ -3,20 +3,24 @@ import Plot from "./Plot.jsx";
 import { NEUTRAL_BAND_FILL, band, dataPoints, fitLine } from "../plotTheme.js";
 import RecurrentCalculator from "./RecurrentCalculator.jsx";
 import { unitInText } from "./unitText.js";
-import Chip from "./ui/Chip.jsx";
+import ResultSummary from "./ui/ResultSummary.jsx";
+import { formatNumber } from "../format.js";
 
 const fmt = (v, d = 2) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: d });
 // Significant figures, for rates and intervals that can be very small.
-const sig = (v, n = 4) =>
-  v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumSignificantDigits: n });
-const ciText = (ci, n = 3) => (ci ? `[${sig(ci[0], n)}, ${sig(ci[1], n)}]` : null);
+const sig = (v, n = 4) => formatNumber(v, { sig: n });
+const ciText = (ci, n = 3) => (ci ? `${sig(ci[0], n)}–${sig(ci[1], n)}` : null);
+// Plain names for the power-law parameters.
+const PARAM_LABEL = { alpha: "Scale α", beta: "Shape β" };
 const pText = (p) => (p < 0.001 ? "p < 0.001" : `p = ${sig(p, 2)}`);
 
+// ``summary``: the answer card's tone — green for the good verdict, amber
+// for the one to act on.
 const GROWTH = {
-  improving: { label: "Improving", note: "failures are slowing", tone: "success" },
-  stable: { label: "Stable", note: "no clear trend in the failure rate", tone: "neutral" },
-  deteriorating: { label: "Deteriorating", note: "failures are accelerating", tone: "danger" },
+  improving: { label: "Improving", note: "failures are slowing", summary: "good" },
+  stable: { label: "Stable", note: "no clear trend in the failure rate", summary: "neutral" },
+  deteriorating: { label: "Deteriorating", note: "failures are accelerating", summary: "caveat" },
 };
 
 // Why the verdict is what it is (#81): β's 95% interval against 1 (a slope
@@ -29,7 +33,7 @@ function basisText(b) {
   if (b.ci) {
     const [lo, hi] = b.ci;
     const where = lo > nul ? `wholly above ${nul}` : hi < nul ? `wholly below ${nul}` : `includes ${nul}`;
-    return `${sym}'s 95% interval ${ciText(b.ci)} ${where}`;
+    return `${sym}'s 95% interval, ${ciText(b.ci)}, ${where}`;
   }
   return `${sym} = ${sig(b.estimate)} (no interval — the value decides)`;
 }
@@ -41,10 +45,10 @@ const TABS = [
 ];
 
 // A fitted recurrent-event (repairable-system) model, laid out like the life-
-// data result view: a tabbed panel with the mean-cumulative-function plot (plus
-// a parameter side-rail) and a "Trend & fit" detail tab, and a growth verdict
-// footer. Handles both data fits and models built from parameters (no observed
-// step, trend tests, bounds or goodness of fit).
+// data result view (#311): the growth verdict and four tiles first, then the
+// mean-cumulative-function plot, the calculator and a "Trend & fit" tab with
+// the parameters, intervals and tests. Handles both data fits and models built
+// from parameters (no observed step, trend tests, bounds or goodness of fit).
 export default function RecurrentResultView({ results, name = null }) {
   const r = results || {};
   const [tab, setTab] = useState("mcf");
@@ -88,9 +92,29 @@ export default function RecurrentResultView({ results, name = null }) {
   };
 
   const anyCi = (r.params || []).some((p) => p.ci);
+  const hasBeta = (r.params || []).some((p) => p.name === "beta");
+  const perUnit = r.unit ? ` per ${unitInText(r.unit).replace(/s$/, "")}` : "";
 
   return (
     <>
+      <ResultSummary
+        tone={growth?.summary || "neutral"}
+        sentence={growth
+          ? <><b>{growth.label}</b> — {growth.note}{basis ? `: ${basis}` : ""}.</>
+          : <><b>{r.model?.name || "Recurrent model"}</b> fitted.</>}
+        stats={[
+          r.mtbf != null && {
+            label: `MTBF now${r.unit ? ` (${unitInText(r.unit)})` : ""}`,
+            value: sig(r.mtbf, 3),
+            hint: dm && dm.lower != null
+              ? `at least ${sig(dm.lower, 3)} at ${Math.round((dm.confidence || 0.9) * 100)}% confidence`
+              : null,
+          },
+          r.rocof != null && { label: "Failure rate now", value: sig(r.rocof, 3), hint: perUnit.trim() || null },
+          r.n_systems != null && { label: "Systems / failures", value: `${r.n_systems} / ${r.n_events}` },
+          { label: "Model", value: r.model?.name || "—" },
+        ]}
+      />
       <div className="tabs">
         {TABS.map((tb) => (
           <button
@@ -109,41 +133,11 @@ export default function RecurrentResultView({ results, name = null }) {
             <div className="plotwrap">
               <div className="plottitle">{r.model?.name || "Recurrent"} — mean cumulative function</div>
               <Plot data={traces} layout={layout} download={`${name || r.model?.name || "Recurrent model"} — mean cumulative function`} />
-            </div>
-            <div className="aside">
-              {(r.params || []).length > 0 && (
-                <div className="gof-card">
-                  <div className="gofh">Parameters</div>
-                  {r.params.map((p) => (
-                    <div className="gofr" key={p.name}>
-                      <span className="gk">{p.name}</span>
-                      <span className="gv-col">
-                        <span className="gv">{sig(p.value)}</span>
-                        {p.ci && <span className="param-ci">95% CI {ciText(p.ci)}</span>}
-                      </span>
-                    </div>
-                  ))}
-                  {r.beta != null && (
-                    <div className="gofr">
-                      <span className="gk">β (shape)</span>
-                      <span className="gv-col">
-                        <span className="gv">{sig(r.beta)}</span>
-                        {r.beta_ci && <span className="param-ci">95% CI {ciText(r.beta_ci)}</span>}
-                      </span>
-                    </div>
-                  )}
-                  {anyCi && (
-                    <p className="param-ci-note" style={{ padding: "0 16px 10px" }}>
-                      95% intervals from the fit's observed information.
-                    </p>
-                  )}
-                </div>
-              )}
-              <div className="detail-note">
+              <p className="plot-caption">
                 {r.n_systems != null
-                  ? <>Fitted to <b>{r.n_events} events</b> across {r.n_systems} systems. The step is the observed MCF (95% band); the line is the fitted {r.model?.name || "model"}.</>
-                  : <>Built from parameters — the line is the fitted {r.model?.name || "model"}; there's no observed data.</>}
-              </div>
+                  ? <>Fitted to {r.n_events} failures across {r.n_systems} systems: the step is the observed MCF with its 95% band, the line the fitted {r.model?.name || "model"}.</>
+                  : <>Built from parameters: the line is the {r.model?.name || "model"}; there's no observed data.</>}
+              </p>
             </div>
           </div>
         )}
@@ -152,20 +146,39 @@ export default function RecurrentResultView({ results, name = null }) {
 
         {tab === "detail" && (
           <div className="detail-panel" style={{ flexWrap: "wrap", alignItems: "flex-start" }}>
+            {(r.params || []).length > 0 && (
+              <div className="gof-card rec-detail-card">
+                <div className="gofh">Parameters</div>
+                {r.params.map((p) => (
+                  <div className="gofr" key={p.name}>
+                    <span className="gk">{PARAM_LABEL[p.name] || p.name}{p.name === "alpha" && r.unit ? ` (${unitInText(r.unit)})` : ""}</span>
+                    <span className="gv-col">
+                      <span className="gv">{sig(p.value)}</span>
+                      {p.ci && <span className="param-ci">95% {ciText(p.ci)}</span>}
+                    </span>
+                  </div>
+                ))}
+                {r.beta != null && !hasBeta && (
+                  <div className="gofr">
+                    <span className="gk">Shape β</span>
+                    <span className="gv-col">
+                      <span className="gv">{sig(r.beta)}</span>
+                      {r.beta_ci && <span className="param-ci">95% {ciText(r.beta_ci)}</span>}
+                    </span>
+                  </div>
+                )}
+                {anyCi && (
+                  <p className="param-ci-note">95% intervals from the fit's observed information.</p>
+                )}
+              </div>
+            )}
             <div className="gof-card rec-detail-card">
               <div className="gofh">Rates{at != null ? ` at ${fmt(at, 1)}${unit}` : ""}</div>
-              <div className="gofr">
-                <span className="gk">Reliability growth</span>
-                <span className="gv-col">
-                  <span className="gv">{growth ? <Chip tone={growth.tone}>{growth.label}</Chip> : "—"}</span>
-                  {basis && <span className="param-ci">{basis}</span>}
-                </span>
-              </div>
               <div className="gofr">
                 <span className="gk" title="1 ÷ the failure rate at the end of observation. If the system is deteriorating this is below the average over the test.">MTBF now (end of test)</span>
                 <span className="gv-col">
                   <span className="gv">{fmt(r.mtbf, 1)}{unit}</span>
-                  {r.mtbf_ci && <span className="param-ci">95% CI {ciText(r.mtbf_ci)}</span>}
+                  {r.mtbf_ci && <span className="param-ci">95% {ciText(r.mtbf_ci)}</span>}
                 </span>
               </div>
               {dm && dm.lower != null && (
@@ -181,7 +194,7 @@ export default function RecurrentResultView({ results, name = null }) {
                 <span className="gk">ROCOF</span>
                 <span className="gv-col">
                   <span className="gv">{sig(r.rocof)}</span>
-                  {r.rocof_ci && <span className="param-ci">95% CI {ciText(r.rocof_ci)}</span>}
+                  {r.rocof_ci && <span className="param-ci">95% {ciText(r.rocof_ci)}</span>}
                 </span>
               </div>
               {r.n_systems != null && (
@@ -276,15 +289,6 @@ export default function RecurrentResultView({ results, name = null }) {
         )}
       </div>
 
-      {growth && (
-        <div className="result-foot">
-          <p className="verdict-line">
-            <b>{growth.label}</b> — {growth.note}{basis ? ` (${basis})` : ""}. ROCOF {sig(r.rocof)} per{unit || " unit"}
-            {r.mtbf != null ? `, MTBF now ≈ ${fmt(r.mtbf, 1)}${unit}` : ""}
-            {dm && dm.lower != null ? `; demonstrated MTBF now ≥ ${fmt(dm.lower, 1)}${unit} at ${Math.round((dm.confidence || 0.9) * 100)}%` : ""}.
-          </p>
-        </div>
-      )}
     </>
   );
 }

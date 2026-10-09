@@ -5,6 +5,9 @@ import AltCalculator from "./AltCalculator.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import { stressName } from "./stressName.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import ResultSummary from "./ui/ResultSummary.jsx";
+import { formatNumber } from "../format.js";
+import { unitInText } from "./unitText.js";
 
 const fmt = (v, d = 4) =>
   v === null || v === undefined || !Number.isFinite(v)
@@ -17,8 +20,44 @@ const ci = (pair) => (Array.isArray(pair) && pair.length === 2 ? `${fmt(pair[0])
 // on the probability plot: the theme's series colours, in order.
 const SERIES = COLORWAY;
 
-// A fitted Accelerated Life model, laid out like the other result views: a
-// tabbed panel with the life-vs-stress plot (the ALT signature — characteristic
+// The answer first (#311): what was fitted and how far the characteristic
+// life moves across the tested stresses; life at the user's own stress is the
+// calculator's job.
+function AltSummary({ r, calculator }) {
+  const lives = (r.levels || []).map((l) => l.characteristic_life).filter((v) => Number.isFinite(v));
+  const unit = r.unit ? ` ${unitInText(r.unit)}` : "";
+  const beta = (r.params || []).find((p) => p.name === "beta");
+  const name = [r.distribution, r.life_model].filter(Boolean).join(" · ");
+  return (
+    <ResultSummary
+      sentence={
+        <>
+          <b>{name || "Accelerated life model"}</b>
+          {lives.length > 1 ? (
+            <>
+              {" "}— characteristic life runs from <b>{formatNumber(Math.min(...lives))}</b> to{" "}
+              <b>{formatNumber(Math.max(...lives))}{unit}</b> across the {lives.length} tested levels.
+            </>
+          ) : "."}
+        </>
+      }
+      stats={[
+        beta && {
+          label: "Shape β",
+          value: formatNumber(beta.value),
+          hint: beta.ci ? `95% ${formatNumber(beta.ci[0])}–${formatNumber(beta.ci[1])}` : null,
+        },
+        { label: "Stress levels", value: String((r.levels || []).length || "—") },
+        { label: "Observations", value: r.n != null ? r.n.toLocaleString() : "—" },
+      ]}
+    >
+      {calculator ? "Life at your own use stress is in the Use-level calculator." : null}
+    </ResultSummary>
+  );
+}
+
+// A fitted Accelerated Life model, laid out like the other result views: the
+// answer card, then a tabbed panel with the life-vs-stress plot (the ALT signature — characteristic
 // life against stress, with the fitted line through each tested level), a
 // use-level calculator (only once saved, so it can hit the evaluate endpoint),
 // and a coefficients/fit detail tab.
@@ -106,6 +145,7 @@ export default function AltResultView({ results, modelId }) {
       {(r.unit_warnings || []).map((w) => (
         <div className="detail-note warn" key={w}>⚠ {w}</div>
       ))}
+      <AltSummary r={r} calculator={!!modelId} />
       <SegmentedControl
         label="View"
         value={tab}
