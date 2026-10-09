@@ -3699,10 +3699,9 @@ h1 .chip,
   background: var(--surf-2);
 }
 
-/* Structured entry: one comma-separated value list per field (badge + input). */
+/* Structured entry: one comma-separated value list per field. */
 .ds-form { display: flex; flex-direction: column; gap: 0.5rem; }
 .ds-pair { display: flex; gap: 0.5rem; }
-.ds-pair > .ds-listfield { flex: 1; min-width: 0; }
 .ds-listfield {
   display: flex;
   align-items: stretch;
@@ -3713,19 +3712,6 @@ h1 .chip,
 }
 .ds-listfield:focus-within { border-color: var(--acc); box-shadow: var(--focus); }
 .ds-listfield.disabled { opacity: 0.5; }
-.ds-listbadge {
-  display: flex;
-  align-items: center;
-  padding: 0 0.6rem;
-  background: var(--surf-2);
-  border-right: 1px solid var(--line);
-  font-size: var(--fs-13);
-  font-weight: 600;
-  color: var(--muted);
-  min-width: 34px;
-  justify-content: center;
-  font-variant-numeric: tabular-nums;
-}
 .ds-listinput {
   flex: 1;
   min-width: 0;
@@ -3978,7 +3964,7 @@ select:disabled {
   height: 16px;
 }
 
-/* Detail: preview + columns on the left, models-using aside on the right. */
+/* Detail: the preview on the left, models-using aside on the right. */
 .ds-grid {
   display: flex;
   gap: 22px;
@@ -4001,32 +3987,6 @@ select:disabled {
   color: var(--ink);
   margin-bottom: 10px;
   font-weight: 600;
-}
-
-.ds-cols {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.ds-col {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 7px 11px;
-  background: var(--surf);
-}
-
-.ds-col-name {
-  font-size: var(--fs-13);
-  color: var(--ink);
-}
-
-.ds-col-type {
-  font-size: var(--fs-12);
-  color: var(--muted);
 }
 
 .ds-aside .gof-card {
@@ -6503,7 +6463,12 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-size: var(--fs-13);
   color: var(--ink);
   width: 160px;
+  /* The whole field takes the click, not a 19px line inside it. */
+  align-self: stretch;
+  padding-block: 8px;
 }
+.tablebar .search.live { padding-block: 0; }
+.tablebar .search.live:focus-within { border-color: var(--acc); box-shadow: var(--focus); }
 .search.live input::placeholder { color: var(--subtle); }
 
 /* ---- Landing: quiet nav links ------------------------------------------- */
@@ -7924,13 +7889,6 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
 .mode-notes { white-space: pre-line; }
 
 /* ---- Compare groups (dataset page, #175) --------------------------------- */
-.cg-card h2 { margin: 0 0 4px; font-size: var(--fs-16); }
-.cg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; }
-.cg-head .muted-line { margin: 0; max-width: 62ch; }
-.cg-inputs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.8rem 1rem; }
-.cg-inputs .calc-t input { width: 100%; box-sizing: border-box; }
-.cg-invert { font-size: var(--fs-14); }
-.cg-actions { margin-top: 1rem; }
 .cg-h { margin-top: 1.25rem; }
 .cg-table .combo-dot { margin-bottom: 0; }
 .cg-table td { white-space: nowrap; }
@@ -7939,10 +7897,6 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
 .cg-table tr.strategy-best td { font-weight: 600; }
 .cg-ci { color: var(--muted); font-size: var(--fs-13); }
 .cg-notes { margin: 0.5rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: var(--fs-13); }
-@media (max-width: 560px) {
-  .cg-head { flex-direction: column; }
-  .cg-inputs { grid-template-columns: 1fr 1fr; }
-}
 
 /* ---- Phone layout (#199) ---------------------------------------------------
    With the sidebar off-canvas the page has the full width; these keep the
@@ -8018,9 +7972,10 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
     padding: 12px 10px;
   }
   .lib-acts .act {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
+  .search.live input { padding-block: 12px; }
   /* Model page: the parameters card goes under the plot, not beside it. */
   .detail-panel {
     flex-direction: column;
