@@ -1,22 +1,24 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
 import { fitLine, pointMarker, referenceShape } from "../plotTheme.js";
-import SegmentedControl from "./ui/SegmentedControl.jsx";
+import Select from "./Select.jsx";
+import { formatNumber } from "../format.js";
+import { unitInText } from "./unitText.js";
 
 // Recurrent-event calculator: read off the repairable-system functions at a
 // chosen time — expected cumulative failures N(t), the rate of occurrence of
 // failures ROCOF(t), and the instantaneous MTBF(t) — plus the expected number
 // of failures in a window. The power-law form (Crow-AMSAA / Duane) is evaluated
 // analytically from α, β; otherwise the fitted MCF curve is interpolated. Mirrors
-// the life-data Calculator's layout (segmented function picker + evaluate-at-t).
+// the life-data Calculator (#313): one answer line — function, time, value —
+// then the chart, with the window option in the rail.
 const FUNCS = [
-  { id: "N", label: "Expected cumulative failures N(t)", y: "Expected cumulative failures" },
-  { id: "rocof", label: "Rate of occurrence of failures", y: "ROCOF" },
+  { id: "N", label: "Expected failures N(t)", y: "Expected cumulative failures" },
+  { id: "rocof", label: "Failure rate (ROCOF)", y: "ROCOF" },
   { id: "mtbf", label: "Mean time between failures", y: "MTBF" },
 ];
 
-const fmt = (v) =>
-  v == null || !Number.isFinite(v) ? "—" : Math.abs(v) >= 1e-4 || v === 0 ? Number(v).toPrecision(5) : Number(v).toExponential(3);
+const fmt = (v) => (v == null || !Number.isFinite(v) ? "—" : formatNumber(v, { sig: 4 }));
 
 function interp(x, y, xq) {
   if (!x || !y || xq < x[0] || xq > x[x.length - 1]) return null;
@@ -65,7 +67,6 @@ export default function RecurrentCalculator({ r, name = null }) {
   const gx = Array.from({ length: M }, (_, k) => (tMax * k) / (M - 1));
   const gy = gx.map((tv) => { const v = valAt(active, tv); return v != null && Number.isFinite(v) ? v : null; });
 
-  const values = { N: mcfAt(nt), rocof: rocofAt(nt), mtbf: mtbfAt(nt) };
   const nFrom = from !== "" && !Number.isNaN(Number(from)) ? Number(from) : null;
   const windowN = nFrom != null ? (() => { const a = mcfAt(nFrom), b = mcfAt(nt); return a != null && b != null ? b - a : null; })() : null;
 
@@ -87,19 +88,35 @@ export default function RecurrentCalculator({ r, name = null }) {
     <div className="calc">
       <div className="calc-body">
         <div className="calc-main">
-          <div className="calc-values">
-            {FUNCS.map((f) => (
-              <div className={"calc-cell" + (active === f.id ? " active" : "")} key={f.id}>
-                <div className="calc-cell-id">{f.id === "N" ? "N(t)" : f.id === "rocof" ? "ROCOF" : "MTBF"}</div>
-                <div className="calc-cell-val">
-                  {fmt(values[f.id])}{f.id === "mtbf" && values.mtbf != null && unit ? ` ${unit}` : ""}
-                </div>
-              </div>
-            ))}
+          <div className="calc-answer">
+            <Select
+              value={active}
+              onChange={setActive}
+              title="Function"
+              className="calc-fn"
+              options={FUNCS.map((f) => ({ value: f.id, label: f.label }))}
+            />
+            <span>at</span>
+            <input
+              type="number"
+              className="calc-t-input"
+              aria-label={`Evaluate at ${tLabel}`}
+              min={0}
+              step="any"
+              value={t}
+              onChange={(e) => setT(e.target.value)}
+            />
+            <span>{unit ? unitInText(unit) : ""}:</span>
+            <span className="calc-answer-value">
+              <b>{fmt(yv)}{active === "mtbf" && yv != null && unit ? ` ${unitInText(unit)}` : ""}</b>
+              {active === "rocof" && yv != null && unit && (
+                <span className="calc-answer-ci"> per {unitInText(unit).replace(/s$/, "")}</span>
+              )}
+            </span>
           </div>
           {windowN != null && (
             <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>
-              Expected failures between {tLabel} = {from} and {t}: <b>{fmt(windowN)}</b>
+              Expected failures between {from} and {t}{unit ? ` ${unitInText(unit)}` : ""}: <b>{fmt(windowN)}</b>
               {analytic ? "" : " (interpolated)"}.
             </p>
           )}
@@ -108,22 +125,8 @@ export default function RecurrentCalculator({ r, name = null }) {
 
         <div className="calc-side-rail">
           <div className="calc-rail-card calc-eval-card">
-            <div className="gofh">Evaluate</div>
+            <div className="gofh">Options</div>
             <div className="calc-eval-body">
-              <SegmentedControl
-                label="Function"
-                value={active}
-                onChange={setActive}
-                options={FUNCS.map((f) => ({
-                  value: f.id,
-                  title: f.label,
-                  label: f.id === "N" ? "N(t)" : f.id === "rocof" ? "ROCOF" : "MTBF",
-                }))}
-              />
-              <label className="calc-t">
-                <span>Evaluate at {tLabel}</span>
-                <input type="number" min={0} step="any" value={t} onChange={(e) => setT(e.target.value)} />
-              </label>
               <label className="calc-t">
                 <span>From{unit ? ` (${unit})` : ""} — for a window</span>
                 <input type="number" min={0} step="any" placeholder="e.g. 0" value={from} onChange={(e) => setFrom(e.target.value)} />

@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import Plot from "./Plot.jsx";
 import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
 import { confidenceAt, evaluateAt } from "../api.js";
-import SegmentedControl from "./ui/SegmentedControl.jsx";
+import { formatNumber, formatPercent } from "../format.js";
+import { unitInText } from "./unitText.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
 // time, conditional age) live in the parent (ResultView) so they survive tab
@@ -54,8 +55,20 @@ function interp(x, y, xq) {
   return null;
 }
 
-const fmt = (v) =>
-  v == null ? "—" : Math.abs(v) >= 1e-4 || v === 0 ? v.toPrecision(5) : v.toExponential(3);
+// The five functions by their plain names (#313). ``lead`` starts the answer
+// sentence; probabilities read as percentages.
+const FUNCTIONS = {
+  sf: { label: "Reliability R(t)", axis: "Reliability, R(t)", pct: true },
+  ff: { label: "Probability of failure F(t)", axis: "Probability of failure, F(t)", pct: true },
+  hf: { label: "Hazard rate", axis: "Hazard rate, h(t)" },
+  Hf: { label: "Cumulative hazard", axis: "Cumulative hazard, H(t)" },
+  df: { label: "Density", axis: "Density, f(t)" },
+};
+const fnLabel = (id, meta) => FUNCTIONS[id]?.label || meta.find((m) => m.id === id)?.label || id;
+
+// A value of function ``id``: a probability as a percentage, else a number.
+const fmtFn = (id, v) =>
+  v == null ? "—" : FUNCTIONS[id]?.pct ? formatPercent(v, { sig: 3 }) : formatNumber(v, { sig: 4 });
 
 // Condition a set of curves on having already survived to age s: the time axis
 // becomes additional time t (= x - s) and each function is recomputed as the
@@ -201,7 +214,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const view = (curves) => (cond > 0 && curves ? conditionalize(curves, cond) : curves);
   const xMaxView = cond > 0 ? x[x.length - 1] - cond : x[x.length - 1];
 
-  const baseLabel = meta.find((m) => m.id === active)?.label || active;
+  const baseLabel = FUNCTIONS[active]?.axis || fnLabel(active, meta);
   const activeLabel = cond > 0 ? `${baseLabel} | survived to ${sLabel}` : baseLabel;
   const tAxisLabel =
     cond > 0 ? `additional time${unit ? ` (${unit})` : ""}` : tLabel;
@@ -330,6 +343,43 @@ export default function Calculator({ functions, unit, params, state, setState, n
     <div className="calc">
       <div className="calc-body">
         <div className="calc-main">
+      <div className="calc-answer">
+        <Select
+          value={active}
+          onChange={setActive}
+          title="Function"
+          className="calc-fn"
+          options={meta.map((m) => ({ value: m.id, label: fnLabel(m.id, meta) }))}
+        />
+        <span>{cond > 0 ? "for a further" : "at"}</span>
+        <input
+          type="number"
+          className="calc-t-input"
+          aria-label={`Evaluate at ${tAxisLabel}`}
+          value={t}
+          min={0}
+          max={xMaxView}
+          step="any"
+          onChange={(e) => setT(e.target.value)}
+        />
+        <span>{unit ? unitInText(unit) : ""}{cond > 0 ? `, having survived ${sLabel}` : ""}{multi ? "" : ":"}</span>
+        {!multi && (
+          <span className="calc-answer-value">
+            <b>{fmtFn(active, interp(views[0]?.x, views[0]?.[active], Number(t)))}</b>
+            {band && (() => {
+              const lo = band.lower ? interp(band.x, band.lower, Number(t)) : null;
+              const hi = band.upper ? interp(band.x, band.upper, Number(t)) : null;
+              const text =
+                band.bound === "two-sided"
+                  ? `${fmtFn(active, lo).replace(/%$/, "")}–${fmtFn(active, hi)}`
+                  : band.bound === "lower"
+                  ? `lower bound ${fmtFn(active, lo)}`
+                  : `upper bound ${fmtFn(active, hi)}`;
+              return <span className="calc-answer-ci"> ({ciLevel}% {text})</span>;
+            })()}
+          </span>
+        )}
+      </div>
       {curveWarning && <p className="calc-warn">⚠ {curveWarning}</p>}
       {confidencePath && ci.error && (
         <p className="hint" style={{ margin: "0 0 0.4rem" }}>
@@ -353,7 +403,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
               </th>
               {meta.map((m) => (
                 <th key={m.id} title={m.label}>
-                  {m.id}
+                  {fnLabel(m.id, meta)}
                 </th>
               ))}
             </tr>
@@ -370,71 +420,22 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </td>
                 {meta.map((m) => (
                   <td key={m.id}>
-                    {fmt(interp(views[i]?.x, views[i]?.[m.id], Number(t)))}
+                    {fmtFn(m.id, interp(views[i]?.x, views[i]?.[m.id], Number(t)))}
                   </td>
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
-      ) : (
-        <>
-          <div className="calc-values">
-            {meta.map((m) => (
-              <div
-                className={"calc-cell" + (active === m.id ? " active" : "")}
-                key={m.id}
-              >
-                <div className="calc-cell-id">{m.id}</div>
-                <div className="calc-cell-val">
-                  {fmt(interp(views[0]?.x, views[0]?.[m.id], Number(t)))}
-                </div>
-              </div>
-            ))}
-          </div>
-          {band && (() => {
-            const lo = band.lower ? interp(band.x, band.lower, Number(t)) : null;
-            const hi = band.upper ? interp(band.x, band.upper, Number(t)) : null;
-            const range =
-              band.bound === "two-sided"
-                ? `[${fmt(lo)}, ${fmt(hi)}]`
-                : band.bound === "lower"
-                ? `≥ ${fmt(lo)}`
-                : `≤ ${fmt(hi)}`;
-            return (
-              <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>
-                {ciLevel}% {band.bound === "two-sided" ? "confidence interval" : `${band.bound} confidence bound`} on{" "}
-                {baseLabel} at {tAxisLabel} = {t}: <b>{range}</b>
-              </p>
-            );
-          })()}
-        </>
-      )}
+      ) : null}
 
       <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} />
         </div>
 
         <div className="calc-side-rail">
             <div className="calc-rail-card calc-eval-card">
-              <div className="gofh">Evaluate</div>
+              <div className="gofh">Options</div>
               <div className="calc-eval-body">
-                <SegmentedControl
-                  label="Function"
-                  value={active}
-                  onChange={setActive}
-                  options={meta.map((m) => ({ value: m.id, label: m.id, title: m.label }))}
-                />
-                <label className="calc-t">
-                  <span>Evaluate at {tAxisLabel}</span>
-                  <input
-                    type="number"
-                    value={t}
-                    min={0}
-                    max={xMaxView}
-                    step="any"
-                    onChange={(e) => setT(e.target.value)}
-                  />
-                </label>
                 <label className="calc-t">
                   <span>Given survived to{unit ? ` (${unit})` : ""}</span>
                   <input
@@ -449,19 +450,6 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </label>
                 {confidencePath && (
                   <>
-                    {ci.bound !== "none" && (
-                      <label className="calc-t">
-                        <span>Confidence level %</span>
-                        <input
-                          type="number"
-                          value={ci.level}
-                          min={1}
-                          max={99.9}
-                          step="any"
-                          onChange={(e) => setCi({ level: e.target.value })}
-                        />
-                      </label>
-                    )}
                     <label className="calc-t">
                       <span>Confidence bound</span>
                       <Select
@@ -475,8 +463,55 @@ export default function Calculator({ functions, unit, params, state, setState, n
                         ]}
                       />
                     </label>
+                    {ci.bound !== "none" && (
+                      <label className="calc-t">
+                        <span>Confidence level %</span>
+                        <input
+                          type="number"
+                          value={ci.level}
+                          min={1}
+                          max={99.9}
+                          step="any"
+                          onChange={(e) => setCi({ level: e.target.value })}
+                        />
+                      </label>
+                    )}
                   </>
                 )}
+                <details className="calc-axis" open={axisOpen} onToggle={(e) => setAxisOpen(e.currentTarget.open)}>
+                  <summary>Axis</summary>
+                  <div className="calc-axis-body">
+                    <label className="calc-cov">
+                      <span>Min{unit ? ` (${unit})` : ""}</span>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="auto"
+                        value={xMin}
+                        onChange={(e) => setXMin(e.target.value)}
+                      />
+                    </label>
+                    <label className="calc-cov">
+                      <span>Max{unit ? ` (${unit})` : ""}</span>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="auto"
+                        value={xMax}
+                        onChange={(e) => setXMax(e.target.value)}
+                      />
+                    </label>
+                    {(xMin !== "" || xMax !== "") && (
+                      <button
+                        type="button"
+                        className="secondary calc-axis-reset"
+                        onClick={() => { setXMin(""); setXMax(""); }}
+                      >
+                        Reset to auto
+                      </button>
+                    )}
+                  </div>
+                </details>
               </div>
             </div>
             {params && params.length > 0 && (
@@ -486,10 +521,10 @@ export default function Calculator({ functions, unit, params, state, setState, n
                   <div className="gofr" key={p.name}>
                     <span className="gk">{p.name}</span>
                     <span className="gv-col">
-                      <span className="gv">{Number(p.value).toPrecision(4)}</span>
+                      <span className="gv">{formatNumber(p.value, { sig: 4 })}</span>
                       {p.ci && (
                         <span className="param-ci">
-                          95% CI [{Number(p.ci[0]).toPrecision(3)}, {Number(p.ci[1]).toPrecision(3)}]
+                          95% {formatNumber(p.ci[0])}–{formatNumber(p.ci[1])}
                         </span>
                       )}
                     </span>
@@ -534,51 +569,6 @@ export default function Calculator({ functions, unit, params, state, setState, n
             </aside>
             )}
 
-            <div className={"calc-rail-card calc-axis-card" + (axisOpen ? "" : " collapsed")}>
-              <div className="calc-cov-rail-head">
-                <button
-                  type="button"
-                  className="cov-rail-toggle"
-                  onClick={() => setAxisOpen((o) => !o)}
-                  aria-expanded={axisOpen}
-                >
-                  <span>{axisOpen ? "▾" : "▸"}</span> X-axis limits
-                </button>
-              </div>
-              {axisOpen && (
-                <div className="calc-axis-body">
-                  <label className="calc-cov">
-                    <span>Min{unit ? ` (${unit})` : ""}</span>
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="auto"
-                      value={xMin}
-                      onChange={(e) => setXMin(e.target.value)}
-                    />
-                  </label>
-                  <label className="calc-cov">
-                    <span>Max{unit ? ` (${unit})` : ""}</span>
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="auto"
-                      value={xMax}
-                      onChange={(e) => setXMax(e.target.value)}
-                    />
-                  </label>
-                  {(xMin !== "" || xMax !== "") && (
-                    <button
-                      type="button"
-                      className="secondary calc-axis-reset"
-                      onClick={() => { setXMin(""); setXMax(""); }}
-                    >
-                      Reset to auto
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
       </div>
 
