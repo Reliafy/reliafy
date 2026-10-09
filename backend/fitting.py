@@ -329,7 +329,46 @@ def preview(file_bytes: bytes, rows: int = 5, distinct: bool = False) -> dict:
     out = {"columns": columns, "preview": sample, "n_rows": int(df.shape[0])}
     if distinct:
         out["n_unique"] = [int(n) for n in df.nunique(dropna=True).tolist()]
+        # What the Data step needs to guess the time and status columns, map a
+        # text status ("Failed" / "Running") and count failures before a fit:
+        # each column's dtype, blank cells, and its values when there are few.
+        out["dtypes"] = [str(t) for t in df.dtypes]
+        out["blanks"] = [int(n) for n in df.isna().sum().tolist()]
+        out["values"] = [_few_values(df[c]) for c in df.columns]
     return out
+
+
+def _few_values(series: pd.Series, limit: int = 12) -> Optional[dict]:
+    """``{value: rows}`` for a column with at most ``limit`` distinct non-blank
+    values (a status column), else None. Whole numbers read as ``"1"``, not
+    ``"1.0"``, and text is trimmed, as :func:`map_censor_column` matches them."""
+    values = series.dropna()
+    if values.nunique() > limit:
+        return None
+    out: dict = {}
+    for value, count in values.map(_status_label).value_counts(sort=True).items():
+        out[str(value)] = out.get(str(value), 0) + int(count)
+    return out
+
+
+def _status_label(value) -> str:
+    if isinstance(value, (bool, np.bool_)):
+        return str(bool(value))
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        f = float(value)
+        return str(int(f)) if math.isfinite(f) and f == int(f) else str(value)
+    return str(value).strip()
+
+
+def _status_key(value) -> str:
+    """A status value as it is matched: its label, case-folded, with a numeric
+    string read as a number (so ``1``, ``1.0`` and ``"1"`` agree)."""
+    label = _status_label(value)
+    try:
+        f = float(label)
+    except ValueError:
+        return label.casefold()
+    return str(int(f)) if math.isfinite(f) and f == int(f) else label.casefold()
 
 
 # The censoring convention, stated once and reused in every message that needs
@@ -353,8 +392,47 @@ CENSOR_CONVENTION = (
 # than the mapping, because the mapping is column *names* only.
 CENSOR_INVERT_KEY = "c_invert"
 
+# Fit option that reads a status column of words ("Failed" / "Running",
+# "F" / "S", "yes" / "no") as censor codes: ``{value: 0 | 1}``, matched
+# case-insensitively. Stored with the fit options like ``c_invert``.
+CENSOR_MAP_KEY = "c_map"
+
 # Censor codes SurPyval understands (see the module docstring).
 _CENSOR_CODES = (0, 1, -1, 2)
+
+
+def map_censor_column(df: pd.DataFrame, column: str, codes: dict) -> pd.DataFrame:
+    """Return a copy of ``df`` with ``column``'s values replaced by the censor
+    codes ``codes`` gives them (``{"Failed": 0, "Running": 1}``).
+
+    Every non-blank value must be in ``codes``; a blank or unmapped value is
+    refused in plain words rather than reaching SurPyval as NaN.
+    """
+    if column not in df.columns:
+        raise FitError(f"Status column '{column}' isn't in the data.")
+    lookup = {}
+    for value, code in (codes or {}).items():
+        try:
+            code = int(code)
+        except (TypeError, ValueError):
+            code = None
+        if code not in _CENSOR_CODES:
+            raise FitError(f"'{value}' in '{column}' must mean failed (0) or still running (1).")
+        lookup[_status_key(value)] = code
+    blank = df[column].isna() | (df[column].astype(str).str.strip() == "")
+    if blank.any():
+        n = int(blank.sum())
+        raise FitError(
+            f"{n} row{'s' if n != 1 else ''} {'have' if n != 1 else 'has'} no value in '{column}'. "
+            "Fill in whether each unit failed or was still running, then try again."
+        )
+    mapped = df[column].map(lambda v: lookup.get(_status_key(v)))
+    if mapped.isna().any():
+        shown = ", ".join(sorted({_status_label(v) for v in df[column][mapped.isna()]})[:5])
+        raise FitError(f"Say whether these values in '{column}' mean failed or still running: {shown}.")
+    out = df.copy()
+    out[column] = mapped.astype(int)
+    return out
 
 
 def invert_censor_column(df: pd.DataFrame, column: str) -> pd.DataFrame:
@@ -882,8 +960,10 @@ def options_from_form(
     how: Optional[str] = None,
     c_invert: Optional[str] = None,
     include_mixtures: Optional[str] = None,
+    c_map: Optional[str] = None,
 ) -> Optional[dict]:
-    """Build an options dict from HTML-form string fields (both fit routers)."""
+    """Build an options dict from HTML-form string fields (both fit routers).
+    ``c_map`` is a JSON object of status words to censor codes."""
 
     def truthy(v):
         return str(v or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -891,6 +971,14 @@ def options_from_form(
     opts = {"offset": truthy(offset), "zi": truthy(zi), "lfp": truthy(lfp)}
     if truthy(c_invert):
         opts[CENSOR_INVERT_KEY] = True
+    if c_map and str(c_map).strip():
+        try:
+            value = json.loads(c_map)
+        except json.JSONDecodeError:
+            value = None
+        if not isinstance(value, dict) or not value:
+            raise FitError('c_map must be a JSON object, e.g. {"Failed": 0, "Running": 1}.')
+        opts[CENSOR_MAP_KEY] = value
     if fixed and str(fixed).strip():
         try:
             opts["fixed"] = json.loads(fixed)
@@ -1163,11 +1251,19 @@ def fit(
     ``options`` (plain distributions only) may hold ``offset``/``zi``/``lfp``
     booleans and a ``fixed`` mapping. ``options["c_invert"]`` applies to every
     model kind: it flips a 1 = failed censor column into the convention before
-    anything (including the all-censored guard) looks at it. Any SurPyval
+    anything (including the all-censored guard) looks at it, and
+    ``options["c_map"]`` (``{"Failed": 0, "Running": 1}``) reads a status column
+    of words the same way, in place of ``c_invert``. Any SurPyval
     error is wrapped in :class:`FitError`.
     """
     options = dict(options or {})
     c_invert = bool(options.pop(CENSOR_INVERT_KEY, False)) and bool(mapping.get("c"))
+    c_map = options.pop(CENSOR_MAP_KEY, None) if mapping.get("c") else None
+    options.pop(CENSOR_MAP_KEY, None)
+    if c_map:
+        # The map already says which way round each value is.
+        df = map_censor_column(df, mapping["c"], c_map)
+        c_invert = False
     if c_invert:
         df = invert_censor_column(df, mapping["c"])
     options = normalize_options(distribution, options)
@@ -1200,6 +1296,8 @@ def fit(
         # Persist alongside the other fit options so a saved model's spec
         # re-fits the data the same way round (see models_service._refit).
         result["options"] = {**(result.get("options") or {}), CENSOR_INVERT_KEY: True}
+    if c_map:
+        result["options"] = {**(result.get("options") or {}), CENSOR_MAP_KEY: c_map}
     # Confidence bounds and probability-paper transforms can produce non-finite
     # values at the extremes (e.g. a Weibull bound that maps to ±inf/NaN). These
     # are not valid JSON, so coerce them to null — Plotly renders them as gaps.

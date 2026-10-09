@@ -118,6 +118,10 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "preview": preview.get("preview", []),
         "preview_columns": preview.get("columns", []),
         "n_unique": preview.get("n_unique"),
+        # Column facts for the fit wizard's Data step (see fitting.preview).
+        "dtypes": preview.get("dtypes"),
+        "blanks": preview.get("blanks"),
+        "values": preview.get("values"),
         "models": [_model_summary(m, ctx) for m in models],
         "other_models": others,
         "profile": profile,
@@ -336,6 +340,7 @@ def save_model(
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
     include_mixtures: str | None = Form(default=None),
+    c_map: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
@@ -371,7 +376,7 @@ def save_model(
             owner_id=ctx.write_owner,
             options=options_from_form(
                 offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
-                include_mixtures=include_mixtures,
+                include_mixtures=include_mixtures, c_map=c_map,
             ),
             covariate_units=covariate_units_from_form(covariate_units),
         )
@@ -505,6 +510,7 @@ def update_model_fit(
     how: str | None = Body(default=None),
     c_invert: bool = Body(default=False),
     include_mixtures: bool = Body(default=False),
+    c_map: dict | None = Body(default=None),
     covariate_units: dict | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
@@ -520,7 +526,8 @@ def update_model_fit(
         return JSONResponse(status_code=status, content=payload)
     options = {"offset": offset, "zi": zi, "lfp": lfp, "fixed": fixed or None,
                "mixture": mixture, "mixture_distribution": mixture_distribution,
-               "how": how, "c_invert": bool(c_invert), "include_mixtures": bool(include_mixtures)}
+               "how": how, "c_invert": bool(c_invert), "include_mixtures": bool(include_mixtures),
+               "c_map": c_map or None}
     try:
         model = models_service.update_fit(
             session, model_id, existing.owner_id, distribution,
