@@ -212,7 +212,7 @@ export default function Landing() {
 
       <section className="landing-spotlight">
         <div className="spotlight-text">
-          <div className="landing-eyebrow">Reliability Centred Maintenance</div>
+          <div className="landing-eyebrow">Reliability centred maintenance</div>
           <h2>Maintenance decisions that prove themselves.</h2>
           <p>
             Every decision in an RCM study links to the analysis behind it: a

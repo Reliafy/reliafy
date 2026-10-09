@@ -132,7 +132,7 @@ export default function RecurrentCalculator({ r, name = null }) {
                 <input type="number" min={0} step="any" placeholder="e.g. 0" value={from} onChange={(e) => setFrom(e.target.value)} />
               </label>
               {!analytic && (
-                <p className="muted-line" style={{ margin: "0.2rem 0 0", fontSize: "0.8rem" }}>
+                <p className="rs-note">
                   Interpolated from the fitted MCF — accurate within the fitted range.
                 </p>
               )}
