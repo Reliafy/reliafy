@@ -167,9 +167,10 @@ def load_dataframe(dataset: Dataset) -> pd.DataFrame:
     return read_dataframe(bytes(dataset.data))
 
 
-def preview_rows(dataset: Dataset, rows: int = 8) -> dict:
-    """Column names + a small sample of rows for the dataset detail view."""
-    return _preview(bytes(dataset.data), rows)
+def preview_rows(dataset: Dataset, rows: int = 8, distinct: bool = False) -> dict:
+    """Column names + a small sample of rows for the dataset detail view
+    (``distinct``: with each column's distinct-value count, see preview)."""
+    return _preview(bytes(dataset.data), rows, distinct=distinct)
 
 
 def models_for_dataset(db, dataset_id: str, owner_id: str, hidden=frozenset()) -> list[Model]:

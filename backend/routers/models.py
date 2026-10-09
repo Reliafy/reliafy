@@ -95,7 +95,7 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
     models = datasets_service.models_for_dataset(session, dataset.id, ctx.read_owners, ctx.hidden)
     summary = _dataset_summary(dataset, ctx, n_models=len(models))
     try:
-        preview = datasets_service.preview_rows(dataset)
+        preview = datasets_service.preview_rows(dataset, distinct=True)
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Failed to build dataset preview: %s", exc)
         preview = {"columns": [c["name"] for c in (dataset.columns or [])], "preview": [], "n_rows": dataset.n_rows}
@@ -103,6 +103,7 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         **summary,
         "preview": preview.get("preview", []),
         "preview_columns": preview.get("columns", []),
+        "n_unique": preview.get("n_unique"),
         "models": [_model_summary(m, ctx) for m in models],
     }
 
