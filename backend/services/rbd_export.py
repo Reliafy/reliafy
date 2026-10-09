@@ -52,7 +52,7 @@ from backend.services import rbd_analysis, rbd_ccf, rbd_next_failure, rbd_repeat
 from backend.units import unit_in_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.23", "repyability": "0.13"}
+_DEFAULT_VERSIONS = {"surpyval": "0.24", "repyability": "0.13"}
 _SURPYVAL_GIT = "https://github.com/derrynknife/SurPyval.git"
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
@@ -331,7 +331,7 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
         )
     # Offset, limited-failure proportion and zero-inflation, by SurPyval's
     # keywords: the proportion Reliafy stores as "p" is ``lfp_p`` since
-    # SurPyval 0.23 (#608; ``p=`` warns there and fails in 0.24), so the
+    # SurPyval 0.23 (#608; ``p=`` warned there and fails since 0.24), so the
     # header then says the script needs 0.23 or later.
     extras = []
     stored = model.get("extras") or {}

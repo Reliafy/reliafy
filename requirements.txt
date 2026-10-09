@@ -6,12 +6,14 @@ numpy
 # SurPyval from git: the PyPI releases are stale and miss the proportional-
 # hazards / AFT / PO / AH classes, the discrete distributions, and more. Pinned
 # to a release tag so builds are reproducible. (Requires git at build time.)
-# 0.23 is a breaking release (names 0.22 deprecated now raise; the LFP
+# 0.23 was a breaking release (names 0.22 deprecated now raise; the LFP
 # proportion is ``lfp_p``; ``covariance()`` replaces ``cov_matrix``): #238.
-git+https://github.com/derrynknife/SurPyval.git@v0.23
+# 0.24 removes the names 0.23 deprecated (Reliafy already used the new ones)
+# and moves a few results (BC-mode growth projection, sorted-row fits): #329.
+git+https://github.com/derrynknife/SurPyval.git@v0.24
 # RePyability is installed --no-deps in the Dockerfile (and CI), pinned to a
-# git tag (v0.13, which requires SurPyval 0.23), so the SurPyval
-# pin above stays authoritative: it declares surpyval>=0.23 (uncapped), but
+# git tag (v0.13, which requires SurPyval 0.23 and runs on 0.24), so the
+# SurPyval pin above stays authoritative: it declares surpyval>=0.23 (uncapped), but
 # --no-deps also stops pip re-resolving surpyval from PyPI. backend/tests/test_rbd_analysis.py exercises the pairing,
 # so a real break would fail the suite rather than reach production.
 # RePyability's runtime deps (numpy/scipy via surpyval, networkx, tqdm) are

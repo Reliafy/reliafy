@@ -26,7 +26,7 @@ from backend.services import strategy  # noqa: E402
 
 
 def _no_surpyval_deprecations():
-    """Turn SurPyval's deprecations (all say "removed in v0.24") into errors."""
+    """Turn SurPyval's deprecations (they say "removed in v0.2x") into errors."""
     ctx = warnings.catch_warnings()
     ctx.__enter__()
     warnings.filterwarnings("error", message=r".*removed in v0\.2", category=DeprecationWarning)
@@ -40,10 +40,6 @@ def strict():
         yield
     finally:
         ctx.__exit__(None, None, None)
-
-
-def test_the_pin_is_0_23():
-    assert sp.__version__ == "0.23"
 
 
 # ---------------------------------------------------------------------------

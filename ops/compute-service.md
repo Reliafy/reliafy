@@ -42,7 +42,7 @@ browser polls GET /api/rbd-jobs/<id>; MCP waits up to 20 s, then get_job.
 - **Same image, different command.** `reliafy-compute` runs the web's image
   digest with `uvicorn backend.compute_app:app`. It runs the same function as
   the in-process path, `rbd_analysis.analyze_availability`, with RePyability
-  0.13 (`Dockerfile`: `RePyability.git@v0.13`, `--no-deps`; SurPyval `v0.23`
+  0.13 (`Dockerfile`: `RePyability.git@v0.13`, `--no-deps`; SurPyval `v0.24`
   in `requirements.txt`).
 - **Same seed, same result.** In RePyability 0.13 each simulation's draws are
   a function of the run's seed, the stream, the simulation's index and the

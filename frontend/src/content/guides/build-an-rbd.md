@@ -133,13 +133,14 @@ diagrams shared with you, and appears on public links too. Each block is one
 commented variable, so the script doubles as a readable record of the model for
 a report, a thesis appendix or a colleague without an account.
 
-Install the two libraries (RePyability goes in with `--no-deps`, because its
-metadata still pins an older SurPyval) and run the file:
+Install the two libraries (RePyability goes in with `--no-deps`, so pip can't
+swap in an older SurPyval from PyPI) and run the file. The script's header
+lists the exact commands for the versions Reliafy runs:
 
 ```
-pip install "git+https://github.com/derrynknife/SurPyval.git@v0.20.0"
+pip install "git+https://github.com/derrynknife/SurPyval.git@v0.24"
 pip install networkx tqdm
-pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.8.0"
+pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.13"
 python my_diagram.py
 ```
 
