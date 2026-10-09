@@ -7767,6 +7767,11 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
   padding: 0.45rem 0.6rem; font-size: var(--fs-14); font-family: inherit;
 }
 .rbd-window-custom input:focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
+/* A phone: the five window options share the row, tall enough to tap. */
+@media (max-width: 600px) {
+  .rbd-window .seg-field, .rbd-window .seg { width: 100%; }
+  .rbd-window .seg-btn { flex: 1 1 auto; min-height: 44px; padding-inline: var(--sp-1); font-size: var(--fs-13); }
+}
 .rbd-basis {
   display: inline-block; margin-left: 4px; font-size: var(--fs-12); font-weight: 500; padding: 0 5px; border-radius: var(--r-sm); vertical-align: 1px;
   background: var(--surf-2); color: var(--muted);
