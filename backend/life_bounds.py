@@ -17,6 +17,7 @@ end of the two-sided ``1 − 2α`` interval is the one-sided ``1 − α`` bound.
 from __future__ import annotations
 
 import math
+import warnings
 from typing import Optional
 
 import numpy as np
@@ -73,19 +74,32 @@ def _no_bounds_reason(model) -> Optional[str]:
 def _quantile_bounds(model, probs: np.ndarray, alpha: float, bound: str):
     """``(lower, upper)`` arrays (None for a side not asked for) of the
     quantiles at ``probs``, by SurPyval's ``quantile_cb``."""
-    with np.errstate(all="ignore"):
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        # An undefined bound comes back nan, and is shown as none.
+        warnings.simplefilter("ignore", RuntimeWarning)
         if _is_nonparametric(model):
             # Two-sided only: a one-sided 1 − α bound is one end of 1 − 2α.
             two = np.asarray(model.quantile_cb(probs, alpha_ci=alpha if bound == "two-sided" else 2 * alpha),
                              dtype=float).reshape(-1, 2)
             lo, hi = two[:, 0], two[:, 1]
         else:
-            cb = np.asarray(model.quantile_cb(probs, alpha_ci=alpha, bound=bound), dtype=float)
+            # One probability at a time: SurPyval 0.23 returns nan for a whole
+            # call when one quantile's variance is zero (a zero-inflated
+            # model's B1 at t = 0, say), and that would take the rest with it.
+            def one(p):
+                try:
+                    return np.ravel(np.asarray(model.quantile_cb(np.array([p]), alpha_ci=alpha, bound=bound),
+                                               dtype=float))
+                except ValueError:
+                    raise
+                except Exception:  # noqa: BLE001 - that quantile goes without its bound
+                    return np.full(2 if bound == "two-sided" else 1, np.nan)
+
+            cb = np.array([one(p) for p in probs])
             if bound == "two-sided":
-                cb = cb.reshape(-1, 2)
                 lo, hi = cb[:, 0], cb[:, 1]
             else:
-                cb = cb.reshape(-1)
+                cb = cb[:, 0]
                 lo, hi = (cb, None) if bound == "lower" else (None, cb)
     if bound == "lower":
         hi = None
@@ -152,7 +166,8 @@ def _mttf(model, alpha: float, with_bounds: bool) -> dict:
     if out["value"] is None or not with_bounds or _is_nonparametric(model) or _no_bounds_reason(model):
         return out
     try:
-        with np.errstate(all="ignore"):
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
             out["lower"] = _num(np.ravel(np.asarray(model.mean_cb(alpha_ci=alpha, bound="lower"),
                                                     dtype=float))[0])
     except Exception:  # noqa: BLE001 - the value stands without its bound

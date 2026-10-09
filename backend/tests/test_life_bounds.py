@@ -216,3 +216,20 @@ def test_mcp_get_model_gives_the_same_life(env):  # noqa: F811 - the fixture
     # Consistent with the metrics beside it.
     assert life["b_lives"][2]["value"] == pytest.approx(detail["metrics"]["b10"], rel=1e-9)
     assert life["mttf"]["value"] == pytest.approx(detail["metrics"]["mttf"], rel=1e-9)
+
+
+def test_lognormal_band_survives_the_grids_zero():
+    """SurPyval 0.23 gives nan for a whole cb call when one point (t = 0,
+    where a lognormal's reliability is exactly 1) has a zero variance; the
+    calculator's band must not vanish for it."""
+    t, c = _data(5)
+    r = fitting.fit("lognormal", pd.DataFrame({"t": t, "c": c}), {"x": "t", "c": "c"})
+    cid = r["functions"]["model_id"]
+    for bound in ("lower", "two-sided"):
+        out = fitting.confidence_bounds(cid, on="sf", alpha_ci=0.1, bound=bound)
+        assert out["x"][0] == 0 and out["lower"][0] == pytest.approx(1.0)
+        model = LogNormal.fit(t, c)
+        mid = len(out["x"]) // 2
+        expected = np.ravel(model.cb([out["x"][mid]], on="sf", alpha_ci=0.1, bound=bound))
+        assert out["lower"][mid] == pytest.approx(float(expected[0]), rel=1e-6)
+        assert sum(v is None for v in out["lower"]) == 0

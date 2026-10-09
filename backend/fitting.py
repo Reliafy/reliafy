@@ -2708,8 +2708,9 @@ def confidence_bounds(
         raise FitError("This model type doesn't provide confidence bounds.")
 
     try:
-        with np.errstate(all="ignore"):
-            cb = np.asarray(model.cb(grid, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            cb = _cb_off_pinned_points(model, grid, on, alpha_ci, bound)
     except Exception as exc:
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
 
@@ -2731,6 +2732,27 @@ def confidence_bounds(
         "lower": lower,
         "upper": upper,
     }
+
+
+def _cb_off_pinned_points(model, grid, on, alpha_ci, bound) -> np.ndarray:
+    """``model.cb`` over ``grid``, leaving out the points where a parametric
+    model's reliability is pinned at 1 or 0 (before a lifetime's support
+    starts, at t = 0): its value there is certain, so the bound is the value
+    itself. Asked there, SurPyval 0.23's Wald bound has a zero variance it
+    calls undefined, and returns nan at every point of the call — a lognormal's
+    calculator lost its whole band to the grid's t = 0."""
+    if not hasattr(model, "dist"):
+        return np.asarray(model.cb(grid, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+    sf = np.asarray(model.sf(grid), dtype=float)
+    free = np.isfinite(sf) & (sf > 0) & (sf < 1)
+    if free.all() or not free.any():
+        return np.asarray(model.cb(grid, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+    inner = np.asarray(model.cb(grid[free], on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+    value = np.asarray(getattr(model, on)(grid[~free]), dtype=float)
+    out = np.empty((grid.size, 2) if inner.ndim == 2 else grid.size, dtype=float)
+    out[free] = inner
+    out[~free] = value[:, None] if inner.ndim == 2 else value
+    return out
 
 
 # The reliability functions exposed in the calculator tab, with display labels.
