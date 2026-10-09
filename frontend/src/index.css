@@ -2684,9 +2684,11 @@ h1 .chip,
 .rbd-calc-actions {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
-  margin: 0.9rem 0 1.1rem;
+  gap: var(--sp-3);
 }
+/* After the settings row it ends; under an As-of-now table, a row of its own. */
+.rbd-asof > .rbd-calc-actions,
+.rbd-asof-panel + .rbd-calc-actions { margin-top: var(--sp-2); }
 
 .rbd-calc-actions button:disabled {
   opacity: 0.5;
@@ -7194,7 +7196,9 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 /* "What to improve" on repairable results (#225) */
 .rbd-improve { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); min-width: 0; }
 .rbd-improve .ds-section-h { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
-.rbd-improve-controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.rbd-improve-controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-end; }
+.rbd-improve-sim { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.rbd-improve-sim .hint { margin: 0; flex: 1 1 320px; }
 .rbd-improve-table td, .rbd-improve-table th { font-variant-numeric: tabular-nums; vertical-align: top; }
 .rbd-improve-table th:nth-child(2), .rbd-improve-table td.rbd-improve-lever { text-align: left; }
 .rbd-improve-table td.rbd-improve-lever { min-width: 220px; white-space: normal; }
@@ -7753,9 +7757,14 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 .rbd-avail .rs-details { margin-top: 0; }
 .rbd-avail .rs-details-body { display: flex; flex-direction: column; gap: var(--sp-4); }
 .rbd-avail .rs-dl + * { margin-top: 0; }
-.rbd-method-line { margin: 0; font-size: var(--fs-12); color: var(--subtle); }
 .rbd-window { gap: var(--sp-3) var(--sp-4); justify-content: flex-start; }
-.rbd-window .rbd-asof-toggle { margin-left: auto; }
+/* Custom: one number and its unit, level with the presets. */
+.rbd-window-custom { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); color: var(--muted); }
+.rbd-window-custom input {
+  width: 120px; background: var(--surf); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink);
+  padding: 0.45rem 0.6rem; font-size: var(--fs-14); font-family: inherit;
+}
+.rbd-window-custom input:focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
 .rbd-basis {
   display: inline-block; margin-left: 4px; font-size: var(--fs-12); font-weight: 500; padding: 0 5px; border-radius: var(--r-sm); vertical-align: 1px;
   background: var(--surf-2); color: var(--muted);

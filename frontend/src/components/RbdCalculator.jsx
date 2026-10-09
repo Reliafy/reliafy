@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
-import { COLORWAY, DATA_INK, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
+import { COLORWAY, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
 import { analyzeRbd, getActiveRbdJob, getRbdJob } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
@@ -414,9 +414,8 @@ function DowntimeBars({ rows, title, note }) {
   );
 }
 
-// A y-range fitted to the availability curves themselves (#308): from zero
-// they read as a flat line at the top. A simulation's confidence band is left
-// to run off the bottom rather than set the scale.
+// A y-range fitted to the curves given (#308): from zero, availability reads
+// as a flat line at the top.
 function availabilityRange(...curves) {
   const v = curves.flat().filter((y) => y != null && Number.isFinite(y));
   if (!v.length) return undefined;
@@ -447,6 +446,14 @@ export function weakestLink(result) {
     const share = i?.unavailability_criticality;
     if (share == null || !Number.isFinite(share) || share <= 0) continue;
     if (!best || share > best.share) best = { id, label: i.label || id, share };
+  }
+  if (best || result.has_simulation === false) return best;
+  // No exact importance (a simulation-only diagram): the block with the
+  // largest simulated share of downtime.
+  for (const n of result.per_node || []) {
+    const share = n?.share;
+    if (share == null || !Number.isFinite(share) || share <= 0) continue;
+    if (!best || share > best.share) best = { id: n.id, label: n.label || n.id, share, simulated: true };
   }
   return best;
 }
@@ -540,6 +547,38 @@ function SifAnswer({ safety }) {
   return <AnswerCard tone={tone} rows={rows} note={note} className="rbd-sif-answer" />;
 }
 
+// A simulated A(t) as drawn: a centred rolling mean over 5% of its
+// horizon. A few hundred replications move A(t) in steps of a fraction of a
+// percent, which read as noise; the mean over a short window is the curve.
+// ``span`` is the window's length (null when the curve is too short to smooth).
+const SMOOTH_FRAC = 0.05;
+export function rollingMean(t, y, frac = SMOOTH_FRAC) {
+  const n = t?.length || 0;
+  if (n < 5 || y?.length !== n) return { y, span: null };
+  const span = (t[n - 1] - t[0]) * frac;
+  const half = span / 2;
+  const out = new Array(n);
+  let lo = 0;
+  let hi = 0;
+  let sum = 0;
+  let cnt = 0;
+  for (let i = 0; i < n; i++) {
+    for (; hi < n && t[hi] <= t[i] + half; hi++) {
+      if (y[hi] != null) { sum += y[hi]; cnt += 1; }
+    }
+    for (; t[lo] < t[i] - half; lo++) {
+      if (y[lo] != null) { sum -= y[lo]; cnt -= 1; }
+    }
+    out[i] = cnt ? sum / cnt : null;
+  }
+  return { y: out, span };
+}
+
+// "smoothed over ≈ 260 hours"
+function smoothedText(span, unit) {
+  return span ? `smoothed over ≈ ${formatNumber(span, { sig: 2 })}${unit ? ` ${unitInText(unit)}` : ""}` : "";
+}
+
 // One chart (#311, #313): the exact A(t) with any simulation over the same
 // window drawn on it — or, for a safety function, PFD(t) = 1 − A(t) with the
 // PFDavg and the target SIL's limit.
@@ -573,12 +612,15 @@ function AvailabilityChart({ exact, steady, unit, sim = null, safety = null }) {
       />
     );
   }
+  // The simulation over the same window, smoothed; the exact line as it is.
+  const simY = sim ? rollingMean(sim.curve.t, sim.curve.availability) : null;
   const traces = [
     ...(sim
       ? [{
-          x: sim.curve.t, y: sim.curve.availability, mode: "lines", type: "scatter",
-          line: { color: "rgba(20, 23, 28, 0.35)", width: 1 }, name: "Simulated",
-          hovertemplate: `t = %{x:,.4~g}${u}<br>Simulated A(t) = %{y:.5f}<extra></extra>`,
+          x: sim.curve.t, y: simY.y, mode: "lines", type: "scatter",
+          line: { color: DATA_INK, width: 1 },
+          name: `Simulated, ${smoothedText(simY.span, unit) || "as run"}`,
+          hovertemplate: `t = %{x:,.4~g}${u}<br>Simulated A(t), smoothed = %{y:.5f}<extra></extra>`,
         }]
       : []),
     fitLine({
@@ -587,6 +629,11 @@ function AvailabilityChart({ exact, steady, unit, sim = null, safety = null }) {
     }),
   ];
   const shapes = steady != null ? [referenceShape({ y: steady })] : [];
+  // The dashed line says what it is, at its right end.
+  const annotations = steady != null
+    ? [{ xref: "paper", x: 1, y: steady, xanchor: "right", yanchor: "bottom", showarrow: false,
+         text: `Long run ${pctOf(steady)}`, font: { size: 12, color: MUTED } }]
+    : [];
   return (
     <Plot
       data={traces}
@@ -596,29 +643,40 @@ function AvailabilityChart({ exact, steady, unit, sim = null, safety = null }) {
         // Auto-scaled: availability moves in the third decimal place.
         yaxis: {
           title: { text: "Availability A(t)" }, tickformat: ".4~%",
-          range: availabilityRange(c.availability, sim ? sim.curve.availability : [], steady != null ? [steady] : []),
+          range: availabilityRange(c.availability, simY ? simY.y : [], steady != null ? [steady] : []),
         },
-        shapes, showlegend: !!sim,
+        shapes, annotations, showlegend: !!sim,
       }}
     />
   );
 }
 
-// The simulated A(t) (with its band) when there's no exact curve to draw it on.
+// The simulated A(t) (with its band) when there's no exact curve to draw it
+// on: the curve and the band smoothed alike, and the axis says over how long.
 function SimulatedChart({ curve, unit }) {
   if (!(curve?.t?.length > 1)) return null;
   const hasBand = curve.lower?.length === curve.t.length && curve.upper?.length === curve.t.length;
+  const mid = rollingMean(curve.t, curve.availability);
+  const lower = hasBand ? rollingMean(curve.t, curve.lower).y : null;
+  const upper = hasBand ? rollingMean(curve.t, curve.upper).y : null;
+  const how = smoothedText(mid.span, unit);
+  const u = unit ? ` ${unitInText(unit)}` : "";
   return (
     <Plot
       data={[
-        ...(hasBand ? bandPair(curve.t, curve.lower, curve.upper) : []),
-        fitLine({ x: curve.t, y: curve.availability, name: "Simulated" }),
+        ...(hasBand ? bandPair(curve.t, lower, upper) : []),
+        fitLine({
+          x: curve.t, y: mid.y, name: "Simulated",
+          hovertemplate: `t = %{x:,.4~g}${u}<br>Simulated A(t)${how ? ", smoothed" : ""} = %{y:.5f}<extra></extra>`,
+        }),
       ]}
       layout={{
         height: 300,
-        xaxis: { title: { text: unit ? `Time (${unit})` : "Time" } },
-        // Auto-scaled, not from zero: availability moves in the third decimal place.
-        yaxis: { title: { text: "Availability" }, tickformat: ".4~%", range: availabilityRange(curve.availability) },
+        xaxis: { title: { text: `${unit ? `Time (${unit})` : "Time"}${how ? ` · simulated A(t), ${how}` : ""}` } },
+        // Auto-scaled, not from zero: availability moves in the third decimal
+        // place. The (smoothed) band sets the scale too, so what's left of the
+        // simulation's noise reads against its uncertainty.
+        yaxis: { title: { text: "Availability" }, tickformat: ".4~%", range: availabilityRange(mid.y, lower || [], upper || []) },
         showlegend: false,
       }}
     />
@@ -737,7 +795,7 @@ function windowWords(window, unit, label = null) {
 // Availability results for a repairable diagram, answer first (#311): the
 // answer card (availability, weakest link, best improvement — or, for a safety
 // function, PFDavg and its SIL), one chart, What to improve, then everything
-// else folded under Details, and the method said once at the foot.
+// else folded under Details, with the method said once there.
 // ``windowLabel``: the window the user chose ("1 year"), null for the long
 // run; ``top``: What to improve's top lever ({lever, of}, {pending} while it
 // works, null for none);
@@ -855,7 +913,12 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         },
         weakest && {
           label: "Weakest link",
-          value: <><b>{weakest.label}</b> — {formatPercent(weakest.share)} of the system&rsquo;s downtime</>,
+          value: (
+            <>
+              <b>{weakest.label}</b> — {formatPercent(weakest.share)} of the system&rsquo;s
+              {weakest.simulated ? " simulated" : ""} downtime
+            </>
+          ),
         },
         top?.pending
           ? { label: "Best improvement", value: <span className="muted">Working it out…</span> }
@@ -920,6 +983,8 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
 
       <ResultDetails>
         {(kpis.length > 0 || windowKpis.length > 0) && <ResultDetailsRows rows={[...kpis, ...windowKpis]} />}
+        {/* The method, said once (#313), with the figures it found. */}
+        {!needsSim && <p className="rbd-details-p">{methodLine(result, exactOk, hasSim)}</p>}
         {(result.warnings || []).length > 0 && (
           <ul className="rbd-details-notes">
             {result.warnings.map((w) => <li key={w}>{w}</li>)}
@@ -996,7 +1061,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
             Figures over time are computed {fromNow ? "from the blocks' states now" : "with every block new at the start"}
             {steady != null && chartOk && !pfdChart ? "; the dashed line on the chart is the long-run availability" : ""}
             {pfdChart ? "; the dashed line on the chart is the PFDavg, the dotted one the SIL limit" : ""}
-            {sameWindow && !pfdChart ? "; the grey line is the simulation's estimate over the same window" : ""}.
+            {sameWindow && !pfdChart ? "; the grey line is the simulation's estimate over the same window, smoothed" : ""}.
             {exact.cost_note ? ` No exact cost: ${exact.cost_note}` : ""}
           </p>
         )}
@@ -1005,7 +1070,8 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
 
         <DowntimeSplit result={result} unit={unit} />
         <AvailabilityCosts result={result} unit={unit} />
-        <AvailabilityPolicies result={result} />
+        {/* Before the simulation runs, the answer card says why it's needed. */}
+        <AvailabilityPolicies result={result} showReason={!needsSim} />
 
         {hasSim ? (
           <div className="rbd-sim">
@@ -1053,7 +1119,6 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         )}
         {more}
       </ResultDetails>
-      {!needsSim && <p className="rbd-method-line">{methodLine(result, exactOk, hasSim)}</p>}
     </div>
   );
 }
@@ -1237,6 +1302,7 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
   const [targetPct, setTargetPct] = useState("90");
   const [busy, setBusy] = useState(null); // null | "exact" | "simulate": what the running request adds
   const [checking, setChecking] = useState(false); // validating before a calculation
+  const [customWindow, setCustomWindow] = useState(false); // "Custom" chosen: its number input shows
   const [top, setTop] = useState({ pending: true }); // What to improve's top lever, for the answer card
 
   const unitLabel = graph.unit ? ` (${graph.unit})` : "";
@@ -1325,11 +1391,13 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
   });
   const dirty = result != null && calcSig != null && inputSig !== calcSig;
 
-  // The window preset the "Window" control shows, and the automatic window
-  // in years (#300: "auto" chose 35,521 h when a year was wanted).
-  const windowPreset = tMax === "" || tMaxAuto
+  // The option the "Window" control shows — a preset, the long run, or
+  // Custom (any other window, typed) — and the automatic window in years
+  // (#300: "auto" chose 35,521 h when a year was wanted).
+  const matchedPreset = tMax === "" || tMaxAuto
     ? "long"
     : (hpu && WINDOW_PRESETS.find((w) => Math.abs(Number(tMax) * hpu - w.hours) < 1e-6 * w.hours)?.id) || null;
+  const windowPreset = customWindow || !matchedPreset ? "custom" : matchedPreset;
   const autoWindow = (() => {
     const w = result?.kind === "repairable" ? result.exact?.window ?? result.t_simulation : null;
     if (!w || !hpu || !(tMax === "" || tMaxAuto)) return null;
@@ -1539,35 +1607,39 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
     );
   }
 
+  // The action comes after the settings it uses: settings, then Calculate,
+  // then the answer.
+  const action = (
+    <div className="rbd-calc-actions">
+      <button
+        // The next step until there's a current result; then the results'
+        // own action (a simulation, say) is the primary one.
+        className={result && !stale && !dirty ? "secondary" : ""}
+        onClick={() => calculate(false)}
+        disabled={blocked || checking || phase === "calculating"}
+        title={blocked ? "Fix the diagram's problems first (below)" : "Check the diagram and calculate"}
+      >
+        {checking
+          ? "Checking…"
+          : phase === "calculating"
+          ? "Calculating…"
+          : result && !stale
+          ? "Recalculate"
+          : "Calculate"}
+      </button>
+      {dirty && (
+        <span className="hint">Recalculate to apply your changes.</span>
+      )}
+      {job && (
+        <span className="rbd-job-status" role="status" aria-live="polite">
+          {jobStatusText(job)}
+        </span>
+      )}
+    </div>
+  );
+
   return (
     <div className="rbd-calc">
-      <div className="rbd-calc-actions">
-        <button
-          // The next step until there's a current result; then the results'
-          // own action (a simulation, say) is the primary one.
-          className={result && !stale && !dirty ? "secondary" : ""}
-          onClick={() => calculate(false)}
-          disabled={blocked || checking || phase === "calculating"}
-          title={blocked ? "Fix the diagram's problems first (below)" : "Check the diagram and calculate"}
-        >
-          {checking
-            ? "Checking…"
-            : phase === "calculating"
-            ? "Calculating…"
-            : result && !stale
-            ? "Recalculate"
-            : "Calculate"}
-        </button>
-        {dirty && (
-          <span className="hint">Recalculate to apply your changes.</span>
-        )}
-        {job && (
-          <span className="rbd-job-status" role="status" aria-live="polite">
-            {jobStatusText(job)}
-          </span>
-        )}
-      </div>
-
       {placeholderCount > 0 && (
         <div className="rbd-placeholder-note" role="status">
           {placeholderCount === 1
@@ -1658,6 +1730,7 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
             <input type="checkbox" checked={asOf} onChange={(e) => setAsOf(e.target.checked)} />
             <span>As of now</span>
           </label>
+          {!asOf && action}
         </div>
       )}
 
@@ -1670,46 +1743,57 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
             unitLabel={unitLabel}
             repairable={false}
           />
+          {action}
         </div>
       )}
 
       {graph.repairable && (
         <div className="rbd-asof">
+          {/* One window control: the presets, the long run, or Custom
+              with one number; "As of now" beside it; then the action. */}
           <div className="calc-controls rbd-calc-inputs rbd-window">
-            {hpu && (
-              <SegmentedControl
-                label={asOf ? "Window from now" : "Window"}
-                showLabel
-                value={windowPreset}
-                onChange={(v) => {
-                  const p = WINDOW_PRESETS.find((w) => w.id === v);
-                  setTMax(p ? String(Number((p.hours / hpu).toPrecision(6))) : "");
-                  setTMaxAuto(!p);
-                }}
-                options={[
-                  ...WINDOW_PRESETS.map((w) => ({ value: w.id, label: w.label })),
-                  { value: "long", label: "Long run", title: "The long-run (steady-state) availability; figures over time use an automatic window" },
-                ]}
-              />
+            <SegmentedControl
+              label={asOf ? "Window from now" : "Window"}
+              showLabel
+              value={windowPreset}
+              onChange={(v) => {
+                if (v === "custom") {
+                  setCustomWindow(true);
+                  return;
+                }
+                setCustomWindow(false);
+                const p = WINDOW_PRESETS.find((w) => w.id === v);
+                setTMax(p ? String(Number((p.hours / hpu).toPrecision(6))) : "");
+                setTMaxAuto(!p);
+              }}
+              options={[
+                ...(hpu ? WINDOW_PRESETS.map((w) => ({ value: w.id, label: w.label })) : []),
+                { value: "long", label: "Long run", title: "The long-run (steady-state) availability; figures over time use an automatic window" },
+                { value: "custom", label: "Custom", title: "A window of your own length" },
+              ]}
+            />
+            {windowPreset === "custom" && (
+              <label className="rbd-window-custom">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  aria-label={`Window${unitLabel}`}
+                  placeholder={autoWindow ? `auto (${autoWindow})` : "length"}
+                  value={tMax === "" || tMaxAuto ? "" : tMax}
+                  onChange={(e) => {
+                    setTMax(e.target.value);
+                    setTMaxAuto(e.target.value === "");
+                  }}
+                />
+                {graph.unit && <span>{unitInText(graph.unit)}</span>}
+              </label>
             )}
-            <label className="calc-t">
-              <span>{hpu ? `Or a window${unitLabel}` : asOf ? `Next${unitLabel} — window from now` : `Window${unitLabel}`}</span>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                placeholder={autoWindow ? `auto (${autoWindow})` : "auto"}
-                value={tMax}
-                onChange={(e) => {
-                  setTMax(e.target.value);
-                  setTMaxAuto(e.target.value === "");
-                }}
-              />
-            </label>
             <label className="rbd-asof-toggle">
               <input type="checkbox" checked={asOf} onChange={(e) => setAsOf(e.target.checked)} />
               <span>As of now</span>
             </label>
+            {!asOf && action}
           </div>
           {asOf && (
             <AsOfPanel
@@ -1720,6 +1804,7 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
               repairable
             />
           )}
+          {asOf && action}
         </div>
       )}
 

@@ -37,6 +37,9 @@ const BASIS_TEXT = {
     "with its 95% interval.",
 };
 
+// The method's one word, leading the line under the table.
+const BASIS_WORD = { exact: "Exact: ", numerical: "Numerical: ", simulation: "Simulated: " };
+
 const WINDOW_TEXT =
   "Each effect is RePyability's slope of the window's mean availability (numerical: each block's renewal " +
   "equation on a grid, no simulation) times the step.";
@@ -193,22 +196,21 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
   return (
     <div className="rbd-improve">
       <div className="ds-section-h">What to improve</div>
-      <p className="hint" style={{ margin: 0 }}>
-        Each lever moved one step the way that helps — a {Math.round(step * 100)}% longer mean life, a{" "}
-        {Math.round(step * 100)}% shorter mean repair time or test interval, one more repair crew — and ranked by
-        what it gains{over === "window" ? ` over the first ${num(windowLen)}${unit ? ` ${unit.toLowerCase()}` : ""}` : " in the long run"}.
-      </p>
 
+      {/* Labelled controls; what a step and a lever are is said once, in the
+          line under the table. */}
       <div className="rbd-improve-controls">
         <SegmentedControl
           label="Step"
+          showLabel
           size="sm"
           value={step}
           onChange={setStep}
           options={STEPS.map((s) => ({ value: s, label: `${Math.round(s * 100)}%`, title: `Move each lever ${Math.round(s * 100)}%` }))}
         />
         <SegmentedControl
-          label="Over"
+          label="Measured over"
+          showLabel
           size="sm"
           value={over}
           onChange={(v) => {
@@ -224,6 +226,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
         {over === "long_run" && (priced || rankBy === "cost") && (
           <SegmentedControl
             label="Rank by"
+            showLabel
             size="sm"
             value={rankBy}
             onChange={setRankBy}
@@ -236,6 +239,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
         {(editCosts || hasSentCosts) && rows.length > 0 && (
           <SegmentedControl
             label="Order"
+            showLabel
             size="sm"
             value={order}
             onChange={(v) => {
@@ -274,16 +278,15 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
           </div>
         </div>
       )}
+      {/* Why there's no exact route is said once, under Details: here, only
+          what simulating the effects takes. */}
       {data?.status === "needs_simulation" && (
-        <div className="card note" role="status">
-          <p style={{ margin: 0 }}>{data.basis_reason}</p>
-          <p style={{ margin: "6px 0 0" }}>{data.message}</p>
-          <div className="rbd-upgrade-actions">
-            <button type="button" disabled={phase === "running"}
-                    onClick={() => { setSimWanted(true); run({ simulate: true }); }}>
-              {phase === "running" ? "Simulating…" : "Simulate the effects"}
-            </button>
-          </div>
+        <div className="rbd-improve-sim" role="status">
+          <p className="hint">{data.message}</p>
+          <button type="button" className="secondary" disabled={phase === "running"}
+                  onClick={() => { setSimWanted(true); run({ simulate: true }); }}>
+            {phase === "running" ? "Simulating…" : "Simulate the effects"}
+          </button>
         </div>
       )}
       {data?.status === "too_large" && <div className="card note" role="status">{data.message}</div>}
@@ -295,9 +298,9 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
               <tr>
                 <th className="rbd-improve-rank">#</th>
                 <th>Lever and change</th>
-                <th title="Change in availability, in percentage points">
-                  <span className="rbd-improve-wide">Availability</span>
-                  <span className="rbd-improve-narrow">Avail.</span>
+                <th title={`Change in availability, in percentage points (pp). ${data.of === "window" && !sim ? WINDOW_TEXT : BASIS_TEXT[basis] || ""}`}>
+                  <span className="rbd-improve-wide">Availability (pp)</span>
+                  <span className="rbd-improve-narrow">Avail. (pp)</span>
                 </th>
                 {priced && (
                   <th title={`Change in the running cost per unit time (${per(unit)})`}>
@@ -402,14 +405,13 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
         </button>
       )}
 
+      {/* The method, in one short line; the long form is on the column's tooltip. */}
       {data?.status === "ok" && (
         <p className="muted-line" style={{ margin: 0 }}>
-          {data.of === "window" && !sim ? WINDOW_TEXT : BASIS_TEXT[basis] || ""}
-          {sim && data.n_simulations
-            ? ` ${data.n_simulations.toLocaleString()} simulations of each over ${num(data.t_simulation)}${unit ? ` ${unit.toLowerCase()}` : ""}.`
-            : ""}
-          {rows.some((r) => r.effect_basis === "linear") && " ≈: the slope times the step (over a window, or an interval on a shared calendar)."}
-          {" "}Effects are in percentage points of availability{priced ? ` and running cost ${per(unit)}` : ""}; hover an effect for the slope.
+          {BASIS_WORD[sim ? "simulation" : basis] || ""}each lever moved {Math.round(step * 100)}% the way that helps
+          (longer life, shorter repair or test interval, one more crew), ranked by its gain
+          {data.of === "window" ? ` over the first ${num(windowLen)}${unit ? ` ${unit.toLowerCase()}` : ""}` : " in the long run"}
+          {sim && data.n_simulations ? ` (${data.n_simulations.toLocaleString()} simulations of each)` : ""}.
           {(data.notes || []).map((n) => ` ${n}`)}
           {data.pinned?.length ? ` Pinned blocks (${data.pinned.join(", ")}) are left out.` : ""}
         </p>
