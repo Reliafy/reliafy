@@ -66,8 +66,13 @@ FULL_NAMES = ["log n_sims", "log1p events/rep", "log blocks", "log1p edges", "br
 def load(path):
     rows = [json.loads(line) for line in open(path) if line.strip()]
     keep = [r for r in rows if r["result"].get("status") in ("ok", "censored")]
-    x = np.array([max(r["result"]["seconds"], 1e-3) for r in keep])
-    c = np.array([1 if r["result"]["status"] == "censored" else 0 for r in keep])
+    # A run at or past its cap is censored there, whatever its status says:
+    # the pilot's cap could be swallowed by the analysis (fixed in run_one).
+    cap = np.array([r["result"].get("cap_s") or 60.0 for r in keep])
+    secs = np.array([r["result"]["seconds"] for r in keep])
+    c = np.array([1 if (r["result"]["status"] == "censored" or s >= k - 0.1) else 0
+                  for r, s, k in zip(keep, secs, cap)])
+    x = np.where(c == 1, cap, np.maximum(secs, 1e-3))
     Z = {k: np.array([feature_sets(r["features"], r["result"])[k] for r in keep]) for k in ("minimal", "full")}
     exact = np.array([r["result"].get("exact_seconds") or np.nan for r in keep])
     return rows, keep, x, c, Z, exact

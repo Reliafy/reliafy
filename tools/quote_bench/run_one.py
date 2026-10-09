@@ -25,8 +25,9 @@ for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEX
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 
-class _Cap(Exception):
-    pass
+class _Cap(BaseException):
+    """The cap. A BaseException, so the analysis's own ``except Exception``
+    blocks can't swallow it and carry on past the cap."""
 
 
 def _alarm(signum, frame):
@@ -57,6 +58,8 @@ def main() -> None:
         result = compute_core.run_availability({"graph": req["graph"], "options": req["options"]})
         signal.setitimer(signal.ITIMER_REAL, 0)
         out.update(seconds=time.perf_counter() - w0, cpu_seconds=time.process_time() - c0)
+        if out["seconds"] >= cap:  # past the cap without the alarm landing: censored all the same
+            raise _Cap
         n = result.get("n_simulations") or (result.get("simulation") or {}).get("n_simulations")
         has_sim = bool(result.get("precision") or result.get("availability_curve") or n)
         out.update(status="ok" if has_sim else "nosim", replications=n,
