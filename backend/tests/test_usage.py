@@ -406,6 +406,21 @@ def test_report_shapes_and_operator_exclusion(monkeypatch):
     assert with_ops["totals"]["app"] == 10 and with_ops["daily"][-1]["app_accounts"] == 3
 
 
+def test_report_counts_failed_calls_per_channel(monkeypatch):
+    from backend.services import usage
+
+    db = mongomock.MongoClient()["usage_errors"]
+    _seed(db, monkeypatch)
+    usage.record(db, uid="b", channel="mcp", feature="get_model", outcome="error", plan="pro")
+    usage.record(db, uid="a", channel="app", feature="fit", outcome="error", plan="free")
+    usage.record(db, uid="a", channel="app", feature="fit", outcome="error", plan="free")
+    usage.record(db, uid="ops", channel="app", feature="fit", outcome="error", plan="admin")
+    rep = usage.report(db, days=7, now=DAY)
+    # Refusals (pro_only, limit) aren't failures; operator accounts are left out.
+    assert rep["totals"]["errors"] == {"app": 2, "mcp": 1, "api": 0}
+    assert usage.report(db, days=7, include_admin=True, now=DAY)["totals"]["errors"]["app"] == 3
+
+
 def test_admin_usage_endpoint_is_operator_only(monkeypatch):
     from backend import config, db as db_module
     from backend.auth import get_current_user
