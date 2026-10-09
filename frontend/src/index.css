@@ -6194,6 +6194,19 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   flex-shrink: 0;
 }
 .set-name { font-weight: 600; font-size: var(--fs-16); }
+.set-plan-acts { gap: 0.6rem 1rem; align-items: center; flex-wrap: wrap; margin-top: 0.8rem; }
+.set-plan-acts .evidence-link { font-size: var(--fs-14); }
+/* Settings > API access: the form opens inside the tokens card; a new token
+   shows once, in the mono copy field, with a request to try. */
+.token-form { padding-bottom: 0.9rem; margin-bottom: 0.4rem; border-bottom: 1px solid var(--line2); }
+.token-form .login-field { max-width: 340px; }
+.token-form-acts { gap: 0.6rem; margin-top: 0.8rem; }
+.card.token-minted { margin-bottom: 1rem; }
+.token-curl { margin: 0.8rem 0 0; padding: 10px 12px; overflow-x: auto; font-size: var(--fs-12); background: var(--bg); border: 1px solid var(--line2); border-radius: var(--r-sm); }
+/* Settings > Connected apps, before any app: connect Claude in three steps. */
+.connect-lead { margin: 0 0 4px; font-size: var(--fs-14); }
+.connect-empty .pl-link-url { max-width: 460px; }
+.connect-steps { margin: 0.8rem 0 0; padding-left: 1.2rem; font-size: var(--fs-13); color: var(--muted); line-height: 1.6; }
 .set-check { display: flex; align-items: flex-start; gap: 0.55rem; cursor: pointer; font-size: var(--fs-14); }
 .set-check input { margin-top: 0.2rem; flex-shrink: 0; }
 .set-check b { font-weight: 600; }
