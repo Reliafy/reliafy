@@ -50,6 +50,89 @@ export function guessCompareColumns(columns, { distinct = {}, splitBy = null } =
   };
 }
 
+// ---- Life data (the fit wizard's Data step, #291) ----------------------------
+
+// A column name as words: "operating_hours" and "OperatingHours" → "operating hours".
+const words = (name) =>
+  String(name || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-./()[\]#:]+/g, " ").trim();
+
+// A time to failure or removal: hours, cycles, km, age… in the name.
+const TIME_WORDS = /\b(hours?|hrs?|hr|time|times|age|cycles?|km|kms|kilomet(?:re|er)s?|miles?|mileage|odometer|days?|weeks?|months?|years?|minutes?|mins?|starts?|operations?|landings?|shots?|runtime|duration|life|ttf|tbf|mtbf)\b/i;
+// A failed / still-running flag: status, failed, censor, event, suspended…
+const STATUS_WORDS = /\b(status|state|fail|failed|failure|failures|censor|censored|censoring|cens|event|events|suspend|suspended|suspension|suspensions|running|outcome|survived|alive|dead)\b/i;
+// …but not a failure *mode*, cause or date.
+const NOT_STATUS = /\b(mode|modes|cause|causes|type|code|description|desc|reason|date|time|hours?|comment|comments|notes?)\b/i;
+// An identifier: never the time, however numeric.
+const ID_WORDS = /\b(id|ids|no|number|serial|sn|s n|tag|asset|unit|item|equipment|code|row|index)\b/i;
+const COUNT_NAMES = /^(n|count|counts|qty|quantity|units|number of units)$/i;
+
+// A status value's meaning: 0 = failed, 1 = still running, null = can't tell.
+// "Failed / Running", "F / S", "yes / no" (read by the column's name: a
+// "running" column's yes is still running), and 0/1 codes, which follow
+// ``censorInverted``.
+const FAILED_VALUES = /^(f|fail|failed|failure|failures|fault|faulty|broken|broke|dead|died|event|down|u ?\/ ?s|unserviceable|defect|defective|tripped|failed in service)$/i;
+const RUNNING_VALUES = /^(s|r|run|running|still running|suspended|suspension|susp|censored|survived|survivor|alive|ok|okay|working|operating|operational|in service|in-service|active|serviceable|good|healthy|removed|retired|planned|preventive)$/i;
+const YES = /^(y|yes|true|t)$/i;
+const NO = /^(n|no|false)$/i;
+const RUNNING_NAME = /\b(censor|censored|censoring|cens|suspend|suspended|suspension|running|survived|alive)\b/i;
+export function guessStatusMeaning(value, columnName = "") {
+  const v = String(value ?? "").trim();
+  const num = v === "" ? NaN : Number(v);
+  if (num === 0 || num === 1) return censorInverted(columnName) ? 1 - num : num;
+  if (num === -1 || num === 2) return num; // left / interval: kept as they are
+  if (FAILED_VALUES.test(v)) return 0;
+  if (RUNNING_VALUES.test(v)) return 1;
+  const runningName = RUNNING_NAME.test(words(columnName)) && !censorInverted(columnName);
+  if (YES.test(v)) return runningName ? 1 : 0;
+  if (NO.test(v)) return runningName ? 0 : 1;
+  return null;
+}
+
+// A time unit from a column name: "Operating Hours" → "Hours", "km" →
+// "Kilometres". The spellings match the Data step's unit suggestions.
+const UNIT_NAMES = [
+  [/\b(hours?|hrs?|hr|h)\b/i, "Hours"], [/\b(days?)\b/i, "Days"], [/\b(weeks?)\b/i, "Weeks"],
+  [/\b(months?)\b/i, "Months"], [/\b(years?)\b/i, "Years"], [/\b(cycles?)\b/i, "Cycles"],
+  [/\b(km|kms|kilomet(?:re|er)s?)\b/i, "Kilometres"], [/\b(miles?|mileage)\b/i, "Miles"],
+  [/\b(minutes?|mins?)\b/i, "Minutes"], [/\b(operations?)\b/i, "Operations"], [/\b(starts?)\b/i, "Starts"],
+  [/\b(landings?)\b/i, "Landings"],
+];
+export function guessUnit(name) {
+  const w = words(name);
+  return UNIT_NAMES.find(([re]) => re.test(w))?.[1] || "";
+}
+
+// First guesses for a life-data fit: the time column (x), the status column
+// (c) and which way round its values are, a count column (n) and the unit.
+// ``columns``: [{ name, dtype, values }] — ``values`` is the column's
+// {value: rows} when it has only a few (null otherwise).
+//   time:   a numeric column named like hours, time, age, cycles, km…; else
+//           the first numeric column that isn't an id, a status or a count.
+//   status: a column named like status, failed, censored, event, suspended…
+//           whose few values read as failed / still running.
+export function guessLifeColumns(columns) {
+  const looksLikeStatus = (c) => {
+    if (!c.values) return false;
+    const vals = Object.keys(c.values);
+    if (!vals.length) return false;
+    if (isNumeric(c.dtype)) return vals.every((v) => ["0", "1", "-1", "2"].includes(String(v)));
+    const known = vals.filter((v) => guessStatusMeaning(v, c.name) !== null).length;
+    return known * 2 >= vals.length;
+  };
+  const status =
+    columns.find((c) => STATUS_WORDS.test(words(c.name)) && !NOT_STATUS.test(words(c.name)) && looksLikeStatus(c)) ||
+    columns.find((c) => CENSOR_RE.test(String(c.name).trim()) && looksLikeStatus(c));
+  const c = status?.name || "";
+  const count = columns.find((col) => col.name !== c && isNumeric(col.dtype) && COUNT_NAMES.test(String(col.name).trim()));
+  const n = count?.name || "";
+  const numeric = columns.filter((col) => isNumeric(col.dtype) && col.name !== c && col.name !== n);
+  const x =
+    numeric.find((col) => TIME_WORDS.test(words(col.name))) ||
+    numeric.find((col) => !ID_WORDS.test(words(col.name))) ||
+    numeric[0];
+  return { x: x?.name || "", c, n, unit: guessUnit(x?.name) };
+}
+
 // A pandas dtype in plain words, for a preview's column heads.
 export function dtypeLabel(dtype) {
   const d = String(dtype || "");
