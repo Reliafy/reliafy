@@ -2303,10 +2303,11 @@ class Stage(BaseModel):
     k_of_n: Optional[int] = Field(None, description="Components required (k of n), 1 to the stage's component "
                                                      "count. Omit or 1 = any one suffices; = component count = all "
                                                      "required.")
-    common_cause_beta: Optional[float] = Field(None, description="Non-repairable only, stages with 2+ components: "
-                                                                  "beta-factor common-cause coupling for this stage's "
-                                                                  "redundant components, 0 ≤ beta < 1 (typically "
-                                                                  "0.01–0.2).")
+    common_cause_beta: Optional[float] = Field(None, description="Stages with 2+ components: beta-factor "
+                                                                  "common-cause coupling for this stage's redundant "
+                                                                  "components, 0 ≤ beta < 1 (typically 0.01–0.2). "
+                                                                  "Repairable diagrams follow it over time where "
+                                                                  "the members' lives are exponential.")
     common_cause_basis: Optional[Literal["rate", "probability"]] = Field(None, description=(
         "With common_cause_beta: what beta is a fraction of. 'rate' (default) splits each member's failure rate "
         "and holds over the whole life; 'probability' is the PRA basic-event split, only for small failure "
@@ -2401,7 +2402,10 @@ def create_rbd(
     preventive and inspection too, the rest are added with edit_rbd update_node); the diagram repair_crews,
     maintenance_groups, safety_function, target_sil and costs. A safety function needs its proof tests
     (inspection) — without them its PFDavg treats every failure as revealed at once. Common-cause groups
-    (edit_rbd add_ccf) enter a safety function's PFDavg.
+    (common_cause_beta on a stage, or edit_rbd add_ccf) are followed over time in repairable diagrams: in every
+    figure where RePyability's chains take them (members with exponential lives, revealed failures or tests and
+    repairs in no time, no scheduled maintenance, crews for every repair), otherwise left out with the reason
+    (the validation warnings say so).
     Returns the node ids (the stages form generates them) and structure_summary, the diagram in one line
     (e.g. "PLC → (Pump A ∥ Pump B)"; 2-of-3(…) for voting) — check it matches what the user described; change
     the diagram later with edit_rbd."""
@@ -2681,7 +2685,8 @@ def edit_rbd(
       safety_function?, target_sil? (0 clears), costs? {downtime_rate?, horizon?, discount_rate? (% a year); 0
       clears}}
     - add_ccf {members, beta, basis?, id?} / remove_ccf {id} — common-cause (beta-factor) groups (basis 'rate',
-      the default, for lifetime analysis); in a repairable diagram they enter a safety function's PFDavg.
+      the default, for lifetime analysis); a repairable diagram follows them over time in every figure where
+      RePyability's chains take them (else they're left out, and the warnings say why).
     Removing a node drops it from its common-cause group (and the group if under 2 members remain).
     Changing connections re-lays out the diagram automatically. Returns one line per op, structure_summary
     (the diagram after the edit in one line, e.g. "PLC → (Pump A ∥ Pump B)"), the validation
@@ -3139,8 +3144,10 @@ def analyze_rbd(
     the long-run values were found (long_run_method: exact / numerical / simulated, e.g. the repair crews'
     Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety: whether common
     cause is in it, common_cause_included; with no proof-tested block, a warning that the PFDavg and SIL are
-    optimistic — and with common cause in the PFDavg the headline `availability` is the one with it,
-    without_common_cause alongside), proof_test_note when A(t) saw-tooths with proof tests, and (in
+    optimistic), common-cause groups in every figure where RePyability follows them over time (the headline
+    `availability` says common_cause_included, with the long run without_common_cause alongside; where they're
+    refused, common_cause.note says why and every figure leaves them out — a safety function's PFDavg may still
+    include them, and then leads the headline), proof_test_note when A(t) saw-tooths with proof tests, and (in
     `exact`) the availability over time A(t), mission availability and the window's expected system
     failures, outages, downtime and cost — each with its method (exact / numerical; no simulation) — from
     new or from current_state. A priced diagram adds `costs`: the long-run cost rate, and the total cost of
@@ -3489,9 +3496,11 @@ def cheapest_design(
     design as drawn and the cheapest side by side (total cost, purchase, running cost rate, availability), the
     copies per block and the saving; the totals are present values when discounted. Needs block purchase prices
     (edit_rbd update_node costs.acquisition), an ownership horizon and the system downtime cost (edit_rbd set
-    costs.horizon and costs.downtime_rate; create_rbd takes the same costs). Nothing is saved:
-    add the copies with edit_rbd (add_node parallel_to), or open the diagram's Design tab to draw them. Pro
-    (or purchased credits), as in the app."""
+    costs.horizon and costs.downtime_rate; create_rbd takes the same costs). The diagram's common-cause groups
+    are in the scoring wherever analyze_rbd has them: a grouped block's copies join its group (common_cause
+    says; copies of a train holding a member are refused). Nothing is saved: add the copies with edit_rbd
+    (add_node parallel_to; for a grouped block, remove_ccf then add_ccf its group with the copies too), or open
+    the diagram's Design tab to draw them. Pro (or purchased credits), as in the app."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     rbd = _get_rbd(db, uid, rbd_id)
@@ -3516,6 +3525,9 @@ def cheapest_design(
     keep = ("unit", "horizon", "min_availability", "discount_rate", "method", "max_copies", "current", "saving",
             "changed", "note")
     out = {**head, "available": True, **{k: result[k] for k in keep}}
+    if result.get("common_cause"):
+        # Whether the designs were scored with the common-cause groups (#226).
+        out["common_cause"] = result["common_cause"]
     if out.get("note") and "no system downtime cost" in out["note"]:
         out["note"] += " " + _COSTS_HOW["downtime_rate"]
     out["present_value"] = result["discount_rate"] is not None
@@ -3692,8 +3704,10 @@ def rbd_sensitivity(
     exact or numerical (free, deterministic: the derivatives are central differences of the exact long-run
     values, a step's effect an exact difference — 'linear' when it is the derivative times the step) or
     simulation (Pro or credits: each step simulated against the diagram with common random numbers, with a 95%
-    interval; say when an interval spans zero). Common-cause groups are left out, as in analyze_rbd's
-    availability. A long calculation may come back as a job_id: call get_job with it until done."""
+    interval; say when an interval spans zero). Common-cause groups are in it as in analyze_rbd's availability:
+    each group's beta is then a lever ('Common-cause β': a lower beta, fewer shared failures) and its members'
+    life and repair move together; where they're refused, notes say why. A long calculation may come back as a
+    job_id: call get_job with it until done."""
     from backend.routers.rbd_sensitivity import sensitivity_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -3887,8 +3901,8 @@ def optimise_maintenance_intervals(
     target_sil), or the most available within max_cost_rate. Returns each block's interval now and in the
     plan (proof tests: and its first test, offset), the plan's cost rate, availability and — for a safety
     function — PFDavg and SIL beside the diagram as drawn; with stagger_tests also the best plan with every test
-    at once (tested_together), so the effect of staggering shows; a safety function's common-cause groups are in
-    its PFDavg. With limited repair crews it needs assume_unlimited_crews (the intervals are chosen as if no
+    at once (tested_together), so the effect of staggering shows; the diagram's common-cause groups are in the
+    figures the intervals are chosen by wherever RePyability's long-run chain covers them (common_cause says). With limited repair crews it needs assume_unlimited_crews (the intervals are chosen as if no
     repair waits) and simulate_with_crews gives the plan's availability and PFDavg with the crews (with_crews).
     Free (exact); a large proof-test search runs as a job (call get_job). Nothing is saved: apply the plan with
     edit_rbd using edit_rbd_ops. It needs blocks with proof tests (inspection) or age replacement (preventive)

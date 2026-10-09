@@ -48,7 +48,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 
 from backend.fitting import DISTRIBUTIONS
-from backend.services import rbd_analysis, rbd_next_failure, rbd_repeats, rbd_sensitivity
+from backend.services import rbd_analysis, rbd_ccf, rbd_next_failure, rbd_repeats, rbd_sensitivity
 from backend.units import unit_in_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1412,30 +1412,40 @@ def _repairable_body(script: _Script, graph) -> str:
         out += groups
         out.append("")
     ccf = _repairable_ccf(graph, {nid for nid, _, _ in comps})
-    if ccf and not graph.get("safety_function"):
-        out.append("# Common-cause groups enter a repairable diagram only through a "
-                   "safety")
-        out.append("# function's PFDavg, so they are ignored here (as in Reliafy).")
     io = []
     if "input" in node_ids:
         io.append("input_node='input'")
     if "output" in node_ids:
         io.append("output_node='output'")
     io += rbd_export_costs.rbd_kwargs(graph)
-    out.append("rbd = RepairableRBD(\n    EDGES,\n    COMPONENTS,\n    k=K,\n"
-               + "".join(f"    {a},\n" for a in io) + ")")
-    if graph.get("safety_function"):
-        ccf_expr = None
-        if ccf:
-            script.imports.update({"CCFGroup", "BetaFactor"})
-            groups_src = "".join(
-                f"        CCFGroup(members={members!r}, model={_beta_factor(beta, basis)}),\n"
-                for members, beta, basis in ccf)
-            ccf_expr = ("RepairableRBD(\n    EDGES,\n    COMPONENTS,\n    k=K,\n"
-                        + "".join(f"    {a},\n" for a in io)
-                        + "    ccf_groups=[\n" + groups_src + "    ],\n)")
+    if ccf:
+        # Common-cause groups (#226): followed over time, in every figure, or
+        # left out of every figure where RePyability refuses them (main()).
+        script.imports.update({"CCFGroup", "BetaFactor"})
+        out.append("# Common-cause groups (beta factor): each splits its members' failure rate")
+        out.append("# between their own causes and a shared one that fails them together. As in")
+        out.append("# Reliafy they are in every figure, or - where RePyability refuses them (a")
+        out.append("# member whose life isn't exponential, limited repair crews, ...) - in none,")
+        out.append("# and main() says why (see common_cause_refusal).")
+        out.append("CCF_GROUPS = [")
+        for members, beta, basis in ccf:
+            out.append(f"    CCFGroup(members={members!r}, model={_beta_factor(beta, basis)}),")
+        out.append("]")
         out.append("")
-        out += rbd_export_costs.safety_constants(graph, ccf_expr)
+        out.append("")
+        out.append("def build_rbd(ccf_groups=None):")
+        out.append('    """The diagram, with these common-cause groups (None: without any)."""')
+        out.append("    return RepairableRBD(\n        EDGES,\n        COMPONENTS,\n        k=K,\n"
+                   + "".join(f"        {a},\n" for a in io) + "        ccf_groups=ccf_groups,\n    )")
+        out.append("")
+        out.append("")
+        out.append("rbd = build_rbd(CCF_GROUPS)")
+    else:
+        out.append("rbd = RepairableRBD(\n    EDGES,\n    COMPONENTS,\n    k=K,\n"
+                   + "".join(f"    {a},\n" for a in io) + ")")
+    if graph.get("safety_function"):
+        out.append("")
+        out += rbd_export_costs.safety_constants(graph, "build_rbd(CCF_GROUPS)" if ccf else None)
     out.append("")
     out.append("")
     out.append("# " + "-" * 75)
@@ -1500,9 +1510,15 @@ def _repairable_body(script: _Script, graph) -> str:
     out.append("")
     out.append("")
     main = rbd_export_costs.main_source(_REPAIRABLE_MAIN, graph).strip("\n")
+    if ccf:
+        assert main.count(_MAIN_START) == 1 and main.count(_MAIN_RESULTS) == 1
+        main = main.replace(_MAIN_START, _MAIN_START_CCF).replace(_MAIN_RESULTS, _MAIN_RESULTS_CCF)
     # As of now (#220, #221): the next failure's code, as the app runs it.
     helpers = (rbd_next_failure.export_source() + "\n\n" + _NEXT_FAILURE_REPORT.strip("\n") + "\n\n\n"
                + rbd_sensitivity.export_source() + "\n\n")
+    if ccf:
+        # Common cause in every figure or none, as the app decides (#226).
+        helpers += "\n" + rbd_ccf.export_source() + "\n\n"
     out.append(main.replace("\ndef main():", "\n" + helpers + "\ndef main():", 1))
     return "\n".join(out)
 
@@ -1541,10 +1557,37 @@ def _beta_factor(beta: float, basis: str) -> str:
     return f"BetaFactor({_num(beta)}, basis={basis!r})"
 
 
+# main() with common-cause groups (#226): in every figure, or in none.
+_MAIN_START = '''
+def main():
+    # Voting gates (the ids in K) are junctions: perfect, and never pinned.
+'''
+_MAIN_START_CCF = '''
+def main():
+    global rbd
+    # Common cause in every figure or in none, as in Reliafy: where
+    # RePyability's chains or its simulation refuse a group (from STATE, with
+    # the pins), the diagram is analysed without its groups, and says why.
+    left_out = common_cause_refusal(rbd, WORKING_NODES, BROKEN_NODES, node_states())
+    if left_out:
+        print(f"Common-cause groups left out of every figure: {left_out}")
+        rbd = build_rbd()
+    common_cause = {"groups": len(CCF_GROUPS), "included": not left_out, "reason": left_out}
+    # Voting gates (the ids in K) are junctions: perfect, and never pinned.
+'''
+_MAIN_RESULTS = '''        "exact": exact,
+    }
+'''
+_MAIN_RESULTS_CCF = '''        "exact": exact,
+        "common_cause": common_cause,
+    }
+'''
+
+
 def _repairable_ccf(graph: dict, nodes: set) -> list:
     """``(members, beta, basis)`` of the common-cause groups Reliafy builds
-    for a repairable diagram's PFDavg (as :func:`rbd_analysis._ccf_groups`;
-    the basis doesn't change RePyability's chain)."""
+    for a repairable diagram (as :func:`rbd_analysis._ccf_groups`; the basis
+    doesn't change RePyability's chains)."""
     out = []
     for g in graph.get("ccf_groups") or []:
         members = list(dict.fromkeys(m for m in g.get("members") or [] if m in nodes))

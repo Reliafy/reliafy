@@ -260,7 +260,7 @@ def _develop(
 def _repairable_tree(graph: dict, resolve_model) -> tuple[FaultTree, dict, float]:
     """The fault tree of a repairable diagram over its blocks' steady-state
     unavailabilities: ``(tree, event_info, long-run unavailability)``."""
-    rbd, labels, gate_ids, working, broken = ra._build_repairable_rbd(graph, resolve_model)
+    rbd, labels, gate_ids, working, broken = ra._build_repairable_rbd(graph, resolve_model, with_ccf=False)
     availability = rbd.node_availability()
     args = rbd._init_args
     structural = {
@@ -750,7 +750,8 @@ def fault_tree(
         out["unavailability"] = ra._f(unavailability)
         out["unit"] = unit
         out["notes"] = (
-            ["Common-cause groups are reliability-only and aren't in this tree."]
+            ["This tree is over the blocks alone: its common-cause groups aren't in it (the Calculator "
+             "tab's availability takes them in)."]
             if graph.get("ccf_groups") else []
         )
         return out

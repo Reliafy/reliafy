@@ -2,7 +2,7 @@
 title: "Add a common-cause group"
 task: "How do I couple redundant components that share a failure cause?"
 category: "Reliability block diagrams"
-prerequisites: "A non-repairable RBD with two or more redundant components that share a cause."
+prerequisites: "An RBD with two or more redundant components that share a cause."
 related_href: "/rbds/b"
 related_label: "Open the RBD builder"
 order: 31
@@ -20,7 +20,11 @@ out both units together, which no amount of parallelism can protect against. A
 common-cause group tells Reliafy to account for it, so your reliability number
 stops being optimistic in exactly the situations where optimism is expensive.
 
-This is a reliability feature, so it applies to **non-repairable** diagrams.
+It works in both kinds of diagram. In a **non-repairable** diagram it lowers
+the reliability curve and the MTTF. In a **repairable** diagram it is followed
+over time: the long-run availability, A(t), the expected failures and costs,
+the simulation, the cheapest design and *What to improve*, where each group's β
+becomes a lever of its own.
 
 ## Select the components that share a cause
 
@@ -63,6 +67,14 @@ whole life. The dialog also offers the failure-probability split of PRA basic
 events; keep that for short missions, since over a lifetime it overstates the
 group's reliability (and the MTTF isn't given with it).
 
+In a repairable diagram β always splits the failure rate, and the group is
+followed in every figure when its members have exponential lives (failures
+found at once, or by proof tests that take no time), no scheduled maintenance,
+and a repair crew for every repair. Where that doesn't hold, the group is left
+out of every figure rather than just some of them, and **Validate** says why. A
+safety function's PFDavg still takes the group in wherever its long-run value
+can.
+
 A note on symmetry: the β-factor model assumes the grouped units are
 *identical*. If their life models differ, Reliafy flags it when you validate —
 give them the same model for a result that means anything.
@@ -81,7 +93,9 @@ system reliability **with** the common cause against what you'd have got
 ![The results showing the common-cause reliability impact callout](/guides/img/ccf-04-impact.png)
 
 In this example a β of 0.1 takes the design-point reliability from 91.0% down
-to 89.9%. That gap is the cost of the shared cause — the part of your redundancy
+to 89.9%. A repairable diagram says the same under its availability: the
+figures include the groups, and the long-run availability without them is
+alongside. That gap is the cost of the shared cause — the part of your redundancy
 that was never really there. It's usually larger than people expect, and it's
 the whole reason the feature exists.
 
