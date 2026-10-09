@@ -273,9 +273,9 @@ export default function DegradationResultView({ results, modelId }) {
           <table className="lib-table">
             <tbody>
               {(life.params || []).map((p) => (
-                <tr key={p.name}><td className="mono">{p.name}</td><td className="lib-n">{fmt(p.value, 3)}</td></tr>
+                <tr key={p.name}><td>{p.name}</td><td className="lib-n">{fmt(p.value, 3)}</td></tr>
               ))}
-              <tr><td className="mono">mean</td><td className="lib-n">{fmt(life.mean, 1)}</td></tr>
+              <tr><td>mean</td><td className="lib-n">{fmt(life.mean, 1)}</td></tr>
             </tbody>
           </table>
 
@@ -286,7 +286,7 @@ export default function DegradationResultView({ results, modelId }) {
                 <tbody>
                   {r.path_selection.slice(0, 5).map((row, i) => (
                     <tr key={row.id}>
-                      <td className="mono">{row.name || row.id}{i === 0 ? " ✓" : ""}</td>
+                      <td>{row.name || row.id}{i === 0 ? " ✓" : ""}</td>
                       <td className="lib-n">{fmt(row.aicc, 1)}</td>
                     </tr>
                   ))}

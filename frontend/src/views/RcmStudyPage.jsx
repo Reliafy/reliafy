@@ -152,7 +152,7 @@ export default function RcmStudyPage() {
             {study.name}
             {study.is_sample && <span className="sample-tag">Sample</span>}
             {study.shared_by && <span className="sample-tag shared" title={`Shared by ${study.shared_by}`}>Shared</span>}
-            {dirty && <span className="dirty-tag">unsaved</span>}
+            {dirty && <span className="dirty-tag">Unsaved</span>}
           </h1>
           {(study.system || study.description) && (
             <p>{[study.system, study.description].filter(Boolean).join(" — ")}</p>

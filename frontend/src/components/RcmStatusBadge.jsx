@@ -1,10 +1,10 @@
 // Evidence-status badge for an RCM decision, reusing the health-badge palette.
 const STATUS = {
-  supported: { label: "supported", cls: "health-green" },
-  contradicted: { label: "contradicted", cls: "health-red" },
-  inconclusive: { label: "inconclusive", cls: "health-amber" },
-  unevidenced: { label: "no evidence", cls: "health-amber" },
-  stale: { label: "stale link", cls: "health-grey" },
+  supported: { label: "Supported", cls: "health-green" },
+  contradicted: { label: "Contradicted", cls: "health-red" },
+  inconclusive: { label: "Inconclusive", cls: "health-amber" },
+  unevidenced: { label: "No evidence", cls: "health-amber" },
+  stale: { label: "Stale link", cls: "health-grey" },
 };
 
 export default function RcmStatusBadge({ status }) {

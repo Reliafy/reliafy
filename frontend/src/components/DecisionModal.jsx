@@ -107,7 +107,7 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
             >
               <span className="option-title">
                 {o.label}
-                {suggested.includes(o.id) && <span className="suggest-tag">suggested</span>}
+                {suggested.includes(o.id) && <span className="suggest-tag">Suggested</span>}
               </span>
             </button>
           ))}

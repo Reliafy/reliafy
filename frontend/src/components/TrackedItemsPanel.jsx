@@ -8,13 +8,13 @@ const fmt = (v, digits = 0) =>
 
 // Health badge from a cached prediction: how worried should the owner be?
 export function healthBadge(pred) {
-  if (!pred || pred.method === "error") return { label: "monitoring", cls: "health-grey" };
-  if ((pred.prob_never_fails ?? 0) > 0.5) return { label: "may never fail", cls: "health-grey" };
+  if (!pred || pred.method === "error") return { label: "Monitoring", cls: "health-grey" };
+  if ((pred.prob_never_fails ?? 0) > 0.5) return { label: "May never fail", cls: "health-grey" };
   const p = pred.prob_failed;
-  if (p === null || p === undefined) return { label: "estimate", cls: "health-grey" };
-  if (p >= 0.5) return { label: "replace now", cls: "health-red" };
-  if (p >= 0.05) return { label: "plan replacement", cls: "health-amber" };
-  return { label: "healthy", cls: "health-green" };
+  if (p === null || p === undefined) return { label: "Estimate", cls: "health-grey" };
+  if (p >= 0.5) return { label: "Replace now", cls: "health-red" };
+  if (p >= 0.05) return { label: "Plan replacement", cls: "health-amber" };
+  return { label: "Healthy", cls: "health-green" };
 }
 
 export function rulText(pred, unit) {

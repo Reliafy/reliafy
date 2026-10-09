@@ -49,7 +49,7 @@ function PlaceholderBadge() {
   const title = "Placeholder parameters — set real values before trusting the results";
   return (
     <span className="rbd-placeholder-chip" title={title} aria-label={title}>
-      placeholder
+      Placeholder
     </span>
   );
 }

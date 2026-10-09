@@ -106,7 +106,7 @@ export default function BillingPage() {
     { label: "Team workspaces", free: "Join teams (view-only)", pro: "Create teams and edit together" },
   ];
   const planName = { free: "Free", agent: "Agent", pro: "Pro" }[plan] || "Free";
-  const current = (p) => (plan === p ? <span className={"plan-badge " + p}>current</span> : null);
+  const current = (p) => (plan === p ? <span className={"plan-badge " + p}>Current</span> : null);
 
   return (
     <div className="app">

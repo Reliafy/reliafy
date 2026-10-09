@@ -223,7 +223,7 @@ export default function FleetForecastPage() {
             {fleet.name}
             {fleet.is_sample && <span className="sample-tag">Sample</span>}
             {fleet.shared_by && <span className="sample-tag shared" title={`Shared by ${fleet.shared_by}`}>Shared</span>}
-            {dirty && <span className="dirty-tag">unsaved</span>}
+            {dirty && <span className="dirty-tag">Unsaved</span>}
           </h1>
           <p>
             Against{" "}

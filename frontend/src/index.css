@@ -127,35 +127,6 @@ h6 {
   color: var(--ink);
 }
 
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.nav-link {
-  text-decoration: none;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  font-weight: 500;
-  padding: 6px 11px;
-  border-radius: var(--r-sm);
-  transition: color 0.15s, background 0.15s;
-}
-
-.nav-link:hover {
-  color: var(--ink);
-  background: var(--surf-2);
-}
-
-.nav-link.active {
-  color: var(--acc);
-  background: var(--acc-t);
-}
-
 /* API token scope checkboxes (Settings → API access). */
 .token-scopes { border: 0; padding: 0; margin: 0.8rem 0 0; }
 .token-scopes legend { font-size: var(--fs-12); color: var(--muted); padding: 0; margin-bottom: 4px; }
@@ -247,13 +218,11 @@ h6 {
 
 /* Mono section label, e.g. "Workspace" / "Help". */
 .side-label-group {
-  font-family: var(--mono);
   font-size: var(--fs-12);
-  letter-spacing: 0.14em;
   color: var(--muted);
-  text-transform: uppercase;
   padding: 0 10px;
   margin: 2px 0 8px;
+  font-weight: 500;
 }
 
 .sidebar.collapsed .side-label-group {
@@ -325,8 +294,6 @@ h6 {
 
 .side-soon {
   font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   font-weight: 600;
   color: var(--muted);
   background: var(--surf-2);
@@ -488,8 +455,6 @@ h6 {
 .soon-badge {
   display: inline-block;
   font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   font-weight: 600;
   color: var(--acc-d);
   background: rgba(47, 109, 246, 0.12);
@@ -637,8 +602,6 @@ h6 {
 }
 
 .demo-toggles .seg-btn {
-  font-family: inherit;
-  font-weight: 600;
   white-space: normal;
 }
 
@@ -973,10 +936,8 @@ h6 {
 }
 
 .picker-label {
-  font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 600;
+  font-size: var(--fs-13);
+  font-weight: 500;
   color: var(--muted);
 }
 
@@ -1019,9 +980,8 @@ h6 {
 }
 
 .param-field span {
-  font-family: ui-monospace, "SFMono-Regular", monospace;
-  font-weight: 600;
-  color: var(--acc-d);
+  font-weight: 500;
+  color: var(--muted);
 }
 
 .param-field input {
@@ -1096,10 +1056,8 @@ h6 {
 }
 
 .rbd-unit-field span {
-  font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 600;
+  font-size: var(--fs-13);
+  font-weight: 500;
   color: var(--muted);
 }
 
@@ -1191,8 +1149,6 @@ h6 {
   right: -4px;
   font-size: 9.5px;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
   background: #f59e0b;
   color: #fff;
   border-radius: var(--r-sm);
@@ -1422,11 +1378,9 @@ h6 {
 }
 
 .stats .stat .k {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.1em;
+  font-size: var(--fs-13);
   color: var(--muted);
-  text-transform: uppercase;
+  font-weight: 500;
 }
 
 .stats .stat .v {
@@ -1450,10 +1404,9 @@ h6 {
 }
 
 .tablebar .count {
-  font-family: var(--mono);
   font-size: var(--fs-12);
   color: var(--muted);
-  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
 }
 
 .tablebar .grow {
@@ -1514,10 +1467,7 @@ h6 {
 
 .lib-table thead th {
   text-align: left;
-  font-family: var(--mono);
   font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.11em;
   color: var(--muted);
   font-weight: 500;
   padding: 0 14px 11px;
@@ -1551,12 +1501,12 @@ h6 {
 }
 
 .lib-date {
-  font-family: var(--mono);
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .lib-n {
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .lib-actions {
@@ -1622,14 +1572,12 @@ header p {
   max-width: 56ch;
 }
 
-/* Mono breadcrumb above a page title (Instrument). */
+/* Breadcrumb above a page title. */
 .crumb {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.08em;
+  font-size: var(--fs-13);
   color: var(--muted);
-  text-transform: uppercase;
   margin-bottom: 9px;
+  font-weight: 500;
 }
 
 .crumb b {
@@ -1645,7 +1593,6 @@ header p {
   font: inherit;
   color: var(--muted);
   cursor: pointer;
-  text-transform: uppercase;
   letter-spacing: inherit;
 }
 
@@ -1732,13 +1679,13 @@ button.secondary:hover:not(:disabled) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--mono);
   font-size: var(--fs-12);
   color: var(--ink);
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: 3px 9px;
+  font-variant-numeric: tabular-nums;
 }
 
 .dpill .dot {
@@ -1749,30 +1696,26 @@ button.secondary:hover:not(:disabled) {
 }
 
 .phflag {
-  font-family: var(--mono);
   font-size: var(--fs-12);
-  letter-spacing: 0.08em;
   color: var(--acc);
   background: var(--acc-t);
   border-radius: var(--r-sm);
   padding: 2px 6px;
-  text-transform: uppercase;
   margin-left: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* "Sample" tag on seeded starter datasets/models (shared, read-only). */
 .sample-tag {
-  font-family: var(--mono);
   font-size: var(--fs-12);
-  letter-spacing: 0.06em;
   color: var(--muted);
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: 1px 6px;
-  text-transform: uppercase;
   margin-left: 8px;
   vertical-align: middle;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Empty state */
@@ -1901,10 +1844,10 @@ button.secondary:hover:not(:disabled) {
   place-items: center;
   font-size: var(--fs-12);
   font-weight: 600;
-  font-family: var(--mono);
   background: var(--bg);
   border: 1px solid var(--line);
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .steps .step.active {
@@ -1968,8 +1911,7 @@ button.secondary:hover:not(:disabled) {
 .dropzone .dz-hint {
   font-size: var(--fs-12);
   color: var(--muted);
-  font-family: var(--mono);
-  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
 }
 
 .dropzone:hover,
@@ -1989,12 +1931,10 @@ button.secondary:hover:not(:disabled) {
 }
 
 .recent-h {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: var(--fs-14);
+  color: var(--ink);
   margin-bottom: 9px;
+  font-weight: 600;
 }
 
 .recent-row {
@@ -2047,7 +1987,7 @@ button.secondary:hover:not(:disabled) {
   margin-left: auto;
   font-size: var(--fs-12);
   color: var(--muted);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .row {
@@ -2094,17 +2034,14 @@ button.secondary:hover:not(:disabled) {
   margin-top: 6px;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
-  font-family: var(--mono);
   order: 2;
 }
 
 .params .stat .name {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.1em;
+  font-size: var(--fs-13);
   color: var(--muted);
-  text-transform: uppercase;
   order: 1;
+  font-weight: 500;
 }
 
 .params .stat {
@@ -2130,12 +2067,10 @@ button.secondary:hover:not(:disabled) {
 }
 
 .detail-panel .plottitle {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: var(--fs-14);
+  color: var(--ink);
   margin-bottom: 6px;
+  font-weight: 600;
 }
 
 .detail-panel .aside {
@@ -2160,13 +2095,11 @@ button.secondary:hover:not(:disabled) {
 }
 
 .detail-panel .gof-card .gofh {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: var(--fs-14);
+  color: var(--ink);
   padding: 13px 16px 11px;
   border-bottom: 1px solid var(--line2);
+  font-weight: 600;
 }
 
 .detail-panel .gofr {
@@ -2187,8 +2120,8 @@ button.secondary:hover:not(:disabled) {
 }
 
 .detail-panel .gofr .gv {
-  font-family: var(--mono);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Parameter rows carry a value with its confidence interval stacked beneath. */
@@ -2211,13 +2144,11 @@ button.secondary:hover:not(:disabled) {
   overflow: hidden;
 }
 .gof-metrics-card .gofh {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: var(--fs-14);
+  color: var(--ink);
   padding: 13px 16px 11px;
   border-bottom: 1px solid var(--line2);
+  font-weight: 600;
 }
 .gof-metrics-card .gofr {
   display: flex;
@@ -2234,8 +2165,8 @@ button.secondary:hover:not(:disabled) {
   color: var(--muted);
 }
 .gof-metrics-card .gv {
-  font-family: var(--mono);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .gof-metrics-card .gv-col {
   display: flex;
@@ -2263,10 +2194,10 @@ button.secondary:hover:not(:disabled) {
   font-size: var(--fs-13);
 }
 .validation-card .vterm {
-  font-family: var(--mono);
   font-size: var(--fs-12);
   color: var(--muted);
   margin-left: 6px;
+  font-variant-numeric: tabular-nums;
 }
 .validation-card .vsub,
 .validation-card .vauc {
@@ -2280,9 +2211,9 @@ button.secondary:hover:not(:disabled) {
   gap: 4px 16px;
 }
 .validation-card .vauc b {
-  font-family: var(--mono);
   font-weight: 500;
   color: var(--ink, inherit);
+  font-variant-numeric: tabular-nums;
 }
 .validation-card .vread {
   margin: 6px 0 0;
@@ -2340,10 +2271,8 @@ button.secondary:hover:not(:disabled) {
 }
 
 .dist-label {
-  font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 600;
+  font-size: var(--fs-13);
+  font-weight: 500;
   color: var(--muted);
 }
 
@@ -2618,11 +2547,9 @@ button.secondary:hover:not(:disabled) {
 }
 
 .rbd-section-head {
-  font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-14);
   font-weight: 600;
-  color: var(--muted);
+  color: var(--ink);
   margin: 1.25rem 0 0.5rem;
 }
 
@@ -2660,11 +2587,9 @@ button.secondary:hover:not(:disabled) {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-14);
   font-weight: 600;
-  color: var(--muted);
+  color: var(--ink);
   margin-bottom: 0.7rem;
 }
 
@@ -2798,13 +2723,11 @@ button.secondary:hover:not(:disabled) {
 }
 
 .calc-eval-card .gofh {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: var(--fs-14);
+  color: var(--ink);
   padding: 13px 16px 11px;
   border-bottom: 1px solid var(--line2);
+  font-weight: 600;
 }
 .calc-eval-body {
   display: flex;
@@ -2853,11 +2776,8 @@ button.secondary:hover:not(:disabled) {
   border: none;
   box-shadow: none;
   padding: 0;
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 400;
+  font-size: var(--fs-13);
+  font-weight: 500;
   color: var(--muted);
   cursor: pointer;
   display: inline-flex;
@@ -2886,13 +2806,11 @@ button.secondary:hover:not(:disabled) {
 }
 /* Baseline parameters card at the top of the rail (PH models). */
 .calc-rail-params .gofh {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: var(--fs-14);
+  color: var(--ink);
   padding: 13px 16px 11px;
   border-bottom: 1px solid var(--line2);
+  font-weight: 600;
 }
 .calc-rail-params .gofr {
   display: flex;
@@ -2910,8 +2828,8 @@ button.secondary:hover:not(:disabled) {
   color: var(--muted);
 }
 .calc-rail-params .gv {
-  font-family: var(--mono);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .calc-rail-params .gv-col {
   display: flex;
@@ -2979,8 +2897,7 @@ button.secondary:hover:not(:disabled) {
 
 .calc-table thead th {
   color: var(--muted);
-  font-weight: 600;
-  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-weight: 500;
 }
 
 .calc-table thead th:first-child {
@@ -3019,9 +2936,8 @@ button.secondary:hover:not(:disabled) {
   border-radius: 0;
   border-right: 1px solid var(--line);
   padding: 0.45rem 0.8rem;
-  font-family: ui-monospace, "SFMono-Regular", monospace;
   font-size: var(--fs-14);
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
 }
 
@@ -3083,10 +2999,10 @@ button.secondary:hover:not(:disabled) {
 }
 
 .calc-cell-id {
-  font-family: ui-monospace, "SFMono-Regular", monospace;
   font-weight: 600;
   font-size: var(--fs-13);
   color: var(--acc-d);
+  font-variant-numeric: tabular-nums;
 }
 
 .calc-cell-val {
@@ -3114,10 +3030,8 @@ button.secondary:hover:not(:disabled) {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 600;
+  font-size: var(--fs-13);
+  font-weight: 500;
   color: var(--muted);
 }
 .units-label::after {
@@ -3158,11 +3072,9 @@ button.secondary:hover:not(:disabled) {
 }
 
 .map-group-title-text {
-  font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-14);
   font-weight: 600;
-  color: var(--muted);
+  color: var(--ink);
 }
 
 .cov-adv-toggle {
@@ -3274,8 +3186,8 @@ button.secondary:hover:not(:disabled) {
 }
 
 .coef-table .coef-name {
-  font-family: ui-monospace, "SFMono-Regular", monospace;
   color: var(--acc-d);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Goodness-of-fit table */
@@ -3452,12 +3364,12 @@ button.secondary:hover:not(:disabled) {
   padding: 0 0.6rem;
   background: var(--surf-2);
   border-right: 1px solid var(--line);
-  font-family: var(--mono);
   font-size: var(--fs-13);
   font-weight: 600;
   color: var(--muted);
   min-width: 34px;
   justify-content: center;
+  font-variant-numeric: tabular-nums;
 }
 .ds-listinput {
   flex: 1;
@@ -3534,11 +3446,9 @@ button.secondary:hover:not(:disabled) {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-14);
   font-weight: 600;
-  color: var(--muted);
+  color: var(--ink);
   margin-bottom: 0.45rem;
 }
 
@@ -3597,12 +3507,12 @@ button.secondary:hover:not(:disabled) {
   place-items: center;
   width: 1.9rem;
   flex-shrink: 0;
-  font-family: ui-monospace, "SFMono-Regular", monospace;
   font-weight: 600;
   font-size: var(--fs-13);
   color: var(--acc-d);
   background: rgba(47, 109, 246, 0.12);
   border-right: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
 }
 
 .map-field.selected .map-badge {
@@ -3731,12 +3641,10 @@ select:disabled {
 }
 
 .ds-section-h {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: var(--fs-14);
+  color: var(--ink);
   margin-bottom: 10px;
+  font-weight: 600;
 }
 
 .ds-cols {
@@ -3773,13 +3681,11 @@ select:disabled {
 }
 
 .ds-aside .gofh {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: var(--fs-14);
+  color: var(--ink);
   padding: 13px 16px 11px;
   border-bottom: 1px solid var(--line2);
+  font-weight: 600;
 }
 
 .ds-model-row {
@@ -3823,9 +3729,8 @@ select:disabled {
   place-items: center;
   height: 100vh;
   color: var(--muted);
-  font-family: var(--mono);
   font-size: var(--fs-13);
-  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
 }
 
 .login-wrap {
@@ -3894,10 +3799,8 @@ select:disabled {
   gap: 12px;
   margin: 18px 0;
   color: var(--muted);
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-13);
+  font-weight: 500;
 }
 
 .login-or::before,
@@ -3921,11 +3824,9 @@ select:disabled {
 }
 
 .login-field span {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: var(--fs-13);
   color: var(--muted);
+  font-weight: 500;
 }
 
 .login-field input {
@@ -5233,12 +5134,10 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
   gap: 6px;
 }
 .chat-settings label {
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: var(--fs-13);
   color: var(--muted);
   margin-top: 6px;
+  font-weight: 500;
 }
 .chat-settings input {
   width: 100%;
@@ -5503,12 +5402,12 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
   border-radius: var(--r-sm);
   border: 1px solid var(--line);
   background: var(--bg);
-  font-family: var(--mono);
   font-size: var(--fs-12);
   font-weight: 600;
   color: var(--ink);
   cursor: pointer;
   box-shadow: none;
+  font-variant-numeric: tabular-nums;
 }
 .chat-balance:hover { border-color: var(--acc); color: var(--acc); }
 .chat-credit-note { margin-top: 14px; font-size: var(--fs-12); color: var(--muted); }
@@ -5531,21 +5430,21 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 .bill-head { display: flex; align-items: center; justify-content: space-between; }
 .bill-head h2 { margin: 0; font-size: var(--fs-16); }
 
-.plan-badge {
-  font-family: var(--mono); font-size: var(--fs-12); letter-spacing: 0.06em; text-transform: uppercase;
+.plan-badge { font-size: var(--fs-12);
   padding: 3px 9px; border-radius: var(--r-sm);
+  font-variant-numeric: tabular-nums;
 }
 .plan-badge.free { color: var(--muted); background: var(--bg); border: 1px solid var(--line); }
 .plan-badge.pro { color: var(--acc); background: var(--acc-t); }
 .plan-badge.agent { color: #0f8a6a; background: rgba(15, 138, 106, 0.1); }
 .plan-badge.admin { color: #7a5af5; background: rgba(122, 90, 245, 0.1); }
 
-.bill-balance { font-family: var(--mono); font-size: var(--fs-20); font-weight: 600; }
-.bill-balance-unit { font-size: var(--fs-12); font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0.05em; text-transform: uppercase; }
+.bill-balance { font-size: var(--fs-20); font-weight: 600; font-variant-numeric: tabular-nums; }
+.bill-balance-unit { font-size: var(--fs-12); font-weight: 500; color: var(--muted); margin-left: 6px; }
 
 .bill-usage { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .bill-usage li { display: flex; justify-content: space-between; font-size: var(--fs-14); padding: 6px 0; border-bottom: 1px solid var(--line); }
-.bill-usage-n { font-family: var(--mono); color: var(--muted); }
+.bill-usage-n { color: var(--muted); font-variant-numeric: tabular-nums; }
 
 .bill-packs { display: flex; gap: 10px; flex-wrap: wrap; }
 .bill-pack {
@@ -5563,8 +5462,8 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 /* Free vs Pro comparison (Free-plan cloud users only). The table scrolls
    inside its own wrapper on narrow screens; the page never scrolls sideways. */
 .bill-compare { margin-top: 8px; }
-.bill-compare-price { font-family: var(--mono); font-size: 18px; font-weight: 600; white-space: nowrap; }
-.bill-compare-per { font-size: var(--fs-12); font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0.05em; text-transform: uppercase; }
+.bill-compare-price { font-size: var(--fs-20); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.bill-compare-per { font-size: var(--fs-12); font-weight: 500; color: var(--muted); margin-left: 6px; }
 .bill-compare-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .bill-compare-table { width: 100%; min-width: 520px; border-collapse: collapse; font-size: var(--fs-14); }
 .bill-compare-table th, .bill-compare-table td {
@@ -5572,12 +5471,12 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 }
 .bill-compare-table th:first-child, .bill-compare-table td:first-child { padding-left: 0; }
 .bill-compare-table thead th {
-  font-size: var(--fs-12); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  font-size: var(--fs-12); font-weight: 500; color: var(--muted);
 }
 .bill-compare-table thead th .plan-badge { margin-left: 6px; vertical-align: middle; }
 .bill-compare-table tbody th { font-weight: 500; width: 36%; }
 .bill-compare-table td { color: var(--muted); width: 32%; }
-.bill-compare-table td.bill-compare-n { font-family: var(--mono); }
+.bill-compare-table td.bill-compare-n {; font-variant-numeric: tabular-nums; }
 .bill-compare-table td.bill-compare-pro { color: inherit; font-weight: 500; }
 .bill-compare-cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .bill-compare-cta .muted-line { margin: 0; }
@@ -5730,13 +5629,11 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 
 /* Tracked-item health badges + selected fleet row */
 .health-badge {
-  font-family: var(--mono);
   font-size: var(--fs-12);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   padding: 3px 9px;
   border-radius: var(--r-sm);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .health-green { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--ok-line); }
 .health-amber { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); }
@@ -5746,10 +5643,10 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 
 /* Parameter CIs + randomness verdict on fit results */
 .param-ci {
-  font-family: var(--mono);
   font-size: var(--fs-12);
   color: var(--muted);
   margin-top: 2px;
+  font-variant-numeric: tabular-nums;
 }
 /* How the intervals are taken (#265) */
 .param-ci-note {
@@ -5888,9 +5785,7 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 .copy-id:hover:not(:disabled) { border-color: var(--acc); background: rgba(47, 109, 246, 0.05); color: var(--acc); }
 .copy-id-k {
   font-size: var(--fs-12);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-weight: 500;
   color: var(--muted);
 }
 .copy-id code {
@@ -5952,10 +5847,7 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 /* ---- RCM: study tree, decision flow, evidence -------------------------- */
 .head-actions { display: inline-flex; gap: 0.6rem; align-items: flex-start; }
 .dirty-tag {
-  font-family: var(--mono);
   font-size: var(--fs-12);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   color: var(--warn);
   background: var(--warn-bg);
   border: 1px solid var(--warn-line);
@@ -5963,6 +5855,7 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
   padding: 3px 9px;
   margin-left: 10px;
   vertical-align: middle;
+  font-variant-numeric: tabular-nums;
 }
 .rollup-badges { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .card.note {
@@ -6002,14 +5895,12 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 }
 .tree-chevron svg { width: 16px; height: 16px; }
 .tree-tag {
-  font-family: var(--mono);
   font-size: var(--fs-12);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   padding: 2px 7px;
   border-radius: var(--r-sm);
   white-space: nowrap;
   flex: none;
+  font-variant-numeric: tabular-nums;
 }
 .fn-tag { color: #3d5a80; background: #eef3f9; border: 1px solid #cfdeed; }
 .fail-tag { color: #7a4f8f; background: #f6f0f9; border: 1px solid #e2d2ec; }
@@ -6083,12 +5974,10 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 .decision-step { margin-bottom: 1.1rem; }
 .field-label {
   display: block;
-  font-family: var(--mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--fs-13);
   color: var(--muted);
   margin: 0 0 6px;
+  font-weight: 500;
 }
 .option-grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .option-tile {
@@ -6103,12 +5992,10 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 .option-tile:hover { border-color: var(--acc); }
 .option-tile.selected { border-color: var(--acc); background: var(--acc-t); }
 .suggest-tag {
-  font-family: var(--mono);
   font-size: var(--fs-12);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   color: var(--ok);
   margin-left: 6px;
+  font-variant-numeric: tabular-nums;
 }
 .option-hint {
   font-size: var(--fs-12);
@@ -6210,7 +6097,7 @@ button.danger:hover { background: var(--danger-bg); }
 .pd-batches { display: flex; flex-direction: column; gap: 6px; }
 .pd-batch { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: center; max-width: 460px; }
 .pd-batch.multi { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 34px; max-width: 640px; }
-.pd-batch-head { font-family: var(--mono); font-size: var(--fs-12); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.pd-batch-head { font-size: var(--fs-14); color: var(--ink); font-weight: 600; }
 .pd-batch input {
   width: 100%; min-width: 0; box-sizing: border-box;
   border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 11px;
@@ -6440,9 +6327,7 @@ button.danger:hover { background: var(--danger-bg); }
 .sel-group {
   padding: 8px 12px 4px;
   font-size: var(--fs-12);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: 500;
   color: var(--muted);
   pointer-events: none;
 }
@@ -6512,7 +6397,6 @@ button.danger:hover { background: var(--danger-bg); }
   border-radius: var(--r-sm);
   background: var(--acc-t);
   color: var(--acc-d);
-  letter-spacing: 0.06em;
 }
 /* Fill the viewport: thread scrolls, composer pinned at the bottom. */
 /* Full-height page: header + chat (scrolls) + composer pinned to the bottom,
@@ -6647,12 +6531,11 @@ button.danger:hover { background: var(--danger-bg); }
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-family: var(--mono);
   font-size: var(--fs-12);
-  letter-spacing: 0.04em;
   color: var(--muted);
   padding: 6px 11px;
   user-select: none;
+  font-variant-numeric: tabular-nums;
 }
 .agent-step > summary:hover { color: var(--ink); }
 .agent-step > summary::-webkit-details-marker { display: none; }
@@ -6688,10 +6571,10 @@ button.danger:hover { background: var(--danger-bg); }
 
 /* Reliafy tool call + outcome (the approved load) — distinct accented chips. */
 .agent-load {
-  font-family: var(--mono);
   font-size: var(--fs-12);
   color: var(--muted);
   padding: 2px 2px;
+  font-variant-numeric: tabular-nums;
 }
 .agent-load.done {
   font-weight: 600;
@@ -6734,9 +6617,9 @@ button.danger:hover { background: var(--danger-bg); }
 }
 .chat-approve-btn:hover:not(:disabled) { background: var(--acc-d); }
 .chat-typing, .chat-status {
-  font-family: var(--mono);
   font-size: var(--fs-12);
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Composer pinned at the bottom. */
@@ -6824,7 +6707,7 @@ button.danger:hover { background: var(--danger-bg); }
   border: 1px solid var(--line, #e6ebf1); border-radius: var(--r); background: var(--surf-2, #f7f9fc);
   min-width: 110px;
 }
-.alt-metric .k { font-size: var(--fs-12); color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.alt-metric .k { font-size: var(--fs-13); color: var(--muted); font-weight: 500; }
 .alt-metric .v { font-size: var(--fs-16); font-weight: 600; }
 .alt-metric.accent { border-color: var(--acc); }
 .alt-metric.accent .v { color: var(--acc); }
@@ -6909,7 +6792,7 @@ button.danger:hover { background: var(--danger-bg); }
 /* Exact availability over time (#154) and "As of now" (#155). */
 .rbd-method {
   display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: var(--r-sm);
-  font-size: var(--fs-12); font-weight: 600; letter-spacing: 0.02em; text-transform: none;
+  font-size: var(--fs-12); font-weight: 600; text-transform: none;
   vertical-align: middle; line-height: 1.6; cursor: help;
   color: #0f7a55; background: rgba(15, 138, 106, 0.1);
 }
@@ -6950,7 +6833,7 @@ button.danger:hover { background: var(--danger-bg); }
   background: rgba(47, 109, 246, 0.06); border-radius: var(--r); font-size: var(--fs-14); margin-bottom: 10px;
 }
 .rbd-design-life-name {
-  font-size: var(--fs-12); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+  font-size: var(--fs-13); font-weight: 500; color: var(--muted);
 }
 .rbd-design-life-value { font-size: var(--fs-20); font-variant-numeric: tabular-nums; color: var(--acc-d); }
 
@@ -7015,7 +6898,7 @@ button.danger:hover { background: var(--danger-bg); }
 .rbd-comp.ccf-member { box-shadow: 0 0 0 2px rgba(208, 118, 47, 0.55), 0 0 0 5px rgba(208, 118, 47, 0.18); }
 .rbd-ccf-chip {
   position: absolute; top: -8px; right: -4px;
-  font-size: var(--fs-12); font-weight: 600; letter-spacing: 0.02em;
+  font-size: var(--fs-12); font-weight: 600;
   background: #d0762f; color: #fff; border-radius: var(--r-sm); padding: 1px 6px;
 }
 .rbd-btn.accent { background: #d0762f; color: #fff; border-color: #d0762f; }
@@ -7026,7 +6909,7 @@ button.danger:hover { background: var(--danger-bg); }
   min-width: 260px; max-width: 340px;
   min-width: 220px; max-width: 300px;
 }
-.rbd-ccf-list-h { font-size: var(--fs-12); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.rbd-ccf-list-h { font-size: var(--fs-14); color: var(--ink); font-weight: 600; margin-bottom: 6px; }
 .rbd-ccf-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: var(--fs-13); }
 .rbd-ccf-row-members { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rbd-ccf-row-beta { background: rgba(208,118,47,0.14); color: var(--warn); border: none; border-radius: var(--r-sm); padding: 1px 7px; font-size: var(--fs-12); font-weight: 600; cursor: pointer; }
@@ -7096,8 +6979,8 @@ button.danger:hover { background: var(--danger-bg); }
 .help-drawer-body { overflow-y: auto; padding: 16px 20px; }
 .help-group + .help-group { margin-top: 18px; }
 .help-group-h {
-  font-size: var(--fs-12); text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--muted); font-weight: 600; margin: 0 0 4px; padding: 0 12px;
+  font-size: var(--fs-12);
+  color: var(--muted); font-weight: 500; margin: 0 0 4px; padding: 0 12px;
 }
 .help-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; }
 /* `display: block` is load-bearing: the global `button` rule is inline-flex, so
@@ -7347,7 +7230,7 @@ button.danger:hover { background: var(--danger-bg); }
 .fleet-risk-list li { padding: 0.3rem 0; border-bottom: 1px solid var(--line2); }
 .fleet-risk-list li:last-child { border-bottom: 0; }
 .fleet-risk-name { font-weight: 600; }
-.fleet-risk-p { margin-left: 0.6rem; font-family: var(--mono); }
+.fleet-risk-p { margin-left: 0.6rem; font-variant-numeric: tabular-nums; }
 .fleet-risk-cond { display: block; margin-top: 0.1rem; }
 @media (max-width: 560px) {
   .fleet-alert-row { flex-wrap: wrap; }
@@ -7366,7 +7249,6 @@ button.danger:hover { background: var(--danger-bg); }
 .rbd-band-iv {
   order: 3;
   margin-top: 3px;
-  font-family: var(--mono);
   font-size: var(--fs-12);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -7450,7 +7332,7 @@ button.danger:hover { background: var(--danger-bg); }
 /* Overhang the card's bottom edge (like the placeholder chip) so the card keeps its size. */
 .rbd-maint-chips { position: absolute; bottom: -8px; left: 8px; display: flex; gap: 4px; z-index: 2; }
 .rbd-maint-chip {
-  font-size: 9.5px; font-weight: 600; letter-spacing: 0.02em; border-radius: var(--r-sm); padding: 1px 6px;
+  font-size: 9.5px; font-weight: 600; border-radius: var(--r-sm); padding: 1px 6px;
   border: 1px solid transparent; white-space: nowrap;
 }
 .rbd-maint-chip.pm { background: #e8f6ee; color: var(--ok); border-color: rgba(22, 163, 74, 0.35); }
@@ -7487,8 +7369,7 @@ button.danger:hover { background: var(--danger-bg); }
 .rbd-sil-target.caveat { color: var(--warn); }
 .rbd-sil-target.no { color: var(--danger); }
 .rbd-basis {
-  display: inline-block; margin-left: 4px; font-size: var(--fs-12); font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.03em; padding: 0 5px; border-radius: var(--r-sm); vertical-align: 1px;
+  display: inline-block; margin-left: 4px; font-size: var(--fs-12); font-weight: 600; padding: 0 5px; border-radius: var(--r-sm); vertical-align: 1px;
   background: rgba(22, 163, 74, 0.12); color: var(--ok);
 }
 .rbd-basis.simulation { background: rgba(224, 136, 59, 0.14); color: var(--warn); }
@@ -7555,7 +7436,7 @@ button.danger:hover { background: var(--danger-bg); }
 .xl-preview { overflow: auto; max-height: 300px; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .xl-preview .preview-table td { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .xl-preview .preview-table tbody tr:hover td { background: var(--acc-t); }
-.xl-preview .xl-rn { color: var(--muted); font-family: var(--mono); font-size: 0.75rem; width: 2.4rem; text-align: right; background: var(--surf-2); }
+.xl-preview .xl-rn { color: var(--muted); font-size: 0.75rem; width: 2.4rem; text-align: right; background: var(--surf-2); font-variant-numeric: tabular-nums; }
 .xl-preview tr.xl-above td:not(.xl-rn) { color: var(--faint); }
 .xl-preview tr.xl-head td { background: var(--acc-t); font-weight: 600; color: var(--acc-d); }
 .xl-note {
@@ -7609,9 +7490,9 @@ button.danger:hover { background: var(--danger-bg); }
 .xl-value.unset .xl-value-raw { color: var(--muted); }
 .xl-value-raw { font-size: var(--fs-13); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .xl-value-hint { grid-column: 1 / -1; font-size: var(--fs-12); color: var(--warn); }
-.xl-auto {
-  font-family: var(--mono); font-size: var(--fs-12); text-transform: uppercase; letter-spacing: 0.05em;
+.xl-auto { font-size: var(--fs-12);
   color: var(--ok); border: 1px solid currentColor; border-radius: var(--r-sm); padding: 0 0.3rem;
+  font-variant-numeric: tabular-nums;
 }
 .xl-summary p { margin: 0.2rem 0 0.5rem; font-size: var(--fs-14); }
 .xl-summary .xl-note { margin-top: 0.4rem; }

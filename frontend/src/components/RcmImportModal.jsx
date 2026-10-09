@@ -310,7 +310,7 @@ function ValueMap({ title, items, choices, map, setMap }) {
                 {it.value} <span className="xl-dim">×{it.count}</span>
               </span>
               <Select value={value} onChange={(v) => setMap((m) => ({ ...m, [it.value]: v }))} options={options} />
-              {auto && <span className="xl-auto">auto</span>}
+              {auto && <span className="xl-auto">Auto</span>}
               {!value && it.hint && <span className="xl-value-hint">{it.hint}</span>}
             </div>
           );

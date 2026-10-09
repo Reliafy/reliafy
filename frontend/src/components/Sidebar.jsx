@@ -275,7 +275,7 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
               >
                 <span className="side-icon">{it.icon}</span>
                 {!collapsed && <span className="side-label">{it.label}</span>}
-                {!collapsed && <span className="side-soon">soon</span>}
+                {!collapsed && <span className="side-soon">Soon</span>}
               </span>
             );
           }
