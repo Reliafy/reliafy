@@ -1,8 +1,9 @@
 """What to improve (#225): how a repairable diagram's availability and cost
-move with each lever, ranked — RePyability 0.12's lever sensitivity
+move with each lever, ranked — RePyability's lever sensitivity
 (``RepairableRBD.parameter_sensitivity``, one of its "Greeks").
 
-The levers are RePyability's own (``repyability.rbd._sensitivity.levers``):
+The levers are RePyability's own (``RepairableRBD.levers()``, public since
+0.13, each moved with ``with_levers``):
 each block's life and repair models' parameters, its scheduled
 replacement's and proof tests' intervals, durations, threshold and coverage,
 its standby group's, its imperfect repair's, and one more repair crew. Each
@@ -311,13 +312,17 @@ def _mean(cls, params, extras) -> Optional[float]:
 
 
 def _spec_of(rbd, lever) -> Optional[dict]:
-    from repyability.rbd import _sensitivity
-
+    """The spec Reliafy built ``lever``'s block from (a common-cause group's:
+    its first member's), or None for the crews, a nested RBD or a junction."""
     components = dict(rbd._init_args["components"])
     key = lever.key[0] if isinstance(lever.key, tuple) else lever.key
     if key is None or key not in components:
         return None
-    return _sensitivity._as_spec(components[key])
+    component = components[key]
+    if isinstance(component, dict):
+        return component
+    life, repair = getattr(component, "reliability", None), getattr(component, "time_to_replace", None)
+    return None if life is None or repair is None else {"reliability": life, "repairability": repair}
 
 
 def _model_of(rbd, lever, prefix: str):
@@ -420,6 +425,8 @@ def options(window=None, step=None, rank_by=None, costs=None, n_simulations=None
             raise AnalysisError("n_simulations is out of range.")
         out["n_simulations"] = n
     if seed is not None:
+        if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)) or not 0 <= seed < 2**32:
+            raise AnalysisError("seed must be a whole number from 0 to 2**32 - 1.")
         out["seed"] = int(seed)
     return {k: v for k, v in out.items() if v is not None and v != {}}
 
@@ -517,7 +524,7 @@ def _values(rbd, quantities, overrides: dict, window: Optional[float]) -> dict:
 
 def _rebuilt(rbd, lever: _Lever, value: float):
     try:
-        return type(rbd)(**lever.raw.build(value))
+        return rbd.with_levers({lever.raw: value})
     except (ValueError, TypeError):
         return None
 
@@ -657,10 +664,8 @@ def analyze_sensitivity(
 
 
 def _levers(rbd, labels, unit, pinned, gate_ids) -> list:
-    from repyability.rbd import _sensitivity
-
     out = []
-    for lever in _sensitivity.levers(rbd):
+    for lever in rbd.levers():
         key = lever.key
         members = set(key) if isinstance(key, tuple) else {key}
         if key is not None and (members & pinned or members & set(gate_ids)):
@@ -672,8 +677,6 @@ def _levers(rbd, labels, unit, pinned, gate_ids) -> list:
 def _deterministic(rbd, found, overrides, window, step, rank_by, quantities, route) -> dict:
     """Derivatives from ``parameter_sensitivity``; step effects from the
     rebuilt diagram (long run) or the derivative times the step."""
-    from repyability.rbd import _sensitivity
-
     base = _values(rbd, quantities, overrides, window)
     kw = {"window": window} if window is not None else {}
     with np.errstate(all="ignore"), warnings.catch_warnings():
@@ -708,7 +711,7 @@ def _deterministic(rbd, found, overrides, window, step, rank_by, quantities, rou
                                else "Already at its limit in the direction that helps.")
             rows.append(row)
             continue
-        linear = window is not None or _sensitivity._calendar_lever(rbd, lv.raw)
+        linear = window is not None or lv.raw.calendar
         effect = None
         basis = route
         if not linear:
@@ -853,8 +856,7 @@ def _simulated(graph, rbd, found, overrides, window, step, rank_by, quantities, 
         key = rc._key([seed, 0])
         if paired:
             try:
-                widths = rc._common_widths(base, design, t_sim)
-                return (rc._paired_run(base, t_sim, n, key, widths), rc._paired_run(design, t_sim, n, key, widths))
+                return (rc._paired_run(base, t_sim, n, key), rc._paired_run(design, t_sim, n, key))
             except NotImplementedError:
                 paired = False
         return (rc._independent_run(base, t_sim, n, key % 2**32), rc._independent_run(design, t_sim, n, key % 2**32))
@@ -1061,7 +1063,6 @@ def what_to_improve(rbd, overrides, labels, junctions=(), step=0.1):
     the way that raises the availability, ranked by that gain. Returns the
     rows, or None when the diagram has no exact or numerical long run (the
     app simulates it then)."""
-    from repyability.rbd import _sensitivity
     from repyability.rbd._model_utils import parametric_spec
 
     routes = rbd.analysis_routes()
@@ -1078,7 +1079,10 @@ def what_to_improve(rbd, overrides, labels, junctions=(), step=0.1):
     components = dict(rbd._init_args["components"])
 
     def model_of(key, prefix):
-        spec = _sensitivity._as_spec(components[key]) if key in components else None
+        spec = components.get(key)
+        if spec is not None and not isinstance(spec, dict):
+            spec = {"reliability": getattr(spec, "reliability", None),
+                    "repairability": getattr(spec, "time_to_replace", None)}
         if spec is None:
             return None
         if prefix in ("reliability", "repairability"):
@@ -1087,7 +1091,7 @@ def what_to_improve(rbd, overrides, labels, junctions=(), step=0.1):
         return options.get("duration") if isinstance(options, dict) else None
 
     rows = []
-    for lever in _sensitivity.levers(rbd):
+    for lever in rbd.levers():
         key = lever.key
         members = set(key) if isinstance(key, tuple) else {key}
         if key is not None and members & held:
@@ -1137,10 +1141,10 @@ def what_to_improve(rbd, overrides, labels, junctions=(), step=0.1):
             if target == theta:
                 continue
         effect, basis = None, routes["mean_availability"].route
-        if not _sensitivity._calendar_lever(rbd, lever):
+        if not lever.calendar:
             try:
                 with np.errstate(all="ignore"):
-                    moved = float(type(rbd)(**lever.build(target)).mean_unavailability(**overrides))
+                    moved = float(rbd.with_levers({lever: target}).mean_unavailability(**overrides))
                 effect = base - moved
             except (ValueError, TypeError, NotImplementedError):
                 effect = None
