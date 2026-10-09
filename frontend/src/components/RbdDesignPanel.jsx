@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
-import { ACCENT, DATA_INK, fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
+import { ACCENT, DATA_INK, SURFACE, fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
 import { applyRbdDesign, designRbd } from "../api.js";
 import RbdCheapestDesign from "./RbdCheapestDesign.jsx";
 import RbdIntervals from "./RbdIntervals.jsx";
@@ -519,7 +519,7 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
       y: [result.current.reliability],
       type: "scatter",
       mode: "markers",
-      marker: { color: DATA_INK, size: 10, symbol: "diamond", line: { color: "#fff", width: 1.5 } },
+      marker: { color: DATA_INK, size: 10, symbol: "diamond", line: { color: SURFACE, width: 1.5 } },
       name: "As drawn",
       hovertemplate: "As drawn<br>Cost %{x:,}<br>R(t) %{y:.6f}<extra></extra>",
     },

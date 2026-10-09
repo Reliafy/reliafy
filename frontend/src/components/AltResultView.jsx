@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
-import { COLORWAY, DATA_INK, GRID, INK, fitLine } from "../plotTheme.js";
+import { COLORWAY, DATA_INK, GRID, INK, SURFACE, fitLine } from "../plotTheme.js";
 import AltCalculator from "./AltCalculator.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import { stressName } from "./stressName.js";
@@ -87,7 +87,7 @@ export default function AltResultView({ results, modelId }) {
       x: [p.stress], y: [p.life], mode: "markers", type: "scatter",
       // One stress: tested levels are observed data (ink); two: their series' colour.
       marker: { color: twoStress ? SERIES[idx % SERIES.length] : INK, size: 10, symbol: "diamond",
-                line: { color: "#fff", width: 1.5 } },
+                line: { color: SURFACE, width: 1.5 } },
       name: "Tested level", legendgroup: `g${idx}`, showlegend: false,
       hovertemplate: `${plot.x_label}: %{x}<br>Characteristic life: %{y:.4g}<extra></extra>`,
     });
@@ -249,7 +249,7 @@ function ProbabilityPanel({ prob, unit, twoStress }) {
     if (s.scatter) {
       traces.push({
         x: s.scatter.x, y: s.scatter.y, mode: "markers", type: "scatter",
-        marker: { color, size: 6, line: { color: "#fff", width: 0.5 } },
+        marker: { color, size: 6, line: { color: SURFACE, width: 0.5 } },
         name: s.label, legendgroup: `p${i}`, showlegend: !s.line,
         hovertemplate: `${s.label}<extra></extra>`,
       });

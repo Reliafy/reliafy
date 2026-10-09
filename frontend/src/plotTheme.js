@@ -19,6 +19,11 @@ export const AXIS = "#cfd3d8";
 export const DANGER = "#b91c1c";
 export const SUCCESS = "#15803d";
 export const WARNING = "#b45309";
+export const SURFACE = "#ffffff"; // card and page surface; marker outlines
+
+// Kinds, not series: model kinds, distribution families, planned work. The
+// same palette as the --cat-* tokens in index.css (blue is the accent).
+export const CATEGORY = { blue: ACCENT, amber: "#d0762f", teal: "#0f9ab0", violet: "#7c3aed", grey: SUBTLE };
 
 export const DATA_INK = "rgba(20, 23, 28, 0.7)"; // observed data: ink at 70%
 export const BAND_FILL = "rgba(47, 109, 246, 0.10)"; // accent at 0.10
@@ -72,7 +77,7 @@ export const BASE_LAYOUT = {
   hoverlabel: {
     bgcolor: INK,
     bordercolor: INK,
-    font: { family: FONT, color: "#ffffff", size: 12 },
+    font: { family: FONT, color: SURFACE, size: 12 },
   },
 };
 
@@ -143,7 +148,7 @@ export const fitLine = role({ mode: "lines", line: { color: ACCENT, width: 2 } }
 // Observed data points: ink at 70%, with a thin surface ring.
 export const dataPoints = role({
   mode: "markers",
-  marker: { color: DATA_INK, size: 7, line: { color: "#ffffff", width: 1 } },
+  marker: { color: DATA_INK, size: 7, line: { color: SURFACE, width: 1 } },
 });
 
 // A line through observed data (e.g. an empirical step curve).
@@ -191,7 +196,7 @@ export const optimumMarker = (trace = {}) =>
     {
       type: "scatter",
       mode: "markers+text",
-      marker: { color: INK, size: 10, line: { color: "#ffffff", width: 2 } },
+      marker: { color: INK, size: 10, line: { color: SURFACE, width: 2 } },
       text: trace.name ? [trace.name] : undefined,
       textposition: "top center",
       textfont: { color: INK, size: 12 },
@@ -205,7 +210,7 @@ export const optimumMarker = (trace = {}) =>
 export const pointMarker = (color = ACCENT) => ({
   type: "scatter",
   mode: "markers",
-  marker: { color, size: 9, line: { color: "#ffffff", width: 2 } },
+  marker: { color, size: 9, line: { color: SURFACE, width: 2 } },
   showlegend: false,
   hoverinfo: "y",
 });

@@ -230,7 +230,6 @@
   stroke: var(--cat-violet);
 }
 .ft-symbol text {
-  font-family: var(--mono);
   font-size: var(--fs-12);
   font-weight: 600;
   fill: var(--ink);

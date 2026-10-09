@@ -1,10 +1,11 @@
 import { useState } from "react";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
+import { CATEGORY } from "../plotTheme.js";
 import Chip from "../components/ui/Chip.jsx";
 import { RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 
-const ALT_COLOR = "#0f9ab0";
+const ALT_COLOR = CATEGORY.teal;
 
 // Saved accelerated-life models, laid out like the life-data and recurrent
 // lists: search, then the table with the samples grouped last.

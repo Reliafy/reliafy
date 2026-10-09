@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
-import { NEUTRAL_BAND_FILL, band, dataPoints, fitLine } from "../plotTheme.js";
+import { DATA_INK, NEUTRAL_BAND_FILL, band, dataPoints, fitLine } from "../plotTheme.js";
 import RecurrentCalculator from "./RecurrentCalculator.jsx";
 import { unitInText } from "./unitText.js";
 import ResultSummary from "./ui/ResultSummary.jsx";
@@ -77,7 +77,7 @@ export default function RecurrentResultView({ results, name = null }) {
   if (obs.x?.length) {
     traces.push(dataPoints({
       x: obs.x, y: obs.mcf, mode: "lines+markers",
-      line: { color: "rgba(20, 23, 28, 0.7)", width: 1.25, shape: "hv" },
+      line: { color: DATA_INK, width: 1.25, shape: "hv" },
       marker: { size: 5, line: { width: 0 } }, name: "Observed (MCF)",
     }));
   }

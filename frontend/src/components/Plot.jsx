@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-basic-dist-min";
-import { slugify, themedConfig, themedLayout } from "../plotTheme.js";
+import { INK, SURFACE, slugify, themedConfig, themedLayout } from "../plotTheme.js";
 
 const PlotlyPlot = createPlotlyComponent(Plotly);
 
@@ -37,11 +37,11 @@ async function downloadPng(gd, title) {
   const height = gd.offsetHeight || gd.layout?.height || 400;
   const layout = {
     ...gd.layout,
-    paper_bgcolor: "#ffffff",
-    plot_bgcolor: "#ffffff",
+    paper_bgcolor: SURFACE,
+    plot_bgcolor: SURFACE,
     title: {
       text: title, x: 0, xref: "paper", xanchor: "left", y: 1, yref: "container", yanchor: "top",
-      pad: { t: 16 }, font: { size: 15, color: "#14171c" },
+      pad: { t: 16 }, font: { size: 15, color: INK },
     },
     // Room for the title above the legend, which the theme puts above the plot.
     margin: { ...(gd.layout?.margin || {}), t: Math.max(gd.layout?.margin?.t || 0, 80) },

@@ -3412,7 +3412,7 @@ h1 .chip,
   color: var(--ink);
   padding: 0.5rem 0.65rem;
   font-size: var(--fs-14);
-  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-family: var(--mono);
   margin-bottom: 0.4rem;
 }
 
@@ -4313,11 +4313,6 @@ select:disabled {
   font-size: var(--fs-16);
   line-height: 1.6;
   color: var(--muted);
-}
-
-.landing-hero .mono {
-  color: var(--ink);
-  font-size: var(--fs-14);
 }
 
 .landing-cta {

@@ -1,22 +1,24 @@
 // Shared Instrument-design helpers: distribution accent colours, a reliability
 // sparkline path, a stable per-model seed, and relative-time formatting.
 
+import { CATEGORY } from "./plotTheme.js";
+
 // Accent colour per distribution family (keyed by the first word of the
 // backend's distribution name, so "Weibull PH" -> Weibull blue).
 export const DIST_COLORS = {
-  Weibull: "#2f6df6",
-  Lognormal: "#7c4dff",
-  Exponential: "#0ea5e9",
-  Gamma: "#e0883b",
-  Normal: "#16a34a",
-  Logistic: "#7c4dff",
-  Gumbel: "#0ea5e9",
-  Cox: "#6c727c",
+  Weibull: CATEGORY.blue,
+  Lognormal: CATEGORY.violet,
+  Exponential: CATEGORY.teal,
+  Gamma: CATEGORY.amber,
+  Normal: CATEGORY.grey,
+  Logistic: CATEGORY.violet,
+  Gumbel: CATEGORY.teal,
+  Cox: CATEGORY.grey,
 };
 
 export function distColor(distribution = "") {
   const family = String(distribution).split(/[\s(]/)[0];
-  return DIST_COLORS[family] || "#2f6df6";
+  return DIST_COLORS[family] || CATEGORY.blue;
 }
 
 // API timestamps are UTC. If the ISO string carries no timezone (naive, e.g.

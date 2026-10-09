@@ -1,5 +1,5 @@
 import Plot from "./Plot.jsx";
-import { ACCENT, BAND_FILL, DANGER, band, dataPoints, fitLine, referenceShape } from "../plotTheme.js";
+import { ACCENT, BAND_FILL, DANGER, DATA_INK, band, dataPoints, fitLine, referenceShape } from "../plotTheme.js";
 
 // One tracked item's outlook: its measurements, the projected degradation
 // path, the failure threshold, and the predicted crossing time with its 95%
@@ -27,7 +27,7 @@ export default function RulChart({ item, threshold, unit, measurementUnit }) {
   }
   traces.push(dataPoints({
     x: meas.map((m) => m.t), y: meas.map((m) => m.y), mode: "lines+markers",
-    line: { color: "rgba(20, 23, 28, 0.7)", width: 1.25 },
+    line: { color: DATA_INK, width: 1.25 },
     name: "Measurements",
   }));
 
