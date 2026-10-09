@@ -60,7 +60,8 @@ export function applyIntervals(graph, rows) {
   return { ...graph, nodes };
 }
 
-function maintainedBlocks(graph) {
+// The blocks with age replacement and with (full-coverage) proof tests.
+export function maintainedBlocks(graph) {
   const out = { replacement: [], proof_test: [] };
   for (const n of graph.nodes || []) {
     if (n.type !== "component") continue;

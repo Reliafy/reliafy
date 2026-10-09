@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
   BaseEdge,
-  Background,
   Controls,
   Handle,
   Position,
@@ -12,6 +11,7 @@ import { rbdFaultTree } from "../api.js";
 import ValidationPanel, { graphSignature } from "./RbdValidation.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
+import { formatNumber } from "../format.js";
 import "./RbdFaultTree.css";
 
 // The RBD builder's "Fault tree" tab (#101): a read-only view of the diagram's
@@ -23,6 +23,8 @@ import "./RbdFaultTree.css";
 // wide trees start collapsed and expand gate by gate.
 
 const NODE_W = 184;
+// A gate's drawn height: its box, stem and symbol (an event's is less).
+const NODE_H = 150;
 const GAP_X = 22;
 const LEVEL_H = 158;
 // Nodes shown before the rest of the tree starts collapsed.
@@ -31,24 +33,27 @@ const INITIAL_BUDGET = 48;
 const WIDE = 8;
 const WIDE_SHOWN = 6;
 // The tree is framed no smaller than this: a wide tree is panned, not shrunk
-// to specks.
-const MIN_FRAME_ZOOM = 0.7;
+// to specks (its text is drawn large enough to read at this zoom).
+const MIN_FRAME_ZOOM = 0.5;
+// The canvas is as tall as the framed tree, between these (px), plus a margin
+// above and below it.
+const CANVAS_MIN = 220;
+const CANVAS_MAX = 720;
+const CANVAS_MARGIN = 20;
 // Rows shown in the tables before "Show all".
 const TABLE_ROWS = 15;
 
-const fmtP = (v) =>
-  v == null || !Number.isFinite(v)
-    ? "—"
-    : v === 0 || v === 1
-    ? String(v)
-    : v >= 1e-3
-    ? Number(v.toPrecision(4)).toString()
-    : v.toExponential(2);
-const fmtX = (v) =>
-  v == null || !Number.isFinite(v) ? "—" : Math.abs(v) >= 1e-3 || v === 0 ? Number(v.toPrecision(3)).toString() : v.toExponential(2);
+// Probabilities and importance measures: the shared number format (three
+// significant figures, scientific below 0.001), as on the stat tiles.
+const fmtP = (v) => formatNumber(v);
+const fmtX = (v) => formatNumber(v);
 const fmtPct = (v) =>
   v == null || !Number.isFinite(v) ? "—" : v >= 0.001 ? `${(v * 100).toFixed(1)}%` : "<0.1%";
 const fullLabel = (e) => [...(e.path || []), e.label].join(" › ");
+
+// How the tree is read off the diagram (the caption's "?").
+const FT_HOW = "Series blocks become OR gates, parallel blocks AND gates, and k-of-n blocks VOTE gates on the failures that defeat them.";
+const FT_HOW_REPAIRABLE = "Each basic event is a block's long-run unavailability, so the top event is the system's steady-state unavailability.";
 
 // Gate symbols, output at the top and inputs along the bottom.
 function GateSymbol({ kind, k, n }) {
@@ -253,6 +258,7 @@ function TreeCanvas({ result, name, active }) {
   const [showAll, setShowAll] = useState(() => new Set());
   const [ready, setReady] = useState(false);
   const [frameRequest, setFrameRequest] = useState(1);
+  const [height, setHeight] = useState(null);
   const framed = useRef(0);
   const box = useRef(null);
   const { setViewport } = useReactFlow();
@@ -290,26 +296,28 @@ function TreeCanvas({ result, name, active }) {
     return { nodes, edges };
   }, [result, collapsed, showAll, name]);
 
-  // Frame the tree with the top event at the top: the whole tree when it fits
-  // at a readable zoom, else centred on the top event (pan to see the rest).
+  // Frame the tree with the top event at the top: the whole width when it
+  // fits at a readable zoom, else centred on the top event (pan to see the
+  // rest). The canvas is then as tall as the tree at that zoom, so a shallow
+  // tree leaves no empty area under it.
   useEffect(() => {
     const el = box.current;
     if (!ready || !active || framed.current === frameRequest || !el?.clientWidth) return;
     const W = el.clientWidth;
-    const H = el.clientHeight;
     let minX = Infinity;
     let maxX = -Infinity;
     let maxY = 0;
     for (const n of nodes) {
       minX = Math.min(minX, n.position.x);
       maxX = Math.max(maxX, n.position.x + NODE_W);
-      maxY = Math.max(maxY, n.position.y + 130);
+      maxY = Math.max(maxY, n.position.y + NODE_H);
     }
-    const fit = Math.min(W / (maxX - minX + 60), H / (maxY + 60));
+    const fit = W / (maxX - minX + 24);
     const zoom = Math.min(1, Math.max(MIN_FRAME_ZOOM, fit));
     const top = nodes.find((n) => n.id === "TOP");
     const cx = fit >= MIN_FRAME_ZOOM ? (minX + maxX) / 2 : top.position.x + NODE_W / 2;
-    setViewport({ x: W / 2 - cx * zoom, y: 24, zoom });
+    setHeight(Math.round(Math.min(CANVAS_MAX, Math.max(CANVAS_MIN, maxY * zoom + 2 * CANVAS_MARGIN))));
+    setViewport({ x: W / 2 - cx * zoom, y: CANVAS_MARGIN, zoom });
     framed.current = frameRequest;
   }, [ready, active, frameRequest, nodes, setViewport]);
 
@@ -330,7 +338,7 @@ function TreeCanvas({ result, name, active }) {
     <div className="ft-canvas-wrap">
       <div className="ft-canvas-tools">
         <button
-          className="secondary sm"
+          className="ghost sm"
           onClick={() => {
             setCollapsed(new Set());
             setFrameRequest((r) => r + 1);
@@ -340,7 +348,7 @@ function TreeCanvas({ result, name, active }) {
           Expand all
         </button>
         <button
-          className="secondary sm"
+          className="ghost sm"
           onClick={() => {
             setCollapsed(new Set(allGateKeys(result).filter((k) => k !== "TOP")));
             setFrameRequest((r) => r + 1);
@@ -349,9 +357,9 @@ function TreeCanvas({ result, name, active }) {
         >
           Collapse all
         </button>
-        <span className="hint">Click a gate to expand or collapse it. Drag to pan, scroll to zoom.</span>
+        <span className="hint">Click a gate to fold it; drag to pan.</span>
       </div>
-      <div className="ft-canvas" ref={box}>
+      <div className="ft-canvas" ref={box} style={height ? { height } : undefined}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -367,7 +375,6 @@ function TreeCanvas({ result, name, active }) {
           maxZoom={1.5}
           proOptions={{ hideAttribution: true }}
         >
-          <Background gap={22} />
           <Controls showInteractive={false} />
         </ReactFlow>
       </div>
@@ -381,15 +388,16 @@ function CutSetTable({ result }) {
   const events = useMemo(() => Object.fromEntries(result.events.map((e) => [e.id, e])), [result.events]);
   const rows = all ? cuts.listed : cuts.listed.slice(0, TABLE_ROWS);
   const count = cuts.count;
+  // The count is on the tiles above: the heading says only what's listed.
   const heading =
     cuts.basis === "all"
-      ? `${count.toLocaleString()} minimal cut set${count === 1 ? "" : "s"}, most likely first`
+      ? "most likely first"
       : cuts.basis === "most_likely"
       ? `The ${cuts.listed.length} most likely of ${count?.toLocaleString() ?? "many"} minimal cut sets`
       : `Minimal cut sets of up to ${cuts.max_order} events (${count?.toLocaleString() ?? "too many"} in all — too many to list)`;
   return (
     <div className="ft-section">
-      <div className="rbd-section-head">Ranked cut sets — {heading}</div>
+      <div className="rbd-section-head">Cut sets, {heading}</div>
       {cuts.listed.length === 0 ? (
         <p className="muted-line">No cut sets of up to {cuts.max_order} events.</p>
       ) : (
@@ -398,10 +406,10 @@ function CutSetTable({ result }) {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Cut set — these fail together</th>
+                <th>Cut set (these fail together)</th>
                 <th title="Number of basic events in the cut set">Order</th>
                 <th title="Probability that every event in the cut set has occurred">Probability</th>
-                <th title="The cut set's probability on its own as a share of the top event probability. Cut sets overlap, so these shares don't add up to 100%.">Share of top event (alone)</th>
+                <th title="The cut set's probability on its own as a share of the top event probability. Cut sets overlap, so these shares don't add up to 100%.">Share of top event</th>
               </tr>
             </thead>
             <tbody>
@@ -438,11 +446,25 @@ function CutSetTable({ result }) {
           {all ? "Show fewer" : `Show all ${cuts.listed.length}`}
         </button>
       )}
+      {/* One line; the reasoning is on the "?". */}
       <p className="muted-line ft-note">
-        A cut set's probability is the product of its events', and its share is that probability alone over the
-        top event's. Cut sets overlap (they share events and can happen together), so the shares don't add up to
-        100% — they can add to more.
-        {cuts.basis === "all" && ` Their probabilities' sum (${fmtP(cuts.probability_sum)}) is the rare-event approximation: an upper bound that can exceed the exact top event probability.`}
+        Cut sets overlap, so their shares can add to more than 100%.
+        <span
+          className="ref-link"
+          tabIndex={0}
+          role="img"
+          aria-label="How the shares are found"
+          title={
+            "A cut set's probability is the product of its events', and its share is that probability alone over " +
+            "the top event's. Cut sets overlap (they share events and can happen together), so the shares don't add " +
+            "up to 100%." +
+            (cuts.basis === "all"
+              ? ` Their probabilities' sum (${fmtP(cuts.probability_sum)}) is the rare-event approximation: an upper bound that can exceed the exact top event probability.`
+              : "")
+          }
+        >
+          ?
+        </span>
       </p>
     </div>
   );
@@ -502,7 +524,7 @@ function ImportanceTable({ result }) {
   const fvPartial = result.cut_sets.basis === "low_order";
   return (
     <div className="ft-section">
-      <div className="rbd-section-head">Basic events — importance to the top event</div>
+      <div className="rbd-section-head">Basic events: importance to the top event</div>
       <div className="ft-table-scroll">
         <table className="calc-table ft-table">
           <thead>
@@ -638,24 +660,22 @@ export default function RbdFaultTree({ graph, validation, stale, active, name, o
             </form>
           )}
           {result && (
-            <div className="ft-metrics">
-              <div className="ft-metric ft-metric-main">
-                <span className="k">
-                  {availability ? "Top event · unavailability" : `Top event · F(${fmtX(result.t)}${u})`}
-                </span>
-                <span className="v">{fmtP(result.top_event_probability)}</span>
+            <div className="stats ft-stats">
+              <div className="stat">
+                <div className="k">
+                  {availability ? "Unavailability (top event)" : `Top event F(${formatNumber(result.t)}${u})`}
+                </div>
+                <div className="v">{formatNumber(result.top_event_probability)}</div>
               </div>
-              <div className="ft-metric">
-                <span className="k">{availability ? "Availability" : "Reliability R(t)"}</span>
-                <span className="v">{fmtP(result.top_event_probability == null ? null : 1 - result.top_event_probability)}</span>
+              <div className="stat">
+                <div className="k">{availability ? "Availability" : "Reliability R(t)"}</div>
+                <div className="v">
+                  {formatNumber(result.top_event_probability == null ? null : 1 - result.top_event_probability, { sig: 5 })}
+                </div>
               </div>
-              <div className="ft-metric">
-                <span className="k">Gates · events</span>
-                <span className="v">{result.n_gates} · {result.n_events}</span>
-              </div>
-              <div className="ft-metric">
-                <span className="k">Minimal cut sets</span>
-                <span className="v">{result.cut_sets.count?.toLocaleString() ?? "—"}</span>
+              <div className="stat">
+                <div className="k">Minimal cut sets</div>
+                <div className="v">{formatNumber(result.cut_sets.count)}</div>
               </div>
             </div>
           )}
@@ -668,13 +688,25 @@ export default function RbdFaultTree({ graph, validation, stale, active, name, o
 
       {result && canCalculate && (
         <>
+          {/* One muted line; how the tree is built is on the "?". */}
           <p className="muted-line ft-note">
+            {result.n_gates} gate{result.n_gates === 1 ? "" : "s"} and {result.n_events} basic event
+            {result.n_events === 1 ? "" : "s"}
             {availability
-              ? "Repairable diagram: each basic event is a block's long-run unavailability, so the top event is the system's steady-state unavailability."
+              ? ", each a block's long-run unavailability"
               : result.t === result.t_default
-              ? "At the calculator's design point, where system reliability is about 90%."
-              : null}
-            {" "}Series blocks become OR gates, parallel blocks AND gates, and k-of-n blocks VOTE gates on the failures that defeat them.
+              ? ", at the calculator's design point (system reliability about 90%)"
+              : ""}
+            .
+            <span
+              className="ref-link"
+              tabIndex={0}
+              role="img"
+              aria-label={FT_HOW}
+              title={FT_HOW + (availability ? ` ${FT_HOW_REPAIRABLE}` : "")}
+            >
+              ?
+            </span>
             {result.notes?.map((n) => ` ${n}`)}
           </p>
 

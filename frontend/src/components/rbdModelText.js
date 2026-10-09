@@ -77,8 +77,9 @@ const GREEK = { alpha: "α", beta: "β", mu: "μ", sigma: "σ", failure_rate: "�
 const n3 = (v) => formatNumber(v, { sig: 3 });
 
 // One short line for a life model: "λ 1e-6/h", "Weibull · η 12,000 h · β 1.6",
-// "Lognormal · mean 13.6 h".
-export function lifeLine(model, unit) {
+// "Lognormal · mean 13.6 h". ``short`` leaves out the "Weibull" its η and β
+// already say ("η 12,000 h · β 1.6"), for a block's one line on the canvas.
+export function lifeLine(model, unit, { short = false } = {}) {
   if (!model) return "";
   const u = unitAbbr(unit);
   const withU = (v) => `${n3(v)}${u ? ` ${u}` : ""}`;
@@ -90,7 +91,7 @@ export function lifeLine(model, unit) {
     const per = u.length > 3 ? u.replace(/s$/, "") : u;
     return `λ ${n3(r)}${per ? `/${per}` : ""}`;
   }
-  if (k === "weibull") return `Weibull · η ${withU(param(model, "alpha"))} · β ${n3(param(model, "beta"))}`;
+  if (k === "weibull") return `${short ? "" : "Weibull · "}η ${withU(param(model, "alpha"))} · β ${n3(param(model, "beta"))}`;
   const mean = modelMean(model);
   if (mean != null) return `${model.distribution} · mean ${withU(mean)}`;
   const ps = (model.params || []).map((p) => `${GREEK[p.name] || p.name} ${n3(p.value)}`).join(" · ");

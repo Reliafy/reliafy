@@ -3,7 +3,7 @@ import { Handle, Position, useStore } from "reactflow";
 import { maintenanceChips } from "./RbdBlockCosts.jsx";
 import { unitInText } from "./unitText.js";
 import { formatPercent } from "../format.js";
-import { blockLine, lifeLine, repairLine } from "./rbdModelText.js";
+import { lifeLine, repairLine } from "./rbdModelText.js";
 
 // The React Flow node components of a reliability block diagram, shared by the
 // builder (interactive) and the public read-only view (/p/:token). Pure
@@ -115,9 +115,11 @@ function ComponentCard({ id, data, repeat = false, missing = false }) {
   const placeholder = !!data.model?.placeholder;
   const repeatTitle = `Repeated block — the same component as “${data.label}”, drawn again. ` +
     "It works or fails wherever it is drawn; edit the original to change it.";
-  // The block shows its name and one plain line (#314); the full models are
-  // on its tooltip.
-  const line = data.model ? blockLine(data, rbdUnit, repairable) : "";
+  // The block shows its name and its life (and, repairable, its repair) in
+  // plain words, each on a line of its own that reads at fit-to-view (#314);
+  // the full models are on its tooltip.
+  const life = data.model ? lifeLine(data.model, rbdUnit, { short: repairable }) : "";
+  const rep = !repairable ? "" : data.instant_repair ? "instant repair" : repairLine(data.repair, rbdUnit);
   const detail = [
     data.model ? `Life: ${modelSummary(data.model)}` : null,
     repairable && data.repair && !data.instant_repair ? `Repair: ${modelSummary(data.repair)}` : null,
@@ -130,11 +132,18 @@ function ComponentCard({ id, data, repeat = false, missing = false }) {
   else if (repairable && !data.repair && !data.instant_repair) {
     body = (
       <>
-        <div className="rbd-comp-model">{lifeLine(data.model, rbdUnit)}</div>
+        <div className="rbd-comp-model one-line">{life}</div>
         <div className="rbd-comp-empty warn">No repair time — double-click</div>
       </>
     );
-  } else body = <div className="rbd-comp-model">{line}</div>;
+  } else if (repairable) {
+    body = (
+      <>
+        <div className="rbd-comp-model one-line">{life}</div>
+        <div className="rbd-comp-model one-line">{rep}</div>
+      </>
+    );
+  } else body = <div className="rbd-comp-model">{life}</div>;
   return (
     <div className={"rbd-comp" + (repeat ? " repeat" : "") + (warn ? " unit-warn" : "") + (placeholder ? " placeholder" : "") + stateClass(data.state)}
          title={title}>
@@ -237,20 +246,17 @@ export function StructureNode({ data: nodeData, type }) {
       <div className="rbd-block-sub">No life model</div>
     );
   } else if (data.kind === "standby") {
-    // "cold · 1 spare", then one plain line: the unit's life and (repairable,
+    // "cold · 1 spare", then a line each for the unit's life and (repairable,
     // #156) each failed unit's repair.
-    const line = [
-      data.model ? lifeLine(data.model, rbdUnit) : null,
-      repairable && data.repair ? repairLine(data.repair, rbdUnit) : null,
-    ].filter(Boolean).join(" · ");
     body = (
       <>
-        <div className="rbd-block-sub">
+        <div className="rbd-block-sub one-line">
           {standbyKind(data) +
             ` · ${data.spares ?? 1} spare${(data.spares ?? 1) === 1 ? "" : "s"}`}
           {repairable && data.repair_one_at_a_time ? " · one repairer" : ""}
         </div>
-        {line && <div className="rbd-block-model">{line}</div>}
+        {data.model && <div className="rbd-block-model one-line">{lifeLine(data.model, rbdUnit, { short: true })}</div>}
+        {repairable && data.repair && <div className="rbd-block-model one-line">{repairLine(data.repair, rbdUnit)}</div>}
         {repairable && !data.repair && (
           <div className="rbd-comp-empty warn">No repair time — double-click</div>
         )}

@@ -45,11 +45,13 @@ export function SafetyNotes({ safety }) {
   );
 }
 
-export default function AvailabilityPolicies({ result }) {
+// ``showReason``: false while the answer card already says why the diagram
+// needs the simulation (said once).
+export default function AvailabilityPolicies({ result, showReason = true }) {
   const method = result.long_run_method;
   const crews = result.repair_crews;
   const renewals = result.opportunistic_renewals;
-  const showMethod = method && (crews || result.safety || renewals || method.route !== "exact");
+  const showMethod = showReason && method && (crews || result.safety || renewals || method.route !== "exact");
   if (!showMethod && !crews && !renewals) return null;
   return (
     <div className="rbd-avail-nodes rbd-policies">
