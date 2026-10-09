@@ -4226,7 +4226,7 @@ select:disabled {
     flex: 1 1 100%;
     min-width: 0;
     flex-wrap: wrap;
-    gap: 8px 14px;
+    gap: 8px 4px;
   }
 }
 
@@ -6437,6 +6437,9 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   transition: color 0.15s, background 0.15s;
 }
 .landing-nav-link:hover { color: var(--acc); background: var(--acc-t); }
+@media (max-width: 700px) {
+  .landing-nav-link { padding: 6px 8px; }
+}
 /* Lower-priority nav links: above the phone breakpoint the nav doesn't wrap,
    so drop them until there's room (they stay in the footer). */
 @media (min-width: 701px) and (max-width: 1100px) {
