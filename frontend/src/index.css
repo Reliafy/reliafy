@@ -15,6 +15,8 @@
   --muted: #5f6670;
   --subtle: #6c727c;
   --faint: #9aa0a8;
+  /* Text and icons on a solid fill (accent, ink, semantic). */
+  --on-fill: #ffffff;
 
   /* Accent: primary action, links, selection */
   --acc: #2f6df6;
@@ -161,12 +163,12 @@ h6 {
   padding: 10px 18px;
   background: var(--warn-bg);
   border-bottom: 1px solid #f0dca6;
-  color: #5c4708;
+  color: var(--ink);
   font-size: var(--fs-13);
   line-height: 1.45;
 }
 .verify-banner-text { flex: 1 1 320px; min-width: 0; }
-.verify-banner-note { color: #7a5d0a; }
+.verify-banner-note { color: var(--warn); }
 .verify-banner-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .verify-banner-actions button { padding: 4px 10px; font-size: var(--fs-13); }
 .verify-banner-close {
@@ -589,7 +591,7 @@ h6 {
   border-radius: 50%;
   font-size: var(--fs-13);
   font-weight: 600;
-  color: #fff;
+  color: var(--on-fill);
 }
 .rs-good .rs-icon { background: var(--ok); }
 .rs-caveat .rs-icon { background: var(--warn); }
@@ -704,7 +706,7 @@ h6 {
 
 .demo-table-wrap .calc-table td.strategy-best {
   background: #dbeafe;
-  color: #1e3a8a;
+  color: var(--ink);
   font-weight: 600;
 }
 
@@ -801,7 +803,7 @@ h6 {
 .rbd-canvas .react-flow__node.rbd-io {
   background: var(--acc-d);
   border-color: var(--acc-d);
-  color: #fff;
+  color: var(--on-fill);
 }
 
 /* Custom component node */
@@ -899,7 +901,7 @@ h6 {
 .rbd-knode-title {
   font-size: var(--fs-14);
   font-weight: 600;
-  color: #6d28d9;
+  color: var(--ink);
   text-align: center;
 }
 
@@ -968,7 +970,7 @@ h6 {
   background: var(--warn-bg);
 }
 .rbd-standby .rbd-block-title {
-  color: var(--warn);
+  color: var(--ink);
 }
 
 .rbd-series {
@@ -976,7 +978,7 @@ h6 {
   background: #f0fdfa;
 }
 .rbd-series .rbd-block-title {
-  color: #0f766e;
+  color: var(--ink);
 }
 
 .rbd-parallel {
@@ -984,7 +986,7 @@ h6 {
   background: #eef2ff;
 }
 .rbd-parallel .rbd-block-title {
-  color: #4338ca;
+  color: var(--ink);
 }
 
 .rbd-subsystem {
@@ -1170,7 +1172,7 @@ h6 {
   font-size: var(--fs-12);
   font-weight: 600;
   border-radius: 50%;
-  color: #fff;
+  color: var(--on-fill);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
   z-index: 2;
 }
@@ -1194,7 +1196,7 @@ h6 {
   font-size: var(--fs-12);
   border-radius: 50%;
   background: #f59e0b;
-  color: #fff;
+  color: var(--on-fill);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
 }
 
@@ -1211,7 +1213,7 @@ h6 {
   font-size: var(--fs-12);
   font-weight: 600;
   background: #f59e0b;
-  color: #fff;
+  color: var(--on-fill);
   border-radius: var(--r-sm);
   padding: 1px 6px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
@@ -1758,7 +1760,7 @@ header p {
 /* Buttons */
 button {
   background: var(--acc);
-  color: #ffffff;
+  color: var(--on-fill);
   border: none;
   border-radius: var(--r-sm);
   padding: 11px 17px;
@@ -2071,7 +2073,7 @@ h1 .chip,
 .steps .step.active .dot {
   background: var(--acc);
   border-color: var(--acc);
-  color: #fff;
+  color: var(--on-fill);
 }
 
 .steps .sep {
@@ -2456,7 +2458,7 @@ h1 .chip,
 }
 .validation-card .vauc b {
   font-weight: 500;
-  color: var(--ink, inherit);
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 .validation-card .vread {
@@ -2482,7 +2484,7 @@ h1 .chip,
   border-radius: var(--r);
   padding: 14px 16px;
   font-size: var(--fs-13);
-  color: #2a4a86;
+  color: var(--ink);
   line-height: 1.5;
 }
 
@@ -2495,6 +2497,7 @@ h1 .chip,
   color: var(--muted);
   font-size: var(--fs-14);
 }
+.muted-line.warn { color: var(--warn); }
 
 .hint code {
   color: var(--acc-d);
@@ -3757,7 +3760,7 @@ h1 .chip,
 }
 
 .map-field.selected .map-badge {
-  color: #fff;
+  color: var(--on-fill);
   background: var(--acc);
   border-right-color: var(--acc);
 }
@@ -3772,7 +3775,8 @@ h1 .chip,
 }
 
 .map-field.selected .map-badge .req {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--on-fill);
+  opacity: 0.8;
 }
 
 /* Custom-styled select with a chevron */
@@ -3811,7 +3815,7 @@ select {
   font-family: inherit;
   font-size: var(--fs-13);
   color: var(--ink);
-  background-color: #fff;
+  background-color: var(--on-fill);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c727c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 9px center;
@@ -4213,7 +4217,7 @@ select:disabled {
 
 .cta-solid {
   background: var(--acc);
-  color: #fff;
+  color: var(--on-fill);
   box-shadow: 0 1px 2px rgba(47, 109, 246, 0.25);
 }
 
@@ -4572,7 +4576,7 @@ select:disabled {
   padding: 2px 7px;
   border-radius: var(--r-sm);
   background: #e6f0ff;
-  color: #2257d6;
+  color: var(--acc-d);
 }
 .api-path { font-family: var(--mono); font-size: var(--fs-13); color: var(--ink); }
 
@@ -4763,7 +4767,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .public-rbd-meta b { color: var(--ink); font-weight: 600; }
 .public-rbd-download { margin-left: auto; display: inline-flex; align-items: center; gap: 0.6rem; }
-.public-rbd-download-err { color: #b3261e; }
+.public-rbd-download-err { color: var(--danger); }
 @media (max-width: 700px) {
   .public-rbd-canvas { height: 46vh; min-height: 280px; }
 }
@@ -5163,7 +5167,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 
 .blog-dot {
-  color: var(--line2);
+  color: var(--faint);
 }
 
 .blog-card h2 {
@@ -5371,7 +5375,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   padding: 11px 16px;
   border-radius: 999px;
   background: var(--acc);
-  color: #fff;
+  color: var(--on-fill);
   border: none;
   font: inherit;
   font-size: var(--fs-14);
@@ -5493,7 +5497,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   border: 1px solid var(--line);
 }
 .chat-settings-actions .ghost { background: var(--surf); color: var(--muted); }
-.chat-settings-actions .solid { background: var(--acc); color: #fff; border-color: var(--acc); }
+.chat-settings-actions .solid { background: var(--acc); color: var(--on-fill); border-color: var(--acc); }
 .chat-settings-actions .solid:disabled { opacity: 0.5; cursor: default; }
 
 /* Messages */
@@ -5538,7 +5542,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .chat-user {
   align-self: flex-end;
   background: var(--acc);
-  color: #fff;
+  color: var(--on-fill);
   border-bottom-right-radius: 4px;
 }
 .chat-assistant {
@@ -5688,7 +5692,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   border: none;
   border-radius: var(--r);
   background: var(--acc);
-  color: #fff;
+  color: var(--on-fill);
   cursor: pointer;
 }
 .chat-send:disabled { opacity: 0.5; cursor: default; }
@@ -5782,7 +5786,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   padding: 9px 12px;
   border: 1px solid #e6c15a;
   background: var(--warn-bg);
-  color: #8a6400;
+  color: var(--warn);
   border-radius: var(--r-sm);
   font-size: var(--fs-13);
   line-height: 1.5;
@@ -5840,7 +5844,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   left: 24px;
   font-size: var(--fs-12);
   font-weight: 600;
-  color: #fff;
+  color: var(--on-fill);
   background: var(--acc);
   border-radius: 999px;
   padding: 4px 10px;
@@ -6678,7 +6682,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .chat-bubble.user {
   background: var(--acc);
-  color: #fff;
+  color: var(--on-fill);
   border-bottom-right-radius: 4px;
   white-space: pre-wrap;
 }
@@ -6851,7 +6855,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .chat-approve-btn {
   flex: 0 0 auto;
   background: var(--acc);
-  color: #fff;
+  color: var(--on-fill);
   font-weight: 600;
   border: none;
   border-radius: var(--r-sm);
@@ -7005,7 +7009,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 
 /* Repairable RBD — component repair line + availability results */
-.rbd-comp-empty.warn { color: #c67a1e; }
+.rbd-comp-empty.warn { color: var(--warn); }
 
 .rbd-avail { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
 .rbd-avail-hero { text-align: center; padding: 10px 0 4px; }
@@ -7028,7 +7032,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-avail-imp-scroll .calc-table .calc-row-label { display: table-cell; white-space: nowrap; }
 .rbd-avail-pin { margin-left: 6px; font-size: var(--fs-12); font-weight: 500; color: var(--muted); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 0 5px; }
 .rbd-avail-legend { margin: 0; padding-left: 18px; font-size: var(--fs-12); color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
-.rbd-avail-legend b { color: var(--ink, inherit); font-weight: 600; }
+.rbd-avail-legend b { color: var(--ink); font-weight: 600; }
 
 /* Exact availability over time (#154) and "As of now" (#155). */
 .rbd-exact, .rbd-sim { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -7124,8 +7128,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 
 /* Common-cause failure groups (RBD builder) */
 /* The common-cause action wears the CCF colour it creates on the canvas. */
-button.secondary.ccf { color: #a85a1c; border-color: rgba(208, 118, 47, 0.55); background: #fdf4ec; }
-button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762f; background: #fbe9da; }
+button.secondary.ccf { color: var(--ink); border-color: rgba(208, 118, 47, 0.55); background: #fdf4ec; }
+button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: #d0762f; background: #fbe9da; }
 .rbd-ccf-list {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 6;
   background: var(--surf, #fff); border: 1px solid var(--line, #dde3ea);
@@ -7156,7 +7160,7 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 
 /* Load-sharing RBD node */
 .rbd-block.rbd-loadshare { border-color: #0f9ab0; }
-.rbd-block.rbd-loadshare .rbd-block-title { color: #0c7d8f; }
+.rbd-block.rbd-loadshare .rbd-block-title { color: var(--ink); }
 .ls-fields { display: flex; gap: 12px; margin-top: 10px; }
 .ls-fields .login-field { flex: 1; }
 
@@ -7236,7 +7240,7 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
   border-radius: 999px; padding: 5px 14px; font-size: var(--fs-13); cursor: pointer; box-shadow: none;
 }
 .blog-filter:hover { border-color: var(--acc); color: var(--acc); }
-.blog-filter.active { background: var(--acc); border-color: var(--acc); color: #fff; }
+.blog-filter.active { background: var(--acc); border-color: var(--acc); color: var(--on-fill); }
 .blog-tag {
   background: rgba(47, 109, 246, 0.12); color: var(--acc);
   border-radius: 999px; padding: 1px 9px; font-size: var(--fs-12); font-weight: 600;

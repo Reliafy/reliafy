@@ -140,7 +140,7 @@ export default function TeamSettingsPage() {
             sees everything in this workspace; editing needs a Pro plan.
           </p>
           {team.frozen && (
-            <p className="muted-line" style={{ color: "#9a6b0c" }}>
+            <p className="muted-line warn">
               The team owner's Pro plan has lapsed — the workspace is read-only until it's renewed.
             </p>
           )}
