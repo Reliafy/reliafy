@@ -367,7 +367,7 @@ function TreeCanvas({ result, name, active }) {
           maxZoom={1.5}
           proOptions={{ hideAttribution: true }}
         >
-          <Background gap={22} color="#e8e7e2" />
+          <Background gap={22} />
           <Controls showInteractive={false} />
         </ReactFlow>
       </div>

@@ -9,6 +9,7 @@ import {
   deleteRecurrentModel,
 } from "./api.js";
 import { distColor } from "./instrument.js";
+import { CATEGORY } from "./plotTheme.js";
 
 // Every saved model — life data, accelerated life, recurrent, degradation — as
 // one list of rows, newest first. Shared by the All models list and the
@@ -47,7 +48,7 @@ export async function loadAllModels() {
     ...common(m),
     type: "degradation",
     detail: m.path_model || "—",
-    color: "#7c3aed",
+    color: CATEGORY.violet,
     created_at: m.updated_at || m.created_at,
     to: `/modelling/degradation/${m.id}`,
   }));
@@ -57,7 +58,7 @@ export async function loadAllModels() {
     // e.g. "Weibull · Arrhenius" — the distribution and its life-stress law.
     detail: [distLabel(m.distribution), m.life_model].filter(Boolean).join(" · ") || "—",
     noMax: !!m.no_finite_maximum,
-    color: "#0f9ab0",
+    color: CATEGORY.teal,
     created_at: m.created_at,
     to: `/modelling/alt/${m.id}`,
   }));
@@ -65,7 +66,7 @@ export async function loadAllModels() {
     ...common(m),
     type: "recurrent",
     detail: m.model || "—",
-    color: "#d0762f",
+    color: CATEGORY.amber,
     created_at: m.created_at,
     to: `/modelling/recurrent/${m.id}`,
   }));

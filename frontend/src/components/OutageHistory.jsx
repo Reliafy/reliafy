@@ -6,7 +6,7 @@
 // fitted from the same log, ready to put on the blocks.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
-import { ACCENT, GRID } from "../plotTheme.js";
+import { ACCENT, CATEGORY, DANGER, GRID } from "../plotTheme.js";
 import Select from "./Select.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
@@ -42,8 +42,8 @@ function unitSeconds(unit) {
   return UNIT_SECONDS[key] || null;
 }
 
-const FAIL = "#d0473a";
-const PLANNED = "#e0a030";
+const FAIL = DANGER;
+const PLANNED = CATEGORY.amber;
 
 function fmt(v, digits = 4) {
   if (v == null || !Number.isFinite(Number(v))) return "—";

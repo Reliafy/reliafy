@@ -3,7 +3,7 @@ import Plot from "./Plot.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatWithUnit } from "../format.js";
 import { unitInText } from "./unitText.js";
-import { ACCENT, COLORWAY, DANGER, INK, SUCCESS, fitLine, optimumMarker, sentence } from "../plotTheme.js";
+import { ACCENT, COLORWAY, DANGER, INK, SUCCESS, SURFACE, fitLine, optimumMarker, sentence } from "../plotTheme.js";
 
 // Series colours by allowed failures: the theme's order, never cycled (there
 // are at most five columns).
@@ -42,7 +42,7 @@ function OcCurve({ result }) {
       x: [isMtbf ? pt.x : pt.x * 100],
       y: [pt.pass_probability],
       cliponaxis: false,
-      marker: { size: 11, color: OC_POINT_COLOURS[pt.label] || INK, line: { color: "#ffffff", width: 2 } },
+      marker: { size: 11, color: OC_POINT_COLOURS[pt.label] || INK, line: { color: SURFACE, width: 2 } },
       hovertemplate: `${pt.label}: ${xFmt}, passes %{y:.1%}<extra></extra>`,
     })),
   ];

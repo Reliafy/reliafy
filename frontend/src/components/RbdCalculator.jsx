@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
-import { COLORWAY, DATA_INK, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
+import { COLORWAY, DANGER, DATA_INK, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
 import { analyzeRbd, getActiveRbdJob, getRbdJob } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
@@ -554,7 +554,7 @@ function AvailabilityChart({ exact, steady, unit, sim = null, safety = null }) {
     const limit = safety.target_sil ?? safety.sil;
     const shapes = [
       ...(safety.pfd_avg != null ? [referenceShape({ y: safety.pfd_avg })] : []),
-      ...(limit ? [referenceShape({ y: silLimit(limit), line: { color: "#b91c1c", dash: "dot", width: 1 } })] : []),
+      ...(limit ? [referenceShape({ y: silLimit(limit), line: { color: DANGER, dash: "dot", width: 1 } })] : []),
     ];
     return (
       <Plot
@@ -567,7 +567,7 @@ function AvailabilityChart({ exact, steady, unit, sim = null, safety = null }) {
           showlegend: false,
           annotations: limit
             ? [{ x: 1, xref: "paper", y: silLimit(limit), yanchor: "bottom", xanchor: "right", showarrow: false,
-                 text: `SIL ${limit} limit`, font: { size: 12, color: "#b91c1c" } }]
+                 text: `SIL ${limit} limit`, font: { size: 12, color: DANGER } }]
             : [],
         }}
       />

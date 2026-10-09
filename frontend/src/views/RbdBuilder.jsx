@@ -1297,7 +1297,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           </div>
         )}
         </Panel>
-        <Background gap={22} color="#e8e7e2" />
+        <Background gap={22} />
         <Controls showInteractive={false} />
         {/* Only for a large diagram (#314): on a small one it covers blocks. */}
         {nodes.length > 15 && <MiniMap pannable zoomable />}
