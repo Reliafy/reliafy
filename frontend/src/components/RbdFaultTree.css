@@ -23,9 +23,9 @@
   display: flex;
   gap: 0;
   flex-wrap: wrap;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surf);
 }
 .ft-metric {
   display: flex;
@@ -49,10 +49,10 @@
   font-variant-numeric: tabular-nums;
   font-size: 16px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
 }
 .ft-metric-main .v {
-  color: var(--accent-strong);
+  color: var(--acc-d);
 }
 
 .ft-note {
@@ -61,8 +61,8 @@
 }
 
 .ft-canvas-wrap {
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
   background: var(--bg);
   overflow: hidden;
 }
@@ -73,8 +73,8 @@
   gap: 0.5rem;
   flex-wrap: wrap;
   padding: 0.55rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  background: var(--surf);
 }
 .ft-canvas-tools .hint {
   margin-left: 0.4rem;
@@ -127,21 +127,21 @@
   justify-content: center;
   align-items: center;
   text-align: center;
-  border-radius: 9px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--surf);
+  box-shadow: var(--shadow-card);
   padding: 0.45rem 0.6rem;
 }
 .ft-gate .ft-box {
   border-color: #c7d2fe;
 }
 .ft-gate:hover .ft-box {
-  border-color: var(--accent);
+  border-color: var(--acc);
 }
 .ft-box-top {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong) !important;
+  background: var(--acc-d);
+  border-color: var(--acc-d) !important;
   color: #fff;
 }
 .ft-box-ccf {
@@ -179,13 +179,13 @@
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-size: 0.68rem;
-  color: var(--accent-strong);
+  color: var(--acc-d);
 }
 .ft-box-top .ft-box-meta {
   color: #fff;
 }
 .ft-code {
-  font-weight: 700;
+  font-weight: 600;
   color: var(--muted);
 }
 .ft-box-top .ft-code {
@@ -202,14 +202,14 @@
   color: #6d28d9;
   background: #f5f3ff;
   border: 1px solid #c4b5fd;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   padding: 0 5px;
   line-height: 14px;
 }
 .ft-tag-pin {
   color: var(--muted);
-  background: var(--panel-2);
-  border-color: var(--border);
+  background: var(--surf-2);
+  border-color: var(--line);
 }
 
 .ft-stem {
@@ -234,7 +234,7 @@
 .ft-symbol text {
   font-family: var(--mono);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   fill: #6d28d9;
 }
 .ft-gate.collapsed .ft-symbol path {
@@ -245,9 +245,9 @@
   margin-top: 3px;
   font-size: 10.5px;
   font-weight: 600;
-  color: var(--accent-strong);
+  color: var(--acc-d);
   background: var(--acc-t);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   padding: 1px 7px;
 }
 
@@ -261,8 +261,8 @@
   align-items: center;
   justify-content: center;
   font-size: 8.5px;
-  font-weight: 700;
-  color: #b45309;
+  font-weight: 600;
+  color: var(--warn);
 }
 .ft-circle-ccf {
   border-color: #d0762f;
@@ -272,11 +272,11 @@
 .ft-cc-badge {
   display: inline-block;
   font-size: 9.5px;
-  font-weight: 700;
-  color: #b45309;
+  font-weight: 600;
+  color: var(--warn);
   background: #fff8f1;
   border: 1px solid #d0762f;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   padding: 0 5px;
   margin-right: 5px;
   line-height: 15px;
@@ -301,28 +301,28 @@
   flex: none;
 }
 .ft-event.pinned .ft-box {
-  background: var(--panel-2);
+  background: var(--surf-2);
   border-style: dashed;
 }
 .ft-event.pinned .ft-circle {
   border-color: var(--faint);
-  background: var(--panel-2);
+  background: var(--surf-2);
 }
 
 .ft-more-node {
   width: 184px;
   box-sizing: border-box;
   border: 1px dashed #c7d2fe;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   background: var(--acc-t);
-  color: var(--accent-strong);
+  color: var(--acc-d);
   font-size: 0.8rem;
   font-weight: 600;
   text-align: center;
   padding: 0.7rem 0.5rem;
 }
 .ft-more-node:hover {
-  border-color: var(--accent);
+  border-color: var(--acc);
 }
 
 .ft-section {
@@ -349,7 +349,7 @@
 }
 .ft-table .ft-rank {
   text-align: left;
-  color: var(--faint);
+  color: var(--muted);
   width: 2.5rem;
 }
 .ft-table .ft-cut {
@@ -360,7 +360,7 @@
   display: table-cell;
 }
 .ft-and {
-  color: var(--faint);
+  color: var(--muted);
   font-weight: 400;
 }
 .ft-share {
@@ -372,12 +372,12 @@
 .ft-share-bar {
   width: 70px;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--line2);
   overflow: hidden;
 }
 .ft-share-bar span {
   display: block;
   height: 100%;
-  background: var(--accent);
+  background: var(--acc);
 }
