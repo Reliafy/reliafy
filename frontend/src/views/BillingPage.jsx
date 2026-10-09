@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getBilling, buyCredits, subscribePro, billingPortal } from "../api.js";
 import { PRO_PRICE } from "../pricing.js";
+import { useAppConfig } from "../ConfigProvider.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 // AI usage is denominated in "credits" — users never see a dollar balance.
 // (Internally 1 credit == 1 cent; only pack purchase prices show as dollars.)
@@ -24,6 +26,7 @@ const ARTIFACTS = [
 
 export default function BillingPage() {
   const location = useLocation();
+  const { ai, reliability_agent: agentEnabled } = useAppConfig();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [working, setWorking] = useState("");
@@ -48,10 +51,14 @@ export default function BillingPage() {
     }
   };
 
+  // Credits only buy AI use (the assistant, the Reliability Agent): without
+  // either there's nothing to buy.
+  const hasCredits = ai || agentEnabled;
+  const title = hasCredits ? "Billing & credits" : "Billing";
   if (error && !data) {
     return (
       <div className="app">
-        <header><h1>Billing &amp; credits</h1></header>
+        <PageHeader title={title} />
         <div className="card error">{error}</div>
       </div>
     );
@@ -86,12 +93,12 @@ export default function BillingPage() {
   // is Pro only), and reliability_agent.py (Pro or any purchased credits).
   const compareRows = [
     ...ARTIFACTS.map(([label, key]) => ({ label, free: caps[key] ?? "—", pro: "Unlimited", mono: true })),
-    {
+    ai && {
       label: "AI assistant (metered)",
       free: packsOnly,
       pro: proCredits ? `${proCredits} credits included every month, plus packs` : "Buy credit packs",
     },
-    { label: "Reliability Agent", free: "With purchased credits", pro: "Included" },
+    agentEnabled && { label: "Reliability Agent", free: "With purchased credits", pro: "Included" },
     {
       label: "Availability simulation (repairable RBDs)",
       free: "View saved results; run locally via Download as Python",
@@ -106,26 +113,21 @@ export default function BillingPage() {
     },
     { label: "Programmatic API & data ingestion", free: "—", pro: "Included" },
     { label: "Team workspaces", free: "Join teams (view-only)", pro: "Create teams and edit together" },
-  ];
+  ].filter(Boolean);
+  // Pro exists (pricing.js); it can only be bought where Stripe is set up.
+  const noPayments = (
+    <p className="muted-line">Payments aren't set up on this environment, so Pro can't be bought here.</p>
+  );
   const planName = { free: "Free", agent: "Agent", pro: "Pro" }[plan] || "Free";
   const current = (p) => (plan === p ? <Chip tone="accent">Current</Chip> : null);
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">Account / <b>Billing &amp; credits</b></div>
-          <h1>Billing &amp; credits</h1>
-          <p>Manage your plan and AI credits. The assistant draws on your credit balance as you use it.</p>
-        </div>
-      </header>
+      <PageHeader title={title} />
 
       {status === "success" && <div className="card notice-ok">Payment received — your account will update momentarily.</div>}
       {status === "cancel" && <div className="card">Checkout cancelled.</div>}
       {error && <div className="card error">{error}</div>}
-      {!data.stripe_enabled && (
-        <div className="card">Payments aren't configured on this environment yet.</div>
-      )}
 
       {showCompare && (
         <div className="card bill-card bill-compare">
@@ -169,7 +171,7 @@ export default function BillingPage() {
               </span>
             </div>
           ) : (
-            <p className="muted-line">Pro plan coming soon.</p>
+            noPayments
           )}
         </div>
       )}
@@ -199,7 +201,7 @@ export default function BillingPage() {
             {ARTIFACTS.map(([label, key]) => (
               <li key={key}>
                 <span>{label}</span>
-                <span className="bill-usage-n">{usage[key] ?? 0}{noCaps ? "" : ` / ${myCaps[key]}`}</span>
+                <span className="bill-usage-n">{num(usage[key])} / {noCaps || myCaps[key] == null ? "Unlimited" : num(myCaps[key])}</span>
               </li>
             ))}
           </ul>
@@ -212,7 +214,7 @@ export default function BillingPage() {
               {working === "portal" ? "Opening…" : "Manage subscription"}
             </button>
           )}
-          {isPro && proCredits && (
+          {isPro && ai && proCredits && (
             <p className="muted-line">Your plan includes {proCredits} AI credits each month.</p>
           )}
           {/* Free users on the cloud get the subscribe button under the
@@ -223,26 +225,23 @@ export default function BillingPage() {
                 {working === "pro" ? "Redirecting…" : "Upgrade to Pro"}
               </button>
             ) : (
-              <p className="muted-line">Pro plan coming soon.</p>
+              noPayments
             )
           )}
-          {!isPro && !showCompare && (
+          {!isPro && !showCompare && !isAdmin && (
             <p className="muted-line">
               Pro lifts the free-tier limits on saved datasets, models, and RBDs
-              {proCredits && ` — and includes ${proCredits} AI credits every month`}.
+              {ai && proCredits && ` — and includes ${proCredits} AI credits every month`}.
             </p>
           )}
         </div>
 
-        {/* MCP use against a quota: Free's monthly allowance (shown once
-            used) or the grandfathered Agent plan's daily quota. Pro and
-            operators have none. */}
-        {data.billing_enabled && !isAdmin && plan === "free" && mcp.period === "month" && mcp.calls_used > 0 && (
+        {/* MCP use against a quota: Free's monthly allowance or the
+            grandfathered Agent plan's daily quota. Pro and operators have
+            none. */}
+        {data.billing_enabled && !isAdmin && plan === "free" && mcp.period === "month" && (
           <div className="card bill-card">
-            <CardHeader
-              title="Your AI agent (MCP)"
-              actions={<Chip tone={plan === "free" ? "neutral" : "accent"}>{planName}</Chip>}
-            />
+            <CardHeader title="Your AI agent (MCP)" />
             <ul className="bill-usage">
               <li>
                 <span>Tool calls this month</span>
@@ -258,10 +257,7 @@ export default function BillingPage() {
         )}
         {data.billing_enabled && isAgent && !isAdmin && mcp.daily_quota != null && (
           <div className="card bill-card">
-            <CardHeader
-              title="Your AI agent (MCP)"
-              actions={<Chip tone={plan === "free" ? "neutral" : "accent"}>{planName}</Chip>}
-            />
+            <CardHeader title="Your AI agent (MCP)" />
             <ul className="bill-usage">
               <li>
                 <span>Tool calls today</span>
@@ -283,24 +279,26 @@ export default function BillingPage() {
           </div>
         )}
 
-        {/* Credits */}
-        <div className="card bill-card">
-          <CardHeader title="AI credits" actions={<span className="bill-balance">{credits(data.credit_cents)}<span className="bill-balance-unit">credits</span></span>} />
-          <p className="muted-line">The assistant draws on your credit balance as you use it. Credits never expire.</p>
-          <div className="bill-packs">
-            {(data.packs || []).map((p) => (
-              <button
-                key={p.id}
-                className="bill-pack"
-                disabled={!data.stripe_enabled || working === p.id}
-                onClick={() => go(p.id, () => buyCredits(p.id))}
-              >
-                <span className="bill-pack-price">{p.label}</span>
-                <span className="bill-pack-credits">{credits(p.grant_cents)} credits</span>
-              </button>
-            ))}
+        {/* Credits: only where there's AI to spend them on. */}
+        {hasCredits && (
+          <div className="card bill-card">
+            <CardHeader title="AI credits" actions={<span className="bill-balance">{credits(data.credit_cents)}<span className="bill-balance-unit">credits</span></span>} />
+            <p className="muted-line">The assistant draws on your credit balance as you use it. Credits never expire.</p>
+            <div className="bill-packs">
+              {(data.packs || []).map((p) => (
+                <button
+                  key={p.id}
+                  className="bill-pack"
+                  disabled={!data.stripe_enabled || working === p.id}
+                  onClick={() => go(p.id, () => buyCredits(p.id))}
+                >
+                  <span className="bill-pack-price">{p.label}</span>
+                  <span className="bill-pack-credits">{credits(p.grant_cents)} credits</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
