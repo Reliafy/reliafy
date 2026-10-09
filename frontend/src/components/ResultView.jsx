@@ -253,7 +253,6 @@ export default function ResultView({ result, modelId = null, name = null, split 
         {tab === "survival" && (
           <div className="detail-panel">
             <div className="plotwrap">
-              <div className="plottitle">{result.distribution} — empirical survival</div>
               <SurvivalPlot estimate={result.estimate} unit={result.unit}
                             download={`${name || result.distribution} — survival curve`} />
             </div>
@@ -263,7 +262,6 @@ export default function ResultView({ result, modelId = null, name = null, split 
         {tab === "plot" && (
           <div className="detail-panel">
             <div className="plotwrap">
-              <div className="plottitle">{result.distribution} probability plot</div>
               <ProbabilityPlot plot={result.plot} unit={result.unit}
                                download={`${name || result.distribution} — probability plot`} />
             </div>

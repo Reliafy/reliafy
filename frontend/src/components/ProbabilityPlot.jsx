@@ -23,6 +23,18 @@ export default function ProbabilityPlot({ plot, unit, download = null }) {
 
   const layout = {
     height: 480,
+    // The legend sits inside the plot, top left: on probability paper the
+    // points run from bottom left to top right, so that corner is empty. The
+    // top margin only clears the download button.
+    margin: { t: 36 },
+    legend: {
+      orientation: "v",
+      x: 0.015,
+      xanchor: "left",
+      y: 0.985,
+      yanchor: "top",
+      bgcolor: "rgba(255,255,255,0.85)",
+    },
     xaxis: {
       title: { text: xTitle },
       type: "linear",
