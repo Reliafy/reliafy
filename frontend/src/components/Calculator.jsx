@@ -322,7 +322,12 @@ export default function Calculator({ functions, unit, params, state, setState, n
     }
   });
 
-  const showLegend = multi || !!band;
+  // One curve needs no legend: the axis names it and the read-out above gives
+  // the band. Several (covariate combinations) get one inside the plot, in the
+  // corner the curves leave empty — top right where they fall (reliability,
+  // density), top left where they rise.
+  const showLegend = multi;
+  const falling = active === "sf" || active === "df";
 
   // Plot axis range: a single manual bound falls back to the data extent for
   // the other end.
@@ -331,6 +336,15 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const layout = {
     height: 440,
     showlegend: showLegend,
+    margin: { t: 8, r: 12 },
+    legend: {
+      orientation: "v",
+      x: falling ? 0.985 : 0.015,
+      xanchor: falling ? "right" : "left",
+      y: 0.985,
+      yanchor: "top",
+      bgcolor: "rgba(255,255,255,0.85)",
+    },
     xaxis: {
       title: { text: tAxisLabel },
       ...(manualX ? { range: xRange, autorange: false } : {}),

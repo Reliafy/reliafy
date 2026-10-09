@@ -22,7 +22,8 @@ export default function ProbabilityPlot({ plot, unit, download = null }) {
   ];
 
   const layout = {
-    height: 480,
+    height: 500,
+    margin: { t: 8, r: 12, b: 44 },
     // The legend sits inside the plot, top left: on probability paper the
     // points run from bottom left to top right, so that corner is empty.
     legend: {

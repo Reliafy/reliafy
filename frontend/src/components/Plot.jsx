@@ -79,11 +79,10 @@ export default function Plot({
   const narrow = useNarrow();
   const gd = useRef(null);
   const merged = useMemo(() => {
-    const l = themedLayout(layout, { narrow });
-    // Room at the top right for the download button when nothing else (a
-    // legend) pushes the margin there.
-    return download ? { ...l, margin: { ...l.margin, t: Math.max(l.margin?.t ?? 0, 32) } } : l;
-  }, [layout, narrow, download]);
+    // The download button shows over the chart on hover, so it needs no room
+    // of its own.
+    return themedLayout(layout, { narrow });
+  }, [layout, narrow]);
   const cfg = useMemo(() => themedConfig(config), [config]);
 
   const plot = (
