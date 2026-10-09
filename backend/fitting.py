@@ -311,8 +311,13 @@ def read_dataframe(file_bytes: bytes) -> pd.DataFrame:
     return df
 
 
-def preview(file_bytes: bytes, rows: int = 5) -> dict:
-    """Return column names and a small sample of rows for the mapping UI."""
+def preview(file_bytes: bytes, rows: int = 5, distinct: bool = False) -> dict:
+    """Return column names and a small sample of rows for the mapping UI.
+
+    ``distinct`` adds ``n_unique``: each column's count of distinct non-blank
+    values over every row, not just the sample (the degradation wizard checks
+    the item id column has at least two items).
+    """
     df = read_dataframe(file_bytes)
     columns = [str(c) for c in df.columns]
     sample = (
@@ -321,7 +326,10 @@ def preview(file_bytes: bytes, rows: int = 5) -> dict:
         .where(pd.notna(df.head(rows)), None)
         .values.tolist()
     )
-    return {"columns": columns, "preview": sample, "n_rows": int(df.shape[0])}
+    out = {"columns": columns, "preview": sample, "n_rows": int(df.shape[0])}
+    if distinct:
+        out["n_unique"] = [int(n) for n in df.nunique(dropna=True).tolist()]
+    return out
 
 
 # The censoring convention, stated once and reused in every message that needs

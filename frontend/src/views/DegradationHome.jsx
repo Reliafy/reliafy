@@ -1,28 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DegradationNewModal from "../components/DegradationNewModal.jsx";
-import DegradationResultView from "../components/DegradationResultView.jsx";
-import { listDegradationModels, saveDegradationModel, deleteDegradationModel } from "../api.js";
+import { listDegradationModels, deleteDegradationModel } from "../api.js";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
-import { FirstRunStrip } from "../components/FirstRun.jsx";
-import { useFirstRun } from "../firstRun.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 
-// Landing page for degradation models: list, create (3-step modal + save bar),
-// open, delete. Lives inside the Modelling section.
+// Landing page for degradation models: list, create (a 3-step modal that
+// fits, saves and opens the new model's page), open, delete. Lives inside the
+// Modelling section.
 export default function DegradationHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
-  // No models, datasets or diagrams of their own yet (samples don't count).
-  const firstRun = useFirstRun(models ? models.some((m) => !m.is_sample) : undefined);
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
-  const [pending, setPending] = useState(null); // { result, fit }
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   const refresh = useCallback(() => {
@@ -32,27 +25,6 @@ export default function DegradationHome() {
   }, []);
   useEffect(() => refresh(), [refresh]);
 
-  const onFitted = ({ result, fit }) => {
-    setPending({ result, fit });
-    setName(`Degradation — ${result.results.path_model.name.toLowerCase()} to ${result.results.threshold}${result.results.measurement_unit ? " " + result.results.measurement_unit : ""}`);
-    setError(null);
-    setModalOpen(false);
-  };
-
-  const onSave = async () => {
-    if (!name.trim() || !pending) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const { fit } = pending;
-      const saved = await saveDegradationModel(name.trim(), fit.file, fit);
-      navigate(`/modelling/degradation/${saved.id}`);
-    } catch (err) {
-      setError(err.code === "cap" ? err.message : err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const onDelete = async (m) => {
     const msg = m.is_sample
@@ -79,28 +51,9 @@ export default function DegradationHome() {
         primary={<button onClick={() => setModalOpen(true)}><PlusIcon /> New model</button>}
       />
 
-      <FirstRunStrip info={firstRun} />
-
       {error && <div className="card error">{error}</div>}
 
-      {pending ? (
-        <div className="card">
-          <div className="save-bar">
-            <input
-              className="save-name"
-              type="text"
-              value={name}
-              placeholder="Model name"
-              onChange={(e) => setName(e.target.value)}
-            />
-            <button onClick={onSave} disabled={saving || !name.trim()}>
-              {saving ? "Saving…" : "Save model"}
-            </button>
-            <button className="secondary" onClick={() => setPending(null)}>Discard</button>
-          </div>
-          <DegradationResultView results={pending.result.results} />
-        </div>
-      ) : models === null ? (
+      {models === null ? (
         <div className="card empty">Loading…</div>
       ) : models.length === 0 ? (
         <div className="card empty">
@@ -154,7 +107,7 @@ export default function DegradationHome() {
       )}
 
       {modalOpen && (
-        <DegradationNewModal onClose={() => setModalOpen(false)} onFitted={onFitted} />
+        <DegradationNewModal onClose={() => setModalOpen(false)} onSaved={(m) => open(m.id)} />
       )}
     </div>
   );

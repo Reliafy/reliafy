@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
 import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
@@ -104,6 +104,7 @@ export default function RecurrentNewPage() {
     try {
       const full = await getDataset(d.id);
       const columns = full.preview_columns || [];
+      if (!d.name) setSourceName(full.name || "dataset");
       setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows });
       setMap({ i: columns[0] || "", x: columns[1] || "", c: "", n: "", tl: "", tr: "", mode: guessModeColumn(columns) });
       setStep(2);
@@ -113,6 +114,19 @@ export default function RecurrentNewPage() {
       setLoading(false);
     }
   };
+
+  // ?dataset=<id> (a dataset page's "Fit a recurrent model") starts on that
+  // dataset, at the column mapping.
+  const [params] = useSearchParams();
+  const startDataset = params.get("dataset");
+  const started = useRef(false);
+  useEffect(() => {
+    if (!startDataset || started.current) return;
+    started.current = true;
+    setMode("data");
+    pickDataset({ id: startDataset, name: "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDataset]);
 
   const onDrop = (e) => {
     e.preventDefault();

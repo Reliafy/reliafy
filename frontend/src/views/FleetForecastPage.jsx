@@ -11,8 +11,10 @@ import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import ResultSummary, { ResultDetails } from "../components/ui/ResultSummary.jsx";
-import { formatNumber } from "../format.js";
-import { itemName } from "../components/LibRows";
+import { formatNumber, formatPercent } from "../format.js";
+import { PlusIcon, itemName } from "../components/LibRows.jsx";
+import { unitInText } from "../components/unitText.js";
+import { itemsWithoutUsage, usageInputValue } from "../fleetUsage.js";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -37,9 +39,6 @@ const TrashIcon = () => (
     <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
   </svg>
 );
-
-const fmt = (v, d = 1) =>
-  v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: d });
 
 const blank = (v) => v === null || v === undefined || v === "";
 
@@ -125,6 +124,10 @@ export default function FleetForecastPage() {
   const single = (settings.method || "renewals") === "single";
   const showService = single && !repairable && !blank(settings.warranty_periods);
   const nameById = Object.fromEntries(items.map((it) => [it.id, it.name]));
+  // Items with no usage never age, so the forecast would read "≈ 0": ask for
+  // the usage per period instead (unsaved), or caveat a saved forecast.
+  const noUsage = itemsWithoutUsage(settings, items);
+  const savedNoUsage = itemsWithoutUsage(fleet.settings, fleet.items);
   // "Which items are at risk": the five most likely to fail (first failures).
   const atRisk = forecast.status === "ok" && forecast.method === "single" && !dirty
     ? [...(forecast.per_item || [])].filter((r) => r.prob_any > 0)
@@ -160,7 +163,9 @@ export default function FleetForecastPage() {
     setSaving(true);
     setError(null);
     try {
-      const fresh = await putFleetItems(id, settings, items, fleet.updated_at);
+      // A blank usage per period (no item relies on it) is sent as 0.
+      const sent = settings.default_rate === "" ? { ...settings, default_rate: 0 } : settings;
+      const fresh = await putFleetItems(id, sent, items, fleet.updated_at);
       setFleet(fresh);
       setSettings(fresh.settings || {});
       setItems(fresh.items || []);
@@ -221,11 +226,13 @@ export default function FleetForecastPage() {
   const settingsWord = settingsPeriod.replace(/s$/i, "");
   const horizon = `${forecast.periods} ${Number(forecast.periods) === 1 ? periodWord : forecast.period_label}`;
 
-  // The answer (#311): expected failures over the horizon, the likely range
-  // and what's counted, then the monthly chart under it.
-  const showAnswer = forecast.status === "ok" && items.length > 0;
+  // Settings, items, then the answer (#311). The answer, Export CSV and the
+  // alerts wait for the first computed save: until then the page asks for
+  // items and usage.
+  const computed = (fleet.items || []).length > 0;
+  const showAnswer = computed && forecast.status === "ok" && savedNoUsage === 0;
   const [lo, hi] = forecast.interval || [];
-  const range = lo != null && hi != null ? `${fmt(lo, 0)}–${fmt(hi, 0)}` : null;
+  const range = lo != null && hi != null ? `${formatNumber(lo, { sig: 3 })}–${formatNumber(hi, { sig: 3 })}` : null;
   const counted = repairable
     ? ", including repeat failures after repair"
     : forecast.method === "renewals" ? ", including replacements failing again" : "";
@@ -236,22 +243,31 @@ export default function FleetForecastPage() {
   const hideProb = showAnswer && !dirty && (forecast.per_item || []).length > 0
     && (forecast.per_item || []).every((r) => r.prob_any > 0.95);
 
-  // One line of assumptions; Edit opens the form (#311).
+  // One line of assumptions under the header; Edit opens the form (#311).
+  // Missing usage keeps the form open: it's the next step.
+  const formOpen = !readOnly && (editing || noUsage > 0);
   const methodText = repairable
     ? "every failure counted (repairable)"
     : single ? "first failures only" : "failed items replaced";
   const assumptions = [
-    `${fmt(settings.default_rate ?? 0, 2)}${unit ? ` ${unit.toLowerCase()}` : ""} of use a ${settingsWord} per item`,
+    Number(settings.default_rate) > 0
+      ? `${formatNumber(settings.default_rate, { sig: 6 })}${unit ? ` ${unitInText(unit)}` : ""} of use a ${settingsWord} per item`
+      : items.length > 0 && noUsage === 0 ? "each item at its own rate" : `no usage per ${settingsWord} yet`,
     `${settings.periods ?? 12} ${settingsPeriod}`,
     methodText,
     settings.rate_source === "estimated" ? "rates from API readings" : null,
     single && !repairable && (!blank(settings.warranty_use) || !blank(settings.warranty_periods)) ? "warranty limits" : null,
   ].filter(Boolean);
+  // The per-item figures are blank while they're out of date: unsaved edits,
+  // or a forecast saved without usage (every item at 0).
+  const itemFiguresStale = dirty || savedNoUsage > 0;
+  // Figures the user typed, shown as text on a read-only forecast: exact, with separators.
+  const asText = (v) => (blank(v) ? "—" : formatNumber(v, { sig: 6 }));
 
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Fleet", to: "/fleet" }]}
+        crumbs={[{ label: "Fleet" }, { label: "Failure forecasts", to: "/fleet" }]}
         title={itemName(fleet)}
         badges={
           <>
@@ -267,14 +283,15 @@ export default function FleetForecastPage() {
               {forecast.model_name || "the linked model"}
             </Link>
             {forecast.model_kind === "alt" ? " (ALT)" : forecast.model_kind === "regression" ? " (regression)" : ""}
-            {unit ? ` · time in ${unit}` : ""}
+            {unit ? ` · time in ${unitInText(unit)}` : ""}
             {fleet.updated_by ? ` · last edited by ${fleet.updated_by}` : ""}
           </>
         }
-        actions={<button className="secondary" onClick={exportCsv}>Export CSV</button>}
+        actions={computed && savedNoUsage === 0 && <button className="secondary" onClick={exportCsv}>Export CSV</button>}
         // With no items yet, "Add item" is the next step, not saving.
         primary={!readOnly && (items.length > 0 || dirty) && (
-          <button onClick={onSave} disabled={saving || !dirty}>
+          <button onClick={onSave} disabled={saving || !dirty || noUsage > 0}
+                  title={noUsage > 0 ? `Set the usage per ${settingsWord} first` : undefined}>
             {saving ? "Computing…" : dirty ? "Save & forecast" : "Saved"}
           </button>
         )}
@@ -285,7 +302,16 @@ export default function FleetForecastPage() {
             {!readOnly && <button className="ovm-item" onClick={onRename}>Rename</button>}
           </>
         }
-      />
+      >
+        <div className="fleet-assume-line">
+          <span><span className="fleet-assume-k">Assumes</span> {assumptions.join(" · ")}</span>
+          {!readOnly && noUsage === 0 && (
+            <button className="secondary sm" onClick={() => setEditing((v) => !v)} aria-expanded={editing}>
+              {editing ? "Done" : "Edit"}
+            </button>
+          )}
+        </div>
+      </PageHeader>
 
       {error && (
         <div className="card error">
@@ -308,20 +334,134 @@ export default function FleetForecastPage() {
         <div key={w} className="card upgrade-nudge"><p>{w}</p></div>
       ))}
 
-      {showAnswer && (
+      {formOpen && (
         <div className="card">
+          <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap", marginTop: 0 }}>
+            <label className="login-field" style={{ width: 190 }}>
+              <span>Usage per {settingsWord}{unit ? ` (${unit})` : ""}</span>
+              <input type="number" min="0" step="any" value={usageInputValue(settings.default_rate)}
+                     placeholder="required" required aria-invalid={noUsage > 0}
+                     aria-describedby={noUsage > 0 ? "fleet-usage-missing" : undefined}
+                     onChange={(e) => setSetting("default_rate", e.target.value)} />
+            </label>
+            <label className="login-field" style={{ width: 110 }}>
+              <span>Horizon</span>
+              <input type="number" min="1" max="120" value={settings.periods ?? 12}
+                     onChange={(e) => setSetting("periods", e.target.value)} />
+            </label>
+            <label className="login-field" style={{ width: 130 }}>
+              <span>Period</span>
+              <input type="text" value={settings.period_label ?? "months"}
+                     onChange={(e) => setSetting("period_label", e.target.value)} />
+            </label>
+          </div>
+          {noUsage > 0 && (
+            <p id="fleet-usage-missing" className="hint fleet-alert-warn" style={{ marginBottom: 0 }}>
+              Set the usage per {settingsWord}: {noUsage === items.length ? "the items have" : `${noUsage} item${noUsage === 1 ? " has" : "s have"}`} no
+              own rate, so without it they don’t age and the forecast can’t count any failures.
+            </p>
+          )}
+
+          {fields.length > 0 && (
+            <>
+              <h3 className="fleet-assume-h">{forecast.model_kind === "alt" ? "Operating stress" : "Operating conditions"}</h3>
+              <p className="muted-line" style={{ marginTop: 0 }}>
+                {forecast.model_kind === "alt"
+                  ? "The stress every item runs at, unless an item sets its own."
+                  : "The covariate values every item runs at, unless an item sets its own. Blank uses the model's default (the training-data mean, or its most common level)."}
+              </p>
+              <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+                {fields.map((f) => (
+                  <label key={f.name} className="login-field" style={{ width: 190 }}>
+                    <span>{fieldLabel(f)}</span>
+                    <CovariateInput field={f} value={fleetCovariates[f.name]} placeholder={f.default}
+                                    onChange={(v) => setFleetCovariate(f.name, v)} />
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+
+          <ResultDetails summary="Advanced">
+            <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+              {!repairable && (
+                <label className="login-field" style={{ minWidth: 230 }}>
+                  <span>Counting method</span>
+                  <Select value={settings.method || "renewals"} onChange={(v) => setSetting("method", v)}
+                          options={byConditions
+                            ? METHOD_OPTIONS.map((o) => (o.value === "renewals"
+                              ? { ...o, disabled: true, hint: "Each item is forecast at its own conditions: first failures only." }
+                              : o))
+                            : METHOD_OPTIONS} />
+                </label>
+              )}
+              <label className="login-field" style={{ minWidth: 250 }}>
+                <span>Usage rate</span>
+                <Select value={settings.rate_source || "manual"} onChange={(v) => setSetting("rate_source", v)}
+                        options={RATE_SOURCE_OPTIONS} />
+              </label>
+            </div>
+            {repairable && (
+              <p className="rs-note">
+                Repairable items: each failure is repaired and the item runs on, so every repeat failure is counted
+                from the item’s age (time since new) under the recurrent model. Ranges are Poisson.
+              </p>
+            )}
+            {single && !repairable && (
+              <div className="row fleet-warranty">
+                <label className="login-field" style={{ width: 200 }}>
+                  <span>Warranty: use{unit ? ` (${unit})` : ""}</span>
+                  <input type="number" min="0" step="any" value={settings.warranty_use ?? ""} placeholder="no limit"
+                         onChange={(e) => setSetting("warranty_use", e.target.value === "" ? null : e.target.value)} />
+                </label>
+                <label className="login-field" style={{ width: 200 }}>
+                  <span>Warranty: {settings.period_label || "periods"} in service</span>
+                  <input type="number" min="0" step="any" value={settings.warranty_periods ?? ""} placeholder="no limit"
+                         onChange={(e) => setSetting("warranty_periods", e.target.value === "" ? null : e.target.value)} />
+                </label>
+                <p className="muted-line">
+                  Failures after an item's warranty ends (whichever limit comes first) aren't counted.
+                  {forecast.out_of_warranty
+                    ? ` ${forecast.out_of_warranty} item${forecast.out_of_warranty === 1 ? " is" : "s are"} already out of warranty.`
+                    : ""}
+                </p>
+              </div>
+            )}
+            <p className="rs-note">
+              {settings.rate_source === "estimated"
+                ? "Each item uses the rate estimated from meter readings sent through the API with a read_at time; items without one fall back to their own rate, then the usage per period."
+                : "Rates come from the usage per period and each item's own rate. Switch to “Estimated” to use rates learned from timestamped API meter readings."}
+            </p>
+            {settings.rate_source === "estimated" && !isCalendarUnit(settings.period_label) && (
+              <p className="hint fleet-alert-warn" style={{ marginBottom: 0 }}>
+                “{settings.period_label}” isn’t a calendar unit (days, weeks, months, quarters or years), so usage
+                rates can’t be estimated from API readings — items use their manual rates.
+              </p>
+            )}
+          </ResultDetails>
+        </div>
+      )}
+
+      {/* The answer and its months come first; the items behind it follow. */}
+      {!readOnly && (!computed || (forecast.status === "ok" && savedNoUsage > 0)) && (
+        <p className={"fleet-gate" + (computed ? " warn" : "")}>
+          {computed
+            ? `Set the usage per ${settingsWord}, then Save & forecast.`
+            : `Add items and set the usage per ${settingsWord}, then Save & forecast.`}
+        </p>
+      )}
+
+      {showAnswer && (
+        <div className="card" style={{ marginTop: "1rem" }}>
           <ResultSummary
             sentence={
               single && !repairable ? (
-                <>≈ <b>{formatNumber(forecast.expected, { sig: 2 })}</b> items fail in the next <b>{horizon}</b>
-                  {range && <> (likely {range})</>}.</>
+                <>≈ <b>{formatNumber(forecast.expected)}</b> items fail in the next <b>{horizon}</b>.</>
               ) : (
-                <>≈ <b>{formatNumber(forecast.expected, { sig: 2 })}</b> failures in the next <b>{horizon}</b>
-                  {range && <> (likely {range})</>}{counted}.</>
+                <>≈ <b>{formatNumber(forecast.expected)}</b> failures in the next <b>{horizon}</b>{counted}.</>
               )
             }
             stats={[
-              { label: "Expected failures", value: fmt(forecast.expected) },
               range && { label: "Likely range (80%)", value: range, hint: rangeHint },
               forecast.periods > 1 && {
                 label: `Average a ${periodWord}`,
@@ -372,12 +512,14 @@ export default function FleetForecastPage() {
       <div className="card" style={{ marginTop: "1rem" }}>
         <CardHeader
           title="Items"
-          actions={!readOnly && items.length > 0 && <button className="secondary sm" onClick={addItem}>+ Add item</button>}
+          actions={!readOnly && items.length > 0 && (
+            <button className="secondary sm" onClick={addItem}><PlusIcon /> Add item</button>
+          )}
         />
         {items.length === 0 ? (
           <div className="fleet-items-empty">
-            <p className="muted-line">No items yet — add each in-service unit with its accumulated use.</p>
-            {!readOnly && <button onClick={addItem}>+ Add item</button>}
+            <p className="muted-line">No items yet. Add each in-service unit with its accumulated use.</p>
+            {!readOnly && <button onClick={addItem}><PlusIcon /> Add item</button>}
           </div>
         ) : (
           <div className="fleet-items-scroll">
@@ -388,14 +530,14 @@ export default function FleetForecastPage() {
                   <th className="num" style={{ width: 90 }}>Expected failures</th>
                   {!hideProb && <th className="num" style={{ width: 100 }}>{repairable ? "P(≥1 failure)" : "P(failure)"}</th>}
                   <th className="num" style={{ width: 130 }}>Current use{unit ? ` (${unit})` : ""}</th>
-                  <th className="num" style={{ width: 120 }} title={`Usage per ${settingsWord}; blank uses the fleet's ${fmt(settings.default_rate ?? 0, 2)}`}>
+                  <th className="num" style={{ width: 120 }} title={`Usage per ${settingsWord}; blank uses the fleet's ${asText(settings.default_rate || 0)}`}>
                     Own rate
                   </th>
                   {fields.map((f) => <th key={f.name} style={{ minWidth: 130 }}>{fieldLabel(f)}</th>)}
                   {showService && <th className="num" style={{ width: 130 }}>In service ({settings.period_label || "periods"})</th>}
                   {repairable && <th className="num" style={{ width: 140 }}>Next service at</th>}
                   {repairable && <th className="num" style={{ width: 140 }}>P(fail before service)</th>}
-                  <th className="fleet-items-rest" aria-label="Actions" />
+                  {!readOnly && <th className="fleet-items-act" aria-label="Actions" />}
                 </tr>
               </thead>
               <tbody>
@@ -412,26 +554,29 @@ export default function FleetForecastPage() {
                                  onChange={(e) => setItem(idx, "name", e.target.value)} />
                         )}
                       </td>
-                      <td className="num fleet-expected">{r.expected === undefined || dirty ? "—" : fmt(r.expected, 2)}</td>
+                      <td className="num fleet-expected">{r.expected === undefined || itemFiguresStale ? "—" : formatNumber(r.expected)}</td>
                       {!hideProb && (
-                        <td className="num">{r.prob_any === undefined || dirty ? "—" : `${(r.prob_any * 100).toFixed(0)}%`}</td>
+                        <td className="num">{r.prob_any === undefined || itemFiguresStale ? "—" : formatPercent(r.prob_any)}</td>
                       )}
                       <td className="num">
-                        <input className="cell-input" type="number" min="0" step="any" value={it.current_use}
-                               aria-label={`Current use of ${it.name || "item"}`}
-                               disabled={readOnly} onChange={(e) => setItem(idx, "current_use", e.target.value)} />
+                        {readOnly ? asText(it.current_use) : (
+                          <input className="cell-input" type="number" min="0" step="any" value={it.current_use}
+                                 aria-label={`Current use of ${it.name || "item"}`}
+                                 onChange={(e) => setItem(idx, "current_use", e.target.value)} />
+                        )}
                       </td>
                       <td className="num">
-                        <input className="cell-input" type="number" min="0" step="any"
-                               value={it.rate ?? ""} placeholder="—"
-                               aria-label={`Own usage rate of ${it.name || "item"}`}
-                               title={`Blank uses the fleet's ${fmt(settings.default_rate ?? 0, 2)} per ${settingsWord}`}
-                               disabled={readOnly}
-                               onChange={(e) => setItem(idx, "rate", e.target.value === "" ? null : e.target.value)} />
+                        {readOnly ? asText(it.rate) : (
+                          <input className="cell-input" type="number" min="0" step="any"
+                                 value={it.rate ?? ""} placeholder="—"
+                                 aria-label={`Own usage rate of ${it.name || "item"}`}
+                                 title={`Blank uses the fleet's ${asText(settings.default_rate || 0)} per ${settingsWord}`}
+                                 onChange={(e) => setItem(idx, "rate", e.target.value === "" ? null : e.target.value)} />
+                        )}
                         {it.estimated_rate_n >= 1 && (
                           <div className="hint fleet-rate-est"
                                title={`Estimated from ${it.estimated_rate_n} interval(s) between API meter readings`}>
-                            est. {fmt(it.estimated_rate)} / {settingsWord}
+                            est. {formatNumber(it.estimated_rate)} / {settingsWord}
                             {!dirty && r.rate_basis === "estimated" ? " · in use" : ` · n=${it.estimated_rate_n}`}
                           </div>
                         )}
@@ -445,41 +590,44 @@ export default function FleetForecastPage() {
                       ))}
                       {showService && (
                         <td className="num">
-                          <input className="cell-input" type="number" min="0" step="any"
-                                 value={it.service_periods ?? ""} placeholder="from use ÷ rate"
-                                 title="How long the item has been in service; blank estimates it from its use at its rate."
-                                 disabled={readOnly}
-                                 onChange={(e) => setItem(idx, "service_periods", e.target.value === "" ? null : e.target.value)} />
+                          {readOnly ? asText(it.service_periods) : (
+                            <input className="cell-input" type="number" min="0" step="any"
+                                   value={it.service_periods ?? ""} placeholder="from use ÷ rate"
+                                   title="How long the item has been in service; blank estimates it from its use at its rate."
+                                   onChange={(e) => setItem(idx, "service_periods", e.target.value === "" ? null : e.target.value)} />
+                          )}
                         </td>
                       )}
                       {repairable && (
                         <td className="num">
-                          <input className="cell-input" type="number" min="0" step="any"
-                                 value={it.next_service_at ?? ""} placeholder="—" disabled={readOnly}
-                                 title={`The use${unit ? ` (${unit})` : ""} the item is next serviced at`}
-                                 onChange={(e) => setItem(idx, "next_service_at", e.target.value === "" ? null : e.target.value)} />
+                          {readOnly ? asText(it.next_service_at) : (
+                            <input className="cell-input" type="number" min="0" step="any"
+                                   value={it.next_service_at ?? ""} placeholder="—"
+                                   title={`The use${unit ? ` (${unit})` : ""} the item is next serviced at`}
+                                   onChange={(e) => setItem(idx, "next_service_at", e.target.value === "" ? null : e.target.value)} />
+                          )}
                         </td>
                       )}
                       {repairable && (
                         <td className="num">
-                          {dirty || it.next_service_at == null || it.next_service_at === ""
+                          {itemFiguresStale || it.next_service_at == null || it.next_service_at === ""
                             ? "—"
                             : r.service_overdue
                             ? <span className="fleet-alert-warn" title="The item's use is past its next service">overdue</span>
                             : r.prob_before_service == null
                             ? "—"
-                            : `${(r.prob_before_service * 100).toFixed(0)}%`}
+                            : formatPercent(r.prob_before_service)}
                         </td>
                       )}
-                      <td className="lib-actions">
-                        {!readOnly && (
+                      {!readOnly && (
+                        <td className="lib-actions">
                           <div className="lib-acts">
-                            <button className="act del" title="Remove item" onClick={() => removeItem(idx)}>
+                            <button className="act del" title="Remove item" aria-label="Remove item" onClick={() => removeItem(idx)}>
                               <TrashIcon />
                             </button>
                           </div>
-                        )}
-                      </td>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -490,25 +638,19 @@ export default function FleetForecastPage() {
         {hideProb && (
           <p className="rs-note">Every item is more than 95% likely to fail within the horizon.</p>
         )}
-        {dirty && items.length > 0 && !showAnswer && (
-          <p className="muted-line" style={{ marginTop: "0.6rem" }}>
-            Unsaved changes — hit "Save &amp; forecast" to recompute the columns.
-          </p>
-        )}
       </div>
 
       {atRisk.length > 0 && (
         <div className="card" style={{ marginTop: "1rem" }}>
-          <h2 style={{ marginTop: 0 }}>Most at risk</h2>
-          <p className="muted-line" style={{ marginTop: 0 }}>
-            The items most likely to fail within {forecast.periods} {forecast.period_label}
-            {byConditions ? ", each at its own conditions" : ""}.
-          </p>
+          <CardHeader
+            title="Most at risk"
+            subtitle={`The items most likely to fail within ${forecast.periods} ${forecast.period_label}${byConditions ? ", each at its own conditions" : ""}.`}
+          />
           <ol className="fleet-risk-list">
             {atRisk.map((r) => (
               <li key={r.id}>
                 <span className="fleet-risk-name">{nameById[r.id] || r.id}</span>
-                <span className="fleet-risk-p">{(r.prob_any * 100).toFixed(r.prob_any < 0.1 ? 1 : 0)}%</span>
+                <span className="fleet-risk-p">{formatPercent(r.prob_any)}</span>
                 {r.covariates && Object.keys(r.covariates).length > 0 && (
                   <span className="hint fleet-risk-cond">
                     {fields.map((f) => `${fieldLabel(f)} ${r.covariates[f.name]}`).join(" · ")}
@@ -520,118 +662,7 @@ export default function FleetForecastPage() {
         </div>
       )}
 
-      <div className="card fleet-assumptions" style={{ marginTop: "1rem" }}>
-        <div className="fleet-assume-line">
-          <span><span className="fleet-assume-k">Assumes</span> {assumptions.join(" · ")}</span>
-          {!readOnly && (
-            <button className="link" onClick={() => setEditing((v) => !v)} aria-expanded={editing}>
-              {editing ? "Done" : "Edit"}
-            </button>
-          )}
-        </div>
-
-        {editing && !readOnly && (
-          <div className="fleet-assume-form">
-            <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-              <label className="login-field" style={{ width: 190 }}>
-                <span>Usage per {settingsWord}{unit ? ` (${unit})` : ""}</span>
-                <input type="number" min="0" step="any" value={settings.default_rate ?? 0}
-                       onChange={(e) => setSetting("default_rate", e.target.value)} />
-              </label>
-              <label className="login-field" style={{ width: 110 }}>
-                <span>Horizon</span>
-                <input type="number" min="1" max="120" value={settings.periods ?? 12}
-                       onChange={(e) => setSetting("periods", e.target.value)} />
-              </label>
-              <label className="login-field" style={{ width: 130 }}>
-                <span>Period</span>
-                <input type="text" value={settings.period_label ?? "months"}
-                       onChange={(e) => setSetting("period_label", e.target.value)} />
-              </label>
-            </div>
-
-            {fields.length > 0 && (
-              <>
-                <h3 className="fleet-assume-h">{forecast.model_kind === "alt" ? "Operating stress" : "Operating conditions"}</h3>
-                <p className="muted-line" style={{ marginTop: 0 }}>
-                  {forecast.model_kind === "alt"
-                    ? "The stress every item runs at, unless an item sets its own."
-                    : "The covariate values every item runs at, unless an item sets its own. Blank uses the model's default (the training-data mean, or its most common level)."}
-                </p>
-                <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-                  {fields.map((f) => (
-                    <label key={f.name} className="login-field" style={{ width: 190 }}>
-                      <span>{fieldLabel(f)}</span>
-                      <CovariateInput field={f} value={fleetCovariates[f.name]} placeholder={f.default}
-                                      onChange={(v) => setFleetCovariate(f.name, v)} />
-                    </label>
-                  ))}
-                </div>
-              </>
-            )}
-
-            <ResultDetails summary="Advanced">
-              <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-                {!repairable && (
-                  <label className="login-field" style={{ minWidth: 230 }}>
-                    <span>Counting method</span>
-                    <Select value={settings.method || "renewals"} onChange={(v) => setSetting("method", v)}
-                            options={byConditions
-                              ? METHOD_OPTIONS.map((o) => (o.value === "renewals"
-                                ? { ...o, disabled: true, hint: "Each item is forecast at its own conditions: first failures only." }
-                                : o))
-                              : METHOD_OPTIONS} />
-                  </label>
-                )}
-                <label className="login-field" style={{ minWidth: 250 }}>
-                  <span>Usage rate</span>
-                  <Select value={settings.rate_source || "manual"} onChange={(v) => setSetting("rate_source", v)}
-                          options={RATE_SOURCE_OPTIONS} />
-                </label>
-              </div>
-              {repairable && (
-                <p className="rs-note">
-                  Repairable items: each failure is repaired and the item runs on, so every repeat failure is counted
-                  from the item’s age (time since new) under the recurrent model. Ranges are Poisson.
-                </p>
-              )}
-              {single && !repairable && (
-                <div className="row fleet-warranty">
-                  <label className="login-field" style={{ width: 200 }}>
-                    <span>Warranty: use{unit ? ` (${unit})` : ""}</span>
-                    <input type="number" min="0" step="any" value={settings.warranty_use ?? ""} placeholder="no limit"
-                           onChange={(e) => setSetting("warranty_use", e.target.value === "" ? null : e.target.value)} />
-                  </label>
-                  <label className="login-field" style={{ width: 200 }}>
-                    <span>Warranty: {settings.period_label || "periods"} in service</span>
-                    <input type="number" min="0" step="any" value={settings.warranty_periods ?? ""} placeholder="no limit"
-                           onChange={(e) => setSetting("warranty_periods", e.target.value === "" ? null : e.target.value)} />
-                  </label>
-                  <p className="muted-line">
-                    Failures after an item's warranty ends (whichever limit comes first) aren't counted.
-                    {forecast.out_of_warranty
-                      ? ` ${forecast.out_of_warranty} item${forecast.out_of_warranty === 1 ? " is" : "s are"} already out of warranty.`
-                      : ""}
-                  </p>
-                </div>
-              )}
-              <p className="rs-note">
-                {settings.rate_source === "estimated"
-                  ? "Each item uses the rate estimated from meter readings sent through the API with a read_at time; items without one fall back to their own rate, then the usage per period."
-                  : "Rates come from the usage per period and each item's own rate. Switch to “Estimated” to use rates learned from timestamped API meter readings."}
-              </p>
-              {settings.rate_source === "estimated" && !isCalendarUnit(settings.period_label) && (
-                <p className="hint fleet-alert-warn" style={{ marginBottom: 0 }}>
-                  “{settings.period_label}” isn’t a calendar unit (days, weeks, months, quarters or years), so usage
-                  rates can’t be estimated from API readings — items use their manual rates.
-                </p>
-              )}
-            </ResultDetails>
-          </div>
-        )}
-      </div>
-
-      {!readOnly && <FleetAlertsCard fleetId={fleet.id} version={fleet.updated_at} />}
+      {!readOnly && computed && <FleetAlertsCard fleetId={fleet.id} version={fleet.updated_at} />}
     </div>
   );
 }

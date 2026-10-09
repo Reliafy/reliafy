@@ -8,6 +8,7 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
+import { unitInText } from "../components/unitText.js";
 
 
 const fmt = (v) =>
@@ -99,7 +100,7 @@ export default function FleetTrackingHome() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Fleet", to: "/fleet" }]}
+        crumbs={[{ label: "Fleet" }]}
         title="Degradation tracking"
         meta="Each item's remaining life against a degradation model; open a fleet to log inspections."
         primary={<button onClick={openCreate}><PlusIcon /> New tracked fleet</button>}
@@ -115,7 +116,7 @@ export default function FleetTrackingHome() {
           <p>
             Name a fleet, pick the degradation model it runs against, and
             register the items you have in service — or{" "}
-            <Link to="/modelling/degradation">fit a model</Link> first.
+            <Link to="/modelling/degradation" className="evidence-link">fit a model</Link> first.
           </p>
           <button style={{ marginTop: "1rem" }} onClick={openCreate}>
             <PlusIcon /> New tracked fleet
@@ -124,7 +125,11 @@ export default function FleetTrackingHome() {
       ) : (
         <>
           <div className="tablebar">
-            <span className="count">{visible.length} of {fleets.length} tracked fleets</span>
+            {query && (
+              <span className="count">
+                {visible.length} of {fleets.length} tracked fleet{fleets.length === 1 ? "" : "s"}
+              </span>
+            )}
             <span className="grow" />
             <ListSearch value={query} onChange={setQuery} placeholder="Search tracked fleets…" />
           </div>
@@ -150,12 +155,16 @@ export default function FleetTrackingHome() {
                         {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
                       </div>
                     </td>
-                    <td className="lib-date lib-opt">{f.model_name || "—"}</td>
+                    <td className="lib-date lib-opt">
+                      {f.model_name
+                        ? itemName({ name: f.model_name, is_sample: f.is_sample || String(f.model_id).startsWith("sample-") })
+                        : "—"}
+                    </td>
                     <td className="lib-n lib-opt">{f.n_items}</td>
                     <td><HealthChips tracking={f.tracking} /></td>
                     <td className="lib-n lib-opt">
                       {f.tracking?.next_crossing != null
-                        ? `${fmt(f.tracking.next_crossing)}${f.unit ? ` ${f.unit}` : ""}`
+                        ? `${fmt(f.tracking.next_crossing)}${f.unit ? ` ${unitInText(f.unit)}` : ""}`
                         : "—"}
                     </td>
                     <td className="lib-date lib-opt">{relativeTime(f.updated_at || f.created_at)}</td>
@@ -209,7 +218,7 @@ export default function FleetTrackingHome() {
             </label>
             <p className="muted-line">
               One model can back any number of fleets. Don't have a model yet?{" "}
-              <Link to="/modelling/degradation" onClick={() => setModalOpen(false)}>
+              <Link to="/modelling/degradation" className="evidence-link" onClick={() => setModalOpen(false)}>
                 Fit a degradation model
               </Link>{" "}
               from your inspection history first.

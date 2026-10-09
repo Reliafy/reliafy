@@ -176,6 +176,40 @@ def test_admin_stats_gated(client, monkeypatch):
     }
 
 
+def test_admin_signups_gated_and_minimal(client, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from backend import config
+
+    now = datetime.now(timezone.utc)
+    client.db.users.insert_many([
+        {"_id": "new-pro", "email": "p@x.com", "name": "P", "plan": "pro",
+         "plan_until": now + timedelta(days=20), "stripe_customer_id": "cus_1",
+         "created_at": now - timedelta(days=1), "last_login": now - timedelta(hours=5)},
+        {"_id": "new-free", "email": "f@x.com", "name": "F",
+         "created_at": now - timedelta(days=3), "last_login": now - timedelta(days=3)},
+        {"_id": "old", "email": "o@x.com", "created_at": now - timedelta(days=40)},
+    ])
+    # A usage event later than the last sign-in is the last activity.
+    client.db.usage_events.insert_one({"uid": "new-free", "ts": now - timedelta(hours=1), "channel": "app"})
+
+    client.act_as(A)
+    assert client.get("/api/admin/signups").status_code == 403
+    monkeypatch.setattr(config, "ADMIN_EMAILS", {"a@x.com"})
+    data = client.get("/api/admin/signups?days=7").json()
+    assert data["days"] == 7 and data["count"] >= 2
+    rows = {r["email"]: r for r in data["signups"]}
+    assert "o@x.com" not in rows
+    # Newest first, and only what an operator needs: no ids, names or Stripe fields.
+    assert [r["email"] for r in data["signups"]][:2] == ["p@x.com", "f@x.com"]
+    assert all(set(r) == {"email", "plan", "joined", "last_active"} for r in data["signups"])
+    assert rows["p@x.com"]["plan"] == "pro" and rows["f@x.com"]["plan"] == "free"
+    last = datetime.fromisoformat(rows["f@x.com"]["last_active"])
+    assert abs((last - (now - timedelta(hours=1))).total_seconds()) < 5
+    # The window is clamped.
+    assert client.get("/api/admin/signups?days=5000").json()["days"] == 365
+
+
 # ---- Optimistic locking + attribution ----------------------------------------------
 
 def test_rcm_tree_conflict_409(client):

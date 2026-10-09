@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { listDatasets, deleteDataset } from "../api.js";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
@@ -7,6 +7,7 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
+import "../components/Datasets.css";
 
 const FileIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -40,10 +41,12 @@ export default function DatasetsHome() {
 
   useEffect(() => refresh(), [refresh]);
 
-  const onCreated = (ds) => {
+  // Identical data opens the dataset you already had; its page says so and
+  // offers the name just typed.
+  const onCreated = (ds, typedName) => {
     setNewOpen(false);
     refresh();
-    navigate(`/datasets/d/${ds.id}`);
+    navigate(`/datasets/d/${ds.id}`, ds.reused ? { state: { reused: true, name: typedName || null } } : undefined);
   };
 
   const onDelete = async (d) => {
@@ -86,37 +89,45 @@ export default function DatasetsHome() {
       ) : (
         <>
           <div className="tablebar">
-            <span className="count">{visible.length} of {datasets.length} datasets</span>
+            {/* A count only says something while it filters. */}
+            {query.trim() && <span className="count">{visible.length} of {datasets.length} datasets</span>}
             <span className="grow" />
             <ListSearch value={query} onChange={setQuery} placeholder="Search datasets…" />
           </div>
 
-          <div className="lib">
+          <div className="lib ds-lib">
             <table className="lib-table">
               <thead>
                 <tr>
-                  <th style={{ width: "44%" }}>Dataset</th>
+                  <th style={{ width: "46%" }}>Dataset</th>
                   <th style={{ width: 90 }}>Rows</th>
-                  <th className="lib-opt" style={{ width: 100 }}>Columns</th>
-                  <th className="lib-opt" style={{ width: 100 }}>Models</th>
+                  <th className="lib-opt" style={{ width: 170 }}><span className="sr-only">Used by</span></th>
                   <th className="lib-opt">Added</th>
                   <th><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
-                <SampleGroups rows={visible} cols={6} render={(d) => (
+                <SampleGroups rows={visible} cols={5} render={(d) => (
                   <tr key={d.id} className="lib-row" onClick={() => open(d.id)}>
                     <td>
                       <div className="ds-name">
                         <span className="ds-ic"><FileIcon /></span>
-                        <span className="lib-name">{itemName(d)}{d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}</span>
+                        {/* A real link, so the row opens from the keyboard too. */}
+                        <Link className="lib-name ds-row-link" to={`/datasets/d/${d.id}`} onClick={(e) => e.stopPropagation()}>
+                          {itemName(d)}
+                        </Link>
+                        {d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}
                       </div>
                     </td>
                     <td className="lib-n">{(d.n_rows ?? 0).toLocaleString()}</td>
-                    <td className="lib-n lib-opt">{d.n_columns}</td>
-                    <td className="lib-n lib-opt">{d.n_models}</td>
+                    <td className="lib-opt">
+                      {d.n_models > 0 && (
+                        <span className="ds-used">Used by {d.n_models} model{d.n_models === 1 ? "" : "s"}</span>
+                      )}
+                    </td>
                     <td className="lib-date lib-opt">{relativeTime(d.created_at)}</td>
-                    <RowActions item={d} onOpen={() => open(d.id)} onDelete={() => onDelete(d)} />
+                    {/* The row opens the dataset, so no separate Open button. */}
+                    <RowActions item={d} onDelete={() => onDelete(d)} />
                   </tr>
                 )} />
               </tbody>
