@@ -8,6 +8,7 @@ import ModelValidation from "./ModelValidation.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import CiNote from "./CiNote.jsx";
 import { distColor } from "../instrument.js";
+import Chip from "./ui/Chip.jsx";
 
 const DISTRIBUTION_TABS = [
   { id: "plot", label: "Probability plot" },
@@ -40,7 +41,7 @@ function PerDemandPanel({ result }) {
   return (
     <>
       <div className="result-head">
-        <span className="dpill"><span className="dot" style={{ background: color }} />Per-demand</span>
+        <Chip dot={color}>Per-demand</Chip>
       </div>
       <div className="params">
         <div className="stat">
@@ -263,10 +264,9 @@ export default function ResultView({ result, hideHead = false, modelId = null, n
     <>
       {!hideHead && (
         <div className="result-head">
-          <span className="dpill">
-            <span className="dot" style={{ background: color }} />
+          <Chip dot={color}>
             {result.distribution}
-          </span>
+          </Chip>
         </div>
       )}
       <NoMaximumNotice notice={result.no_finite_maximum} style={{ margin: "0 0 12px" }} />

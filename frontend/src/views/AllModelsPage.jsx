@@ -14,6 +14,7 @@ import {
   listRecurrentModels,
   deleteRecurrentModel,
 } from "../api.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const PlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -198,25 +199,24 @@ export default function AllModelsPage() {
                     <td>
                       <div className="lib-name">
                         {r.name}
-                        {r.is_sample && <span className="sample-tag">Sample</span>}
-                        {r.shared_by && <span className="sample-tag shared" title={`Shared by ${r.shared_by}`}>Shared</span>}
+                        {r.is_sample && <Chip>Sample</Chip>}
+                        {r.shared_by && <Chip title={`Shared by ${r.shared_by}`}>Shared</Chip>}
                         {r.noMax && (
-                          <span className="sample-tag nomax"
+                          <Chip tone="warning"
                                 title="These data don't pin down the model: its numbers aren't estimates.">
                             No finite maximum
-                          </span>
+                          </Chip>
                         )}
                       </div>
                     </td>
                     <td>
-                      <span className={"type-tag " + r.type}>{TYPE_LABEL[r.type]}</span>
+                      {TYPE_LABEL[r.type]}
                     </td>
                     <td>
-                      <span className="dpill">
-                        <span className="dot" style={{ background: r.color }} />
+                      <Chip dot={r.color}>
                         {r.detail}
-                        {r.ph && <span className="phflag">PH</span>}
-                      </span>
+                        {r.ph && " · PH"}
+                      </Chip>
                     </td>
                     <td className="lib-date">{relativeTime(r.created_at)}</td>
                     <td className="lib-actions">

@@ -10,6 +10,7 @@ import {
   addTrackedMeasurement,
   getItemPrediction,
 } from "../api.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const CONFIDENCE_LEVELS = [
   { value: "0.8", label: "80%" },
@@ -144,7 +145,7 @@ export default function StrategyTracking() {
           </div>
           <h1>
             {fleet.name}
-            {fleet.is_sample && <span className="sample-tag" style={{ verticalAlign: "middle" }}>Sample</span>}
+            {fleet.is_sample && <Chip>Sample</Chip>}
           </h1>
           <p>
             {model ? (
@@ -191,7 +192,7 @@ export default function StrategyTracking() {
           <div className="bill-head">
             <h2 style={{ margin: 0 }}>
               {selected.name}
-              {badge && <span className={`health-badge ${badge.cls}`} style={{ marginLeft: 10 }}>{badge.label}</span>}
+              {badge && <Chip tone={badge.tone} style={{ marginLeft: 10 }}>{badge.label}</Chip>}
             </h2>
             <span className="muted-line" style={{ margin: 0 }}>
               Remaining life: <b>{rulText(activePred, unit)}</b>

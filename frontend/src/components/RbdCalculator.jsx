@@ -17,6 +17,7 @@ import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
 import WhatToImprove from "./WhatToImprove.jsx";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import Chip from "./ui/Chip.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -632,9 +633,9 @@ function SimulationOffer({ canSimulate, onSimulate, simulating, graph, quick = n
 // "Quick estimate": a free, time-capped simulation's result (#147).
 function QuickTag() {
   return (
-    <span className="rbd-quick-tag" title="A free, time-capped simulation: fewer replications than a full run">
+    <Chip tone="warning" style={{ marginLeft: 8 }} title="A free, time-capped simulation: fewer replications than a full run">
       Quick estimate
-    </span>
+    </Chip>
   );
 }
 

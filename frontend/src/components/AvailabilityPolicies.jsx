@@ -1,3 +1,4 @@
+import Chip from "./ui/Chip.jsx";
 // What an availability result adds for repair crews, maintenance policies and
 // safety functions (#156, #157): how RePyability found the long-run values
 // (exactly, numerically, by simulation — and why), the repair crews and the
@@ -23,7 +24,8 @@ function SafetyCard({ safety }) {
   // Whenever the PFDavg leaves anything out, the band and target read amber,
   // never a green "met" beside a caveat.
   const optimistic = !!safety.sil_optimistic || noTests || ccfLeftOut;
-  const chipTone = !safety.sil ? " none" : optimistic ? " caveat" : ` sil${safety.sil}`;
+  // Green only for a clean SIL 2+; SIL 1 or an optimistic band is a caveat.
+  const chipTone = !safety.sil ? "danger" : optimistic || safety.sil === 1 ? "warning" : "success";
   return (
     <div className="rbd-policy-card rbd-sif">
       <div className="ds-section-h">Safety function</div>
@@ -32,10 +34,10 @@ function SafetyCard({ safety }) {
           <div className="rbd-sif-big">{fmtPfd(safety.pfd_avg)}</div>
           <div className="muted">PFDavg (average probability of failure on demand)</div>
         </div>
-        <div className={"rbd-sil-chip" + chipTone} title={safety.sil_optimistic ? safety.sil_note : undefined}>
+        <Chip tone={chipTone} className="rbd-sil-chip" title={safety.sil_optimistic ? safety.sil_note : undefined}>
           {safety.sil ? `SIL ${safety.sil}` : "No SIL"}
           {safety.sil && optimistic ? " (optimistic)" : ""}
-        </div>
+        </Chip>
         {safety.target_sil != null && (
           <div className={"rbd-sil-target " + (!met ? "no" : optimistic ? "caveat" : "ok")}>
             Target SIL {safety.target_sil}: {!met ? "not met" : optimistic ? "met, but optimistic" : "met"}

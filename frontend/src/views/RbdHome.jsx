@@ -8,6 +8,7 @@ import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import { FirstRunStrip } from "../components/FirstRun.jsx";
 import { useFirstRun } from "../firstRun.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const PlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -259,7 +260,7 @@ export default function RbdHome() {
               <tbody>
                 {rbds.filter((r) => matches(query, r.name)).map((r) => (
                   <tr key={r.id} className="lib-row" onClick={() => open(r.id)}>
-                    <td><div className="lib-name">{r.name}{r.is_sample && <span className="sample-tag">Sample</span>}{r.shared_by && <span className="sample-tag shared" title={`Shared by ${r.shared_by}`}>Shared</span>}</div></td>
+                    <td><div className="lib-name">{r.name}{r.is_sample && <Chip>Sample</Chip>}{r.shared_by && <Chip title={`Shared by ${r.shared_by}`}>Shared</Chip>}</div></td>
                     <td className="lib-n">{(r.n_nodes ?? 0).toLocaleString()}</td>
                     <td className="lib-n">{(r.n_edges ?? 0).toLocaleString()}</td>
                     <td><RbdGlyph /></td>

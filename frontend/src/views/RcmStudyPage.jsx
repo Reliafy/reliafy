@@ -8,6 +8,7 @@ import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getRcmStudy, getRcmOptions, putRcmTree, renameRcmStudy } from "../api.js";
 import { toCsv } from "../csv.js";
+import Chip from "../components/ui/Chip.jsx";
 
 function exportCsv(study, functions) {
   const header = [
@@ -150,9 +151,9 @@ export default function RcmStudyPage() {
           </div>
           <h1>
             {study.name}
-            {study.is_sample && <span className="sample-tag">Sample</span>}
-            {study.shared_by && <span className="sample-tag shared" title={`Shared by ${study.shared_by}`}>Shared</span>}
-            {dirty && <span className="dirty-tag">Unsaved</span>}
+            {study.is_sample && <Chip>Sample</Chip>}
+            {study.shared_by && <Chip title={`Shared by ${study.shared_by}`}>Shared</Chip>}
+            {dirty && <Chip tone="warning">Unsaved</Chip>}
           </h1>
           {(study.system || study.description) && (
             <p>{[study.system, study.description].filter(Boolean).join(" — ")}</p>

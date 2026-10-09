@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import Select from "./Select.jsx";
+import Chip from "./ui/Chip.jsx";
 
 // Guided RCM decision flow for one failure mode: consequence → outcome
 // (suggested first, per the classic decision diagram) → task details →
@@ -107,7 +108,7 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
             >
               <span className="option-title">
                 {o.label}
-                {suggested.includes(o.id) && <span className="suggest-tag">Suggested</span>}
+                {suggested.includes(o.id) && <Chip tone="accent" style={{ marginLeft: 6 }}>Suggested</Chip>}
               </span>
             </button>
           ))}

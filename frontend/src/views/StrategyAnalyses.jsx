@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { listStrategyAnalyses, deleteStrategyAnalysis } from "../api.js";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
@@ -92,8 +93,8 @@ export default function StrategyAnalyses() {
                   <td>
                     <div className="lib-name">
                       {a.name}
-                      {a.is_sample && <span className="sample-tag">Sample</span>}
-                      {a.shared_by && <span className="sample-tag shared" title={`Shared by ${a.shared_by}`}>Shared</span>}
+                      {a.is_sample && <Chip>Sample</Chip>}
+                      {a.shared_by && <Chip title={`Shared by ${a.shared_by}`}>Shared</Chip>}
                     </div>
                   </td>
                   <td>{KIND_LABEL[a.kind] || a.kind}</td>

@@ -6,6 +6,7 @@ import {
   reliabilityPath,
   relativeTime,
 } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const SearchIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -101,13 +102,12 @@ export default function ModelLibrary({ models, loading, onOpen, onDelete }) {
               const seed = seedFromString(m.id || m.name);
               return (
                 <tr key={m.id} className="lib-row" onClick={() => onOpen(m.id)}>
-                  <td><div className="lib-name">{m.name}{m.is_sample && <span className="sample-tag">Sample</span>}{m.shared_by && <span className="sample-tag shared" title={`Shared by ${m.shared_by}`}>Shared</span>}</div></td>
+                  <td><div className="lib-name">{m.name}{m.is_sample && <Chip>Sample</Chip>}{m.shared_by && <Chip title={`Shared by ${m.shared_by}`}>Shared</Chip>}</div></td>
                   <td>
-                    <span className="dpill">
-                      <span className="dot" style={{ background: color }} />
+                    <Chip dot={color}>
                       {distLabel(m.distribution)}
-                      {m.kind === "regression" && <span className="phflag">PH</span>}
-                    </span>
+                      {m.kind === "regression" && " · PH"}
+                    </Chip>
                   </td>
                   <td className="lib-n">{(m.n ?? 0).toLocaleString()}</td>
                   <td>

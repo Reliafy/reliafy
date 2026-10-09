@@ -6,6 +6,7 @@ import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getAltModel, deleteAltModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
 
 // A saved Accelerated Life model — mirrors the other model pages: title row with
 // a model pill + saved meta, then the life-stress result view with the use-level
@@ -41,10 +42,9 @@ export default function AltModelPage() {
           <div className="title-row">
             <h1>{model ? model.name : "Model"}</h1>
             {model && (
-              <span className="dpill">
-                <span className="dot" style={{ background: "#2f6df6" }} />
+              <Chip dot={"#2f6df6"}>
                 {r.distribution} · {r.life_model}
-              </span>
+              </Chip>
             )}
             {model && (
               <span className="page-meta">

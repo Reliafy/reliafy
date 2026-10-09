@@ -5,6 +5,7 @@ import Select from "../components/Select.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { listFleets, createFleet, deleteFleet, listModels, listAltModels, listRecurrentModels } from "../api.js";
 import { relativeTime } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const PlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -165,8 +166,8 @@ export default function FleetForecasts() {
                   <td>
                     <div className="lib-name">
                       {f.name}
-                      {f.is_sample && <span className="sample-tag">Sample</span>}
-                      {f.shared_by && <span className="sample-tag shared" title={`Shared by ${f.shared_by}`}>Shared</span>}
+                      {f.is_sample && <Chip>Sample</Chip>}
+                      {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
                     </div>
                   </td>
                   <td className="lib-n">{f.n_items}</td>

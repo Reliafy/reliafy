@@ -6,6 +6,7 @@ import Modal from "../components/Modal.jsx";
 import Select from "../components/Select.jsx";
 import { listTrackedFleets, createTrackedFleet, deleteTrackedFleet, listDegradationModels } from "../api.js";
 import { relativeTime } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const PlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -30,16 +31,16 @@ const fmt = (v) =>
 function HealthChips({ tracking }) {
   if (!tracking) return <span className="lib-date">—</span>;
   const parts = [
-    ["replace", tracking.replace, "health-red", "replace now"],
-    ["plan", tracking.plan, "health-amber", "plan replacement"],
-    ["healthy", tracking.healthy, "health-green", "healthy"],
-    ["monitoring", tracking.monitoring, "health-grey", "monitoring"],
+    ["replace", tracking.replace, "danger", "replace now"],
+    ["plan", tracking.plan, "warning", "plan replacement"],
+    ["healthy", tracking.healthy, "success", "healthy"],
+    ["monitoring", tracking.monitoring, "neutral", "monitoring"],
   ].filter(([, n]) => n > 0);
   if (!parts.length) return <span className="lib-date">No items yet</span>;
   return (
-    <span className="rollup-badges">
-      {parts.map(([key, n, cls, label]) => (
-        <span key={key} className={`health-badge ${cls}`}>{n} {label}</span>
+    <span className="chip-row">
+      {parts.map(([key, n, tone, label]) => (
+        <Chip key={key} tone={tone}>{n} {label}</Chip>
       ))}
     </span>
   );
@@ -162,7 +163,7 @@ export default function FleetTrackingHome() {
                   <td>
                     <div className="lib-name">
                       {f.name}
-                      {f.is_sample && <span className="sample-tag">Sample</span>}
+                      {f.is_sample && <Chip>Sample</Chip>}
                     </div>
                   </td>
                   <td className="lib-date">{f.model_name || "—"}</td>

@@ -4,6 +4,7 @@ import CopyId from "../components/CopyId.jsx";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getDegradationModel } from "../api.js";
+import Chip from "../components/ui/Chip.jsx";
 
 // One saved degradation model: the fitted paths + life model. The fleet of
 // tracked items lives under Fleet → Degradation tracking.
@@ -44,7 +45,7 @@ export default function DegradationModelPage() {
           </div>
           <h1>
             {model.name}
-            {model.is_sample && <span className="sample-tag" style={{ verticalAlign: "middle" }}>Sample</span>}
+            {model.is_sample && <Chip>Sample</Chip>}
           </h1>
           <p>
             {model.path_model} degradation toward {model.threshold}

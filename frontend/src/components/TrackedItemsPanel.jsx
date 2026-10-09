@@ -2,19 +2,20 @@ import { useState } from "react";
 import Modal from "./Modal.jsx";
 import { createTrackedItem, addTrackedMeasurement } from "../api.js";
 import { unitInText } from "./unitText.js";
+import Chip from "./ui/Chip.jsx";
 
 const fmt = (v, digits = 0) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: digits });
 
 // Health badge from a cached prediction: how worried should the owner be?
 export function healthBadge(pred) {
-  if (!pred || pred.method === "error") return { label: "Monitoring", cls: "health-grey" };
-  if ((pred.prob_never_fails ?? 0) > 0.5) return { label: "May never fail", cls: "health-grey" };
+  if (!pred || pred.method === "error") return { label: "Monitoring", tone: "neutral" };
+  if ((pred.prob_never_fails ?? 0) > 0.5) return { label: "May never fail", tone: "neutral" };
   const p = pred.prob_failed;
-  if (p === null || p === undefined) return { label: "Estimate", cls: "health-grey" };
-  if (p >= 0.5) return { label: "Replace now", cls: "health-red" };
-  if (p >= 0.05) return { label: "Plan replacement", cls: "health-amber" };
-  return { label: "Healthy", cls: "health-green" };
+  if (p === null || p === undefined) return { label: "Estimate", tone: "neutral" };
+  if (p >= 0.5) return { label: "Replace now", tone: "danger" };
+  if (p >= 0.05) return { label: "Plan replacement", tone: "warning" };
+  return { label: "Healthy", tone: "success" };
 }
 
 export function rulText(pred, unit) {
@@ -83,10 +84,10 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
                     <td>
                       <div className="lib-name">
                         {it.name}
-                        {it.is_sample && <span className="sample-tag">Sample</span>}
+                        {it.is_sample && <Chip>Sample</Chip>}
                       </div>
                     </td>
-                    <td><span className={`health-badge ${badge.cls}`}>{badge.label}</span></td>
+                    <td><Chip tone={badge.tone}>{badge.label}</Chip></td>
                     <td className="lib-n">{rulText(pred, unit)}</td>
                     <td className="lib-n">
                       {pred.failure_time === null || pred.failure_time === undefined

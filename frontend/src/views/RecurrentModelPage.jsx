@@ -8,6 +8,7 @@ import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getRecurrentModel, deleteRecurrentModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const GROWTH_COLOR = { improving: "#2faa6a", stable: "#6c727c", deteriorating: "#d05a5a" };
 
@@ -44,10 +45,9 @@ export default function RecurrentModelPage() {
           <div className="title-row">
             <h1>{model ? model.name : "Model"}</h1>
             {model && (
-              <span className="dpill">
-                <span className="dot" style={{ background: GROWTH_COLOR[r.growth] || "#6c727c" }} />
+              <Chip dot={GROWTH_COLOR[r.growth] || "#6c727c"}>
                 {r.model?.name || "Recurrent"}
-              </span>
+              </Chip>
             )}
             {model && (
               <span className="page-meta">

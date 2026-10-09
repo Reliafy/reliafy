@@ -42,11 +42,6 @@
 
 .outage-chart { width: 100%; min-width: 0; }
 .outage-table td { white-space: nowrap; }
-.outage-tag {
-  margin-left: 6px; font-size: var(--fs-12); font-weight: 500; color: var(--danger); border: 1px solid var(--danger-line);
-  border-radius: var(--r-sm); padding: 0 5px;
-}
-.outage-tag.planned { color: #8a5a00; border-color: #f0dca8; }
 
 @media (max-width: 720px) {
   .outage-map-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }

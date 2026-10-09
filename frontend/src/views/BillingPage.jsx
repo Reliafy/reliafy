@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getBilling, buyCredits, subscribePro, billingPortal } from "../api.js";
 import { PRO_PRICE } from "../pricing.js";
+import Chip from "../components/ui/Chip.jsx";
 
 // AI usage is denominated in "credits" — users never see a dollar balance.
 // (Internally 1 credit == 1 cent; only pack purchase prices show as dollars.)
@@ -106,7 +107,7 @@ export default function BillingPage() {
     { label: "Team workspaces", free: "Join teams (view-only)", pro: "Create teams and edit together" },
   ];
   const planName = { free: "Free", agent: "Agent", pro: "Pro" }[plan] || "Free";
-  const current = (p) => (plan === p ? <span className={"plan-badge " + p}>Current</span> : null);
+  const current = (p) => (plan === p ? <Chip tone="accent">Current</Chip> : null);
 
   return (
     <div className="app">
@@ -176,8 +177,8 @@ export default function BillingPage() {
           <div className="bill-head">
             <h2>Plan</h2>
             <span style={{ display: "inline-flex", gap: 6 }}>
-              {isAdmin && <span className="plan-badge admin">Operator</span>}
-              <span className={"plan-badge " + plan}>{planName}</span>
+              {isAdmin && <Chip>Operator</Chip>}
+              <Chip tone={plan === "free" ? "neutral" : "accent"}>{planName}</Chip>
             </span>
           </div>
           {isAdmin && (
@@ -235,7 +236,7 @@ export default function BillingPage() {
           <div className="card bill-card">
             <div className="bill-head">
               <h2>Your AI agent (MCP)</h2>
-              <span className={"plan-badge " + plan}>{planName}</span>
+              <Chip tone={plan === "free" ? "neutral" : "accent"}>{planName}</Chip>
             </div>
             <ul className="bill-usage">
               <li>
@@ -254,7 +255,7 @@ export default function BillingPage() {
           <div className="card bill-card">
             <div className="bill-head">
               <h2>Your AI agent (MCP)</h2>
-              <span className={"plan-badge " + plan}>{planName}</span>
+              <Chip tone={plan === "free" ? "neutral" : "accent"}>{planName}</Chip>
             </div>
             <ul className="bill-usage">
               <li>

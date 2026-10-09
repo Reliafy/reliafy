@@ -12,6 +12,7 @@ import {
   leaveTeam,
 } from "../api.js";
 import Modal from "../components/Modal.jsx";
+import Chip from "../components/ui/Chip.jsx";
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -197,9 +198,9 @@ export default function TeamSettingsPage() {
                 <td className="lib-date">
                   {m.role}
                   {m.can_edit === false && (
-                    <span className="health-badge health-grey" style={{ marginLeft: 8 }} title="Free account — can view the workspace; editing needs Pro.">
-                      view-only
-                    </span>
+                    <Chip style={{ marginLeft: 8 }} title="Free account — can view the workspace; editing needs Pro.">
+                      View only
+                    </Chip>
                   )}
                 </td>
                 <td className="lib-actions">

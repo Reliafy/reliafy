@@ -3,6 +3,7 @@ import Plot from "./Plot.jsx";
 import { NEUTRAL_BAND_FILL, band, dataPoints, fitLine } from "../plotTheme.js";
 import RecurrentCalculator from "./RecurrentCalculator.jsx";
 import { unitInText } from "./unitText.js";
+import Chip from "./ui/Chip.jsx";
 
 const fmt = (v, d = 2) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: d });
@@ -13,9 +14,9 @@ const ciText = (ci, n = 3) => (ci ? `[${sig(ci[0], n)}, ${sig(ci[1], n)}]` : nul
 const pText = (p) => (p < 0.001 ? "p < 0.001" : `p = ${sig(p, 2)}`);
 
 const GROWTH = {
-  improving: { label: "Improving", note: "failures are slowing", cls: "health-green" },
-  stable: { label: "Stable", note: "no clear trend in the failure rate", cls: "health-grey" },
-  deteriorating: { label: "Deteriorating", note: "failures are accelerating", cls: "health-red" },
+  improving: { label: "Improving", note: "failures are slowing", tone: "success" },
+  stable: { label: "Stable", note: "no clear trend in the failure rate", tone: "neutral" },
+  deteriorating: { label: "Deteriorating", note: "failures are accelerating", tone: "danger" },
 };
 
 // Why the verdict is what it is (#81): β's 95% interval against 1 (a slope
@@ -156,7 +157,7 @@ export default function RecurrentResultView({ results, name = null }) {
               <div className="gofr">
                 <span className="gk">Reliability growth</span>
                 <span className="gv-col">
-                  <span className="gv">{growth ? <span className={`health-badge ${growth.cls}`}>{growth.label}</span> : "—"}</span>
+                  <span className="gv">{growth ? <Chip tone={growth.tone}>{growth.label}</Chip> : "—"}</span>
                   {basis && <span className="param-ci">{basis}</span>}
                 </span>
               </div>

@@ -229,11 +229,11 @@ export default function RcmImportModal({ study, onClose, onImported }) {
                 <ul className="xl-tree">
                   {preview.functions.slice(0, 4).map((f) => (
                     <li key={f.id}>
-                      <span className="tree-tag fn-tag">Function</span> {f.text}
+                      <b>{f.text}</b>
                       <ul>
                         {f.failures.slice(0, 3).map((x) => (
                           <li key={x.id}>
-                            <span className="tree-tag fail-tag">Failure</span> {x.text}
+                            {x.text}
                             <span className="xl-dim"> — {x.modes.length} mode{x.modes.length === 1 ? "" : "s"}</span>
                           </li>
                         ))}

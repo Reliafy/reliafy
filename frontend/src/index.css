@@ -67,6 +67,19 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Read by screen readers, not shown. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Shared mono / tabular-numeral helper used by Instrument screens. */
 .mono {
   font-family: var(--mono);
@@ -453,16 +466,6 @@ h6 {
   padding: 30px 38px 56px;
 }
 
-.soon-badge {
-  display: inline-block;
-  font-size: var(--fs-12);
-  font-weight: 600;
-  color: var(--acc-d);
-  background: rgba(47, 109, 246, 0.12);
-  border-radius: var(--r-sm);
-  padding: 0.25rem 0.8rem;
-  margin-bottom: 1rem;
-}
 
 /* Sidebar nested items */
 .side-children {
@@ -1205,21 +1208,6 @@ h6 {
 .rbd-job-status { font-size: var(--fs-13); color: var(--muted); }
 .rbd-sim-offer .rbd-job-status { margin: 10px 0 0; }
 .rbd-quick-cap { margin: 8px 0 0; font-size: var(--fs-13); color: var(--warn); }
-.rbd-quick-tag {
-  margin-left: 8px;
-  font-size: var(--fs-12);
-  font-weight: 600;
-  color: var(--warn);
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-line);
-  border-radius: var(--r-sm);
-  padding: 0 6px;
-  vertical-align: 1px;
-  /* Not the section heading's mono capitals: a tag, like MethodTag. */
-  font-family: inherit;
-  text-transform: none;
-  letter-spacing: normal;
-}
 
 .rbd-name {
   display: inline-block;
@@ -1492,7 +1480,14 @@ h6 {
   font-weight: 600;
   font-size: var(--fs-14);
   letter-spacing: -0.01em;
+  /* A name and its chips: the chips wrap under the name, flush left. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
 }
+span.lib-name { display: inline-flex; }
 
 .lib-spark {
   display: block;
@@ -1735,49 +1730,54 @@ button.link.sm {
   padding: 0;
 }
 
-/* Distribution pill — accent dot + name, optional PH flag (Instrument). */
-.dpill {
+/* Chip (#310; components/ui/Chip.jsx): 12px sans, sentence case, 6px
+   radius; colour only when it means something. */
+.chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  max-width: 100%;
+  font-family: inherit;
   font-size: var(--fs-12);
-  color: var(--ink);
-  background: var(--bg);
-  border: 1px solid var(--line);
+  font-weight: 500;
+  line-height: 18px;
+  letter-spacing: normal;
+  text-transform: none;
+  padding: 0 7px;
+  border: 1px solid transparent;
   border-radius: var(--r-sm);
-  padding: 3px 9px;
+  white-space: nowrap;
+  vertical-align: middle;
   font-variant-numeric: tabular-nums;
+  flex: none;
 }
-
-.dpill .dot {
+.chip-neutral { color: var(--muted); background: var(--surf-2); border-color: var(--line); }
+.chip-accent { color: var(--acc-d); background: var(--acc-t); border-color: rgba(47, 109, 246, 0.2); }
+.chip-success { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-line); }
+.chip-warning { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+.chip-danger { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-line); }
+.chip-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
-
-.phflag {
-  font-size: var(--fs-12);
+/* A chip that edits its value (an RCM decision): outlined, accent on hover. */
+button.chip-btn {
+  box-shadow: none;
+  cursor: pointer;
+  padding: 0 7px;
+}
+button.chip-btn:hover:not(:disabled) {
+  background: var(--surf);
+  border-color: var(--acc);
   color: var(--acc);
-  background: var(--acc-t);
-  border-radius: var(--r-sm);
-  padding: 2px 6px;
-  margin-left: 4px;
-  font-variant-numeric: tabular-nums;
 }
-
-/* "Sample" tag on seeded starter datasets/models (shared, read-only). */
-.sample-tag {
-  font-size: var(--fs-12);
-  color: var(--muted);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 1px 6px;
-  margin-left: 8px;
-  vertical-align: middle;
-  font-variant-numeric: tabular-nums;
-}
+/* Beside a name: a little air. */
+h1 .chip,
+.lib-name + .chip { margin-left: 8px; }
+.method-tag { margin-left: 6px; cursor: help; }
+.chip-row { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 
 /* Empty state */
 .empty {
@@ -4516,19 +4516,6 @@ select:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pl-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--fs-12);
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 1px 8px;
-  white-space: nowrap;
-}
-.pl-badge svg { width: 12px; height: 12px; }
-.pl-badge-lock { color: var(--acc); border-color: var(--acc-t); background: var(--acc-t); }
 button.pl-revoke {
   margin-left: auto;
   width: 28px;
@@ -5543,14 +5530,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .bill-head { display: flex; align-items: center; justify-content: space-between; }
 .bill-head h2 { margin: 0; font-size: var(--fs-16); }
 
-.plan-badge { font-size: var(--fs-12);
-  padding: 3px 9px; border-radius: var(--r-sm);
-  font-variant-numeric: tabular-nums;
-}
-.plan-badge.free { color: var(--muted); background: var(--bg); border: 1px solid var(--line); }
-.plan-badge.pro { color: var(--acc); background: var(--acc-t); }
-.plan-badge.agent { color: #0f8a6a; background: rgba(15, 138, 106, 0.1); }
-.plan-badge.admin { color: #7a5af5; background: rgba(122, 90, 245, 0.1); }
 
 .bill-balance { font-size: var(--fs-20); font-weight: 600; font-variant-numeric: tabular-nums; }
 .bill-balance-unit { font-size: var(--fs-12); font-weight: 500; color: var(--muted); margin-left: 6px; }
@@ -5586,7 +5565,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .bill-compare-table thead th {
   font-size: var(--fs-12); font-weight: 500; color: var(--muted);
 }
-.bill-compare-table thead th .plan-badge { margin-left: 6px; vertical-align: middle; }
+.bill-compare-table thead th .chip { margin-left: 6px; }
 .bill-compare-table tbody th { font-weight: 500; width: 36%; }
 .bill-compare-table td { color: var(--muted); width: 32%; }
 .bill-compare-table td.bill-compare-n {; font-variant-numeric: tabular-nums; }
@@ -5740,18 +5719,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .foot-links a { color: var(--muted); text-decoration: none; }
 .foot-links a:hover { color: var(--acc); }
 
-/* Tracked-item health badges + selected fleet row */
-.health-badge {
-  font-size: var(--fs-12);
-  padding: 3px 9px;
-  border-radius: var(--r-sm);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.health-green { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--ok-line); }
-.health-amber { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); }
-.health-red { color: var(--danger); background: var(--danger-bg); border: 1px solid var(--danger-line); }
-.health-grey { color: var(--muted); background: var(--bg); border: 1px solid var(--line); }
+/* Selected fleet row */
 .selected-row { background: var(--acc-t); }
 
 /* Parameter CIs + randomness verdict on fit results */
@@ -5786,17 +5754,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 
 /* Model-type pill on the combined Saved-models list. */
-.type-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 9px;
-  border-radius: var(--r-sm);
-  font-size: var(--fs-12);
-  font-weight: 500;
-  white-space: nowrap;
-}
-.type-tag.life { background: rgba(47, 109, 246, 0.10); color: var(--acc); }
-.type-tag.degradation { background: rgba(124, 58, 237, 0.10); color: #7c3aed; }
 
 /* Inline unit field in the column mapper — sits alongside x / xl / xr and
    matches the embedded selects. */
@@ -5964,18 +5921,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 
 /* ---- RCM: study tree, decision flow, evidence -------------------------- */
 .head-actions { display: inline-flex; gap: 0.6rem; align-items: flex-start; }
-.dirty-tag {
-  font-size: var(--fs-12);
-  color: var(--warn);
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-line);
-  border-radius: var(--r-sm);
-  padding: 3px 9px;
-  margin-left: 10px;
-  vertical-align: middle;
-  font-variant-numeric: tabular-nums;
-}
-.rollup-badges { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .card.note {
   font-size: var(--fs-13);
   color: var(--muted);
@@ -6013,18 +5958,16 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   flex: none;
 }
 .tree-chevron svg { width: 16px; height: 16px; }
-.tree-tag {
-  font-size: var(--fs-12);
-  padding: 2px 7px;
-  border-radius: var(--r-sm);
-  white-space: nowrap;
-  flex: none;
-  font-variant-numeric: tabular-nums;
-}
-.fn-tag { color: #3d5a80; background: #eef3f9; border: 1px solid #cfdeed; }
-.fail-tag { color: #7a4f8f; background: #f6f0f9; border: 1px solid #e2d2ec; }
-.mode-tag { color: var(--muted); background: var(--bg); border: 1px solid var(--line); }
 .tree-text { font-size: var(--fs-14); display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+/* No level tags (#310): indentation and weight say function, failure, mode. */
+.fn-row > .tree-text { font-weight: 600; }
+.fail-row > .tree-text { font-weight: 500; }
+/* The chevron stays beside its text when the text wraps. */
+.fn-row,
+.fail-row { flex-wrap: nowrap; }
+.mode-row { padding-left: 10px; }
+/* An empty decision: dashed, so it reads as a slot to fill. */
+.chip.chip-empty { border-style: dashed; background: none; }
 .tree-placeholder { color: var(--subtle); font-style: italic; }
 .tree-pencil { opacity: 0; }
 .tree-row:hover .tree-pencil { opacity: 1; }
@@ -6052,28 +5995,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .tree-add svg { width: 13px; height: 13px; }
 .tree-add-fn { margin-left: 8px; margin-top: 8px; }
 
-.consequence-chip {
-  font-size: var(--fs-12);
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 2px 9px;
-  white-space: nowrap;
-  flex: none;
-}
-.decision-chip {
-  all: unset;
-  font-size: var(--fs-12);
-  border: 1px solid var(--line);
-  background: var(--bg);
-  border-radius: var(--r-sm);
-  padding: 3px 10px;
-  white-space: nowrap;
-  flex: none;
-}
-.decision-chip.clickable { cursor: pointer; }
-.decision-chip.clickable:hover { border-color: var(--acc); color: var(--acc); }
-.decision-chip.empty { color: var(--muted); border-style: dashed; background: none; }
 .mode-evidence {
   display: flex;
   align-items: baseline;
@@ -6081,7 +6002,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   flex-wrap: wrap;
   font-size: var(--fs-12);
   color: var(--muted);
-  margin: -2px 0 4px 46px;
+  margin: -2px 0 4px 10px;
 }
 .evidence-link { color: var(--acc); text-decoration: none; }
 .evidence-link:hover { text-decoration: underline; }
@@ -6109,12 +6030,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .option-tile:hover { border-color: var(--acc); }
 .option-tile.selected { border-color: var(--acc); background: var(--acc-t); }
-.suggest-tag {
-  font-size: var(--fs-12);
-  color: var(--ok);
-  margin-left: 6px;
-  font-variant-numeric: tabular-nums;
-}
 .option-hint {
   font-size: var(--fs-12);
   color: var(--muted);
@@ -6203,9 +6118,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   margin-top: 6px;
   font-size: var(--fs-13);
 }
-.sample-tag.shared { color: #3d5a80; background: #eef3f9; border-color: #cfdeed; }
 /* A fit with no finite maximum (#230): its numbers aren't estimates. */
-.sample-tag.nomax { white-space: nowrap; color: var(--warn); background: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.45); }
 .no-max-notice details { margin-top: 6px; }
 .no-max-notice summary { cursor: pointer; font-weight: 600; }
 .no-max-notice details p { margin: 6px 0 0; }
@@ -6898,15 +6811,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-avail-legend b { color: var(--ink, inherit); font-weight: 600; }
 
 /* Exact availability over time (#154) and "As of now" (#155). */
-.rbd-method {
-  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: var(--r-sm);
-  font-size: var(--fs-12); font-weight: 600; text-transform: none;
-  vertical-align: middle; line-height: 1.6; cursor: help;
-  color: #0f7a55; background: rgba(15, 138, 106, 0.1);
-}
-.rbd-method.numerical { color: #2457c5; background: rgba(47, 109, 246, 0.1); }
-.rbd-method.simulated { color: var(--warn); background: #fff4dd; }
-.rbd-method.refused { color: var(--muted); background: var(--bg, #f3f5f8); }
 .rbd-exact, .rbd-sim { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .rbd-exact .ds-section-h, .rbd-sim .ds-section-h { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
 .rbd-exact-metrics { justify-content: flex-start; }
@@ -7004,10 +6908,10 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 
 /* Common-cause failure groups (RBD builder) */
 .rbd-comp.ccf-member { box-shadow: 0 0 0 2px rgba(208, 118, 47, 0.55), 0 0 0 5px rgba(208, 118, 47, 0.18); }
-.rbd-ccf-chip {
-  position: absolute; top: -8px; right: -4px;
-  font-size: var(--fs-12); font-weight: 600;
-  background: #d0762f; color: #fff; border-radius: var(--r-sm); padding: 1px 6px;
+/* On the canvas: pinned to the block's corner in the CCF colour. */
+.chip.rbd-ccf-chip {
+  position: absolute; top: -9px; right: -4px;
+  font-weight: 600; background: #d0762f; color: #fff; border-color: #d0762f;
 }
 /* The common-cause action wears the CCF colour it creates on the canvas. */
 button.secondary.ccf { color: #a85a1c; border-color: rgba(208, 118, 47, 0.55); background: #fdf4ec; }
@@ -7130,8 +7034,6 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 }
 
 /* Saved-models type tags for the newer model kinds */
-.type-tag.alt { background: rgba(15, 154, 176, 0.12); color: #0c7d8f; }
-.type-tag.recurrent { background: rgba(208, 118, 47, 0.12); color: var(--warn); }
 
 /* "Open the full guide" link in the Help drawer */
 .guide-full-link { font-size: 13px; color: var(--acc); text-decoration: none; }
@@ -7458,14 +7360,8 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 .rbd-policy-notes { margin: 6px 0 0; padding-left: 18px; font-size: var(--fs-13); color: var(--muted); }
 .rbd-sif-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; }
 .rbd-sif-big { font-size: var(--fs-28); font-weight: 600; letter-spacing: -0.01em; }
-.rbd-sil-chip {
-  font-weight: 600; font-size: var(--fs-14); padding: 4px 12px; border-radius: var(--r-sm);
-  background: rgba(22, 163, 74, 0.12); color: var(--ok); border: 1px solid rgba(22, 163, 74, 0.35);
-}
-.rbd-sil-chip.sil1 { background: rgba(224, 136, 59, 0.12); color: var(--warn); border-color: rgba(224, 136, 59, 0.4); }
-.rbd-sil-chip.none { background: rgba(180, 35, 24, 0.08); color: var(--danger); border-color: rgba(180, 35, 24, 0.3); }
+.rbd-sil-chip { font-size: var(--fs-14); font-weight: 600; line-height: 22px; padding: 2px 10px; }
 /* A band from a PFDavg that leaves something out (#305): amber, not green. */
-.rbd-sil-chip.caveat { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-line); }
 .rbd-sif-warning {
   margin: 8px 0 0; padding: 6px 10px; border-radius: var(--r-sm); font-size: var(--fs-13); line-height: 1.45;
   background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-line);
@@ -7608,7 +7504,6 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 .xl-tree > li { margin: 0.25rem 0; }
 .xl-tree ul { padding-left: 1.4rem; }
 .xl-tree ul li { margin: 0.15rem 0; }
-.xl-tree .tree-tag { font-size: var(--fs-12); }
 .xl-target { display: flex; flex-direction: column; gap: 0.45rem; border-top: 1px solid var(--line2); padding-top: 0.9rem; }
 .xl-target-new { flex-direction: row; flex-wrap: wrap; gap: 0.8rem; }
 .xl-target-new .login-field { flex: 1 1 14rem; }
@@ -7622,12 +7517,7 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
   gap: 2px;
   font-size: var(--fs-12);
   color: var(--muted);
-  margin: -2px 0 4px 46px;
-}
-/* Phone: the mode's details sit under it rather than past the tag (#309). */
-@media (max-width: 560px) {
-  .mode-detail,
-  .mode-evidence { margin-left: 8px; }
+  margin: -2px 0 4px 10px;
 }
 .mode-detail b { font-weight: 600; color: var(--muted); margin-right: 4px; }
 .mode-notes { white-space: pre-line; }

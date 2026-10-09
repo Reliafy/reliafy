@@ -7,6 +7,7 @@ import FfiResult from "../components/FfiResult.jsx";
 import DemoTestResult from "../components/DemoTestResult.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getStrategyAnalysis } from "../api.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
@@ -47,8 +48,8 @@ export default function StrategyAnalysisPage() {
           </div>
           <h1>
             {doc.name}
-            {doc.is_sample && <span className="sample-tag" style={{ verticalAlign: "middle" }}>Sample</span>}
-            {doc.shared_by && <span className="sample-tag shared" style={{ verticalAlign: "middle" }} title={`Shared by ${doc.shared_by}`}>Shared</span>}
+            {doc.is_sample && <Chip>Sample</Chip>}
+            {doc.shared_by && <Chip title={`Shared by ${doc.shared_by}`}>Shared</Chip>}
           </h1>
           <p>{KIND_LABEL[doc.kind] || doc.kind} — computed when saved; results are stored, not refreshed.</p>
           <CopyId id={doc.id} />

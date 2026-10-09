@@ -21,6 +21,7 @@ import {
 } from "../api.js";
 import "./OutageHistory.css";
 import { unitInText } from "./unitText.js";
+import Chip from "./ui/Chip.jsx";
 
 const FIELDS = [
   { key: "asset", label: "Asset", help: "The block (its label or id) each outage belongs to", req: true },
@@ -412,8 +413,8 @@ function OutageTable({ history }) {
                 <td>{o.start_at ? when(o.start_at) : fmt(o.start, 6)}</td>
                 <td>
                   {fmt(o.duration)}
-                  {o.ongoing && <span className="outage-tag">still down</span>}
-                  {o.planned && <span className="outage-tag planned">planned</span>}
+                  {o.ongoing && <Chip tone="danger" style={{ marginLeft: 6 }}>Still down</Chip>}
+                  {o.planned && <Chip style={{ marginLeft: 6 }}>Planned</Chip>}
                 </td>
                 <td className="calc-row-label"><b>{o.cause_label}</b></td>
                 <td>{o.down_with_labels.join(", ") || "—"}</td>

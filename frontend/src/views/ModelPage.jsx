@@ -7,6 +7,7 @@ import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getModel, deleteModel } from "../api.js";
 import { distColor, relativeTime } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
 
 // Reopen a saved model by id and render its cached results.
 export default function ModelPage() {
@@ -44,10 +45,9 @@ export default function ModelPage() {
           <div className="title-row">
             <h1>{model ? model.name : "Model"}</h1>
             {model && (
-              <span className="dpill">
-                <span className="dot" style={{ background: distColor(model.results?.distribution) }} />
+              <Chip dot={distColor(model.results?.distribution)}>
                 {model.results?.distribution}
-              </span>
+              </Chip>
             )}
             {model && (
               <span className="page-meta">

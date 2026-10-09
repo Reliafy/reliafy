@@ -8,6 +8,7 @@ import FleetAlertsCard from "../components/FleetAlertsCard.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getFleet, putFleetItems, renameFleet } from "../api.js";
 import { toCsv } from "../csv.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -222,9 +223,9 @@ export default function FleetForecastPage() {
           </div>
           <h1>
             {fleet.name}
-            {fleet.is_sample && <span className="sample-tag">Sample</span>}
-            {fleet.shared_by && <span className="sample-tag shared" title={`Shared by ${fleet.shared_by}`}>Shared</span>}
-            {dirty && <span className="dirty-tag">Unsaved</span>}
+            {fleet.is_sample && <Chip>Sample</Chip>}
+            {fleet.shared_by && <Chip title={`Shared by ${fleet.shared_by}`}>Shared</Chip>}
+            {dirty && <Chip tone="warning">Unsaved</Chip>}
           </h1>
           <p>
             Against{" "}

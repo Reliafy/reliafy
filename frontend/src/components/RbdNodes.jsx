@@ -3,6 +3,7 @@ import { Handle, Position, useStore } from "reactflow";
 import { MaintenanceChips } from "./RbdBlockCosts.jsx";
 import { RepairIcon } from "./icons.jsx";
 import { unitInText } from "./unitText.js";
+import Chip from "./ui/Chip.jsx";
 
 // The React Flow node components of a reliability block diagram, shared by the
 // builder (interactive) and the public read-only view (/p/:token). Pure
@@ -122,7 +123,7 @@ function ComponentCard({ id, data, repeat = false, missing = false }) {
       {warn && <UnitWarn title={warn} />}
       {placeholder && <PlaceholderBadge />}
       {beta != null && (
-        <span className="rbd-ccf-chip" title={`Common-cause group — β = ${beta}`}>CC β={beta}</span>
+        <Chip className="rbd-ccf-chip" title={`Common-cause group — β = ${beta}`}>CC β={beta}</Chip>
       )}
       <div className="rbd-comp-title">
         {repeat && <span className="rbd-repeat-mark" aria-label="Repeated block">↺ </span>}

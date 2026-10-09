@@ -7,6 +7,7 @@ import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import { FirstRunStrip } from "../components/FirstRun.jsx";
 import { useFirstRun } from "../firstRun.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const PlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -149,8 +150,8 @@ export default function DegradationHome() {
                   <td>
                     <div className="lib-name">
                       {m.name}
-                      {m.is_sample && <span className="sample-tag">Sample</span>}
-                      {m.shared_by && <span className="sample-tag shared" title={`Shared by ${m.shared_by}`}>Shared</span>}
+                      {m.is_sample && <Chip>Sample</Chip>}
+                      {m.shared_by && <Chip title={`Shared by ${m.shared_by}`}>Shared</Chip>}
                     </div>
                   </td>
                   <td>{m.path_model || "—"}</td>

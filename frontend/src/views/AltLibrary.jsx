@@ -1,6 +1,7 @@
 import { useState } from "react";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { seedFromString, reliabilityPath, relativeTime } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
 
 const OpenIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -82,15 +83,14 @@ export default function AltLibrary({ models, loading, onOpen, onDelete }) {
                   <td>
                     <div className="lib-name">
                       {m.name}
-                      {m.is_sample && <span className="sample-tag">Sample</span>}
-                      {m.shared_by && <span className="sample-tag shared" title={`Shared by ${m.shared_by}`}>Shared</span>}
+                      {m.is_sample && <Chip>Sample</Chip>}
+                      {m.shared_by && <Chip title={`Shared by ${m.shared_by}`}>Shared</Chip>}
                     </div>
                   </td>
                   <td>
-                    <span className="dpill">
-                      <span className="dot" style={{ background: ALT_COLOR }} />
+                    <Chip dot={ALT_COLOR}>
                       {[m.distribution, m.life_model].filter(Boolean).join(" · ") || "—"}
-                    </span>
+                    </Chip>
                   </td>
                   <td className="lib-n">{m.n_stresses ?? 1}</td>
                   <td className="lib-n">{(m.n ?? 0).toLocaleString()}</td>

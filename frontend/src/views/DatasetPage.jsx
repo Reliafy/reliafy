@@ -6,6 +6,7 @@ import CompareGroups from "../components/CompareGroups.jsx";
 import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { distColor, parseTimestamp } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
 
 // Detail view for one dataset: schema, a preview of the rows, and the models
 // fitted from it.
@@ -124,11 +125,10 @@ export default function DatasetPage() {
                       onClick={() => navigate(`/modelling/m/${m.id}`)}
                     >
                       <span className="ds-model-name">{m.name}</span>
-                      <span className="dpill">
-                        <span className="dot" style={{ background: distColor(m.distribution) }} />
+                      <Chip dot={distColor(m.distribution)}>
                         {String(m.distribution || "").replace(/\s*\(.*$/, "").replace(/\s+PH$/, "")}
-                        {m.kind === "regression" && <span className="phflag">PH</span>}
-                      </span>
+                        {m.kind === "regression" && " · PH"}
+                      </Chip>
                     </button>
                   ))
                 )}
