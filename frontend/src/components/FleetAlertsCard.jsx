@@ -30,6 +30,7 @@ const KINDS = [
 
 // Email alerts on the fleet's forecast — only rendered for users who can edit
 // the fleet. Rules are evaluated server-side when usage arrives via the API.
+// Collapsed to one line with "+ Add alert" (#311); the form opens on demand.
 // ``version`` (the fleet's updated_at) reloads the list after a save, since the
 // horizon and current values can change.
 export default function FleetAlertsCard({ fleetId, version }) {
@@ -41,6 +42,7 @@ export default function FleetAlertsCard({ fleetId, version }) {
   const [x, setX] = useState("1");
   const [y, setY] = useState("3");
   const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   const load = () =>
     listFleetAlerts(fleetId)
@@ -75,6 +77,7 @@ export default function FleetAlertsCard({ fleetId, version }) {
     try {
       await createFleetAlert(fleetId, rule);
       setThreshold("");
+      setAdding(false);
       await load();
     } catch (err) {
       setError(err.message);
@@ -105,17 +108,13 @@ export default function FleetAlertsCard({ fleetId, version }) {
     <div className="card fleet-alerts" id="alerts" style={{ marginTop: "1rem" }}>
       <CardHeader
         title="Alerts"
-        subtitle="Checked each time usage for this fleet arrives through the API (Pro). You'll get one email per crossing."
-        actions={
-          <span className="muted-line" style={{ margin: 0 }}>
-            Now: <b>{fmt(data.current_value)}</b> expected failures over {periodsText(data.periods, label)}
-          </span>
-        }
+        subtitle={rules.length === 0 && !adding ? "Get an email when the forecast crosses a level you set." : null}
+        actions={!full && !adding && (
+          <button className="secondary sm" onClick={() => setAdding(true)}>+ Add alert</button>
+        )}
       />
 
-      {rules.length === 0 ? (
-        <p className="muted-line">No alerts yet.</p>
-      ) : (
+      {rules.length > 0 && (
         <ul className="fleet-alert-list">
           {rules.map((rule) => (
             <li key={rule.id} className={"fleet-alert-row" + (rule.enabled ? "" : " off")}>
@@ -149,8 +148,11 @@ export default function FleetAlertsCard({ fleetId, version }) {
         </ul>
       )}
 
-      {!full && (
+      {!full && adding && (
         <form className="fleet-alert-form" onSubmit={onAdd}>
+          <p className="muted-line" style={{ marginTop: 0 }}>
+            Checked each time usage for this fleet arrives through the API (Pro). One email per crossing.
+          </p>
           <div className="fleet-alert-kinds" role="radiogroup" aria-label="Alert type">
             {KINDS.map((k) => (
               <label key={k.value} className="set-check">
@@ -189,6 +191,7 @@ export default function FleetAlertsCard({ fleetId, version }) {
               </>
             )}
             <button type="submit" disabled={busy}>{busy ? "Adding…" : "Add alert"}</button>
+            <button type="button" className="ghost" onClick={() => setAdding(false)} disabled={busy}>Cancel</button>
           </div>
         </form>
       )}

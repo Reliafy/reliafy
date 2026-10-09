@@ -13,6 +13,8 @@ import {
 import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import ResultSummary from "../components/ui/ResultSummary.jsx";
+import { unitInText } from "../components/unitText.js";
 
 const CONFIDENCE_LEVELS = [
   { value: "0.8", label: "80%" },
@@ -135,6 +137,9 @@ export default function StrategyTracking() {
   const badge = selected ? healthBadge(activePred) : null;
   const confPct = Math.round(Number(confidence) * 100);
   const [ftLo, ftHi] = activePred?.failure_time_interval || [null, null];
+  const ut = unit ? ` ${unitInText(unit)}` : "";
+  // The item's health colours its answer: green healthy, amber to plan or act.
+  const tone = { success: "good", warning: "caveat", danger: "caveat" }[badge?.tone] || "neutral";
 
   return (
     <div className="app">
@@ -191,7 +196,14 @@ export default function StrategyTracking() {
                 {badge && <Chip tone={badge.tone} style={{ marginLeft: 10 }}>{badge.label}</Chip>}
               </>
             }
-            subtitle={<>Remaining life: <b>{rulText(activePred, unit)}</b></>}
+            actions={activePred?.method === "bayesian" && (
+              <label className="trk-conf">
+                <span>Confidence</span>
+                <div style={{ width: 96 }}>
+                  <Select value={confidence} onChange={setConfidence} options={CONFIDENCE_LEVELS} />
+                </div>
+              </label>
+            )}
           />
           {selected.prediction?.method === "error" && (
             <p className="muted-line">
@@ -200,27 +212,27 @@ export default function StrategyTracking() {
             </p>
           )}
 
-          {activePred?.method === "bayesian" && (
-            <>
-              <div className="row" style={{ gap: "0.7rem", alignItems: "center", margin: "1rem 0 0.6rem" }}>
-                <span className="muted-line" style={{ margin: 0 }}>Crossing confidence</span>
-                <div style={{ width: 96 }}>
-                  <Select value={confidence} onChange={setConfidence} options={CONFIDENCE_LEVELS} />
-                </div>
-                {previewBusy && <span className="muted-line" style={{ margin: 0 }}>Computing…</span>}
-              </div>
-              <div className="design-life-readout">
-                Expected crossing at{" "}
-                <strong>{fmt(activePred.failure_time)}{unit ? ` ${unit}` : ""}</strong>.
-                {ftLo != null && ftHi != null && (
-                  <span>
-                    {" "}With <strong>{confPct}%</strong> confidence it crosses between{" "}
-                    <strong>{fmt(ftLo)}</strong> and <strong>{fmt(ftHi)}{unit ? ` ${unit}` : ""}</strong>
-                    {" "}— plan for the earliest, <strong>{fmt(ftLo)}{unit ? ` ${unit}` : ""}</strong>.
-                  </span>
-                )}
-              </div>
-            </>
+          {activePred?.method === "bayesian" ? (
+            <ResultSummary
+              tone={tone}
+              sentence={
+                <>
+                  Expected to cross the limit at <b>{fmt(activePred.failure_time)}{ut}</b>.
+                  {ftLo != null && ftHi != null && (
+                    <>
+                      {" "}With {confPct}% confidence it crosses between {fmt(ftLo)} and {fmt(ftHi)}{ut} — plan
+                      for the earliest, <b>{fmt(ftLo)}{ut}</b>.
+                    </>
+                  )}
+                </>
+              }
+            >
+              {previewBusy ? "Computing…" : <>Remaining life: {rulText(activePred, unit)}</>}
+            </ResultSummary>
+          ) : (
+            activePred && activePred.method !== "error" && (
+              <ResultSummary tone={tone} sentence={<>Remaining life: <b>{rulText(activePred, unit)}</b></>} />
+            )
           )}
 
           <RulChart

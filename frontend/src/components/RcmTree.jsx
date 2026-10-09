@@ -212,9 +212,6 @@ export default function RcmTree({ functions, readOnly, onChange, onEditDecision 
                                 readOnly={readOnly}
                                 onCommit={(text) => updateMode(fn.id, fail.id, mode.id, { text })}
                               />
-                              {mode.consequence && (
-                                <Chip>{CONSEQUENCE_LABEL[mode.consequence]}</Chip>
-                              )}
                               <DecisionChip
                                 mode={mode}
                                 readOnly={readOnly}
@@ -229,9 +226,17 @@ export default function RcmTree({ functions, readOnly, onChange, onEditDecision 
                                 </div>
                               )}
                             </div>
-                            {(mode.effects || mode.notes) && (
+                            {(mode.consequence || mode.effects || mode.notes) && (
                               <div className="mode-detail">
-                                {mode.effects && <span><b>Effects</b> {mode.effects}</span>}
+                                {/* The consequence is plain text: a mode row carries at most two
+                                    chips, the decision and its evidence status (#311). */}
+                                {(mode.consequence || mode.effects) && (
+                                  <span>
+                                    {mode.consequence && <span className="mode-cons">{CONSEQUENCE_LABEL[mode.consequence]}</span>}
+                                    {mode.consequence && mode.effects && " · "}
+                                    {mode.effects && <><b>Effects</b> {mode.effects}</>}
+                                  </span>
+                                )}
                                 {mode.notes && <span className="mode-notes">{mode.notes}</span>}
                               </div>
                             )}
