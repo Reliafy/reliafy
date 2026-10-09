@@ -1,6 +1,5 @@
 import Plot from "./Plot.jsx";
 import { fitLine } from "../plotTheme.js";
-import MethodTag from "./MethodTag.jsx";
 import { unitInText } from "./unitText.js";
 
 // As of now with the simulation (#220, #221): the time to the next system
@@ -27,7 +26,7 @@ export default function RbdNextFailure({ result, unit }) {
   return (
     <div className="rbd-next-failure">
       <div className="ds-section-h">
-        Next system failure from now <MethodTag method="simulated" />
+        Next system failure from now
       </div>
       {nf.down_now > 0 && (
         <p className="muted-line" style={{ margin: 0 }}>
