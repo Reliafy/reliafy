@@ -49,6 +49,51 @@ def stats(session=Depends(get_session), user: dict = Depends(get_current_user)) 
     })
 
 
+_SIGNUPS_SHOWN = 20
+
+
+def _aware(ts):
+    """Mongo hands back naive UTC datetimes; make them comparable."""
+    if ts is None:
+        return None
+    return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+
+
+@router.get("/signups")
+def signups(
+    days: int = 7,
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """New accounts in the last ``days`` days: how many, and the latest few
+    with only what an operator needs to follow up — email, plan, when they
+    joined and when they were last active (their latest sign-in or usage
+    event, which is kept 90 days)."""
+    if not billing_service.is_admin_user(user):
+        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
+    days = max(1, min(int(days or 7), 365))
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    query = {"created_at": {"$gte": since}}
+    count = session.users.count_documents(query)
+    docs = session.users.find(
+        query, {"email": 1, "plan": 1, "plan_until": 1, "created_at": 1, "last_login": 1},
+    ).sort("created_at", -1).limit(_SIGNUPS_SHOWN)
+    rows = []
+    for d in docs:
+        seen = [_aware(d.get("last_login"))]
+        latest = session.usage_events.find_one({"uid": d["_id"]}, {"ts": 1}, sort=[("ts", -1)])
+        if latest:
+            seen.append(_aware(latest.get("ts")))
+        seen = [t for t in seen if t is not None]
+        rows.append({
+            "email": d.get("email"),
+            "plan": billing_service.active_plan({"plan": d.get("plan", "free"), "plan_until": d.get("plan_until")}),
+            "joined": _aware(d.get("created_at")).isoformat() if d.get("created_at") else None,
+            "last_active": max(seen).isoformat() if seen else None,
+        })
+    return JSONResponse(content={"days": days, "count": count, "signups": rows})
+
+
 @router.get("/traffic")
 def traffic(
     days: int = 14,

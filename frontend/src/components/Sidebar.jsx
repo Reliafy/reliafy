@@ -12,7 +12,7 @@ const SignOutIcon = () => (
 );
 
 // Two-letter avatar from a display name or email.
-function initials(user) {
+export function initials(user) {
   const base = (user?.displayName || user?.email || "?").trim();
   const parts = base.split(/[\s@.]+/).filter(Boolean);
   const letters = parts.length >= 2 ? parts[0][0] + parts[1][0] : base.slice(0, 2);
@@ -169,7 +169,9 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 export default function Sidebar({ collapsed, onToggle, phone = false, open = false, onClose }) {
   const asideRef = useRef(null);
   const { user, signOut } = useAuth();
-  const { billing, reliability_agent: agentEnabled } = useAppConfig();
+  const { ai, billing, reliability_agent: agentEnabled } = useAppConfig();
+  // Credits only buy AI use; without it the page is plain billing.
+  const billingLabel = ai || agentEnabled ? "Billing & credits" : "Billing";
   // The Reliability Agent surface is behind a feature flag (hidden until ready).
   const items = ITEMS.filter((it) => it.to !== "/agent" || agentEnabled);
   const navigate = useNavigate();
@@ -325,10 +327,10 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
         <NavLink
           to="/billing"
           className={({ isActive }) => "side-item" + (isActive ? " active" : "")}
-          title="Billing & credits"
+          title={billingLabel}
         >
           <span className="side-icon"><BillingIcon /></span>
-          {!collapsed && <span className="side-label">Billing &amp; credits</span>}
+          {!collapsed && <span className="side-label">{billingLabel}</span>}
         </NavLink>
       )}
       <a

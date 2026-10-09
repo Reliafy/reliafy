@@ -41,6 +41,7 @@ const ApiDocsPage = lazy(() => import("./views/ApiDocsPage.jsx"));
 const ReliabilityAgent = lazy(() => import("./views/ReliabilityAgent.jsx"));
 const AdminPage = lazy(() => import("./views/AdminPage.jsx"));
 import { useAppConfig } from "./ConfigProvider.jsx";
+import { unmatchedRoute } from "./appConfig.js";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
 
 // The authenticated app shell. This module is code-split: App.jsx
@@ -110,7 +111,8 @@ export default function AppShell() {
   }, []);
   // Deployment capabilities: hide the assistant and billing entirely when this
   // deployment can't offer them (e.g. an open-source self-hosted instance).
-  const { ai, billing, reliability_agent: agentEnabled } = useAppConfig();
+  const config = useAppConfig();
+  const { ai, billing, reliability_agent: agentEnabled } = config;
   // Keying the routed content on the workspace remounts every view on switch,
   // so all lists refetch under the new X-Workspace-Id without any per-view code.
   const { workspace } = useWorkspace();
@@ -190,7 +192,14 @@ export default function AppShell() {
             <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
             <Route path="/admin" element={<AdminPage />} />
             {billing && <Route path="/billing" element={<BillingPage />} />}
-            <Route path="*" element={<Navigate to="/modelling" replace />} />
+            {/* Until the config loads, /billing and /agent aren't registered:
+                wait rather than redirect a direct load of them. */}
+            <Route
+              path="*"
+              element={unmatchedRoute(config) === "redirect"
+                ? <Navigate to="/modelling" replace />
+                : <div className="card empty view-loading">Loading…</div>}
+            />
           </Routes>
           </Suspense>
           </ErrorBoundary>
