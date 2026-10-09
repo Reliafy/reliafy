@@ -1539,6 +1539,11 @@ export function getAdminStats() {
   return request("/api/admin/stats");
 }
 
+// Operator-only: new accounts in the last `days` days, and the latest few.
+export function getAdminSignups(days = 7) {
+  return request(`/api/admin/signups?days=${days}`);
+}
+
 // Operator-only first-party traffic analytics.
 export function getAdminTraffic(days = 14) {
   return request(`/api/admin/traffic?days=${days}`);
