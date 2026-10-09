@@ -21,8 +21,9 @@ export function graphSignature(graph) {
   });
 }
 
-// Renders the outcome of a validate call: a green pass, or a red panel that
-// explains what makes the RBD invalid, and notes which nodes are simulated.
+// Renders the outcome of a validate call: a green pass, an amber pass that
+// carries warnings (never green, #305), or a red panel that explains what
+// makes the RBD invalid, and notes which nodes are simulated.
 // ``stale`` means the diagram has changed since this result was produced.
 export default function ValidationPanel({ validation, stale }) {
   if (!validation) return null;
@@ -61,6 +62,9 @@ export default function ValidationPanel({ validation, stale }) {
     non_analytic_nodes: nonAnalytic,
   } = validation;
   const nonAnalyticList = Object.entries(nonAnalytic || {});
+  const hasWarnings = !!warnings && warnings.length > 0;
+  const okClass = "rbd-check " + (hasWarnings ? "rbd-check-caveat" : "rbd-check-ok");
+  const okIcon = hasWarnings ? "!" : "✓";
 
   // A repairable diagram (#154): how each availability figure is computed.
   const routes = validation.availability_routes;
@@ -68,8 +72,8 @@ export default function ValidationPanel({ validation, stale }) {
     const overTime = routes.over_time?.route;
     const exactOverTime = overTime === "exact" || overTime === "numerical";
     return (
-      <div className="rbd-check rbd-check-ok">
-        <span className="rbd-check-icon">✓</span>
+      <div className={okClass}>
+        <span className="rbd-check-icon">{okIcon}</span>
         <div>
           <strong>
             {exactOverTime
@@ -101,8 +105,8 @@ export default function ValidationPanel({ validation, stale }) {
   // is worth saying but is not a problem.
   if (valid) {
     return (
-      <div className="rbd-check rbd-check-ok">
-        <span className="rbd-check-icon">✓</span>
+      <div className={okClass}>
+        <span className="rbd-check-icon">{okIcon}</span>
         <div>
           <strong>
             {analytic ? "Valid and analytically solvable." : "Valid — estimated by simulation."}
