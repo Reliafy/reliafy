@@ -1,0 +1,158 @@
+/* Datasets: the list, a dataset's page, Compare groups and the New-dataset
+   flow. Shared pieces (page header, cards, preview table, lib rows) are in
+   index.css; this file holds only what is particular to datasets. */
+
+/* ---- List ------------------------------------------------------------------ */
+/* "Used by 2 models": a quiet fact, not a figure to compare. */
+.ds-used {
+  font-size: var(--fs-13);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ds-row-link { display: inline-flex; color: inherit; text-decoration: none; }
+.ds-row-link:focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--r-sm); }
+.ds-lib .lib-name + .chip { margin-left: var(--sp-2); }
+/* Delete shows on the row you point at (or focus); a touch screen, with no
+   hover, always shows it. */
+@media (hover: hover) {
+  .ds-lib .lib-row .act.del { opacity: 0; }
+  .ds-lib .lib-row:hover .act.del,
+  .ds-lib .lib-row:focus-within .act.del { opacity: 1; }
+}
+
+/* ---- Dataset page ------------------------------------------------------------ */
+/* Every preview row shows: the page has room, so no inner scroller. */
+.preview-wrap.ds-preview {
+  max-height: none;
+  margin-bottom: 0;
+}
+/* Each column's type, under its name. */
+.preview-table .pv-type {
+  display: block;
+  font-size: var(--fs-12);
+  font-weight: 400;
+  color: var(--muted);
+}
+/* A long model name shortens with an ellipsis instead of running into its chip. */
+.ds-model-row .ds-model-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* "You already had this data": one quiet line under the title. */
+.ds-reused {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  font-size: var(--fs-14);
+  color: var(--ink);
+}
+
+/* ---- Compare groups: the answer and plot left, the inputs on the right ------- */
+.cg-card { margin-top: var(--sp-5); }
+.cg-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-3);
+}
+.cg-card h2 { display: flex; align-items: center; margin: 0; font-size: var(--fs-16); }
+.cg-about { margin: 0 0 var(--sp-4); max-width: 72ch; }
+.cg-warn { margin: 0 0 var(--sp-4); }
+.cg-panel {
+  display: flex;
+  gap: var(--sp-5);
+  align-items: flex-start;
+}
+.cg-main { flex: 1; min-width: 0; }
+.cg-main > .error { margin-top: 0; }
+.cg-aside {
+  flex: 0 0 248px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surf);
+}
+.cg-aside .calc-t { min-width: 0; }
+.cg-aside .calc-t input,
+.cg-aside .sel-trigger { width: 100%; box-sizing: border-box; }
+.cg-aside .cg-invert { margin-top: calc(-1 * var(--sp-1)); font-weight: 500; font-size: var(--fs-13); }
+.cg-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+.cg-run { width: 100%; justify-content: center; margin-top: var(--sp-1); }
+.cg-empty {
+  margin: 0;
+  padding: var(--sp-6) var(--sp-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+  text-align: center;
+}
+.cg-result > .result-summary:first-child { margin-top: 0; }
+/* "vs [group ▾] (95% CI)": the reference group is chosen in the column head. */
+.cg-ref { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.cg-ref .sel-trigger { padding: 2px 8px; font-size: var(--fs-12); font-weight: 600; }
+
+@media (max-width: 860px) {
+  /* Settings, then the answer, on a narrow screen. */
+  .cg-panel { flex-direction: column; align-items: stretch; }
+  .cg-aside { flex-basis: auto; order: -1; }
+}
+@media (max-width: 640px) {
+  .cg-run { min-height: 44px; }
+}
+
+/* ---- New dataset ----------------------------------------------------------------- */
+/* The one primary sits on the right, with or without a Back beside it. */
+.ds-foot-primary { margin-left: auto; }
+/* Its previews show their five rows whole, not in a scroller. */
+.ds-new .preview-wrap { max-height: none; margin-bottom: 0; }
+.ds-new-alt {
+  margin: 0;
+  font-size: var(--fs-14);
+  color: var(--muted);
+  text-align: center;
+}
+.ds-file-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-14);
+  color: var(--ink);
+}
+.ds-file-line .ds-file-name { font-weight: 600; overflow-wrap: anywhere; }
+.ds-file-line .muted { color: var(--muted); }
+/* Form entry: a plain label over each list, its count on the right. */
+.ds-flabel {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--ink);
+}
+.ds-flabel .ds-listcount { padding: 0; }
+.ds-listcount.bad { color: var(--danger); font-weight: 600; }
+.ds-fieldwrap { display: flex; flex-direction: column; gap: var(--sp-1); }
+.ds-fieldwrap .ds-listinput {
+  padding-inline: 10px;
+  font-family: inherit;
+  font-size: var(--fs-14);
+  font-variant-numeric: tabular-nums;
+}
+.ds-pair > .ds-fieldwrap { flex: 1; min-width: 0; }
+.ds-fieldwrap.disabled .ds-flabel { color: var(--muted); }
+.ds-more { font-size: var(--fs-14); }
+.ds-more > summary { cursor: pointer; color: var(--acc); font-weight: 500; width: max-content; }
+.ds-more[open] > summary { margin-bottom: var(--sp-2); }
+.ds-more-body { display: flex; flex-direction: column; gap: var(--sp-2); }

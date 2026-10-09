@@ -42,7 +42,8 @@ export function SampleGroups({ rows, cols, render }) {
   );
 }
 
-// The actions cell every list row ends with: Open, any extras, then Delete
+// The actions cell every list row ends with: Open (left out when there's no
+// onOpen, e.g. where the row click already opens), any extras, then Delete
 // (which, for a shared sample or an item shared with you, hides it from your
 // view). Clicks don't reach the row's own open handler.
 export function RowActions({ item, onOpen, onDelete, children }) {
@@ -53,9 +54,11 @@ export function RowActions({ item, onOpen, onDelete, children }) {
   return (
     <td className="lib-actions">
       <div className="lib-acts">
-        <button className="act act-open" title="Open" aria-label="Open" onClick={stop(onOpen)}>
-          <OpenIcon />
-        </button>
+        {onOpen && (
+          <button className="act act-open" title="Open" aria-label="Open" onClick={stop(onOpen)}>
+            <OpenIcon />
+          </button>
+        )}
         {children}
         {onDelete && (
           <button

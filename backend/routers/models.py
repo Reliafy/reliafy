@@ -99,21 +99,36 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Failed to build dataset preview: %s", exc)
         preview = {"columns": [c["name"] for c in (dataset.columns or [])], "preview": [], "n_rows": dataset.n_rows}
+    try:
+        profile = datasets_service.profile(dataset)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to profile dataset: %s", exc)
+        profile = {"distinct": {}, "repeated_units": None}
+    # ALT, recurrent and degradation models fitted to it (life models are
+    # "models", with their distribution).
+    others = [
+        {"kind": d["kind"], "collection": d["collection"], "id": d["id"], "name": d["name"],
+         "is_sample": samples_service.is_sample(d["owner_id"])}
+        for d in datasets_service.dependents_for_dataset(session, dataset.id, ctx.read_owners, ctx.hidden)
+        if d["collection"] != "models"
+    ]
     return {
         **summary,
+        "n_models": len(models) + len(others),
         "preview": preview.get("preview", []),
         "preview_columns": preview.get("columns", []),
         "n_unique": preview.get("n_unique"),
         "models": [_model_summary(m, ctx) for m in models],
+        "other_models": others,
+        "profile": profile,
     }
 
 
 @router.get("/datasets")
 def list_datasets(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
     shared_by = shares_service.shared_by_map(session, ctx.uid, "datasets") if ctx.is_personal else {}
-    counts: dict[str, int] = {}
-    for m in models_service.list_models(session, ctx.list_owners, ctx.hidden):
-        counts[m.dataset_id] = counts.get(m.dataset_id, 0) + 1
+    # Models of every kind fitted to each dataset ("Used by N models").
+    counts = datasets_service.dependent_counts(session, ctx.read_owners, ctx.hidden)
     return {
         "datasets": [
             {**_dataset_summary(d, ctx, n_models=counts.get(d.id, 0)),
@@ -163,9 +178,9 @@ def upload_dataset(
         if session.datasets.find_one({"checksum": digest, "owner_id": ctx.write_owner}) is None:
             return denied
     try:
-        dataset = datasets_service.create_dataset(
-            session, name or file.filename or "dataset.csv", contents, ctx.write_owner,
-            no_header=no_header,
+        dataset, reused = datasets_service.create_or_reuse(
+            session, (name or "").strip() or datasets_service.default_name(file.filename), contents,
+            ctx.write_owner, no_header=no_header,
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
@@ -174,7 +189,7 @@ def upload_dataset(
         return JSONResponse(
             status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."}
         )
-    return JSONResponse(content=_dataset_detail(dataset, session, ctx))
+    return JSONResponse(content=_created(dataset, reused, session, ctx))
 
 
 @router.post("/datasets/paste")
@@ -198,7 +213,7 @@ def paste_dataset(
         if session.datasets.find_one({"checksum": digest, "owner_id": ctx.write_owner}) is None:
             return denied
     try:
-        dataset = datasets_service.create_dataset(
+        dataset, reused = datasets_service.create_or_reuse(
             session, (name or "").strip() or "Pasted data", csv_bytes, ctx.write_owner,
             no_header=no_header,
         )
@@ -207,6 +222,39 @@ def paste_dataset(
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store pasted dataset")
         return JSONResponse(status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."})
+    return JSONResponse(content=_created(dataset, reused, session, ctx))
+
+
+def _created(dataset, reused: bool, session, ctx: AccessCtx) -> dict:
+    """A create's response: the dataset, plus ``reused`` when identical data
+    was already saved (the existing dataset came back, under its own name)."""
+    return {**_dataset_detail(dataset, session, ctx), **({"reused": True} if reused else {})}
+
+
+@router.patch("/datasets/{dataset_id}")
+def rename_dataset(
+    dataset_id: str,
+    name: str = Body(..., embed=True),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Rename a dataset (the data never changes)."""
+    name = (name or "").strip()
+    if not name:
+        return JSONResponse(status_code=422, content={"detail": "A dataset needs a name."})
+    if len(name) > 200:
+        return JSONResponse(status_code=422, content={"detail": "That name is too long (200 characters at most)."})
+    existing, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+    if existing is None or existing.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    denial = access_service.write_denial(ctx, existing.owner_id)
+    if denial:
+        status, payload = denial
+        return JSONResponse(status_code=status, content=payload)
+    dataset = datasets_service.update_details(session, dataset_id, ctx.write_owner, name=name)
+    if dataset is None:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    access_service.stamp_editor(session, "datasets", dataset.id, ctx)
     return JSONResponse(content=_dataset_detail(dataset, session, ctx))
 
 
