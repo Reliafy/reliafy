@@ -7449,7 +7449,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   background: var(--cat-violet-t);
   box-shadow: var(--shadow-card);
 }
-.react-flow__node.selected .rbd-junction::before { box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.3); }
+.react-flow__node.selected .rbd-junction::before { box-shadow: var(--ring-sel); }
 .rbd-junction .rbd-status { top: calc(50% - 21px); }
 
 /* Fit-method picker in the advanced options, and the warning a fitter emits
