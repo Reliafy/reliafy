@@ -3,6 +3,7 @@ import { getAdminUsage } from "../api.js";
 import Plot from "./Plot.jsx";
 import { COLORWAY, DANGER, SUBTLE } from "../plotTheme.js";
 import Select from "./Select.jsx";
+import { CardHeader } from "./ui/Card.jsx";
 
 // Product usage for the operator dashboard (GET /api/admin/usage): how the
 // app, MCP and the API are used, and the MCP plan wall — the numbers behind
@@ -108,18 +109,20 @@ export default function UsageSection() {
   }, [days, includeAdmin]);
 
   const header = (
-    <div className="bill-head">
-      <h2 style={{ margin: 0 }}>Product usage</h2>
-      <div className="usage-controls">
-        <label className="usage-check">
-          <input type="checkbox" checked={includeAdmin} onChange={(e) => setIncludeAdmin(e.target.checked)} />
-          Include operator accounts
-        </label>
-        <div style={{ width: 170 }}>
-          <Select value={days} onChange={setDays} options={RANGES} />
+    <CardHeader
+      title="Product usage"
+      actions={
+        <div className="usage-controls">
+          <label className="usage-check">
+            <input type="checkbox" checked={includeAdmin} onChange={(e) => setIncludeAdmin(e.target.checked)} />
+            Include operator accounts
+          </label>
+          <div style={{ width: 170 }}>
+            <Select value={days} onChange={setDays} options={RANGES} />
+          </div>
         </div>
-      </div>
-    </div>
+      }
+    />
   );
 
   if (error) return <div className="card" style={{ marginTop: "1rem" }}>{header}<p className="muted-line">{error}</p></div>;

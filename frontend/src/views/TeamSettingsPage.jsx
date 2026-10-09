@@ -13,6 +13,7 @@ import {
 } from "../api.js";
 import Modal from "../components/Modal.jsx";
 import Chip from "../components/ui/Chip.jsx";
+import { CardHeader } from "../components/ui/Card.jsx";
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -159,9 +160,7 @@ export default function TeamSettingsPage() {
       {error && <div className="card error">{error}</div>}
 
       <div className="card">
-        <div className="bill-head">
-          <h2 style={{ margin: 0 }}>Members</h2>
-        </div>
+        <CardHeader title="Members" />
         {isOwner && (
           <div className="row" style={{ gap: "0.6rem", alignItems: "flex-end", marginBottom: "0.6rem" }}>
             <label className="login-field" style={{ flex: 1, maxWidth: 420 }}>

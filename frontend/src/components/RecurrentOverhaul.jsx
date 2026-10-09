@@ -3,6 +3,7 @@ import Plot from "./Plot.jsx";
 import { fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
 import { recurrentOverhaul } from "../api.js";
 import { unitInText } from "./unitText.js";
+import { CardHeader } from "./ui/Card.jsx";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
@@ -57,10 +58,10 @@ export default function RecurrentOverhaul({ modelId, unit, name = null }) {
 
   return (
     <div className="strategy-tool">
-      <div className="gofh">Optimal overhaul interval</div>
-      <p className="muted-line" style={{ margin: "0.3rem 0 0.6rem" }}>
-        Minimal repair between overhauls; an overhaul restores the system to as-good-as-new.
-      </p>
+      <CardHeader
+        title="Optimal overhaul interval"
+        subtitle="Minimal repair between overhauls; an overhaul restores the system to as-good-as-new."
+      />
       <div className="strategy-form">
         <div className="strategy-costs">
           <label className="calc-t">

@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { getBilling, buyCredits, subscribePro, billingPortal } from "../api.js";
 import { PRO_PRICE } from "../pricing.js";
 import Chip from "../components/ui/Chip.jsx";
+import { CardHeader } from "../components/ui/Card.jsx";
 
 // AI usage is denominated in "credits" — users never see a dollar balance.
 // (Internally 1 credit == 1 cent; only pack purchase prices show as dollars.)
@@ -128,12 +129,14 @@ export default function BillingPage() {
 
       {showCompare && (
         <div className="card bill-card bill-compare">
-          <div className="bill-head">
-            <h2>Free vs Pro</h2>
-            <span className="bill-compare-price">
-              {PRO_PRICE.amount}<span className="bill-compare-per">{PRO_PRICE.per}</span>
-            </span>
-          </div>
+          <CardHeader
+            title="Free vs Pro"
+            actions={
+              <span className="bill-compare-price">
+                {PRO_PRICE.amount}<span className="bill-compare-per">{PRO_PRICE.per}</span>
+              </span>
+            }
+          />
           <div className="bill-compare-wrap">
             <table className="bill-compare-table">
               <thead>
@@ -174,13 +177,15 @@ export default function BillingPage() {
       <div className="bill-grid">
         {/* Plan */}
         <div className="card bill-card">
-          <div className="bill-head">
-            <h2>Plan</h2>
-            <span style={{ display: "inline-flex", gap: 6 }}>
-              {isAdmin && <Chip>Operator</Chip>}
-              <Chip tone={plan === "free" ? "neutral" : "accent"}>{planName}</Chip>
-            </span>
-          </div>
+          <CardHeader
+            title="Plan"
+            actions={
+              <span className="chip-row">
+                {isAdmin && <Chip>Operator</Chip>}
+                <Chip tone={plan === "free" ? "neutral" : "accent"}>{planName}</Chip>
+              </span>
+            }
+          />
           {isAdmin && (
             <p className="muted-line">Operator account — plan limits and AI charges don't apply to you.</p>
           )}
@@ -234,10 +239,10 @@ export default function BillingPage() {
             operators have none. */}
         {data.billing_enabled && !isAdmin && plan === "free" && mcp.period === "month" && mcp.calls_used > 0 && (
           <div className="card bill-card">
-            <div className="bill-head">
-              <h2>Your AI agent (MCP)</h2>
-              <Chip tone={plan === "free" ? "neutral" : "accent"}>{planName}</Chip>
-            </div>
+            <CardHeader
+              title="Your AI agent (MCP)"
+              actions={<Chip tone={plan === "free" ? "neutral" : "accent"}>{planName}</Chip>}
+            />
             <ul className="bill-usage">
               <li>
                 <span>Tool calls this month</span>
@@ -253,10 +258,10 @@ export default function BillingPage() {
         )}
         {data.billing_enabled && isAgent && !isAdmin && mcp.daily_quota != null && (
           <div className="card bill-card">
-            <div className="bill-head">
-              <h2>Your AI agent (MCP)</h2>
-              <Chip tone={plan === "free" ? "neutral" : "accent"}>{planName}</Chip>
-            </div>
+            <CardHeader
+              title="Your AI agent (MCP)"
+              actions={<Chip tone={plan === "free" ? "neutral" : "accent"}>{planName}</Chip>}
+            />
             <ul className="bill-usage">
               <li>
                 <span>Tool calls today</span>
@@ -280,7 +285,7 @@ export default function BillingPage() {
 
         {/* Credits */}
         <div className="card bill-card">
-          <div className="bill-head"><h2>AI credits</h2><span className="bill-balance">{credits(data.credit_cents)}<span className="bill-balance-unit">credits</span></span></div>
+          <CardHeader title="AI credits" actions={<span className="bill-balance">{credits(data.credit_cents)}<span className="bill-balance-unit">credits</span></span>} />
           <p className="muted-line">The assistant draws on your credit balance as you use it. Credits never expire.</p>
           <div className="bill-packs">
             {(data.packs || []).map((p) => (

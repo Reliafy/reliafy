@@ -9,6 +9,7 @@ import { ShareButton } from "../components/ShareDialog.jsx";
 import { getFleet, putFleetItems, renameFleet } from "../api.js";
 import { toCsv } from "../csv.js";
 import Chip from "../components/ui/Chip.jsx";
+import { CardHeader } from "../components/ui/Card.jsx";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -396,12 +397,10 @@ export default function FleetForecastPage() {
       )}
 
       <div className="card" style={{ marginTop: "1rem" }}>
-        <div className="bill-head">
-          <h2 style={{ margin: 0 }}>Items</h2>
-          {!readOnly && (
-            <button className="secondary" onClick={addItem}>+ Add item</button>
-          )}
-        </div>
+        <CardHeader
+          title="Items"
+          actions={!readOnly && <button className="secondary sm" onClick={addItem}>+ Add item</button>}
+        />
         {items.length === 0 ? (
           <p className="muted-line">No items yet — add each in-service unit with its accumulated use.</p>
         ) : (

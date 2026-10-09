@@ -3,6 +3,7 @@ import Modal from "./Modal.jsx";
 import { createTrackedItem, addTrackedMeasurement } from "../api.js";
 import { unitInText } from "./unitText.js";
 import Chip from "./ui/Chip.jsx";
+import { CardHeader } from "./ui/Card.jsx";
 
 const fmt = (v, digits = 0) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -38,21 +39,18 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
 
   return (
     <div className="card" style={{ marginTop: "1rem" }}>
-      <div className="bill-head">
-        <h2 style={{ margin: 0 }}>Tracked items</h2>
-        {!(model?.read_only && !model?.is_sample) && (
-        <button onClick={() => setRegistering(true)}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Register item
-        </button>
+      <CardHeader
+        title="Tracked items"
+        subtitle="Your monitored assets. Add measurements as inspections happen — the prediction updates each time."
+        actions={!(model?.read_only && !model?.is_sample) && (
+          <button className="secondary sm" onClick={() => setRegistering(true)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Register item
+          </button>
         )}
-      </div>
-      <p className="muted-line">
-        Your monitored assets. Add measurements as inspections happen — the
-        prediction updates each time.
-      </p>
+      />
 
       {items.length === 0 ? (
         <div className="empty" style={{ padding: "1.6rem" }}>

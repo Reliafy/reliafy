@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createFleetAlert, deleteFleetAlert, listFleetAlerts, updateFleetAlert } from "../api.js";
+import { CardHeader } from "./ui/Card.jsx";
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -102,15 +103,15 @@ export default function FleetAlertsCard({ fleetId, version }) {
 
   return (
     <div className="card fleet-alerts" id="alerts" style={{ marginTop: "1rem" }}>
-      <div className="bill-head">
-        <h2 style={{ margin: 0 }}>Alerts</h2>
-        <span className="muted-line">
-          Now: <b>{fmt(data.current_value)}</b> expected failures over {periodsText(data.periods, label)}
-        </span>
-      </div>
-      <p className="muted-line">
-        Checked each time usage for this fleet arrives through the API (Pro). You'll get one email per crossing.
-      </p>
+      <CardHeader
+        title="Alerts"
+        subtitle="Checked each time usage for this fleet arrives through the API (Pro). You'll get one email per crossing."
+        actions={
+          <span className="muted-line" style={{ margin: 0 }}>
+            Now: <b>{fmt(data.current_value)}</b> expected failures over {periodsText(data.periods, label)}
+          </span>
+        }
+      />
 
       {rules.length === 0 ? (
         <p className="muted-line">No alerts yet.</p>

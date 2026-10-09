@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Select from "./Select.jsx";
 import { getRecurrentProjection, runRecurrentProjection } from "../api.js";
 import { unitInText } from "./unitText.js";
+import { CardHeader } from "./ui/Card.jsx";
 
 const fmt = (v, d = 4) =>
   v == null || !Number.isFinite(v)
@@ -94,11 +95,15 @@ export default function RecurrentProjection({ modelId, unit }) {
 
   return (
     <div className="strategy-tool growth-projection">
-      <div className="gofh">Reliability growth projection</div>
-      <p className="muted-line" style={{ margin: "0.3rem 0 0.6rem" }}>
-        The MTBF once the fixes found in the test are in (AMSAA-Crow, MIL-HDBK-189C). Mark each failure mode
-        A (not fixed), BD (fixed after the test, with a fix-effectiveness factor) or BC (fixed during it).
-      </p>
+      <CardHeader
+        title="Reliability growth projection"
+        subtitle={
+          <>
+            The MTBF once the fixes found in the test are in (AMSAA-Crow, MIL-HDBK-189C). Mark each failure mode
+            A (not fixed), BD (fixed after the test, with a fix-effectiveness factor) or BC (fixed during it).
+          </>
+        }
+      />
 
       {!view.available ? (
         <p className="hint">{view.reason}</p>

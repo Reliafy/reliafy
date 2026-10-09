@@ -11,6 +11,7 @@ import {
   getItemPrediction,
 } from "../api.js";
 import Chip from "../components/ui/Chip.jsx";
+import { CardHeader } from "../components/ui/Card.jsx";
 
 const CONFIDENCE_LEVELS = [
   { value: "0.8", label: "80%" },
@@ -189,15 +190,15 @@ export default function StrategyTracking() {
 
       {selected && (
         <div className="card" style={{ marginTop: "1rem" }}>
-          <div className="bill-head">
-            <h2 style={{ margin: 0 }}>
-              {selected.name}
-              {badge && <Chip tone={badge.tone} style={{ marginLeft: 10 }}>{badge.label}</Chip>}
-            </h2>
-            <span className="muted-line" style={{ margin: 0 }}>
-              Remaining life: <b>{rulText(activePred, unit)}</b>
-            </span>
-          </div>
+          <CardHeader
+            title={
+              <>
+                {selected.name}
+                {badge && <Chip tone={badge.tone} style={{ marginLeft: 10 }}>{badge.label}</Chip>}
+              </>
+            }
+            subtitle={<>Remaining life: <b>{rulText(activePred, unit)}</b></>}
+          />
           {selected.prediction?.method === "error" && (
             <p className="muted-line">
               Not enough data to predict yet ({selected.prediction.detail}) — add

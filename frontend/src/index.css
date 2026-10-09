@@ -651,12 +651,9 @@ h6 {
   line-height: 1.5;
 }
 
+/* A tool's inputs sit directly on its card (#310): no nested grey panel. */
 .strategy-form {
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  padding: 1rem;
-  background: var(--surf-2);
-  margin-bottom: 1rem;
+  margin-bottom: var(--sp-5);
 }
 
 .strategy-costs {
@@ -1626,6 +1623,39 @@ header p {
 }
 .card h2:first-child {
   margin-top: 0;
+}
+
+/* CardHeader (#310; components/ui/Card.jsx): title + optional subtitle on the
+   left, actions on the right; they wrap under on a phone. */
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.card-head-text { min-width: 0; }
+.card .card-title,
+.card-title {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: normal;
+}
+.card-sub {
+  margin: 4px 0 0;
+  font-size: var(--fs-13);
+  line-height: 1.45;
+  color: var(--muted);
+  max-width: 68ch;
+}
+.card-head-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
 }
 
 /* Buttons */
@@ -5527,8 +5557,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 @media (max-width: 900px) { .bill-grid { grid-template-columns: 1fr; } }
 
 .bill-card { display: flex; flex-direction: column; gap: 12px; }
-.bill-head { display: flex; align-items: center; justify-content: space-between; }
-.bill-head h2 { margin: 0; font-size: var(--fs-16); }
 
 
 .bill-balance { font-size: var(--fs-20); font-weight: 600; font-variant-numeric: tabular-nums; }
