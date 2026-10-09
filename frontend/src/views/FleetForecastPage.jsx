@@ -124,7 +124,7 @@ export default function FleetForecastPage() {
       : repairable ? `/modelling/recurrent/${fleet.model_id}` : `/modelling/m/${fleet.model_id}`);
   const single = (settings.method || "renewals") === "single";
   const showService = single && !repairable && !blank(settings.warranty_periods);
-  const itemName = Object.fromEntries(items.map((it) => [it.id, it.name]));
+  const nameById = Object.fromEntries(items.map((it) => [it.id, it.name]));
   // "Which items are at risk": the five most likely to fail (first failures).
   const atRisk = forecast.status === "ok" && forecast.method === "single" && !dirty
     ? [...(forecast.per_item || [])].filter((r) => r.prob_any > 0)
@@ -507,7 +507,7 @@ export default function FleetForecastPage() {
           <ol className="fleet-risk-list">
             {atRisk.map((r) => (
               <li key={r.id}>
-                <span className="fleet-risk-name">{itemName[r.id] || r.id}</span>
+                <span className="fleet-risk-name">{nameById[r.id] || r.id}</span>
                 <span className="fleet-risk-p">{(r.prob_any * 100).toFixed(r.prob_any < 0.1 ? 1 : 0)}%</span>
                 {r.covariates && Object.keys(r.covariates).length > 0 && (
                   <span className="hint fleet-risk-cond">
