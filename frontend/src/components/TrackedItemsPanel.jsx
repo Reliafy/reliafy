@@ -4,6 +4,7 @@ import { createTrackedItem, addTrackedMeasurement } from "../api.js";
 import { unitInText } from "./unitText.js";
 import Chip from "./ui/Chip.jsx";
 import { CardHeader } from "./ui/Card.jsx";
+import { PlusIcon } from "./LibRows.jsx";
 
 const fmt = (v, digits = 0) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -44,10 +45,7 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
         subtitle="Your monitored assets. Add measurements as inspections happen — the prediction updates each time."
         actions={!(model?.read_only && !model?.is_sample) && (
           <button className="secondary sm" onClick={() => setRegistering(true)}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            Register item
+            <PlusIcon /> Register item
           </button>
         )}
       />
@@ -79,12 +77,8 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
                     className={"lib-row" + (selectedId === it.id ? " selected-row" : "")}
                     onClick={() => onSelect(it.id)}
                   >
-                    <td>
-                      <div className="lib-name">
-                        {it.name}
-                        {it.is_sample && <Chip>Sample</Chip>}
-                      </div>
-                    </td>
+                    {/* No Sample chip: the page is marked; read-only rows have no actions. */}
+                    <td><div className="lib-name">{it.name}</div></td>
                     <td><Chip tone={badge.tone}>{badge.label}</Chip></td>
                     <td className="lib-n">{rulText(pred, unit)}</td>
                     <td className="lib-n">
@@ -96,25 +90,27 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
                     <td className="lib-actions">
                       <div className="lib-acts">
                         {!(it.read_only ?? it.is_sample) && (
-                          <button
-                            className="act"
-                            title="Add measurement"
-                            onClick={(e) => { e.stopPropagation(); setMeasuring(it); }}
-                          >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M12 5v14M5 12h14" />
-                            </svg>
-                          </button>
+                          <>
+                            <button
+                              className="act"
+                              title="Add measurement"
+                              aria-label="Add measurement"
+                              onClick={(e) => { e.stopPropagation(); setMeasuring(it); }}
+                            >
+                              <PlusIcon />
+                            </button>
+                            <button
+                              className="act del"
+                              title="Delete item"
+                              aria-label="Delete item"
+                              onClick={(e) => { e.stopPropagation(); onDelete(it); }}
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
+                              </svg>
+                            </button>
+                          </>
                         )}
-                        <button
-                          className="act del"
-                          title={it.is_sample ? "Hide sample item" : "Delete item"}
-                          onClick={(e) => { e.stopPropagation(); onDelete(it); }}
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
-                          </svg>
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -258,24 +254,25 @@ function RegisterItemModal({ model, fleetId, onClose, onCreated }) {
                onChange={(e) => setName(e.target.value)} />
       </label>
 
-      <p className="muted-line" style={{ marginBottom: "0.4rem" }}>
-        Initial measurements{unit || mUnit ? ` (time in ${unit || "?"}, value in ${mUnit || "?"})` : ""}:
-      </p>
-      {rows.map((r, idx) => (
-        <div className="row" key={idx} style={{ gap: "0.6rem", marginTop: "0.35rem" }}>
-          <input type="number" step="any" placeholder="time" value={r.t}
-                 onChange={(e) => setRow(idx, "t", e.target.value)} style={{ flex: 1 }} />
-          <input type="number" step="any" placeholder="measurement" value={r.y}
-                 onChange={(e) => setRow(idx, "y", e.target.value)} style={{ flex: 1 }} />
-        </div>
-      ))}
+      <div className="trk-readings" role="group" aria-label="Initial measurements">
+        <span className="trk-readings-h" id="trk-reg-t">Time{unit ? ` (${unit})` : ""}</span>
+        <span className="trk-readings-h" id="trk-reg-y">Measurement{mUnit ? ` (${mUnit})` : ""}</span>
+        {rows.map((r, idx) => (
+          <div className="login-field trk-readings-row" key={idx}>
+            <input type="number" step="any" value={r.t} aria-labelledby="trk-reg-t"
+                   onChange={(e) => setRow(idx, "t", e.target.value)} />
+            <input type="number" step="any" value={r.y} aria-labelledby="trk-reg-y"
+                   onChange={(e) => setRow(idx, "y", e.target.value)} />
+          </div>
+        ))}
+      </div>
       <button
         type="button"
-        className="secondary"
-        style={{ marginTop: "0.6rem" }}
+        className="secondary sm"
+        style={{ marginTop: "var(--sp-3)" }}
         onClick={() => setRows((rs) => [...rs, { t: "", y: "" }])}
       >
-        + Add measurement
+        <PlusIcon /> Add measurement
       </button>
 
       {error && <div className="error">{error}</div>}

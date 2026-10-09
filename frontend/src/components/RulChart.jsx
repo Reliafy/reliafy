@@ -31,9 +31,15 @@ export default function RulChart({ item, threshold, unit, measurementUnit }) {
     name: "Measurements",
   }));
 
-  // The failure threshold: red, it is where the item has failed.
+  // The failure threshold: red, it is where the item has failed, and labelled.
   const shapes = [referenceShape({ y: threshold, line: { color: DANGER, width: 1.5 } })];
   const annotations = [];
+  if (threshold != null) {
+    annotations.push({
+      xref: "paper", x: 0, y: threshold, xanchor: "left", yanchor: "bottom", showarrow: false,
+      text: `Limit ${threshold}${measurementUnit ? ` ${measurementUnit}` : ""}`, font: { color: DANGER },
+    });
+  }
 
   const [lo, hi] = pred.failure_time_interval || [null, null];
   if (lo !== null && hi !== null) {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import TrackedItemsPanel, { healthBadge, rulText } from "../components/TrackedItemsPanel.jsx";
+import { unitInText } from "../components/unitText.js";
 import RulChart from "../components/RulChart.jsx";
 import Select from "../components/Select.jsx";
 import {
@@ -14,7 +15,6 @@ import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import ResultSummary from "../components/ui/ResultSummary.jsx";
-import { unitInText } from "../components/unitText.js";
 import { itemName } from "../components/LibRows";
 
 const CONFIDENCE_LEVELS = [
@@ -107,10 +107,7 @@ export default function StrategyTracking() {
   };
 
   const onDeleteItem = async (it) => {
-    const msg = it.is_sample
-      ? `Remove the sample item “${it.name}” from your view?`
-      : `Delete tracked item “${it.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!window.confirm(`Delete tracked item “${it.name}”?`)) return;
     await deleteTrackedItem(it.model_id, it.id);
     refresh();
   };
@@ -145,7 +142,8 @@ export default function StrategyTracking() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Fleet", to: "/fleet" }, { label: "Degradation tracking", to: "/fleet/tracking" }]}
+        className="trk-header"
+        crumbs={[{ label: "Fleet" }, { label: "Degradation tracking", to: "/fleet/tracking" }]}
         title={itemName(fleet)}
         badges={fleet.is_sample && <Chip>Sample</Chip>}
         meta={
@@ -153,9 +151,10 @@ export default function StrategyTracking() {
             {model ? (
               <>
                 Against{" "}
-                <Link to={`/modelling/degradation/${model.id}`} className="evidence-link">{model.name}</Link>
-                {" "}— {model.path_model} degradation toward {model.threshold}
-                {mUnit ? ` ${mUnit}` : ""}{unit ? ` · time in ${unit}` : ""}
+                <Link to={`/modelling/degradation/${model.id}`} className="evidence-link">
+                  {itemName({ name: model.name, is_sample: fleet.is_sample || String(model.id).startsWith("sample-") })}
+                </Link>
+                {" "}· limit {model.threshold}{mUnit ? ` ${mUnit}` : ""}{unit ? ` · time in ${unitInText(unit)}` : ""}
               </>
             ) : (
               "The linked degradation model is unavailable."
@@ -165,16 +164,16 @@ export default function StrategyTracking() {
         }
         id={fleet.id}
         menu={!fleet.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
-      />
+      >
+        {fleet.is_sample && (
+          <div className="ph-meta">
+            A shared sample: items you register here are yours. For real assets,{" "}
+            <Link to="/fleet/tracking" className="evidence-link">create your own fleet</Link>.
+          </div>
+        )}
+      </PageHeader>
 
       {error && <div className="card error">{error}</div>}
-      {fleet.is_sample && (
-        <div className="card note">
-          This is a shared sample fleet — items you register here are yours but
-          live alongside the sample. For real assets,{" "}
-          <Link to="/fleet/tracking">create your own fleet</Link>.
-        </div>
-      )}
 
       {panelModel && (
         <TrackedItemsPanel
@@ -191,12 +190,7 @@ export default function StrategyTracking() {
       {selected && (
         <div className="card" style={{ marginTop: "1rem" }}>
           <CardHeader
-            title={
-              <>
-                {selected.name}
-                {badge && <Chip tone={badge.tone} style={{ marginLeft: 10 }}>{badge.label}</Chip>}
-              </>
-            }
+            title={selected.name}
             actions={activePred?.method === "bayesian" && (
               <label className="trk-conf">
                 <span>Confidence</span>
@@ -228,7 +222,7 @@ export default function StrategyTracking() {
                 </>
               }
             >
-              {previewBusy ? "Computing…" : <>Remaining life: {rulText(activePred, unit)}</>}
+              {previewBusy && "Computing…"}
             </ResultSummary>
           ) : (
             activePred && activePred.method !== "error" && (
