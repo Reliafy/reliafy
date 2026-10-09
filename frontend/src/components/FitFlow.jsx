@@ -336,6 +336,33 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     }
   };
 
+  // The fit-statistics dialog's comparison (#293): Best fit's ranking on the
+  // same data and options, and a refit with the distribution picked from it.
+  const compareFit = () =>
+    fitModel("best", file, mapping, {
+      unit, ...(datasetId ? { datasetId } : {}),
+      fitOptions: { offset: fitOpts.offset, zi: fitOpts.zi, lfp: fitOpts.lfp },
+    }).then((res) => res.selection);
+  // A fit with options of its own (a fixed β, say) isn't swapped for a plain one.
+  const ownOptions = Object.values(fitOpts || {}).some(
+    (v) => v && (typeof v !== "object" || Object.keys(v).length > 0));
+  const pickFit = async (id) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fitModel(id, file, mapping, { unit, ...(datasetId ? { datasetId } : {}) });
+      setDistribution(id);
+      setFitOpts({});
+      setResult(res);
+      const src = file?.name || sourceName || "dataset";
+      setName(`${res.distribution} — ${src.replace(/\.csv$/i, "")}`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const onSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
@@ -612,7 +639,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
       {step === 4 && result && (
         <div className="fit-step">
-          <ResultView result={result} split={split} />
+          <ResultView
+            result={result}
+            split={split}
+            compare={result.kind === "distribution" && !hasCovariates ? compareFit : null}
+            onPick={ownOptions ? null : pickFit}
+          />
         </div>
       )}
 
