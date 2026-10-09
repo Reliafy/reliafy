@@ -456,6 +456,14 @@ export function deleteDataset(id) {
   return request(`/api/datasets/${id}`, { method: "DELETE" });
 }
 
+export function renameDataset(id, name) {
+  return request(`/api/datasets/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
 // ---- Saved RBDs ------------------------------------------------------------
 
 export function listRbds() {
