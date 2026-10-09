@@ -252,7 +252,23 @@ export function confidenceAt(path, params, range) {
   });
 }
 
+// B-lives and MTTF with one-sided lower bounds (#288). ``path`` comes from the
+// result payload (functions.life_path); ``body`` is { confidence } or, for the
+// time at a reliability, { reliability: [R], confidence, bound }.
+export function lifeAt(path, body) {
+  return request(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // ---- Saved models ----------------------------------------------------------
+
+// Best fit's ranking of every distribution on a saved model's data (#293).
+export function compareModel(id) {
+  return request(`/api/models/${id}/compare`, { method: "POST" });
+}
 
 export function listModels() {
   return request("/api/models");

@@ -11,6 +11,7 @@ import LifeAside from "./LifeSummary.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { distColor } from "../instrument.js";
 import { formatNumber } from "../format.js";
+import { bestFitSentence, compareRows } from "../lifeResults.js";
 import Chip from "./ui/Chip.jsx";
 
 // The fit statistics open from the panel beside the plot.
@@ -128,7 +129,11 @@ const REGRESSION_TABS = [
 // ``modelId`` (a saved model) lets a regression model saved before its
 // validation scores existed fetch them. ``split`` ({ failed, running, other })
 // is the data's failure / still-running count when the caller has the data.
-export default function ResultView({ result, modelId = null, name = null, split = null }) {
+// ``compare`` (() => Promise<selection>) runs Best fit's comparison on the
+// same data; ``onPick(distributionId)`` refits with another distribution
+// (#293) — both optional.
+export default function ResultView({ result, modelId = null, name = null, split = null, compare = null,
+                                    onPick = null }) {
   if (result.kind === "per_demand") return <PerDemandPanel result={result} />;
 
   const isRegression = result.kind === "regression";
@@ -153,6 +158,9 @@ export default function ResultView({ result, modelId = null, name = null, split 
   // fitting another model in the workspace) reset them for the new model.
   const [calc, setCalc] = useState(() => initCalcState(result.functions));
   const calcNextId = useRef(1);
+  // One confidence for the life card's bounds and the calculator's (#288).
+  const level = Number(calc.ci.level);
+  const setLevel = (v) => setCalc((st) => ({ ...st, ci: { ...st.ci, level: v } }));
   const [prevResult, setPrevResult] = useState(result);
   if (result !== prevResult) {
     setPrevResult(result);
@@ -189,16 +197,10 @@ export default function ResultView({ result, modelId = null, name = null, split 
     : [];
   let selectionNote = null;
   if (bestFit) {
-    const key = result.selection.criterion || "aic";
-    const label = key === "bic" ? "BIC" : key === "aic_c" ? "AICc" : "AIC";
-    const [first, second] = result.selection.candidates;
-    // Mixtures on (#236): the summary says which criterion decided — BIC
-    // between the best mixture and the best single, AIC among the singles.
-    selectionNote = result.selection.summary || (
-      `Selected by lowest ${label} over ${result.selection.candidates.length} candidates` +
-      `${result.selection.include_mixtures ? ", two-mode mixtures included" : ""} — next best: ` +
-      `${second.name} (Δ${label} +${(second[key] - first[key]).toFixed(1)})`
-    );
+    // In words (#293): the best, the ones the data can't tell from it, the
+    // rest. Mixtures on (#236): the summary says which criterion decided.
+    selectionNote = result.selection.summary ||
+      bestFitSentence(compareRows(result.selection.candidates, result.selection.criterion || "aic"));
   }
 
   // Everything the answer card leaves out, folded under Details: parameters
@@ -251,7 +253,7 @@ export default function ResultView({ result, modelId = null, name = null, split 
 
       <div className="tab-panel">
         {tab === "survival" && (
-          <div className="detail-panel">
+          <div className="detail-panel life-panel">
             <div className="plotwrap">
               <SurvivalPlot estimate={result.estimate} unit={result.unit}
                             download={`${name || result.distribution} — survival curve`} />
@@ -260,12 +262,15 @@ export default function ResultView({ result, modelId = null, name = null, split 
           </div>
         )}
         {tab === "plot" && (
-          <div className="detail-panel">
+          <div className="detail-panel life-panel">
             <div className="plotwrap">
               <ProbabilityPlot plot={result.plot} unit={result.unit}
                                download={`${name || result.distribution} — probability plot`} />
             </div>
-            {!isRegression && <LifeAside result={result} split={split} bestFit={bestFit} />}
+            {!isRegression && (
+              <LifeAside result={result} split={split} bestFit={bestFit} level={level} onLevel={setLevel}
+                         compare={compare} onPick={onPick} />
+            )}
           </div>
         )}
         {tab === "calc" && (

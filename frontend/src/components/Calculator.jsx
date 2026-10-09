@@ -5,8 +5,10 @@ import CiNote from "./CiNote.jsx";
 import { useEffect, useRef, useState } from "react";
 import Plot from "./Plot.jsx";
 import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
-import { confidenceAt, evaluateAt } from "../api.js";
+import { confidenceAt, evaluateAt, lifeAt } from "../api.js";
 import { formatNumber, formatPercent } from "../format.js";
+import { boundWords, timeAtValue } from "../lifeResults.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { unitInText } from "./unitText.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
@@ -29,7 +31,12 @@ export function initCalcState(functions) {
     xMin: "", // blank = auto-range from the data
     xMax: "",
     // Confidence bounds config + last-fetched band (keyed to avoid refetching).
-    ci: { level: 95, bound: "two-sided", key: null, data: null, error: null },
+    // 90% one-sided lower by default, as the life card's B-lives (#288).
+    ci: { level: 90, bound: "lower", key: null, data: null, error: null },
+    // "value": a function at a time; "time": the time at a reliability (#288).
+    mode: "value",
+    rTarget: 90, // %, for the time at a reliability
+    tar: { key: null, data: null, error: null }, // last-fetched time at reliability
   };
 }
 
@@ -165,7 +172,13 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const [axisOpen, setAxisOpen] = useState(false);
 
   // State is owned by the parent so it persists across tab switches.
-  const { series, active, t, condAge, ci, xMin, xMax } = state;
+  const { series, t, condAge: condInput, ci, xMin, xMax } = state;
+  const mode = state.mode || "value";
+  const timeMode = mode === "time";
+  const rTarget = state.rTarget ?? 90;
+  // The time at a reliability reads the reliability curve, unconditioned.
+  const active = timeMode ? "sf" : state.active;
+  const condAge = timeMode ? "" : condInput;
   const setSeries = (updater) =>
     setState((st) => ({
       ...st,
@@ -177,6 +190,9 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const setXMin = (v) => setState((st) => ({ ...st, xMin: v }));
   const setXMax = (v) => setState((st) => ({ ...st, xMax: v }));
   const setCi = (patch) => setState((st) => ({ ...st, ci: { ...st.ci, ...patch } }));
+  const setMode = (v) => setState((st) => ({ ...st, mode: v }));
+  const setRTarget = (v) => setState((st) => ({ ...st, rTarget: v }));
+  const setTar = (v) => setState((st) => ({ ...st, tar: v }));
 
   // Manual x-axis limits (blank/invalid = auto). When set — and the model can
   // be re-evaluated — the curves and confidence band are recomputed over the
@@ -206,6 +222,27 @@ export default function Calculator({ functions, unit, params, state, setState, n
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ciValid, active, ciAlpha, ci.bound, confidencePath, xLoNum, xHiNum]);
+
+  // Time at a reliability (#288): the model's own quantile and its bound(s)
+  // from the life path; without one (regression, or parameters only), read
+  // off the curve, with no bound.
+  const lifePath = functions.life_path;
+  const rNum = Number(rTarget);
+  const rValid = rTarget !== "" && rNum > 0 && rNum < 100;
+  const tarBound = ci.bound === "none" ? "lower" : ci.bound;
+  const tarKey = `${rNum}|${ciLevel}|${tarBound}`;
+  const tar = state.tar || {};
+  useEffect(() => {
+    if (!timeMode || !lifePath || !rValid || !(ciLevel > 0 && ciLevel < 100)) return undefined;
+    if (tar.key === tarKey && (tar.data || tar.error)) return undefined;
+    const id = setTimeout(() => {
+      lifeAt(lifePath, { reliability: [rNum / 100], confidence: ciLevel / 100, bound: tarBound })
+        .then((res) => setTar({ key: tarKey, data: res, error: null }))
+        .catch((err) => setTar({ key: tarKey, data: null, error: err.message }));
+    }, 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeMode, lifePath, tarKey, rValid]);
 
   const x = functions.curves.x;
 
@@ -279,6 +316,13 @@ export default function Calculator({ functions, unit, params, state, setState, n
   // Per-series curves, conditioned on the survived age when set.
   const views = series.map((s) => view(s.curves));
 
+  // The time at the target reliability for each series, and (one series with
+  // a life path) the model's exact value with its bound(s).
+  const tarPoint = timeMode && lifePath && tar.key === tarKey ? tar.data?.points?.[0] : null;
+  const tarTimes = series.map((s, i) =>
+    i === 0 && tarPoint && !multi ? tarPoint.time : rValid ? timeAtValue(views[i]?.x, views[i]?.sf, rNum / 100) : null
+  );
+
   // Backend flags impossible reliability (sf > 1 from a negative cumulative
   // hazard — additive-hazards models). Surface it rather than hide it.
   const curveWarning = series.map((s) => s.curves?.warning).find(Boolean);
@@ -316,6 +360,10 @@ export default function Calculator({ functions, unit, params, state, setState, n
       type: "scatter",
       connectgaps: false,
     });
+    if (timeMode) {
+      if (tarTimes[i] != null) traces.push({ ...pointMarker(color), x: [tarTimes[i]], y: [rNum / 100] });
+      return;
+    }
     const y = interp(cv.x, cv[active], Number(t));
     if (y != null) {
       traces.push({ ...pointMarker(color), x: [Number(t)], y: [y] });
@@ -350,14 +398,39 @@ export default function Calculator({ functions, unit, params, state, setState, n
       ...(manualX ? { range: xRange, autorange: false } : {}),
     },
     yaxis: { title: { text: activeLabel } },
-    shapes: [referenceShape({ x: Number(t), line: { dash: "dot" } })],
+    shapes: timeMode
+      ? [
+          ...(rValid ? [referenceShape({ y: rNum / 100, line: { dash: "dot" } })] : []),
+          ...(tarTimes[0] != null ? [referenceShape({ x: tarTimes[0], line: { dash: "dot" } })] : []),
+        ]
+      : [referenceShape({ x: Number(t), line: { dash: "dot" } })],
   };
+  const unitWord = unit ? ` ${unitInText(unit)}` : "";
+  const fmtTime = (v) => `${formatNumber(v)}${unitWord}`;
 
   return (
     <div className="calc">
       <div className="calc-body">
         <div className="calc-main">
       {/* The answer, read off the chart; every input sits in the card on the right. */}
+      {timeMode ? (
+        <div className="calc-answer">
+          <span>
+            Time when reliability falls to <b>{rValid ? `${rNum.toLocaleString(undefined, { maximumFractionDigits: 6 })}%` : "—"}</b>
+            {rValid && Number.isInteger(Math.round((100 - rNum) * 1e6) / 1e6) ? ` (the B${100 - rNum} life)` : ""}
+            {multi ? "" : ":"}
+          </span>
+          {!multi && (
+            <span className="calc-answer-value">
+              <b>{tarTimes[0] != null ? fmtTime(tarTimes[0]) : "—"}</b>
+              {ci.bound !== "none" && tarPoint && (() => {
+                const words = boundWords(ciLevel, tar.data.bound, tarPoint.lower, tarPoint.upper, fmtTime);
+                return words ? <span className="calc-answer-ci"> — {words}</span> : null;
+              })()}
+            </span>
+          )}
+        </div>
+      ) : (
       <div className="calc-answer">
         <span>
           {fnLabel(active, meta)} {cond > 0 ? "for a further" : "at"}{" "}
@@ -368,19 +441,22 @@ export default function Calculator({ functions, unit, params, state, setState, n
           <span className="calc-answer-value">
             <b>{fmtFn(active, interp(views[0]?.x, views[0]?.[active], Number(t)))}</b>
             {band && (() => {
+              // In words (#292): "we're 90% sure it's at least 38%".
               const lo = band.lower ? interp(band.x, band.lower, Number(t)) : null;
               const hi = band.upper ? interp(band.x, band.upper, Number(t)) : null;
-              const text =
-                band.bound === "two-sided"
-                  ? `${fmtFn(active, lo).replace(/%$/, "")}–${fmtFn(active, hi)}`
-                  : band.bound === "lower"
-                  ? `lower bound ${fmtFn(active, lo)}`
-                  : `upper bound ${fmtFn(active, hi)}`;
-              return <span className="calc-answer-ci"> ({ciLevel}% {text})</span>;
+              const words = boundWords(ciLevel, band.bound, lo, hi, (v) => fmtFn(active, v));
+              return words ? <span className="calc-answer-ci"> — {words}</span> : null;
             })()}
           </span>
         )}
       </div>
+      )}
+      {timeMode && lifePath && tar.key === tarKey && tar.error && (
+        <p className="hint" style={{ margin: "0 0 0.4rem" }}>Couldn't compute the time: {tar.error}</p>
+      )}
+      {timeMode && tarPoint && tar.data?.bounds_note && ci.bound !== "none" && (
+        <p className="muted-line" style={{ margin: "0 0 0.4rem" }}>{tar.data.bounds_note}</p>
+      )}
       {curveWarning && <p className="calc-warn">⚠ {curveWarning}</p>}
       {confidencePath && ci.error && (
         <p className="hint" style={{ margin: "0 0 0.4rem" }}>
@@ -394,7 +470,24 @@ export default function Calculator({ functions, unit, params, state, setState, n
         </p>
       )}
 
-      {multi ? (
+      {multi && timeMode ? (
+        <table className="calc-table">
+          <thead>
+            <tr><th>Combination</th><th>Time at R = {rValid ? `${rNum}%` : "—"}{unitWord ? ` (${unitWord.trim()})` : ""}</th></tr>
+          </thead>
+          <tbody>
+            {series.map((s, i) => (
+              <tr key={s.id}>
+                <td className="calc-row-label">
+                  <span className="combo-dot" style={{ background: COLORS[i % COLORS.length] }} />
+                  {labelOf(s)}
+                </td>
+                <td>{tarTimes[i] != null ? formatNumber(tarTimes[i]) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : multi ? (
         <table className="calc-table">
           <thead>
             <tr>
@@ -437,6 +530,31 @@ export default function Calculator({ functions, unit, params, state, setState, n
             <div className="calc-rail-card calc-eval-card">
               <div className="gofh">Inputs</div>
               <div className="calc-eval-body">
+                <SegmentedControl
+                  label="What to calculate"
+                  size="sm"
+                  className="calc-mode"
+                  value={mode}
+                  onChange={setMode}
+                  options={[
+                    { value: "value", label: "At a time" },
+                    { value: "time", label: "Time at reliability", title: "The time by which reliability falls to a level: R = 90% is the B10 life" },
+                  ]}
+                />
+                {timeMode ? (
+                  <label className="calc-t">
+                    <span>Reliability %</span>
+                    <input
+                      type="number"
+                      value={rTarget}
+                      min={0.01}
+                      max={99.99}
+                      step="any"
+                      onChange={(e) => setRTarget(e.target.value)}
+                    />
+                  </label>
+                ) : (
+                <>
                 <label className="calc-t">
                   <span>Function</span>
                   <Select
@@ -469,6 +587,8 @@ export default function Calculator({ functions, unit, params, state, setState, n
                     onChange={(e) => setCondAge(e.target.value)}
                   />
                 </label>
+                </>
+                )}
                 {confidencePath && (
                   <>
                     <label className="calc-t">
