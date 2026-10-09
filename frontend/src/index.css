@@ -3441,6 +3441,11 @@ h1 .chip,
   padding-top: 1.25rem;
   border-top: 1px solid var(--line);
 }
+.cov.cov-folded { margin-top: 0; padding-top: 0; border-top: 0; display: flex; flex-direction: column; }
+/* Folded: the hint, then the formula toggle, then the chips. */
+.cov-folded > * { order: 3; }
+.cov-folded > .cov-hint { order: 1; margin-top: 0; }
+.cov-folded > .cov-head { order: 2; justify-content: flex-start; margin-bottom: var(--sp-3); }
 
 .cov-head {
   display: flex;
@@ -3832,9 +3837,8 @@ h1 .chip,
   gap: 0.5rem;
   grid-template-columns: repeat(4, 1fr);
 }
-.map-fields[data-cols="3"] { grid-template-columns: repeat(3, 1fr); }
 @media (max-width: 560px) {
-  .map-fields, .map-fields[data-cols="3"] { grid-template-columns: repeat(2, 1fr); }
+  .map-fields { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* Each field is one connected control: badge fused to its select. */
@@ -3862,11 +3866,6 @@ h1 .chip,
 
 .map-field.selected {
   border-color: var(--acc);
-}
-
-.map-field.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .map-badge {
@@ -3901,6 +3900,62 @@ h1 .chip,
 .map-field.selected .map-badge .req {
   color: var(--on-fill);
   opacity: 0.8;
+}
+
+/* Fit wizard Data step (#291): labelled fields in rows, each status value's
+   meaning, then the summary line or what stops the fit. */
+.ds-mapper { display: flex; flex-direction: column; gap: var(--sp-4); }
+.ds-mapper .rs-details { margin-top: 0; }
+.ds-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sp-3) var(--sp-4);
+  align-items: start;
+}
+.ds-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ds-label { font-size: var(--fs-13); font-weight: 500; color: var(--ink); }
+.ds-hint { font-size: var(--fs-12); line-height: 1.4; color: var(--muted); }
+.ds-unit .units-input { width: 100%; max-width: 240px; padding: 7px 10px; }
+.ds-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin-top: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surf-2);
+  border-radius: var(--r-sm);
+}
+.ds-status-row { display: contents; }
+.ds-status-value {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 var(--sp-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-14);
+  font-weight: 500;
+  color: var(--ink);
+}
+.ds-status-rows { font-size: var(--fs-12); font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ds-status-fixed { font-size: var(--fs-13); color: var(--muted); }
+.ds-summary { margin: 0; font-size: var(--fs-14); color: var(--ink); }
+.ds-summary b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ds-summary-note { color: var(--muted); }
+.ds-problems {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4) var(--sp-3) calc(var(--sp-4) + 14px);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-sm);
+  color: var(--warn);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.fit-step .ds-change { align-self: flex-start; font-size: var(--fs-14); }
+@media (max-width: 560px) {
+  .ds-status .seg-btn, .fit-step .ds-change { min-height: 44px; }
 }
 
 /* Custom-styled select with a chevron */
@@ -6096,21 +6151,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 
 /* Model-type pill on the combined Saved-models list. */
 
-/* Inline unit field in the column mapper — sits alongside x / xl / xr and
-   matches the embedded selects. */
-.map-unit .map-badge { width: auto; padding: 0 0.55rem; }
-.map-unit-input {
-  width: 100%;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  padding: 0.4rem 0.55rem;
-  font-size: var(--fs-14);
-  font-family: inherit;
-  color: var(--ink);
-}
-.map-unit-input:focus { outline: none; }
-
 /* "Per-demand" escape hatch on the fit-flow source step. */
 .perdemand-cta {
   display: flex;
@@ -7495,21 +7535,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   color: var(--warn);
 }
 
-/* Censoring convention, stated where the column is picked. Inverting this flag
-   is the most common upload mistake, and a hover tooltip never gets read. */
-.map-convention {
-  margin: 8px 0 0;
-  padding: 8px 12px;
-  border-left: 3px solid var(--acc);
-  background: var(--acc-hover);
-  border-radius: 0 var(--r-sm) var(--r-sm) 0;
-  font-size: var(--fs-13);
-  line-height: 1.5;
-  color: var(--ink);
-}
-.map-convention p {
-  margin: 0;
-}
+/* "1 = failed" checkbox (Compare groups). */
 .map-invert {
   display: flex;
   align-items: center;
