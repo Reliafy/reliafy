@@ -22,3 +22,5 @@ export const RcmIcon = () => svg(<><rect x="5" y="4" width="14" height="17" rx="
 export const AltIcon = () => svg(<><path d="M4 20h16" /><path d="M4 20c3-2 5-11 8-11s5 6 8-1" /><path d="M18 4v4M16 6h4" strokeWidth="1.5" /></>);
 export const PasteIcon = () => svg(<><rect x="6" y="4" width="12" height="17" rx="2" /><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3" /></>);
 export const UploadIcon = () => svg(<><path d="M12 16V4m0 0 4 4m-4-4-4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></>);
+// Repair (a wrench): a block's repair time on the RBD canvas.
+export const RepairIcon = () => svg(<path d="M14.7 6.3a4 4 0 0 0-5.4 5.1L4 16.7V20h3.3l5.3-5.3a4 4 0 0 0 5.1-5.4l-2.6 2.6-2.4-.6-.6-2.4z" />);

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext } from "react";
 import { Handle, Position, useStore } from "reactflow";
 import { MaintenanceChips } from "./RbdBlockCosts.jsx";
+import { RepairIcon } from "./icons.jsx";
 import { unitInText } from "./unitText.js";
 
 // The React Flow node components of a reliability block diagram, shared by the
@@ -129,15 +130,15 @@ function ComponentCard({ id, data, repeat = false, missing = false }) {
       </div>
       {missing && <div className="rbd-comp-empty warn">The block it repeats was removed</div>}
       {missing ? null : data.model ? (
-        <div className="rbd-comp-model">{modelSummary(data.model)}</div>
+        <div className="rbd-comp-model" title={modelSummary(data.model)}>{modelSummary(data.model)}</div>
       ) : (
         <div className="rbd-comp-empty">No life model — double-click to set</div>
       )}
       {repairable && !missing && (
         data.instant_repair ? (
-          <div className="rbd-comp-repair">🛠 Instant repair</div>
+          <div className="rbd-comp-repair"><RepairIcon /> Instant repair</div>
         ) : data.repair ? (
-          <div className="rbd-comp-repair">🛠 {modelSummary(data.repair)}</div>
+          <div className="rbd-comp-repair" title={`Repair: ${modelSummary(data.repair)}`}><RepairIcon /> {modelSummary(data.repair)}</div>
         ) : (
           <div className="rbd-comp-empty warn">No repair time — double-click to set</div>
         )
@@ -226,7 +227,7 @@ export function StructureNode({ data: nodeData, type }) {
         {/* Repairable: each unit is repaired after it fails (#156). */}
         {repairable && (data.repair ? (
           <div className="rbd-comp-repair">
-            🛠 {modelSummary(data.repair)}{data.repair_one_at_a_time ? " · one at a time" : ""}
+            <RepairIcon /> {modelSummary(data.repair)}{data.repair_one_at_a_time ? " · one at a time" : ""}
           </div>
         ) : (
           <div className="rbd-comp-empty warn">No repair time — double-click to set</div>

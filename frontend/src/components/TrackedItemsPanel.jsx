@@ -58,70 +58,72 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
           <p>No tracked items yet. Register one to get its first prediction.</p>
         </div>
       ) : (
-        <table className="lib-table">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Health</th>
-              <th>Remaining life</th>
-              <th>Predicted crossing</th>
-              <th style={{ width: 90 }}>Readings</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it) => {
-              const badge = healthBadge(it.prediction);
-              const pred = it.prediction || {};
-              return (
-                <tr
-                  key={it.id}
-                  className={"lib-row" + (selectedId === it.id ? " selected-row" : "")}
-                  onClick={() => onSelect(it.id)}
-                >
-                  <td>
-                    <div className="lib-name">
-                      {it.name}
-                      {it.is_sample && <span className="sample-tag">Sample</span>}
-                    </div>
-                  </td>
-                  <td><span className={`health-badge ${badge.cls}`}>{badge.label}</span></td>
-                  <td className="lib-n">{rulText(pred, unit)}</td>
-                  <td className="lib-n">
-                    {pred.failure_time === null || pred.failure_time === undefined
-                      ? "—"
-                      : `${fmt(pred.failure_time)}${unit ? ` ${unitInText(unit)}` : ""}`}
-                  </td>
-                  <td className="lib-n">{it.n_measurements}</td>
-                  <td className="lib-actions">
-                    <div className="lib-acts">
-                      {!(it.read_only ?? it.is_sample) && (
+        <div className="table-scroll">
+          <table className="lib-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Health</th>
+                <th>Remaining life</th>
+                <th>Predicted crossing</th>
+                <th style={{ width: 90 }}>Readings</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => {
+                const badge = healthBadge(it.prediction);
+                const pred = it.prediction || {};
+                return (
+                  <tr
+                    key={it.id}
+                    className={"lib-row" + (selectedId === it.id ? " selected-row" : "")}
+                    onClick={() => onSelect(it.id)}
+                  >
+                    <td>
+                      <div className="lib-name">
+                        {it.name}
+                        {it.is_sample && <span className="sample-tag">Sample</span>}
+                      </div>
+                    </td>
+                    <td><span className={`health-badge ${badge.cls}`}>{badge.label}</span></td>
+                    <td className="lib-n">{rulText(pred, unit)}</td>
+                    <td className="lib-n">
+                      {pred.failure_time === null || pred.failure_time === undefined
+                        ? "—"
+                        : `${fmt(pred.failure_time)}${unit ? ` ${unitInText(unit)}` : ""}`}
+                    </td>
+                    <td className="lib-n">{it.n_measurements}</td>
+                    <td className="lib-actions">
+                      <div className="lib-acts">
+                        {!(it.read_only ?? it.is_sample) && (
+                          <button
+                            className="act"
+                            title="Add measurement"
+                            onClick={(e) => { e.stopPropagation(); setMeasuring(it); }}
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 5v14M5 12h14" />
+                            </svg>
+                          </button>
+                        )}
                         <button
-                          className="act"
-                          title="Add measurement"
-                          onClick={(e) => { e.stopPropagation(); setMeasuring(it); }}
+                          className="act del"
+                          title={it.is_sample ? "Hide sample item" : "Delete item"}
+                          onClick={(e) => { e.stopPropagation(); onDelete(it); }}
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 5v14M5 12h14" />
+                            <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
                           </svg>
                         </button>
-                      )}
-                      <button
-                        className="act del"
-                        title={it.is_sample ? "Hide sample item" : "Delete item"}
-                        onClick={(e) => { e.stopPropagation(); onDelete(it); }}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
-                        </svg>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {registering && (

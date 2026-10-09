@@ -1186,6 +1186,18 @@ h6 {
   color: var(--muted);
 }
 .rbd-saved-note button { padding: 3px 10px; font-size: var(--fs-13); }
+/* "Saved" confirmation that replaces a Save analysis button. */
+.saved-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+.saved-note-tick { color: var(--ok); font-weight: 600; }
+.saved-note a { color: var(--acc); font-weight: 500; text-decoration: none; }
+.saved-note a:hover { text-decoration: underline; }
 /* Free quick simulations (#147) and queued jobs (#146). */
 .rbd-quick-note a { font-size: var(--fs-13); }
 .rbd-job-status { font-size: var(--fs-13); color: var(--muted); }
@@ -1625,6 +1637,16 @@ header p {
   box-shadow: var(--shadow-card);
 }
 
+/* A card's title: 16px semibold, not the browser's 24px h2. */
+.card h2 {
+  font-size: var(--fs-16);
+  line-height: 1.35;
+  margin: var(--sp-5) 0 var(--sp-3);
+}
+.card h2:first-child {
+  margin-top: 0;
+}
+
 /* Buttons */
 button {
   background: var(--acc);
@@ -1756,9 +1778,13 @@ button.secondary:hover:not(:disabled) {
   width: 100%;
   max-width: 620px;
   overflow: hidden;
-  /* auto top/bottom margins centre the dialog vertically when it fits, and let
-     it scroll (instead of clipping) when taller than the viewport. */
+  /* auto top/bottom margins centre the dialog vertically. It never grows past
+     the viewport: the body scrolls, so the head and footer stay on screen. */
   margin: auto;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
 }
 
 /* Compact variant, e.g. confirmation dialogs. */
@@ -1800,8 +1826,16 @@ button.secondary:hover:not(:disabled) {
   color: var(--ink);
 }
 
+.modal-head,
+.modal-foot {
+  flex: none;
+}
+
 .modal-body {
   padding: 22px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .modal-foot {
@@ -1812,6 +1846,20 @@ button.secondary:hover:not(:disabled) {
   padding: 16px 22px;
   border-top: 1px solid var(--line2);
   background: var(--bg);
+  flex-wrap: wrap;
+}
+
+/* A footer note takes the free width; the buttons stay side by side on the
+   right, and drop below the note only when there's no room beside it. */
+.modal-foot > .hint {
+  flex: 1 1 16rem;
+  min-width: 0;
+  font-size: var(--fs-13);
+}
+.modal-foot > .row {
+  flex: none;
+  flex-wrap: nowrap;
+  margin-left: auto;
 }
 
 /* Stepper */
@@ -1950,6 +1998,10 @@ button.secondary:hover:not(:disabled) {
   box-shadow: none;
   cursor: pointer;
   text-align: left;
+  /* A list row, not a button: its text wraps (the global button rule is
+     nowrap and semibold). */
+  white-space: normal;
+  font-weight: 400;
 }
 
 .recent-row:hover:not(:disabled) {
@@ -1985,6 +2037,7 @@ button.secondary:hover:not(:disabled) {
 
 .recent-meta {
   margin-left: auto;
+  flex-shrink: 0;
   font-size: var(--fs-12);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -2042,6 +2095,13 @@ button.secondary:hover:not(:disabled) {
   color: var(--muted);
   order: 1;
   font-weight: 500;
+}
+
+/* Stat labels read in sentence case: many are written lower case (they were
+   shown in capitals), so the first letter is raised here. */
+.params .stat .name::first-letter,
+.stats .stat .k::first-letter {
+  text-transform: uppercase;
 }
 
 .params .stat {
@@ -3270,6 +3330,11 @@ button.secondary:hover:not(:disabled) {
   cursor: pointer;
   color: var(--ink);
   box-shadow: none;
+  /* A card, not a button: its description wraps (the global button rule is
+     nowrap and semibold). */
+  min-width: 0;
+  white-space: normal;
+  font-weight: 400;
   transition: border-color 0.15s, background 0.15s;
 }
 /* Match the selector/dropdown input hover (subtle border + faint tint), not
@@ -3280,7 +3345,7 @@ button.secondary:hover:not(:disabled) {
 
 /* New-model chooser: four equal entry points (CSV / paste / parameters /
    sample), two-up on wide screens, stacked on narrow ones. */
-.new-model-choose { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.new-model-choose { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 @media (max-width: 720px) {
   .new-model-choose { grid-template-columns: 1fr; }
 }
@@ -3298,7 +3363,6 @@ button.secondary:hover:not(:disabled) {
 .sample-picks .recent-row:last-child { margin-bottom: 0; }
 .sample-pick-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .sample-pick-blurb { font-size: var(--fs-12); color: var(--muted); line-height: 1.3; }
-.sample-picks .recent-meta { flex-shrink: 0; }
 
 /* Fit-flow source step: switch between the CSV dropzone and pasted values. */
 .source-toggle {
@@ -3823,7 +3887,7 @@ select:disabled {
   gap: 6px;
 }
 
-.login-field span {
+.login-field > span {
   font-size: var(--fs-13);
   color: var(--muted);
   font-weight: 500;
@@ -4357,6 +4421,15 @@ select:disabled {
 .api-preq.yes { color: var(--warn); }
 .api-preq.no { color: var(--muted); }
 .api-pdesc { color: var(--muted); width: 99%; }
+/* Phone: name, type and required on one line, the description under them. */
+@media (max-width: 560px) {
+  .api-params tr { display: grid; grid-template-columns: auto auto 1fr; column-gap: 10px; border-top: 1px solid var(--line2); }
+  .api-params tr:first-child { border-top: none; }
+  .api-params td { border-top: none; }
+  .api-params td.api-pdesc { grid-column: 1 / -1; width: auto; padding-top: 0; }
+}
+/* A wide table scrolls inside its card on a phone, not the page. */
+.table-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 /* Client function reference: signature + the endpoint it maps to. */
 .api-fn-head { justify-content: space-between; gap: 14px; }
@@ -5655,6 +5728,12 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
   line-height: 1.4;
   color: var(--muted);
 }
+/* Inside a parameters card it sits under the rows, inset like them. */
+.gof-card .param-ci-note,
+.calc-rail-params .param-ci-note {
+  margin: 0;
+  padding: 10px 16px 12px;
+}
 .verdict-line {
   margin: 0.4rem 0 0;
   font-size: var(--fs-13);
@@ -5731,7 +5810,6 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 
 /* ---- Settings page ---------------------------------------------------- */
 .set-section { margin-top: 1.25rem; }
-.set-section .card h2 { margin-top: 0; }
 .set-profile { display: flex; align-items: center; gap: 14px; }
 .set-profile .ava.lg {
   width: 44px;
@@ -5870,6 +5948,7 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 .rcm-tree { display: flex; flex-direction: column; gap: 2px; }
 .tree-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
@@ -5915,7 +5994,7 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
   border: 1px solid var(--acc);
   border-radius: var(--r-sm);
   padding: 3px 8px;
-  min-width: 320px;
+  min-width: min(320px, 100%);
 }
 .tree-add {
   all: unset;
@@ -5969,7 +6048,6 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 .evidence-reason { min-width: 0; }
 
 /* Decision modal */
-.decision-modal .modal-body { max-height: 70vh; overflow-y: auto; }
 .modal.decision-modal { width: min(680px, calc(100vw - 32px)); }
 .decision-step { margin-bottom: 1.1rem; }
 .field-label {
@@ -6717,7 +6795,6 @@ button.danger:hover { background: var(--danger-bg); }
 .alt-bounds-k { font-size: var(--fs-13); color: var(--ink); }
 .alt-bounds-pick .seg { flex-wrap: wrap; max-width: 100%; }
 .alt-method-hint { font-size: var(--fs-12); }
-.alt-calc-out .table-scroll { max-width: 100%; overflow-x: auto; }
 .alt-ci-table td:nth-child(2), .alt-ci-table th:nth-child(2),
 .alt-coef-table td:nth-child(2), .alt-coef-table th:nth-child(2) { text-align: right; }
 /* Inspection-data toggle on the new-model Data step (#237) */
@@ -6763,7 +6840,11 @@ button.danger:hover { background: var(--danger-bg); }
 }
 
 /* Repairable RBD — component repair line + availability results */
-.rbd-comp-repair { font-size: var(--fs-12); color: var(--muted); margin-top: 2px; }
+.rbd-comp-repair {
+  font-size: var(--fs-12); color: var(--muted); margin-top: 2px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rbd-comp-repair svg { width: 12px; height: 12px; vertical-align: -2px; }
 .rbd-comp-empty.warn { color: #c67a1e; }
 
 .rbd-avail { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
@@ -7425,7 +7506,6 @@ button.danger:hover { background: var(--danger-bg); }
 
 /* ---- Excel import: sheet picker, column mapper, RCM / RBD import ---------- */
 .modal.modal-xl { max-width: 960px; }
-.modal.modal-xl .modal-body { max-height: min(74vh, 900px); overflow-y: auto; }
 .xl-picker { display: flex; flex-direction: column; gap: 0.7rem; }
 .xl-picker-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1.2rem; }
 .xl-inline { display: inline-flex; align-items: center; gap: 0.5rem; font-size: var(--fs-14); color: var(--muted); }
@@ -7515,6 +7595,11 @@ button.danger:hover { background: var(--danger-bg); }
   font-size: var(--fs-12);
   color: var(--muted);
   margin: -2px 0 4px 46px;
+}
+/* Phone: the mode's details sit under it rather than past the tag (#309). */
+@media (max-width: 560px) {
+  .mode-detail,
+  .mode-evidence { margin-left: 8px; }
 }
 .mode-detail b { font-weight: 600; color: var(--muted); margin-right: 4px; }
 .mode-notes { white-space: pre-line; }

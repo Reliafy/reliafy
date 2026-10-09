@@ -180,6 +180,10 @@ const EDGE_OPTIONS = {
   markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
 };
 
+// Fitting the view never zooms out so far that block text is unreadable: a
+// large diagram fits at 0.6 and the rest is a pan away.
+const FIT_OPTIONS = { padding: 0.35, minZoom: 0.6, duration: 300 };
+
 // A repairable diagram's crews, groups and safety settings (#156, #157): the
 // graph keys that are set.
 const POLICY_KEYS = ["repair_crews", "maintenance_groups", "safety_function", "target_sil"];
@@ -236,7 +240,29 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   // live diagram via the bridge without stale-closure issues.
   const liveRef = useRef({ nodes: [], edges: [], unit: "" });
   liveRef.current = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField };
-  const { screenToFlowPosition, fitView } = useReactFlow();
+  const { screenToFlowPosition, fitView, getNodes } = useReactFlow();
+  // Fit once React Flow has measured the nodes just set (#309). A saved
+  // diagram reopened with blocks off-screen: its load ran in a callback from
+  // the first render, whose fitView was React Flow's no-op stand-in (the
+  // viewport wasn't ready), and fitting in the next frame came before the
+  // nodes had sizes. So: the current fitView, once every one of ``expected``
+  // is in the flow with a size (a second at most).
+  const fitViewRef = useRef(fitView);
+  fitViewRef.current = fitView;
+  const fitWhenMeasured = useCallback((expected) => {
+    const ids = (expected || []).map((n) => n.id);
+    let frames = 0;
+    const attempt = () => {
+      const byId = new Map(getNodes().map((n) => [n.id, n]));
+      const ready = ids.every((id) => byId.get(id)?.width && byId.get(id)?.height);
+      if ((ready && frames > 0) || frames > 60) fitViewRef.current(FIT_OPTIONS);
+      else {
+        frames += 1;
+        window.requestAnimationFrame(attempt);
+      }
+    };
+    window.requestAnimationFrame(attempt);
+  }, [getNodes]);
   const nodeTypes = useMemo(
     () => ({
       component: ComponentNode,
@@ -396,10 +422,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   const autoLayout = useCallback(() => {
     setNodes((nds) => autoLayoutNodes(nds, edges));
     // Recenter/zoom once the new positions have been applied.
-    window.requestAnimationFrame(() =>
-      fitView({ padding: 0.35, duration: 300 })
-    );
-  }, [setNodes, edges, fitView]);
+    fitWhenMeasured();
+  }, [setNodes, edges, fitWhenMeasured]);
 
   // Manually mark a node working/failed, or clear it (state = null).
   const setNodeState = useCallback(
@@ -661,9 +685,9 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
       setSavedRbdReadOnly(readOnly);
-      window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
+      fitWhenMeasured(loadedNodes);
     },
-    [setNodes, setEdges, fitView]
+    [setNodes, setEdges, fitWhenMeasured]
   );
 
   const openRbd = useCallback(
@@ -688,8 +712,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
     setSavedRbdReadOnly(false);
-    window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
-  }, [setNodes, setEdges, fitView]);
+    fitWhenMeasured(INITIAL_NODES);
+  }, [setNodes, setEdges, fitWhenMeasured]);
 
   // Replace the canvas with an assistant-provided graph: normalise it (handles,
   // edge styling, life models) and lay it out left-to-right, then keep the new
@@ -707,8 +731,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     if (graph.ccf_groups != null) setCcfGroups(graph.ccf_groups);
     if (graph.costs !== undefined) setDiagramCosts(graph.costs || null);
     if (POLICY_KEYS.some((k) => graph[k] !== undefined)) setPolicies(policyFields(graph));
-    window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
-  }, [setNodes, setEdges, fitView]);
+    fitWhenMeasured(norm.nodes);
+  }, [setNodes, setEdges, fitWhenMeasured]);
 
   // Put a redundancy design (Design tab) on the canvas as it is — unsaved, and
   // keeping the user's layout — clearing the id counter past any new ids.
@@ -975,7 +999,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         defaultEdgeOptions={EDGE_OPTIONS}
         fitView
-        fitViewOptions={{ padding: 0.35 }}
+        fitViewOptions={FIT_OPTIONS}
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
       >
@@ -1525,7 +1549,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         onView={() => {
           setTab("builder");
           // Once the canvas is shown again (it can't be fitted while hidden).
-          window.setTimeout(() => fitView({ padding: 0.35, duration: 300 }), 60);
+          window.setTimeout(() => fitView(FIT_OPTIONS), 60);
         }}
       />
     </div>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import Modal from "./Modal.jsx";
 import { saveStrategyAnalysis } from "../api.js";
 
@@ -27,7 +28,12 @@ export default function SaveAnalysisButton({ kind, inputs, defaultName }) {
   };
 
   if (savedId) {
-    return <span className="saved-note">✓ Saved to <a href="/strategy/analyses">analyses</a></span>;
+    return (
+      <span className="saved-note" role="status">
+        <span className="saved-note-tick" aria-hidden="true">✓</span> Saved ·{" "}
+        <Link to={`/strategy/analyses/${savedId}`}>Open analysis</Link>
+      </span>
+    );
   }
 
   return (
