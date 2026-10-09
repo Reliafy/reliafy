@@ -381,7 +381,7 @@ def test_dataset_from_xlsx_guesses_header_and_takes_first_sheet(client):
     r = client.post("/api/datasets", files=_files(_life_xlsx(df, title_rows=1), "bearings.xlsx"))
     assert r.status_code == 200, r.text
     assert [c["name"] for c in r.json()["columns"]] == ["hours", "censored", "batch"]
-    assert r.json()["name"] == "bearings.xlsx"
+    assert r.json()["name"] == "bearings"  # the file name, without its extension
 
 
 def test_dataset_from_xlsx_with_no_header(client):
