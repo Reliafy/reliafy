@@ -1,17 +1,15 @@
 import Plot from "./Plot.jsx";
+import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
+import { formatNumber, formatPercent, formatWithUnit } from "../format.js";
 import { fitLine, optimumMarker, referenceLine } from "../plotTheme.js";
-
-const fmt = (v) =>
-  v == null
-    ? "—"
-    : Math.abs(v) >= 1e-4 || v === 0
-    ? Number(v).toPrecision(5)
-    : Number(v).toExponential(3);
 
 // Presentational renderer for an optimal-replacement result — used by the live
 // tool and by saved analyses (which render the stored payload without refetch).
+// Answer first (#311): the replacement age and the saving, the cost-rate
+// curve, then the cost rates and MTTF under Details.
 export default function ReplacementResult({ result, name = null }) {
-  const u = result?.unit ? ` (${result.unit})` : "";
+  const unit = result?.unit || "";
+  const u = unit ? ` (${unit})` : "";
   const c = result.curve;
   const traces = [fitLine({ x: c.t, y: c.cost_rate, name: "Cost rate", connectgaps: false })];
   if (result.run_to_failure_cost_rate != null) {
@@ -26,7 +24,7 @@ export default function ReplacementResult({ result, name = null }) {
       x: [result.optimal_time],
       y: [result.optimal_cost_rate],
       name: "Optimum",
-      text: [`Optimum ${fmt(result.optimal_time)}`],
+      text: [`Optimum ${formatNumber(result.optimal_time)}`],
     }));
   }
   const yMax = result.run_to_failure_cost_rate
@@ -43,33 +41,41 @@ export default function ReplacementResult({ result, name = null }) {
     },
   };
 
+  const pays = result.beneficial && result.optimal_time != null;
+  const age = formatWithUnit(result.optimal_time, unit);
+  const saving = formatPercent(result.savings);
+
   return (
     <>
-      <div className={"strategy-reco " + (result.beneficial ? "" : "strategy-reco-warn")}>
-        <span className="strategy-reco-icon">{result.beneficial ? "✓" : "ⓘ"}</span>
-        <span>{result.recommendation}</span>
-      </div>
-
-      <div className="params">
-        <div className="stat">
-          <div className="value">{result.optimal_time == null ? "—" : fmt(result.optimal_time)}</div>
-          <div className="name">optimal age{u}</div>
-        </div>
-        <div className="stat">
-          <div className="value">{result.beneficial ? `${(result.savings * 100).toFixed(0)}%` : "0%"}</div>
-          <div className="name">cost saving vs. run-to-failure</div>
-        </div>
-        <div className="stat">
-          <div className="value">{fmt(result.optimal_cost_rate ?? result.run_to_failure_cost_rate)}</div>
-          <div className="name">best cost rate</div>
-        </div>
-        <div className="stat">
-          <div className="value">{fmt(result.mttf)}</div>
-          <div className="name">MTTF{u}</div>
-        </div>
-      </div>
+      {pays ? (
+        <ResultSummary
+          tone="good"
+          sentence={
+            <>
+              Replace preventively at about <b>{age}</b>. That lowers the long-run cost rate by{" "}
+              <b>{saving}</b> versus running to failure.
+            </>
+          }
+          stats={[
+            { label: "Replace at", value: `≈ ${age}` },
+            { label: "Saves", value: saving, hint: "of the run-to-failure cost rate" },
+          ]}
+        />
+      ) : (
+        <ResultSummary tone="caveat" sentence={result.recommendation} />
+      )}
 
       <Plot data={traces} layout={layout} download={`${name || "Optimal replacement"} — cost rate`} />
+
+      <ResultDetails
+        rows={[
+          pays && { label: "Cost rate at the optimum", value: formatNumber(result.optimal_cost_rate, { sig: 4 }) },
+          { label: "Run-to-failure cost rate", value: formatNumber(result.run_to_failure_cost_rate, { sig: 4 }) },
+          { label: `MTTF${u}`, value: formatNumber(result.mttf, { sig: 4 }) },
+        ]}
+      >
+        <p className="rs-note">Cost rates are long-run costs per unit time.</p>
+      </ResultDetails>
     </>
   );
 }
