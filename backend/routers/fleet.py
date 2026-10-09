@@ -214,6 +214,9 @@ def list_fleet_alerts(
         "periods": (fleet.settings or {}).get("periods"),
         "period_label": (fleet.settings or {}).get("period_label"),
         "max_alerts": alerts_service.MAX_RULES,
+        # Rules are checked only when usage arrives through the API (Pro on
+        # the cloud), so the card can say whether they can fire for this user.
+        "api_access": billing_service.api_access_allowed(session, ctx.user),
     })
 
 
