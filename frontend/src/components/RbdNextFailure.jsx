@@ -1,4 +1,5 @@
 import Plot from "./Plot.jsx";
+import { fitLine } from "../plotTheme.js";
 import MethodTag from "./MethodTag.jsx";
 import { unitInText } from "./unitText.js";
 
@@ -56,17 +57,15 @@ export default function RbdNextFailure({ result, unit }) {
       </div>
       {curve.t?.length > 1 && (
         <Plot
-          data={[{
-            x: curve.t, y: curve.cdf, mode: "lines", type: "scatter", line: { color: "#b42318", width: 2 },
-            name: "P(failed by t)", hovertemplate: "%{x:.4g}: %{y:.1%}<extra></extra>",
-          }]}
+          data={[fitLine({
+            x: curve.t, y: curve.cdf, name: "P(failed by t)", hovertemplate: "%{x:,.4~g}: %{y:.1%}<extra></extra>",
+          })]}
           layout={{
-            autosize: true, height: 260, margin: { l: 56, r: 16, t: 16, b: 44 },
-            paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff", showlegend: false,
-            xaxis: { title: `Time from now${unit ? ` (${unit})` : ""}`, gridcolor: "#eef1f5", zeroline: false },
-            yaxis: { title: "P(next failure by t)", gridcolor: "#eef1f5", range: [0, 1.02], tickformat: ".0%" },
+            height: 260,
+            showlegend: false,
+            xaxis: { title: { text: `Time from now${unit ? ` (${unit})` : ""}` } },
+            yaxis: { title: { text: "P(next failure by t)" }, range: [0, 1.02], tickformat: ".0%" },
           }}
-          useResizeHandler style={{ width: "100%" }} config={{ displayModeBar: false, responsive: true }}
         />
       )}
       {causes.length > 0 && (

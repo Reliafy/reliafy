@@ -1,4 +1,5 @@
 import Select from "./Select.jsx";
+import { BAND_FILL } from "../plotTheme.js";
 
 // Confidence band on a non-repairable RBD's reliability (#103): the spread of
 // the system reliability, MTTF and B-lives over draws of the fitted blocks'
@@ -52,7 +53,7 @@ export function bandTraces(band, x, active) {
     { x, y: lower, mode: "lines", type: "scatter", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
     {
       x, y: upper, mode: "lines", type: "scatter", line: { width: 0 },
-      fill: "tonexty", fillcolor: "rgba(15, 23, 42, 0.13)",
+      fill: "tonexty", fillcolor: BAND_FILL,
       name: `${pct(band.level)} confidence band`, hoverinfo: "skip",
     },
   ];

@@ -4,6 +4,7 @@ import { withUnit } from "./stressName.js";
 import CiNote from "./CiNote.jsx";
 import { useEffect, useRef, useState } from "react";
 import Plot from "./Plot.jsx";
+import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
 import { confidenceAt, evaluateAt } from "../api.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
@@ -30,8 +31,8 @@ export function initCalcState(functions) {
   };
 }
 
-// Distinct colours for covariate-combination series.
-const COLORS = ["#0284c7", "#16a34a", "#db2777", "#d97706", "#7c3aed", "#0891b2"];
+// Distinct colours for covariate-combination series, in the theme's order.
+const COLORS = COLORWAY;
 const MAX_SERIES = 6;
 
 // Linear interpolation of y at xq from the (x, y) grid; null y points are
@@ -135,7 +136,7 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
 // Calculator tab: chart any of the reliability functions and read them off at a
 // chosen t. For regression models you can add several covariate combinations,
 // each re-evaluated by the backend and overlaid on the chart.
-export default function Calculator({ functions, unit, params, state, setState, nextIdRef }) {
+export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
@@ -275,23 +276,16 @@ export default function Calculator({ functions, unit, params, state, setState, n
   // Chart: the active function for every series, plus a marker at t.
   const traces = [];
   if (band) {
-    // Lower first, then upper filling down to it (two-sided) — drawn under the
-    // fitted line, which is added next.
-    if (band.lower) {
+    // Two-sided: a shaded band under the fitted line (added next). One-sided:
+    // the bound alone, dashed.
+    const bandName = band.bound === "two-sided" ? `${ciLevel}% confidence band` : `${ciLevel}% ${band.bound} bound`;
+    if (band.lower && band.upper) {
+      traces.push(...bandPair(band.x, band.lower, band.upper, { name: bandName, connectgaps: false }));
+    } else {
       traces.push({
-        x: band.x, y: band.lower, mode: "lines", type: "scatter",
-        line: { color: "#0284c7", width: 1, dash: "dot" },
-        name: band.bound === "two-sided" ? `${ciLevel}% lower` : `${ciLevel}% ${band.bound}`,
-        connectgaps: false, hoverinfo: "skip",
-      });
-    }
-    if (band.upper) {
-      traces.push({
-        x: band.x, y: band.upper, mode: "lines", type: "scatter",
-        line: { color: "#0284c7", width: 1, dash: "dot" },
-        name: band.bound === "two-sided" ? `${ciLevel}% upper` : `${ciLevel}% ${band.bound}`,
-        fill: band.lower ? "tonexty" : undefined, fillcolor: "rgba(2,132,199,0.10)",
-        connectgaps: false, hoverinfo: "skip",
+        x: band.x, y: band.lower || band.upper, mode: "lines", type: "scatter",
+        line: { color: COLORS[0], width: 1.5, dash: "dash" },
+        name: bandName, connectgaps: false, hoverinfo: "skip",
       });
     }
   }
@@ -310,15 +304,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
     });
     const y = interp(cv.x, cv[active], Number(t));
     if (y != null) {
-      traces.push({
-        x: [Number(t)],
-        y: [y],
-        mode: "markers",
-        marker: { color, size: 8, line: { color: "#fff", width: 1 } },
-        type: "scatter",
-        showlegend: false,
-        hoverinfo: "y",
-      });
+      traces.push({ ...pointMarker(color), x: [Number(t)], y: [y] });
     }
   });
 
@@ -329,40 +315,14 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const xRange = manualX ? [xLoNum != null ? xLoNum : 0, xHiNum != null ? xHiNum : xMaxView] : undefined;
 
   const layout = {
-    autosize: true,
     height: 440,
-    margin: { l: 64, r: 20, t: 20, b: showLegend ? 70 : 46 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "#ffffff",
-    font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
     showlegend: showLegend,
-    legend: { orientation: "h", y: -0.18 },
     xaxis: {
-      title: { text: tAxisLabel, standoff: 12 },
-      automargin: true,
-      gridcolor: "#e2e8f0",
-      linecolor: "#cbd5e1",
-      zeroline: false,
+      title: { text: tAxisLabel },
       ...(manualX ? { range: xRange, autorange: false } : {}),
     },
-    yaxis: {
-      title: { text: activeLabel, standoff: 12 },
-      automargin: true,
-      gridcolor: "#e2e8f0",
-      linecolor: "#cbd5e1",
-      zeroline: false,
-    },
-    shapes: [
-      {
-        type: "line",
-        x0: Number(t),
-        x1: Number(t),
-        yref: "paper",
-        y0: 0,
-        y1: 1,
-        line: { color: "#94a3b8", width: 1, dash: "dot" },
-      },
-    ],
+    yaxis: { title: { text: activeLabel } },
+    shapes: [referenceShape({ x: Number(t), line: { dash: "dot" } })],
   };
 
   return (
@@ -450,13 +410,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
         </>
       )}
 
-      <Plot
-        data={traces}
-        layout={layout}
-        config={{ displayModeBar: true, responsive: true }}
-        style={{ width: "100%" }}
-        useResizeHandler
-      />
+      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} />
         </div>
 
         <div className="calc-side-rail">

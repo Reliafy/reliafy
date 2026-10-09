@@ -79,12 +79,12 @@ export default function RecurrentModelPage() {
       {error && <div className="card error">{error}</div>}
       {model && (
         <div className="card">
-          <RecurrentResultView results={model.results} />
+          <RecurrentResultView results={model.results} name={model.name} />
         </div>
       )}
       {model && (
         <div className="card">
-          <RecurrentOverhaul modelId={model.id} unit={r.unit} />
+          <RecurrentOverhaul modelId={model.id} unit={r.unit} name={model.name} />
         </div>
       )}
       {model && !model.spec?.params_only && (

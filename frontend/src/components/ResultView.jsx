@@ -143,7 +143,7 @@ function RandomnessVerdict({ r }) {
 // shows it (e.g. the saved-model page header) to avoid stating it twice.
 // ``modelId`` (a saved model) lets a regression model saved before its
 // validation scores existed fetch them.
-export default function ResultView({ result, hideHead = false, modelId = null }) {
+export default function ResultView({ result, hideHead = false, modelId = null, name = null }) {
   if (result.kind === "per_demand") return <PerDemandPanel result={result} />;
 
   const isRegression = result.kind === "regression";
@@ -322,14 +322,16 @@ export default function ResultView({ result, hideHead = false, modelId = null })
         {tab === "survival" && (
           <div className="plotwrap">
             <div className="plottitle">{result.distribution} — empirical survival</div>
-            <SurvivalPlot estimate={result.estimate} unit={result.unit} />
+            <SurvivalPlot estimate={result.estimate} unit={result.unit}
+                          download={`${name || result.distribution} — survival curve`} />
           </div>
         )}
         {tab === "plot" && (
           <div className="detail-panel">
             <div className="plotwrap">
               <div className="plottitle">{result.distribution} probability plot</div>
-              <ProbabilityPlot plot={result.plot} unit={result.unit} />
+              <ProbabilityPlot plot={result.plot} unit={result.unit}
+                               download={`${name || result.distribution} — probability plot`} />
             </div>
             <div className="aside">
               {result.params.length > 0 && (
@@ -385,6 +387,7 @@ export default function ResultView({ result, hideHead = false, modelId = null })
             state={calc}
             setState={setCalc}
             nextIdRef={calcNextId}
+            name={name || result.distribution}
           />
         )}
         {tab === "coef" && <Coefficients coefficients={result.coefficients} ratioLabel={result.ratio_label} />}

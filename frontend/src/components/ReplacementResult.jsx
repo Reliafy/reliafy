@@ -1,4 +1,5 @@
 import Plot from "./Plot.jsx";
+import { fitLine, optimumMarker, referenceLine } from "../plotTheme.js";
 
 const fmt = (v) =>
   v == null
@@ -9,59 +10,36 @@ const fmt = (v) =>
 
 // Presentational renderer for an optimal-replacement result — used by the live
 // tool and by saved analyses (which render the stored payload without refetch).
-export default function ReplacementResult({ result }) {
+export default function ReplacementResult({ result, name = null }) {
   const u = result?.unit ? ` (${result.unit})` : "";
   const c = result.curve;
-  const traces = [
-    {
-      x: c.t,
-      y: c.cost_rate,
-      mode: "lines",
-      line: { color: "#0284c7", width: 2.5 },
-      name: "Cost rate",
-      type: "scatter",
-      connectgaps: false,
-    },
-  ];
+  const traces = [fitLine({ x: c.t, y: c.cost_rate, name: "Cost rate", connectgaps: false })];
   if (result.run_to_failure_cost_rate != null) {
-    traces.push({
+    traces.push(referenceLine({
       x: [c.t[0], c.t[c.t.length - 1]],
       y: [result.run_to_failure_cost_rate, result.run_to_failure_cost_rate],
-      mode: "lines",
-      line: { color: "#94a3b8", width: 1.5, dash: "dash" },
       name: "Run-to-failure",
-      type: "scatter",
-    });
+    }));
   }
   if (result.optimal_time != null && result.optimal_cost_rate != null) {
-    traces.push({
+    traces.push(optimumMarker({
       x: [result.optimal_time],
       y: [result.optimal_cost_rate],
-      mode: "markers",
-      marker: { color: "#16a34a", size: 11, symbol: "diamond" },
       name: "Optimum",
-      type: "scatter",
-    });
+      text: [`Optimum ${fmt(result.optimal_time)}`],
+    }));
   }
   const yMax = result.run_to_failure_cost_rate
     ? result.run_to_failure_cost_rate * 2.5
     : undefined;
   const layout = {
-    autosize: true,
     height: 400,
-    margin: { l: 70, r: 20, t: 20, b: 60 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "#ffffff",
-    font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
     showlegend: true,
-    legend: { orientation: "h", y: -0.2 },
-    xaxis: { title: { text: `replacement age${u}`, standoff: 12 }, gridcolor: "#e2e8f0", zeroline: false },
+    xaxis: { title: { text: `Replacement age${u}` } },
     yaxis: {
-      title: { text: "long-run cost per unit time", standoff: 12 },
-      gridcolor: "#e2e8f0",
+      title: { text: "Long-run cost per unit time" },
       rangemode: "tozero",
       range: yMax ? [0, yMax] : undefined,
-      zeroline: false,
     },
   };
 
@@ -91,13 +69,7 @@ export default function ReplacementResult({ result }) {
         </div>
       </div>
 
-      <Plot
-        data={traces}
-        layout={layout}
-        config={{ displayModeBar: true, responsive: true }}
-        style={{ width: "100%" }}
-        useResizeHandler
-      />
+      <Plot data={traces} layout={layout} download={`${name || "Optimal replacement"} — cost rate`} />
     </>
   );
 }

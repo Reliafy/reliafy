@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
+import { fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
 import { recurrentOverhaul } from "../api.js";
 import { unitInText } from "./unitText.js";
 
@@ -14,7 +15,7 @@ const fmt = (v) =>
 // overhauls, an overhaul renews the system. Minimises the long-run cost rate
 // (cr·Λ(T) + co) / T server-side (RePyability's Repairable). Styled like the
 // Strategy › Optimal replacement tool.
-export default function RecurrentOverhaul({ modelId, unit }) {
+export default function RecurrentOverhaul({ modelId, unit, name = null }) {
   const [cr, setCr] = useState("");
   const [co, setCo] = useState("");
   const [result, setResult] = useState(null);
@@ -42,24 +43,16 @@ export default function RecurrentOverhaul({ modelId, unit }) {
   if (opt && result.curve) {
     const c = result.curve;
     const traces = [
-      { x: c.t, y: c.cost_rate, mode: "lines", type: "scatter", name: "Cost rate",
-        line: { color: "#0284c7", width: 2.5 }, connectgaps: false },
-      { x: [opt.interval], y: [opt.cost_rate], mode: "markers", type: "scatter", name: "Optimum T*",
-        marker: { color: "#16a34a", size: 11, symbol: "diamond" } },
+      fitLine({ x: c.t, y: c.cost_rate, name: "Cost rate", connectgaps: false }),
+      optimumMarker({ x: [opt.interval], y: [opt.cost_rate], name: "Optimum T*", text: [`T* ${fmt(opt.interval)}`] }),
     ];
     const layout = {
-      autosize: true, height: 380, margin: { l: 70, r: 20, t: 20, b: 60 },
-      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-      font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
-      showlegend: true, legend: { orientation: "h", y: -0.2 },
-      xaxis: { title: { text: `overhaul interval${u}`, standoff: 12 }, gridcolor: "#e2e8f0", zeroline: false },
-      yaxis: { title: { text: "long-run cost per unit time", standoff: 12 }, gridcolor: "#e2e8f0",
-        rangemode: "tozero", range: [0, opt.cost_rate * 2.5], zeroline: false },
-      shapes: [{ type: "line", x0: opt.interval, x1: opt.interval, yref: "paper", y0: 0, y1: 1,
-        line: { color: "#16a34a", width: 1, dash: "dot" } }],
+      height: 380,
+      xaxis: { title: { text: `Overhaul interval${u}` } },
+      yaxis: { title: { text: "Long-run cost per unit time" }, rangemode: "tozero", range: [0, opt.cost_rate * 2.5] },
+      shapes: [referenceShape({ x: opt.interval, line: { dash: "dot" } })],
     };
-    plot = <Plot data={traces} layout={layout} config={{ displayModeBar: true, responsive: true }}
-                 style={{ width: "100%" }} useResizeHandler />;
+    plot = <Plot data={traces} layout={layout} download={`${name || "Recurrent model"} — overhaul cost rate`} />;
   }
 
   return (

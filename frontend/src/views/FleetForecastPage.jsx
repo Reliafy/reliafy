@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import CopyId from "../components/CopyId.jsx";
 import Plot from "../components/Plot.jsx";
+import { ACCENT, INK, sentence } from "../plotTheme.js";
 import Select from "../components/Select.jsx";
 import FleetAlertsCard from "../components/FleetAlertsCard.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
@@ -538,14 +539,14 @@ export default function FleetForecastPage() {
               type: "bar",
               x: periodLabels,
               y: forecast.per_period,
-              marker: { color: "rgba(47, 109, 246, 0.75)" },
+              marker: { color: ACCENT },
               ...(periodBand ? {
                 error_y: {
                   type: "data",
                   symmetric: false,
                   array: forecast.per_period.map((v, i) => Math.max(0, (periodBand[i]?.[1] ?? v) - v)),
                   arrayminus: forecast.per_period.map((v, i) => Math.max(0, v - (periodBand[i]?.[0] ?? v))),
-                  color: "rgba(20, 24, 32, 0.45)",
+                  color: INK,
                   thickness: 1,
                   width: 3,
                 },
@@ -555,15 +556,11 @@ export default function FleetForecastPage() {
             }]}
             layout={{
               height: 260,
-              margin: { l: 46, r: 12, t: 8, b: 40 },
-              xaxis: { title: { text: forecast.period_label || "period" }, dtick: 1 },
-              yaxis: { title: { text: "expected failures" }, rangemode: "tozero" },
-              paper_bgcolor: "rgba(0,0,0,0)",
-              plot_bgcolor: "rgba(0,0,0,0)",
-              font: { family: "IBM Plex Mono, monospace", size: 11 },
+              bargap: 0.35,
+              // Whole periods, at most about a dozen labels.
+              xaxis: { title: { text: sentence(forecast.period_label || "period") }, tick0: 1, dtick: Math.max(1, Math.ceil(periodLabels.length / 12)) },
+              yaxis: { title: { text: "Expected failures" }, rangemode: "tozero" },
             }}
-            config={{ displayModeBar: false, responsive: true }}
-            style={{ width: "100%" }}
           />
           {periodBand && (
             <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>
