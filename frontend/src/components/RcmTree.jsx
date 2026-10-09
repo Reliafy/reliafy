@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import RcmStatusBadge from "./RcmStatusBadge.jsx";
+import Chip from "./ui/Chip.jsx";
 
 const OUTCOME_LABEL = {
   on_condition: "On-condition",
@@ -87,23 +88,17 @@ function DecisionChip({ mode, readOnly, onEdit }) {
   const d = mode.decision;
   if (!d) {
     return readOnly ? (
-      <span className="decision-chip empty">No decision</span>
+      <Chip className="chip-empty">No decision</Chip>
     ) : (
-      <button className="decision-chip empty clickable" onClick={onEdit}>
-        + Decision
-      </button>
+      <Chip className="chip-empty" onClick={onEdit}>+ Decision</Chip>
     );
   }
   let label = OUTCOME_LABEL[d.outcome] || d.outcome;
   if (d.interval != null) label += ` · ${d.interval} ${intervalUnit(d.interval, d.interval_unit)}`.trimEnd();
   return (
-    <button
-      className={"decision-chip" + (readOnly ? "" : " clickable")}
-      onClick={readOnly ? undefined : onEdit}
-      title={d.task || ""}
-    >
+    <Chip onClick={readOnly ? undefined : onEdit} title={d.task || undefined}>
       {label}
-    </button>
+    </Chip>
   );
 }
 
@@ -163,7 +158,7 @@ export default function RcmTree({ functions, readOnly, onChange, onEditDecision 
             <button className="tree-chevron" onClick={() => toggle(fn.id)} aria-label="Toggle">
               <Chevron open={!collapsed[fn.id]} />
             </button>
-            <span className="tree-tag fn-tag">Function</span>
+            <span className="sr-only">Function:</span>
             <NodeText
               text={fn.text}
               placeholder="e.g. Stop the vehicle within 30 m from 60 km/h"
@@ -187,7 +182,7 @@ export default function RcmTree({ functions, readOnly, onChange, onEditDecision 
                     <button className="tree-chevron" onClick={() => toggle(fail.id)} aria-label="Toggle">
                       <Chevron open={!collapsed[fail.id]} />
                     </button>
-                    <span className="tree-tag fail-tag">Functional failure</span>
+                    <span className="sr-only">Functional failure:</span>
                     <NodeText
                       text={fail.text}
                       placeholder="e.g. Unable to stop within 30 m"
@@ -210,16 +205,13 @@ export default function RcmTree({ functions, readOnly, onChange, onEditDecision 
                         return (
                           <div key={mode.id} className="tree-mode">
                             <div className="tree-row mode-row">
-                              <span className="tree-tag mode-tag">Mode</span>
+                              <span className="sr-only">Failure mode:</span>
                               <NodeText
                                 text={mode.text}
                                 placeholder="e.g. Brake pads worn below minimum"
                                 readOnly={readOnly}
                                 onCommit={(text) => updateMode(fn.id, fail.id, mode.id, { text })}
                               />
-                              {mode.consequence && (
-                                <span className="consequence-chip">{CONSEQUENCE_LABEL[mode.consequence]}</span>
-                              )}
                               <DecisionChip
                                 mode={mode}
                                 readOnly={readOnly}
@@ -234,9 +226,17 @@ export default function RcmTree({ functions, readOnly, onChange, onEditDecision 
                                 </div>
                               )}
                             </div>
-                            {(mode.effects || mode.notes) && (
+                            {(mode.consequence || mode.effects || mode.notes) && (
                               <div className="mode-detail">
-                                {mode.effects && <span><b>Effects</b> {mode.effects}</span>}
+                                {/* The consequence is plain text: a mode row carries at most two
+                                    chips, the decision and its evidence status (#311). */}
+                                {(mode.consequence || mode.effects) && (
+                                  <span>
+                                    {mode.consequence && <span className="mode-cons">{CONSEQUENCE_LABEL[mode.consequence]}</span>}
+                                    {mode.consequence && mode.effects && " · "}
+                                    {mode.effects && <><b>Effects</b> {mode.effects}</>}
+                                  </span>
+                                )}
                                 {mode.notes && <span className="mode-notes">{mode.notes}</span>}
                               </div>
                             )}

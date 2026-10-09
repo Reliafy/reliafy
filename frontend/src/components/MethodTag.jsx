@@ -1,3 +1,5 @@
+import Chip from "./ui/Chip.jsx";
+
 // How a figure is computed (RePyability's analysis_routes, #154): exact
 // (closed forms), numerical (deterministic, e.g. a renewal equation on a
 // grid, to about 1e-7) or simulated. Shared by the availability results and
@@ -12,11 +14,12 @@ const METHOD_HELP = {
 
 const LABELS = { exact: "Exact", numerical: "Numerical", simulated: "Simulated", refused: "Not available" };
 
+// Neutral unless it's a caveat: a Monte-Carlo estimate is amber.
 export default function MethodTag({ method }) {
   if (!method || !LABELS[method]) return null;
   return (
-    <span className={`rbd-method ${method}`} title={METHOD_HELP[method]}>
+    <Chip tone={method === "simulated" ? "warning" : "neutral"} className="method-tag" title={METHOD_HELP[method]}>
       {LABELS[method]}
-    </span>
+    </Chip>
   );
 }

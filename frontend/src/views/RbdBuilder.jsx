@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import ReactFlow, {
   Background,
   Controls,
@@ -33,7 +33,6 @@ import {
   saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP, downloadRbdJson, JSON_EXPORT_TIP,
 } from "../api.js";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import CopyId from "../components/CopyId.jsx";
 import { registerRbdCanvas } from "../rbdBridge.js";
 import { normalizeRbdGraph } from "../rbdGraph.js";
 import { isRepeat, makeRepeat, originalId, promoteRepeats } from "../rbdRepeats.js";
@@ -50,6 +49,9 @@ import {
 } from "../components/RbdNodes.jsx";
 import { lazy, Suspense } from "react";
 import { unitInText } from "../components/unitText.js";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import Chip from "../components/ui/Chip.jsx";
+import { formatPercent } from "../format.js";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -180,6 +182,18 @@ const EDGE_OPTIONS = {
   markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
 };
 
+// Fitting the view fills the canvas's width (block text is sized to read at
+// about 0.55), never zooms a small diagram past 0.75 (where block text is the
+// page's size), and never zooms out so far that the text is unreadable: past
+// that a large diagram is a pan away.
+const FIT_OPTIONS = { padding: 0.02, minZoom: 0.45, maxZoom: 0.75, duration: 300 };
+// The sized canvas (see sizeCanvas): its least height, the room kept above
+// and below the diagram for the zoom controls, and the frame below it (the
+// page's bottom padding).
+const CANVAS_MIN = 300;
+const CANVAS_PAD = 24;
+const FRAME_BOTTOM = 20;
+
 // A repairable diagram's crews, groups and safety settings (#156, #157): the
 // graph keys that are set.
 const POLICY_KEYS = ["repair_crews", "maintenance_groups", "safety_function", "target_sil"];
@@ -189,7 +203,135 @@ function policyFields(policies) {
   return out;
 }
 
-function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
+// A toolbar dropdown (#314): the trigger, and a menu of .ovm-item buttons that
+// closes on an outside click or on choosing an item. Items stay mounted.
+function ToolbarMenu({ label, title, aria, caret = true, className = "", children }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <div className={"ovm rbd-tb-menu " + className} ref={ref}>
+      <button
+        type="button"
+        className="secondary sm rbd-tb-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={aria}
+        title={title}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {label}{caret && <span className="rbd-tb-caret"><Caret /></span>}
+      </button>
+      <div
+        className="ovm-menu"
+        hidden={!open}
+        onClick={(e) => { if (e.target.closest(".ovm-item")) setOpen(false); }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const Caret = () => (
+  <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+    <path d="M2.5 4.5 6 8l3.5-3.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const MoreIcon = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+    <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+  </svg>
+);
+
+// Validation as a slim toolbar status (#314): "✓ Valid", "! Valid · 1 warning"
+// or "✕ Not valid · 2 problems", toned by the worst item, that opens the full
+// check. Before a check (or once the diagram has changed) it's the Validate
+// button itself.
+function ValidationStatus({ validation, stale, validating, onValidate }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  // A failed check opens itself: the problems are the next thing to read.
+  useEffect(() => {
+    if (validation && !validation.valid && !validation.empty) setOpen(true);
+  }, [validation]);
+  // Keep the open check on screen (a phone's toolbar puts the status mid-row).
+  const popRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = popRef.current;
+    if (!open || !el) return;
+    el.style.right = "";
+    const { left, right } = el.getBoundingClientRect();
+    const gap = 12;
+    if (left < gap) el.style.right = `${left - gap}px`;
+    else if (right > window.innerWidth - gap) el.style.right = `${right - (window.innerWidth - gap)}px`;
+  }, [open]);
+
+  if (validating || !validation || stale) {
+    return (
+      <button
+        type="button"
+        className="sm"
+        onClick={onValidate}
+        disabled={validating}
+        title={stale ? "The diagram has changed since the last check" : "Check the diagram"}
+      >
+        {validating ? "Validating…" : "Validate"}
+      </button>
+    );
+  }
+  const errors = validation.errors?.length || 0;
+  const warnings = validation.warnings?.length || 0;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const [tone, icon, text] = validation.empty
+    ? ["todo", "+", "Nothing to check"]
+    : !validation.valid
+    ? ["bad", "✕", `Not valid${errors ? ` · ${plural(errors, "problem")}` : ""}`]
+    : warnings
+    ? ["caveat", "!", `Valid · ${plural(warnings, "warning")}`]
+    : ["ok", "✓", "Valid"];
+  return (
+    <div className="ovm rbd-tb-menu" ref={ref}>
+      <button
+        type="button"
+        className={`rbd-valid-toggle is-${tone}`}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span aria-hidden="true">{icon}</span> {text}
+        <span className="rbd-tb-caret"><Caret /></span>
+      </button>
+      <div className="ovm-menu rbd-valid-pop" hidden={!open} ref={popRef}>
+        <ValidationPanel validation={validation} stale={false} />
+        <button type="button" className="secondary sm" onClick={() => { setOpen(false); onValidate(); }}>
+          Validate again
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Shared samples are stored with a "(sample)" suffix; the header says so with a chip.
+const SAMPLE_SUFFIX = /\s*\(sample\)\s*$/i;
+
+function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
@@ -206,6 +348,10 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   const [savedRbdName, setSavedRbdName] = useState("");
   const [savedRbdUpdatedAt, setSavedRbdUpdatedAt] = useState(null);
   const [savedRbdReadOnly, setSavedRbdReadOnly] = useState(false);
+  // The page header shows the diagram's name and holds Share / Copy ID.
+  useEffect(() => {
+    onMeta?.({ id: savedRbdId, name: savedRbdName, readOnly: savedRbdReadOnly });
+  }, [onMeta, savedRbdId, savedRbdName, savedRbdReadOnly]);
   const [rbdUnit, setRbdUnit] = useState("");
   // Repairable RBD: a distinct modelling choice — components carry a repair-time
   // distribution and the system is analysed for availability, not reliability.
@@ -225,8 +371,16 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   );
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
   const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'tree' | 'design' | 'outages'
-  // A tab's empty state (#271) sends the user back to the canvas.
+  // The canvas fills the frame; the result tabs scroll with the page (#311).
+  useEffect(() => { onTab?.(tab); }, [onTab, tab]);
+  // A tab's empty state (#271) sends the user back to the canvas — or, on a
+  // read-only diagram, to save a copy (or, unsaved, to save it): the dialog
+  // opens over the Builder.
   const toBuilder = useCallback(() => setTab("builder"), []);
+  const saveFromTab = useCallback((which) => {
+    setTab("builder");
+    setModal(which);
+  }, []);
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
   const [checkedSig, setCheckedSig] = useState(null);
@@ -236,7 +390,67 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   // live diagram via the bridge without stale-closure issues.
   const liveRef = useRef({ nodes: [], edges: [], unit: "" });
   liveRef.current = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField };
-  const { screenToFlowPosition, fitView } = useReactFlow();
+  const { screenToFlowPosition, fitView, getNodes } = useReactFlow();
+  // Fit once React Flow has measured the nodes just set (#309). A saved
+  // diagram reopened with blocks off-screen: its load ran in a callback from
+  // the first render, whose fitView was React Flow's no-op stand-in (the
+  // viewport wasn't ready), and fitting in the next frame came before the
+  // nodes had sizes. So: the current fitView, once every one of ``expected``
+  // is in the flow with a size (a second at most).
+  const fitViewRef = useRef(fitView);
+  fitViewRef.current = fitView;
+  // The canvas is as tall as the diagram needs at the zoom that fits its
+  // width, so a wide, flat diagram has no band of empty canvas above and
+  // below it; between CANVAS_MIN and the frame. A phone, or a diagram with
+  // next to nothing on it (room to build), keeps the whole frame. Returns
+  // whether the canvas could be measured (not while its tab is hidden).
+  const [canvasH, setCanvasH] = useState(null);
+  const sizedRef = useRef(false);
+  const sizeCanvas = useCallback(() => {
+    const el = wrapper.current;
+    const W = el?.clientWidth || 0;
+    if (!W) return false;
+    const placed = getNodes().filter((n) => n.width && n.height);
+    if (W < 640 || placed.length <= 3) {
+      setCanvasH(null);
+      return true;
+    }
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const n of placed) {
+      const p = n.positionAbsolute || n.position;
+      x0 = Math.min(x0, p.x);
+      x1 = Math.max(x1, p.x + n.width);
+      y0 = Math.min(y0, p.y);
+      y1 = Math.max(y1, p.y + n.height);
+    }
+    const k = 1 + FIT_OPTIONS.padding;
+    const zoom = Math.min(FIT_OPTIONS.maxZoom, Math.max(FIT_OPTIONS.minZoom, W / ((x1 - x0) * k)));
+    const want = Math.ceil((y1 - y0) * k * zoom) + 2 * CANVAS_PAD;
+    const room = window.innerHeight - el.getBoundingClientRect().top - FRAME_BOTTOM;
+    setCanvasH(Math.round(Math.max(CANVAS_MIN, Math.min(want, room))));
+    return true;
+  }, [getNodes]);
+  const fitWhenMeasured = useCallback((expected) => {
+    const ids = (expected || []).map((n) => n.id);
+    let frames = 0;
+    const attempt = () => {
+      const byId = new Map(getNodes().map((n) => [n.id, n]));
+      const ready = ids.every((id) => byId.get(id)?.width && byId.get(id)?.height);
+      if ((ready && frames > 0) || frames > 60) {
+        sizedRef.current = sizeCanvas();
+        // Fit once React Flow has seen the canvas's new height.
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => fitViewRef.current(FIT_OPTIONS)));
+      } else {
+        frames += 1;
+        window.requestAnimationFrame(attempt);
+      }
+    };
+    window.requestAnimationFrame(attempt);
+  }, [getNodes, sizeCanvas]);
+  // A diagram loaded while another tab showed is sized when the canvas is.
+  useEffect(() => {
+    if (tab === "builder" && !sizedRef.current) fitWhenMeasured();
+  }, [tab, fitWhenMeasured]);
   const nodeTypes = useMemo(
     () => ({
       component: ComponentNode,
@@ -269,16 +483,19 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       const v = await validateRbd({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField });
       setValidation(v);
       setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
+      return v;
     } catch (err) {
-      setValidation({
+      const v = {
         valid: false,
         analytic: false,
         can_calculate: false,
         errors: [err.message],
         warnings: [],
         non_analytic_nodes: {},
-      });
+      };
+      setValidation(v);
       setCheckedSig(graphSignature({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
+      return v;
     } finally {
       setValidating(false);
     }
@@ -396,10 +613,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   const autoLayout = useCallback(() => {
     setNodes((nds) => autoLayoutNodes(nds, edges));
     // Recenter/zoom once the new positions have been applied.
-    window.requestAnimationFrame(() =>
-      fitView({ padding: 0.35, duration: 300 })
-    );
-  }, [setNodes, edges, fitView]);
+    fitWhenMeasured();
+  }, [setNodes, edges, fitWhenMeasured]);
 
   // Manually mark a node working/failed, or clear it (state = null).
   const setNodeState = useCallback(
@@ -615,10 +830,11 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
   );
 
   // Persist the current diagram as a saved RBD (updates the open one if any).
+  // ``asNew`` (Save as new) saves a copy under a new id and opens it.
   const onSaveRbd = useCallback(
-    async (name) => {
+    async (name, asNew = false) => {
       const graph = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField };
-      const saved = await saveRbd(name, graph, savedRbdId, savedRbdUpdatedAt);
+      const saved = await saveRbd(name, graph, asNew ? null : savedRbdId, asNew ? null : savedRbdUpdatedAt);
       setSavedRbdId(saved.id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(saved.updated_at || null);
@@ -661,9 +877,9 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
       setSavedRbdReadOnly(readOnly);
-      window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
+      fitWhenMeasured(loadedNodes);
     },
-    [setNodes, setEdges, fitView]
+    [setNodes, setEdges, fitWhenMeasured]
   );
 
   const openRbd = useCallback(
@@ -688,8 +904,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
     setSavedRbdReadOnly(false);
-    window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
-  }, [setNodes, setEdges, fitView]);
+    fitWhenMeasured(INITIAL_NODES);
+  }, [setNodes, setEdges, fitWhenMeasured]);
 
   // Replace the canvas with an assistant-provided graph: normalise it (handles,
   // edge styling, life models) and lay it out left-to-right, then keep the new
@@ -707,8 +923,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
     if (graph.ccf_groups != null) setCcfGroups(graph.ccf_groups);
     if (graph.costs !== undefined) setDiagramCosts(graph.costs || null);
     if (POLICY_KEYS.some((k) => graph[k] !== undefined)) setPolicies(policyFields(graph));
-    window.requestAnimationFrame(() => fitView({ padding: 0.35, duration: 300 }));
-  }, [setNodes, setEdges, fitView]);
+    fitWhenMeasured(norm.nodes);
+  }, [setNodes, setEdges, fitWhenMeasured]);
 
   // Put a redundancy design (Design tab) on the canvas as it is — unsaved, and
   // keeping the user's layout — clearing the id counter past any new ids.
@@ -951,10 +1167,157 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         Outage history
       </button>
     </div>
+    <div className="rbd-builder" style={{ display: tab === "builder" ? undefined : "none" }}>
+    {/* One row above the canvas (#314): the diagram's settings on the left;
+        Validate, Save ▾ and ⋯ on the right. On a phone the settings move into ⋯. */}
+    <div className="rbd-toolbar">
+      <div className="rbd-toolbar-row rbd-tb-settings">
+        <label className="rbd-unit-field">
+          <span>Unit</span>
+          <input
+            className="rbd-unit-input"
+            list="rbd-time-units"
+            placeholder="e.g. Hours"
+            value={rbdUnit}
+            onChange={(e) => setRbdUnit(e.target.value)}
+          />
+        </label>
+        <Select
+          className="rbd-mode-select"
+          value={repairable ? "repairable" : "non"}
+          onChange={(v) => setRepairable(v === "repairable")}
+          title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time."
+          options={[
+            { value: "non", label: "Non-repairable" },
+            { value: "repairable", label: "Repairable" },
+          ]}
+        />
+        {repairable && policies.safety_function && (
+          <Chip onClick={() => setModal("safety")} title="This diagram is a safety function: its results lead with PFDavg and the SIL. Click to edit.">
+            Safety function{policies.target_sil ? ` · SIL ${policies.target_sil} target` : ""}
+          </Chip>
+        )}
+        {/* Common-cause groups: a chip that drops the list beneath it. */}
+        {ccfGroups.length > 0 && (
+          <div className="rbd-ccf-menu">
+            <Chip
+              className={ccfListOpen ? "open" : ""}
+              onClick={() => setCcfListOpen((o) => !o)}
+              title="Common-cause groups in this diagram"
+            >
+              ⚭ {ccfGroups.length} common-cause group{ccfGroups.length === 1 ? "" : "s"}
+            </Chip>
+            {ccfListOpen && (
+              <div className="rbd-ccf-list">
+                <div className="rbd-ccf-list-h">Common-cause groups</div>
+                {ccfGroups.map((g) => (
+                  <div className="rbd-ccf-row" key={g.id}>
+                    <span className="rbd-ccf-row-members" title={(g.members || []).map(labelFor).join(", ")}>
+                      {(g.members || []).map(labelFor).join(" · ")}
+                    </span>
+                    <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β {formatPercent(g.beta)}{g.basis === "probability" ? " (prob.)" : ""}</button>
+                    <button className="rbd-ccf-row-x" onClick={() => removeCcf(g.id)} title="Ungroup" aria-label="Ungroup">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <datalist id="rbd-time-units">
+        {TIME_UNITS.map((u) => (
+          <option value={u} key={u} />
+        ))}
+      </datalist>
+      <div className="rbd-toolbar-actions">
+        <ValidationStatus
+          validation={validation}
+          stale={validationStale}
+          validating={validating}
+          onValidate={runValidate}
+        />
+        <ToolbarMenu label="Save" title="Save, or download the saved diagram">
+          <button className="ovm-item" onClick={() => setModal("saverbd")}>Save…</button>
+          {savedRbdId && (
+            <button className="ovm-item" onClick={() => setModal("saveasnew")}>Save as new…</button>
+          )}
+          <button
+            className="ovm-item"
+            onClick={exportPython}
+            disabled={!savedRbdId || !!exporting}
+            title={savedRbdId ? PYTHON_EXPORT_TIP : "Save the diagram first"}
+          >
+            {exporting === "python" ? "Preparing…" : "Download as Python"}
+          </button>
+          <button
+            className="ovm-item"
+            onClick={() => exportAs("json")}
+            disabled={!savedRbdId || !!exporting}
+            title={savedRbdId ? JSON_EXPORT_TIP : "Save the diagram first"}
+          >
+            {exporting === "json" ? "Preparing…" : "Download as RePyability JSON"}
+          </button>
+        </ToolbarMenu>
+        <ToolbarMenu label={<MoreIcon />} title="More" aria="More diagram settings" caret={false}>
+          {/* On a phone the toolbar's settings live here (#301). */}
+          <div className="rbd-ovm-settings">
+            <label>
+              <span>Unit</span>
+              <input
+                list="rbd-time-units"
+                placeholder="e.g. Hours"
+                value={rbdUnit}
+                onChange={(e) => setRbdUnit(e.target.value)}
+              />
+            </label>
+            <label>
+              <span>System</span>
+              <select value={repairable ? "repairable" : "non"} onChange={(e) => setRepairable(e.target.value === "repairable")}>
+                <option value="non">Non-repairable</option>
+                <option value="repairable">Repairable</option>
+              </select>
+            </label>
+          </div>
+          <button className="ovm-item" onClick={autoLayout}>Auto-arrange</button>
+          {repairable && (
+            <button
+              className="ovm-item"
+              onClick={() => setModal("costs")}
+              title={
+                diagramCosts?.downtime_rate != null
+                  ? `System downtime costs ${Number(diagramCosts.downtime_rate).toLocaleString()} per ${(unitInText(rbdUnit) || "time unit").replace(/s$/, "")}`
+                  : "System downtime cost and ownership horizon (block costs are on each block)"
+              }
+            >
+              Costs…{diagramCosts ? " ✓" : ""}
+            </button>
+          )}
+          {repairable && (
+            <button
+              className="ovm-item"
+              onClick={() => setModal("crews")}
+              title="Repair crews shared by the blocks, and maintenance groups' set-up costs"
+            >
+              Crews and groups…
+              {policies.repair_crews?.crews
+                ? ` (${policies.repair_crews.crews} crew${policies.repair_crews.crews === 1 ? "" : "s"})`
+                : ""}
+            </button>
+          )}
+          <button
+            className="ovm-item"
+            onClick={() => setModal("safety")}
+            title="A safety instrumented function: report PFDavg and the SIL"
+          >
+            Safety function…{repairable && policies.safety_function ? " ✓" : ""}
+          </button>
+        </ToolbarMenu>
+      </div>
+    </div>
     <div
-      className="rbd-canvas"
+      className={"rbd-canvas" + (canvasH ? " is-sized" : "")}
       ref={wrapper}
-      style={{ display: tab === "builder" ? undefined : "none" }}
+      style={canvasH ? { height: canvasH } : undefined}
     >
       <ReactFlow
         nodes={nodes}
@@ -975,172 +1338,24 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         defaultEdgeOptions={EDGE_OPTIONS}
         fitView
-        fitViewOptions={{ padding: 0.35 }}
+        fitViewOptions={FIT_OPTIONS}
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
       >
-        <Panel position="top-left" className="rbd-toolbar">
-          <div className="rbd-toolbar-row">
-          <span className="rbd-name">{savedRbdName || "Untitled RBD"}</span>
-          <label className="rbd-unit-field">
-            <span>Unit</span>
-            <input
-              className="rbd-unit-input"
-              list="rbd-time-units"
-              placeholder="e.g. Hours"
-              value={rbdUnit}
-              onChange={(e) => setRbdUnit(e.target.value)}
-            />
-            <datalist id="rbd-time-units">
-              {TIME_UNITS.map((u) => (
-                <option value={u} key={u} />
-              ))}
-            </datalist>
-          </label>
-          <div className="rbd-unit-field" title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time.">
-            <span>System</span>
-            <Select
-              value={repairable ? "repairable" : "non"}
-              onChange={(v) => setRepairable(v === "repairable")}
-              // Short labels: the toolbar row has to share the canvas width with
-              // the action buttons opposite. What each mode means is on the
-              // field's tooltip and in the results tab.
-              options={[
-                { value: "non", label: "Non-repairable" },
-                { value: "repairable", label: "Repairable" },
-              ]}
-            />
-          </div>
-          {repairable && (
-            <button
-              className={"rbd-costs-toggle" + (diagramCosts ? " set" : "")}
-              onClick={() => setModal("costs")}
-              title={
-                diagramCosts?.downtime_rate != null
-                  ? `System downtime costs ${Number(diagramCosts.downtime_rate).toLocaleString()} per ${(unitInText(rbdUnit) || "time unit").replace(/s$/, "")} — click to edit`
-                  : "System downtime cost and ownership horizon (block costs are on each block)"
-              }
-            >
-              Costs
-            </button>
-          )}
-          {repairable && (
-            <button
-              className={"rbd-costs-toggle" + (Object.keys(policyFields(policies)).length ? " set" : "")}
-              onClick={() => setModal("crews")}
-              title="Repair crews shared by the blocks, maintenance groups' set-up costs, and a safety function's PFDavg / SIL"
-            >
-              {policies.repair_crews?.crews
-                ? `${policies.repair_crews.crews} crew${policies.repair_crews.crews === 1 ? "" : "s"}`
-                : "Crews"}
-              {policies.safety_function ? " · SIF" : ""}
-            </button>
-          )}
-          {/* Common-cause groups sit with the other diagram-level settings, as a
-              chip that expands on demand. They used to float bottom-left, where
-              they collided with the zoom controls and the hint bubble; a chip
-              keeps the overlay one row tall so it doesn't cover the top of the
-              diagram either. */}
-          {(!repairable || policies.safety_function) && ccfGroups.length > 0 && (
-            <div className="rbd-ccf-menu">
-              <button
-                className={"rbd-ccf-toggle" + (ccfListOpen ? " open" : "")}
-                onClick={() => setCcfListOpen((o) => !o)}
-                title="Common-cause groups in this diagram"
-              >
-                ⚭ {ccfGroups.length} CC group{ccfGroups.length === 1 ? "" : "s"}
-              </button>
-              {ccfListOpen && (
-                <div className="rbd-ccf-list">
-                  <div className="rbd-ccf-list-h">Common-cause groups</div>
-                  {ccfGroups.map((g) => (
-                    <div className="rbd-ccf-row" key={g.id}>
-                      <span className="rbd-ccf-row-members" title={(g.members || []).map(labelFor).join(", ")}>
-                        {(g.members || []).map(labelFor).join(" · ")}
-                      </span>
-                      <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β={g.beta}{g.basis === "probability" ? " (prob.)" : ""}</button>
-                      <button className="rbd-ccf-row-x" onClick={() => removeCcf(g.id)} title="Ungroup" aria-label="Ungroup">×</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          </div>
-          <div className="rbd-toolbar-actions">
-          <button className="rbd-btn" onClick={() => setModal("saverbd")}>
-            Save RBD
-          </button>
-          {savedRbdId && (
-            <ShareButton
-              collection="rbds"
-              artifactId={savedRbdId}
-              name={savedRbdName || "Untitled RBD"}
-              readOnly={savedRbdReadOnly}
-            />
-          )}
-          <span
-            className="rbd-export-wrap"
-            title={savedRbdId ? PYTHON_EXPORT_TIP : "Save the diagram first"}
-          >
-            <button
-              className="rbd-btn"
-              onClick={exportPython}
-              disabled={!savedRbdId || !!exporting}
-            >
-              {exporting === "python" ? "Preparing…" : "Download as Python"}
-            </button>
-          </span>
-          <span
-            className="rbd-export-wrap"
-            title={savedRbdId ? JSON_EXPORT_TIP : "Save the diagram first"}
-          >
-            <button
-              className="rbd-btn"
-              onClick={() => exportAs("json")}
-              disabled={!savedRbdId || !!exporting}
-            >
-              {exporting === "json" ? "Preparing…" : "Download as RePyability JSON"}
-            </button>
-          </span>
-          <button className="rbd-btn" onClick={autoLayout}>
-            Auto-arrange
-          </button>
-          <button
-            className="rbd-btn rbd-btn-primary"
-            onClick={runValidate}
-            disabled={validating}
-          >
-            {validating ? "Validating…" : "Validate"}
-          </button>
-          </div>
-        {(!repairable || policies.safety_function) && selectedComponentIds.length >= 2 && (
+        <Panel position="top-center" className="rbd-float-panel">
+        {selectedComponentIds.length >= 2 && (
           <div className="rbd-toolbar-float">
-            <button className="rbd-btn accent" onClick={openCcfForSelection}
+            <button className="secondary sm ccf" onClick={openCcfForSelection}
                     title="Couple these redundant components by a shared failure cause">
               ⚭ Common-cause group ({selectedComponentIds.length})
             </button>
           </div>
         )}
-        {validation && (
-          <div className="rbd-toolbar-float">
-            <div className="rbd-validate-card">
-              <button
-                className="rbd-validate-close"
-                onClick={() => setValidation(null)}
-                aria-label="Dismiss"
-                title="Dismiss"
-              >
-                ×
-              </button>
-              <ValidationPanel validation={validation} stale={validationStale} />
-            </div>
-          </div>
-        )}
         </Panel>
-        <Background gap={22} color="#e8e7e2" />
-        <Controls showInteractive={false} />
-        <MiniMap pannable zoomable />
+        <Background gap={22} />
+        <Controls showInteractive={false} onFitView={() => fitWhenMeasured()} />
+        {/* Only for a large diagram (#314): on a small one it covers blocks. */}
+        {nodes.length > 15 && <MiniMap pannable zoomable />}
       </ReactFlow>
 
       {menu && (
@@ -1381,19 +1596,17 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         </div>
       )}
 
-      <div className="rbd-hint">
-        {connectHint ? (
-          <span className="rbd-hint-flash">{connectHint}</span>
-        ) : (
-          <>
-            Right-click the canvas to add a component · drag between handles, or
-            select blocks and press <kbd>C</kbd>, to connect · double-click a block to edit
-            {repairable
-              ? " · double-click each component to set its repair time, costs and maintenance"
-              : " · shift-click 2+ redundant components to add a common-cause group"}
-          </>
-        )}
-      </div>
+      {/* One short line until the first connection (#314); the C shortcut's
+          feedback flashes here too. */}
+      {(connectHint || edges.length === 0) && (
+        <div className="rbd-hint">
+          {connectHint ? (
+            <span className="rbd-hint-flash">{connectHint}</span>
+          ) : (
+            "Right-click to add · drag to connect · double-click to edit"
+          )}
+        </div>
+      )}
 
       {modal === "lifemodel" && (
         <LifeModelModal
@@ -1401,6 +1614,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
           repairable={repairable}
           crews={!!policies.repair_crews}
           groups={groupNames}
+          safety={repairable && !!policies.safety_function}
           onClose={() => {
             setModal(null);
             setModalNodeId(null);
@@ -1473,12 +1687,19 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
           onSubmit={(c) => { setDiagramCosts(c); setModal(null); }}
         />
       )}
-      {modal === "crews" && (
+      {(modal === "crews" || modal === "safety") && (
         <RbdCrewsModal
+          section={modal}
           initial={policies}
           groupNames={groupNames}
+          repairable={repairable}
           onClose={() => setModal(null)}
-          onSubmit={(p) => { setPolicies(policyFields(p)); setModal(null); }}
+          onSubmit={(p) => {
+            setPolicies(policyFields(p));
+            // A safety function is a repairable diagram's analysis (#298).
+            if (p.safety_function) setRepairable(true);
+            setModal(null);
+          }}
         />
       )}
       {modal === "saverbd" && (
@@ -1488,6 +1709,15 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
           onSubmit={onSaveRbd}
         />
       )}
+      {modal === "saveasnew" && (
+        <RbdSaveModal
+          asNew
+          initialName={savedRbdName ? `${savedRbdName.replace(SAMPLE_SUFFIX, "")} (copy)` : ""}
+          onClose={() => setModal(null)}
+          onSubmit={(name) => onSaveRbd(name, true)}
+        />
+      )}
+    </div>
     </div>
     <div
       className="rbd-calc-panel"
@@ -1497,7 +1727,9 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         validation={validation}
         stale={validationStale}
+        onValidate={runValidate}
         rbdId={savedRbdId}
+        name={savedRbdName}
         onBuild={toBuilder}
       />
     </div>
@@ -1522,10 +1754,12 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
         graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         onApply={applyDesign}
         onBuild={toBuilder}
+        readOnly={savedRbdReadOnly}
+        onSaveCopy={savedRbdId ? () => saveFromTab("saveasnew") : null}
         onView={() => {
           setTab("builder");
           // Once the canvas is shown again (it can't be fitted while hidden).
-          window.setTimeout(() => fitView({ padding: 0.35, duration: 300 }), 60);
+          window.setTimeout(() => fitView(FIT_OPTIONS), 60);
         }}
       />
     </div>
@@ -1537,6 +1771,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
             graph={{ nodes, edges, unit: rbdUnit }}
             readOnly={savedRbdReadOnly}
             onBuild={toBuilder}
+            onSave={() => saveFromTab("saverbd")}
+            onSaveCopy={savedRbdId ? () => saveFromTab("saveasnew") : null}
             onApplyModels={(updates) =>
               // Models fitted from the log, put on their blocks (unsaved).
               setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: { ...n.data, ...updates[n.id] } } : n)))
@@ -1558,22 +1794,30 @@ export default function RbdBuilder() {
   const location = useLocation();
   const imported = id ? null : location.state?.imported || null;
   const [notesHidden, setNotesHidden] = useState(false);
+  const [meta, setMeta] = useState({});
+  const [tab, setTab] = useState("builder");
   return (
-    <div className="app rbd-app">
-      <header>
-        <div>
-          <div className="crumb">
-            <Link className="crumb-link" to="/rbds">RBDs</Link> / <b>Builder</b>
-          </div>
-          <h1>Reliability block diagram</h1>
-          <CopyId id={id} />
-        </div>
-      </header>
+    <div className={"app rbd-app" + (tab === "builder" ? "" : " rbd-app-scroll")}>
+      <PageHeader
+        crumbs={[{ label: "RBDs", to: "/rbds" }]}
+        title={(meta.name || "").replace(SAMPLE_SUFFIX, "") || (id ? "" : "Untitled RBD")}
+        badges={SAMPLE_SUFFIX.test(meta.name || "") && <Chip>Sample</Chip>}
+        id={meta.id || id}
+        menu={meta.id && (
+          <ShareButton
+            collection="rbds"
+            artifactId={meta.id}
+            name={meta.name || "Untitled RBD"}
+            readOnly={meta.readOnly}
+            className="ovm-item"
+          />
+        )}
+      />
       {imported && !notesHidden && (
         <div className="card note rbd-import-note">
           <p>
             <b>Imported from {imported.source_format || "file"}</b> — not saved yet. Check the blocks, then Save to keep it.
-            {" "}<button className="link-btn" onClick={() => setNotesHidden(true)}>Dismiss</button>
+            {" "}<button className="link" onClick={() => setNotesHidden(true)}>Dismiss</button>
           </p>
           {imported.warnings?.length > 0 && (
             <ul>
@@ -1589,8 +1833,10 @@ export default function RbdBuilder() {
             rbdId={id}
             imported={imported}
             onNew={() => navigate("/rbds/b")}
-            onOpenLibrary={() => navigate("/rbds/list")}
+            onOpenLibrary={() => navigate("/rbds")}
             onSaved={(savedId) => navigate(`/rbds/b/${savedId}`, { replace: true })}
+            onMeta={setMeta}
+            onTab={setTab}
           />
         </ReactFlowProvider>
       </div>

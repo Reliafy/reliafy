@@ -1,0 +1,73 @@
+"""Common-cause groups in repairable diagrams (#226).
+
+Since RePyability 0.12 a ``RepairableRBD``'s common-cause groups are followed
+over time (#158 there): the long-run figures and importance, A(t) and the
+window's events and costs, the simulation and the allocations take them in,
+each group a Markov chain of which members are down together. Where its
+chain or its simulation can't take a group — a member whose life isn't
+exponential, one with scheduled maintenance, imperfect repair or a
+maintenance group, members tested and repaired over time, limited repair
+crews, a member pinned working or failed, or one started from a current
+state — it refuses, with the reason.
+
+Reliafy's rule: a repairable diagram's common cause is in **every** figure or
+in **none**. :func:`common_cause_refusal` asks RePyability whether its long
+run, its values over time from new (and their failure frequencies) and its
+simulation all take the groups; when one doesn't, the diagram is analysed
+without them (as before #226) and the reason is said beside the figures, so
+the exact figures, the simulation and the costs never mix a with-common-cause
+value with one without. A safety function's PFDavg needs only the long run
+(:func:`long_run_refusal`), so it keeps its groups wherever the long-run
+chain covers them (#136).
+
+With limited repair crews RePyability 0.12's crew chain gives long-run values
+without the groups rather than refusing; :func:`long_run_refusal` checks the
+groups' chains, which refuse there, so those values are never reported as
+including common cause.
+
+The functions take an RBD and its pins only, so "Download as Python" copies
+them into its script (:func:`export_source`) and decides as the app does.
+"""
+
+from __future__ import annotations
+
+import inspect
+
+
+def long_run_refusal(rbd, working_nodes=(), broken_nodes=()):
+    """None when RePyability's long-run values take ``rbd``'s common-cause
+    groups in (with these blocks pinned), else its reason."""
+    if not getattr(rbd, "ccf_groups", None):
+        return None
+    try:
+        rbd._require_free_members(set(working_nodes or ()), set(broken_nodes or ()))
+        rbd._require_ccf_long_run()
+    except NotImplementedError as exc:
+        return str(exc)
+    return None
+
+
+def common_cause_refusal(rbd, working_nodes=(), broken_nodes=(), state=None):
+    """None when RePyability takes ``rbd``'s common-cause groups into every
+    figure of a repairable diagram — the long run, the values over time and
+    their failure frequencies, and the simulation, from ``state`` (node ->
+    NodeState; None: every block new) with these blocks pinned — else the
+    reason it doesn't."""
+    reason = long_run_refusal(rbd, working_nodes, broken_nodes)
+    if reason is not None or not getattr(rbd, "ccf_groups", None):
+        return reason
+    try:
+        rbd._require_ccf_frequencies()
+        rbd._require_groups_over_time(dict(state or {}))
+        rbd._require_groups_simulated(state or None)
+    except NotImplementedError as exc:
+        return str(exc)
+    return None
+
+
+_EXPORTED = (long_run_refusal, common_cause_refusal)
+
+
+def export_source() -> str:
+    """The functions above, as "Download as Python" copies them."""
+    return "\n\n".join(inspect.getsource(f).rstrip() for f in _EXPORTED) + "\n"

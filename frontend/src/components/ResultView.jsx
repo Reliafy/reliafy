@@ -7,12 +7,16 @@ import Coefficients from "./Coefficients.jsx";
 import ModelValidation from "./ModelValidation.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import CiNote from "./CiNote.jsx";
+import LifeAside from "./LifeSummary.jsx";
+import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { distColor } from "../instrument.js";
+import { formatNumber } from "../format.js";
+import Chip from "./ui/Chip.jsx";
 
+// The fit statistics open from the panel beside the plot.
 const DISTRIBUTION_TABS = [
   { id: "plot", label: "Probability plot" },
   { id: "calc", label: "Calculator" },
-  { id: "gof", label: "Goodness of fit" },
 ];
 const NONPARAMETRIC_TABS = [
   { id: "survival", label: "Survival curve" },
@@ -21,7 +25,7 @@ const NONPARAMETRIC_TABS = [
 // Discrete distributions have no probability paper, so no probability plot.
 const DISCRETE_TABS = [
   { id: "calc", label: "Calculator" },
-  { id: "gof", label: "Goodness of fit" },
+  { id: "gof", label: "Fit quality" },
 ];
 
 const pct = (v) => `${(v * 100).toFixed(v < 0.1 ? 2 : 1)}%`;
@@ -40,7 +44,7 @@ function PerDemandPanel({ result }) {
   return (
     <>
       <div className="result-head">
-        <span className="dpill"><span className="dot" style={{ background: color }} />Per-demand</span>
+        <Chip dot={color}>Per-demand</Chip>
       </div>
       <div className="params">
         <div className="stat">
@@ -109,41 +113,22 @@ function PerDemandPanel({ result }) {
     </>
   );
 }
+
 const REGRESSION_TABS = [
   { id: "coef", label: "Coefficients" },
   { id: "calc", label: "Calculator" },
-  { id: "gof", label: "Goodness of fit" },
+  { id: "gof", label: "Fit quality" },
   { id: "check", label: "Validation" },
 ];
 
-// One-line interpretation of the failure pattern — the statistical evidence an
-// RCM run-to-failure decision leans on.
-function RandomnessVerdict({ r }) {
-  if (r.basis === "memoryless") {
-    return (
-      <p className="verdict-line">
-        Exponential model — memoryless by construction: failures occur at a
-        constant rate (<b>random</b>). Time-based replacement won't help.
-      </p>
-    );
-  }
-  const ci = r.beta_ci ? `[${r.beta_ci[0].toPrecision(3)}, ${r.beta_ci[1].toPrecision(3)}]` : null;
-  const beta = `β = ${Number(r.beta).toPrecision(3)}${ci ? ` ${ci}` : ""}`;
-  const text = {
-    random: <>the CI contains 1 — failures are <b>consistent with a random</b> (constant-rate) process.</>,
-    wear_out: <>the CI excludes 1 — this is <b>wear-out</b>; preventive replacement can pay off.</>,
-    infant_mortality: <>the CI is below 1 — <b>infant mortality</b>; failures decrease with age.</>,
-    inconclusive: <>no confidence interval available — the failure pattern is <b>inconclusive</b>.</>,
-  }[r.verdict];
-  return <p className="verdict-line">{beta}: {text}</p>;
-}
-
-// Presentational result panel for a fit (used for both fresh and saved models).
-// ``hideHead`` drops the distribution pill when the surrounding page already
-// shows it (e.g. the saved-model page header) to avoid stating it twice.
+// Presentational result panel for a fit (used for both fresh and saved
+// models). The tabs come first; the plot sits beside a panel with the
+// parameters, the data and a one-line reading (#311); the rest is folded
+// under Details.
 // ``modelId`` (a saved model) lets a regression model saved before its
-// validation scores existed fetch them.
-export default function ResultView({ result, hideHead = false, modelId = null }) {
+// validation scores existed fetch them. ``split`` ({ failed, running, other })
+// is the data's failure / still-running count when the caller has the data.
+export default function ResultView({ result, modelId = null, name = null, split = null }) {
   if (result.kind === "per_demand") return <PerDemandPanel result={result} />;
 
   const isRegression = result.kind === "regression";
@@ -187,17 +172,11 @@ export default function ResultView({ result, hideHead = false, modelId = null })
   if (!isNonparametric && !isDiscrete && !hasPlot)
     tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
 
-  const color = distColor(result.distribution);
-  const metrics = result.metrics || {};
-  // PH models show their baseline parameters in the calculator's side rail
-  // rather than a top summary bar.
+  // PH models show their baseline parameters in the calculator's side rail;
+  // every other kind leads with the answer card.
   const paramsInRail = isRegression && !!result.functions;
+  const bestFit = (result.selection?.candidates?.length || 0) > 1;
 
-  // Descriptive notes + the randomness verdict — rendered below the tabbed
-  // content (the model itself stays at the top of the view).
-  const hasNotes =
-    isNonparametric || isDiscrete || result.params_only ||
-    result.selection?.candidates?.length > 1 || result.options || result.randomness;
   // The adjustments a fit used, in words (a mixture's own settings aren't).
   const optionWords = result.options
     ? [
@@ -208,104 +187,56 @@ export default function ResultView({ result, hideHead = false, modelId = null })
           `fixed ${Object.entries(result.options.fixed).map(([k, v]) => `${k} = ${v}`).join(", ")}`,
       ].filter(Boolean)
     : [];
-  const notes = (
-    <>
-      {isNonparametric && (
-        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-          Non-parametric empirical estimate — no distribution assumed, so no
-          fitted parameters or goodness-of-fit.
-        </p>
-      )}
-      {isDiscrete && (
-        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-          Discrete distribution — fitted to whole-count life data (cycles, shocks
-          or demands to failure). There's no probability plot; the fitted
-          reliability functions and goodness-of-fit are shown.
-        </p>
-      )}
-      {result.params_only && (
-        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-          Created from parameters — reliability functions and life metrics are
-          available; there's no probability plot without data.
-        </p>
-      )}
-      {result.selection && result.selection.candidates?.length > 1 && (() => {
-        const key = result.selection.criterion || "aic";
-        const label = key === "bic" ? "BIC" : key === "aic_c" ? "AICc" : "AIC";
-        const [first, second] = result.selection.candidates;
-        // Mixtures on (#236): say which criterion decided — BIC between the
-        // best mixture and the best single, AIC among the singles.
-        if (result.selection.summary) {
-          return (
-            <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-              {result.selection.summary}
-            </p>
-          );
-        }
-        return (
-          <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-            Selected by lowest {label} over {result.selection.candidates.length}{" "}
-            candidates{result.selection.include_mixtures ? ", two-mode mixtures included" : ""} — next best:{" "}
-            {second.name} (Δ{label} +{(second[key] - first[key]).toFixed(1)})
-          </p>
-        );
-      })()}
-      {optionWords.length > 0 && (
-        <p className="muted-line" style={{ margin: "0.4rem 0 0" }}>
-          Fit options: {optionWords.join(" · ")}
-        </p>
-      )}
-      {result.randomness && <RandomnessVerdict r={result.randomness} />}
-    </>
+  let selectionNote = null;
+  if (bestFit) {
+    const key = result.selection.criterion || "aic";
+    const label = key === "bic" ? "BIC" : key === "aic_c" ? "AICc" : "AIC";
+    const [first, second] = result.selection.candidates;
+    // Mixtures on (#236): the summary says which criterion decided — BIC
+    // between the best mixture and the best single, AIC among the singles.
+    selectionNote = result.selection.summary || (
+      `Selected by lowest ${label} over ${result.selection.candidates.length} candidates` +
+      `${result.selection.include_mixtures ? ", two-mode mixtures included" : ""} — next best: ` +
+      `${second.name} (Δ${label} +${(second[key] - first[key]).toFixed(1)})`
+    );
+  }
+
+  // Everything the answer card leaves out, folded under Details: parameters
+  // past the two tiles (with their intervals), how the model was chosen and
+  // fitted, and what this kind of model can't show.
+  const params = result.params || [];
+  const extra = result.extra_params || [];
+  const moreParams = !isRegression && !hasPlot && !isNonparametric && (params.length > 2 || extra.length > 0);
+  const details = !isRegression && (
+    moreParams || optionWords.length > 0 || selectionNote || isNonparametric || isDiscrete ||
+    result.params_only || result.mixture > 1
   );
 
   return (
     <>
-      {!hideHead && (
-        <div className="result-head">
-          <span className="dpill">
-            <span className="dot" style={{ background: color }} />
-            {result.distribution}
-          </span>
-        </div>
-      )}
       <NoMaximumNotice notice={result.no_finite_maximum} style={{ margin: "0 0 12px" }} />
       {/* Best fit picked a two-mode mixture (#236): say what the modes are. */}
       {result.mixture_summary && (
         <p className="mixture-summary">{result.mixture_summary}</p>
       )}
-      {/* Distributions with a probability plot move their parameters into the
-          plot's side rail; proportional-hazards models move theirs into the
-          calculator's side rail (like non-PH models). Other kinds keep the top
-          summary bar. The observation count is no longer shown as a stat. */}
-      {!hasPlot && !paramsInRail && (
-        <div className="params">
-          {result.params.map((p) => (
-            <div className="stat" key={p.name}>
-              <div className="value">{p.value.toPrecision(4)}</div>
-              <div className="name">{p.name}</div>
-              {p.ci && (
-                <div className="param-ci">
-                  95% CI [{p.ci[0].toPrecision(3)}, {p.ci[1].toPrecision(3)}]
-                </div>
-              )}
-            </div>
-          ))}
-          {(result.extra_params || []).map((p) => (
-            <div className="stat" key={p.name}>
-              <div className="value">{p.value.toPrecision(4)}</div>
-              <div className="name">{p.name}</div>
-            </div>
-          ))}
-          {(isNonparametric || isDiscrete) && metrics.median != null && (
-            <div className="stat"><div className="value">{Number(metrics.median).toPrecision(4)}</div><div className="name">median life</div></div>
-          )}
-          {(isNonparametric || isDiscrete) && metrics.mttf != null && (
-            <div className="stat"><div className="value">{Number(metrics.mttf).toPrecision(4)}</div><div className="name">MTTF</div></div>
-          )}
-        </div>
+      {isRegression && !paramsInRail && (
+        <>
+          <div className="params">
+            {params.map((p) => (
+              <div className="stat" key={p.name}>
+                <div className="value">{formatNumber(p.value, { sig: 4 })}</div>
+                <div className="name">{p.name}</div>
+                {p.ci && (
+                  <div className="param-ci">
+                    95% CI [{formatNumber(p.ci[0])}, {formatNumber(p.ci[1])}]
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <CiNote params={params} note={result.ci_note} />
+        </>
       )}
-      {!hasPlot && !paramsInRail && <CiNote params={result.params} note={result.ci_note} />}
       <div className="tabs">
         {tabs.map((t) => (
           <button
@@ -320,81 +251,89 @@ export default function ResultView({ result, hideHead = false, modelId = null })
 
       <div className="tab-panel">
         {tab === "survival" && (
-          <div className="plotwrap">
-            <div className="plottitle">{result.distribution} — empirical survival</div>
-            <SurvivalPlot estimate={result.estimate} unit={result.unit} />
+          <div className="detail-panel">
+            <div className="plotwrap">
+              <SurvivalPlot estimate={result.estimate} unit={result.unit}
+                            download={`${name || result.distribution} — survival curve`} />
+            </div>
+            <LifeAside result={result} split={split} />
           </div>
         )}
         {tab === "plot" && (
           <div className="detail-panel">
             <div className="plotwrap">
-              <div className="plottitle">{result.distribution} probability plot</div>
-              <ProbabilityPlot plot={result.plot} unit={result.unit} />
+              <ProbabilityPlot plot={result.plot} unit={result.unit}
+                               download={`${name || result.distribution} — probability plot`} />
             </div>
-            <div className="aside">
-              {result.params.length > 0 && (
-                <div className="gof-card">
-                  <div className="gofh">Parameters</div>
-                  {result.params.map((p) => (
-                    <div className="gofr" key={p.name}>
-                      <span className="gk">{p.name}</span>
-                      <span className="gv-col">
-                        <span className="gv">{p.value.toPrecision(4)}</span>
-                        {p.ci && (
-                          <span className="param-ci">
-                            95% CI [{p.ci[0].toPrecision(3)}, {p.ci[1].toPrecision(3)}]
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  ))}
-                  {(result.extra_params || []).map((p) => (
-                    <div className="gofr" key={p.name}>
-                      <span className="gk">{p.name}</span>
-                      <span className="gv">{p.value.toPrecision(4)}</span>
-                    </div>
-                  ))}
-                  <CiNote params={result.params} note={result.ci_note} />
-                </div>
-              )}
-              {result.fit_warning && !result.no_finite_maximum && (
-                <div className="detail-note warn" style={{ marginBottom: 10 }}>
-                  ⚠ {result.fit_warning}
-                </div>
-              )}
-              <div className="detail-note">
-                {result.options?.how && result.options.how !== "MLE"
-                  ? <>Fitted by <b>{result.options.how}</b> over <b>{result.n} observations</b>.</>
-                  : <>Maximum-likelihood fit over <b>{result.n} observations</b>.</>} The
-                line is the fitted model; points are the data on{" "}
-                {result.distribution} probability paper
-                {result.plot?.bounds ? ", with a 95% confidence band." : "."}
-                {result.mixture > 1 && (
-                  <> A mixture has no covariance matrix, so it reports no
-                  confidence bounds — judge it on the AIC against a single fit.</>
-                )}
-              </div>
-            </div>
+            {!isRegression && <LifeAside result={result} split={split} bestFit={bestFit} />}
           </div>
         )}
         {tab === "calc" && (
           <Calculator
             functions={result.functions}
             unit={result.unit}
-            params={paramsInRail ? result.params : null}
+            params={paramsInRail || (!isRegression && !hasPlot && !isNonparametric) ? result.params : null}
             state={calc}
             setState={setCalc}
             nextIdRef={calcNextId}
+            name={name || result.distribution}
           />
         )}
         {tab === "coef" && <Coefficients coefficients={result.coefficients} ratioLabel={result.ratio_label} />}
-        {tab === "gof" && <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} />}
+        {tab === "gof" && (
+          <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} bestFit={bestFit} />
+        )}
         {tab === "check" && (
           <ModelValidation validation={result.validation} modelId={modelId} unit={result.unit} />
         )}
       </div>
 
-      {hasNotes && <div className="result-foot">{notes}</div>}
+      {details && (
+        <ResultDetails>
+          {moreParams && (
+            <div className="rs-table-wrap">
+              <table className="mini-table">
+                <thead><tr><th>Parameter</th><th>Estimate</th><th>95% interval</th></tr></thead>
+                <tbody>
+                  {params.map((p) => {
+                    const v = paramView(result, p);
+                    return <tr key={p.name}><td>{v.label}</td><td>{v.value}</td><td>{v.ci || "—"}</td></tr>;
+                  })}
+                  {extra.map((p) => (
+                    <tr key={p.name}><td>{p.name}</td><td>{formatNumber(p.value)}</td><td>—</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {selectionNote && <p className="rs-note">{selectionNote}</p>}
+          {optionWords.length > 0 && <p className="rs-note">Fit options: {optionWords.join(" · ")}</p>}
+          {result.mixture > 1 && (
+            <p className="rs-note">
+              A mixture has no covariance matrix, so it reports no confidence bounds — judge it on
+              the AIC against a single fit.
+            </p>
+          )}
+          {isNonparametric && (
+            <p className="rs-note">
+              Non-parametric empirical estimate — no distribution assumed, so no fitted parameters
+              or goodness-of-fit.
+            </p>
+          )}
+          {isDiscrete && (
+            <p className="rs-note">
+              Discrete distribution — fitted to whole-count life data (cycles, shocks or demands to
+              failure). There's no probability plot.
+            </p>
+          )}
+          {result.params_only && (
+            <p className="rs-note">
+              Created from parameters — reliability functions and life metrics are available;
+              there's no probability plot without data.
+            </p>
+          )}
+        </ResultDetails>
+      )}
     </>
   );
 }

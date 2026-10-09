@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { getRbdJob, rbdSensitivity } from "../api.js";
-import MethodTag from "./MethodTag.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // "What to improve" on a repairable diagram's availability results (#225):
 // every lever RePyability exposes (a block's mean life and repair time, its
@@ -25,7 +25,6 @@ const num = (v) => {
 const signed = (v, f) => (v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${f(Math.abs(v))}`);
 const money = (v) => (Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : Number(v.toPrecision(3)).toLocaleString());
 const per = (unit) => (unit ? `/${unit.toLowerCase().replace(/s$/, "")}` : "/unit time");
-const BASIS_TAG = { exact: "exact", numerical: "numerical", simulation: "simulated" };
 
 const BASIS_TEXT = {
   exact:
@@ -37,6 +36,9 @@ const BASIS_TEXT = {
     "Each effect is simulated: the diagram with the lever moved against the diagram as it is, with common random numbers, " +
     "with its 95% interval.",
 };
+
+// The method's one word, leading the line under the table.
+const BASIS_WORD = { exact: "Exact: ", numerical: "Numerical: ", simulation: "Simulated: " };
 
 const WINDOW_TEXT =
   "Each effect is RePyability's slope of the window's mean availability (numerical: each block's renewal " +
@@ -57,7 +59,9 @@ function span(row, unit) {
   return `${num(row.shown_value)} → ${num(row.shown_to)}${u}`;
 }
 
-export default function WhatToImprove({ graph, rbdId = null, result: availability }) {
+// ``onTop`` hears the top lever for the calculator's answer card (#311):
+// {lever, of} once ranked, {pending: true} while working, null when there's none.
+export default function WhatToImprove({ graph, rbdId = null, result: availability, onTop = null }) {
   const [step, setStep] = useState(0.1);
   const [rankBy, setRankBy] = useState("availability");
   const [over, setOver] = useState("long_run"); // long_run | window
@@ -180,62 +184,75 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
   const hasTypedCosts = positive(costs);
   const basis = data?.basis;
   const sim = basis === "simulation" && data?.status === "ok";
-  const tag = BASIS_TAG[basis];
+  const topLever = ranked.find((r) => r.rank === 1) || ranked[0] || null;
+  const busy = phase === "running" || !!job;
+  useEffect(() => {
+    if (!onTop) return;
+    if (busy) onTop({ pending: true });
+    else onTop(topLever ? { lever: topLever, of: data?.of || over } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, topLever, data]);
 
   return (
     <div className="rbd-improve">
-      <div className="ds-section-h">
-        What to improve {tag && <MethodTag method={tag} />}
-      </div>
-      <p className="hint" style={{ margin: 0 }}>
-        Each lever moved one step the way that helps — a {Math.round(step * 100)}% longer mean life, a{" "}
-        {Math.round(step * 100)}% shorter mean repair time or test interval, one more repair crew — and ranked by
-        what it gains{over === "window" ? ` over the first ${num(windowLen)}${unit ? ` ${unit.toLowerCase()}` : ""}` : " in the long run"}.
-      </p>
+      <div className="ds-section-h">What to improve</div>
 
+      {/* Labelled controls; what a step and a lever are is said once, in the
+          line under the table. */}
       <div className="rbd-improve-controls">
-        <div className="seg" role="group" aria-label="Step">
-          {STEPS.map((s) => (
-            <button key={s} type="button" className={"seg-btn" + (step === s ? " active" : "")}
-                    onClick={() => setStep(s)} title={`Move each lever ${Math.round(s * 100)}%`}>
-              {Math.round(s * 100)}%
-            </button>
-          ))}
-        </div>
-        <div className="seg" role="group" aria-label="Over">
-          <button type="button" className={"seg-btn" + (over === "long_run" ? " active" : "")}
-                  onClick={() => setOver("long_run")} title="Rank by the long-run (steady-state) availability">
-            Long run
-          </button>
-          <button type="button" className={"seg-btn" + (over === "window" ? " active" : "")}
-                  disabled={!windowLen} onClick={() => { setOver("window"); setRankBy("availability"); }}
-                  title="Rank by the mean availability over the results' window, from new (runs on the calculation service)">
-            Window
-          </button>
-        </div>
+        <SegmentedControl
+          label="Step"
+          showLabel
+          size="sm"
+          value={step}
+          onChange={setStep}
+          options={STEPS.map((s) => ({ value: s, label: `${Math.round(s * 100)}%`, title: `Move each lever ${Math.round(s * 100)}%` }))}
+        />
+        <SegmentedControl
+          label="Measured over"
+          showLabel
+          size="sm"
+          value={over}
+          onChange={(v) => {
+            setOver(v);
+            if (v === "window") setRankBy("availability");
+          }}
+          options={[
+            { value: "long_run", label: "Long run", title: "Rank by the long-run (steady-state) availability" },
+            { value: "window", label: "Window", disabled: !windowLen,
+              title: "Rank by the mean availability over the results' window, from new (runs on the calculation service)" },
+          ]}
+        />
         {over === "long_run" && (priced || rankBy === "cost") && (
-          <div className="seg" role="group" aria-label="Rank by">
-            <button type="button" className={"seg-btn" + (rankBy === "availability" ? " active" : "")}
-                    onClick={() => setRankBy("availability")}>Availability</button>
-            <button type="button" className={"seg-btn" + (rankBy === "cost" ? " active" : "")}
-                    onClick={() => setRankBy("cost")} title="Rank by the running cost saved per unit time">Cost</button>
-          </div>
+          <SegmentedControl
+            label="Rank by"
+            showLabel
+            size="sm"
+            value={rankBy}
+            onChange={setRankBy}
+            options={[
+              { value: "availability", label: "Availability" },
+              { value: "cost", label: "Cost", title: "Rank by the running cost saved per unit time" },
+            ]}
+          />
         )}
         {(editCosts || hasSentCosts) && rows.length > 0 && (
-          <div className="seg" role="group" aria-label="Order">
-            <button type="button" className={"seg-btn" + (order === "benefit" ? " active" : "")}
-                    onClick={() => setOrder("benefit")}
-                    title="Rank by the step's benefit alone, whether or not a lever has a cost">Benefit</button>
-            <button type="button" className={"seg-btn" + (order === "benefit_per_cost" ? " active" : "")}
-                    disabled={!hasSentCosts && !hasTypedCosts}
-                    onClick={() => {
-                      if (costChanged) setSentCosts(costs);
-                      setOrder("benefit_per_cost");
-                    }}
-                    title="The levers with a cost to change first, by benefit per unit spent; then the rest by benefit">
-              Benefit per cost
-            </button>
-          </div>
+          <SegmentedControl
+            label="Order"
+            showLabel
+            size="sm"
+            value={order}
+            onChange={(v) => {
+              if (v === "benefit_per_cost" && costChanged) setSentCosts(costs);
+              setOrder(v);
+            }}
+            options={[
+              { value: "benefit", label: "Benefit",
+                title: "Rank by the step's benefit alone, whether or not a lever has a cost" },
+              { value: "benefit_per_cost", label: "Benefit per cost", disabled: !hasSentCosts && !hasTypedCosts,
+                title: "The levers with a cost to change first, by benefit per unit spent; then the rest by benefit" },
+            ]}
+          />
         )}
         {rows.length > 0 && (
           <button type="button" className="secondary" onClick={() => setEditCosts((v) => !v)}>
@@ -261,25 +278,18 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
           </div>
         </div>
       )}
+      {/* Why there's no exact route is said once, under Details: here, only
+          what simulating the effects takes. */}
       {data?.status === "needs_simulation" && (
-        <div className="card note" role="status">
-          <p style={{ margin: 0 }}>{data.basis_reason}</p>
-          <p style={{ margin: "6px 0 0" }}>{data.message}</p>
-          <div className="rbd-upgrade-actions">
-            <button type="button" disabled={phase === "running"}
-                    onClick={() => { setSimWanted(true); run({ simulate: true }); }}>
-              {phase === "running" ? "Simulating…" : "Simulate the effects"}
-            </button>
-          </div>
+        <div className="rbd-improve-sim" role="status">
+          <p className="hint">{data.message}</p>
+          <button type="button" className="secondary" disabled={phase === "running"}
+                  onClick={() => { setSimWanted(true); run({ simulate: true }); }}>
+            {phase === "running" ? "Simulating…" : "Simulate the effects"}
+          </button>
         </div>
       )}
       {data?.status === "too_large" && <div className="card note" role="status">{data.message}</div>}
-
-      {data?.status === "ok" && data.top && (
-        <p className="rbd-improve-top">
-          <b>Top:</b> {data.top}
-        </p>
-      )}
 
       {visible.length > 0 && (
         <div className="rbd-avail-imp-scroll">
@@ -288,9 +298,9 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
               <tr>
                 <th className="rbd-improve-rank">#</th>
                 <th>Lever and change</th>
-                <th title="Change in availability, in percentage points">
-                  <span className="rbd-improve-wide">Availability</span>
-                  <span className="rbd-improve-narrow">Avail.</span>
+                <th title={`Change in availability, in percentage points (pp). ${data.of === "window" && !sim ? WINDOW_TEXT : BASIS_TEXT[basis] || ""}`}>
+                  <span className="rbd-improve-wide">Availability (pp)</span>
+                  <span className="rbd-improve-narrow">Avail. (pp)</span>
                 </th>
                 {priced && (
                   <th title={`Change in the running cost per unit time (${per(unit)})`}>
@@ -395,14 +405,13 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
         </button>
       )}
 
+      {/* The method, in one short line; the long form is on the column's tooltip. */}
       {data?.status === "ok" && (
         <p className="muted-line" style={{ margin: 0 }}>
-          {data.of === "window" && !sim ? WINDOW_TEXT : BASIS_TEXT[basis] || ""}
-          {sim && data.n_simulations
-            ? ` ${data.n_simulations.toLocaleString()} simulations of each over ${num(data.t_simulation)}${unit ? ` ${unit.toLowerCase()}` : ""}.`
-            : ""}
-          {rows.some((r) => r.effect_basis === "linear") && " ≈: the slope times the step (over a window, or an interval on a shared calendar)."}
-          {" "}Effects are in percentage points of availability{priced ? ` and running cost ${per(unit)}` : ""}; hover an effect for the slope.
+          {BASIS_WORD[sim ? "simulation" : basis] || ""}each lever moved {Math.round(step * 100)}% the way that helps
+          (longer life, shorter repair or test interval, one more crew), ranked by its gain
+          {data.of === "window" ? ` over the first ${num(windowLen)}${unit ? ` ${unit.toLowerCase()}` : ""}` : " in the long run"}
+          {sim && data.n_simulations ? ` (${data.n_simulations.toLocaleString()} simulations of each)` : ""}.
           {(data.notes || []).map((n) => ` ${n}`)}
           {data.pinned?.length ? ` Pinned blocks (${data.pinned.join(", ")}) are left out.` : ""}
         </p>

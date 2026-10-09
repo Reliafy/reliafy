@@ -38,8 +38,13 @@ over the availability simulation's window. That is the paid simulation
 (Pro or credits); the exact and numerical answers are free.
 
 The diagram is built exactly as the availability analysis builds it, so the
-base values are the results tab's: common-cause groups are left out as they
-are there (#185), and pinned blocks are held.
+base values are the results tab's, and pinned blocks are held. Its
+common-cause groups (#226) are in it wherever the analysis has them: each
+group's β is then a lever ("Common-cause β", a lower β meaning fewer shared
+failures), and its members' life and repair parameters move together (the
+group's lever, on "A & B"), as RePyability's chains need the members alike.
+Where RePyability refuses the groups they're left out here too, and the
+notes say why.
 
 Speed (#225), the whole analysis (derivatives and steps) timed with
 RePyability 0.12 on a laptop (Cloud Run's 1 vCPU is about half as fast):
@@ -616,11 +621,16 @@ def analyze_sensitivity(
         "repyability_version": ra._repyability_version(),
     }
     notes = [cost_note] if cost_note else []
-    groups = [g for g in graph.get("ccf_groups") or [] if len(g.get("members") or []) >= 2]
-    if groups:
-        notes.append(f"The diagram's {len(groups)} common-cause group{'s' if len(groups) != 1 else ''} "
-                     f"{'are' if len(groups) != 1 else 'is'} left out, as in the availability figures: "
-                     "RePyability's long-run availability doesn't take them for these blocks yet.")
+    common = ra.common_cause_status(rbd)
+    if common is not None:
+        head["common_cause_included"] = common["included"]
+        n = common["groups"]
+        if common["included"]:
+            notes.append(f"The diagram's {n} common-cause group{'s' if n != 1 else ''} "
+                         f"{'are' if n != 1 else 'is'} in the figures: each group's β is a lever, and its "
+                         "members' life and repair move together.")
+        else:
+            notes.append(ra.common_cause_left_out(n, common["reason"]))
     if deterministic:
         result = _deterministic(rbd, found, overrides, window, step, rank_by, quantities, route)
         result["basis_reason"] = ra._with_labels(reason or "", labels)
@@ -1084,8 +1094,12 @@ def what_to_improve(rbd, overrides, labels, junctions=(), step=0.1):
             continue
         d = float(sens[key][lever.name])
         theta = float(lever.value)
-        row = {"block": None if key is None else str(key), "lever": lever.name, "value": theta,
-               "derivative": d}
+        # A common-cause group's levers are its members' together ("a+b", as
+        # the app names them).
+        row = {"block": None if key is None else "+".join(map(str, key)) if isinstance(key, tuple) else str(key),
+               "label": "System" if key is None else " & ".join(
+                   str(labels.get(k, k)) for k in (key if isinstance(key, tuple) else (key,))),
+               "lever": lever.name, "value": theta, "derivative": d}
         if lever.discrete:
             row.update(to=theta + 1.0, effect=d, basis="exact")
             rows.append(row)
@@ -1137,7 +1151,7 @@ def what_to_improve(rbd, overrides, labels, junctions=(), step=0.1):
     rows.sort(key=lambda r: -r["effect"])
     print(f"\nWhat to improve (long run; each lever {step:.0%} the way that helps, counts by one):")
     for i, r in enumerate(rows[:10], 1):
-        where = labels.get(r["block"], r["block"]) if r["block"] else "System"
+        where = r["label"]
         print(f"  {i:>2}. {where[:24]:<24} {r['lever']:<28} {r['value']:>12.6g} -> {r['to']:<12.6g}"
               f" {r['effect'] * 100:+.3g} points ({r['basis']})")
     return rows

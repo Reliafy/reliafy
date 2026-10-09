@@ -12,6 +12,8 @@ import {
   leaveTeam,
 } from "../api.js";
 import Modal from "../components/Modal.jsx";
+import Chip from "../components/ui/Chip.jsx";
+import { CardHeader } from "../components/ui/Card.jsx";
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -138,7 +140,7 @@ export default function TeamSettingsPage() {
             sees everything in this workspace; editing needs a Pro plan.
           </p>
           {team.frozen && (
-            <p className="muted-line" style={{ color: "#9a6b0c" }}>
+            <p className="muted-line warn">
               The team owner's Pro plan has lapsed — the workspace is read-only until it's renewed.
             </p>
           )}
@@ -158,9 +160,7 @@ export default function TeamSettingsPage() {
       {error && <div className="card error">{error}</div>}
 
       <div className="card">
-        <div className="bill-head">
-          <h2 style={{ margin: 0 }}>Members</h2>
-        </div>
+        <CardHeader title="Members" />
         {isOwner && (
           <div className="row" style={{ gap: "0.6rem", alignItems: "flex-end", marginBottom: "0.6rem" }}>
             <label className="login-field" style={{ flex: 1, maxWidth: 420 }}>
@@ -197,9 +197,9 @@ export default function TeamSettingsPage() {
                 <td className="lib-date">
                   {m.role}
                   {m.can_edit === false && (
-                    <span className="health-badge health-grey" style={{ marginLeft: 8 }} title="Free account — can view the workspace; editing needs Pro.">
-                      view-only
-                    </span>
+                    <Chip style={{ marginLeft: 8 }} title="Free account — can view the workspace; editing needs Pro.">
+                      View only
+                    </Chip>
                   )}
                 </td>
                 <td className="lib-actions">

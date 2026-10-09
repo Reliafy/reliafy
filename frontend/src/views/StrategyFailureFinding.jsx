@@ -1,26 +1,19 @@
-import { useNavigate } from "react-router-dom";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import Card from "../components/ui/Card.jsx";
 import FailureFinding from "../components/FailureFinding.jsx";
 
+// Strategy › Failure finding.
 export default function StrategyFailureFinding() {
-  const navigate = useNavigate();
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/strategy")}>Strategy</button> / <b>Failure finding</b>
-          </div>
-          <h1>Failure-finding interval</h1>
-          <p>
-            How often to check a hidden function — a protective device whose
-            failure only shows when it's demanded — to keep its availability
-            above target.
-          </p>
-        </div>
-      </header>
-      <div className="card">
+      <PageHeader
+        crumbs={[{ label: "Strategy", to: "/strategy" }]}
+        title="Failure-finding interval"
+        meta="How often to check a hidden function — a protective device whose failure only shows when it's demanded — to keep its availability above target."
+      />
+      <Card>
         <FailureFinding />
-      </div>
+      </Card>
     </div>
   );
 }

@@ -1,91 +1,52 @@
 /* RBD builder — "Fault tree" tab (RbdFaultTree.jsx). Boxes match the builder's
-   blocks (white card, 9px radius, 184px wide); gates carry the standard
-   OR / AND / VOTE symbols below their description, basic events a circle. */
+   blocks (white card, 184px wide); gates carry the standard OR / AND / VOTE
+   symbols below their description, basic events a circle. */
 
-/* Header: the time input on the left, the headline figures on the right. */
+/* Header: the time input (a non-repairable diagram's), then the headline
+   figures as the shared stat tiles. */
 .ft-head {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem 1.5rem;
-  flex-wrap: wrap;
-  margin: 0.4rem 0 0.5rem;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-2);
 }
 .ft-controls {
   display: flex;
   align-items: flex-end;
-  gap: 0.6rem;
+  gap: var(--sp-2);
 }
-.ft-controls button {
-  padding: 0.5rem 0.95rem;
-}
-.ft-metrics {
-  display: flex;
-  gap: 0;
-  flex-wrap: wrap;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel);
-}
-.ft-metric {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0.45rem 0.95rem;
-  border-right: 1px solid var(--line2);
-}
-.ft-metric:last-child {
-  border-right: none;
-}
-.ft-metric .k {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.ft-metric .v {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-}
-.ft-metric-main .v {
-  color: var(--accent-strong);
+.stats.ft-stats {
+  margin: 0;
 }
 
 .ft-note {
-  margin: 0.2rem 0 0.7rem;
-  font-size: 12.5px;
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-13);
 }
 
+/* The tree sits directly on the card: no frame of its own. Its text is drawn
+   larger than the page's, in the tree's own units, so it reads when a wide
+   tree is fitted (zoom ~0.6). */
 .ft-canvas-wrap {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
-  overflow: hidden;
+  --ft-scale: 1.3;
+  margin-bottom: var(--sp-4);
 }
 
 .ft-canvas-tools {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--sp-1);
   flex-wrap: wrap;
-  padding: 0.55rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
 }
 .ft-canvas-tools .hint {
-  margin-left: 0.4rem;
-  font-size: 12px;
+  margin: 0 0 0 var(--sp-2);
+  font-size: var(--fs-13);
 }
 
 .ft-canvas {
   position: relative;
-  /* Fits the builder's fixed-height panel below the header on a laptop. */
-  height: calc(100vh - 440px);
-  min-height: 380px;
+  /* Until the tree is framed; then as tall as it (RbdFaultTree's TreeCanvas). */
+  height: 320px;
 }
 
 .ft-canvas .react-flow__node {
@@ -105,7 +66,7 @@
   border: none;
 }
 .ft-canvas .ft-edge .react-flow__edge-path {
-  stroke: #9aa0a8;
+  stroke: var(--faint);
   stroke-width: 1.4;
 }
 
@@ -127,30 +88,26 @@
   justify-content: center;
   align-items: center;
   text-align: center;
-  border-radius: 9px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--surf);
+  box-shadow: var(--shadow-card);
   padding: 0.45rem 0.6rem;
 }
-.ft-gate .ft-box {
-  border-color: #c7d2fe;
-}
 .ft-gate:hover .ft-box {
-  border-color: var(--accent);
+  border-color: var(--acc);
 }
+/* The top event: the same box, set off by an ink border, not a solid fill. */
 .ft-box-top {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong) !important;
-  color: #fff;
+  border: 1.5px solid var(--ink);
 }
 .ft-box-ccf {
-  border-color: #f3c29a;
-  background: #fff8f1;
+  border-color: var(--cat-amber-line);
+  background: var(--cat-amber-t);
 }
 
 .ft-box-title {
-  font-size: 0.8rem;
+  font-size: calc(var(--fs-14) * var(--ft-scale));
   font-weight: 600;
   line-height: 1.25;
   color: inherit;
@@ -162,13 +119,10 @@
   word-break: break-word;
 }
 .ft-box-sub {
-  margin-top: 0.1rem;
-  font-size: 0.66rem;
+  margin-top: 2px;
+  font-size: calc(var(--fs-12) * var(--ft-scale));
   color: var(--muted);
   line-height: 1.2;
-}
-.ft-box-top .ft-box-sub {
-  color: rgba(255, 255, 255, 0.8);
 }
 
 .ft-box-meta {
@@ -176,66 +130,48 @@
   display: flex;
   gap: 0.5rem;
   align-items: baseline;
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-size: 0.68rem;
-  color: var(--accent-strong);
-}
-.ft-box-top .ft-box-meta {
-  color: #fff;
-}
-.ft-code {
-  font-weight: 700;
+  font-size: calc(var(--fs-13) * var(--ft-scale));
   color: var(--muted);
 }
-.ft-box-top .ft-code {
-  color: rgba(255, 255, 255, 0.75);
+.ft-code {
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .ft-tag {
   position: absolute;
   top: -8px;
   right: 8px;
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #6d28d9;
-  background: #f5f3ff;
-  border: 1px solid #c4b5fd;
-  border-radius: 7px;
+  font-size: calc(var(--fs-12) * var(--ft-scale));
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
   padding: 0 5px;
-  line-height: 14px;
+  line-height: 1.3;
 }
 .ft-tag-pin {
-  color: var(--muted);
-  background: var(--panel-2);
-  border-color: var(--border);
+  background: var(--surf-2);
 }
 
 .ft-stem {
   width: 1.4px;
   height: 8px;
-  background: #9aa0a8;
+  background: var(--faint);
 }
 
+/* Gate symbols in one neutral style: their shapes say OR, AND and VOTE. */
 .ft-symbol path {
-  fill: #eef2ff;
-  stroke: #4338ca;
+  fill: var(--surf-2);
+  stroke: var(--muted);
   stroke-width: 1.6;
 }
-.ft-symbol-and path {
-  fill: #f0fdfa;
-  stroke: #0f766e;
-}
-.ft-symbol-vote path {
-  fill: #f5f3ff;
-  stroke: #6d28d9;
-}
 .ft-symbol text {
-  font-family: var(--mono);
   font-size: 10px;
-  font-weight: 700;
-  fill: #6d28d9;
+  font-weight: 600;
+  fill: var(--ink);
 }
 .ft-gate.collapsed .ft-symbol path {
   stroke-dasharray: 3 2;
@@ -243,11 +179,11 @@
 
 .ft-more-below {
   margin-top: 3px;
-  font-size: 10.5px;
+  font-size: calc(var(--fs-12) * var(--ft-scale));
   font-weight: 600;
-  color: var(--accent-strong);
+  color: var(--acc-d);
   background: var(--acc-t);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   padding: 1px 7px;
 }
 
@@ -255,28 +191,28 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  border: 1.6px solid #0f766e;
-  background: #f0fdfa;
+  border: 1.6px solid var(--muted);
+  background: var(--surf-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 8.5px;
-  font-weight: 700;
-  color: #b45309;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--warn);
 }
 .ft-circle-ccf {
-  border-color: #d0762f;
-  background: #fff8f1;
+  border-color: var(--cat-amber);
+  background: var(--cat-amber-t);
 }
 /* The shared cause of a common-cause group, in the cut sets and summary (#229). */
 .ft-cc-badge {
   display: inline-block;
-  font-size: 9.5px;
-  font-weight: 700;
-  color: #b45309;
-  background: #fff8f1;
-  border: 1px solid #d0762f;
-  border-radius: 7px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--warn);
+  background: var(--cat-amber-t);
+  border: 1px solid var(--cat-amber);
+  border-radius: var(--r-sm);
   padding: 0 5px;
   margin-right: 5px;
   line-height: 15px;
@@ -294,42 +230,42 @@
   display: flex;
   gap: 0.2rem;
   align-items: baseline;
-  font-size: 0.9rem;
+  font-size: var(--fs-14);
   overflow-wrap: anywhere;
 }
 .ft-ccf-list .ft-cc-badge {
   flex: none;
 }
 .ft-event.pinned .ft-box {
-  background: var(--panel-2);
+  background: var(--surf-2);
   border-style: dashed;
 }
 .ft-event.pinned .ft-circle {
   border-color: var(--faint);
-  background: var(--panel-2);
+  background: var(--surf-2);
 }
 
 .ft-more-node {
   width: 184px;
   box-sizing: border-box;
-  border: 1px dashed #c7d2fe;
-  border-radius: 9px;
+  border: 1px dashed var(--acc-line);
+  border-radius: var(--r-sm);
   background: var(--acc-t);
-  color: var(--accent-strong);
-  font-size: 0.8rem;
+  color: var(--acc-d);
+  font-size: calc(var(--fs-14) * var(--ft-scale));
   font-weight: 600;
   text-align: center;
   padding: 0.7rem 0.5rem;
 }
 .ft-more-node:hover {
-  border-color: var(--accent);
+  border-color: var(--acc);
 }
 
 .ft-section {
   margin-top: 0.4rem;
 }
 .ft-show-all {
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 500;
 }
 .ft-table-scroll {
@@ -349,7 +285,7 @@
 }
 .ft-table .ft-rank {
   text-align: left;
-  color: var(--faint);
+  color: var(--muted);
   width: 2.5rem;
 }
 .ft-table .ft-cut {
@@ -360,7 +296,7 @@
   display: table-cell;
 }
 .ft-and {
-  color: var(--faint);
+  color: var(--muted);
   font-weight: 400;
 }
 .ft-share {
@@ -372,12 +308,12 @@
 .ft-share-bar {
   width: 70px;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--line2);
   overflow: hidden;
 }
 .ft-share-bar span {
   display: block;
   height: 100%;
-  background: var(--accent);
+  background: var(--acc);
 }

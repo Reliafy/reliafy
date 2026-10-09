@@ -438,6 +438,9 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
     trains = normalise_trains(trains)
     drawn = _as_drawn(graph)
     rbd, labels, gate_ids, _, _ = ra._build_repairable_rbd(drawn, resolve_model)
+    # Common-cause groups (#226): in the scoring wherever the availability
+    # analysis has them; a grouped block's copies join its group.
+    common_cause = ra.common_cause_summary(rbd, {}, drawn)
     trained = _checked_trains(trains, drawn, rbd, labels, gate_ids)
     in_trains = {b: t["name"] for t in trained for b in t["blocks"]}
     if blocks:
@@ -556,15 +559,42 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
         "saving": current["total_cost"] - design["total_cost"],
         "changed": changed,
         "note": note,
+        "common_cause": _common_cause_out(common_cause),
         # Trains first, so a block's copies are wired to the trains' copies too.
         "graph": apply_copies(apply_train_copies(graph, train_rows), units) if changed else None,
         "repyability_version": ra._repyability_version(),
     }
 
 
+def _common_cause_out(common: Optional[dict]) -> Optional[dict]:
+    """The cheapest design's ``common_cause``: whether the designs were
+    scored with the diagram's groups, and why not (#226)."""
+    if common is None:
+        return None
+    out = {k: common.get(k) for k in ("groups", "included", "reason")}
+    out["note"] = (
+        f"Scored with the diagram's {common['groups']} common-cause group{'s' if common['groups'] != 1 else ''}: "
+        "a grouped block's copies join its group, so a shared cause can take them out together."
+        if common.get("included") else ra.common_cause_left_out(common["groups"], common.get("reason")))
+    return out
+
+
 def _edge(source: str, target: str) -> dict:
     return {"id": f"e-{source}-{target}", "source": source, "target": target,
             "type": "smoothstep", "markerEnd": dict(_ARROW)}
+
+
+def _join_groups(out: dict, nid: str, copies: list[str]) -> None:
+    """A common-cause group member's copies join its group (#226), as
+    RePyability's ``allocate_redundancy`` scores them."""
+    groups = out.get("ccf_groups")
+    if not copies or not isinstance(groups, list):
+        return
+    out["ccf_groups"] = [
+        {**g, "members": [*g["members"], *copies]}
+        if isinstance(g, dict) and nid in (g.get("members") or []) else g
+        for g in groups
+    ]
 
 
 def apply_copies(graph: dict, units: dict) -> dict:
@@ -573,8 +603,8 @@ def apply_copies(graph: dict, units: dict) -> dict:
     carries the path). Where a block feeds a k-out-of-n vote (k ≥ 2), whose
     count of incoming branches must not change, its copies join at a junction
     first. Copies keep the block's models, costs and maintenance (proof-tested
-    copies are tested together, as the allocation assumes); pins are dropped.
-    Nothing is saved."""
+    copies are tested together, as the allocation assumes), and join its
+    common-cause group (#226); pins are dropped. Nothing is saved."""
     out = copy.deepcopy(graph)
     nodes = list(out.get("nodes") or [])
     edges = list(out.get("edges") or [])
@@ -642,6 +672,7 @@ def apply_copies(graph: dict, units: dict) -> dict:
         for c in copies[1:]:
             by_id[c["id"]] = c
         edges += new_edges
+        _join_groups(out, nid, [c["id"] for c in copies[1:]])
     out["nodes"] = nodes
     out["edges"] = edges
     return out

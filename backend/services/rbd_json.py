@@ -16,7 +16,13 @@ diagram with ``rbd_from_json`` and get the RBD the app analyses:
   as nested diagrams;
 * a **repairable** diagram is the ``RepairableRBD`` the availability analysis
   builds (:func:`.rbd_analysis._build_repairable_rbd`), costs, maintenance,
-  proof tests, standby groups, repair crews and maintenance groups included.
+  proof tests, standby groups, repair crews and maintenance groups included,
+  and its common-cause groups wherever the analysis takes them in (#226).
+  Where RePyability refuses them (a member whose life isn't exponential,
+  say) the analysis leaves them out of every figure, and so does the
+  document's RePyability part, so it gives the app's numbers; the groups
+  stay in the diagram (the ``"reliafy"`` part's graph), and
+  ``"reliafy".common_cause`` says why they're not in the RePyability part.
 
 What RePyability's document has no place for (block labels and positions, the
 time unit, links to saved models and sub-system diagrams, placeholder flags,
@@ -98,6 +104,7 @@ class _Exporter:
         self.resolve_subsystem = resolve_subsystem
         self.problems: list[str] = []
         self.subsystems: dict[str, dict] = {}
+        self.common_cause: Optional[dict] = None
 
     # -- life models ------------------------------------------------------
     def spec(self, model: Optional[dict]) -> Optional[dict]:
@@ -276,11 +283,13 @@ class _Exporter:
         if self.problems:
             raise ExportError(self.message())
         spec_graph = {**graph, "nodes": nodes}
-        with_ccf = bool(graph.get("ccf_groups"))
         try:
-            rbd, *_ = ra._build_repairable_rbd(spec_graph, resolve_model=None, with_ccf=with_ccf)
+            # As the analysis builds it: the common-cause groups wherever it
+            # takes them in (#226).
+            rbd, *_ = ra._build_repairable_rbd(spec_graph, resolve_model=None)
         except ra.AnalysisError as exc:
             raise ExportError(f"This diagram can't be written as RePyability JSON yet: {exc}") from None
+        self.common_cause = ra.common_cause_status(rbd)
         try:
             return rbd_to_dict(rbd)
         except NotImplementedError as exc:
@@ -314,6 +323,11 @@ def core(graph: dict, resolve_model: Optional[Callable] = None,
          resolve_subsystem: Optional[Callable[[str], Optional[dict]]] = None) -> tuple[dict, dict]:
     """``(RePyability document, {sub-system id: {name, graph}})`` for a
     graph. Raises :class:`ExportError` naming the blocks that can't go in."""
+    doc, subsystems, _ = _core(graph, resolve_model, resolve_subsystem)
+    return doc, subsystems
+
+
+def _core(graph: dict, resolve_model, resolve_subsystem) -> tuple[dict, dict, "_Exporter"]:
     ex = _Exporter(resolve_model, resolve_subsystem)
     try:
         if graph.get("repairable"):
@@ -328,13 +342,13 @@ def core(graph: dict, resolve_model: Optional[Callable] = None,
         raise ExportError(f"This diagram has a block setting RePyability can't read ({exc}).") from None
     if ex.problems:
         raise ExportError(ex.message())
-    return doc, ex.subsystems
+    return doc, ex.subsystems, ex
 
 
 def to_document(graph: dict, name: str, resolve_model: Optional[Callable] = None,
                 resolve_subsystem: Optional[Callable[[str], Optional[dict]]] = None) -> dict:
     """The diagram as a RePyability document plus Reliafy's own part."""
-    doc, subsystems = core(graph or {}, resolve_model, resolve_subsystem)
+    doc, subsystems, ex = _core(graph or {}, resolve_model, resolve_subsystem)
     doc[EXTENSION_KEY] = {
         "format": FORMAT,
         "version": FORMAT_VERSION,
@@ -342,6 +356,10 @@ def to_document(graph: dict, name: str, resolve_model: Optional[Callable] = None
         "graph": graph or {},
         "subsystems": subsystems,
     }
+    if ex.common_cause is not None:
+        # Whether the RePyability part has the diagram's common-cause groups
+        # (#226): as the analysis does, and why not.
+        doc[EXTENSION_KEY]["common_cause"] = {k: ex.common_cause[k] for k in ("groups", "included", "reason")}
     return doc
 
 

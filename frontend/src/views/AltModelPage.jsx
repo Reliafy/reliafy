@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import AltResultView from "../components/AltResultView.jsx";
-import OverflowMenu from "../components/OverflowMenu.jsx";
-import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getAltModel, deleteAltModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { itemName } from "../components/LibRows.jsx";
 
-// A saved Accelerated Life model — mirrors the other model pages: title row with
-// a model pill + saved meta, then the life-stress result view with the use-level
-// calculator.
+// A saved Accelerated Life model — mirrors the other model pages: title and
+// saved meta, then the result view (answer card, life-stress plot, use-level
+// calculator).
 export default function AltModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -31,46 +32,27 @@ export default function AltModelPage() {
 
   return (
     <div className="app model-page">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/alt")}>Accelerated life</button> /{" "}
-            <b>{model ? model.name : "Model"}</b>
-          </div>
-          <div className="title-row">
-            <h1>{model ? model.name : "Model"}</h1>
-            {model && (
-              <span className="dpill">
-                <span className="dot" style={{ background: "#2f6df6" }} />
-                {r.distribution} · {r.life_model}
-              </span>
-            )}
-            {model && (
-              <span className="page-meta">
-                Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""}
-              </span>
-            )}
-          </div>
-          {model && <CopyId id={model.id} />}
-        </div>
-        {model && (
-          <div className="head-actions">
-            <OverflowMenu>
-              <ShareButton
-                collection="alt_models"
-                artifactId={model.id}
-                name={model.name}
-                readOnly={model.read_only}
-                className="ovm-item"
-              />
-              <button className="ovm-item danger" onClick={onDelete}>
-                {model.read_only ? "Remove from my view" : "Delete"}
-              </button>
-            </OverflowMenu>
-          </div>
+      <PageHeader
+        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Accelerated life", to: "/modelling/alt" }]}
+        title={model ? itemName(model) : "Model"}
+        badges={model?.is_sample && <Chip>Sample</Chip>}
+        meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""}</>}
+        id={model?.id}
+        menu={model && (
+          <>
+            <ShareButton
+              collection="alt_models"
+              artifactId={model.id}
+              name={model.name}
+              readOnly={model.read_only}
+              className="ovm-item"
+            />
+            <button className="ovm-item danger" onClick={onDelete}>
+              {model.read_only ? "Remove from my view" : "Delete"}
+            </button>
+          </>
         )}
-      </header>
+      />
 
       {error && <div className="card error">{error}</div>}
       {model && (

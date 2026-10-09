@@ -101,11 +101,32 @@ def test_a_diagram_with_exact_figures_stays_available_with_a_headline(env):
 
 # ---- #185: common cause beside the headline availability --------------------------------
 
-def test_common_cause_left_out_of_the_availability_is_said(env):
+def test_common_cause_in_every_figure_is_said(env):
+    """#226: the groups are in the availability, so it agrees with the PFDavg."""
     out = _analyze(env, _saved(env, _sif()), simulate=False)
     safety, cc = out["safety"], out["common_cause"]
+    assert safety["common_cause"]["included"] is True and safety["common_cause_included"] is True
+    assert cc["groups"] == 1 and cc["included"] is True and cc["reason"] is None and cc["note"] is None
+    assert out["unavailability"] == pytest.approx(safety["pfd_avg"], rel=1e-9)
+    head = out["availability"]
+    assert head["common_cause_included"] is True and head["value"] == out["steady_state_availability"]
+    assert head["without_common_cause"]["value"] == pytest.approx(cc["availability_without_common_cause"])
+    assert head["without_common_cause"]["value"] > head["value"]
+    assert not any("common-cause" in w for w in out.get("warnings") or [])
+
+
+def test_common_cause_left_out_of_the_availability_is_said(env):
+    """A test that takes time outside the group: RePyability's failure
+    frequencies refuse the groups, so every figure leaves them out, while the
+    PFDavg (the long run alone) keeps them and leads the headline."""
+    graph = _sif()
+    for n in graph["nodes"]:
+        if n["id"] == "valve":
+            n["data"]["inspection"] = {"interval": 8760, "duration": _exp(0.5)}
+    out = _analyze(env, _saved(env, graph), simulate=False)
+    safety, cc = out["safety"], out["common_cause"]
     assert safety["common_cause"]["included"] is True
-    assert cc["groups"] == 1 and cc["included"] is False
+    assert cc["groups"] == 1 and cc["included"] is False and "tests that take time" in cc["reason"]
     assert cc["availability_with_common_cause"] == pytest.approx(1 - safety["pfd_avg"], rel=1e-12)
     # The CCF-free figures are lower in unavailability than the PFDavg, and say so.
     assert out["unavailability"] < safety["pfd_avg"]
@@ -117,7 +138,7 @@ def test_common_cause_left_out_of_the_availability_is_said(env):
     assert head["without_common_cause"]["value"] == out["steady_state_availability"]
     assert "common_cause_included" not in head["without_common_cause"]
     assert safety["common_cause_included"] is True
-    assert any("leave out the diagram's 1 common-cause group" in w and "pfd_avg includes" in w
+    assert any("leave out the diagram's 1 common-cause group" in w and "PFDavg still takes them" in w
                for w in out["warnings"])
     # Without groups there's nothing to say.
     plain = _analyze(env, _saved(env, _sif() | {"ccf_groups": []}), simulate=False)

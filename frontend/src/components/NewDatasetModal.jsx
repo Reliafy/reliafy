@@ -3,6 +3,7 @@ import Modal from "./Modal.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import { SPREADSHEET_ACCEPT, isSpreadsheetFile, pasteDataset, uploadDataset } from "../api.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // ---- paste preview (client-side sniff, server does the authoritative parse) --
 function sniff(text) {
@@ -206,10 +207,16 @@ export default function NewDatasetModal({ onClose, onCreated }) {
 
       {step === "enter" && (
         <div className="fit-step">
-          <div className="seg" style={{ alignSelf: "flex-start" }}>
-            <button className={"seg-btn" + (enterMode === "paste" ? " active" : "")} onClick={() => setEnterMode("paste")}>Paste</button>
-            <button className={"seg-btn" + (enterMode === "form" ? " active" : "")} onClick={() => setEnterMode("form")}>Form</button>
-          </div>
+          <SegmentedControl
+            label="Entry"
+            value={enterMode}
+            onChange={setEnterMode}
+            style={{ alignSelf: "flex-start" }}
+            options={[
+              { value: "paste", label: "Paste" },
+              { value: "form", label: "Form" },
+            ]}
+          />
           <label className="login-field">
             <span>Dataset name</span>
             <input type="text" autoFocus value={name} placeholder="e.g. Pump bearing lives"

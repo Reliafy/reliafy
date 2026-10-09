@@ -65,19 +65,23 @@ export default function FailureFinding() {
           <button onClick={run} disabled={!canRun || loading}>
             {loading ? "Computing…" : "Compute"}
           </button>
-          {result && inputs && (
+        </div>
+      </div>
+
+      {error && <div className="error">{error}</div>}
+
+      {result && (
+        <FfiResult
+          result={result}
+          actions={inputs && (
             <SaveAnalysisButton
               kind="failure_finding"
               inputs={inputs}
               defaultName={`Failure finding — ${result.distribution}`}
             />
           )}
-        </div>
-      </div>
-
-      {error && <div className="error">{error}</div>}
-
-      {result && <FfiResult result={result} />}
+        />
+      )}
     </div>
   );
 }

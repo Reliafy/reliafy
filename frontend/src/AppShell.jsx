@@ -19,25 +19,20 @@ const RecurrentModelPage = lazy(() => import("./views/RecurrentModelPage.jsx"));
 const AltHome = lazy(() => import("./views/AltHome.jsx"));
 const AltNewPage = lazy(() => import("./views/AltNewPage.jsx"));
 const AltModelPage = lazy(() => import("./views/AltModelPage.jsx"));
-const RbdDashboard = lazy(() => import("./views/RbdDashboard.jsx"));
 const RbdHome = lazy(() => import("./views/RbdHome.jsx"));
 const RbdBuilder = lazy(() => import("./views/RbdBuilder.jsx"));
-const DatasetsDashboard = lazy(() => import("./views/DatasetsDashboard.jsx"));
 const DatasetsHome = lazy(() => import("./views/DatasetsHome.jsx"));
 const DatasetPage = lazy(() => import("./views/DatasetPage.jsx"));
-const StrategyDashboard = lazy(() => import("./views/StrategyDashboard.jsx"));
 const StrategyReplacement = lazy(() => import("./views/StrategyReplacement.jsx"));
 const StrategyCompare = lazy(() => import("./views/StrategyCompare.jsx"));
 const StrategyFailureFinding = lazy(() => import("./views/StrategyFailureFinding.jsx"));
 const StrategyDemonstration = lazy(() => import("./views/StrategyDemonstration.jsx"));
 const StrategyAnalyses = lazy(() => import("./views/StrategyAnalyses.jsx"));
 const StrategyTracking = lazy(() => import("./views/StrategyTracking.jsx"));
-const FleetDashboard = lazy(() => import("./views/FleetDashboard.jsx"));
 const FleetForecasts = lazy(() => import("./views/FleetForecasts.jsx"));
 const FleetTrackingHome = lazy(() => import("./views/FleetTrackingHome.jsx"));
 const FleetForecastPage = lazy(() => import("./views/FleetForecastPage.jsx"));
 const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx"));
-const RcmDashboard = lazy(() => import("./views/RcmDashboard.jsx"));
 const RcmHome = lazy(() => import("./views/RcmHome.jsx"));
 const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
 const TeamSettingsPage = lazy(() => import("./views/TeamSettingsPage.jsx"));
@@ -162,30 +157,31 @@ export default function AppShell() {
             <Route path="/modelling/alt/new" element={<AltNewPage />} />
             <Route path="/modelling/alt/:id" element={<AltModelPage />} />
             <Route path="/modelling/m/:id" element={<ModelPage />} />
-            <Route path="/rbds" element={<RbdDashboard />} />
-            <Route path="/rbds/list" element={<RbdHome />} />
+            {/* Each section opens on its list (#312); the old list URLs redirect. */}
+            <Route path="/rbds" element={<RbdHome />} />
+            <Route path="/rbds/list" element={<Navigate to="/rbds" replace />} />
             <Route path="/rbds/b" element={<RbdBuilder />} />
             <Route path="/rbds/b/:id" element={<RbdBuilder />} />
-            <Route path="/datasets" element={<DatasetsDashboard />} />
-            <Route path="/datasets/list" element={<DatasetsHome />} />
+            <Route path="/datasets" element={<DatasetsHome />} />
+            <Route path="/datasets/list" element={<Navigate to="/datasets" replace />} />
             <Route path="/datasets/d/:id" element={<DatasetPage />} />
-            <Route path="/strategy" element={<StrategyDashboard />} />
+            <Route path="/strategy" element={<StrategyAnalyses />} />
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
             <Route path="/strategy/failure-finding" element={<StrategyFailureFinding />} />
             <Route path="/strategy/demonstration-test" element={<StrategyDemonstration />} />
             <Route path="/strategy/tracking" element={<Navigate to="/fleet/tracking" replace />} />
             <Route path="/strategy/tracking/:modelId" element={<TrackingRedirect />} />
-            <Route path="/fleet" element={<FleetDashboard />} />
+            <Route path="/fleet" element={<FleetForecasts />} />
             <Route path="/fleet/tracking" element={<FleetTrackingHome />} />
             <Route path="/fleet/tracking/:fleetId" element={<StrategyTracking />} />
-            <Route path="/fleet/forecasts" element={<FleetForecasts />} />
+            <Route path="/fleet/forecasts" element={<Navigate to="/fleet" replace />} />
             <Route path="/fleet/forecasts/:id" element={<FleetForecastPage />} />
-            <Route path="/strategy/analyses" element={<StrategyAnalyses />} />
+            <Route path="/strategy/analyses" element={<Navigate to="/strategy" replace />} />
             <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
             {agentEnabled && <Route path="/agent" element={<ReliabilityAgent />} />}
-            <Route path="/rcm" element={<RcmDashboard />} />
-            <Route path="/rcm/studies" element={<RcmHome />} />
+            <Route path="/rcm" element={<RcmHome />} />
+            <Route path="/rcm/studies" element={<Navigate to="/rcm" replace />} />
             <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />
             <Route path="/team" element={<TeamSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />

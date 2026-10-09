@@ -1,6 +1,7 @@
 import Select from "./Select.jsx";
 import { useEffect, useMemo, useState } from "react";
 import { getDistributions, listModels, getModel } from "../api.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // Inline life-model picker: choose a saved (plain-distribution) model or enter
 // parameters. Emits the model object (same shape used on RBD nodes) via
@@ -89,28 +90,20 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false }
   return (
     <div className="picker">
       {label && <div className="picker-label">{label}</div>}
-      <div className="seg picker-seg">
-        <button
-          type="button"
-          className={"seg-btn" + (source === "params" ? " active" : "")}
-          onClick={() => {
-            setSource("params");
-            emitParams(distId, pvals);
-          }}
-        >
-          Parameters
-        </button>
-        <button
-          type="button"
-          className={"seg-btn" + (source === "saved" ? " active" : "")}
-          onClick={() => {
-            setSource("saved");
-            onPickSaved(savedId);
-          }}
-        >
-          Saved model
-        </button>
-      </div>
+      <SegmentedControl
+        label={label || "Model source"}
+        className="picker-seg"
+        value={source}
+        onChange={(v) => {
+          setSource(v);
+          if (v === "params") emitParams(distId, pvals);
+          else onPickSaved(savedId);
+        }}
+        options={[
+          { value: "params", label: "Parameters" },
+          { value: "saved", label: "Saved model" },
+        ]}
+      />
 
       {source === "params" ? (
         <>

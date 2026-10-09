@@ -420,8 +420,12 @@ def test_common_cause_enters_pfdavg():
     assert s["pfd_avg"] > without["safety"]["pfd_avg"]
     assert s["common_cause"] == {"groups": 1, "included": True, "note": None}
     assert s["sil"] == 2 and s["target_sil"] == 3 and s["meets_target"] is False
-    # The availability figures leave the groups out (RePyability's simulation can't take them).
-    assert r["steady_state_availability"] == pytest.approx(without["steady_state_availability"], rel=1e-12)
+    # Since #226 every figure takes the groups in: the availability is 1 − PFDavg.
+    assert r["steady_state_availability"] == pytest.approx(direct.mean_availability(), rel=1e-12)
+    assert r["unavailability"] == pytest.approx(s["pfd_avg"], rel=1e-9)
+    assert r["common_cause"]["included"] is True and r["common_cause"]["reason"] is None
+    assert r["common_cause"]["availability_without_common_cause"] == pytest.approx(
+        without["steady_state_availability"], rel=1e-12)
 
 
 def test_common_cause_left_out_when_the_chain_cannot_take_it():
@@ -459,10 +463,15 @@ def test_target_sil_error_and_ccf_warnings():
     v = ra.validate_graph(_sif(target_sil=5))
     assert any("target SIL must be 1, 2, 3 or 4" in e for e in v["errors"])
     ccf = [{"id": "c1", "members": ["a", "b"], "beta": 0.1}]
+    # Followed over time (#226): no warning where RePyability takes the groups...
     plain = _parallel(_channel("a"), _channel("b"), ccf_groups=ccf)
-    assert any("mark the diagram as a safety function" in w for w in ra.validate_graph(plain)["warnings"])
-    assert any("enter the safety function's PFDavg" in w
-               for w in ra.validate_graph(_sif(ccf_groups=ccf))["warnings"])
+    assert not any("common-cause" in w for w in ra.validate_graph(plain)["warnings"])
+    assert not any("common-cause" in w for w in ra.validate_graph(_sif(ccf_groups=ccf))["warnings"])
+    # ...and the reason where it doesn't.
+    worn = _parallel(_node("a", model=_w(1000, 2), repair=_exp(0.1)), _node("b", model=_w(1000, 2), repair=_exp(0.1)),
+                     ccf_groups=ccf)
+    assert any("leave out the diagram's 1 common-cause group" in w and "exponential" in w
+               for w in ra.validate_graph(worn)["warnings"])
 
 
 # ---------------------------------------------------------------------------
@@ -604,7 +613,7 @@ def test_export_reproduces_crews_policies_and_pfdavg(tmp_path):
     g = _export_graph()
     app = ra.analyze_availability(g, n_simulations=60)
     code = rbd_export.to_python(g, "SIF", exported_at=WHEN)
-    assert "CCFGroup(members=['a', 'b'], model=BetaFactor(0.1))" in code
+    assert "CCFGroup(members=['a', 'b'], model=BetaFactor(0.1, basis='rate'))" in code
     assert '"threshold": 0.05' in code and '"offset": 50' in code and '"standby": {"units": 3' in code
     res, proc = _run(code, tmp_path, n_sims="60")
     assert res["steady_state_availability"] == pytest.approx(app["steady_state_availability"], rel=1e-12)

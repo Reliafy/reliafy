@@ -1,8 +1,9 @@
 // What an availability result adds for repair crews, maintenance policies and
 // safety functions (#156, #157): how RePyability found the long-run values
 // (exactly, numerically, by simulation — and why), the repair crews and the
-// jobs they share, opportunistic renewals, and a safety function's PFDavg
-// with its SIL band. Each part shows only when the result carries it.
+// jobs they share, opportunistic renewals, and a safety function's notes (its
+// PFDavg and SIL lead the calculator, #311). Each part shows only when the
+// result carries it.
 
 const ROUTE_LABELS = {
   exact: "Exact",
@@ -14,47 +15,24 @@ const ROUTE_LABELS = {
 const fmtPfd = (v) => (v == null || !Number.isFinite(v) ? "—" : v < 1e-3 ? v.toExponential(2) : v.toPrecision(3));
 const fmtN = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(3)).toLocaleString());
 
-function SafetyCard({ safety }) {
-  const met = safety.meets_target;
+// A safety function's notes, folded under Details: the PFDavg itself, its SIL
+// and any caveat are the calculator's answer card (#311).
+export function SafetyNotes({ safety }) {
+  const ccfLeftOut = safety.common_cause_included === false || (safety.common_cause && !safety.common_cause.included);
   return (
-    <div className="rbd-policy-card rbd-sif">
+    <div className="rbd-policy-card">
       <div className="ds-section-h">Safety function</div>
-      <div className="rbd-sif-row">
-        <div>
-          <div className="rbd-sif-big">{fmtPfd(safety.pfd_avg)}</div>
-          <div className="muted">PFDavg (average probability of failure on demand)</div>
-        </div>
-        <div
-          className={"rbd-sil-chip" + (safety.sil ? ` sil${safety.sil}` : " none")}
-          title={safety.sil_optimistic ? safety.sil_note : undefined}
-        >
-          {safety.sil ? `SIL ${safety.sil}` : "No SIL"}
-          {safety.sil_optimistic ? " (optimistic)" : ""}
-        </div>
-        {safety.target_sil != null && (
-          <div className={"rbd-sil-target " + (met ? "ok" : "no")}>
-            Target SIL {safety.target_sil}: {met ? "met" : "not met"}
-          </div>
-        )}
-      </div>
-      {safety.proof_tests === "none" && (
-        <p className="rbd-sif-warning">
-          ⚠ No block is proof-tested, so this PFDavg treats every failure as revealed and repaired at once.
-          {safety.sil_optimistic ? " The SIL band is optimistic." : ""} Give the blocks with hidden failures proof
-          tests (double-click a block → Cost &amp; maintenance).
-        </p>
-      )}
       <ul className="rbd-policy-notes">
-        {safety.common_cause_included != null && (
+        <li>
+          PFDavg {fmtPfd(safety.pfd_avg)}: the long-run unavailability averaged over the proof-test cycle
+          (low-demand SIL bands, IEC 61508), {safety.basis === "simulated" ? "simulated" : safety.basis === "numerical" ? "numerical" : "exact"}.
+        </li>
+        {!ccfLeftOut && safety.common_cause?.included && (
           <li>
-            <b>Common cause {safety.common_cause_included ? "included" : "not included"}</b> in this PFDavg
-            {safety.common_cause_included ? "" : " — it is optimistic by the groups' contribution"}.
+            Includes {safety.common_cause.groups} common-cause group{safety.common_cause.groups === 1 ? "" : "s"}.
           </li>
         )}
-        <li>
-          {safety.basis === "simulated" ? "Simulated" : safety.basis === "numerical" ? "Numerical" : "Exact"} — the
-          long-run unavailability averaged over the proof-test cycle (low-demand SIL bands, IEC 61508).
-        </li>
+        {!ccfLeftOut && !safety.common_cause && safety.common_cause_included && <li>Common cause included.</li>}
         {safety.proof_tested_blocks > 0 && (
           <li>
             {safety.proof_tested_blocks} proof-tested block{safety.proof_tested_blocks === 1 ? "" : "s"}
@@ -62,28 +40,21 @@ function SafetyCard({ safety }) {
             {safety.imperfect_tests ? " · imperfect tests (coverage below 100%)" : ""}
           </li>
         )}
-        {safety.common_cause && (
-          <li>
-            {safety.common_cause.included
-              ? `Includes ${safety.common_cause.groups} common-cause group${safety.common_cause.groups === 1 ? "" : "s"}.`
-              : `Common cause left out: ${safety.common_cause.note}`}
-          </li>
-        )}
       </ul>
     </div>
   );
 }
 
-export default function AvailabilityPolicies({ result }) {
+// ``showReason``: false while the answer card already says why the diagram
+// needs the simulation (said once).
+export default function AvailabilityPolicies({ result, showReason = true }) {
   const method = result.long_run_method;
   const crews = result.repair_crews;
-  const safety = result.safety;
   const renewals = result.opportunistic_renewals;
-  const showMethod = method && (crews || safety || renewals || method.route !== "exact");
-  if (!showMethod && !crews && !safety && !renewals) return null;
+  const showMethod = showReason && method && (crews || result.safety || renewals || method.route !== "exact");
+  if (!showMethod && !crews && !renewals) return null;
   return (
     <div className="rbd-avail-nodes rbd-policies">
-      {safety && <SafetyCard safety={safety} />}
       {crews && (
         <div className="rbd-policy-card">
           <div className="ds-section-h">Repair crews</div>
@@ -114,10 +85,7 @@ export default function AvailabilityPolicies({ result }) {
       {showMethod && (
         <div className="rbd-policy-card">
           <div className="ds-section-h">
-            How the long-run values are found{" "}
-            <span className={"rbd-basis " + (method.route === "exact" || method.route === "numerical" ? "" : "simulation")}>
-              {ROUTE_LABELS[method.route] || method.route}
-            </span>
+            How the long-run values are found: {(ROUTE_LABELS[method.route] || method.route).toLowerCase()}
           </div>
           <p className="muted rbd-policy-reason">
             {method.route === "refused" ? "No exact long-run values, so the simulation gives them: " : ""}

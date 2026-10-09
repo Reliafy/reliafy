@@ -1,5 +1,4 @@
 // Shared RBD validation feedback, used on both the Builder and Calculator tabs.
-import MethodTag from "./MethodTag.jsx";
 import { NO_BLOCKS } from "../rbdReadiness.js";
 
 // A structural signature of the diagram (ignoring node positions) so callers
@@ -21,8 +20,9 @@ export function graphSignature(graph) {
   });
 }
 
-// Renders the outcome of a validate call: a green pass, or a red panel that
-// explains what makes the RBD invalid, and notes which nodes are simulated.
+// Renders the outcome of a validate call: a green pass, an amber pass that
+// carries warnings (never green, #305), or a red panel that explains what
+// makes the RBD invalid, and notes which nodes are simulated.
 // ``stale`` means the diagram has changed since this result was produced.
 export default function ValidationPanel({ validation, stale }) {
   if (!validation) return null;
@@ -61,15 +61,30 @@ export default function ValidationPanel({ validation, stale }) {
     non_analytic_nodes: nonAnalytic,
   } = validation;
   const nonAnalyticList = Object.entries(nonAnalytic || {});
+  const hasWarnings = !!warnings && warnings.length > 0;
+  const okClass = "rbd-check " + (hasWarnings ? "rbd-check-caveat" : "rbd-check-ok");
+  const okIcon = hasWarnings ? "!" : "✓";
 
-  // A repairable diagram (#154): how each availability figure is computed.
+  // "exact", "numerical (no simulation)" or "simulated": a route in words (#313:
+// the method is said in a sentence, not a badge per figure).
+const ROUTE_WORDS = { exact: "exact", numerical: "numerical", simulated: "simulated", refused: "simulated" };
+function routesSentence(routes) {
+  const parts = [
+    ["Long-run figures", routes.long_run?.route],
+    ["availability over time", routes.over_time?.route],
+    ["expected failures and downtime", routes.window?.route],
+  ].filter(([, r]) => r);
+  return parts.map(([what, r]) => `${what} ${ROUTE_WORDS[r] || r}`).join("; ") + ".";
+}
+
+// A repairable diagram (#154): how each availability figure is computed.
   const routes = validation.availability_routes;
   if (valid && routes) {
     const overTime = routes.over_time?.route;
     const exactOverTime = overTime === "exact" || overTime === "numerical";
     return (
-      <div className="rbd-check rbd-check-ok">
-        <span className="rbd-check-icon">✓</span>
+      <div className={okClass}>
+        <span className="rbd-check-icon">{okIcon}</span>
         <div>
           <strong>
             {exactOverTime
@@ -77,12 +92,10 @@ export default function ValidationPanel({ validation, stale }) {
               : "Valid — availability over time needs the simulation."}
           </strong>
           <p className="rbd-check-note">
-            Long-run figures <MethodTag method={routes.long_run?.route} /> · availability over time{" "}
-            <MethodTag method={overTime} /> · expected failures and downtime{" "}
-            <MethodTag method={routes.window?.route} />
+            {routesSentence(routes)}{" "}
             {exactOverTime
-              ? ". The simulation adds the spread of outcomes (distributions, criticality)."
-              : `. ${routes.over_time?.reason || ""}`}
+              ? "The simulation adds the spread of outcomes (distributions, criticality)."
+              : routes.over_time?.reason || ""}
           </p>
           {warnings && warnings.length > 0 && (
             <ul className="rbd-check-list rbd-check-warn">
@@ -101,8 +114,8 @@ export default function ValidationPanel({ validation, stale }) {
   // is worth saying but is not a problem.
   if (valid) {
     return (
-      <div className="rbd-check rbd-check-ok">
-        <span className="rbd-check-icon">✓</span>
+      <div className={okClass}>
+        <span className="rbd-check-icon">{okIcon}</span>
         <div>
           <strong>
             {analytic ? "Valid and analytically solvable." : "Valid — estimated by simulation."}

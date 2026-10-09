@@ -3,9 +3,11 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getDataset, deleteDataset } from "../api.js";
 import PreviewTable from "../components/PreviewTable.jsx";
 import CompareGroups from "../components/CompareGroups.jsx";
-import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { distColor, parseTimestamp } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { itemName } from "../components/LibRows.jsx";
 
 // Detail view for one dataset: schema, a preview of the rows, and the models
 // fitted from it.
@@ -36,7 +38,7 @@ export default function DatasetPage() {
     if (!window.confirm(`Delete dataset “${ds.name}”?`)) return;
     try {
       await deleteDataset(id);
-      navigate("/datasets/list");
+      navigate("/datasets");
     } catch (e) {
       setError(e.message);
     }
@@ -44,53 +46,40 @@ export default function DatasetPage() {
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/datasets")}>Datasets</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/datasets/list")}>Files</button> /{" "}
-            <b>{ds ? ds.name : "Dataset"}</b>
-          </div>
-          <div className="title-row">
-            <h1>{ds ? ds.name : "Dataset"}</h1>
-          </div>
-          {ds && (
-            <p>
-              {ds.n_rows.toLocaleString()} rows · {ds.n_columns} columns · added{" "}
-              {parseTimestamp(ds.created_at).toLocaleString()}
-            </p>
-          )}
-          {ds && <CopyId id={ds.id} />}
-        </div>
-        {ds && (
-          <div className="head-actions">
-            {ds.n_columns >= 2 && !comparing && (
-              <button className="secondary" onClick={() => setComparing(true)}>Compare groups</button>
-            )}
+      <PageHeader
+        crumbs={[{ label: "Datasets", to: "/datasets" }]}
+        title={ds ? itemName(ds) : "Dataset"}
+        badges={ds?.is_sample && <Chip>Sample</Chip>}
+        meta={ds && (
+          <>
+            {ds.n_rows.toLocaleString()} rows · {ds.n_columns} column{ds.n_columns === 1 ? "" : "s"} · added{" "}
+            {parseTimestamp(ds.created_at).toLocaleString()}
+          </>
+        )}
+        actions={ds && ds.n_columns >= 2 && !comparing && (
+          <button className="secondary" onClick={() => setComparing(true)}>Compare groups</button>
+        )}
+        id={ds?.id}
+        menu={ds && (
+          <>
             <ShareButton
               collection="datasets"
               artifactId={ds.id}
               name={ds.name}
               readOnly={ds.read_only}
+              className="ovm-item"
             />
-            <button className="secondary" onClick={onDelete}>
+            <button className="ovm-item danger" onClick={onDelete}>
               {ds.read_only ? "Remove from my view" : "Delete"}
             </button>
-          </div>
+          </>
         )}
-      </header>
+      />
 
       {error && <div className="card error">{error}</div>}
 
       {ds && (
         <>
-          <div className="stats">
-            <div className="stat"><div className="k">Rows</div><div className="v">{ds.n_rows.toLocaleString()}</div></div>
-            <div className="stat"><div className="k">Columns</div><div className="v">{ds.n_columns}</div></div>
-            <div className="stat"><div className="k">Linked models</div><div className="v">{ds.n_models}</div></div>
-            <div className="stat"><div className="k">Checksum</div><div className="v sm mono" title={ds.checksum}>{ds.checksum.slice(0, 10)}</div></div>
-          </div>
-
           {comparing && (
             <CompareGroups dataset={ds} splitBy={compareBy || null} onClose={() => setComparing(false)} />
           )}
@@ -123,12 +112,11 @@ export default function DatasetPage() {
                       className="ds-model-row"
                       onClick={() => navigate(`/modelling/m/${m.id}`)}
                     >
-                      <span className="ds-model-name">{m.name}</span>
-                      <span className="dpill">
-                        <span className="dot" style={{ background: distColor(m.distribution) }} />
+                      <span className="ds-model-name">{itemName(m)}</span>
+                      <Chip dot={distColor(m.distribution)}>
                         {String(m.distribution || "").replace(/\s*\(.*$/, "").replace(/\s+PH$/, "")}
-                        {m.kind === "regression" && <span className="phflag">PH</span>}
-                      </span>
+                        {m.kind === "regression" && " · PH"}
+                      </Chip>
                     </button>
                   ))
                 )}

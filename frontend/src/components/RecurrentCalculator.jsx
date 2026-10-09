@@ -1,20 +1,24 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
+import { fitLine, pointMarker, referenceShape } from "../plotTheme.js";
+import Select from "./Select.jsx";
+import { formatNumber } from "../format.js";
+import { unitInText } from "./unitText.js";
 
 // Recurrent-event calculator: read off the repairable-system functions at a
 // chosen time — expected cumulative failures N(t), the rate of occurrence of
 // failures ROCOF(t), and the instantaneous MTBF(t) — plus the expected number
 // of failures in a window. The power-law form (Crow-AMSAA / Duane) is evaluated
 // analytically from α, β; otherwise the fitted MCF curve is interpolated. Mirrors
-// the life-data Calculator's layout (segmented function picker + evaluate-at-t).
+// the life-data Calculator (#313): one answer line — function, time, value —
+// then the chart, with the window option in the rail.
 const FUNCS = [
-  { id: "N", label: "Expected cumulative failures N(t)", y: "Expected cumulative failures" },
-  { id: "rocof", label: "Rate of occurrence of failures", y: "ROCOF" },
+  { id: "N", label: "Expected failures N(t)", y: "Expected cumulative failures" },
+  { id: "rocof", label: "Failure rate (ROCOF)", y: "ROCOF" },
   { id: "mtbf", label: "Mean time between failures", y: "MTBF" },
 ];
 
-const fmt = (v) =>
-  v == null || !Number.isFinite(v) ? "—" : Math.abs(v) >= 1e-4 || v === 0 ? Number(v).toPrecision(5) : Number(v).toExponential(3);
+const fmt = (v) => (v == null || !Number.isFinite(v) ? "—" : formatNumber(v, { sig: 4 }));
 
 function interp(x, y, xq) {
   if (!x || !y || xq < x[0] || xq > x[x.length - 1]) return null;
@@ -29,7 +33,7 @@ function interp(x, y, xq) {
   return null;
 }
 
-export default function RecurrentCalculator({ r }) {
+export default function RecurrentCalculator({ r, name = null }) {
   const unit = r.unit || "";
   const tLabel = unit ? `t (${unit})` : "t";
   const fitted = r.mcf?.fitted || {};
@@ -63,74 +67,72 @@ export default function RecurrentCalculator({ r }) {
   const gx = Array.from({ length: M }, (_, k) => (tMax * k) / (M - 1));
   const gy = gx.map((tv) => { const v = valAt(active, tv); return v != null && Number.isFinite(v) ? v : null; });
 
-  const values = { N: mcfAt(nt), rocof: rocofAt(nt), mtbf: mtbfAt(nt) };
   const nFrom = from !== "" && !Number.isNaN(Number(from)) ? Number(from) : null;
   const windowN = nFrom != null ? (() => { const a = mcfAt(nFrom), b = mcfAt(nt); return a != null && b != null ? b - a : null; })() : null;
 
   const yv = valAt(active, nt);
-  const traces = [
-    { x: gx, y: gy, mode: "lines", type: "scatter", line: { color: "#2f6df6", width: 2 }, name: active, connectgaps: false },
-  ];
+  const traces = [fitLine({ x: gx, y: gy, name: active, connectgaps: false })];
   if (yv != null && Number.isFinite(yv)) {
-    traces.push({ x: [nt], y: [yv], mode: "markers", type: "scatter",
-      marker: { color: "#2f6df6", size: 8, line: { color: "#fff", width: 1 } }, showlegend: false, hoverinfo: "y" });
+    traces.push({ ...pointMarker(), x: [nt], y: [yv] });
   }
   const yTitle = FUNCS.find((f) => f.id === active)?.y || active;
   const layout = {
-    autosize: true, height: 420, margin: { l: 64, r: 20, t: 20, b: 46 },
-    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-    font: { color: "#6c727c", family: "IBM Plex Mono, monospace", size: 11 },
+    height: 420,
     showlegend: false,
-    xaxis: { title: { text: tLabel, standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false, rangemode: "tozero" },
-    yaxis: { title: { text: yTitle + (unit && active !== "N" && active !== "rocof" ? ` (${unit})` : ""), standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false, rangemode: "tozero" },
-    shapes: [{ type: "line", x0: nt, x1: nt, yref: "paper", y0: 0, y1: 1, line: { color: "#94a3b8", width: 1, dash: "dot" } }],
+    xaxis: { title: { text: tLabel }, rangemode: "tozero" },
+    yaxis: { title: { text: yTitle + (unit && active !== "N" && active !== "rocof" ? ` (${unit})` : "") }, rangemode: "tozero" },
+    shapes: [referenceShape({ x: nt, line: { dash: "dot" } })],
   };
 
   return (
     <div className="calc">
       <div className="calc-body">
         <div className="calc-main">
-          <div className="calc-values">
-            {FUNCS.map((f) => (
-              <div className={"calc-cell" + (active === f.id ? " active" : "")} key={f.id}>
-                <div className="calc-cell-id">{f.id === "N" ? "N(t)" : f.id === "rocof" ? "ROCOF" : "MTBF"}</div>
-                <div className="calc-cell-val">
-                  {fmt(values[f.id])}{f.id === "mtbf" && values.mtbf != null && unit ? ` ${unit}` : ""}
-                </div>
-              </div>
-            ))}
+          <div className="calc-answer">
+            <Select
+              value={active}
+              onChange={setActive}
+              title="Function"
+              className="calc-fn"
+              options={FUNCS.map((f) => ({ value: f.id, label: f.label }))}
+            />
+            <span>at</span>
+            <input
+              type="number"
+              className="calc-t-input"
+              aria-label={`Evaluate at ${tLabel}`}
+              min={0}
+              step="any"
+              value={t}
+              onChange={(e) => setT(e.target.value)}
+            />
+            <span>{unit ? unitInText(unit) : ""}:</span>
+            <span className="calc-answer-value">
+              <b>{fmt(yv)}{active === "mtbf" && yv != null && unit ? ` ${unitInText(unit)}` : ""}</b>
+              {active === "rocof" && yv != null && unit && (
+                <span className="calc-answer-ci"> per {unitInText(unit).replace(/s$/, "")}</span>
+              )}
+            </span>
           </div>
           {windowN != null && (
             <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>
-              Expected failures between {tLabel} = {from} and {t}: <b>{fmt(windowN)}</b>
+              Expected failures between {from} and {t}{unit ? ` ${unitInText(unit)}` : ""}: <b>{fmt(windowN)}</b>
               {analytic ? "" : " (interpolated)"}.
             </p>
           )}
-          <Plot data={traces} layout={layout} config={{ displayModeBar: true, responsive: true }} style={{ width: "100%" }} useResizeHandler />
+          <Plot data={traces} layout={layout} download={`${name || "Recurrent model"} — ${yTitle}`} />
         </div>
 
         <div className="calc-side-rail">
           <div className="calc-rail-card calc-eval-card">
-            <div className="gofh">Evaluate</div>
+            <div className="gofh">Options</div>
             <div className="calc-eval-body">
-              <div className="seg">
-                {FUNCS.map((f) => (
-                  <button key={f.id} className={"seg-btn" + (active === f.id ? " active" : "")}
-                          onClick={() => setActive(f.id)} title={f.label}>
-                    {f.id === "N" ? "N(t)" : f.id === "rocof" ? "ROCOF" : "MTBF"}
-                  </button>
-                ))}
-              </div>
-              <label className="calc-t">
-                <span>Evaluate at {tLabel}</span>
-                <input type="number" min={0} step="any" value={t} onChange={(e) => setT(e.target.value)} />
-              </label>
               <label className="calc-t">
                 <span>From{unit ? ` (${unit})` : ""} — for a window</span>
                 <input type="number" min={0} step="any" placeholder="e.g. 0" value={from} onChange={(e) => setFrom(e.target.value)} />
               </label>
               {!analytic && (
-                <p className="muted-line" style={{ margin: "0.2rem 0 0", fontSize: "0.8rem" }}>
+                <p className="rs-note">
                   Interpolated from the fitted MCF — accurate within the fitted range.
                 </p>
               )}

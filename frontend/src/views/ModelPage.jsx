@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
-import OverflowMenu from "../components/OverflowMenu.jsx";
-import CopyId from "../components/CopyId.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getModel, deleteModel } from "../api.js";
-import { distColor, relativeTime } from "../instrument.js";
+import { relativeTime } from "../instrument.js";
+import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { itemName } from "../components/LibRows.jsx";
 
-// Reopen a saved model by id and render its cached results.
+// Reopen a saved model by id and render its cached results. The answer card
+// names the distribution, so the header doesn't.
 export default function ModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -34,53 +36,33 @@ export default function ModelPage() {
 
   return (
     <div className="app model-page">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/life")}>Life data models</button> /{" "}
-            <b>{model ? model.name : "Model"}</b>
-          </div>
-          <div className="title-row">
-            <h1>{model ? model.name : "Model"}</h1>
-            {model && (
-              <span className="dpill">
-                <span className="dot" style={{ background: distColor(model.results?.distribution) }} />
-                {model.results?.distribution}
-              </span>
-            )}
-            {model && (
-              <span className="page-meta">
-                Saved {relativeTime(model.created_at)}
-                {model.unit ? ` · ${model.unit}` : ""}
-              </span>
-            )}
-          </div>
-          {model && <CopyId id={model.id} />}
-        </div>
-        {model && (
-          <div className="head-actions">
-            {canEdit && <button onClick={() => setEditing(true)}>Edit fit</button>}
-            <OverflowMenu>
-              <ShareButton
-                collection="models"
-                artifactId={model.id}
-                name={model.name}
-                readOnly={model.read_only}
-                className="ovm-item"
-              />
-              <button className="ovm-item danger" onClick={onDelete}>
-                {model.read_only ? "Remove from my view" : "Delete"}
-              </button>
-            </OverflowMenu>
-          </div>
+      <PageHeader
+        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Life data models", to: "/modelling/life" }]}
+        title={model ? itemName(model) : "Model"}
+        badges={model?.is_sample && <Chip>Sample</Chip>}
+        meta={model && <>Saved {relativeTime(model.created_at)}{model.unit ? ` · ${model.unit}` : ""}</>}
+        actions={canEdit && <button className="secondary" onClick={() => setEditing(true)}>Edit fit</button>}
+        id={model?.id}
+        menu={model && (
+          <>
+            <ShareButton
+              collection="models"
+              artifactId={model.id}
+              name={model.name}
+              readOnly={model.read_only}
+              className="ovm-item"
+            />
+            <button className="ovm-item danger" onClick={onDelete}>
+              {model.read_only ? "Remove from my view" : "Delete"}
+            </button>
+          </>
         )}
-      </header>
+      />
 
       {error && <div className="card error">{error}</div>}
       {model && (
         <div className="card">
-          <ResultView result={model.results} hideHead modelId={model.id} />
+          <ResultView result={model.results} modelId={model.id} name={model.name} />
         </div>
       )}
       {editing && model && (

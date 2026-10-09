@@ -12,8 +12,11 @@ and this module finishes it so it says plainly what it holds:
   ``exact.refused`` (#186); the routes keep their ``route`` and point to it;
 * an importance table with nothing computed becomes ``{}`` and one
   ``importance_note`` (#186);
-* common-cause groups the availability figures leave out are said beside
-  them and in ``warnings`` (#185).
+* whether the figures take the diagram's common-cause groups in
+  (``common_cause_included`` on the headline, #185, #226): since #226 they
+  are in every figure where RePyability follows them over time, with the
+  long-run availability without them alongside; where it refuses them they
+  are left out of every figure, said beside them and in ``warnings``.
 
 Fields are only added (or emptied where they held only nulls), never renamed,
 so existing clients keep working.
@@ -225,8 +228,16 @@ def finish(out: dict, payload: dict) -> dict:
     headline = _headline(out, payload)
     if headline is not None:
         if common:
-            headline["common_cause_included"] = False
-            if common.get("availability_with_common_cause") is not None:
+            included = bool(common.get("included"))
+            headline["common_cause_included"] = included
+            if included:
+                # Every figure has the groups (#226); the long run without
+                # them shows what they cost.
+                if common.get("availability_without_common_cause") is not None:
+                    headline["without_common_cause"] = {
+                        "value": common["availability_without_common_cause"], "basis": "exact",
+                        "what": "the long-run (steady-state) availability without the common-cause groups"}
+            elif common.get("availability_with_common_cause") is not None:
                 headline["with_common_cause"] = common["availability_with_common_cause"]
                 if payload.get("safety"):
                     headline = _safety_headline(headline, payload, common)

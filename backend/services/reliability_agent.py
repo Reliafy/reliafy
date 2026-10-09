@@ -96,7 +96,7 @@ SYSTEM_PROMPT = (
     "lognormal mean-time-to-repair). Choose repairable when the user cares about "
     "uptime/availability of a system that is fixed and returned to service. For "
     "redundant components that share a failure cause (same batch/environment/"
-    "power supply), set the stage's common_cause_beta (non-repairable RBDs) so "
+    "power supply), set the stage's common_cause_beta so "
     "the redundancy isn't over-credited.\n\n"
     "UPLOADED DATA IS OPTIONAL. If the user gives no data (e.g. 'research this "
     "pump / truck type and build an RBD'), research the typical components and "
@@ -424,7 +424,7 @@ def tools() -> list:
                             "properties": {
                                 "label": {"type": "string", "description": "Name of this stage/block."},
                                 "k_of_n": {"type": "integer", "description": "Components required to keep the stage working (k of the n components). Omit or 1 = plain parallel redundancy (any one); equal to the component count = all required (series)."},
-                                "common_cause_beta": {"type": "number", "description": "Optional (non-repairable RBDs, stages with 2+ components): couple this stage's redundant components by a beta-factor common cause — the fraction (0–1, e.g. 0.1) of each component's failures that are shared-cause and take out the whole group at once. Use for identical redundant units that share a cause (same batch, environment, power)."},
+                                "common_cause_beta": {"type": "number", "description": "Optional (stages with 2+ components; repairable RBDs follow it over time when the members' lives are exponential): couple this stage's redundant components by a beta-factor common cause — the fraction (0–1, e.g. 0.1) of each component's failures that are shared-cause and take out the whole group at once. Use for identical redundant units that share a cause (same batch, environment, power)."},
                                 "components": {
                                     "type": "array",
                                     "description": "One or more parallel components in this stage.",
@@ -748,10 +748,7 @@ def _build_rbd_graph(db, uid: str, stages: list, repairable: bool = False) -> di
                     f"{where}: common_cause_beta = {beta:g} is out of range — it's the fraction of each "
                     "component's failures that are shared-cause, so 0 ≤ beta < 1 (typically 0.01–0.2; 0 = none).")
             if beta > 0:
-                if repairable:
-                    raise ValueError(
-                        f"{where}: common_cause_beta is reliability-only — repairable (availability) "
-                        "diagrams don't model common cause. Drop it, or use a non-repairable diagram.")
+                # Repairable diagrams follow the groups over time too (#226).
                 if m < 2:
                     raise ValueError(
                         f"{where}: common_cause_beta couples redundant components, so the stage needs 2 or "

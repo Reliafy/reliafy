@@ -117,7 +117,10 @@ def test_safety_answer_leads_with_the_headline_and_safety(env):
     head = out["availability"]
     assert head["common_cause_included"] is True
     assert head["value"] == pytest.approx(1 - out["safety"]["pfd_avg"])
-    assert head["without_common_cause"]["what"] == "the long-run (steady-state) availability"
+    # Every figure has the groups since #226: the headline is the long run with them.
+    assert head["value"] == out["steady_state_availability"]
+    assert head["without_common_cause"]["what"] == (
+        "the long-run (steady-state) availability without the common-cause groups")
 
 
 def test_non_safety_diagram_headline_is_unchanged(env):
@@ -127,7 +130,8 @@ def test_non_safety_diagram_headline_is_unchanged(env):
     out = _analyze(env, _saved(env, graph), simulate=False)
     head = out["availability"]
     assert head["value"] == out["steady_state_availability"]
-    assert head["common_cause_included"] is False and "without_common_cause" not in head
+    # Followed over time (#226), the groups are in a non-safety diagram's figures too.
+    assert head["common_cause_included"] is True and head["without_common_cause"]["value"] > head["value"]
     assert "safety" not in out
 
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPerDemandModel, getDataset, listDatasets } from "../api.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 const isCount = (v, min) => v !== "" && Number.isInteger(Number(v)) && Number(v) >= min;
 const pct = (v) => `${(v * 100).toFixed(v > 0.99 || v < 0.01 ? 2 : 1)}%`;
@@ -92,12 +93,16 @@ export default function PerDemandPanel({ onCreated, onBack }) {
                onChange={(e) => setName(e.target.value)} />
       </label>
 
-      <div className="seg" style={{ margin: "0.9rem 0 0.6rem" }}>
-        <button className={"seg-btn" + (source === "enter" ? " active" : "")}
-                onClick={() => setSource("enter")}>Enter counts</button>
-        <button className={"seg-btn" + (source === "dataset" ? " active" : "")}
-                onClick={() => setSource("dataset")}>From a dataset</button>
-      </div>
+      <SegmentedControl
+        label="Source"
+        value={source}
+        onChange={setSource}
+        style={{ margin: "0.9rem 0 0.6rem" }}
+        options={[
+          { value: "enter", label: "Enter counts" },
+          { value: "dataset", label: "From a dataset" },
+        ]}
+      />
 
       {source === "enter" ? (
         <div className="pd-batches">

@@ -4,13 +4,16 @@ import RecurrentLibrary from "./RecurrentLibrary.jsx";
 import { listRecurrentModels, deleteRecurrentModel } from "../api.js";
 import { FirstRunStrip } from "../components/FirstRun.jsx";
 import { useFirstRun } from "../firstRun.js";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { PlusIcon, itemName } from "../components/LibRows.jsx";
 
 // Recurrent-event (repairable-system) models — mirrors the life-data models
-// home: header + "New model" button, then the saved-model library. The fit
-// flow lives on its own page (/modelling/recurrent/new).
+// list: header + "New model", then the saved-model list. The fit flow lives
+// on its own page (/modelling/recurrent/new).
 export default function RecurrentHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
+  const [error, setError] = useState(null);
   // No models, datasets or diagrams of their own yet (samples don't count).
   const firstRun = useFirstRun(models ? models.some((m) => !m.is_sample) : undefined);
 
@@ -19,38 +22,29 @@ export default function RecurrentHome() {
 
   const onDelete = async (m) => {
     const msg = m.is_sample
-      ? `Remove the sample “${m.name}” from your workspace?`
+      ? `Remove the sample “${itemName(m)}” from your workspace? It stays available to other users and you won't see it again.`
       : `Delete “${m.name}”?`;
     if (!window.confirm(msg)) return;
-    await deleteRecurrentModel(m.id);
-    refresh();
+    try {
+      await deleteRecurrentModel(m.id);
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> / <b>Recurrent events</b>
-          </div>
-          <h1>Recurrent events</h1>
-          <p>
-            Repairable systems — fit a fleet's failure history to an MCF and
-            Crow-AMSAA growth model. Is it improving or worsening, and how often
-            will it fail?
-          </p>
-        </div>
-        <div className="row" style={{ margin: 0, gap: "0.5rem" }}>
-          <button onClick={() => navigate("/modelling/recurrent/new")}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            New model
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        crumbs={[{ label: "Modelling", to: "/modelling" }]}
+        title="Recurrent events"
+        meta="Repairable systems: is the failure rate improving or worsening?"
+        primary={<button onClick={() => navigate("/modelling/recurrent/new")}><PlusIcon /> New model</button>}
+      />
 
       <FirstRunStrip info={firstRun} />
+
+      {error && <div className="card error">{error}</div>}
 
       <RecurrentLibrary
         models={models || []}
