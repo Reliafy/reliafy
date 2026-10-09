@@ -7726,3 +7726,16 @@ button.danger:hover { background: #fdeeee; }
 .fleet-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .fleet-items { min-width: 680px; }
 .fleet-items.repairable { min-width: 940px; }
+
+/* Chart download button (#308): top right of the chart, over its top margin. */
+.plot-frame { position: relative; }
+.plot-dl {
+  position: absolute; top: 0; right: 0; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0;
+  border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--muted);
+  cursor: pointer;
+}
+.plot-dl:hover { background: var(--acc-t); color: var(--acc); }
+.plot-dl:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--acc-t); border-color: var(--acc); }
