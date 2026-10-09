@@ -178,6 +178,8 @@ def test_simulated_answer_is_compact_and_in_reliafys_words(env):
     ("Simulate them with availability() or cost(); the availability over time is exact.",
      "Simulate them; the availability over time is exact."),
     ("Simulate it with availability(demand=...).", "Simulate it."),
+    ("Estimate the values by simulation, with availability() or cost(), which take any; or give them a "
+     "fixed length.", "Estimate the values by simulation, which takes any; or give them a fixed length."),
     ("With 2 repair crew(s) for 5 components, a component can wait.",
      "With 2 repair crews for 5 repair jobs (each unit of a standby group is one), a component can wait."),
 ])

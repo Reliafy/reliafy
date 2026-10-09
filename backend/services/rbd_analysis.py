@@ -2233,6 +2233,9 @@ def _component_message(text: str, labels: dict) -> str:
 # (each unit of a standby group is one). Relayed without the call, and
 # naming what the count is.
 _PY_CALL = re.compile(r",?\s+with\s+availability\((?:demand=\.\.\.)?\)(?:\s+or\s+cost\(\))?")
+# What followed the call, still agreeing with it ("by simulation, with
+# availability() or cost(), which take any"): one simulation takes it.
+_WHICH_TAKE = re.compile(r"\bsimulation, which take\b")
 _CREW_JOBS = re.compile(r"(\d+) repair crew\(s\) for (\d+) components\b")
 
 
@@ -2242,7 +2245,7 @@ def plain_reason(text):
     returned as is. Idempotent, so saved results can be cleaned again."""
     if not isinstance(text, str):
         return text
-    text = hide_engine_names(_PY_CALL.sub("", text))
+    text = hide_engine_names(_WHICH_TAKE.sub("simulation, which takes", _PY_CALL.sub("", text)))
     return _CREW_JOBS.sub(lambda m: f"{m.group(1)} repair crew{'s' if m.group(1) != '1' else ''} for "
                                     f"{m.group(2)} repair jobs (each unit of a standby group is one)", text)
 

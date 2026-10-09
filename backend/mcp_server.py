@@ -2403,9 +2403,10 @@ def create_rbd(
     maintenance_groups, safety_function, target_sil and costs. A safety function needs its proof tests
     (inspection) — without them its PFDavg treats every failure as revealed at once. Common-cause groups
     (common_cause_beta on a stage, or edit_rbd add_ccf) are followed over time in repairable diagrams: in every
-    figure where RePyability's chains take them (members with exponential lives, revealed failures or tests and
-    repairs in no time, no scheduled maintenance, crews for every repair), otherwise left out with the reason
-    (the validation warnings say so).
+    figure where RePyability's chains take them (members with exponential lives, revealed failures with
+    exponential repairs or proof tests whose repairs take no, fixed or exponential time, no scheduled
+    maintenance, crews for every repair), otherwise left out with the reason (the validation warnings say so);
+    a safety function's PFDavg keeps them wherever the long run can (proof tests that take time, say).
     Returns the node ids (the stages form generates them) and structure_summary, the diagram in one line
     (e.g. "PLC → (Pump A ∥ Pump B)"; 2-of-3(…) for voting) — check it matches what the user described; change
     the diagram later with edit_rbd."""
