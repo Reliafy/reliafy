@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.db import get_session, init_db
+from backend import life_bounds
 from backend.fitting import (
     DISCRETE,
     DISTRIBUTIONS,
@@ -30,6 +31,7 @@ from backend.fitting import (
     REGRESSION_MODELS,
     FitError,
     ModelNotFound,
+    _entry_for,
     bind_owner,
     confidence_bounds,
     covariate_units_from_form,
@@ -438,6 +440,7 @@ def fit_endpoint(
         functions["evaluate_path"] = f"/api/evaluate/{functions['model_id']}"
         if result.get("kind") in ("distribution", "discrete", "nonparametric"):
             functions["confidence_path"] = f"/api/confidence/{functions['model_id']}"
+            functions["life_path"] = f"/api/life/{functions['model_id']}"
     return JSONResponse(content=result)
 
 
@@ -488,6 +491,28 @@ def confidence_endpoint(
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except (ValueError, TypeError):
         return JSONResponse(status_code=422, content={"detail": "Invalid confidence settings."})
+
+
+@app.post("/api/life/{model_id}")
+def life_endpoint(
+    model_id: str,
+    body: dict = Body(default={}),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """B-lives and MTTF with one-sided lower bounds at ``confidence`` — or,
+    with ``reliability`` [R, ...], the time at each reliability with its
+    ``bound`` (#288) — of a freshly-fitted model. Same access rule as
+    :func:`evaluate_endpoint`."""
+    try:
+        model = _entry_for(model_id, user["uid"])["model"]
+        return JSONResponse(content=life_bounds.answer(model, body))
+    except ModelNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Model not found — re-fit to compute B-lives."},
+        )
+    except (ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid life request."})
 
 
 # ---------------------------------------------------------------------------

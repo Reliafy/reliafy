@@ -83,7 +83,7 @@ from surpyval import (
 from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
-from backend import param_intervals
+from backend import life_bounds, param_intervals
 from backend.units import canonical_unit, unit_in_text
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
@@ -1196,6 +1196,12 @@ def fit(
     if result.get("mixture_summary") and result["unit"]:
         result["mixture_summary"] = (mixture_summary(result, unit_in_text(result["unit"]))
                                      or result["mixture_summary"])
+    if result.get("kind") == "distribution":
+        # B-lives and MTTF with their 90% lower bounds (#288).
+        entry = _MODEL_STORE.get((result.get("functions") or {}).get("model_id"))
+        life = life_bounds.life_for(entry and entry.get("model"), bool(result.get("no_finite_maximum")))
+        if life:
+            result["life"] = life
     if c_invert:
         # Persist alongside the other fit options so a saved model's spec
         # re-fits the data the same way round (see models_service._refit).
@@ -1363,6 +1369,9 @@ def result_from_params(
     randomness = _randomness_verdict(distribution_id, result["params"])
     if randomness is not None:
         result["randomness"] = randomness
+    life = life_bounds.life_for(model)  # values only: no data, no covariance
+    if life:
+        result["life"] = life
     return _json_safe(result)
 
 

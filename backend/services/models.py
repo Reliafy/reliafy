@@ -358,6 +358,7 @@ def public_results(model: Model) -> dict:
         # Confidence bounds aren't available for regression models.
         if model.kind in ("distribution", "discrete", "nonparametric"):
             functions["confidence_path"] = f"/api/models/{model.id}/confidence"
+            functions["life_path"] = f"/api/models/{model.id}/life"
         results["functions"] = functions
     return results
 
@@ -512,6 +513,40 @@ def confidence(db, model_id: str, params: dict, owner_id: str, x_min=None, x_max
         x_min=x_min,
         x_max=x_max,
     )
+
+
+def life(db, model_id: str, body: dict, owner_id) -> dict:
+    """B-lives and MTTF with one-sided lower bounds, or the time at given
+    reliabilities (#288), of a saved model — see
+    :func:`backend.life_bounds.answer`. Re-fits on demand like
+    :func:`confidence`; a fit with no finite maximum gets values only."""
+    from backend import life_bounds
+
+    model = get_model(db, model_id, owner_id)
+    if model is None:
+        raise ModelNotFound(model_id)
+    entry = fitting._MODEL_STORE.get(_live_cache_id(db, model_id, owner_id)) or {}
+    return life_bounds.answer(entry.get("model"), body,
+                              no_finite_maximum=bool((model.results or {}).get("no_finite_maximum")))
+
+
+def compare(db, model: Model) -> dict:
+    """Best fit's comparison of every plain distribution on a saved model's
+    own data and fit options (#293): ``{"criterion", "candidates", "failed"?}``
+    ranked best first, as a Best fit's ``selection``. Raises ``ModelNotFound``
+    when the dataset is gone, ``fitting.FitError`` when nothing fits."""
+    dataset = datasets_service.get_dataset(db, model.dataset_id, owner_id=model.owner_id) \
+        if model.dataset_id else None
+    if dataset is None:
+        raise ModelNotFound(model.id)
+    spec = _spec(model)
+    # Only the options Best fit applies to every candidate (and the censor flip).
+    options = {k: v for k, v in (spec.get("options") or {}).items()
+               if k in ("offset", "zi", "lfp", fitting.CENSOR_INVERT_KEY)}
+    result = fitting.fit(fitting.BEST_ID, datasets_service.load_dataframe(dataset),
+                         spec.get("mapping", {}), unit=spec.get("unit"), options=options)
+    selection = result.get("selection") or {}
+    return {k: selection[k] for k in ("criterion", "candidates", "failed") if k in selection}
 
 
 def get_live_model(db, model_id: str, owner_id: str | list[str]) -> dict | None:
