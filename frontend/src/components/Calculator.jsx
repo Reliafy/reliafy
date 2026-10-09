@@ -343,26 +343,13 @@ export default function Calculator({ functions, unit, params, state, setState, n
     <div className="calc">
       <div className="calc-body">
         <div className="calc-main">
+      {/* The answer, read off the chart; every input sits in the card on the right. */}
       <div className="calc-answer">
-        <Select
-          value={active}
-          onChange={setActive}
-          title="Function"
-          className="calc-fn"
-          options={meta.map((m) => ({ value: m.id, label: fnLabel(m.id, meta) }))}
-        />
-        <span>{cond > 0 ? "for a further" : "at"}</span>
-        <input
-          type="number"
-          className="calc-t-input"
-          aria-label={`Evaluate at ${tAxisLabel}`}
-          value={t}
-          min={0}
-          max={xMaxView}
-          step="any"
-          onChange={(e) => setT(e.target.value)}
-        />
-        <span>{unit ? unitInText(unit) : ""}{cond > 0 ? `, having survived ${sLabel}` : ""}{multi ? "" : ":"}</span>
+        <span>
+          {fnLabel(active, meta)} {cond > 0 ? "for a further" : "at"}{" "}
+          <b>{Number(t).toLocaleString(undefined, { maximumFractionDigits: 6 })}{unit ? ` ${unitInText(unit)}` : ""}</b>
+          {cond > 0 ? `, having survived ${sLabel}` : ""}{multi ? "" : ":"}
+        </span>
         {!multi && (
           <span className="calc-answer-value">
             <b>{fmtFn(active, interp(views[0]?.x, views[0]?.[active], Number(t)))}</b>
@@ -434,8 +421,28 @@ export default function Calculator({ functions, unit, params, state, setState, n
 
         <div className="calc-side-rail">
             <div className="calc-rail-card calc-eval-card">
-              <div className="gofh">Options</div>
+              <div className="gofh">Inputs</div>
               <div className="calc-eval-body">
+                <label className="calc-t">
+                  <span>Function</span>
+                  <Select
+                    value={active}
+                    onChange={setActive}
+                    className="calc-fn"
+                    options={meta.map((m) => ({ value: m.id, label: fnLabel(m.id, meta) }))}
+                  />
+                </label>
+                <label className="calc-t">
+                  <span>{cond > 0 ? "For a further" : "At"}{unit ? ` (${unitInText(unit)})` : ""}</span>
+                  <input
+                    type="number"
+                    value={t}
+                    min={0}
+                    max={xMaxView}
+                    step="any"
+                    onChange={(e) => setT(e.target.value)}
+                  />
+                </label>
                 <label className="calc-t">
                   <span>Given survived to{unit ? ` (${unit})` : ""}</span>
                   <input

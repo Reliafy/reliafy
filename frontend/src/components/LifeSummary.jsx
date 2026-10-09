@@ -1,3 +1,6 @@
+import { useState } from "react";
+import Modal from "./Modal.jsx";
+import GoodnessOfFit from "./GoodnessOfFit.jsx";
 import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
 
@@ -121,7 +124,9 @@ function dataText(result, split) {
 
 // ``split`` ({ failed, running, other }) when the caller can count the data.
 // ``children`` (the plot) goes on the left; the panel sits on the right.
-export default function LifeAside({ result, split = null }) {
+export default function LifeAside({ result, split = null, bestFit = false }) {
+  const [statsOpen, setStatsOpen] = useState(false);
+  const aic = (result.gof || []).find((g) => g.id === "aic") || (result.gof || [])[0];
   const id = distId(result);
   // Shape before scale: the reading turns on the shape.
   const order = id === "weibull" || id === "loglogistic" || id === "expo_weibull" ? ["beta", "alpha", "mu"] : null;
@@ -160,6 +165,12 @@ export default function LifeAside({ result, split = null }) {
             <span className="gv">{data}</span>
           </div>
         )}
+        {aic && (
+          <button type="button" className="gofr gofr-link" onClick={() => setStatsOpen(true)}>
+            <span className="gk">Fit statistics</span>
+            <span className="gv">AIC {formatNumber(aic.value, { sig: 5 })} ›</span>
+          </button>
+        )}
       </div>
       {caveat && <div className="life-reading caveat">{result.fit_warning}</div>}
       {reading && (
@@ -172,6 +183,13 @@ export default function LifeAside({ result, split = null }) {
         {method} fit. The line is the model, the points the data
         {result.plot?.bounds ? ", the band and intervals 95%" : ""}.
       </p>
+      {statsOpen && (
+        <Modal title="Fit statistics" onClose={() => setStatsOpen(false)}
+               footer={<div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+                 <button onClick={() => setStatsOpen(false)}>Done</button></div>}>
+          <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} bestFit={bestFit} />
+        </Modal>
+      )}
     </div>
   );
 }

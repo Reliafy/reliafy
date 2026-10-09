@@ -8010,4 +8010,22 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
   cursor: pointer;
 }
 .plot-dl:hover { background: var(--acc-t); color: var(--acc); }
+/* Out of the way until wanted: shown on hover or keyboard focus, faint on
+   touch screens (no hover there). */
+.plot-dl { opacity: 0; transition: opacity 0.15s; }
+.plot-frame:hover .plot-dl, .plot-dl:focus-visible { opacity: 1; }
+@media (hover: none) { .plot-dl { opacity: 0.55; } }
 .plot-dl:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--acc-t); border-color: var(--acc); }
+
+/* Fit statistics in their modal: the table is the dialog's content, not a card in it. */
+.modal .gof-metrics-card { border: none; border-radius: 0; max-width: none; width: 100%; box-shadow: none; }
+.modal .gof-metrics-card .gofh { padding-left: 0; padding-right: 0; }
+.modal .gof-metrics-card .gofr { padding-left: 0; padding-right: 0; }
+/* A parameters-panel row that opens more (the fit statistics). */
+.detail-panel .gofr.gofr-link {
+  width: 100%; background: none; border: none; border-radius: 0; cursor: pointer;
+  font: inherit; font-size: var(--fs-13); font-weight: 400; color: inherit; text-align: left; white-space: normal;
+}
+.detail-panel .gofr.gofr-link .gv { color: var(--acc); }
+.detail-panel .gofr.gofr-link:hover { background: var(--acc-t); }
+.detail-panel .gofr.gofr-link:focus-visible { outline: none; box-shadow: inset var(--focus); }

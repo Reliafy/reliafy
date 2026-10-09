@@ -13,10 +13,10 @@ import { distColor } from "../instrument.js";
 import { formatNumber } from "../format.js";
 import Chip from "./ui/Chip.jsx";
 
+// The fit statistics open from the panel beside the plot.
 const DISTRIBUTION_TABS = [
   { id: "plot", label: "Probability plot" },
   { id: "calc", label: "Calculator" },
-  { id: "gof", label: "Fit quality" },
 ];
 const NONPARAMETRIC_TABS = [
   { id: "survival", label: "Survival curve" },
@@ -265,7 +265,7 @@ export default function ResultView({ result, modelId = null, name = null, split 
               <ProbabilityPlot plot={result.plot} unit={result.unit}
                                download={`${name || result.distribution} — probability plot`} />
             </div>
-            {!isRegression && <LifeAside result={result} split={split} />}
+            {!isRegression && <LifeAside result={result} split={split} bestFit={bestFit} />}
           </div>
         )}
         {tab === "calc" && (
