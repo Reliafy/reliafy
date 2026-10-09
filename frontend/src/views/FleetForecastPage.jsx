@@ -442,6 +442,73 @@ export default function FleetForecastPage() {
         </div>
       )}
 
+      {/* The answer and its months come first; the items behind it follow. */}
+      {!readOnly && (!computed || (forecast.status === "ok" && savedNoUsage > 0)) && (
+        <p className={"fleet-gate" + (computed ? " warn" : "")}>
+          {computed
+            ? `Set the usage per ${settingsWord}, then Save & forecast.`
+            : `Add items and set the usage per ${settingsWord}, then Save & forecast.`}
+        </p>
+      )}
+
+      {showAnswer && (
+        <div className="card" style={{ marginTop: "1rem" }}>
+          <ResultSummary
+            sentence={
+              single && !repairable ? (
+                <>≈ <b>{formatNumber(forecast.expected)}</b> items fail in the next <b>{horizon}</b>.</>
+              ) : (
+                <>≈ <b>{formatNumber(forecast.expected)}</b> failures in the next <b>{horizon}</b>{counted}.</>
+              )
+            }
+            stats={[
+              range && { label: "Likely range (80%)", value: range, hint: rangeHint },
+              forecast.periods > 1 && {
+                label: `Average a ${periodWord}`,
+                value: `≈ ${formatNumber(forecast.expected / forecast.periods, { sig: 2 })}`,
+              },
+            ]}
+          >
+            {dirty && "Unsaved changes — Save & forecast to update."}
+          </ResultSummary>
+          {(forecast.per_period || []).some((v) => v > 0) && (
+            <>
+              <Plot
+                data={[{
+                  type: "bar",
+                  x: periodLabels,
+                  y: forecast.per_period,
+                  marker: { color: ACCENT },
+                  ...(periodBand ? {
+                    error_y: {
+                      type: "data",
+                      symmetric: false,
+                      array: forecast.per_period.map((v, i) => Math.max(0, (periodBand[i]?.[1] ?? v) - v)),
+                      arrayminus: forecast.per_period.map((v, i) => Math.max(0, v - (periodBand[i]?.[0] ?? v))),
+                      color: INK,
+                      thickness: 1,
+                      width: 3,
+                    },
+                    customdata: periodBand,
+                    hovertemplate: "%{y:.2f} expected (likely %{customdata[0]}–%{customdata[1]})<extra></extra>",
+                  } : { hovertemplate: "%{y:.2f} expected<extra></extra>" }),
+                }]}
+                layout={{
+                  height: 260,
+                  bargap: 0.35,
+                  // Whole periods, at most about a dozen labels.
+                  xaxis: { title: { text: sentence(forecast.period_label || "period") }, tick0: 1, dtick: Math.max(1, Math.ceil(periodLabels.length / 12)) },
+                  yaxis: { title: { text: `Expected failures a ${periodWord}` }, rangemode: "tozero" },
+                }}
+              />
+              {periodBand && (
+                <p className="rs-note">Whiskers: each {periodWord}’s likely range (80%).</p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="card" style={{ marginTop: "1rem" }}>
         <CardHeader
           title="Items"
@@ -572,72 +639,6 @@ export default function FleetForecastPage() {
           <p className="rs-note">Every item is more than 95% likely to fail within the horizon.</p>
         )}
       </div>
-
-      {!readOnly && (!computed || (forecast.status === "ok" && savedNoUsage > 0)) && (
-        <p className={"fleet-gate" + (computed ? " warn" : "")}>
-          {computed
-            ? `Set the usage per ${settingsWord}, then Save & forecast.`
-            : `Add items and set the usage per ${settingsWord}, then Save & forecast.`}
-        </p>
-      )}
-
-      {showAnswer && (
-        <div className="card" style={{ marginTop: "1rem" }}>
-          <ResultSummary
-            sentence={
-              single && !repairable ? (
-                <>≈ <b>{formatNumber(forecast.expected)}</b> items fail in the next <b>{horizon}</b>.</>
-              ) : (
-                <>≈ <b>{formatNumber(forecast.expected)}</b> failures in the next <b>{horizon}</b>{counted}.</>
-              )
-            }
-            stats={[
-              range && { label: "Likely range (80%)", value: range, hint: rangeHint },
-              forecast.periods > 1 && {
-                label: `Average a ${periodWord}`,
-                value: `≈ ${formatNumber(forecast.expected / forecast.periods, { sig: 2 })}`,
-              },
-            ]}
-          >
-            {dirty && "Unsaved changes — Save & forecast to update."}
-          </ResultSummary>
-          {(forecast.per_period || []).some((v) => v > 0) && (
-            <>
-              <Plot
-                data={[{
-                  type: "bar",
-                  x: periodLabels,
-                  y: forecast.per_period,
-                  marker: { color: ACCENT },
-                  ...(periodBand ? {
-                    error_y: {
-                      type: "data",
-                      symmetric: false,
-                      array: forecast.per_period.map((v, i) => Math.max(0, (periodBand[i]?.[1] ?? v) - v)),
-                      arrayminus: forecast.per_period.map((v, i) => Math.max(0, v - (periodBand[i]?.[0] ?? v))),
-                      color: INK,
-                      thickness: 1,
-                      width: 3,
-                    },
-                    customdata: periodBand,
-                    hovertemplate: "%{y:.2f} expected (likely %{customdata[0]}–%{customdata[1]})<extra></extra>",
-                  } : { hovertemplate: "%{y:.2f} expected<extra></extra>" }),
-                }]}
-                layout={{
-                  height: 260,
-                  bargap: 0.35,
-                  // Whole periods, at most about a dozen labels.
-                  xaxis: { title: { text: sentence(forecast.period_label || "period") }, tick0: 1, dtick: Math.max(1, Math.ceil(periodLabels.length / 12)) },
-                  yaxis: { title: { text: `Expected failures a ${periodWord}` }, rangemode: "tozero" },
-                }}
-              />
-              {periodBand && (
-                <p className="rs-note">Whiskers: each {periodWord}’s likely range (80%).</p>
-              )}
-            </>
-          )}
-        </div>
-      )}
 
       {atRisk.length > 0 && (
         <div className="card" style={{ marginTop: "1rem" }}>
