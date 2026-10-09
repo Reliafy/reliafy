@@ -7,7 +7,7 @@ import Coefficients from "./Coefficients.jsx";
 import ModelValidation from "./ModelValidation.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import CiNote from "./CiNote.jsx";
-import LifeSummary, { paramView } from "./LifeSummary.jsx";
+import LifeAside from "./LifeSummary.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { distColor } from "../instrument.js";
 import { formatNumber } from "../format.js";
@@ -122,8 +122,9 @@ const REGRESSION_TABS = [
 ];
 
 // Presentational result panel for a fit (used for both fresh and saved
-// models). Answer first (#311): the verdict and up to four tiles, then the
-// tabs (plot, calculator, fit quality), then the rest folded under Details.
+// models). The tabs come first; the plot sits beside a panel with the
+// parameters, the data and a one-line reading (#311); the rest is folded
+// under Details.
 // ``modelId`` (a saved model) lets a regression model saved before its
 // validation scores existed fetch them. ``split`` ({ failed, running, other })
 // is the data's failure / still-running count when the caller has the data.
@@ -205,19 +206,15 @@ export default function ResultView({ result, modelId = null, name = null, split 
   // fitted, and what this kind of model can't show.
   const params = result.params || [];
   const extra = result.extra_params || [];
-  const moreParams = !isRegression && (params.length > 2 || extra.length > 0);
+  const moreParams = !isRegression && !hasPlot && !isNonparametric && (params.length > 2 || extra.length > 0);
   const details = !isRegression && (
     moreParams || optionWords.length > 0 || selectionNote || isNonparametric || isDiscrete ||
     result.params_only || result.mixture > 1
   );
 
-  const method = result.options?.how && result.options.how !== "MLE"
-    ? `Fitted by ${result.options.how}` : "Maximum-likelihood fit";
-
   return (
     <>
       <NoMaximumNotice notice={result.no_finite_maximum} style={{ margin: "0 0 12px" }} />
-      {!isRegression && <LifeSummary result={result} split={split} />}
       {/* Best fit picked a two-mode mixture (#236): say what the modes are. */}
       {result.mixture_summary && (
         <p className="mixture-summary">{result.mixture_summary}</p>
@@ -254,10 +251,13 @@ export default function ResultView({ result, modelId = null, name = null, split 
 
       <div className="tab-panel">
         {tab === "survival" && (
-          <div className="plotwrap">
-            <div className="plottitle">{result.distribution} — empirical survival</div>
-            <SurvivalPlot estimate={result.estimate} unit={result.unit}
-                          download={`${name || result.distribution} — survival curve`} />
+          <div className="detail-panel">
+            <div className="plotwrap">
+              <div className="plottitle">{result.distribution} — empirical survival</div>
+              <SurvivalPlot estimate={result.estimate} unit={result.unit}
+                            download={`${name || result.distribution} — survival curve`} />
+            </div>
+            <LifeAside result={result} split={split} />
           </div>
         )}
         {tab === "plot" && (
@@ -266,18 +266,15 @@ export default function ResultView({ result, modelId = null, name = null, split 
               <div className="plottitle">{result.distribution} probability plot</div>
               <ProbabilityPlot plot={result.plot} unit={result.unit}
                                download={`${name || result.distribution} — probability plot`} />
-              <p className="plot-caption">
-                {method} to {result.n?.toLocaleString()} observations: the line is the model, the
-                points the data{result.plot?.bounds ? ", the band its 95% confidence" : ""}.
-              </p>
             </div>
+            {!isRegression && <LifeAside result={result} split={split} />}
           </div>
         )}
         {tab === "calc" && (
           <Calculator
             functions={result.functions}
             unit={result.unit}
-            params={paramsInRail ? result.params : null}
+            params={paramsInRail || (!isRegression && !hasPlot && !isNonparametric) ? result.params : null}
             state={calc}
             setState={setCalc}
             nextIdRef={calcNextId}
