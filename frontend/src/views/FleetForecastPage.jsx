@@ -258,6 +258,9 @@ export default function FleetForecastPage() {
     settings.rate_source === "estimated" ? "rates from API readings" : null,
     single && !repairable && (!blank(settings.warranty_use) || !blank(settings.warranty_periods)) ? "warranty limits" : null,
   ].filter(Boolean);
+  // The per-item figures are blank while they're out of date: unsaved edits,
+  // or a forecast saved without usage (every item at 0).
+  const itemFiguresStale = dirty || savedNoUsage > 0;
   // Figures the user typed, shown as text on a read-only forecast: exact, with separators.
   const asText = (v) => (blank(v) ? "—" : formatNumber(v, { sig: 6 }));
 
@@ -284,7 +287,7 @@ export default function FleetForecastPage() {
             {fleet.updated_by ? ` · last edited by ${fleet.updated_by}` : ""}
           </>
         }
-        actions={computed && <button className="secondary" onClick={exportCsv}>Export CSV</button>}
+        actions={computed && savedNoUsage === 0 && <button className="secondary" onClick={exportCsv}>Export CSV</button>}
         // With no items yet, "Add item" is the next step, not saving.
         primary={!readOnly && (items.length > 0 || dirty) && (
           <button onClick={onSave} disabled={saving || !dirty || noUsage > 0}
@@ -484,9 +487,9 @@ export default function FleetForecastPage() {
                                  onChange={(e) => setItem(idx, "name", e.target.value)} />
                         )}
                       </td>
-                      <td className="num fleet-expected">{r.expected === undefined || dirty ? "—" : formatNumber(r.expected)}</td>
+                      <td className="num fleet-expected">{r.expected === undefined || itemFiguresStale ? "—" : formatNumber(r.expected)}</td>
                       {!hideProb && (
-                        <td className="num">{r.prob_any === undefined || dirty ? "—" : formatPercent(r.prob_any)}</td>
+                        <td className="num">{r.prob_any === undefined || itemFiguresStale ? "—" : formatPercent(r.prob_any)}</td>
                       )}
                       <td className="num">
                         {readOnly ? asText(it.current_use) : (
@@ -540,7 +543,7 @@ export default function FleetForecastPage() {
                       )}
                       {repairable && (
                         <td className="num">
-                          {dirty || it.next_service_at == null || it.next_service_at === ""
+                          {itemFiguresStale || it.next_service_at == null || it.next_service_at === ""
                             ? "—"
                             : r.service_overdue
                             ? <span className="fleet-alert-warn" title="The item's use is past its next service">overdue</span>
