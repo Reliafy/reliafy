@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider.jsx";
+import { useAppConfig } from "../ConfigProvider.jsx";
 import ApiAccessPanel from "../components/ApiAccessPanel.jsx";
 import ConnectedAppsPanel from "../components/ConnectedAppsPanel.jsx";
+import { initials } from "../components/Sidebar.jsx";
+import Button from "../components/ui/Button.jsx";
+import Card, { CardHeader } from "../components/ui/Card.jsx";
+import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 import {
+  getBilling,
   restoreSamples,
   removeSamples,
   getEmailPreferences,
@@ -17,9 +24,61 @@ const TABS = [
   { id: "apps", label: "Connected apps" },
 ];
 
-function initials(user) {
-  const s = user?.displayName || user?.email || "?";
-  return s.trim().slice(0, 2).toUpperCase();
+const PLAN_NAME = { free: "Free", agent: "Agent", pro: "Pro" };
+
+// The plan at a glance: which plan, MCP calls against this period's
+// allowance, and the way up. Only where this deployment has plans.
+function PlanCard() {
+  const navigate = useNavigate();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let alive = true;
+    getBilling()
+      .then((d) => alive && setData(d))
+      .catch(() => alive && setError("Couldn't load your plan."));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const plan = data?.plan || "free";
+  const mcp = data?.mcp || {};
+  const n = (v) => (v ?? 0).toLocaleString();
+  const quota = mcp.quota != null ? ` / ${n(mcp.quota)}` : "";
+  return (
+    <Card style={{ marginTop: "1rem" }}>
+      <CardHeader
+        title="Plan"
+        actions={data && (
+          <span className="chip-row">
+            {data.admin && <Chip>Operator</Chip>}
+            <Chip tone={plan === "free" ? "neutral" : "accent"}>{PLAN_NAME[plan] || plan}</Chip>
+          </span>
+        )}
+      />
+      {error ? (
+        <p className="muted-line">{error}</p>
+      ) : !data ? (
+        <p className="muted-line">Loading…</p>
+      ) : (
+        <>
+          <ul className="bill-usage">
+            <li>
+              <span>MCP calls {mcp.period === "day" ? "today" : "this month"}</span>
+              <span className="bill-usage-n">{n(mcp.calls_used)}{quota}</span>
+            </li>
+          </ul>
+          <div className="row set-plan-acts">
+            {plan !== "pro" && !data.admin && (
+              <Button onClick={() => navigate("/billing")}>Upgrade to Pro</Button>
+            )}
+            <Link className="evidence-link" to="/billing">Usage, limits and billing</Link>
+          </div>
+        </>
+      )}
+    </Card>
+  );
 }
 
 // Product-update email opt-out. Optimistic: the checkbox flips immediately and
@@ -57,8 +116,8 @@ function EmailPreferences() {
   };
 
   return (
-    <div className="card" style={{ marginTop: "1rem" }}>
-      <h2>Emails</h2>
+    <Card style={{ marginTop: "1rem" }}>
+      <CardHeader title="Emails" />
       <label className="set-check">
         <input
           type="checkbox"
@@ -74,7 +133,7 @@ function EmailPreferences() {
         Emails you trigger yourself, like team invites and shares, aren't affected.
       </p>
       {error && <div className="error" style={{ marginBottom: 0 }}>{error}</div>}
-    </div>
+    </Card>
   );
 }
 
@@ -84,6 +143,7 @@ export default function SettingsPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { billing } = useAppConfig();
 
   const initial = new URLSearchParams(location.search).get("tab");
   const [tab, setTab] = useState(TABS.some((t) => t.id === initial) ? initial : "general");
@@ -116,13 +176,7 @@ export default function SettingsPage() {
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">Account / <b>Settings</b></div>
-          <h1>Settings</h1>
-          <p>Your profile, sample data, emails, programmatic access and connected apps.</p>
-        </div>
-      </header>
+      <PageHeader title="Settings" />
 
       <div className="tabs">
         {TABS.map((t) => (
@@ -138,8 +192,8 @@ export default function SettingsPage() {
 
       {tab === "general" && (
         <div className="set-section">
-          <div className="card">
-            <h2>Profile</h2>
+          <Card>
+            <CardHeader title="Profile" />
             <div className="set-profile">
               <span className="ava lg">{initials(user)}</span>
               <div>
@@ -147,24 +201,24 @@ export default function SettingsPage() {
                 <div className="muted-line">{user?.email || ""}</div>
               </div>
             </div>
-          </div>
+          </Card>
 
-          <div className="card" style={{ marginTop: "1rem" }}>
-            <h2>Sample data</h2>
-            <p className="muted-line" style={{ marginTop: 0 }}>
-              A fresh workspace comes with sample datasets, models, RBDs and
-              studies so you can explore. Hiding samples only affects your view —
-              they stay available to restore any time.
-            </p>
+          {billing && <PlanCard />}
+
+          <Card style={{ marginTop: "1rem" }}>
+            <CardHeader
+              title="Sample data"
+              subtitle="A fresh workspace comes with sample datasets, models, RBDs and studies to explore. Hiding them only changes your view; restore them any time."
+            />
             <div className="row" style={{ gap: "0.6rem" }}>
-              <button className="secondary" onClick={onRestore} disabled={!!samplesBusy}>
+              <Button variant="secondary" onClick={onRestore} disabled={!!samplesBusy}>
                 {samplesBusy === "restore" ? "Restoring…" : "Restore sample data"}
-              </button>
-              <button className="secondary" onClick={onRemoveAll} disabled={!!samplesBusy}>
+              </Button>
+              <Button variant="secondary" onClick={onRemoveAll} disabled={!!samplesBusy}>
                 {samplesBusy === "remove" ? "Removing…" : "Remove all samples"}
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
 
           {!AUTH_DISABLED && <EmailPreferences />}
         </div>
