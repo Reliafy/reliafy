@@ -6196,6 +6196,9 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .set-name { font-weight: 600; font-size: var(--fs-16); }
 .set-plan-acts { gap: 0.6rem 1rem; align-items: center; flex-wrap: wrap; margin-top: 0.8rem; }
 .set-plan-acts .evidence-link { font-size: var(--fs-14); }
+/* /team in the personal workspace: switch to a team or create one. */
+.team-empty p { margin: 0 0 12px; }
+.team-switch { gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 /* Settings > API access: the form opens inside the tokens card; a new token
    shows once, in the mono copy field, with a request to try. */
 .token-form { padding-bottom: 0.9rem; margin-bottom: 0.4rem; border-bottom: 1px solid var(--line2); }
@@ -6472,6 +6475,12 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .nav-team-settings svg { width: 17px; height: 17px; }
 .nav-team-settings:hover { color: var(--acc); background: var(--acc-t); }
 .nav-team-settings.active { color: var(--acc); }
+/* Phone: a long team name shrinks (the label ellipsises) rather than pushing
+   the bar wider than the screen. */
+@media (max-width: 720px) {
+  .nav-workspace { min-width: 0; }
+  .nav-workspace .nav-workspace-select { max-width: 140px; }
+}
 
 /* ---- Sharing ------------------------------------------------------------ */
 .share-row {
