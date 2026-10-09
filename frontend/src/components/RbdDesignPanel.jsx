@@ -3,8 +3,8 @@ import Plot from "./Plot.jsx";
 import { ACCENT, DATA_INK, fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
 import { applyRbdDesign, designRbd } from "../api.js";
 import RbdCheapestDesign from "./RbdCheapestDesign.jsx";
-import RbdIntervals from "./RbdIntervals.jsx";
-import RbdEmptyState from "./RbdEmptyState.jsx";
+import RbdIntervals, { maintainedBlocks } from "./RbdIntervals.jsx";
+import RbdEmptyState, { TabEmptyState } from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
 import LifeModelModal from "./LifeModelModal.jsx";
 import Select from "./Select.jsx";
@@ -83,7 +83,8 @@ function arrangement(b) {
   return `${b.copies} active in parallel`;
 }
 
-export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
+// ``readOnly``: a sample or a view-only share — ``onSaveCopy`` saves a copy to edit.
+export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOnly = false, onSaveCopy = null }) {
   const nodes = graph.nodes || [];
   // A component drawn in several places (a repeated block, #102) — the copy
   // or its original — can't be given copies; it stays as drawn.
@@ -149,6 +150,22 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
   }
 
   if (graph.repairable) {
+    // Nothing to design with yet — no purchase price, no scheduled
+    // maintenance: one line on what the tab does, one on what it needs, and
+    // the way there (a sample is read-only: a copy of it can be edited).
+    const maintained = maintainedBlocks(graph);
+    const priced = (graph.nodes || []).some((n) => n.type === "component" && Number(n.data?.costs?.acquisition) > 0);
+    if (!priced && !maintained.replacement.length && !maintained.proof_test.length) {
+      return (
+        <TabEmptyState
+          title="Design: the cheapest copies of each block, and the best maintenance intervals"
+          need="It needs a purchase price, age replacement or proof tests on a block (double-click it → Cost & maintenance)."
+          action={readOnly
+            ? onSaveCopy && { label: "Save a copy to edit", onClick: onSaveCopy }
+            : onBuild && { label: "Go to the Builder", onClick: onBuild }}
+        />
+      );
+    }
     // Repairable diagrams: the copies with the lowest total cost of ownership
     // (#99), and the maintenance and proof-test intervals chosen together (#228).
     return (

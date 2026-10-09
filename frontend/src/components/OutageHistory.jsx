@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
 import { ACCENT, GRID } from "../plotTheme.js";
 import Select from "./Select.jsx";
-import RbdEmptyState from "./RbdEmptyState.jsx";
+import RbdEmptyState, { TabEmptyState } from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
 import {
   deleteOutageLog,
@@ -622,8 +622,14 @@ function HistoryView({ history, labels }) {
   );
 }
 
-export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels, onBuild }) {
+// What the tab does, in one line (its empty states lead with it).
+const OUTAGE_TITLE = "Outage history: the diagram's observed availability, from a log of real outages";
+
+// ``onSave`` saves an unsaved diagram; ``onSaveCopy`` saves a copy of a
+// sample (whose logs can't be kept on it).
+export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels, onBuild, onSave = null, onSaveCopy = null }) {
   const [logs, setLogs] = useState(null);
+  const [sample, setSample] = useState(false); // a shared sample: no logs of its own
   const [activeId, setActiveId] = useState(null);
   const [history, setHistory] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -645,10 +651,12 @@ export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels, o
     setError(null);
     try {
       const r = await listOutageLogs(rbdId);
+      setSample(false);
       setLogs(r.logs);
       setActiveId((cur) => (cur && r.logs.some((l) => l.id === cur) ? cur : r.logs[0]?.id || null));
     } catch (err) {
-      setError(err.message);
+      if (err.code === "sample") setSample(true);
+      else setError(err.message);
       setLogs([]);
     }
   }, [rbdId]);
@@ -673,10 +681,21 @@ export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels, o
   }
   if (!rbdId) {
     return (
-      <div className="outage-empty card note">
-        <b>Save the diagram first.</b> An outage log is kept with a saved diagram: its assets are matched to the
-        blocks, and the outages are merged through the diagram's structure.
-      </div>
+      <TabEmptyState
+        title={OUTAGE_TITLE}
+        need="A log is kept with a saved diagram: save this one first."
+        action={onSave && { label: "Save…", onClick: onSave }}
+      />
+    );
+  }
+  // A shared sample keeps no logs: a neutral next step, not an error.
+  if (sample) {
+    return (
+      <TabEmptyState
+        title={OUTAGE_TITLE}
+        need="This is a shared sample: logs go on your own diagrams, so save a copy of it to import one."
+        action={onSaveCopy && { label: "Save a copy", onClick: onSaveCopy }}
+      />
     );
   }
   if (error && !logs?.length) return <div className="error">{error}</div>;

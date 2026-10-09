@@ -372,8 +372,14 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'tree' | 'design' | 'outages'
   // The canvas fills the frame; the result tabs scroll with the page (#311).
   useEffect(() => { onTab?.(tab); }, [onTab, tab]);
-  // A tab's empty state (#271) sends the user back to the canvas.
+  // A tab's empty state (#271) sends the user back to the canvas — or, on a
+  // read-only diagram, to save a copy (or, unsaved, to save it): the dialog
+  // opens over the Builder.
   const toBuilder = useCallback(() => setTab("builder"), []);
+  const saveFromTab = useCallback((which) => {
+    setTab("builder");
+    setModal(which);
+  }, []);
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
   const [checkedSig, setCheckedSig] = useState(null);
@@ -1705,7 +1711,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       {modal === "saveasnew" && (
         <RbdSaveModal
           asNew
-          initialName={savedRbdName ? `${savedRbdName} (copy)` : ""}
+          initialName={savedRbdName ? `${savedRbdName.replace(SAMPLE_SUFFIX, "")} (copy)` : ""}
           onClose={() => setModal(null)}
           onSubmit={(name) => onSaveRbd(name, true)}
         />
@@ -1747,6 +1753,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         onApply={applyDesign}
         onBuild={toBuilder}
+        readOnly={savedRbdReadOnly}
+        onSaveCopy={savedRbdId ? () => saveFromTab("saveasnew") : null}
         onView={() => {
           setTab("builder");
           // Once the canvas is shown again (it can't be fitted while hidden).
@@ -1762,6 +1770,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
             graph={{ nodes, edges, unit: rbdUnit }}
             readOnly={savedRbdReadOnly}
             onBuild={toBuilder}
+            onSave={() => saveFromTab("saverbd")}
+            onSaveCopy={savedRbdId ? () => saveFromTab("saveasnew") : null}
             onApplyModels={(updates) =>
               // Models fitted from the log, put on their blocks (unsaved).
               setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: { ...n.data, ...updates[n.id] } } : n)))

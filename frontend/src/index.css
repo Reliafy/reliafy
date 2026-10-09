@@ -2799,6 +2799,8 @@ h1 .chip,
   background: var(--surf);
 }
 .rbd-empty h3 { margin: 0.9rem 0 0.4rem; font-size: var(--fs-16); line-height: 1.35; }
+.rbd-empty-tab { max-width: 42rem; }
+.rbd-empty-tab h3 { margin-top: 0; }
 .rbd-empty p { margin: 0 0 1rem; color: var(--muted); font-size: var(--fs-14); line-height: 1.5; }
 .rbd-empty p:last-child { margin-bottom: 0; }
 .rbd-empty kbd {
