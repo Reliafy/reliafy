@@ -1542,10 +1542,6 @@ h6 {
 }
 span.lib-name { display: inline-flex; }
 
-.lib-spark {
-  display: block;
-}
-
 .lib-date {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -1593,6 +1589,54 @@ span.lib-name { display: inline-flex; }
 .lib-acts .act.del:hover {
   background: var(--danger-bg);
   color: var(--danger);
+}
+
+/* One "Samples" heading over the shared samples, after the user's own rows
+   (#312), instead of a chip on every row. */
+.lib-group th {
+  padding: 20px 14px 8px;
+  text-align: left;
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.lib-table tbody .lib-group:first-child th {
+  padding-top: 12px;
+}
+
+/* A section's tools above its saved list (Strategy). */
+.tool-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+.tool-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  color: var(--ink);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  text-decoration: none;
+  box-shadow: var(--shadow-card);
+}
+.tool-link svg {
+  width: 18px;
+  height: 18px;
+  color: var(--acc);
+  flex: none;
+}
+.tool-link:hover,
+.tool-link:focus-visible {
+  border-color: var(--acc);
+  color: var(--acc-d);
 }
 
 header {
@@ -3929,9 +3973,14 @@ select:disabled {
 }
 
 .ds-model-name {
+  min-width: 0;
   font-size: var(--fs-13);
   font-weight: 600;
   color: var(--ink);
+  text-align: left;
+}
+.ds-model-row .chip {
+  flex: none;
 }
 
 .ds-empty-aside {
@@ -4756,7 +4805,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   .prod-prose { padding: 8px 22px 32px; }
 }
 
-/* ---- Section dashboards (overview cards) --------------------------------- */
+/* ---- Card grids (usage, admin) ------------------------------------------- */
 .dash-cards {
   margin-top: 22px;
   display: grid;
@@ -4768,70 +4817,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   .dash-cards {
     grid-template-columns: 1fr;
   }
-}
-
-.dash-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-  gap: 14px;
-  width: 100%;
-  background: var(--surf);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  padding: 22px;
-  font: inherit;
-  color: inherit;
-  text-decoration: none;
-  cursor: pointer;
-  box-shadow: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.dash-card:hover {
-  background: var(--surf);
-  border-color: var(--acc);
-  box-shadow: var(--shadow-card);
-}
-
-.dash-card-ic {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--r);
-  background: var(--acc-t);
-  color: var(--acc);
-  display: grid;
-  place-items: center;
-}
-
-.dash-card-ic svg {
-  width: 21px;
-  height: 21px;
-}
-
-.dash-card-body {
-  flex: 1;
-}
-
-.dash-card h3 {
-  margin: 0 0 6px;
-  font-size: var(--fs-16);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.dash-card p {
-  margin: 0;
-  font-size: var(--fs-14);
-  line-height: 1.55;
-  color: var(--muted);
-}
-
-.dash-card-cta {
-  font-size: var(--fs-13);
-  font-weight: 600;
-  color: var(--acc);
 }
 
 /* ---- First-run starts (#194) --------------------------------------------- */
@@ -4886,6 +4871,27 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   box-shadow: var(--shadow-card);
 }
 
+.first-run-ic {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r);
+  background: var(--acc-t);
+  color: var(--acc);
+  display: grid;
+  place-items: center;
+}
+
+.first-run-ic svg {
+  width: 21px;
+  height: 21px;
+}
+
+.first-run-cta {
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--acc);
+}
+
 .first-run-start-body {
   flex: 1;
   min-width: 0;
@@ -4906,8 +4912,25 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   color: var(--muted);
 }
 
-.first-run-agent {
+.first-run-more {
   margin: 16px 0 0;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.first-run-more a {
+  color: var(--acc);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.first-run-more a:hover {
+  color: var(--acc-d);
+  text-decoration: underline;
+}
+
+.first-run-agent {
+  margin: 8px 0 0;
   font-size: var(--fs-13);
   color: var(--muted);
 }
@@ -4976,27 +4999,136 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-size: var(--fs-13);
 }
 
-/* Phones: each start becomes a compact row (icon, then text); the whole row
-   is the link, so the CTA line is dropped. */
+/* The Modelling home's own models, newest first (#312). */
+.recent-models {
+  margin-top: 24px;
+}
+
+.recent-models-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.recent-models-head h2 {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 600;
+}
+
+.recent-models-head a {
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--acc);
+  text-decoration: none;
+}
+
+.recent-models-head a:hover {
+  color: var(--acc-d);
+  text-decoration: underline;
+}
+
+.recent-models-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.recent-models-list li + li {
+  border-top: 1px solid var(--line2);
+}
+
+.recent-model {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 12px 16px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: var(--fs-14);
+}
+
+.recent-model:hover,
+.recent-model:focus-visible {
+  background: var(--acc-t);
+}
+
+.recent-model-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-model-kind {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--fs-13);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-model-when {
+  flex: none;
+  width: 96px;
+  text-align: right;
+  color: var(--muted);
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Phones: each start and each recent model is one line — icon (or name) and
+   title; the whole row is the link, so descriptions and CTAs drop out. */
 @media (max-width: 600px) {
   .first-run {
     padding: 16px;
   }
   .first-run-starts {
-    gap: 10px;
+    gap: 8px;
   }
   .first-run-start {
     flex-direction: row;
+    align-items: center;
     gap: 12px;
-    padding: 14px;
+    min-height: 44px;
+    padding: 8px 12px;
   }
-  .first-run-start .dash-card-ic {
+  .first-run-start .first-run-ic {
     flex: none;
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
   }
-  .first-run-start .dash-card-cta {
+  .first-run-start .first-run-ic svg {
+    width: 18px;
+    height: 18px;
+  }
+  .first-run-start-body span,
+  .first-run-start .first-run-cta {
     display: none;
+  }
+  .first-run-start-body b {
+    font-size: var(--fs-14);
+  }
+  .recent-model {
+    min-height: 44px;
+    align-items: center;
+  }
+  .recent-model-kind {
+    display: none;
+  }
+  .recent-model-when {
+    width: auto;
   }
 }
 
@@ -7675,6 +7807,24 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
   .lib {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+  /* ...and keep only the name, the key detail and Delete: a tap on the row
+     opens it, and a long detail chip wraps rather than pushing Delete off. */
+  .lib-table .lib-opt,
+  .lib-acts .act-open {
+    display: none;
+  }
+  .lib-table td .chip {
+    white-space: normal;
+    line-height: 1.35;
+    padding-block: 2px;
+  }
+  .lib-row td {
+    padding: 12px 10px;
+  }
+  .lib-acts .act {
+    width: 36px;
+    height: 36px;
   }
   /* Model page: the parameters card goes under the plot, not beside it. */
   .detail-panel {
