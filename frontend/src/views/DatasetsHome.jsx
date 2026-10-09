@@ -5,39 +5,14 @@ import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 
-const PlusIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-);
-const OpenIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M7 17 17 7M9 7h8v8" />
-  </svg>
-);
-const TrashIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
-  </svg>
-);
 const FileIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
     <path d="M14 3v5h5M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />
   </svg>
 );
-
-function summarise(datasets) {
-  const rows = datasets.reduce((s, d) => s + (d.n_rows || 0), 0);
-  const linked = datasets.reduce((s, d) => s + (d.n_models || 0), 0);
-  const latest = datasets.reduce((a, d) => (a && a > d.created_at ? a : d.created_at), null);
-  return {
-    datasets: datasets.length,
-    rows: rows.toLocaleString(),
-    linked,
-    lastAdded: latest ? relativeTime(latest) : "—",
-  };
-}
 
 // Landing page for the Datasets section: list uploaded CSVs, upload new, open
 // or delete. Datasets are content-addressed, so re-uploading a file reuses it.
@@ -49,7 +24,7 @@ export default function DatasetsHome() {
   const [error, setError] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
 
-  // Open the New-dataset flow directly when arriving from the dashboard card.
+  // Open the New-dataset flow directly when a link asks for it.
   useEffect(() => {
     if (location.state?.openUpload) {
       window.history.replaceState({}, "");
@@ -71,10 +46,9 @@ export default function DatasetsHome() {
     navigate(`/datasets/d/${ds.id}`);
   };
 
-  const onDelete = async (e, d) => {
-    e.stopPropagation();
+  const onDelete = async (d) => {
     const msg = d.is_sample
-      ? `Remove the sample “${d.name}” from your workspace? It stays available to other users and you won't see it again.`
+      ? `Remove the sample “${itemName(d)}” from your workspace? It stays available to other users and you won't see it again.`
       : `Delete dataset “${d.name}”?`;
     if (!window.confirm(msg)) return;
     try {
@@ -87,25 +61,15 @@ export default function DatasetsHome() {
 
   const open = (id) => navigate(`/datasets/d/${id}`);
   const loading = datasets === null;
-  const s = !loading ? summarise(datasets) : null;
+  const visible = (datasets || []).filter((d) => matches(query, d.name, d.id));
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/datasets")}>Datasets</button> / <b>Uploaded files</b>
-          </div>
-          <h1>Datasets</h1>
-          <p>
-            Stored once and shared across the models fitted from them. Upload a
-            CSV or Excel file, paste from a spreadsheet, or type data into a form.
-          </p>
-        </div>
-        <button onClick={() => setNewOpen(true)}>
-          <PlusIcon /> New dataset
-        </button>
-      </header>
+      <PageHeader
+        title="Datasets"
+        meta="Stored once and reused by every model fitted from them."
+        primary={<button onClick={() => setNewOpen(true)}><PlusIcon /> New dataset</button>}
+      />
 
       {error && <div className="card error">{error}</div>}
 
@@ -121,59 +85,40 @@ export default function DatasetsHome() {
         </div>
       ) : (
         <>
-          <div className="stats">
-            <div className="stat"><div className="k">Datasets</div><div className="v">{s.datasets}</div></div>
-            <div className="stat"><div className="k">Total rows</div><div className="v">{s.rows}</div></div>
-            <div className="stat"><div className="k">Linked models</div><div className="v">{s.linked}</div></div>
-            <div className="stat"><div className="k">Last added</div><div className="v sm">{s.lastAdded}</div></div>
-          </div>
-
           <div className="tablebar">
-            <span className="count">{datasets.length} datasets</span>
+            <span className="count">{visible.length} of {datasets.length} datasets</span>
             <span className="grow" />
+            <ListSearch value={query} onChange={setQuery} placeholder="Search datasets…" />
           </div>
 
           <div className="lib">
-            <div className="tablebar">
-              <span className="grow" />
-              <ListSearch value={query} onChange={setQuery} placeholder="Search datasets…" />
-            </div>
             <table className="lib-table">
               <thead>
                 <tr>
-                  <th style={{ width: "38%" }}>Dataset</th>
+                  <th style={{ width: "44%" }}>Dataset</th>
                   <th style={{ width: 90 }}>Rows</th>
-                  <th style={{ width: 100 }}>Columns</th>
-                  <th style={{ width: 100 }}>Models</th>
-                  <th>Added</th>
-                  <th />
+                  <th className="lib-opt" style={{ width: 100 }}>Columns</th>
+                  <th className="lib-opt" style={{ width: 100 }}>Models</th>
+                  <th className="lib-opt">Added</th>
+                  <th><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
-                {datasets.filter((d) => matches(query, d.name)).map((d) => (
+                <SampleGroups rows={visible} cols={6} render={(d) => (
                   <tr key={d.id} className="lib-row" onClick={() => open(d.id)}>
                     <td>
                       <div className="ds-name">
                         <span className="ds-ic"><FileIcon /></span>
-                        <span className="lib-name">{d.name}{d.is_sample && <Chip>Sample</Chip>}{d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}</span>
+                        <span className="lib-name">{itemName(d)}{d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}</span>
                       </div>
                     </td>
                     <td className="lib-n">{(d.n_rows ?? 0).toLocaleString()}</td>
-                    <td className="lib-n">{d.n_columns}</td>
-                    <td className="lib-n">{d.n_models}</td>
-                    <td className="lib-date">{relativeTime(d.created_at)}</td>
-                    <td className="lib-actions">
-                      <div className="lib-acts">
-                        <button className="act" title="Open" onClick={(e) => { e.stopPropagation(); open(d.id); }}>
-                          <OpenIcon />
-                        </button>
-                        <button className="act del" title="Delete" onClick={(e) => onDelete(e, d)}>
-                          <TrashIcon />
-                        </button>
-                      </div>
-                    </td>
+                    <td className="lib-n lib-opt">{d.n_columns}</td>
+                    <td className="lib-n lib-opt">{d.n_models}</td>
+                    <td className="lib-date lib-opt">{relativeTime(d.created_at)}</td>
+                    <RowActions item={d} onOpen={() => open(d.id)} onDelete={() => onDelete(d)} />
                   </tr>
-                ))}
+                )} />
               </tbody>
             </table>
           </div>

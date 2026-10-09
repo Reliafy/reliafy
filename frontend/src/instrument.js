@@ -19,32 +19,6 @@ export function distColor(distribution = "") {
   return DIST_COLORS[family] || "#2f6df6";
 }
 
-// Deterministic 0..1 value from a string — used to give each model a distinct
-// (but stable) sparkline shape without storing anything.
-export function seedFromString(str = "") {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = (h * 31 + str.charCodeAt(i)) >>> 0;
-  }
-  return (h % 1000) / 1000;
-}
-
-// Smooth reliability curve R(t): 1 -> 0 as an SVG path. `shape` skews the
-// steepness so each model's sparkline looks distinct.
-export function reliabilityPath(w, h, shape = 0.5, pad = 0) {
-  const n = 28;
-  const k = 1.2 + shape * 2.6; // Weibull-ish shape
-  const pts = [];
-  for (let i = 0; i <= n; i++) {
-    const x = i / n;
-    const R = Math.exp(-Math.pow(x / (0.55 + shape * 0.3), k));
-    const px = pad + x * (w - pad * 2);
-    const py = pad + (1 - R) * (h - pad * 2);
-    pts.push([px.toFixed(1), py.toFixed(1)]);
-  }
-  return "M " + pts.map((p) => `${p[0]},${p[1]}`).join(" L ");
-}
-
 // API timestamps are UTC. If the ISO string carries no timezone (naive, e.g.
 // after a MongoDB round-trip) treat it as UTC, not the browser's local zone —
 // otherwise every time reads off by the viewer's UTC offset.

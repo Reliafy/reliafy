@@ -6,24 +6,12 @@ import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { listFleets, createFleet, deleteFleet, listModels, listAltModels, listRecurrentModels } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 
-const PlusIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-);
-const OpenIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M7 17 17 7M9 7h8v8" />
-  </svg>
-);
-const TrashIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
-  </svg>
-);
 
-// Fleet forecasts: one row per fleet with its live expected-failure headline.
+// Fleet forecasts, the Fleet section's root: one row per fleet with its live
+// expected-failure headline.
 export default function FleetForecasts() {
   const navigate = useNavigate();
   const [fleets, setFleets] = useState(null);
@@ -97,32 +85,27 @@ export default function FleetForecasts() {
 
   const onDelete = async (f) => {
     const msg = f.is_sample
-      ? `Remove the sample “${f.name}” from your workspace? It stays available to other users.`
+      ? `Remove the sample “${itemName(f)}” from your workspace? It stays available to other users and you won't see it again.`
       : `Delete fleet “${f.name}”?`;
     if (!window.confirm(msg)) return;
-    await deleteFleet(f.id);
-    refresh();
+    try {
+      await deleteFleet(f.id);
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
-  const visible = (fleets || []).filter((f) => matches(query, f.name));
+  const open = (id) => navigate(`/fleet/forecasts/${id}`);
+  const visible = (fleets || []).filter((f) => matches(query, f.name, f.id));
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/fleet")}>Fleet</button> / <b>Failure forecasts</b>
-          </div>
-          <h1>Failure forecasts</h1>
-          <p>
-            Predict how many failures a fleet will see over a chosen horizon,
-            straight from your fitted life models.
-          </p>
-        </div>
-        <button onClick={openCreate}>
-          <PlusIcon /> New forecast
-        </button>
-      </header>
+      <PageHeader
+        title="Failure forecasts"
+        meta="How many failures a fleet will see over a horizon, from your fitted models."
+        primary={<button onClick={openCreate}><PlusIcon /> New forecast</button>}
+      />
 
       {error && <div className="card error">{error}</div>}
       {capHit && (
@@ -145,49 +128,42 @@ export default function FleetForecasts() {
           </button>
         </div>
       ) : (
-        <div className="lib">
+        <>
           <div className="tablebar">
+            <span className="count">{visible.length} of {fleets.length} forecasts</span>
             <span className="grow" />
             <ListSearch value={query} onChange={setQuery} placeholder="Search forecasts…" />
           </div>
-          <table className="lib-table">
-            <thead>
-              <tr>
-                <th style={{ width: "30%" }}>Forecast</th>
-                <th style={{ width: 80 }}>Items</th>
-                <th>Forecast</th>
-                <th>Updated</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((f) => (
-                <tr key={f.id} className="lib-row" onClick={() => navigate(`/fleet/forecasts/${f.id}`)}>
-                  <td>
-                    <div className="lib-name">
-                      {f.name}
-                      {f.is_sample && <Chip>Sample</Chip>}
-                      {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
-                    </div>
-                  </td>
-                  <td className="lib-n">{f.n_items}</td>
-                  <td className="lib-date">{f.headline}</td>
-                  <td className="lib-date">{relativeTime(f.updated_at || f.created_at)}</td>
-                  <td className="lib-actions">
-                    <div className="lib-acts">
-                      <button className="act" title="Open" onClick={(e) => { e.stopPropagation(); navigate(`/fleet/forecasts/${f.id}`); }}>
-                        <OpenIcon />
-                      </button>
-                      <button className="act del" title="Delete" onClick={(e) => { e.stopPropagation(); onDelete(f); }}>
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  </td>
+          <div className="lib">
+            <table className="lib-table">
+              <thead>
+                <tr>
+                  <th style={{ width: "34%" }}>Forecast</th>
+                  <th className="lib-opt" style={{ width: 80 }}>Items</th>
+                  <th>Expected failures</th>
+                  <th className="lib-opt">Updated</th>
+                  <th><span className="sr-only">Actions</span></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                <SampleGroups rows={visible} cols={5} render={(f) => (
+                  <tr key={f.id} className="lib-row" onClick={() => open(f.id)}>
+                    <td>
+                      <div className="lib-name">
+                        {itemName(f)}
+                        {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
+                      </div>
+                    </td>
+                    <td className="lib-n lib-opt">{f.n_items}</td>
+                    <td className="lib-date">{f.headline}</td>
+                    <td className="lib-date lib-opt">{relativeTime(f.updated_at || f.created_at)}</td>
+                    <RowActions item={f} onOpen={() => open(f.id)} onDelete={() => onDelete(f)} />
+                  </tr>
+                )} />
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {modalOpen && (

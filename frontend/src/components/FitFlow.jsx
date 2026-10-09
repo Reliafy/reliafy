@@ -82,9 +82,39 @@ export function parsePastedValues(text) {
   return { csv: `time\n${out.join("\n")}\n`, rows: out.length, cols: 1 };
 }
 
+// Failures and units still running in an uploaded or pasted file, counted
+// from its censoring (and count) columns, for the result's Data tile (#311).
+// Null when the file isn't plain comma-separated text with a header the
+// mapping names, or holds inspection (interval) data — the tile then shows the
+// observation count. The result checks the total against the fit's n.
+export async function dataSplit(file, mapping) {
+  if (!file || !mapping.x || mapping.xl || mapping.xr) return null;
+  const text = await file.text();
+  if (text.includes('"')) return null;
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return null;
+  const header = lines[0].split(",").map((h) => h.trim());
+  const col = (name) => (name ? header.indexOf(name) : -1);
+  const xi = col(mapping.x), ci = col(mapping.c), ni = col(mapping.n);
+  if (xi < 0 || (mapping.c && ci < 0) || (mapping.n && ni < 0)) return null;
+  const out = { failed: 0, running: 0, other: 0 };
+  for (const line of lines.slice(1)) {
+    const cells = line.split(",");
+    if (!(cells[xi] || "").trim()) continue;
+    const n = ni >= 0 ? Number(cells[ni]) : 1;
+    let c = ci >= 0 ? Number(cells[ci]) : 0;
+    if (!Number.isFinite(n) || !Number.isFinite(c)) return null;
+    if (mapping.c_invert && (c === 0 || c === 1)) c = 1 - c;
+    if (c === 0) out.failed += n;
+    else if (c === 1) out.running += n;
+    else out.other += n;
+  }
+  return out;
+}
+
 // Fit flow rendered as a page panel: (1) pick a data source, (2) map columns
-// (+ unit, covariates), (3) pick a model and fit, (4) review the fit, name it,
-// and save — with Back to change anything and re-fit before saving. Calls
+// (+ unit, covariates), (3) pick a model and fit, (4) review the fit, then
+// name it beside Save and save — with Back to change anything and re-fit before saving. Calls
 // ``onSaved`` with the saved model; ``onCancel`` backs out to the list.
 // ``initialSource`` opens the source step on "upload" (default) or "paste".
 export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDatasetId, autoFit, initialSource }) {
@@ -115,6 +145,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   // Step 4 (Result): the fit, a name, and the save action.
   const [result, setResult] = useState(null);
+  const [split, setSplit] = useState(null);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [fitMethods, setFitMethods] = useState([]);
@@ -222,6 +253,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         setCovariates([]);
         if (autoFit && map.x) {
           const res = await fitModel("weibull", null, map, { datasetId: initialDatasetId });
+          setSplit(null);
           setResult(res);
           setName(`${res.distribution} — ${(full.name || "dataset").replace(/\s*\(sample\)\s*$/i, "")}`);
           setStep(4);
@@ -292,6 +324,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         ...(hasCovariates ? {} : { fitOptions: fitOpts }),
       };
       const res = await fitModel(distribution, file, mapping, opts);
+      setSplit(await dataSplit(file, mapping).catch(() => null));
       setResult(res);
       const src = file?.name || sourceName || "dataset";
       setName(`${res.distribution} — ${src.replace(/\.csv$/i, "")}`);
@@ -375,9 +408,20 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       </>
     );
   } else {
+    // The name sits beside Save: it is only needed to save (#311).
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={saving}>Back</button>
+        <input
+          className="fit-save-name"
+          type="text"
+          aria-label="Model name"
+          title="Model name"
+          value={name}
+          placeholder="Model name"
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onSave()}
+        />
         <button onClick={onSave} disabled={!name.trim() || saving}>
           {saving ? "Saving…" : "Save model"}
         </button>
@@ -568,21 +612,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
       {step === 4 && result && (
         <div className="fit-step">
-          <label className="login-field">
-            <span>Model name</span>
-            <input
-              type="text"
-              autoFocus
-              value={name}
-              placeholder="Model name"
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
-          <p className="muted-line" style={{ margin: 0 }}>
-            Review the fit below. Go <b>Back</b> to change the mapping or model
-            and re-fit, or save it.
-          </p>
-          <ResultView result={result} />
+          <ResultView result={result} split={split} />
         </div>
       )}
 

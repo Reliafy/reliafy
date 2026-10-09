@@ -101,7 +101,9 @@ const BillingIcon = () => (
 );
 
 // Routed sections highlight via NavLink (some have nested children that appear
-// when the section is active).
+// when the section is active). A section opens on its list (#312); when a
+// child names that same page, the child is the one highlighted. A section
+// without children stays highlighted on its detail pages.
 const ITEMS = [
   {
     to: "/modelling",
@@ -119,18 +121,17 @@ const ITEMS = [
     to: "/rbds",
     label: "RBDs",
     icon: <RbdIcon />,
-    children: [{ to: "/rbds/list", label: "Saved diagrams" }],
   },
   {
     to: "/strategy",
     label: "Strategy",
     icon: <StrategyIcon />,
     children: [
+      { to: "/strategy", label: "Saved analyses" },
       { to: "/strategy/replacement", label: "Optimal replacement" },
       { to: "/strategy/compare", label: "Compare two models" },
       { to: "/strategy/failure-finding", label: "Failure finding" },
       { to: "/strategy/demonstration-test", label: "Demonstration test" },
-      { to: "/strategy/analyses", label: "Saved analyses" },
     ],
   },
   {
@@ -138,15 +139,14 @@ const ITEMS = [
     label: "Fleet",
     icon: <FleetIcon />,
     children: [
+      { to: "/fleet", label: "Failure forecasts" },
       { to: "/fleet/tracking", label: "Degradation tracking" },
-      { to: "/fleet/forecasts", label: "Failure forecasts" },
     ],
   },
   {
     to: "/rcm",
     label: "RCM",
     icon: <RcmSectionIcon />,
-    children: [{ to: "/rcm/studies", label: "Studies" }],
   },
   {
     to: "/agent",
@@ -157,7 +157,6 @@ const ITEMS = [
     to: "/datasets",
     label: "Datasets",
     icon: <DatasetsIcon />,
-    children: [{ to: "/datasets/list", label: "All datasets" }],
   },
 ];
 
@@ -280,12 +279,13 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
             );
           }
           const sectionActive = pathname.startsWith(it.to);
+          const childIsRoot = (it.children || []).some((c) => c.to === it.to);
           return (
             <div key={it.to}>
               <NavLink
                 to={it.to}
-                end
-                className={({ isActive }) => "side-item" + (isActive ? " active" : "")}
+                end={!!it.children}
+                className={({ isActive }) => "side-item" + (isActive && (collapsed || !childIsRoot) ? " active" : "")}
                 title={it.label}
               >
                 <span className="side-icon">{it.icon}</span>
@@ -297,6 +297,7 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
                     <NavLink
                       key={c.to}
                       to={c.to}
+                      end={c.to === it.to}
                       className={({ isActive }) => "side-subitem" + (isActive ? " active" : "")}
                     >
                       {c.label}

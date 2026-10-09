@@ -6,10 +6,11 @@ import { getAltModel, deleteAltModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { itemName } from "../components/LibRows.jsx";
 
-// A saved Accelerated Life model — mirrors the other model pages: title row with
-// a model pill + saved meta, then the life-stress result view with the use-level
-// calculator.
+// A saved Accelerated Life model — mirrors the other model pages: title and
+// saved meta, then the result view (answer card, life-stress plot, use-level
+// calculator).
 export default function AltModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -33,8 +34,8 @@ export default function AltModelPage() {
     <div className="app model-page">
       <PageHeader
         crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Accelerated life", to: "/modelling/alt" }]}
-        title={model ? model.name : "Model"}
-        badges={model && <Chip dot="#2f6df6">{r.distribution} · {r.life_model}</Chip>}
+        title={model ? itemName(model) : "Model"}
+        badges={model?.is_sample && <Chip>Sample</Chip>}
         meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""}</>}
         id={model?.id}
         menu={model && (

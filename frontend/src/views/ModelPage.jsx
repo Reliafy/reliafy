@@ -4,11 +4,13 @@ import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getModel, deleteModel } from "../api.js";
-import { distColor, relativeTime } from "../instrument.js";
+import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { itemName } from "../components/LibRows.jsx";
 
-// Reopen a saved model by id and render its cached results.
+// Reopen a saved model by id and render its cached results. The answer card
+// names the distribution, so the header doesn't.
 export default function ModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -36,8 +38,8 @@ export default function ModelPage() {
     <div className="app model-page">
       <PageHeader
         crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Life data models", to: "/modelling/life" }]}
-        title={model ? model.name : "Model"}
-        badges={model && <Chip dot={distColor(model.results?.distribution)}>{model.results?.distribution}</Chip>}
+        title={model ? itemName(model) : "Model"}
+        badges={model?.is_sample && <Chip>Sample</Chip>}
         meta={model && <>Saved {relativeTime(model.created_at)}{model.unit ? ` · ${model.unit}` : ""}</>}
         actions={canEdit && <button className="secondary" onClick={() => setEditing(true)}>Edit fit</button>}
         id={model?.id}
@@ -60,7 +62,7 @@ export default function ModelPage() {
       {error && <div className="card error">{error}</div>}
       {model && (
         <div className="card">
-          <ResultView result={model.results} hideHead modelId={model.id} name={model.name} />
+          <ResultView result={model.results} modelId={model.id} name={model.name} />
         </div>
       )}
       {editing && model && (
