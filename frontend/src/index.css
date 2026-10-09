@@ -7553,7 +7553,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .consent-actions > * { flex: 1; justify-content: center; text-align: center; }
 
 /* ---- Fleet forecast: alerts card + estimated usage rates ------------------ */
-.fleet-alert-list { list-style: none; margin: 0.4rem 0 0.9rem; padding: 0; }
+.fleet-alert-list { list-style: none; margin: var(--sp-2) 0 0; padding: 0; }
 .fleet-alert-row {
   display: flex;
   align-items: center;
@@ -7561,13 +7561,14 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   padding: 0.6rem 0;
   border-top: 1px solid var(--line2);
 }
-.fleet-alert-row:last-child { border-bottom: 1px solid var(--line2); }
 .fleet-alert-row.off .fleet-alert-cond { color: var(--muted); }
 .fleet-alert-main { flex: 1; min-width: 0; }
 .fleet-alert-cond { font-weight: 600; font-size: var(--fs-14); overflow-wrap: anywhere; }
 .fleet-alert-warn { color: var(--warn); }
-.fleet-alert-toggle { align-items: center; white-space: nowrap; }
-.fleet-alert-toggle input { margin-top: 0; }
+.fleet-alert-toggle { flex: none; min-width: 64px; }
+.fleet-alert-plan { margin: var(--sp-2) 0 0; font-size: var(--fs-13); }
+.fleet-alert-form { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line2); }
+.fleet-alert-fields { margin-top: var(--sp-3); align-items: flex-end; flex-wrap: wrap; }
 .fleet-alert-row .lib-acts { opacity: 1; }
 .fleet-alert-kinds { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; }
 .fleet-rate-est { margin-top: 0.25rem; font-size: var(--fs-13); }
@@ -7640,6 +7641,12 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   .fleet-alert-row { flex-wrap: wrap; }
   .fleet-alert-main { flex-basis: 100%; }
   .fleet-alert-kinds { flex-direction: column; }
+}
+/* Phone: 44px tap targets on the alert rows and form. */
+@media (max-width: 720px) {
+  .fleet-alert-row .lib-acts .act { width: 44px; height: 44px; }
+  .fleet-alert-form button, .fleet-alerts .card-head-actions button { min-height: 44px; }
+  .fleet-alert-kinds .set-check { min-height: 44px; align-items: center; }
 }
 .rbd-import-note { margin-bottom: 10px; }
 .rbd-import-note ul { margin: 6px 0 0; padding-left: 18px; }
