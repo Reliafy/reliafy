@@ -1,39 +1,17 @@
 import { useState } from "react";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
-import { seedFromString, reliabilityPath, relativeTime } from "../instrument.js";
+import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
+import { RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 
-const OpenIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M7 17 17 7M9 7h8v8" />
-  </svg>
-);
-const TrashIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
-  </svg>
-);
-
-// Growth verdict → pill colour, mirroring the model-list distribution pill.
+// Growth verdict → chip tone: green is the good verdict, red the bad one.
 const GROWTH = {
-  improving: { label: "Improving", color: "#2faa6a" },
-  stable: { label: "Stable", color: "#6c727c" },
-  deteriorating: { label: "Deteriorating", color: "#d05a5a" },
+  improving: { label: "Improving", tone: "success" },
+  stable: { label: "Stable", tone: "neutral" },
+  deteriorating: { label: "Deteriorating", tone: "danger" },
 };
 
-function summarise(models) {
-  const systems = models.reduce((s, m) => s + (m.n_systems || 0), 0);
-  const events = models.reduce((s, m) => s + (m.n_events || 0), 0);
-  const latest = models.reduce((a, m) => (a && a > m.created_at ? a : m.created_at), null);
-  return {
-    models: models.length,
-    systems: systems.toLocaleString(),
-    events: events.toLocaleString(),
-    lastFit: latest ? relativeTime(latest) : "—",
-  };
-}
-
-// Saved recurrent-event models, rendered like the life-data model library.
+// Saved recurrent-event models, laid out like the life-data model list.
 export default function RecurrentLibrary({ models, loading, onOpen, onDelete }) {
   const [query, setQuery] = useState("");
   if (loading) return <div className="card empty">Loading…</div>;
@@ -46,18 +24,10 @@ export default function RecurrentLibrary({ models, loading, onOpen, onDelete }) 
     );
   }
 
-  const s = summarise(models);
-  const visible = models.filter((m) => matches(query, m.name, m.model, m.growth));
+  const visible = models.filter((m) => matches(query, m.name, m.model, m.growth, m.id));
 
   return (
     <>
-      <div className="stats">
-        <div className="stat"><div className="k">Saved models</div><div className="v">{s.models}</div></div>
-        <div className="stat"><div className="k">Systems</div><div className="v">{s.systems}</div></div>
-        <div className="stat"><div className="k">Failures</div><div className="v">{s.events}</div></div>
-        <div className="stat"><div className="k">Last fit</div><div className="v sm">{s.lastFit}</div></div>
-      </div>
-
       <div className="tablebar">
         <span className="count">{visible.length} of {models.length} models</span>
         <span className="grow" />
@@ -68,55 +38,33 @@ export default function RecurrentLibrary({ models, loading, onOpen, onDelete }) 
         <table className="lib-table">
           <thead>
             <tr>
-              <th style={{ width: "32%" }}>Model</th>
+              <th style={{ width: "36%" }}>Model</th>
               <th>Growth</th>
-              <th style={{ width: 90 }}>Systems</th>
-              <th style={{ width: 90 }}>MCF</th>
-              <th>Saved</th>
-              <th />
+              <th className="lib-opt" style={{ width: 90 }}>Systems</th>
+              <th className="lib-opt" style={{ width: 90 }}>Failures</th>
+              <th className="lib-opt">Saved</th>
+              <th><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
-            {visible.map((m) => {
-              const g = GROWTH[m.growth] || { label: m.growth || "—", color: "#6c727c" };
-              const seed = seedFromString(m.id || m.name);
+            <SampleGroups rows={visible} cols={6} render={(m) => {
+              const g = GROWTH[m.growth] || { label: m.growth || "—", tone: "neutral" };
               return (
                 <tr key={m.id} className="lib-row" onClick={() => onOpen(m.id)}>
                   <td>
                     <div className="lib-name">
-                      {m.name}
-                      {m.is_sample && <Chip>Sample</Chip>}
+                      {itemName(m)}
                       {m.shared_by && <Chip title={`Shared by ${m.shared_by}`}>Shared</Chip>}
                     </div>
                   </td>
-                  <td>
-                    <Chip dot={g.color}>
-                      {g.label}
-                    </Chip>
-                  </td>
-                  <td className="lib-n">{(m.n_systems ?? 0).toLocaleString()}</td>
-                  <td>
-                    {/* Cumulative-failures spark rises left→right (invert the reliability curve). */}
-                    <svg className="lib-spark" width="72" height="26" viewBox="0 0 72 26" style={{ transform: "scaleY(-1)" }}>
-                      <path d={reliabilityPath(72, 26, seed, 2)} fill="none" stroke={g.color} strokeWidth="1.6" />
-                    </svg>
-                  </td>
-                  <td className="lib-date">{relativeTime(m.created_at)}</td>
-                  <td className="lib-actions">
-                    <div className="lib-acts">
-                      <button className="act" title="Open" onClick={(e) => { e.stopPropagation(); onOpen(m.id); }}>
-                        <OpenIcon />
-                      </button>
-                      {!m.read_only && (
-                        <button className="act del" title="Delete" onClick={(e) => { e.stopPropagation(); onDelete(m); }}>
-                          <TrashIcon />
-                        </button>
-                      )}
-                    </div>
-                  </td>
+                  <td><Chip tone={g.tone}>{g.label}</Chip></td>
+                  <td className="lib-n lib-opt">{(m.n_systems ?? 0).toLocaleString()}</td>
+                  <td className="lib-n lib-opt">{m.n_events != null ? m.n_events.toLocaleString() : "—"}</td>
+                  <td className="lib-date lib-opt">{relativeTime(m.created_at)}</td>
+                  <RowActions item={m} onOpen={() => onOpen(m.id)} onDelete={() => onDelete(m)} />
                 </tr>
               );
-            })}
+            }} />
           </tbody>
         </table>
       </div>

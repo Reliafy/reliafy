@@ -7,6 +7,7 @@ import { ShareButton } from "../components/ShareDialog.jsx";
 import { distColor, parseTimestamp } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { itemName } from "../components/LibRows.jsx";
 
 // Detail view for one dataset: schema, a preview of the rows, and the models
 // fitted from it.
@@ -37,7 +38,7 @@ export default function DatasetPage() {
     if (!window.confirm(`Delete dataset “${ds.name}”?`)) return;
     try {
       await deleteDataset(id);
-      navigate("/datasets/list");
+      navigate("/datasets");
     } catch (e) {
       setError(e.message);
     }
@@ -46,11 +47,12 @@ export default function DatasetPage() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Datasets", to: "/datasets" }, { label: "Files", to: "/datasets/list" }]}
-        title={ds ? ds.name : "Dataset"}
+        crumbs={[{ label: "Datasets", to: "/datasets" }]}
+        title={ds ? itemName(ds) : "Dataset"}
+        badges={ds?.is_sample && <Chip>Sample</Chip>}
         meta={ds && (
           <>
-            {ds.n_rows.toLocaleString()} rows · {ds.n_columns} columns · added{" "}
+            {ds.n_rows.toLocaleString()} rows · {ds.n_columns} column{ds.n_columns === 1 ? "" : "s"} · added{" "}
             {parseTimestamp(ds.created_at).toLocaleString()}
           </>
         )}
@@ -78,13 +80,6 @@ export default function DatasetPage() {
 
       {ds && (
         <>
-          <div className="stats">
-            <div className="stat"><div className="k">Rows</div><div className="v">{ds.n_rows.toLocaleString()}</div></div>
-            <div className="stat"><div className="k">Columns</div><div className="v">{ds.n_columns}</div></div>
-            <div className="stat"><div className="k">Linked models</div><div className="v">{ds.n_models}</div></div>
-            <div className="stat"><div className="k">Checksum</div><div className="v sm mono" title={ds.checksum}>{ds.checksum.slice(0, 10)}</div></div>
-          </div>
-
           {comparing && (
             <CompareGroups dataset={ds} splitBy={compareBy || null} onClose={() => setComparing(false)} />
           )}
@@ -117,7 +112,7 @@ export default function DatasetPage() {
                       className="ds-model-row"
                       onClick={() => navigate(`/modelling/m/${m.id}`)}
                     >
-                      <span className="ds-model-name">{m.name}</span>
+                      <span className="ds-model-name">{itemName(m)}</span>
                       <Chip dot={distColor(m.distribution)}>
                         {String(m.distribution || "").replace(/\s*\(.*$/, "").replace(/\s+PH$/, "")}
                         {m.kind === "regression" && " · PH"}

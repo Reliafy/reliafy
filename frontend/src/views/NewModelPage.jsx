@@ -4,6 +4,7 @@ import FitFlow from "../components/FitFlow.jsx";
 import ParamsPanel from "../components/ParamsPanel.jsx";
 import PerDemandPanel from "../components/PerDemandPanel.jsx";
 import { listDatasets } from "../api.js";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 // Built-in sample datasets worth putting in front of a first-time visitor,
 // in display order, with a one-line hook each. Anything else flagged
@@ -73,17 +74,11 @@ export default function NewModelPage() {
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/life")}>Life data models</button> /{" "}
-            <b>New model</b>
-          </div>
-          <h1>{heading}</h1>
-          <p>{sub}</p>
-        </div>
-      </header>
+      <PageHeader
+        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Life data models", to: "/modelling/life" }]}
+        title={heading}
+        meta={sub}
+      />
 
       {/* First question: choose how to build the model. Four equal entry
           points — no file needed for three of them. */}

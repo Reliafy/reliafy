@@ -7,25 +7,12 @@ import { listRcmStudies, createRcmStudy, deleteRcmStudy } from "../api.js";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 
-const PlusIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-);
 const ImportIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
-  </svg>
-);
-const OpenIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M7 17 17 7M9 7h8v8" />
-  </svg>
-);
-const TrashIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
   </svg>
 );
 
@@ -73,36 +60,33 @@ export default function RcmHome() {
 
   const onDelete = async (s) => {
     const msg = s.is_sample
-      ? `Remove the sample “${s.name}” from your workspace? It stays available to other users.`
+      ? `Remove the sample “${itemName(s)}” from your workspace? It stays available to other users and you won't see it again.`
       : `Delete study “${s.name}”?`;
     if (!window.confirm(msg)) return;
-    await deleteRcmStudy(s.id);
-    refresh();
+    try {
+      await deleteRcmStudy(s.id);
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
   };
+
+  const open = (id) => navigate(`/rcm/studies/${id}`);
+  const visible = (studies || []).filter((s) => matches(query, s.name, s.system, s.id));
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/rcm")}>RCM</button> / <b>Studies</b>
-          </div>
-          <h1>RCM studies</h1>
-          <p>
-            Every maintenance decision links to the analysis that justifies it,
-            and the link is re-checked each time you open the study.
-          </p>
-        </div>
-        <div className="head-actions">
+      <PageHeader
+        title="RCM studies"
+        meta="Every maintenance decision links to the analysis behind it, re-checked each time you open the study."
+        actions={
           <button className="secondary" onClick={() => setImportOpen(true)}
                   title="Create a study from an FMEA / RCM worksheet in Excel">
             <ImportIcon /> Import from Excel
           </button>
-          <button onClick={() => { setCreateError(null); setModalOpen(true); }}>
-            <PlusIcon /> New study
-          </button>
-        </div>
-      </header>
+        }
+        primary={<button onClick={() => { setCreateError(null); setModalOpen(true); }}><PlusIcon /> New study</button>}
+      />
 
       {error && <div className="card error">{error}</div>}
       {capHit && (
@@ -125,55 +109,48 @@ export default function RcmHome() {
           </button>
         </div>
       ) : (
-        <div className="lib">
+        <>
           <div className="tablebar">
+            <span className="count">{visible.length} of {studies.length} studies</span>
             <span className="grow" />
             <ListSearch value={query} onChange={setQuery} placeholder="Search studies…" />
           </div>
-          <table className="lib-table">
-            <thead>
-              <tr>
-                <th style={{ width: "30%" }}>Study</th>
-                <th>System</th>
-                <th>Evidence</th>
-                <th>Updated</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {studies.filter((s) => matches(query, s.name, s.system)).map((s) => (
-                <tr key={s.id} className="lib-row" onClick={() => navigate(`/rcm/studies/${s.id}`)}>
-                  <td>
-                    <div className="lib-name">
-                      {s.name}
-                      {s.is_sample && <Chip>Sample</Chip>}
-                      {s.shared_by && <Chip title={`Shared by ${s.shared_by}`}>Shared</Chip>}
-                    </div>
-                  </td>
-                  <td className="lib-date">{s.system || "—"}</td>
-                  <td>
-                    {s.rollup?.decided ? (
-                      <RollupBadges rollup={s.rollup} />
-                    ) : (
-                      <span className="lib-date">{s.rollup?.modes ? `${s.rollup.modes} modes` : "Empty"}</span>
-                    )}
-                  </td>
-                  <td className="lib-date">{relativeTime(s.updated_at || s.created_at)}</td>
-                  <td className="lib-actions">
-                    <div className="lib-acts">
-                      <button className="act" title="Open" onClick={(e) => { e.stopPropagation(); navigate(`/rcm/studies/${s.id}`); }}>
-                        <OpenIcon />
-                      </button>
-                      <button className="act del" title="Delete" onClick={(e) => { e.stopPropagation(); onDelete(s); }}>
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  </td>
+          <div className="lib">
+            <table className="lib-table">
+              <thead>
+                <tr>
+                  <th style={{ width: "34%" }}>Study</th>
+                  <th className="lib-opt">System</th>
+                  <th>Evidence</th>
+                  <th className="lib-opt">Updated</th>
+                  <th><span className="sr-only">Actions</span></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                <SampleGroups rows={visible} cols={5} render={(s) => (
+                  <tr key={s.id} className="lib-row" onClick={() => open(s.id)}>
+                    <td>
+                      <div className="lib-name">
+                        {itemName(s)}
+                        {s.shared_by && <Chip title={`Shared by ${s.shared_by}`}>Shared</Chip>}
+                      </div>
+                    </td>
+                    <td className="lib-date lib-opt">{s.system || "—"}</td>
+                    <td>
+                      {s.rollup?.decided ? (
+                        <RollupBadges rollup={s.rollup} />
+                      ) : (
+                        <span className="lib-date">{s.rollup?.modes ? `${s.rollup.modes} modes` : "Empty"}</span>
+                      )}
+                    </td>
+                    <td className="lib-date lib-opt">{relativeTime(s.updated_at || s.created_at)}</td>
+                    <RowActions item={s} onOpen={() => open(s.id)} onDelete={() => onDelete(s)} />
+                  </tr>
+                )} />
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {importOpen && (

@@ -1,45 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
-import { distColor, relativeTime } from "../instrument.js";
+import { relativeTime } from "../instrument.js";
 import { FirstRunStrip } from "../components/FirstRun.jsx";
 import { useFirstRun } from "../firstRun.js";
-import {
-  listModels,
-  deleteModel,
-  listDegradationModels,
-  deleteDegradationModel,
-  listAltModels,
-  deleteAltModel,
-  listRecurrentModels,
-  deleteRecurrentModel,
-} from "../api.js";
+import { TYPE_LABEL, deleteAnyModel, loadAllModels } from "../allModels.js";
 import Chip from "../components/ui/Chip.jsx";
-
-const PlusIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-);
-const OpenIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M7 17 17 7M9 7h8v8" />
-  </svg>
-);
-const TrashIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
-  </svg>
-);
-
-const distLabel = (d = "") => String(d).replace(/\s*\(.*$/, "").replace(/\s+PH$/, "");
-
-const TYPE_LABEL = {
-  life: "Life data",
-  degradation: "Degradation",
-  alt: "Accelerated life",
-  recurrent: "Recurrent",
-};
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 
 // Every saved model — life data, accelerated life, recurrent, degradation — in
 // one list. Rows link to the right detail page; the type-specific lists live
@@ -53,77 +21,17 @@ export default function AllModelsPage() {
   const firstRun = useFirstRun(rows ? rows.some((r) => !r.is_sample) : undefined);
 
   const load = useCallback(() => {
-    Promise.all([listModels(), listDegradationModels(), listAltModels(), listRecurrentModels()])
-      .then(([lm, dm, am, rm]) => {
-        const life = (lm.models || []).map((m) => ({
-          id: m.id,
-          name: m.name,
-          type: "life",
-          detail: distLabel(m.distribution) || "—",
-          ph: m.kind === "regression",
-          noMax: !!m.no_finite_maximum,
-          color: distColor(m.distribution),
-          created_at: m.created_at,
-          is_sample: m.is_sample,
-          shared_by: m.shared_by,
-          to: `/modelling/m/${m.id}`,
-        }));
-        const deg = (dm.models || []).map((m) => ({
-          id: m.id,
-          name: m.name,
-          type: "degradation",
-          detail: m.path_model || "—",
-          ph: false,
-          color: "#7c3aed",
-          created_at: m.updated_at || m.created_at,
-          is_sample: m.is_sample,
-          shared_by: m.shared_by,
-          to: `/modelling/degradation/${m.id}`,
-        }));
-        const acc = (am.models || []).map((m) => ({
-          id: m.id,
-          name: m.name,
-          type: "alt",
-          // e.g. "Weibull · Arrhenius" — the distribution and its life-stress law.
-          detail: [distLabel(m.distribution), m.life_model].filter(Boolean).join(" · ") || "—",
-          ph: false,
-          noMax: !!m.no_finite_maximum,
-          color: "#0f9ab0",
-          created_at: m.created_at,
-          is_sample: m.is_sample,
-          shared_by: m.shared_by,
-          to: `/modelling/alt/${m.id}`,
-        }));
-        const rec = (rm.models || []).map((m) => ({
-          id: m.id,
-          name: m.name,
-          type: "recurrent",
-          detail: m.model || "—",
-          ph: false,
-          color: "#d0762f",
-          created_at: m.created_at,
-          is_sample: m.is_sample,
-          shared_by: m.shared_by,
-          to: `/modelling/recurrent/${m.id}`,
-        }));
-        setRows([...life, ...deg, ...acc, ...rec]
-          .sort((a, b) => (a.created_at > b.created_at ? -1 : 1)));
-      })
-      .catch((e) => setError(e.message));
+    loadAllModels().then(setRows).catch((e) => setError(e.message));
   }, []);
   useEffect(() => load(), [load]);
 
-  const onDelete = async (e, row) => {
-    e.stopPropagation();
+  const onDelete = async (row) => {
     const msg = row.is_sample
-      ? `Remove the sample “${row.name}” from your workspace? It stays available to other users and you won't see it again.`
+      ? `Remove the sample “${itemName(row)}” from your workspace? It stays available to other users and you won't see it again.`
       : `Delete “${row.name}”?`;
     if (!window.confirm(msg)) return;
     try {
-      if (row.type === "life") await deleteModel(row.id);
-      else if (row.type === "degradation") await deleteDegradationModel(row.id);
-      else if (row.type === "alt") await deleteAltModel(row.id);
-      else await deleteRecurrentModel(row.id);
+      await deleteAnyModel(row);
       load();
     } catch (err) {
       setError(err.message);
@@ -131,7 +39,6 @@ export default function AllModelsPage() {
   };
 
   const loading = rows === null;
-  const countOf = (t) => (rows || []).filter((r) => r.type === t).length;
   // Searchable on name, detail, type — and the id, so an ID copied from a model
   // page (or an API response) pastes straight in and finds its row.
   const visible = (rows || []).filter((r) =>
@@ -140,20 +47,12 @@ export default function AllModelsPage() {
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> / <b>Saved models</b>
-          </div>
-          <h1>Saved models</h1>
-          <p>Every saved model — life data, accelerated life, recurrent events, and degradation — in one place.</p>
-        </div>
-        <div className="row" style={{ margin: 0 }}>
-          <button onClick={() => navigate("/modelling/new")}>
-            <PlusIcon /> New model
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        crumbs={[{ label: "Modelling", to: "/modelling" }]}
+        title="All models"
+        meta="Life data, accelerated life, recurrent events and degradation, in one list."
+        primary={<button onClick={() => navigate("/modelling/new")}><PlusIcon /> New model</button>}
+      />
 
       <FirstRunStrip info={firstRun} />
 
@@ -168,14 +67,6 @@ export default function AllModelsPage() {
         </div>
       ) : (
         <>
-          <div className="stats">
-            <div className="stat"><div className="k">Models</div><div className="v">{rows.length}</div></div>
-            <div className="stat"><div className="k">Life data</div><div className="v">{countOf("life")}</div></div>
-            <div className="stat"><div className="k">Accelerated life</div><div className="v">{countOf("alt")}</div></div>
-            <div className="stat"><div className="k">Recurrent</div><div className="v">{countOf("recurrent")}</div></div>
-            <div className="stat"><div className="k">Degradation</div><div className="v">{countOf("degradation")}</div></div>
-          </div>
-
           <div className="tablebar">
             <span className="count">{visible.length} of {rows.length} models</span>
             <span className="grow" />
@@ -186,20 +77,19 @@ export default function AllModelsPage() {
             <table className="lib-table">
               <thead>
                 <tr>
-                  <th style={{ width: "34%" }}>Model</th>
-                  <th style={{ width: 130 }}>Type</th>
+                  <th style={{ width: "36%" }}>Model</th>
+                  <th className="lib-opt" style={{ width: 150 }}>Type</th>
                   <th>Detail</th>
-                  <th>Saved</th>
-                  <th />
+                  <th className="lib-opt">Saved</th>
+                  <th><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
-                {visible.map((r) => (
+                <SampleGroups rows={visible} cols={5} render={(r) => (
                   <tr key={r.id} className="lib-row" onClick={() => navigate(r.to)}>
                     <td>
                       <div className="lib-name">
-                        {r.name}
-                        {r.is_sample && <Chip>Sample</Chip>}
+                        {itemName(r)}
                         {r.shared_by && <Chip title={`Shared by ${r.shared_by}`}>Shared</Chip>}
                         {r.noMax && (
                           <Chip tone="warning"
@@ -209,28 +99,12 @@ export default function AllModelsPage() {
                         )}
                       </div>
                     </td>
-                    <td>
-                      {TYPE_LABEL[r.type]}
-                    </td>
-                    <td>
-                      <Chip dot={r.color}>
-                        {r.detail}
-                        {r.ph && " · PH"}
-                      </Chip>
-                    </td>
-                    <td className="lib-date">{relativeTime(r.created_at)}</td>
-                    <td className="lib-actions">
-                      <div className="lib-acts">
-                        <button className="act" title="Open" onClick={(e) => { e.stopPropagation(); navigate(r.to); }}>
-                          <OpenIcon />
-                        </button>
-                        <button className="act del" title="Delete" onClick={(e) => onDelete(e, r)}>
-                          <TrashIcon />
-                        </button>
-                      </div>
-                    </td>
+                    <td className="lib-opt">{TYPE_LABEL[r.type]}</td>
+                    <td><Chip dot={r.color}>{r.detail}</Chip></td>
+                    <td className="lib-date lib-opt">{relativeTime(r.created_at)}</td>
+                    <RowActions item={r} onOpen={() => navigate(r.to)} onDelete={() => onDelete(r)} />
                   </tr>
-                ))}
+                )} />
               </tbody>
             </table>
           </div>

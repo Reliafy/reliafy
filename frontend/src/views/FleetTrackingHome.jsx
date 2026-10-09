@@ -1,28 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import Modal from "../components/Modal.jsx";
 import Select from "../components/Select.jsx";
 import { listTrackedFleets, createTrackedFleet, deleteTrackedFleet, listDegradationModels } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 
-const PlusIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-);
-const TrashIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" />
-  </svg>
-);
-const OpenIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M7 17 17 7M9 7h8v8" />
-  </svg>
-);
 
 const fmt = (v) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -96,32 +82,28 @@ export default function FleetTrackingHome() {
 
   const onDelete = async (f) => {
     const msg = f.is_sample
-      ? `Remove the sample “${f.name}” from your workspace? It stays available to other users.`
+      ? `Remove the sample “${itemName(f)}” from your workspace? It stays available to other users and you won't see it again.`
       : `Delete fleet “${f.name}” and its tracked items?`;
     if (!window.confirm(msg)) return;
-    await deleteTrackedFleet(f.id);
-    refresh();
+    try {
+      await deleteTrackedFleet(f.id);
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
-  const visible = (fleets || []).filter((f) => matches(query, f.name, f.model_name));
+  const open = (id) => navigate(`/fleet/tracking/${id}`);
+  const visible = (fleets || []).filter((f) => matches(query, f.name, f.model_name, f.id));
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/fleet")}>Fleet</button> / <b>Degradation tracking</b>
-          </div>
-          <h1>Degradation tracking</h1>
-          <p>
-            Each degradation model tracks its own fleet of in-service items.
-            Open one to see every item's remaining life and log inspections.
-          </p>
-        </div>
-        <button onClick={openCreate}>
-          <PlusIcon /> New tracked fleet
-        </button>
-      </header>
+      <PageHeader
+        crumbs={[{ label: "Fleet", to: "/fleet" }]}
+        title="Degradation tracking"
+        meta="Each item's remaining life against a degradation model; open a fleet to log inspections."
+        primary={<button onClick={openCreate}><PlusIcon /> New tracked fleet</button>}
+      />
 
       {error && <div className="card error">{error}</div>}
 
@@ -140,56 +122,50 @@ export default function FleetTrackingHome() {
           </button>
         </div>
       ) : (
-        <div className="lib">
+        <>
           <div className="tablebar">
+            <span className="count">{visible.length} of {fleets.length} tracked fleets</span>
             <span className="grow" />
             <ListSearch value={query} onChange={setQuery} placeholder="Search tracked fleets…" />
           </div>
-          <table className="lib-table">
-            <thead>
-              <tr>
-                <th style={{ width: "24%" }}>Tracked fleet</th>
-                <th style={{ width: "20%" }}>Model</th>
-                <th style={{ width: 70 }}>Items</th>
-                <th>Health</th>
-                <th style={{ width: 160 }}>Next predicted failure</th>
-                <th>Updated</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((f) => (
-                <tr key={f.id} className="lib-row" onClick={() => navigate(`/fleet/tracking/${f.id}`)}>
-                  <td>
-                    <div className="lib-name">
-                      {f.name}
-                      {f.is_sample && <Chip>Sample</Chip>}
-                    </div>
-                  </td>
-                  <td className="lib-date">{f.model_name || "—"}</td>
-                  <td className="lib-n">{f.n_items}</td>
-                  <td><HealthChips tracking={f.tracking} /></td>
-                  <td className="lib-n">
-                    {f.tracking?.next_crossing != null
-                      ? `${fmt(f.tracking.next_crossing)}${f.unit ? ` ${f.unit}` : ""}`
-                      : "—"}
-                  </td>
-                  <td className="lib-date">{relativeTime(f.updated_at || f.created_at)}</td>
-                  <td className="lib-actions">
-                    <div className="lib-acts">
-                      <button className="act" title="Open" onClick={(e) => { e.stopPropagation(); navigate(`/fleet/tracking/${f.id}`); }}>
-                        <OpenIcon />
-                      </button>
-                      <button className="act del" title="Delete" onClick={(e) => { e.stopPropagation(); onDelete(f); }}>
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  </td>
+          <div className="lib">
+            <table className="lib-table">
+              <thead>
+                <tr>
+                  <th style={{ width: "26%" }}>Tracked fleet</th>
+                  <th className="lib-opt" style={{ width: "20%" }}>Model</th>
+                  <th className="lib-opt" style={{ width: 70 }}>Items</th>
+                  <th>Health</th>
+                  <th className="lib-opt" style={{ width: 160 }}>Next predicted failure</th>
+                  <th className="lib-opt">Updated</th>
+                  <th><span className="sr-only">Actions</span></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                <SampleGroups rows={visible} cols={7} render={(f) => (
+                  <tr key={f.id} className="lib-row" onClick={() => open(f.id)}>
+                    <td>
+                      <div className="lib-name">
+                        {itemName(f)}
+                        {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
+                      </div>
+                    </td>
+                    <td className="lib-date lib-opt">{f.model_name || "—"}</td>
+                    <td className="lib-n lib-opt">{f.n_items}</td>
+                    <td><HealthChips tracking={f.tracking} /></td>
+                    <td className="lib-n lib-opt">
+                      {f.tracking?.next_crossing != null
+                        ? `${fmt(f.tracking.next_crossing)}${f.unit ? ` ${f.unit}` : ""}`
+                        : "—"}
+                    </td>
+                    <td className="lib-date lib-opt">{relativeTime(f.updated_at || f.created_at)}</td>
+                    <RowActions item={f} onOpen={() => open(f.id)} onDelete={() => onDelete(f)} />
+                  </tr>
+                )} />
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
       {modalOpen && (
         <Modal
