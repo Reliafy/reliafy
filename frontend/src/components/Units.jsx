@@ -1,4 +1,4 @@
-// Unit selector for the x variable: a combobox of common units that also
+// Unit selector for the time column: a combobox of common units that also
 // accepts a custom value (free text via the datalist).
 const COMMON_UNITS = [
   "Hours",
@@ -16,7 +16,7 @@ const COMMON_UNITS = [
 export default function Units({ value, onChange }) {
   return (
     <label className="units-field">
-      <span className="units-label">Unit for x (optional)</span>
+      <span className="units-label">Unit of the time (optional)</span>
       <input
         className="units-input"
         list="x-units"
