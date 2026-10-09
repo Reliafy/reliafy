@@ -8,7 +8,21 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
+import { formatNumber } from "../format.js";
 
+// A forecast's row figure: "≈ 40.3 in 12 months", or why there isn't one.
+function expectedCell(f) {
+  if (!f.n_items) return <span className="lib-date">No items yet</span>;
+  if (f.forecast_status !== "ok") return <span className="lib-date">{f.headline}</span>;
+  // Items with no usage don't age: the forecast's 0 isn't an answer.
+  if (!f.expected && !(Number(f.settings?.default_rate) > 0)) {
+    return <span className="lib-date">Usage not set</span>;
+  }
+  const periods = f.settings?.periods ?? 12;
+  const label = String(f.settings?.period_label || "months");
+  const word = Number(periods) === 1 ? label.replace(/s$/i, "") : label;
+  return `≈ ${formatNumber(f.expected)} in ${periods} ${word}`;
+}
 
 // Fleet forecasts, the Fleet section's root: one row per fleet with its live
 // expected-failure headline.
@@ -102,6 +116,7 @@ export default function FleetForecasts() {
   return (
     <div className="app">
       <PageHeader
+        crumbs={[{ label: "Fleet" }]}
         title="Failure forecasts"
         meta="How many failures a fleet will see over a horizon, from your fitted models."
         primary={<button onClick={openCreate}><PlusIcon /> New forecast</button>}
@@ -130,7 +145,11 @@ export default function FleetForecasts() {
       ) : (
         <>
           <div className="tablebar">
-            <span className="count">{visible.length} of {fleets.length} forecasts</span>
+            {query && (
+              <span className="count">
+                {visible.length} of {fleets.length} forecast{fleets.length === 1 ? "" : "s"}
+              </span>
+            )}
             <span className="grow" />
             <ListSearch value={query} onChange={setQuery} placeholder="Search forecasts…" />
           </div>
@@ -155,7 +174,7 @@ export default function FleetForecasts() {
                       </div>
                     </td>
                     <td className="lib-n lib-opt">{f.n_items}</td>
-                    <td className="lib-date">{f.headline}</td>
+                    <td className="lib-n">{expectedCell(f)}</td>
                     <td className="lib-date lib-opt">{relativeTime(f.updated_at || f.created_at)}</td>
                     <RowActions item={f} onOpen={() => open(f.id)} onDelete={() => onDelete(f)} />
                   </tr>
