@@ -107,6 +107,8 @@ def _number(value, what: str, label: str, *, positive: bool = False) -> Optional
     """A non-negative (or positive) finite number, None when left blank."""
     if _blank(value):
         return None
+    if isinstance(value, bool):  # True isn't 1 (RePyability refuses it too, since 0.13)
+        raise AnalysisError(f"“{label}”: the {what} must be a number.")
     try:
         x = float(value)
     except (TypeError, ValueError):

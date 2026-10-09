@@ -1416,17 +1416,7 @@ h6 {
   white-space: nowrap;
 }
 
-/* Save bar (unsaved fit) */
-.save-bar {
-  display: flex;
-  gap: 0.6rem;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-bottom: 1.25rem;
-  padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--line);
-}
-
+/* Save-name field (the diagram save dialog) */
 .save-name {
   flex: 1;
   min-width: 200px;
@@ -1981,6 +1971,43 @@ button.link.sm {
   border-radius: 50%;
   flex-shrink: 0;
 }
+/* On/off switch (components/ui/Switch.jsx): a track and knob, label beside. */
+button.switch {
+  background: none;
+  color: var(--ink);
+  border: none;
+  box-shadow: none;
+  padding: 4px 2px;
+  min-height: 32px;
+  gap: 8px;
+  font-weight: 500;
+}
+button.switch:hover:not(:disabled) { background: none; }
+.switch-track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  flex: none;
+  border-radius: 999px;
+  border: 1px solid var(--subtle);
+  background: var(--surf-2);
+  transition: background 0.15s, border-color 0.15s;
+}
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--subtle);
+  transition: transform 0.15s, background 0.15s;
+}
+.switch[aria-checked="true"] .switch-track { background: var(--acc); border-color: var(--acc); }
+.switch[aria-checked="true"] .switch-knob { background: var(--on-fill); transform: translateX(14px); }
+.switch:focus-visible { outline: none; }
+.switch:focus-visible .switch-track { box-shadow: var(--focus); }
+@media (max-width: 720px) { button.switch { min-height: 44px; } }
 /* A chip that edits its value (an RCM decision): outlined, accent on hover. */
 button.chip-btn {
   box-shadow: none;
@@ -3699,10 +3726,9 @@ h1 .chip,
   background: var(--surf-2);
 }
 
-/* Structured entry: one comma-separated value list per field (badge + input). */
+/* Structured entry: one comma-separated value list per field. */
 .ds-form { display: flex; flex-direction: column; gap: 0.5rem; }
 .ds-pair { display: flex; gap: 0.5rem; }
-.ds-pair > .ds-listfield { flex: 1; min-width: 0; }
 .ds-listfield {
   display: flex;
   align-items: stretch;
@@ -3713,19 +3739,6 @@ h1 .chip,
 }
 .ds-listfield:focus-within { border-color: var(--acc); box-shadow: var(--focus); }
 .ds-listfield.disabled { opacity: 0.5; }
-.ds-listbadge {
-  display: flex;
-  align-items: center;
-  padding: 0 0.6rem;
-  background: var(--surf-2);
-  border-right: 1px solid var(--line);
-  font-size: var(--fs-13);
-  font-weight: 600;
-  color: var(--muted);
-  min-width: 34px;
-  justify-content: center;
-  font-variant-numeric: tabular-nums;
-}
 .ds-listinput {
   flex: 1;
   min-width: 0;
@@ -3978,7 +3991,7 @@ select:disabled {
   height: 16px;
 }
 
-/* Detail: preview + columns on the left, models-using aside on the right. */
+/* Detail: the preview on the left, models-using aside on the right. */
 .ds-grid {
   display: flex;
   gap: 22px;
@@ -4001,32 +4014,6 @@ select:disabled {
   color: var(--ink);
   margin-bottom: 10px;
   font-weight: 600;
-}
-
-.ds-cols {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.ds-col {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 7px 11px;
-  background: var(--surf);
-}
-
-.ds-col-name {
-  font-size: var(--fs-13);
-  color: var(--ink);
-}
-
-.ds-col-type {
-  font-size: var(--fs-12);
-  color: var(--muted);
 }
 
 .ds-aside .gof-card {
@@ -4571,8 +4558,24 @@ select:disabled {
 .traffic-nums { width: 170px; color: var(--muted); white-space: nowrap; }
 .traffic-key { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%; }
 
+/* Admin: one range for the page, the headline tiles (six, wrapping to
+   three a row), a muted line of minor totals, folded sections, a footnote. */
+.admin-range { display: flex; justify-content: flex-end; }
+@media (max-width: 720px) { .admin-range .sel-trigger { min-height: 44px; } }
+.stats.admin-tiles { flex-wrap: wrap; margin-top: var(--sp-4); }
+.stats.admin-tiles .stat { min-width: 150px; }
+.admin-minor { margin: 8px 0 1rem; font-size: var(--fs-13); color: var(--muted); font-variant-numeric: tabular-nums; }
+.usage-table.admin-signups td, .usage-table.admin-signups th { text-align: left; }
+.usage-table td.admin-email { font-family: var(--mono); max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.card.admin-fold { margin-top: 1rem; padding-top: var(--sp-3); padding-bottom: var(--sp-3); }
+.admin-fold .rs-details { margin-top: 0; border-top: 0; padding-top: 0; }
+.stats.admin-artifacts { flex-wrap: wrap; margin: 0; }
+.stats.admin-artifacts .stat { min-width: 140px; padding: 10px 14px; }
+.admin-foot { margin: 1rem 0 0; font-size: var(--fs-12); color: var(--subtle); }
+
 /* Admin: product usage */
-.usage-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.usage-legend { margin-top: 12px; }
+.usage-note { margin: 12px 0 0; font-size: var(--fs-12); color: var(--subtle); line-height: 1.45; }
 .usage-check { display: flex; align-items: center; gap: 6px; font-size: var(--fs-13); color: var(--muted); white-space: nowrap; }
 .usage-stats { flex-wrap: wrap; margin: 12px 0 4px; }
 .usage-stats .stat { min-width: 130px; }
@@ -4580,7 +4583,7 @@ select:disabled {
 @media (max-width: 900px) { .usage-charts { grid-template-columns: 1fr; } }
 .usage-h { font-size: var(--fs-13); font-weight: 600; color: var(--muted); margin: 12px 0 0; }
 .dash-cards.usage-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-@media (max-width: 900px) { .dash-cards.usage-cards { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .dash-cards.usage-cards { grid-template-columns: minmax(0, 1fr); } }
 .usage-table-wrap { overflow-x: auto; }
 .usage-table { border-collapse: collapse; width: 100%; font-size: var(--fs-13); }
 .usage-table th, .usage-table td { padding: 0.4rem 0.55rem; border-bottom: 1px solid var(--line2); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -6178,6 +6181,25 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   flex-shrink: 0;
 }
 .set-name { font-weight: 600; font-size: var(--fs-16); }
+.set-plan-acts { gap: 0.6rem 1rem; align-items: center; flex-wrap: wrap; margin-top: 0.8rem; }
+.set-plan-acts .evidence-link { font-size: var(--fs-14); }
+/* /team in the personal workspace: switch to a team or create one. */
+.team-empty p { margin: 0 0 12px; }
+.team-switch { gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+/* Settings > API access: the form opens inside the tokens card; a new token
+   shows once, in the mono copy field, with a request to try. */
+.token-form { padding-bottom: 0.9rem; margin-bottom: 0.4rem; border-bottom: 1px solid var(--line2); }
+.token-form .login-field { max-width: 340px; }
+.token-form-acts { gap: 0.6rem; margin-top: 0.8rem; }
+.card.token-minted { margin-bottom: 1rem; }
+.token-curl { margin: 0.8rem 0 0; padding: 10px 12px; overflow-x: auto; font-size: var(--fs-12); background: var(--bg); border: 1px solid var(--line2); border-radius: var(--r-sm); }
+/* Settings > Connected apps, before any app: connect Claude in three steps. */
+.connect-lead { margin: 0 0 4px; font-size: var(--fs-14); }
+.connect-empty .pl-link-url { max-width: 460px; }
+.connect-steps { margin: 0.8rem 0 0; padding-left: 1.2rem; font-size: var(--fs-13); color: var(--muted); line-height: 1.6; }
+@media (max-width: 720px) {
+  .connect-empty .pl-link-url > *, .token-minted .pl-link-url > * { min-height: 44px; }
+}
 .set-check { display: flex; align-items: flex-start; gap: 0.55rem; cursor: pointer; font-size: var(--fs-14); }
 .set-check input { margin-top: 0.2rem; flex-shrink: 0; }
 .set-check b { font-weight: 600; }
@@ -6443,6 +6465,12 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .nav-team-settings svg { width: 17px; height: 17px; }
 .nav-team-settings:hover { color: var(--acc); background: var(--acc-t); }
 .nav-team-settings.active { color: var(--acc); }
+/* Phone: a long team name shrinks (the label ellipsises) rather than pushing
+   the bar wider than the screen. */
+@media (max-width: 720px) {
+  .nav-workspace { min-width: 0; }
+  .nav-workspace .nav-workspace-select { max-width: 140px; }
+}
 
 /* ---- Sharing ------------------------------------------------------------ */
 .share-row {
@@ -6503,7 +6531,12 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-size: var(--fs-13);
   color: var(--ink);
   width: 160px;
+  /* The whole field takes the click, not a 19px line inside it. */
+  align-self: stretch;
+  padding-block: 8px;
 }
+.tablebar .search.live { padding-block: 0; }
+.tablebar .search.live:focus-within { border-color: var(--acc); box-shadow: var(--focus); }
 .search.live input::placeholder { color: var(--subtle); }
 
 /* ---- Landing: quiet nav links ------------------------------------------- */
@@ -7516,7 +7549,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .consent-actions > * { flex: 1; justify-content: center; text-align: center; }
 
 /* ---- Fleet forecast: alerts card + estimated usage rates ------------------ */
-.fleet-alert-list { list-style: none; margin: 0.4rem 0 0.9rem; padding: 0; }
+.fleet-alert-list { list-style: none; margin: var(--sp-2) 0 0; padding: 0; }
 .fleet-alert-row {
   display: flex;
   align-items: center;
@@ -7524,13 +7557,14 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   padding: 0.6rem 0;
   border-top: 1px solid var(--line2);
 }
-.fleet-alert-row:last-child { border-bottom: 1px solid var(--line2); }
 .fleet-alert-row.off .fleet-alert-cond { color: var(--muted); }
 .fleet-alert-main { flex: 1; min-width: 0; }
 .fleet-alert-cond { font-weight: 600; font-size: var(--fs-14); overflow-wrap: anywhere; }
 .fleet-alert-warn { color: var(--warn); }
-.fleet-alert-toggle { align-items: center; white-space: nowrap; }
-.fleet-alert-toggle input { margin-top: 0; }
+.fleet-alert-toggle { flex: none; min-width: 64px; }
+.fleet-alert-plan { margin: var(--sp-2) 0 0; font-size: var(--fs-13); }
+.fleet-alert-form { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line2); }
+.fleet-alert-fields { margin-top: var(--sp-3); align-items: flex-end; flex-wrap: wrap; }
 .fleet-alert-row .lib-acts { opacity: 1; }
 .fleet-alert-kinds { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; }
 .fleet-rate-est { margin-top: 0.25rem; font-size: var(--fs-13); }
@@ -7553,9 +7587,8 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   vertical-align: bottom;
   white-space: nowrap;
 }
-/* The last (actions) column takes the slack, so the item's figures sit beside
-   its name. */
-.fleet-items .fleet-items-rest { width: 100%; }
+/* The item column takes the slack, so the table fills its card. */
+.fleet-items .fleet-items-act { width: 44px; }
 .fleet-items td {
   height: 40px;
   padding: 4px 8px;
@@ -7579,19 +7612,32 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .fleet-items .lib-acts { justify-content: flex-end; }
 .fleet-items-empty { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 .fleet-items-empty .muted-line { margin: 0; flex: 1 1 260px; }
-/* The assumptions line and the form it opens. */
+/* The assumptions line under the page header, and the form it opens. */
 .fleet-assume-line {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-3);
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  margin-top: var(--sp-3);
   font-size: var(--fs-14);
   color: var(--ink);
 }
 .fleet-assume-k { color: var(--muted); }
-.fleet-assume-line .link { flex: none; }
-.fleet-assume-form { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line2); }
+.fleet-assume-line button { flex: none; }
+/* Before the first computed save: what to do next, in one line. */
+.fleet-gate { margin: var(--sp-4) 0 0; font-size: var(--fs-14); color: var(--muted); }
+.fleet-gate.warn { color: var(--warn); }
 .trk-conf { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); color: var(--muted); }
+/* Tracking page header: the meta runs the full width, and the ⋯ menu (its
+   only action) stays beside the title on phones instead of on a row of its own. */
+.trk-header .ph-meta { max-width: none; }
+.page-header.trk-header { flex-wrap: nowrap; }
+.page-header.trk-header .ph-main { flex-basis: 0; }
+/* Register item: initial readings as a two-column grid of standard inputs. */
+.trk-readings { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-4); }
+.trk-readings-h { font-size: var(--fs-13); color: var(--muted); font-weight: 500; }
+.trk-readings-row { display: contents; }
+.trk-readings-row input { min-width: 0; }
 .fleet-assume-h { margin: var(--sp-4) 0 var(--sp-1); font-size: var(--fs-14); font-weight: 600; }
 .fleet-risk-list { margin: 0.2rem 0 0; padding-left: 1.3rem; }
 .fleet-risk-list li { padding: 0.3rem 0; border-bottom: 1px solid var(--line2); }
@@ -7603,6 +7649,17 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   .fleet-alert-row { flex-wrap: wrap; }
   .fleet-alert-main { flex-basis: 100%; }
   .fleet-alert-kinds { flex-direction: column; }
+}
+/* Phone: a narrower item column, so an item's figures show beside its name. */
+@media (max-width: 560px) {
+  .fleet-items { min-width: 480px; }
+  .fleet-items .fleet-item-name, .fleet-items .cell-input.fleet-item-name { min-width: 140px; }
+}
+/* Phone: 44px tap targets on the alert rows and form. */
+@media (max-width: 720px) {
+  .fleet-alert-row .lib-acts .act { width: 44px; height: 44px; }
+  .fleet-alert-form button, .fleet-alerts .card-head-actions button { min-height: 44px; }
+  .fleet-alert-kinds .set-check { min-height: 44px; align-items: center; }
 }
 .rbd-import-note { margin-bottom: 10px; }
 .rbd-import-note ul { margin: 6px 0 0; padding-left: 18px; }
@@ -7924,13 +7981,6 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
 .mode-notes { white-space: pre-line; }
 
 /* ---- Compare groups (dataset page, #175) --------------------------------- */
-.cg-card h2 { margin: 0 0 4px; font-size: var(--fs-16); }
-.cg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; }
-.cg-head .muted-line { margin: 0; max-width: 62ch; }
-.cg-inputs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.8rem 1rem; }
-.cg-inputs .calc-t input { width: 100%; box-sizing: border-box; }
-.cg-invert { font-size: var(--fs-14); }
-.cg-actions { margin-top: 1rem; }
 .cg-h { margin-top: 1.25rem; }
 .cg-table .combo-dot { margin-bottom: 0; }
 .cg-table td { white-space: nowrap; }
@@ -7939,10 +7989,6 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
 .cg-table tr.strategy-best td { font-weight: 600; }
 .cg-ci { color: var(--muted); font-size: var(--fs-13); }
 .cg-notes { margin: 0.5rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: var(--fs-13); }
-@media (max-width: 560px) {
-  .cg-head { flex-direction: column; }
-  .cg-inputs { grid-template-columns: 1fr 1fr; }
-}
 
 /* ---- Phone layout (#199) ---------------------------------------------------
    With the sidebar off-canvas the page has the full width; these keep the
@@ -8018,9 +8064,10 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
     padding: 12px 10px;
   }
   .lib-acts .act {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
+  .search.live input { padding-block: 12px; }
   /* Model page: the parameters card goes under the plot, not beside it. */
   .detail-panel {
     flex-direction: column;

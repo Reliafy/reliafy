@@ -12,8 +12,11 @@ import {
   leaveTeam,
 } from "../api.js";
 import Modal from "../components/Modal.jsx";
+import { CreateTeamModal } from "../components/NavBar.jsx";
+import Button from "../components/ui/Button.jsx";
 import Chip from "../components/ui/Chip.jsx";
-import { CardHeader } from "../components/ui/Card.jsx";
+import Card, { CardHeader } from "../components/ui/Card.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -21,8 +24,47 @@ const TrashIcon = () => (
   </svg>
 );
 
+const CRUMBS = [{ label: "Settings", to: "/settings" }];
+
+// /team in the personal workspace: switch to a team, or create one.
+function NoTeam() {
+  const { teams, setWorkspaceId, refreshTeams } = useWorkspace();
+  const [creating, setCreating] = useState(false);
+  return (
+    <div className="app">
+      <PageHeader crumbs={CRUMBS} title="Team" />
+      <Card className="team-empty">
+        {teams.length === 0 ? (
+          <p>No team yet. A team shares one workspace: everyone sees everything in it.</p>
+        ) : (
+          <>
+            <p>You're in your personal workspace. Switch to a team to manage it.</p>
+            <div className="row team-switch">
+              {teams.map((t) => (
+                <Button key={t.id} variant="secondary" onClick={() => setWorkspaceId(t.id)}>{t.name}</Button>
+              ))}
+            </div>
+          </>
+        )}
+        <Button variant={teams.length === 0 ? "primary" : "link"} onClick={() => setCreating(true)}>
+          Create a team
+        </Button>
+      </Card>
+      {creating && (
+        <CreateTeamModal
+          onClose={() => setCreating(false)}
+          onCreated={(team) => {
+            setCreating(false);
+            refreshTeams().then(() => setWorkspaceId(team.id));
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 // Settings for the active team workspace: members, invites, rename,
-// leave/delete. Only reachable while a team workspace is selected.
+// leave/delete. In the personal workspace, a way to a team instead.
 export default function TeamSettingsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -44,16 +86,7 @@ export default function TeamSettingsPage() {
   }, [workspace]);
   useEffect(() => refresh(), [refresh]);
 
-  if (workspace === "personal") {
-    return (
-      <div className="app">
-        <header><h1>Team settings</h1></header>
-        <div className="card empty">
-          <p>Switch to a team workspace (sidebar, top left) to manage it.</p>
-        </div>
-      </div>
-    );
-  }
+  if (workspace === "personal") return <NoTeam />;
   if (error && !team) return <div className="app"><div className="card error">{error}</div></div>;
   if (!team) return <div className="app"><div className="card empty">Loading…</div></div>;
 
@@ -131,31 +164,25 @@ export default function TeamSettingsPage() {
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb"><b>Team settings</b></div>
-          <h1>{team.name}</h1>
-          <p>
-            {team.members.length} member{team.members.length === 1 ? "" : "s"} — everyone
-            sees everything in this workspace; editing needs a Pro plan.
+      <PageHeader
+        crumbs={CRUMBS}
+        title={team.name}
+        meta={`${team.members.length} member${team.members.length === 1 ? "" : "s"} · everyone sees everything in this workspace; editing needs a Pro plan`}
+        actions={isOwner && <Button variant="secondary" onClick={onRename}>Rename</Button>}
+        menu={isOwner ? (
+          <button className="ovm-item danger" onClick={() => { setDeleteName(""); setConfirmDelete(true); }}>
+            Delete team
+          </button>
+        ) : (
+          <button className="ovm-item danger" onClick={onLeave}>Leave team</button>
+        )}
+      >
+        {team.frozen && (
+          <p className="muted-line warn">
+            The team owner's Pro plan has lapsed — the workspace is read-only until it's renewed.
           </p>
-          {team.frozen && (
-            <p className="muted-line warn">
-              The team owner's Pro plan has lapsed — the workspace is read-only until it's renewed.
-            </p>
-          )}
-        </div>
-        <div className="head-actions">
-          {isOwner && <button className="secondary" onClick={onRename}>Rename</button>}
-          {isOwner ? (
-            <button className="secondary danger" onClick={() => { setDeleteName(""); setConfirmDelete(true); }}>
-              Delete team
-            </button>
-          ) : (
-            <button className="secondary danger" onClick={onLeave}>Leave team</button>
-          )}
-        </div>
-      </header>
+        )}
+      </PageHeader>
 
       {error && <div className="card error">{error}</div>}
 

@@ -131,6 +131,20 @@ def test_window_value_interpolates_and_truncates():
 
 # ---- CRUD, validation, access -------------------------------------------------------
 
+def test_list_says_whether_alerts_can_fire(client, monkeypatch):
+    from backend import config
+
+    fid, _ = _setup(client)
+    url = _alerts_url(fid)
+    # Billing off (self-hosted): the API is open, so alerts can fire.
+    assert client.get(url).json()["api_access"] is True
+    # On the cloud a free plan has no API access, so no usage arrives to check.
+    monkeypatch.setattr(config, "BILLING_ENABLED", True)
+    assert client.get(url).json()["api_access"] is False
+    client.db.users.update_one({"_id": A}, {"$set": {"plan": "pro"}})
+    assert client.get(url).json()["api_access"] is True
+
+
 def test_crud_validation_and_initial_state(client):
     fid, _ = _setup(client)
     url = _alerts_url(fid)

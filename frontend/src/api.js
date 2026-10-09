@@ -456,6 +456,14 @@ export function deleteDataset(id) {
   return request(`/api/datasets/${id}`, { method: "DELETE" });
 }
 
+export function renameDataset(id, name) {
+  return request(`/api/datasets/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
 // ---- Saved RBDs ------------------------------------------------------------
 
 export function listRbds() {
@@ -1537,6 +1545,11 @@ export function revokeOAuthGrant(id) {
 // Operator-only stats (403 for regular accounts).
 export function getAdminStats() {
   return request("/api/admin/stats");
+}
+
+// Operator-only: new accounts in the last `days` days, and the latest few.
+export function getAdminSignups(days = 7) {
+  return request(`/api/admin/signups?days=${days}`);
 }
 
 // Operator-only first-party traffic analytics.

@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { createFleetAlert, deleteFleetAlert, listFleetAlerts, updateFleetAlert } from "../api.js";
 import { CardHeader } from "./ui/Card.jsx";
+import Switch from "./ui/Switch.jsx";
+import { PlusIcon } from "./LibRows.jsx";
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -29,8 +32,10 @@ const KINDS = [
 ];
 
 // Email alerts on the fleet's forecast — only rendered for users who can edit
-// the fleet. Rules are evaluated server-side when usage arrives via the API.
-// Collapsed to one line with "+ Add alert" (#311); the form opens on demand.
+// the fleet. Rules are evaluated server-side when usage arrives via the API,
+// so the card always says so, in amber when this user's plan has no API
+// access (they can't fire). Collapsed to one line with "Add alert" (#311);
+// the form opens on demand.
 // ``version`` (the fleet's updated_at) reloads the list after a save, since the
 // horizon and current values can change.
 export default function FleetAlertsCard({ fleetId, version }) {
@@ -65,6 +70,8 @@ export default function FleetAlertsCard({ fleetId, version }) {
   const label = data.period_label || "periods";
   const rules = data.alerts || [];
   const full = rules.length >= (data.max_alerts || 10);
+  // Older servers don't send api_access: assume the API is open.
+  const canFire = data.api_access !== false;
 
   const onAdd = async (e) => {
     e.preventDefault();
@@ -108,11 +115,22 @@ export default function FleetAlertsCard({ fleetId, version }) {
     <div className="card fleet-alerts" id="alerts" style={{ marginTop: "1rem" }}>
       <CardHeader
         title="Alerts"
-        subtitle={rules.length === 0 && !adding ? "Get an email when the forecast crosses a level you set." : null}
+        subtitle={
+          <>
+            {rules.length === 0 && "Get an email when the forecast crosses a level you set. "}
+            Checked each time usage for this fleet arrives through the API; one email per crossing.
+          </>
+        }
         actions={!full && !adding && (
-          <button className="secondary sm" onClick={() => setAdding(true)}>+ Add alert</button>
+          <button className="secondary sm" onClick={() => setAdding(true)}><PlusIcon /> Add alert</button>
         )}
       />
+      {!canFire && (
+        <p className="muted-line warn fleet-alert-plan">
+          Usage arrives through the API only on Pro, so on your plan these alerts won’t fire.{" "}
+          <Link to="/billing" className="evidence-link">Upgrade to Pro</Link>
+        </p>
+      )}
 
       {rules.length > 0 && (
         <ul className="fleet-alert-list">
@@ -134,12 +152,10 @@ export default function FleetAlertsCard({ fleetId, version }) {
                   </div>
                 )}
               </div>
-              <label className="set-check fleet-alert-toggle">
-                <input type="checkbox" checked={rule.enabled} onChange={() => onToggle(rule)} />
-                <span>{rule.enabled ? "On" : "Off"}</span>
-              </label>
+              <Switch className="fleet-alert-toggle" checked={rule.enabled} onChange={() => onToggle(rule)}
+                      label={rule.enabled ? "On" : "Off"} ariaLabel={`Alert: ${conditionText(rule, label)}`} />
               <div className="lib-acts">
-                <button className="act del" title="Delete alert" onClick={() => onDelete(rule)}>
+                <button className="act del" title="Delete alert" aria-label="Delete alert" onClick={() => onDelete(rule)}>
                   <TrashIcon />
                 </button>
               </div>
@@ -150,9 +166,6 @@ export default function FleetAlertsCard({ fleetId, version }) {
 
       {!full && adding && (
         <form className="fleet-alert-form" onSubmit={onAdd}>
-          <p className="muted-line" style={{ marginTop: 0 }}>
-            Checked each time usage for this fleet arrives through the API (Pro). One email per crossing.
-          </p>
           <div className="fleet-alert-kinds" role="radiogroup" aria-label="Alert type">
             {KINDS.map((k) => (
               <label key={k.value} className="set-check">
@@ -162,7 +175,7 @@ export default function FleetAlertsCard({ fleetId, version }) {
               </label>
             ))}
           </div>
-          <div className="row" style={{ marginTop: "0.6rem", alignItems: "flex-end" }}>
+          <div className="row fleet-alert-fields">
             {kind === "above" && (
               <label className="login-field" style={{ width: 170 }}>
                 <span>Expected failures (N)</span>
@@ -191,7 +204,7 @@ export default function FleetAlertsCard({ fleetId, version }) {
               </>
             )}
             <button type="submit" disabled={busy}>{busy ? "Adding…" : "Add alert"}</button>
-            <button type="button" className="ghost" onClick={() => setAdding(false)} disabled={busy}>Cancel</button>
+            <button type="button" className="secondary" onClick={() => setAdding(false)} disabled={busy}>Cancel</button>
           </div>
         </form>
       )}

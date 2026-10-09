@@ -303,3 +303,37 @@ def test_degradation_samples_seed_and_are_read_only(session, monkeypatch):
         assert client.get("/api/degradation/models/sample-deg-brake-wear").status_code == 200
     finally:
         app.dependency_overrides.clear()
+
+
+# ---- Wizard: distinct item ids over every row ------------------------------------
+
+def test_preview_counts_distinct_values_over_every_row():
+    """The sample shows only the first item; ``n_unique`` counts all six."""
+    from backend.fitting import preview
+
+    p = preview(_deg_csv(), rows=5, distinct=True)
+    assert {row[0] for row in p["preview"]} == {"item-0"}
+    assert p["n_unique"][p["columns"].index("item")] == 6
+    assert p["n_unique"][p["columns"].index("hours")] == 8
+    # Opt-in: other callers (the MCP tools, the agent) keep the old shape.
+    assert "n_unique" not in preview(_deg_csv(), rows=5)
+
+
+def test_columns_and_dataset_detail_carry_distinct_counts(monkeypatch):
+    from backend.auth import get_current_user
+
+    test_db = mongomock.MongoClient()["reliafy_test"]
+    client, app = _client(monkeypatch, test_db)
+    try:
+        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True}
+        r = client.post("/api/columns", files={"file": ("wear.csv", _deg_csv(4), "text/csv")})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["n_unique"][body["columns"].index("item")] == 4
+
+        r = client.post("/api/datasets", files={"file": ("wear.csv", _deg_csv(3), "text/csv")})
+        assert r.status_code == 200, r.text
+        detail = client.get(f"/api/datasets/{r.json()['id']}").json()
+        assert detail["n_unique"][detail["preview_columns"].index("item")] == 3
+    finally:
+        app.dependency_overrides.clear()

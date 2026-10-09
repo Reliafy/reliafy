@@ -157,6 +157,58 @@ def test_hidden_failures_tested_in_no_time_are_followed_too():
     assert exact["mission_availability"] == pytest.approx(direct.mission_availability(3 * 8760.0), rel=1e-9)
 
 
+def _tested_pair(repair=None, test_duration=None):
+    """A 1oo2 of proof-tested channels, a common-cause group, as a safety
+    function: repaired at once (no ``repair``) or over ``repair``, its
+    tests taking ``test_duration`` (None: no time)."""
+    def channel(nid):
+        inspection = {"interval": 8760, **({"duration": test_duration} if test_duration else {})}
+        kw = {"repair": repair} if repair else {"instant_repair": True}
+        return _node(nid, model=_exp(1e-5), inspection=inspection, **kw)
+
+    edges = [("input", "a"), ("input", "b"), ("a", "output"), ("b", "output")]
+    return {"repairable": True, "unit": "hours", "nodes": [*_io(), channel("a"), channel("b")],
+            "edges": [{"source": s, "target": t} for s, t in edges], "safety_function": True,
+            "ccf_groups": [{"id": "c", "members": ["a", "b"], "beta": 0.1}]}
+
+
+def _tested_direct(repair, inspection=None):
+    spec = {"reliability": E([1e-5]), "repairability": repair,
+            "inspection": {"interval": 8760.0, **(inspection or {})}}
+    return RepairableRBD([("s", "a"), ("s", "b"), ("a", "t"), ("b", "t")], {"a": spec, "b": spec},
+                         input_node="s", output_node="t", ccf_groups=[CCFGroup(["a", "b"], BetaFactor(0.1))])
+
+
+def test_a_mean_repair_time_keeps_the_group_in_every_figure():
+    """RePyability 0.13 (#220 there): proof-tested members repaired over an
+    exponential time are followed too (0.12 left the group out), so the
+    usual SIL case, a 1oo2 with a β and an MRT, has it in every figure."""
+    g = _tested_pair(repair=_exp(1 / 8))
+    out = ra.analyze_availability(g, simulate=False)
+    assert out["common_cause"]["included"] is True and out["safety"]["common_cause"]["included"] is True
+    direct = _tested_direct(E([1 / 8]))
+    assert out["safety"]["pfd_avg"] == pytest.approx(direct.mean_unavailability(), rel=1e-9)
+    # The repairs' downtime adds to the PFDavg of instant repairs.
+    instant = ra.analyze_availability(_tested_pair(), simulate=False)
+    assert out["safety"]["pfd_avg"] > instant["safety"]["pfd_avg"]
+    assert ra.exact_availability(g, horizon=3 * 8760.0).get("common_cause_included") is True
+
+
+def test_proof_tests_that_take_time_keep_the_group_in_the_pfdavg():
+    """Tests that take time are followed by the group's long-run chain
+    (#220), but RePyability 0.13 doesn't work out their failure frequency
+    with the groups: the figures leave the group out, with that reason, and
+    the PFDavg takes it in."""
+    g = _tested_pair(repair=_exp(1 / 8), test_duration=_exp(0.5))
+    out = ra.analyze_availability(g, simulate=False)
+    assert out["common_cause"]["included"] is False and "tests that take time" in out["common_cause"]["reason"]
+    assert out["safety"]["common_cause"]["included"] is True
+    direct = _tested_direct(E([1 / 8]), {"duration": E([0.5])})
+    assert out["safety"]["pfd_avg"] == pytest.approx(direct.mean_unavailability(), rel=1e-9)
+    note = rbd_policies.common_cause_note(g, out)
+    assert note["availability_with_common_cause"] == pytest.approx(1 - out["safety"]["pfd_avg"], rel=1e-12)
+
+
 # ---- Where RePyability refuses them: left out of every figure, and why ---------------------
 
 def _without_figures(graph):
@@ -208,8 +260,8 @@ def test_a_pinned_block_outside_the_group_keeps_it():
 
 
 def test_crews_never_claim_the_groups():
-    """RePyability 0.12's crew chain gives long-run values without the groups
-    rather than refusing: the long-run check refuses there, so neither the
+    """Limited repair crews don't take common cause in: RePyability 0.13
+    refuses the groups there (0.12's crew chain dropped them), so neither the
     figures nor a safety function's PFDavg say they include common cause."""
     g = {**_graph(), "repair_crews": {"crews": 1}, "safety_function": True}
     out = ra.analyze_availability(g, simulate=False)

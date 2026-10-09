@@ -1,8 +1,18 @@
 import { useEffect, useState } from "react";
-import { getAdminEmailCampaigns, getAdminStats, getAdminTraffic } from "../api.js";
+import {
+  getAdminEmailCampaigns,
+  getAdminSignups,
+  getAdminStats,
+  getAdminTraffic,
+  getAdminUsage,
+} from "../api.js";
+import { relativeTime } from "../instrument.js";
 import Select from "../components/Select.jsx";
 import UsageSection from "../components/UsageSection.jsx";
-import { CardHeader } from "../components/ui/Card.jsx";
+import Card, { CardHeader } from "../components/ui/Card.jsx";
+import Chip from "../components/ui/Chip.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
+import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 
 const LABELS = {
   datasets: "Datasets",
@@ -10,16 +20,40 @@ const LABELS = {
   rbds: "RBDs",
   degradation_models: "Degradation models",
   tracked_items: "Tracked items",
+  tracked_fleets: "Tracked fleets",
   strategy_analyses: "Strategy analyses",
   rcm_studies: "RCM studies",
+  fleets: "Fleet forecasts",
 };
 
+// One range drives the whole page. Traffic and account-level usage keep 90
+// days, so that's the longest window.
 const RANGES = [
   { value: "7", label: "Last 7 days" },
-  { value: "14", label: "Last 14 days" },
   { value: "30", label: "Last 30 days" },
   { value: "90", label: "Last 90 days" },
 ];
+
+const PLAN = { free: "Free", pro: "Pro", agent: "Agent" };
+const n = (v) => (v ?? 0).toLocaleString();
+
+// Fetch on every change of the dependencies; { data, error } with data null
+// while loading.
+function useLoad(fn, deps) {
+  const [state, setState] = useState({ data: null, error: null });
+  useEffect(() => {
+    let alive = true;
+    setState({ data: null, error: null });
+    fn()
+      .then((data) => alive && setState({ data, error: null }))
+      .catch((e) => alive && setState({ data: null, error: e.message }));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return state;
+}
 
 // Simple inline bar chart: one row per day, width scaled to the max.
 function DailyBars({ daily }) {
@@ -43,8 +77,8 @@ function DailyBars({ daily }) {
 
 function TopList({ title, rows, empty }) {
   return (
-    <div className="card">
-      <h2>{title}</h2>
+    <Card>
+      <CardHeader title={title} />
       {rows.length === 0 ? (
         <p className="muted-line">{empty}</p>
       ) : (
@@ -57,7 +91,51 @@ function TopList({ title, rows, empty }) {
           ))}
         </ul>
       )}
-    </div>
+    </Card>
+  );
+}
+
+// The latest accounts: who to welcome or follow up with.
+function RecentSignups({ state }) {
+  const { data, error } = state;
+  const rows = data?.signups || [];
+  return (
+    <Card>
+      <CardHeader
+        title="Recent signups"
+        subtitle={data && data.count > rows.length ? `Latest ${rows.length} of ${n(data.count)}` : null}
+      />
+      {error ? (
+        <p className="muted-line">{error}</p>
+      ) : !data ? (
+        <p className="muted-line">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="muted-line">No new accounts in this window.</p>
+      ) : (
+        <div className="usage-table-wrap">
+          <table className="usage-table admin-signups">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Plan</th>
+                <th>Joined</th>
+                <th>Last active</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={`${r.email}-${i}`}>
+                  <td className="admin-email">{r.email || "—"}</td>
+                  <td>{r.plan === "free" ? PLAN.free : <Chip tone="accent">{PLAN[r.plan] || r.plan}</Chip>}</td>
+                  <td>{relativeTime(r.joined)}</td>
+                  <td>{relativeTime(r.last_active)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -65,124 +143,125 @@ function TopList({ title, rows, empty }) {
 // Visitors are visitor-days (daily-hashed), pages are those reached in a
 // tagged visit, and "Active" counts recipients using the app within a few
 // days of their send.
-function EmailCampaigns() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
-  useEffect(() => {
-    getAdminEmailCampaigns().then(setData).catch((e) => setError(e.message));
-  }, []);
+function EmailCampaigns({ state }) {
+  const { data, error } = state;
   const rows = data?.campaigns || [];
+  if (error) return <p className="muted-line">{error}</p>;
+  if (!data) return <p className="muted-line">Loading…</p>;
+  if (rows.length === 0) return <p className="muted-line">No emails sent or tagged visits in this window.</p>;
   return (
-    <div className="card" style={{ marginTop: "1rem" }}>
-      <h2>Email campaigns (last {data?.days ?? 90} days)</h2>
-      {error ? (
-        <p className="muted-line">{error}</p>
-      ) : !data ? (
-        <p className="muted-line">Loading…</p>
-      ) : rows.length === 0 ? (
-        <p className="muted-line">No emails sent or tagged visits yet.</p>
-      ) : (
-        <div className="usage-table-wrap">
-          <table className="usage-table">
-            <thead>
-              <tr>
-                <th>Email</th>
-                <th>Sent</th>
-                <th>Visitors</th>
-                <th>Pageviews</th>
-                <th>Active ≤{data.active_days}d</th>
-                <th style={{ textAlign: "left" }}>Pages reached</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={`${r.medium}:${r.campaign}`}>
-                  <td className="usage-key">{r.medium} · {r.campaign}</td>
-                  <td>{r.sent}</td>
-                  <td>{r.visitors}</td>
-                  <td>{r.pageviews}</td>
-                  <td>{r.active == null ? "—" : r.active}</td>
-                  <td style={{ textAlign: "left" }}>
-                    {r.top_pages.map((p) => `${p.key} (${p.count})`).join(", ") || "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+    <div className="usage-table-wrap">
+      <table className="usage-table">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Sent</th>
+            <th>Visitors</th>
+            <th>Pageviews</th>
+            <th>Active ≤{data.active_days}d</th>
+            <th style={{ textAlign: "left" }}>Pages reached</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.medium}:${r.campaign}`}>
+              <td className="usage-key">{r.medium} · {r.campaign}</td>
+              <td>{r.sent}</td>
+              <td>{r.visitors}</td>
+              <td>{r.pageviews}</td>
+              <td>{r.active == null ? "—" : r.active}</td>
+              <td style={{ textAlign: "left" }}>
+                {r.top_pages.map((p) => `${p.key} (${p.count})`).join(", ") || "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-// Operator dashboard (ADMIN_EMAILS accounts only): signups, plans, volumes,
-// and first-party traffic (no cookies, no third parties, 90-day retention).
+// Operator dashboard (ADMIN_EMAILS accounts only): the week's answer in one
+// tile row, then product usage and MCP, then traffic, with emails and artifact
+// volumes folded away at the end.
 export default function AdminPage() {
-  const [stats, setStats] = useState(null);
-  const [traffic, setTraffic] = useState(null);
-  const [days, setDays] = useState("14");
-  const [error, setError] = useState(null);
+  const [days, setDays] = useState("7");
+  const [includeAdmin, setIncludeAdmin] = useState(false);
+  const d = Number(days);
 
-  useEffect(() => {
-    getAdminStats().then(setStats).catch((e) => setError(e.message));
-  }, []);
-  useEffect(() => {
-    getAdminTraffic(Number(days)).then(setTraffic).catch((e) => setError(e.message));
-  }, [days]);
+  const stats = useLoad(getAdminStats, []);
+  const signups = useLoad(() => getAdminSignups(d), [d]);
+  const usage = useLoad(() => getAdminUsage(d, includeAdmin), [d, includeAdmin]);
+  const trafficState = useLoad(() => getAdminTraffic(d), [d]);
+  const emails = useLoad(() => getAdminEmailCampaigns(d), [d]);
+  const traffic = trafficState.data;
+  const s = stats.data;
+  const u = usage.data;
 
-  if (error) {
+  const header = (
+    <PageHeader
+      title="Operator stats"
+      actions={
+        <div className="admin-range">
+          <Select value={days} onChange={setDays} options={RANGES} title="Date range for the whole page" />
+        </div>
+      }
+    />
+  );
+
+  if (stats.error) {
     return (
       <div className="app">
-        <header><h1>Operator stats</h1></header>
-        <div className="card empty"><p>{error}</p></div>
+        {header}
+        <Card className="empty"><p>{stats.error}</p></Card>
       </div>
     );
   }
-  if (!stats) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!s) return <div className="app">{header}<Card className="empty">Loading…</Card></div>;
+
+  const dash = (v) => (v == null ? "…" : n(v));
+  const errors = u?.totals?.errors;
 
   return (
     <div className="app">
-      <header>
-        <div>
-          <div className="crumb"><b>Operator stats</b></div>
-          <h1>Operator stats</h1>
-          <p>Live counts straight from the database. Traffic is first-party — no cookies, daily-hashed visitors, 90-day retention.</p>
-        </div>
-      </header>
+      {header}
 
-      <div className="stats">
-        <div className="stat"><div className="k">Users</div><div className="v">{stats.users_total}</div></div>
-        <div className="stat"><div className="k">New (7 days)</div><div className="v">{stats.users_new_7d}</div></div>
-        <div className="stat"><div className="k">Pro subscribers</div><div className="v">{stats.pro_users}</div></div>
-        <div className="stat"><div className="k">Teams</div><div className="v">{stats.teams}</div></div>
-        <div className="stat"><div className="k">Shares</div><div className="v">{stats.shares}</div></div>
-        {traffic && (
-          <>
-            <div className="stat"><div className="k">Pageviews ({traffic.days}d)</div><div className="v">{traffic.pageviews}</div></div>
-            <div className="stat"><div className="k">Visitor-days ({traffic.days}d)</div><div className="v">{traffic.visitors_daily_sum}</div></div>
-          </>
-        )}
+      <div className="stats admin-tiles">
+        <div className="stat"><div className="k">New signups</div><div className="v">{dash(signups.data?.count)}</div></div>
+        <div className="stat"><div className="k">Active accounts</div><div className="v">{dash(u?.share?.any_accounts)}</div></div>
+        <div className="stat"><div className="k">MCP calls</div><div className="v">{dash(u?.totals?.mcp)}</div></div>
+        <div className="stat"><div className="k">MCP-active accounts</div><div className="v">{dash(u?.share?.mcp_accounts)}</div></div>
+        <div className="stat"><div className="k">MCP errors</div><div className="v">{dash(errors?.mcp)}</div></div>
+        <div className="stat"><div className="k">Pro subscribers</div><div className="v">{n(s.pro_users)}</div></div>
       </div>
+      <p className="admin-minor">
+        {n(s.users_total)} users · {n(s.teams)} teams · {n(s.shares)} shares
+        {traffic && <> · {n(traffic.pageviews)} pageviews · {n(traffic.visitors_daily_sum)} visitor-days</>}
+        {errors && <> · {n(errors.app)} failed app calls{errors.api > 0 && <> · {n(errors.api)} failed API calls</>}</>}
+      </p>
 
-      <div className="card" style={{ marginTop: "1rem" }}>
-        <CardHeader
-          title="Traffic"
-          actions={
-            <div style={{ width: 170 }}>
-              <Select value={days} onChange={setDays} options={RANGES} />
-            </div>
-          }
-        />
-        {!traffic ? (
+      <RecentSignups state={signups} />
+
+      <UsageSection
+        state={usage}
+        includeAdmin={includeAdmin}
+        onIncludeAdmin={setIncludeAdmin}
+      />
+
+      <Card style={{ marginTop: "1rem" }}>
+        <CardHeader title="Traffic" />
+        {trafficState.error ? (
+          <p className="muted-line">{trafficState.error}</p>
+        ) : !traffic ? (
           <p className="muted-line">Loading…</p>
         ) : traffic.pageviews === 0 ? (
-          <p className="muted-line">No pageviews recorded in this window yet.</p>
+          <p className="muted-line">No pageviews recorded in this window.</p>
         ) : (
           <DailyBars daily={traffic.daily} />
         )}
-      </div>
+      </Card>
 
-      {traffic && (
+      {traffic && traffic.pageviews > 0 && (
         <div className="dash-cards" style={{ marginTop: "1rem" }}>
           <TopList title="Top pages" rows={traffic.top_pages} empty="Nothing yet." />
           <TopList title="Referrers" rows={traffic.top_referrers} empty="No external referrers yet." />
@@ -195,24 +274,34 @@ export default function AdminPage() {
       )}
 
       {traffic && traffic.events.length > 0 && (
-        <TopList title="Product events" rows={traffic.events} empty="" />
+        <div style={{ marginTop: "1rem" }}>
+          <TopList title="Product events" rows={traffic.events} empty="" />
+        </div>
       )}
 
-      <EmailCampaigns />
+      <Card className="admin-fold">
+        <ResultDetails summary="Email campaigns">
+          <EmailCampaigns state={emails} />
+        </ResultDetails>
+      </Card>
 
-      <UsageSection />
+      <Card className="admin-fold">
+        <ResultDetails summary="Artifacts (excluding samples)">
+          <div className="stats admin-artifacts">
+            {Object.entries(s.artifacts).map(([key, count]) => (
+              <div className="stat" key={key}>
+                <div className="k">{LABELS[key] || key}</div>
+                <div className="v">{n(count)}</div>
+              </div>
+            ))}
+          </div>
+        </ResultDetails>
+      </Card>
 
-      <div className="card" style={{ marginTop: "1rem" }}>
-        <h2>Artifacts (excluding samples)</h2>
-        <ul className="bill-usage">
-          {Object.entries(stats.artifacts).map(([key, n]) => (
-            <li key={key}>
-              <span>{LABELS[key] || key}</span>
-              <span className="bill-usage-n">{n}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      <p className="admin-foot">
+        Live counts straight from the database. Traffic is first-party: no cookies,
+        daily-hashed visitors, 90-day retention.
+      </p>
     </div>
   );
 }

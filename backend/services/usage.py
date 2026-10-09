@@ -718,6 +718,7 @@ def report(db, days: int = 30, include_admin: bool = False, now: datetime | None
     connects: Counter = Counter()
     billing: Counter = Counter()
     totals: Counter = Counter()
+    errors: Counter = Counter()
     for d in axis:
         row = {"day": d, "app": 0, "mcp": 0, "api": 0, "mcp_connects": 0,
                "app_accounts": 0, "mcp_accounts": 0, "api_accounts": 0, "any_accounts": 0,
@@ -742,6 +743,8 @@ def report(db, days: int = 30, include_admin: bool = False, now: datetime | None
                 continue
             row[ch] = row.get(ch, 0) + n
             totals[ch] += n
+            if out == "error":
+                errors[ch] += n
             if ch == "mcp":
                 tools[feat][out] += n
                 tool_ms[feat][0] += doc.get("ms_sum", 0)
@@ -772,7 +775,10 @@ def report(db, days: int = 30, include_admin: bool = False, now: datetime | None
         "retention_days": RETENTION_DAYS,
         "generated_at": now.isoformat(),
         "totals": {"app": totals["app"], "mcp": totals["mcp"], "api": totals["api"],
-                   "mcp_connects": connects["initialize"], "mcp_tool_lists": connects["tools/list"]},
+                   "mcp_connects": connects["initialize"], "mcp_tool_lists": connects["tools/list"],
+                   # Calls that failed (outcome "error": a 4xx or 5xx other
+                   # than the plan and limit refusals), per channel.
+                   "errors": {ch: errors[ch] for ch in CHANNELS}},
         "daily": daily,
         "weekly": weekly,
         "mcp_tools": table(tools, tool_ms),

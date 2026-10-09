@@ -1,23 +1,25 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { getAppConfig } from "./api.js";
+import { DEFAULT_CONFIG, settledConfig } from "./appConfig.js";
 
-// Deployment capabilities, fetched once from the public /api/config endpoint.
-// Defaults hide the optional features (AI assistant, billing) so a self-hosted
-// build never flashes affordances that can't work there; on cloud they appear
-// as soon as the fetch resolves.
-const DEFAULT = { auth: true, ai: false, billing: false, reliability_agent: false };
-
-const ConfigContext = createContext(DEFAULT);
+// Deployment capabilities, fetched once from the public /api/config endpoint
+// (defaults and the `loaded` flag: appConfig.js).
+const ConfigContext = createContext(DEFAULT_CONFIG);
 
 export function ConfigProvider({ children }) {
-  const [config, setConfig] = useState(DEFAULT);
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
 
   useEffect(() => {
     let cancelled = false;
     const load = (retry) =>
       getAppConfig()
-        .then((c) => { if (!cancelled) setConfig({ ...DEFAULT, ...c }); })
-        .catch(() => { if (!cancelled && retry) setTimeout(() => load(false), 1500); });
+        .then((c) => { if (!cancelled) setConfig(settledConfig(c)); })
+        .catch(() => {
+          if (cancelled) return;
+          // One retry; after that settle on the defaults so routing unblocks.
+          if (retry) setTimeout(() => load(false), 1500);
+          else setConfig(settledConfig(null));
+        });
     load(true);
     return () => { cancelled = true; };
   }, []);

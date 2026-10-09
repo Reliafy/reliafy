@@ -3,6 +3,7 @@ DataFrames."""
 
 from __future__ import annotations
 
+import re
 import uuid
 
 import pandas as pd
@@ -97,6 +98,14 @@ def create_dataset(db, name: str, file_bytes: bytes, owner_id: str, no_header: b
     own isolated copies. ``no_header`` treats the file as having no header row:
     generic ``col N`` names are added so the first data row isn't lost.
     """
+    return create_or_reuse(db, name, file_bytes, owner_id, no_header=no_header)[0]
+
+
+def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
+                    no_header: bool = False) -> tuple[Dataset, bool]:
+    """``create_dataset``, also saying whether identical data already existed
+    (``True``: the existing dataset, under its own name, came back) — so the
+    app can tell the user rather than silently dropping the new name."""
     from backend import config
 
     def _check_size(data: bytes) -> None:
@@ -117,7 +126,7 @@ def create_dataset(db, name: str, file_bytes: bytes, owner_id: str, no_header: b
     digest = storage.checksum(file_bytes)
     existing = db.datasets.find_one({"checksum": digest, "owner_id": owner_id})
     if existing is not None:
-        return from_doc(Dataset, existing)
+        return from_doc(Dataset, existing), True
 
     df = read_dataframe(file_bytes)
     columns = [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns]
@@ -132,7 +141,15 @@ def create_dataset(db, name: str, file_bytes: bytes, owner_id: str, no_header: b
         data=file_bytes,
     )
     db.datasets.insert_one(to_doc(dataset))
-    return dataset
+    return dataset, False
+
+
+def default_name(filename: str | None) -> str:
+    """A dataset's name from its file when none is given: "pump_test.csv" →
+    "pump_test" (the extension adds nothing once it's a dataset)."""
+    base = (filename or "").strip()
+    stem = re.sub(r"\.(csv|tsv|txt|xlsx|xlsm|xls)$", "", base, flags=re.IGNORECASE).strip()
+    return stem or base or "dataset"
 
 
 def get_dataset(db, dataset_id: str, owner_id: str | list[str] | None = None) -> Dataset | None:
@@ -167,9 +184,10 @@ def load_dataframe(dataset: Dataset) -> pd.DataFrame:
     return read_dataframe(bytes(dataset.data))
 
 
-def preview_rows(dataset: Dataset, rows: int = 8) -> dict:
-    """Column names + a small sample of rows for the dataset detail view."""
-    return _preview(bytes(dataset.data), rows)
+def preview_rows(dataset: Dataset, rows: int = 8, distinct: bool = False) -> dict:
+    """Column names + a small sample of rows for the dataset detail view
+    (``distinct``: with each column's distinct-value count, see preview)."""
+    return _preview(bytes(dataset.data), rows, distinct=distinct)
 
 
 def models_for_dataset(db, dataset_id: str, owner_id: str, hidden=frozenset()) -> list[Model]:
@@ -209,8 +227,81 @@ def dependents_for_dataset(db, dataset_id: str, owner_id, hidden=frozenset()) ->
         ).sort("created_at", -1):
             if d["_id"] in hidden:
                 continue
-            out.append({"kind": kind, "collection": collection, "id": d["_id"], "name": d.get("name") or ""})
+            out.append({"kind": kind, "collection": collection, "id": d["_id"], "name": d.get("name") or "",
+                        "owner_id": d.get("owner_id")})
     return out
+
+
+def dependent_counts(db, owner_id, hidden=frozenset()) -> dict[str, int]:
+    """``{dataset_id: n}``: how many saved models of any kind (the
+    ``DEPENDENT_COLLECTIONS``) this owner can see are fitted to each dataset —
+    the list's "Used by N models"."""
+    counts: dict[str, int] = {}
+    for collection, _kind in DEPENDENT_COLLECTIONS:
+        for d in db[collection].find(
+            {"owner_id": {"$in": access.owner_in(owner_id)}}, {"dataset_id": 1}
+        ):
+            ds_id = d.get("dataset_id")
+            if ds_id and d["_id"] not in hidden:
+                counts[ds_id] = counts.get(ds_id, 0) + 1
+    return counts
+
+
+# Column names that identify a unit (a system, an item, a serial number).
+_UNIT_NAME_RE = re.compile(
+    r"(^|[_\s])(id|unit|item|serial|sn|asset|system|equipment|machine|compressor|pump|"
+    r"vehicle|truck|engine|component|tag|pad|part)s?($|[_\s\d])",
+    re.IGNORECASE,
+)
+
+
+def repeated_units(df: pd.DataFrame) -> dict | None:
+    """Rows that are histories of units rather than one row per unit, or None.
+
+    ``{"column": <unit column>, "kind": "recurrent" | "degradation"}`` when a
+    unit-like text column (an id-ish name, or values that carry digits, e.g.
+    "CMP-1") repeats, and some numeric column rises within every unit in file
+    order — the events of a repairable system ("recurrent"), or measurements
+    on a shared time grid ("degradation"). Comparing groups or fitting a life
+    distribution to such rows would treat each event as a separate unit.
+    """
+    n = len(df)
+    if n < 4:
+        return None
+    numeric = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    for g in df.columns:
+        if g in numeric:
+            continue
+        col = df[g].dropna().astype(str)
+        if col.empty:
+            continue
+        sizes = col.groupby(col).size()
+        if len(sizes) == len(col) or (sizes >= 2).mean() < 0.5:
+            continue
+        digits = sizes.index.to_series().str.contains(r"\d").mean()
+        if not (_UNIT_NAME_RE.search(str(g)) or digits >= 0.8):
+            continue
+        for t in numeric:
+            sub = df.loc[col.index, [t]].assign(_g=col)
+            steps = sub.groupby("_g")[t].diff().dropna()
+            if steps.empty or not (steps > 0).all():
+                continue
+            # A time grid shared by the units reads as measurements over time.
+            seen_in = sub.groupby(t)["_g"].nunique()
+            shared = sub[t].map(seen_in).gt(1).mean()
+            return {"column": str(g), "kind": "degradation" if shared >= 0.5 else "recurrent"}
+    return None
+
+
+def profile(dataset: Dataset) -> dict:
+    """What the dataset page needs beyond the preview: each column's count of
+    distinct values (to pick a sensible "split by") and whether the rows are
+    unit histories (``repeated_units``)."""
+    df = load_dataframe(dataset)
+    return {
+        "distinct": {str(c): int(df[c].nunique(dropna=True)) for c in df.columns},
+        "repeated_units": repeated_units(df),
+    }
 
 
 def dependents_message(dependents: list[dict]) -> str:

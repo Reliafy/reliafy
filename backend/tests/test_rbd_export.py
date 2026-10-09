@@ -408,7 +408,7 @@ def test_output_is_deterministic_and_self_describing():
     assert head.startswith(name)
     assert "Exported from Reliafy <https://reliafy.com>".lower() in head.lower().replace("\n", " ")
     assert "on 2026-09-26 (UTC)" in head
-    assert "SurPyval.git@v0.23" in head and "RePyability.git@v0.12" in head
+    assert "SurPyval.git@v0.23" in head and "RePyability.git@v0.13" in head
     assert "--no-deps" in head and "surpyval==0.23" in head
     assert "python instrument_air_2oo3_compressors_cold_standby_dryer_ccf.py" in head
     # One commented variable per block, with its label.
@@ -429,7 +429,7 @@ def test_imports_only_what_is_used():
 
 
 def test_versions_come_from_the_build_pins():
-    assert rbd_export.detect_versions() == {"surpyval": "0.23", "repyability": "0.12"}
+    assert rbd_export.detect_versions() == {"surpyval": "0.23", "repyability": "0.13"}
 
 
 def test_names_are_safe_identifiers_and_unique():

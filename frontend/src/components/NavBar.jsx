@@ -20,7 +20,7 @@ const GearIcon = () => (
 
 // Modal to create a team. Pro-gating happens server-side: a 402 shows an
 // upgrade nudge instead of the generic error.
-function CreateTeamModal({ onClose, onCreated }) {
+export function CreateTeamModal({ onClose, onCreated }) {
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -175,9 +175,10 @@ export default function NavBar({ menuOpen = false, onMenu, menuButtonRef }) {
           onClose={() => setCreatingTeam(false)}
           onCreated={(team) => {
             setCreatingTeam(false);
-            refreshTeams();
-            setWorkspaceId(team.id);
-            navigate("/team");
+            refreshTeams().then(() => {
+              setWorkspaceId(team.id);
+              navigate("/team");
+            });
           }}
         />
       )}

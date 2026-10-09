@@ -62,8 +62,10 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
         <p className="hint">
           β splits each member's failure rate. The group is followed over time in every availability
           figure — the long run, A(t), events and costs, the simulation — when its members have exponential
-          lives (revealed failures, or proof tests and repairs that take no time), no scheduled maintenance
-          and a crew for every repair. Otherwise it's left out of every figure, and Validate says why.
+          lives (revealed failures with exponential repairs, or proof-tested ones repaired in no time, a fixed
+          time or an exponential one), no scheduled maintenance and a crew for every repair. Otherwise it's
+          left out of every figure, and Validate says why; a safety function's PFDavg still takes it in where
+          the long run can (proof tests that take time, say).
         </p>
       )}
       <p className="hint">

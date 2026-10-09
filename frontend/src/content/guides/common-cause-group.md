@@ -68,12 +68,15 @@ events; keep that for short missions, since over a lifetime it overstates the
 group's reliability (and the MTTF isn't given with it).
 
 In a repairable diagram β always splits the failure rate, and the group is
-followed in every figure when its members have exponential lives (failures
-found at once, or by proof tests that take no time), no scheduled maintenance,
-and a repair crew for every repair. Where that doesn't hold, the group is left
-out of every figure rather than just some of them, and **Validate** says why. A
-safety function's PFDavg still takes the group in wherever its long-run value
-can.
+followed in every figure when its members have exponential lives, no scheduled
+maintenance, and a repair crew for every repair. Failures found at once need
+exponential repair times; proof-tested members' repairs may take no time, a
+fixed time or an exponential one (a 1oo2 with a mean repair time of 8 hours,
+say). Where that doesn't hold, the group is left out of every figure rather
+than just some of them, and **Validate** says why. A safety function's PFDavg
+still takes the group in wherever its long-run value can: with proof tests
+that themselves take time, for one, the PFDavg includes the group while the
+other figures leave it out for now.
 
 A note on symmetry: the β-factor model assumes the grouped units are
 *identical*. If their life models differ, Reliafy flags it when you validate —

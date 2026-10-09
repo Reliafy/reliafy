@@ -276,7 +276,7 @@ def columns_endpoint(
     """
     contents = read_upload(file)
     try:
-        return JSONResponse(content=preview(contents))
+        return JSONResponse(content=preview(contents, distinct=True))
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 

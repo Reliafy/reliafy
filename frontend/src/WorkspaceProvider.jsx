@@ -22,13 +22,17 @@ export function WorkspaceProvider({ children }) {
   // (e.g. the team was deleted, or a fresh local database forgot it).
   const [teams, setTeams] = useState(null);
 
+  // Resolves once the list is in, so a caller can switch to a team it just
+  // created (switching first would be undone by the check below).
   const refreshTeams = useCallback(() => {
-    if (!user) return;
-    listTeams()
+    if (!user) return Promise.resolve();
+    return listTeams()
       .then((d) => setTeams(d.teams || []))
       .catch(() => setTeams([]));
   }, [user]);
-  useEffect(() => refreshTeams(), [refreshTeams]);
+  useEffect(() => {
+    refreshTeams();
+  }, [refreshTeams]);
 
   // Drop a stored workspace the user no longer belongs to.
   useEffect(() => {

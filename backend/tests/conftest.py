@@ -35,6 +35,19 @@ def _no_background_usage_rollup(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _mongomock_utcnow_without_deprecation(monkeypatch):
+    """The in-memory database expires TTL-indexed documents by
+    ``datetime.utcnow()``, deprecated since Python 3.12, so a run with
+    ``-W error::DeprecationWarning`` fails inside it. The same naive UTC time,
+    as mongomock's docs suggest patching it."""
+    from datetime import datetime, timezone
+
+    import mongomock
+
+    monkeypatch.setattr(mongomock, "utcnow", lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+
+
+@pytest.fixture(autouse=True)
 def _fresh_email_verification_cache():
     """Email-verification lookups are cached per process; each test starts
     without another's answers."""
