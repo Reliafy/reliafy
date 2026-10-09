@@ -70,7 +70,7 @@ function DownloadPython({ token, unlock }) {
   };
   return (
     <span className="public-rbd-download">
-      <button className="rbd-btn" onClick={onClick} disabled={busy} title={PYTHON_EXPORT_TIP}>
+      <button className="secondary sm" onClick={onClick} disabled={busy} title={PYTHON_EXPORT_TIP}>
         {busy ? "Preparing…" : "Download as Python"}
       </button>
       {error && <span className="public-rbd-download-err" role="alert">{error}</span>}

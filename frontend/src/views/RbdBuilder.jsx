@@ -1092,7 +1092,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
           )}
           </div>
           <div className="rbd-toolbar-actions">
-          <button className="rbd-btn" onClick={() => setModal("saverbd")}>
+          <button className="secondary sm" onClick={() => setModal("saverbd")}>
             Save RBD
           </button>
           {savedRbdId && (
@@ -1101,6 +1101,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
               artifactId={savedRbdId}
               name={savedRbdName || "Untitled RBD"}
               readOnly={savedRbdReadOnly}
+              className="secondary sm"
             />
           )}
           <span
@@ -1108,7 +1109,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
             title={savedRbdId ? PYTHON_EXPORT_TIP : "Save the diagram first"}
           >
             <button
-              className="rbd-btn"
+              className="secondary sm"
               onClick={exportPython}
               disabled={!savedRbdId || !!exporting}
             >
@@ -1120,18 +1121,18 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
             title={savedRbdId ? JSON_EXPORT_TIP : "Save the diagram first"}
           >
             <button
-              className="rbd-btn"
+              className="secondary sm"
               onClick={() => exportAs("json")}
               disabled={!savedRbdId || !!exporting}
             >
               {exporting === "json" ? "Preparing…" : "Download as RePyability JSON"}
             </button>
           </span>
-          <button className="rbd-btn" onClick={autoLayout}>
+          <button className="secondary sm" onClick={autoLayout}>
             Auto-arrange
           </button>
           <button
-            className="rbd-btn rbd-btn-primary"
+            className="sm"
             onClick={runValidate}
             disabled={validating}
           >
@@ -1140,7 +1141,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved }) {
           </div>
         {selectedComponentIds.length >= 2 && (
           <div className="rbd-toolbar-float">
-            <button className="rbd-btn accent" onClick={openCcfForSelection}
+            <button className="secondary sm ccf" onClick={openCcfForSelection}
                     title="Couple these redundant components by a shared failure cause">
               ⚭ Common-cause group ({selectedComponentIds.length})
             </button>
@@ -1598,7 +1599,7 @@ export default function RbdBuilder() {
         <div className="card note rbd-import-note">
           <p>
             <b>Imported from {imported.source_format || "file"}</b> — not saved yet. Check the blocks, then Save to keep it.
-            {" "}<button className="link-btn" onClick={() => setNotesHidden(true)}>Dismiss</button>
+            {" "}<button className="link" onClick={() => setNotesHidden(true)}>Dismiss</button>
           </p>
           {imported.warnings?.length > 0 && (
             <ul>

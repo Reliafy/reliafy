@@ -16,6 +16,7 @@ import MethodTag from "./MethodTag.jsx";
 import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
 import WhatToImprove from "./WhatToImprove.jsx";
 import { unitInText } from "./unitText.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -246,18 +247,12 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
       </div>
 
       <div className="calc-controls">
-        <div className="seg">
-          {FUNCS.map((f) => (
-            <button
-              key={f.id}
-              className={"seg-btn" + (active === f.id ? " active" : "")}
-              onClick={() => setActive(f.id)}
-              title={f.label}
-            >
-              {f.id === "sf" ? "R(t)" : "F(t)"}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Function"
+          value={active}
+          onChange={setActive}
+          options={FUNCS.map((f) => ({ value: f.id, label: f.id === "sf" ? "R(t)" : "F(t)", title: f.label }))}
+        />
       </div>
 
       <Plot data={traces} layout={layout} download={`${name || "System"} — ${activeLabel}`} />

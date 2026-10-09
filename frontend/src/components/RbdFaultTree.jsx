@@ -330,7 +330,7 @@ function TreeCanvas({ result, name, active }) {
     <div className="ft-canvas-wrap">
       <div className="ft-canvas-tools">
         <button
-          className="rbd-btn"
+          className="secondary sm"
           onClick={() => {
             setCollapsed(new Set());
             setFrameRequest((r) => r + 1);
@@ -340,7 +340,7 @@ function TreeCanvas({ result, name, active }) {
           Expand all
         </button>
         <button
-          className="rbd-btn"
+          className="secondary sm"
           onClick={() => {
             setCollapsed(new Set(allGateKeys(result).filter((k) => k !== "TOP")));
             setFrameRequest((r) => r + 1);
@@ -434,7 +434,7 @@ function CutSetTable({ result }) {
         </div>
       )}
       {cuts.listed.length > TABLE_ROWS && (
-        <button className="link-btn ft-show-all" onClick={() => setAll(!all)}>
+        <button className="link ft-show-all" onClick={() => setAll(!all)}>
           {all ? "Show fewer" : `Show all ${cuts.listed.length}`}
         </button>
       )}
@@ -533,7 +533,7 @@ function ImportanceTable({ result }) {
         </table>
       </div>
       {sorted.length > TABLE_ROWS && (
-        <button className="link-btn ft-show-all" onClick={() => setAll(!all)}>
+        <button className="link ft-show-all" onClick={() => setAll(!all)}>
           {all ? "Show fewer" : `Show all ${sorted.length}`}
         </button>
       )}

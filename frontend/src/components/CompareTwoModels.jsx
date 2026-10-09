@@ -5,6 +5,7 @@ import CompareResult, { COLORS } from "./CompareResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { getColumns, compareTwoModels, SPREADSHEET_ACCEPT } from "../api.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 
 const fmt = (v) =>
@@ -71,20 +72,15 @@ function SideEditor({ tag, side, onChange }) {
         />
       </div>
 
-      <div className="seg">
-        <button
-          className={"seg-btn" + (side.mode === "model" ? " active" : "")}
-          onClick={() => set({ mode: "model" })}
-        >
-          Model
-        </button>
-        <button
-          className={"seg-btn" + (side.mode === "data" ? " active" : "")}
-          onClick={() => set({ mode: "data" })}
-        >
-          Data (non-parametric)
-        </button>
-      </div>
+      <SegmentedControl
+        label="Source"
+        value={side.mode}
+        onChange={(mode) => set({ mode })}
+        options={[
+          { value: "model", label: "Model" },
+          { value: "data", label: "Data (non-parametric)" },
+        ]}
+      />
 
       {side.mode === "model" ? (
         <ModelPicker

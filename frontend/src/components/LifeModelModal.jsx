@@ -32,7 +32,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
         {repairable ? (
           <>
             Set the life model and the repair-time (MTTR) distribution.{" "}
-            <button type="button" className="link-btn" onClick={() => openGuide("repairable-availability")}>
+            <button type="button" className="link" onClick={() => openGuide("repairable-availability")}>
               How do I model availability?
             </button>
           </>

@@ -197,7 +197,7 @@ export default function RbdHome() {
           <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem" }}>
             <h2 style={{ margin: 0 }}>Diagrams in {imported.file}</h2>
             <span className="grow" style={{ flex: 1 }} />
-            <button className="link-btn" onClick={() => setImported(null)}>Cancel</button>
+            <button className="link" onClick={() => setImported(null)}>Cancel</button>
           </div>
           <p>This file holds {imported.diagrams.length} diagrams. Pick one to open — it opens unsaved, so save it to keep it.</p>
           <table className="lib-table">

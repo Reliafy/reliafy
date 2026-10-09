@@ -3,6 +3,7 @@ import Modal from "./Modal.jsx";
 import ModelPicker from "./ModelPicker.jsx";
 import { BlockCostSection } from "./RbdBlockCosts.jsx";
 import { RbdUnitContext } from "./RbdNodes.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // In a repairable diagram (#156) the block is a standby group of identical
 // units: the duty unit and its spares each fail by the life model and are
@@ -104,20 +105,12 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
       </div>
 
       <div className="standby-kind">
-        <div className="seg" role="radiogroup" aria-label="Standby type">
-          {KINDS.map((k) => (
-            <button
-              key={k.id}
-              type="button"
-              role="radio"
-              aria-checked={kind === k.id}
-              className={"seg-btn" + (kind === k.id ? " active" : "")}
-              onClick={() => setKind(k.id)}
-            >
-              {k.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Standby type"
+          value={kind}
+          onChange={setKind}
+          options={KINDS.map((k) => ({ value: k.id, label: k.label }))}
+        />
         <p className="hint">{KINDS.find((k) => k.id === kind).hint}</p>
       </div>
 

@@ -592,10 +592,11 @@ h6 {
   font-weight: 600;
 }
 
+/* Test type above Solve for, each with its label. */
 .demo-toggles {
   display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: var(--sp-4);
 }
 
 .demo-toggles .seg {
@@ -1243,22 +1244,6 @@ h6 {
   white-space: nowrap;
 }
 
-.rbd-btn {
-  background: var(--surf);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 0.45rem 0.8rem;
-  font-size: var(--fs-14);
-  font-weight: 600;
-  box-shadow: var(--shadow-card);
-}
-
-.rbd-btn:hover:not(:disabled) {
-  background: var(--surf-2);
-  border-color: var(--line);
-}
-
 /* Right-click menu — matches the improved dropdowns (rounded card, 13px items,
    soft accent-tint hover). */
 .rbd-menu {
@@ -1681,9 +1666,12 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* Button variants (#310; components/ui/Button.jsx). A bare button is the
+   primary; .secondary, .ghost, .danger (with .secondary) and .link are the
+   others, and .sm is the compact size for toolbars, rows and cards. */
 button.secondary {
   background: var(--surf);
-  color: var(--muted);
+  color: var(--ink);
   border: 1px solid var(--line);
   box-shadow: none;
   font-weight: 500;
@@ -1695,6 +1683,56 @@ button.secondary:hover:not(:disabled) {
   border-color: var(--acc);
   background: rgba(47, 109, 246, 0.05);
   color: var(--acc);
+}
+
+button.secondary.danger {
+  color: var(--danger);
+  border-color: var(--danger-line);
+}
+button.secondary.danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  box-shadow: none;
+  font-weight: 500;
+}
+button.ghost:hover:not(:disabled) {
+  background: var(--surf-2);
+  color: var(--ink);
+}
+
+/* An inline text link that runs an action. */
+button.link {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 500;
+  color: var(--acc);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  white-space: normal;
+}
+button.link:hover:not(:disabled) {
+  background: none;
+  color: var(--acc-d);
+}
+
+button.sm {
+  padding: 6px 11px;
+  font-size: var(--fs-13);
+  gap: 6px;
+}
+button.link.sm {
+  padding: 0;
 }
 
 /* Distribution pill — accent dot + name, optional PH flag (Instrument). */
@@ -2466,22 +2504,6 @@ button.secondary:hover:not(:disabled) {
 }
 
 /* Validation feedback card on the builder canvas */
-.rbd-btn.rbd-btn-primary {
-  background: var(--acc-d);
-  border-color: var(--acc-d);
-  color: #fff;
-}
-
-.rbd-btn.rbd-btn-primary:hover {
-  background: var(--acc);
-  border-color: var(--acc);
-}
-
-.rbd-btn.rbd-btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .rbd-validate-card {
   position: relative;
   max-width: 460px;
@@ -2983,11 +3005,15 @@ button.secondary:hover:not(:disabled) {
   margin-bottom: 0.9rem;
 }
 
+/* Segmented control (#310; components/ui/SegmentedControl.jsx): sans,
+   sentence case; the chosen option is accent-tinted, not a second solid-blue
+   button competing with the primary action. */
 .seg {
   display: inline-flex;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   overflow: hidden;
+  background: var(--surf);
 }
 
 .seg-btn {
@@ -2996,7 +3022,9 @@ button.secondary:hover:not(:disabled) {
   border: none;
   border-radius: 0;
   border-right: 1px solid var(--line);
+  box-shadow: none;
   padding: 0.45rem 0.8rem;
+  font-family: inherit;
   font-size: var(--fs-14);
   font-weight: 500;
   cursor: pointer;
@@ -3006,13 +3034,35 @@ button.secondary:hover:not(:disabled) {
   border-right: none;
 }
 
-.seg .seg-btn:not(.active):hover {
+.seg .seg-btn:not(.active):hover:not(:disabled) {
   background: var(--surf-2);
+  color: var(--ink);
 }
 
-.seg-btn.active {
-  background: var(--acc);
-  color: #fff;
+.seg-btn.active,
+.seg .seg-btn.active:hover:not(:disabled) {
+  background: var(--acc-t);
+  color: var(--acc-d);
+  box-shadow: inset 0 0 0 1px rgba(47, 109, 246, 0.4);
+}
+
+.seg-sm .seg-btn {
+  padding: 5px 10px;
+  font-size: var(--fs-13);
+}
+
+/* A labelled control: the label sits above, like a form field's. */
+.seg-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 100%;
+}
+.seg-label {
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--muted);
 }
 
 .calc-t {
@@ -4504,17 +4554,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   background: var(--bg);
 }
 .pl-link-url button { padding: 7px 12px; font-size: var(--fs-13); }
-.pl-link-acts { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; }
-button.linklike {
-  background: none;
-  border: none;
-  box-shadow: none;
-  padding: 0;
-  color: var(--acc);
-  font-weight: 500;
-  font-size: var(--fs-13);
-}
-button.linklike:hover:not(:disabled) { background: none; text-decoration: underline; }
+.pl-link-acts { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; font-size: var(--fs-13); }
 .pl-phrase {
   margin-top: 8px;
   padding: 9px 10px;
@@ -4613,7 +4653,6 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 .public-rbd-download { margin-left: auto; display: inline-flex; align-items: center; gap: 0.6rem; }
 .public-rbd-download-err { color: #b3261e; }
 .rbd-export-wrap { display: inline-flex; }
-.rbd-export-wrap .rbd-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 @media (max-width: 700px) {
   .public-rbd-canvas { height: 46vh; min-height: 280px; }
 }
@@ -6151,8 +6190,6 @@ button.linklike:hover:not(:disabled) { background: none; text-decoration: underl
 .nav-team-settings svg { width: 17px; height: 17px; }
 .nav-team-settings:hover { color: var(--acc); background: var(--acc-t); }
 .nav-team-settings.active { color: var(--acc); }
-button.danger { color: var(--danger); border-color: var(--danger-line); }
-button.danger:hover { background: var(--danger-bg); }
 
 /* ---- Sharing ------------------------------------------------------------ */
 .share-row {
@@ -6456,17 +6493,6 @@ button.danger:hover { background: var(--danger-bg); }
 .cell-input::placeholder { color: var(--subtle); font-size: var(--fs-12); }
 
 /* First-run intro card (Modelling dashboard) */
-/* Inline link-styled button (compare demo) */
-.link-btn {
-  background: none;
-  border: none;
-  box-shadow: none;
-  padding: 0;
-  font: inherit;
-  color: var(--acc);
-  cursor: pointer;
-  text-decoration: underline;
-}
 
 /* ---- Reliability Agent — chat UX ------------------------------------------ */
 .agent-poc {
@@ -6983,7 +7009,9 @@ button.danger:hover { background: var(--danger-bg); }
   font-size: var(--fs-12); font-weight: 600;
   background: #d0762f; color: #fff; border-radius: var(--r-sm); padding: 1px 6px;
 }
-.rbd-btn.accent { background: #d0762f; color: #fff; border-color: #d0762f; }
+/* The common-cause action wears the CCF colour it creates on the canvas. */
+button.secondary.ccf { color: #a85a1c; border-color: rgba(208, 118, 47, 0.55); background: #fdf4ec; }
+button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762f; background: #fbe9da; }
 .rbd-ccf-list {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 6;
   background: var(--surf, #fff); border: 1px solid var(--line, #dde3ea);
@@ -7086,7 +7114,6 @@ button.danger:hover { background: var(--danger-bg); }
 }
 .nav-help-btn svg { width: 19px; height: 19px; flex: none; }
 .nav-help-btn:hover { background: rgba(47,109,246,0.08); color: var(--acc); }
-.link-btn:hover { opacity: 0.85; }  /* base .link-btn defined above */
 
 /* Merged writing index: Learn/post tags + filter chips */
 .blog-filters { display: flex; gap: 8px; margin: 0 0 18px; flex-wrap: wrap; }
@@ -7385,7 +7412,7 @@ button.danger:hover { background: var(--danger-bg); }
 .rbd-range-inputs input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .rbd-cost-field.rbd-filled input { border-color: rgba(47, 109, 246, 0.55); background: var(--acc-t); }
 .rbd-costs-h-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.rbd-costs-h-row .link-btn { font-size: var(--fs-12); font-weight: 600; }
+.rbd-costs-h-row button.link { font-size: var(--fs-12); font-weight: 600; }
 .rbd-rcm-picker {
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
   border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf);
@@ -7408,7 +7435,7 @@ button.danger:hover { background: var(--danger-bg); }
   background: var(--acc-t); border: 1px solid rgba(47, 109, 246, 0.25);
 }
 .rbd-rcm-source .muted { color: var(--muted); font-size: var(--fs-12); margin-top: 2px; }
-.rbd-rcm-source .link-btn { font-size: var(--fs-12); }
+.rbd-rcm-source button.link { font-size: var(--fs-12); }
 .rbd-rcm-edited { color: var(--warn); font-weight: 600; }
 .rbd-costs-errors { margin: 0; padding-left: 18px; color: var(--danger); font-size: var(--fs-13); }
 /* Overhang the card's bottom edge (like the placeholder chip) so the card keeps its size. */
@@ -7709,7 +7736,7 @@ button.danger:hover { background: var(--danger-bg); }
   .rbd-tabs {
     padding: 0 0.5rem;
   }
-  .rbd-toolbar .rbd-btn,
+  .rbd-toolbar button.sm,
   .rbd-toolbar .rbd-name {
     padding: 0.3rem 0.55rem;
     font-size: var(--fs-13);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getRcmMaintenanceTasks, listRcmStudies } from "../api.js";
 import { unitInText } from "./unitText.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // A repairable block's costs and maintenance (#99, #100, #156, #157), edited in
 // the block's model dialog, collapsed by default. Stored on the node as
@@ -306,7 +307,7 @@ function RcmPicker({ unit, onPick, onClose }) {
     <div className="rbd-rcm-picker">
       <div className="rbd-rcm-picker-head">
         <strong>Fill from an RCM study</strong>
-        <button type="button" className="link-btn" onClick={onClose}>Cancel</button>
+        <button type="button" className="link" onClick={onClose}>Cancel</button>
       </div>
       {studies && studies.length === 0 ? (
         <p className="hint">No RCM studies yet — record failure modes and their tasks under RCM, then fill blocks from them.</p>
@@ -454,21 +455,18 @@ export function BlockCostSection({ initial, onChange, unit = "", crews = false, 
         <div className="rbd-costs-h rbd-costs-h-row">
           Maintenance
           {!picking && (
-            <button type="button" className="link-btn" onClick={() => setPicking(true)}>
+            <button type="button" className="link" onClick={() => setPicking(true)}>
               Fill from RCM study…
             </button>
           )}
         </div>
         {picking && <RcmPicker unit={unit} onPick={pick} onClose={() => setPicking(false)} />}
-        <div className="seg" role="radiogroup" aria-label="Maintenance">
-          {KINDS.map((k) => (
-            <button key={k.id} type="button" role="radio" aria-checked={s.kind === k.id}
-                    className={"seg-btn" + (s.kind === k.id ? " active" : "")}
-                    onClick={() => update({ kind: k.id })}>
-              {k.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Maintenance"
+          value={s.kind}
+          onChange={(kind) => update({ kind })}
+          options={KINDS.map((k) => ({ value: k.id, label: k.label }))}
+        />
         {link && (
           <div className="rbd-rcm-source">
             <div>
@@ -477,21 +475,19 @@ export function BlockCostSection({ initial, onChange, unit = "", crews = false, 
             </div>
             <div className="muted">
               Not kept in sync: later changes to the study don't update this block.{" "}
-              <button type="button" className="link-btn" onClick={() => update({ rcm: null })}>Unlink</button>
+              <button type="button" className="link" onClick={() => update({ rcm: null })}>Unlink</button>
             </div>
           </div>
         )}
         {s.kind === "preventive" && (
           <>
-            <div className="seg rbd-costs-policy" role="radiogroup" aria-label="Replacement policy">
-              {POLICIES.map(([id, label]) => (
-                <button key={id} type="button" role="radio" aria-checked={s.policy === id}
-                        className={"seg-btn" + (s.policy === id ? " active" : "")}
-                        onClick={() => update({ policy: id })}>
-                  {label}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              label="Replacement policy"
+              className="rbd-costs-policy"
+              value={s.policy}
+              onChange={(policy) => update({ policy })}
+              options={POLICIES.map(([id, label]) => ({ value: id, label }))}
+            />
             <p className="hint">{POLICY_HINTS[s.policy] || POLICY_HINTS.age}</p>
           </>
         )}

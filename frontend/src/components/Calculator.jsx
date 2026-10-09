@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import Plot from "./Plot.jsx";
 import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
 import { confidenceAt, evaluateAt } from "../api.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
 // time, conditional age) live in the parent (ResultView) so they survive tab
@@ -417,18 +418,12 @@ export default function Calculator({ functions, unit, params, state, setState, n
             <div className="calc-rail-card calc-eval-card">
               <div className="gofh">Evaluate</div>
               <div className="calc-eval-body">
-                <div className="seg">
-                  {meta.map((m) => (
-                    <button
-                      key={m.id}
-                      className={"seg-btn" + (active === m.id ? " active" : "")}
-                      onClick={() => setActive(m.id)}
-                      title={m.label}
-                    >
-                      {m.id}
-                    </button>
-                  ))}
-                </div>
+                <SegmentedControl
+                  label="Function"
+                  value={active}
+                  onChange={setActive}
+                  options={meta.map((m) => ({ value: m.id, label: m.id, title: m.label }))}
+                />
                 <label className="calc-t">
                   <span>Evaluate at {tAxisLabel}</span>
                   <input

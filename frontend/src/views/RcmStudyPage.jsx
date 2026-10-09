@@ -212,7 +212,7 @@ export default function RcmStudyPage() {
             Imported {imported.counts.modes} failure mode{imported.counts.modes === 1 ? "" : "s"} under{" "}
             {imported.counts.functions} function{imported.counts.functions === 1 ? "" : "s"}
             {imported.counts.decisions ? ` (${imported.counts.decisions} with a decision)` : ""} — saved.
-            <button className="link-btn" style={{ marginLeft: "0.6rem" }} onClick={() => setImported(null)}>Dismiss</button>
+            <button className="link" style={{ marginLeft: "0.6rem" }} onClick={() => setImported(null)}>Dismiss</button>
           </p>
           {imported.warnings.map((w, i) => <p key={i}>{w}</p>)}
         </div>

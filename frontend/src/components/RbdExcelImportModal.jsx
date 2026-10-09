@@ -107,7 +107,7 @@ export default function RbdExcelImportModal({ file, message, onClose, onImported
           <p className="muted-line" style={{ margin: 0 }}>
             {message || "This workbook isn't laid out like Reliafy's RBD template."} Pick the sheet that lists
             the blocks (one row per block) and its header row, then map its columns.{" "}
-            <button className="link-btn" onClick={() => downloadRbdTemplate().catch((e) => setError(e.message))}>
+            <button className="link" onClick={() => downloadRbdTemplate().catch((e) => setError(e.message))}>
               Download the template
             </button>
           </p>

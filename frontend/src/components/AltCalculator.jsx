@@ -5,6 +5,7 @@ import { bandPair, fitLine } from "../plotTheme.js";
 import { altBounds, evaluateAlt, getRbdJob } from "../api.js";
 import { stressName } from "./stressName.js";
 import { unitInText } from "./unitText.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
@@ -221,20 +222,19 @@ export default function AltCalculator({ modelId, results }) {
         </label>
         <div className="alt-bounds-pick">
           <span className="alt-bounds-k">Confidence bounds</span>
-          <div className="seg" role="radiogroup" aria-label="Confidence level">
-            {LEVELS.map((c) => (
-              <button key={c} type="button" role="radio" aria-checked={confidence === c}
-                      className={"seg-btn" + (confidence === c ? " active" : "")}
-                      onClick={() => setConfidence(c)}>{Math.round(c * 100)}%</button>
-            ))}
-          </div>
-          <div className="seg alt-method-seg" role="radiogroup" aria-label="Bounds method">
-            {METHODS.filter((x) => methods.includes(x.id)).map((x) => (
-              <button key={x.id} type="button" role="radio" aria-checked={method === x.id} title={x.hint}
-                      className={"seg-btn" + (method === x.id ? " active" : "")}
-                      onClick={() => pickMethod(x.id)}>{x.label}</button>
-            ))}
-          </div>
+          <SegmentedControl
+            label="Confidence level"
+            value={confidence}
+            onChange={setConfidence}
+            options={LEVELS.map((c) => ({ value: c, label: `${Math.round(c * 100)}%` }))}
+          />
+          <SegmentedControl
+            label="Bounds method"
+            className="alt-method-seg"
+            value={method}
+            onChange={pickMethod}
+            options={METHODS.filter((x) => methods.includes(x.id)).map((x) => ({ value: x.id, label: x.label, title: x.hint }))}
+          />
           <span className="muted alt-method-hint">
             {METHODS.find((x) => x.id === method)?.hint}
             {!methods.includes("bootstrap") && interval && " · Bootstrap bounds aren't available for inspection (interval) data."}
@@ -283,12 +283,13 @@ export default function AltCalculator({ modelId, results }) {
           )}
           {boundsError && <div className="calc-warn">{boundsError}</div>}
           {res.bounds_note && method === "wald" && !bounds && <div className="calc-warn">{res.bounds_note}</div>}
-          <div className="seg" style={{ alignSelf: "flex-start", flexWrap: "wrap", maxWidth: "100%" }}>
-            {FUNCS.map((f) => (
-              <button key={f.id} className={"seg-btn" + (active === f.id ? " active" : "")}
-                      onClick={() => setActive(f.id)}>{f.label}</button>
-            ))}
-          </div>
+          <SegmentedControl
+            label="Function"
+            value={active}
+            onChange={setActive}
+            style={{ alignSelf: "flex-start", flexWrap: "wrap", maxWidth: "100%" }}
+            options={FUNCS.map((f) => ({ value: f.id, label: f.label }))}
+          />
           <Plot data={traces} layout={layout} />
           {curves.warning && <div className="calc-warn">{curves.warning}</div>}
           {bounds && (

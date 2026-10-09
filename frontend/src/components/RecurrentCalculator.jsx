@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
 import { fitLine, pointMarker, referenceShape } from "../plotTheme.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // Recurrent-event calculator: read off the repairable-system functions at a
 // chosen time — expected cumulative failures N(t), the rate of occurrence of
@@ -109,14 +110,16 @@ export default function RecurrentCalculator({ r, name = null }) {
           <div className="calc-rail-card calc-eval-card">
             <div className="gofh">Evaluate</div>
             <div className="calc-eval-body">
-              <div className="seg">
-                {FUNCS.map((f) => (
-                  <button key={f.id} className={"seg-btn" + (active === f.id ? " active" : "")}
-                          onClick={() => setActive(f.id)} title={f.label}>
-                    {f.id === "N" ? "N(t)" : f.id === "rocof" ? "ROCOF" : "MTBF"}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl
+                label="Function"
+                value={active}
+                onChange={setActive}
+                options={FUNCS.map((f) => ({
+                  value: f.id,
+                  title: f.label,
+                  label: f.id === "N" ? "N(t)" : f.id === "rocof" ? "ROCOF" : "MTBF",
+                }))}
+              />
               <label className="calc-t">
                 <span>Evaluate at {tLabel}</span>
                 <input type="number" min={0} step="any" value={t} onChange={(e) => setT(e.target.value)} />

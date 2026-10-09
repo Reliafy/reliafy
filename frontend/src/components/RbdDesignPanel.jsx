@@ -12,6 +12,7 @@ import { modelSummary } from "./RbdNodes.jsx";
 import { graphSignature } from "./RbdValidation.jsx";
 import "./RbdDesignPanel.css";
 import { unitInText } from "./unitText.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // "Design for a target" (redundancy allocation, #98): how many copies of each
 // block a non-repairable diagram needs — the most reliable design within a
@@ -253,22 +254,15 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
         </label>
         <div className="calc-t">
           <span>Goal</span>
-          <div className="seg">
-            <button
-              type="button"
-              className={"seg-btn" + (goal === "budget" ? " active" : "")}
-              onClick={() => setGoal("budget")}
-            >
-              Most reliable within a budget
-            </button>
-            <button
-              type="button"
-              className={"seg-btn" + (goal === "target" ? " active" : "")}
-              onClick={() => setGoal("target")}
-            >
-              Cheapest to reach a target
-            </button>
-          </div>
+          <SegmentedControl
+            label="Goal"
+            value={goal}
+            onChange={setGoal}
+            options={[
+              { value: "budget", label: "Most reliable within a budget" },
+              { value: "target", label: "Cheapest to reach a target" },
+            ]}
+          />
         </div>
         {goal === "budget" ? (
           <label className="calc-t">
@@ -384,7 +378,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
                     <td>
                       <button
                         type="button"
-                        className="link-btn"
+                        className="link"
                         disabled={off || r.types.length >= MAX_TYPES}
                         onClick={() => {
                           update(n.id, {
@@ -402,7 +396,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
                       <td className="rbd-design-block">
                         <span className="rbd-design-type-name">
                           <input value={ty.name} disabled={off} onChange={(e) => updateType(n.id, i, { name: e.target.value })} aria-label="Type name" />
-                          <button type="button" className="link-btn" disabled={off} onClick={() => setModelFor({ id: n.id, index: i })}>
+                          <button type="button" className="link" disabled={off} onClick={() => setModelFor({ id: n.id, index: i })}>
                             {ty.model ? modelSummary(ty.model) : "Set life model"}
                           </button>
                         </span>
@@ -418,7 +412,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild }) {
                       <td colSpan={3} className="rbd-design-type-note">alternative type</td>
                       <td>
                         <button
-                          type="button" className="link-btn" disabled={off}
+                          type="button" className="link" disabled={off}
                           onClick={() => update(n.id, { types: r.types.filter((_, j) => j !== i) })}
                         >
                           Remove
@@ -588,7 +582,7 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
             : "Selected from the trade-off curve"}
         </div>
         {picked != null && (
-          <button type="button" className="link-btn" onClick={() => onPick(null)}>
+          <button type="button" className="link" onClick={() => onPick(null)}>
             Back to the {result.mode === "target" ? "cheapest" : "best"} design
           </button>
         )}

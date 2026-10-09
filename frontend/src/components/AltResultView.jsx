@@ -4,6 +4,7 @@ import { COLORWAY, DATA_INK, GRID, INK, fitLine } from "../plotTheme.js";
 import AltCalculator from "./AltCalculator.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import { stressName } from "./stressName.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 const fmt = (v, d = 4) =>
   v === null || v === undefined || !Number.isFinite(v)
@@ -105,12 +106,13 @@ export default function AltResultView({ results, modelId }) {
       {(r.unit_warnings || []).map((w) => (
         <div className="detail-note warn" key={w}>⚠ {w}</div>
       ))}
-      <div className="seg" style={{ alignSelf: "flex-start" }}>
-        {TABS.map((t) => (
-          <button key={t.id} className={"seg-btn" + (tab === t.id ? " active" : "")}
-                  onClick={() => setTab(t.id)}>{t.label}</button>
-        ))}
-      </div>
+      <SegmentedControl
+        label="View"
+        value={tab}
+        onChange={setTab}
+        style={{ alignSelf: "flex-start" }}
+        options={TABS.map((t) => ({ value: t.id, label: t.label }))}
+      />
 
       {tab === "plot" && (
         <div className="alt-plot-wrap">

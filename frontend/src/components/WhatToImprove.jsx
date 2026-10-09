@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { getRbdJob, rbdSensitivity } from "../api.js";
 import MethodTag from "./MethodTag.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // "What to improve" on a repairable diagram's availability results (#225):
 // every lever RePyability exposes (a block's mean life and repair time, its
@@ -194,48 +195,55 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
       </p>
 
       <div className="rbd-improve-controls">
-        <div className="seg" role="group" aria-label="Step">
-          {STEPS.map((s) => (
-            <button key={s} type="button" className={"seg-btn" + (step === s ? " active" : "")}
-                    onClick={() => setStep(s)} title={`Move each lever ${Math.round(s * 100)}%`}>
-              {Math.round(s * 100)}%
-            </button>
-          ))}
-        </div>
-        <div className="seg" role="group" aria-label="Over">
-          <button type="button" className={"seg-btn" + (over === "long_run" ? " active" : "")}
-                  onClick={() => setOver("long_run")} title="Rank by the long-run (steady-state) availability">
-            Long run
-          </button>
-          <button type="button" className={"seg-btn" + (over === "window" ? " active" : "")}
-                  disabled={!windowLen} onClick={() => { setOver("window"); setRankBy("availability"); }}
-                  title="Rank by the mean availability over the results' window, from new (runs on the calculation service)">
-            Window
-          </button>
-        </div>
+        <SegmentedControl
+          label="Step"
+          size="sm"
+          value={step}
+          onChange={setStep}
+          options={STEPS.map((s) => ({ value: s, label: `${Math.round(s * 100)}%`, title: `Move each lever ${Math.round(s * 100)}%` }))}
+        />
+        <SegmentedControl
+          label="Over"
+          size="sm"
+          value={over}
+          onChange={(v) => {
+            setOver(v);
+            if (v === "window") setRankBy("availability");
+          }}
+          options={[
+            { value: "long_run", label: "Long run", title: "Rank by the long-run (steady-state) availability" },
+            { value: "window", label: "Window", disabled: !windowLen,
+              title: "Rank by the mean availability over the results' window, from new (runs on the calculation service)" },
+          ]}
+        />
         {over === "long_run" && (priced || rankBy === "cost") && (
-          <div className="seg" role="group" aria-label="Rank by">
-            <button type="button" className={"seg-btn" + (rankBy === "availability" ? " active" : "")}
-                    onClick={() => setRankBy("availability")}>Availability</button>
-            <button type="button" className={"seg-btn" + (rankBy === "cost" ? " active" : "")}
-                    onClick={() => setRankBy("cost")} title="Rank by the running cost saved per unit time">Cost</button>
-          </div>
+          <SegmentedControl
+            label="Rank by"
+            size="sm"
+            value={rankBy}
+            onChange={setRankBy}
+            options={[
+              { value: "availability", label: "Availability" },
+              { value: "cost", label: "Cost", title: "Rank by the running cost saved per unit time" },
+            ]}
+          />
         )}
         {(editCosts || hasSentCosts) && rows.length > 0 && (
-          <div className="seg" role="group" aria-label="Order">
-            <button type="button" className={"seg-btn" + (order === "benefit" ? " active" : "")}
-                    onClick={() => setOrder("benefit")}
-                    title="Rank by the step's benefit alone, whether or not a lever has a cost">Benefit</button>
-            <button type="button" className={"seg-btn" + (order === "benefit_per_cost" ? " active" : "")}
-                    disabled={!hasSentCosts && !hasTypedCosts}
-                    onClick={() => {
-                      if (costChanged) setSentCosts(costs);
-                      setOrder("benefit_per_cost");
-                    }}
-                    title="The levers with a cost to change first, by benefit per unit spent; then the rest by benefit">
-              Benefit per cost
-            </button>
-          </div>
+          <SegmentedControl
+            label="Order"
+            size="sm"
+            value={order}
+            onChange={(v) => {
+              if (v === "benefit_per_cost" && costChanged) setSentCosts(costs);
+              setOrder(v);
+            }}
+            options={[
+              { value: "benefit", label: "Benefit",
+                title: "Rank by the step's benefit alone, whether or not a lever has a cost" },
+              { value: "benefit_per_cost", label: "Benefit per cost", disabled: !hasSentCosts && !hasTypedCosts,
+                title: "The levers with a cost to change first, by benefit per unit spent; then the rest by benefit" },
+            ]}
+          />
         )}
         {rows.length > 0 && (
           <button type="button" className="secondary" onClick={() => setEditCosts((v) => !v)}>

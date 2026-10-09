@@ -3,6 +3,7 @@ import DemoTestResult from "./DemoTestResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { demonstrationTest } from "../api.js";
 import { unitInText } from "./unitText.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 const num = (s) => (s === "" || s == null ? null : Number(s));
 const frac = (s) => (s === "" || s == null ? null : Number(s) / 100);
@@ -93,23 +94,27 @@ export default function DemonstrationTest() {
     <div className="strategy-tool">
       <div className="strategy-form">
         <div className="demo-toggles">
-          <div className="seg" role="group" aria-label="Test type">
-            <button className={"seg-btn" + (attribute ? " active" : "")} onClick={() => setMethod("attribute")}>
-              Pass/fail (reliability)
-            </button>
-            <button className={"seg-btn" + (!attribute ? " active" : "")} onClick={() => setMethod("mtbf")}>
-              MTBF (constant rate)
-            </button>
-          </div>
+          <SegmentedControl
+            label="Test type"
+            showLabel
+            value={attribute ? "attribute" : "mtbf"}
+            onChange={setMethod}
+            options={[
+              { value: "attribute", label: "Pass/fail (reliability)" },
+              { value: "mtbf", label: "MTBF (constant rate)" },
+            ]}
+          />
           {attribute && (
-            <div className="seg" role="group" aria-label="Solve for">
-              <button className={"seg-btn" + (!byTime ? " active" : "")} onClick={() => setSolveFor("units")}>
-                Units to test
-              </button>
-              <button className={"seg-btn" + (byTime ? " active" : "")} onClick={() => setSolveFor("test_time")}>
-                Test time per unit
-              </button>
-            </div>
+            <SegmentedControl
+              label="Solve for"
+              showLabel
+              value={byTime ? "test_time" : "units"}
+              onChange={setSolveFor}
+              options={[
+                { value: "units", label: "Units to test" },
+                { value: "test_time", label: "Test time per unit" },
+              ]}
+            />
           )}
         </div>
 
