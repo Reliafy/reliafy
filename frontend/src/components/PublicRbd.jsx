@@ -47,7 +47,7 @@ function Canvas({ graph }) {
       minZoom={0.2}
       proOptions={{ hideAttribution: true }}
     >
-      <Background gap={22} color="#e8e7e2" />
+      <Background gap={22} />
       <Controls showInteractive={false} />
     </ReactFlow>
   );

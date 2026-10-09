@@ -103,7 +103,7 @@
   border: none;
 }
 .ft-canvas .ft-edge .react-flow__edge-path {
-  stroke: #9aa0a8;
+  stroke: var(--faint);
   stroke-width: 1.4;
 }
 
@@ -132,7 +132,7 @@
   padding: 0.45rem 0.6rem;
 }
 .ft-gate .ft-box {
-  border-color: #c7d2fe;
+  border-color: var(--acc-line);
 }
 .ft-gate:hover .ft-box {
   border-color: var(--acc);
@@ -143,8 +143,8 @@
   color: var(--on-fill);
 }
 .ft-box-ccf {
-  border-color: #f3c29a;
-  background: #fff8f1;
+  border-color: var(--cat-amber-line);
+  background: var(--cat-amber-t);
 }
 
 .ft-box-title {
@@ -198,8 +198,8 @@
   font-size: var(--fs-12);
   font-weight: 600;
   color: var(--ink);
-  background: #f5f3ff;
-  border: 1px solid #c4b5fd;
+  background: var(--cat-violet-t);
+  border: 1px solid var(--cat-violet-line);
   border-radius: var(--r-sm);
   padding: 0 5px;
   line-height: 14px;
@@ -213,21 +213,21 @@
 .ft-stem {
   width: 1.4px;
   height: 8px;
-  background: #9aa0a8;
+  background: var(--faint);
 }
 
 .ft-symbol path {
-  fill: #eef2ff;
-  stroke: #4338ca;
+  fill: var(--acc-t);
+  stroke: var(--acc);
   stroke-width: 1.6;
 }
 .ft-symbol-and path {
-  fill: #f0fdfa;
-  stroke: #0f766e;
+  fill: var(--cat-teal-t);
+  stroke: var(--cat-teal);
 }
 .ft-symbol-vote path {
-  fill: #f5f3ff;
-  stroke: #6d28d9;
+  fill: var(--cat-violet-t);
+  stroke: var(--cat-violet);
 }
 .ft-symbol text {
   font-family: var(--mono);
@@ -253,8 +253,8 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  border: 1.6px solid #0f766e;
-  background: #f0fdfa;
+  border: 1.6px solid var(--cat-teal);
+  background: var(--cat-teal-t);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -263,8 +263,8 @@
   color: var(--warn);
 }
 .ft-circle-ccf {
-  border-color: #d0762f;
-  background: #fff8f1;
+  border-color: var(--cat-amber);
+  background: var(--cat-amber-t);
 }
 /* The shared cause of a common-cause group, in the cut sets and summary (#229). */
 .ft-cc-badge {
@@ -272,8 +272,8 @@
   font-size: var(--fs-12);
   font-weight: 600;
   color: var(--warn);
-  background: #fff8f1;
-  border: 1px solid #d0762f;
+  background: var(--cat-amber-t);
+  border: 1px solid var(--cat-amber);
   border-radius: var(--r-sm);
   padding: 0 5px;
   margin-right: 5px;
@@ -310,7 +310,7 @@
 .ft-more-node {
   width: 184px;
   box-sizing: border-box;
-  border: 1px dashed #c7d2fe;
+  border: 1px dashed var(--acc-line);
   border-radius: var(--r-sm);
   background: var(--acc-t);
   color: var(--acc-d);
