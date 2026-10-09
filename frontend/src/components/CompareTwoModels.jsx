@@ -1,12 +1,11 @@
 import Select from "./Select.jsx";
 import { useRef, useState } from "react";
 import ModelPicker from "./ModelPicker.jsx";
-import CompareResult from "./CompareResult.jsx";
+import CompareResult, { COLORS } from "./CompareResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { getColumns, compareTwoModels, SPREADSHEET_ACCEPT } from "../api.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 
-const COLORS = { a: "#0284c7", b: "#db2777" };
 
 const fmt = (v) =>
   v == null
@@ -62,7 +61,7 @@ function SideEditor({ tag, side, onChange }) {
 
   return (
     <div className="compare-side">
-      <div className="compare-side-head" style={{ color: COLORS[tag] }}>
+      <div className="compare-side-head">
         <span className="combo-dot" style={{ background: COLORS[tag] }} />
         <input
           className="compare-label"

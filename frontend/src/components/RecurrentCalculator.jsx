@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
+import { fitLine, pointMarker, referenceShape } from "../plotTheme.js";
 
 // Recurrent-event calculator: read off the repairable-system functions at a
 // chosen time — expected cumulative failures N(t), the rate of occurrence of
@@ -29,7 +30,7 @@ function interp(x, y, xq) {
   return null;
 }
 
-export default function RecurrentCalculator({ r }) {
+export default function RecurrentCalculator({ r, name = null }) {
   const unit = r.unit || "";
   const tLabel = unit ? `t (${unit})` : "t";
   const fitted = r.mcf?.fitted || {};
@@ -68,22 +69,17 @@ export default function RecurrentCalculator({ r }) {
   const windowN = nFrom != null ? (() => { const a = mcfAt(nFrom), b = mcfAt(nt); return a != null && b != null ? b - a : null; })() : null;
 
   const yv = valAt(active, nt);
-  const traces = [
-    { x: gx, y: gy, mode: "lines", type: "scatter", line: { color: "#2f6df6", width: 2 }, name: active, connectgaps: false },
-  ];
+  const traces = [fitLine({ x: gx, y: gy, name: active, connectgaps: false })];
   if (yv != null && Number.isFinite(yv)) {
-    traces.push({ x: [nt], y: [yv], mode: "markers", type: "scatter",
-      marker: { color: "#2f6df6", size: 8, line: { color: "#fff", width: 1 } }, showlegend: false, hoverinfo: "y" });
+    traces.push({ ...pointMarker(), x: [nt], y: [yv] });
   }
   const yTitle = FUNCS.find((f) => f.id === active)?.y || active;
   const layout = {
-    autosize: true, height: 420, margin: { l: 64, r: 20, t: 20, b: 46 },
-    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-    font: { color: "#6c727c", family: "IBM Plex Mono, monospace", size: 11 },
+    height: 420,
     showlegend: false,
-    xaxis: { title: { text: tLabel, standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false, rangemode: "tozero" },
-    yaxis: { title: { text: yTitle + (unit && active !== "N" && active !== "rocof" ? ` (${unit})` : ""), standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false, rangemode: "tozero" },
-    shapes: [{ type: "line", x0: nt, x1: nt, yref: "paper", y0: 0, y1: 1, line: { color: "#94a3b8", width: 1, dash: "dot" } }],
+    xaxis: { title: { text: tLabel }, rangemode: "tozero" },
+    yaxis: { title: { text: yTitle + (unit && active !== "N" && active !== "rocof" ? ` (${unit})` : "") }, rangemode: "tozero" },
+    shapes: [referenceShape({ x: nt, line: { dash: "dot" } })],
   };
 
   return (
@@ -106,7 +102,7 @@ export default function RecurrentCalculator({ r }) {
               {analytic ? "" : " (interpolated)"}.
             </p>
           )}
-          <Plot data={traces} layout={layout} config={{ displayModeBar: true, responsive: true }} style={{ width: "100%" }} useResizeHandler />
+          <Plot data={traces} layout={layout} download={`${name || "Recurrent model"} — ${yTitle}`} />
         </div>
 
         <div className="calc-side-rail">

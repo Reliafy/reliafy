@@ -6,6 +6,7 @@
 // fitted from the same log, ready to put on the blocks.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
+import { ACCENT, GRID } from "../plotTheme.js";
 import Select from "./Select.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
@@ -335,7 +336,7 @@ function TimelineChart({ history, labels }) {
       name: "System",
       x: history.series.t.map(toX),
       y: history.series.up,
-      line: { shape: "hv", color: "#2f6df6", width: 2 },
+      line: { shape: "hv", color: ACCENT, width: 2 },
       hovertemplate: "%{y:.0f}<extra>System up (1) / down (0)</extra>",
       xaxis: "x",
       yaxis: "y2",
@@ -352,43 +353,34 @@ function TimelineChart({ history, labels }) {
       <Plot
         data={data}
         layout={{
-          autosize: true,
           height,
           margin: { l: 20, r: 12, t: 28, b: 36 },
-          paper_bgcolor: "rgba(0,0,0,0)",
-          plot_bgcolor: "rgba(0,0,0,0)",
           barmode: "overlay",
           bargap: 0.3,
           showlegend: true,
-          legend: { orientation: "h", x: 0, y: 1.0, yanchor: "bottom", font: { size: 11 } },
           xaxis: {
             type: dated ? "date" : "linear",
-            title: dated ? undefined : `Time (${unit || "diagram unit"})`,
+            title: dated ? undefined : { text: `Time (${unit || "diagram unit"})` },
             range: [toX(w0), toX(history.window.end)],
-            gridcolor: "#eef1f5",
-            zeroline: false,
+            // A timeline: the time grid helps read when; the rows need none.
+            showgrid: true,
+            gridcolor: GRID,
           },
           yaxis: {
             domain: [0, rows > 0 ? 0.74 : 0],
             categoryorder: "array",
             categoryarray: order.map((id) => labels[id] || id),
-            automargin: true,
-            gridcolor: "#f4f5f7",
+            showgrid: false,
           },
           yaxis2: {
             domain: [0.8, 1],
-            automargin: true,
             range: [-0.15, 1.15],
             tickvals: [0, 1],
             ticktext: ["Down", "Up"],
-            gridcolor: "#f4f5f7",
-            zeroline: false,
-            title: { text: "System", font: { size: 11 } },
+            showgrid: false,
+            title: { text: "System" },
           },
         }}
-        useResizeHandler
-        style={{ width: "100%" }}
-        config={{ displayModeBar: false, responsive: true }}
       />
     </div>
   );

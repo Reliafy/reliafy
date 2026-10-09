@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
+import { COLORWAY, DATA_INK, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
 import { analyzeRbd, getActiveRbdJob, getRbdJob } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
@@ -44,7 +45,8 @@ const FUNCS = [
   { id: "sf", label: "Reliability, R(t)" },
   { id: "ff", label: "Unreliability, F(t)" },
 ];
-const NODE_COLORS = ["#0284c7", "#16a34a", "#db2777", "#d97706", "#7c3aed", "#0891b2"];
+// The system is the accent; its blocks take the next series colours.
+const NODE_COLORS = COLORWAY.slice(1);
 
 
 // "4,200" — a life to four significant figures, with thousands separators.
@@ -109,7 +111,7 @@ function AsOfNote({ result, idToLabel }) {
 // Reliability results (non-repairable RBD): headline MTTF / B-lives, the
 // system + per-node R(t)/F(t) curves, importance measures, and the structural
 // path/cut sets. Also used by the public read-only view.
-export function Results({ result, t, tMax, conditionalAge = 0 }) {
+export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
   const x = result.time;
   const [active, setActive] = useState("sf");
   const unit = result.unit;
@@ -146,18 +148,10 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
           : { lower: 1 - interp(x, band.sf_upper, Number(t)), upper: 1 - interp(x, band.sf_lower, Number(t)) })
       : null;
 
-  // System curve (bold) plus a faint curve per node.
+  // System curve plus a faint dotted curve per node.
   const traces = [
     ...bandTraces(band, x, active),
-    {
-      x,
-      y: sysY,
-      mode: "lines",
-      line: { color: "#0f172a", width: 3 },
-      name: "System",
-      type: "scatter",
-      connectgaps: false,
-    },
+    fitLine({ x, y: sysY, line: { width: 2.5 }, name: "System", connectgaps: false }),
   ];
   (result.nodes || []).forEach((n, i) => {
     const y = active === "sf" ? n.sf : n.sf.map((v) => (v == null ? null : 1 - v));
@@ -165,64 +159,27 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
       x,
       y,
       mode: "lines",
-      line: { color: NODE_COLORS[i % NODE_COLORS.length], width: 1.25, dash: "dot" },
+      // Past the series colours, blocks are plain ink (colours aren't reused).
+      line: { color: NODE_COLORS[i] || DATA_INK, width: 1.25, dash: "dot" },
       name: n.label,
       type: "scatter",
       connectgaps: false,
-      opacity: 0.7,
+      opacity: 0.8,
     });
   });
   if (sysAtT != null) {
-    traces.push({
-      x: [Number(t)],
-      y: [sysAtT],
-      mode: "markers",
-      marker: { color: "#0f172a", size: 9, line: { color: "#fff", width: 1 } },
-      type: "scatter",
-      showlegend: false,
-      hoverinfo: "y",
-    });
+    traces.push({ ...pointMarker(), x: [Number(t)], y: [sysAtT] });
   }
 
   const layout = {
-    autosize: true,
     height: 440,
-    margin: { l: 64, r: 20, t: 20, b: 70 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "#ffffff",
-    font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
     showlegend: true,
-    legend: { orientation: "h", y: -0.18 },
     xaxis: {
-      title: { text: tLabel, standoff: 12 },
-      automargin: true,
-      gridcolor: "#e2e8f0",
-      linecolor: "#cbd5e1",
+      title: { text: tLabel },
       range: [0, tMax != null ? Number(tMax) : x[x.length - 1]],
-      zeroline: false,
     },
-    yaxis: {
-      title: { text: activeLabel, standoff: 12 },
-      automargin: true,
-      gridcolor: "#e2e8f0",
-      linecolor: "#cbd5e1",
-      range: [0, 1.02],
-      zeroline: false,
-    },
-    shapes:
-      t == null
-        ? []
-        : [
-            {
-              type: "line",
-              x0: Number(t),
-              x1: Number(t),
-              yref: "paper",
-              y0: 0,
-              y1: 1,
-              line: { color: "#94a3b8", width: 1, dash: "dot" },
-            },
-          ],
+    yaxis: { title: { text: activeLabel }, range: [0, 1.02] },
+    shapes: t == null ? [] : [referenceShape({ x: Number(t), line: { dash: "dot" } })],
   };
 
   const importance = result.importance || {};
@@ -303,13 +260,7 @@ export function Results({ result, t, tMax, conditionalAge = 0 }) {
         </div>
       </div>
 
-      <Plot
-        data={traces}
-        layout={layout}
-        config={{ displayModeBar: true, responsive: true }}
-        style={{ width: "100%" }}
-        useResizeHandler
-      />
+      <Plot data={traces} layout={layout} download={`${name || "System"} — ${activeLabel}`} />
       <BandNote band={band} />
 
       {impNodes.length > 0 && (
@@ -469,9 +420,21 @@ function DowntimeBars({ rows, title, note }) {
   );
 }
 
+// A y-range fitted to the availability curves themselves (#308): from zero
+// they read as a flat line at the top. A simulation's confidence band is left
+// to run off the bottom rather than set the scale.
+function availabilityRange(...curves) {
+  const v = curves.flat().filter((y) => y != null && Number.isFinite(y));
+  if (!v.length) return undefined;
+  const lo = Math.min(...v);
+  const hi = Math.max(...v);
+  const pad = Math.max((hi - lo) * 0.12, 1e-5);
+  return [Math.max(0, lo - pad), Math.min(1, hi) + pad];
+}
+
 // The exact figures over time (#154), from new or from the current state
 // (#155): the window's figures, each labelled with its method, and A(t).
-function ExactSection({ exact, steady, unit, onCompute, computing }) {
+function ExactSection({ exact, steady, unit, onCompute, computing, sim = null }) {
   const u = unit ? ` ${unitInText(unit)}` : "";
   const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(3)}%`);
   if (!exact) return null;
@@ -500,19 +463,23 @@ function ExactSection({ exact, steady, unit, onCompute, computing }) {
   const fromNow = exact.from === "now";
   const span = `${fmtTime(exact.window)}${u}`;
   const c = exact.curve || {};
+  // With a simulation over the same window, one chart carries both: the exact
+  // A(t) is the answer (accent), the simulated one the check (ink, with its band).
+  // (The simulation's band is left off here: next to the exact curve it is noise.)
   const traces = [
-    {
-      x: c.t, y: c.availability, mode: "lines", type: "scatter",
-      line: { color: "#2f6df6", width: 2 }, name: "A(t)",
-      hovertemplate: `t = %{x:.4g}${u}<br>A(t) = %{y:.5f}<extra></extra>`,
-    },
+    ...(sim
+      ? [{
+          x: sim.curve.t, y: sim.curve.availability, mode: "lines", type: "scatter",
+          line: { color: "rgba(20, 23, 28, 0.35)", width: 1 }, name: "Simulated",
+          hovertemplate: `t = %{x:,.4~g}${u}<br>Simulated A(t) = %{y:.5f}<extra></extra>`,
+        }]
+      : []),
+    fitLine({
+      x: c.t, y: c.availability, name: sim ? "Exact" : "A(t)",
+      hovertemplate: `t = %{x:,.4~g}${u}<br>A(t) = %{y:.5f}<extra></extra>`,
+    }),
   ];
-  const shapes = steady != null && c.t?.length
-    ? [{
-        type: "line", xref: "x", yref: "y", x0: c.t[0], x1: c.t[c.t.length - 1], y0: steady, y1: steady,
-        line: { color: "#94a3b8", width: 1, dash: "dash" },
-      }]
-    : [];
+  const shapes = steady != null && c.t?.length ? [referenceShape({ y: steady })] : [];
   const routes = Object.entries(exact.routes || {});
   return (
     <div className="rbd-exact">
@@ -554,13 +521,15 @@ function ExactSection({ exact, steady, unit, onCompute, computing }) {
         <Plot
           data={traces}
           layout={{
-            autosize: true, height: 280, margin: { l: 56, r: 16, t: 12, b: 44 },
-            paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-            xaxis: { title: unit ? `Time ${fromNow ? "from now" : "from new"} (${unit})` : "Time", gridcolor: "#eef1f5", zeroline: false },
-            yaxis: { title: "Availability A(t)", gridcolor: "#eef1f5", rangemode: fromNow ? "tozero" : "normal" },
-            shapes, showlegend: false,
+            height: sim ? 320 : 280,
+            xaxis: { title: { text: unit ? `Time ${fromNow ? "from now" : "from new"} (${unit})` : "Time" } },
+            // Auto-scaled: availability moves in the third decimal place.
+            yaxis: {
+              title: { text: "Availability A(t)" }, tickformat: ".4~%",
+              range: availabilityRange(c.availability, sim ? sim.curve.availability : [], steady != null ? [steady] : []),
+            },
+            shapes, showlegend: !!sim,
           }}
-          useResizeHandler style={{ width: "100%" }} config={{ displayModeBar: false, responsive: true }}
         />
       )}
       <DowntimeBars
@@ -573,7 +542,8 @@ function ExactSection({ exact, steady, unit, onCompute, computing }) {
       />
       <p className="muted-line" style={{ margin: 0 }}>
         Computed {fromNow ? "from the blocks' states now" : "with every block new at the start"}, with no
-        simulation{steady != null ? "; the dashed line is the long-run availability" : ""}.
+        simulation{steady != null ? "; the dashed line is the long-run availability" : ""}
+        {sim ? ". The grey line is the simulation's estimate over the same window" : ""}.
         {exact.cost_note ? ` No exact cost: ${exact.cost_note}` : ""}
       </p>
       {routes.length > 0 && (
@@ -698,19 +668,8 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
   const curveTraces = !curve
     ? []
     : [
-        ...(hasBand
-          ? [
-              { x: curve.t, y: curve.lower, mode: "lines", type: "scatter", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
-              {
-                x: curve.t, y: curve.upper, mode: "lines", type: "scatter", line: { width: 0 },
-                fill: "tonexty", fillcolor: "rgba(47, 109, 246, 0.15)", hoverinfo: "skip", showlegend: false,
-              },
-            ]
-          : []),
-        { x: curve.t, y: curve.availability, mode: "lines", type: "scatter", line: { color: "#2f6df6", width: 2 }, name: "Simulated" },
-        ...(sameWindow
-          ? [{ x: exact.curve.t, y: exact.curve.availability, mode: "lines", type: "scatter", line: { color: "#0f172a", width: 1, dash: "dot" }, name: "Exact" }]
-          : []),
+        ...(hasBand ? bandPair(curve.t, curve.lower, curve.upper) : []),
+        fitLine({ x: curve.t, y: curve.availability, name: "Simulated" }),
       ];
   const blocks = importanceRows(result);
   // The simulation's columns only when it ran.
@@ -769,6 +728,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         unit={unit}
         onCompute={onCompute}
         computing={busy === "exact"}
+        sim={sameWindow ? { curve } : null}
       />
       {exactOk && result.proof_test_note && <p className="muted-line">{result.proof_test_note}</p>}
 
@@ -822,17 +782,17 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           </div>
           <RbdNextFailure result={result} unit={unit} />
           {exactOk && <DowntimeBars rows={simPer} title="Simulated share of downtime" />}
-          {curve && curve.t?.length > 1 && (
+          {/* Over the exact window the simulated curve is drawn on the exact chart above. */}
+          {curve && curve.t?.length > 1 && !sameWindow && (
             <Plot
               data={curveTraces}
               layout={{
-                autosize: true, height: 300, margin: { l: 56, r: 16, t: 16, b: 44 },
-                paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-                xaxis: { title: unit ? `Time (${unit})` : "Time", gridcolor: "#eef1f5", zeroline: false },
-                yaxis: { title: "Availability", gridcolor: "#eef1f5", rangemode: "tozero" },
-                showlegend: sameWindow, legend: { orientation: "h", y: -0.25 },
+                height: 300,
+                xaxis: { title: { text: unit ? `Time (${unit})` : "Time" } },
+                // Auto-scaled, not from zero: availability moves in the third decimal place.
+                yaxis: { title: { text: "Availability" }, tickformat: ".4~%", range: availabilityRange(curve.availability) },
+                showlegend: false,
               }}
-              useResizeHandler style={{ width: "100%" }} config={{ displayModeBar: false, responsive: true }}
             />
           )}
           <p className="muted-line" style={{ margin: 0 }}>
@@ -841,8 +801,8 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
             replications{result.precision?.antithetic ? " (in antithetic pairs)" : ""}
             {result.quick && result.time_budget_s ? `, a quick run of at most ${fmt3(result.time_budget_s)} s,` : ""}{" "}
             over {fmt(result.t_simulation)}{u}
-            {hasBand ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}
-            {sameWindow ? "; the dotted line is the exact A(t)" : ""}.
+            {hasBand && !sameWindow ? `, with a ${Math.round((curve.confidence || 0.95) * 100)}% confidence band` : ""}
+            {sameWindow ? "; it is drawn with the exact A(t) above" : ""}.
             {precisionNote(result)}
             {result.horizon_shortened && " The window was shortened to keep the simulation quick; the long-run figures don't depend on it."}
             {basis.mean_up_time === "exact" && " Mean up/down time and failure frequency are exact steady-state values."}
@@ -994,7 +954,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
   );
 }
 
-export default function RbdCalculator({ graph, validation, stale, rbdId = null, onBuild }) {
+export default function RbdCalculator({ graph, validation, stale, rbdId = null, name = null, onBuild }) {
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | calculating | error
   const [error, setError] = useState(null);
@@ -1542,6 +1502,7 @@ export default function RbdCalculator({ graph, validation, stale, rbdId = null, 
           t={evalT === "" ? null : Number(evalT)}
           tMax={tSent}
           conditionalAge={result.conditional_age || 0}
+          name={name}
         />
       )}
 

@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import Plot from "./Plot.jsx";
+import { COLORWAY, DANGER, DATA_INK, bandPair, dataPoints, fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
 import { degradationReliability } from "../api.js";
 import { unitInText } from "./unitText.js";
 
-// Instrument-ish categorical palette for per-item traces.
-const COLORS = [
-  "#2f6df6", "#e58e26", "#2faa6a", "#a15af0", "#d05a5a",
-  "#22a6b3", "#b8860b", "#6c727c", "#e056a5", "#4a69bd",
-];
+// Per-item colours: the theme's series colours while each item can have its
+// own; past that, every item is plain ink (colours are never reused).
+const COLORS = COLORWAY;
 
 const fmt = (v, digits = 1) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -30,64 +29,38 @@ function crossing(x, y, level) {
 // Population survival curve + shaded two-stage confidence band, as plotly data.
 function buildRelTraces(curves, xTitle, rel, pointLife, designLife) {
   const data = [];
-  const hasBand = curves.lower && curves.upper;
-  if (hasBand) {
-    data.push({
-      x: curves.x, y: curves.upper, mode: "lines", type: "scatter",
-      line: { width: 0 }, hoverinfo: "skip", showlegend: false,
-    });
-    data.push({
-      x: curves.x, y: curves.lower, mode: "lines", type: "scatter",
-      line: { width: 0 }, fill: "tonexty", fillcolor: "rgba(47,109,246,0.14)",
-      name: "confidence band", hoverinfo: "skip",
-    });
+  if (curves.lower && curves.upper) {
+    data.push(...bandPair(curves.x, curves.lower, curves.upper, { name: "Confidence band" }));
   }
-  data.push({
-    x: curves.x, y: curves.sf, mode: "lines", type: "scatter",
-    line: { color: "#2f6df6", width: 2 }, name: "reliability",
-  });
+  data.push(fitLine({ x: curves.x, y: curves.sf, name: "Reliability" }));
   const layout = {
-    autosize: true,
     height: 340,
-    margin: { l: 60, r: 20, t: 20, b: 50 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "#ffffff",
-    font: { color: "#6c727c", family: "IBM Plex Mono, monospace", size: 11 },
     showlegend: false,
-    xaxis: { title: { text: xTitle, standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false },
-    yaxis: { title: { text: "Reliability", standoff: 12 }, range: [0, 1.02], automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false },
+    xaxis: { title: { text: xTitle } },
+    yaxis: { title: { text: "Reliability" }, range: [0, 1.02] },
     shapes: [],
     annotations: [],
   };
   if (rel != null && Number.isFinite(rel)) {
-    layout.shapes.push({
-      type: "line", xref: "paper", x0: 0, x1: 1, y0: rel, y1: rel,
-      line: { color: "#6c727c", width: 1, dash: "dot" },
-    });
+    layout.shapes.push(referenceShape({ y: rel, line: { dash: "dot" } }));
     layout.annotations.push({
       xref: "paper", x: 0, y: rel, xanchor: "left", yanchor: "bottom",
       text: `R = ${(rel * 100).toFixed(0)}%`, showarrow: false,
-      font: { color: "#6c727c", size: 10 },
     });
   }
   // Design-life marker (conservative lower bound) and point-estimate tick.
   if (designLife != null && Number.isFinite(designLife)) {
-    layout.shapes.push({
-      type: "line", x0: designLife, x1: designLife, yref: "paper", y0: 0, y1: rel ?? 1,
-      line: { color: "#2f6df6", width: 1.4, dash: "dash" },
-    });
-    data.push({
-      x: [designLife], y: [rel], mode: "markers", type: "scatter",
-      marker: { color: "#2f6df6", size: 9, symbol: "diamond" },
-      name: "design life", hoverinfo: "x",
-    });
+    layout.shapes.push(referenceShape({ x: designLife, y1: rel ?? 1, yref: "y", y0: 0 }));
+    data.push(optimumMarker({
+      x: [designLife], y: [rel], name: "Design life", text: ["Design life"],
+      textposition: "top right", hoverinfo: "x",
+    }));
   }
   if (pointLife != null && Number.isFinite(pointLife)) {
-    data.push({
-      x: [pointLife], y: [rel], mode: "markers", type: "scatter",
-      marker: { color: "#6c727c", size: 7, symbol: "circle-open" },
-      name: "point estimate", hoverinfo: "x",
-    });
+    data.push(dataPoints({
+      x: [pointLife], y: [rel], name: "Point estimate", hoverinfo: "x",
+      marker: { symbol: "circle-open", size: 8, line: { color: DATA_INK, width: 1.5 } },
+    }));
   }
   return { data, layout };
 }
@@ -96,45 +69,36 @@ function buildRelTraces(curves, xTitle, rel, pointLife, designLife) {
 // against the failure threshold, plus the derived life model and diagnostics.
 // `modelId` (saved models only) enables re-fetching the confidence band at a
 // different confidence level.
-export default function DegradationResultView({ results, modelId }) {
+export default function DegradationResultView({ results, modelId, name = null }) {
   const r = results || {};
   const units = r.units || [];
   const xTitle = r.unit ? `Time (${r.unit})` : "Time";
   const yTitle = r.measurement_unit ? `Measurement (${r.measurement_unit})` : "Measurement";
 
   const traces = [];
+  const coloured = units.length <= COLORS.length;
   units.forEach((u, idx) => {
-    const color = COLORS[idx % COLORS.length];
+    const color = coloured ? COLORS[idx] : DATA_INK;
     traces.push({
       x: u.line.x, y: u.line.y, mode: "lines", type: "scatter",
-      line: { color, width: 1.6 }, name: u.id, legendgroup: u.id,
+      line: { color, width: 1.5 }, opacity: coloured ? 1 : 0.6, name: u.id, legendgroup: u.id,
       hoverinfo: "skip", showlegend: false,
     });
-    traces.push({
-      x: u.scatter.x, y: u.scatter.y, mode: "markers", type: "scatter",
-      marker: { color, size: 6, line: { color: "#fff", width: 1 } },
-      name: u.id, legendgroup: u.id,
-    });
+    traces.push(dataPoints({
+      x: u.scatter.x, y: u.scatter.y, marker: { color }, name: u.id, legendgroup: u.id, showlegend: coloured,
+    }));
   });
 
   const layout = {
-    autosize: true,
     height: 440,
-    margin: { l: 60, r: 20, t: 20, b: 50 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "#ffffff",
-    font: { color: "#6c727c", family: "IBM Plex Mono, monospace", size: 11 },
-    legend: { orientation: "h", y: -0.18 },
-    xaxis: { title: { text: xTitle, standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false },
-    yaxis: { title: { text: yTitle, standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false },
-    shapes: [{
-      type: "line", xref: "paper", x0: 0, x1: 1, y0: r.threshold, y1: r.threshold,
-      line: { color: "#d05a5a", width: 1.6, dash: "dash" },
-    }],
+    xaxis: { title: { text: xTitle } },
+    yaxis: { title: { text: yTitle } },
+    // The failure threshold: red, it is where an item has failed.
+    shapes: [referenceShape({ y: r.threshold, line: { color: DANGER, width: 1.5 } })],
     annotations: [{
       xref: "paper", x: 1, y: r.threshold, xanchor: "right", yanchor: "bottom",
-      text: `threshold ${fmt(r.threshold)}${r.measurement_unit ? " " + r.measurement_unit : ""}`,
-      showarrow: false, font: { color: "#d05a5a", size: 11 },
+      text: `Threshold ${fmt(r.threshold)}${r.measurement_unit ? " " + r.measurement_unit : ""}`,
+      showarrow: false, font: { color: DANGER },
     }],
   };
 
@@ -187,7 +151,7 @@ export default function DegradationResultView({ results, modelId }) {
       </div>
 
       <div className="card" style={{ marginTop: "1rem" }}>
-        <Plot data={traces} layout={layout} config={{ displayModeBar: true, responsive: true }} style={{ width: "100%" }} useResizeHandler />
+        <Plot data={traces} layout={layout} download={`${name || "Degradation model"} — degradation paths`} />
       </div>
 
       {relTraces && (
@@ -240,9 +204,8 @@ export default function DegradationResultView({ results, modelId }) {
           </div>
 
           <Plot
-            data={relTraces.data} layout={relTraces.layout}
-            config={{ displayModeBar: true, responsive: true }}
-            style={{ width: "100%", marginTop: "0.6rem" }} useResizeHandler
+            data={relTraces.data} layout={relTraces.layout} style={{ marginTop: "0.6rem" }}
+            download={`${name || "Degradation model"} — reliability and design life`}
           />
         </div>
       )}

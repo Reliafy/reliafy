@@ -80,7 +80,7 @@ export default function ModelPage() {
       {error && <div className="card error">{error}</div>}
       {model && (
         <div className="card">
-          <ResultView result={model.results} hideHead modelId={model.id} />
+          <ResultView result={model.results} hideHead modelId={model.id} name={model.name} />
         </div>
       )}
       {editing && model && (

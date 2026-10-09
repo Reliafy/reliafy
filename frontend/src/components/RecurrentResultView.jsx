@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
+import { NEUTRAL_BAND_FILL, band, dataPoints, fitLine } from "../plotTheme.js";
 import RecurrentCalculator from "./RecurrentCalculator.jsx";
 import { unitInText } from "./unitText.js";
 
@@ -43,7 +44,7 @@ const TABS = [
 // a parameter side-rail) and a "Trend & fit" detail tab, and a growth verdict
 // footer. Handles both data fits and models built from parameters (no observed
 // step, trend tests, bounds or goodness of fit).
-export default function RecurrentResultView({ results }) {
+export default function RecurrentResultView({ results, name = null }) {
   const r = results || {};
   const [tab, setTab] = useState("mcf");
   const unit = r.unit ? ` ${unitInText(r.unit)}` : "";
@@ -61,35 +62,28 @@ export default function RecurrentResultView({ results }) {
 
   const traces = [];
   if (obs.lower && obs.upper) {
-    traces.push({
+    // The band is on the observed MCF, so it is neutral, like the steps.
+    traces.push(band({
       x: [...obs.x, ...[...obs.x].reverse()],
       y: [...obs.upper, ...[...obs.lower].reverse()],
-      fill: "toself", fillcolor: "rgba(108,114,124,0.12)", line: { width: 0 },
-      hoverinfo: "skip", name: "95% band", type: "scatter",
-    });
+      fillcolor: NEUTRAL_BAND_FILL, name: "95% band",
+    }));
   }
   if (obs.x?.length) {
-    traces.push({
-      x: obs.x, y: obs.mcf, mode: "lines+markers", type: "scatter",
-      line: { color: "#6c727c", width: 1.4, shape: "hv" },
-      marker: { color: "#6c727c", size: 5 }, name: "observed (MCF)",
-    });
+    traces.push(dataPoints({
+      x: obs.x, y: obs.mcf, mode: "lines+markers",
+      line: { color: "rgba(20, 23, 28, 0.7)", width: 1.25, shape: "hv" },
+      marker: { size: 5, line: { width: 0 } }, name: "Observed (MCF)",
+    }));
   }
   if (fit.x) {
-    traces.push({
-      x: fit.x, y: fit.mcf, mode: "lines", type: "scatter",
-      line: { color: "#2f6df6", width: 2 }, name: `${r.model?.name || "fitted"}`,
-    });
+    traces.push(fitLine({ x: fit.x, y: fit.mcf, name: `${r.model?.name || "Fitted"}` }));
   }
 
   const layout = {
-    autosize: true, height: 420,
-    margin: { l: 60, r: 20, t: 20, b: 50 },
-    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-    font: { color: "#6c727c", family: "IBM Plex Mono, monospace", size: 11 },
-    legend: { orientation: "h", y: -0.18 },
-    xaxis: { title: { text: xTitle, standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false, rangemode: "tozero" },
-    yaxis: { title: { text: "Cumulative failures (MCF)", standoff: 12 }, automargin: true, gridcolor: "#eceae4", linecolor: "#cdcbc3", zeroline: false, rangemode: "tozero" },
+    height: 420,
+    xaxis: { title: { text: xTitle }, rangemode: "tozero" },
+    yaxis: { title: { text: "Cumulative failures (MCF)" }, rangemode: "tozero" },
   };
 
   const anyCi = (r.params || []).some((p) => p.ci);
@@ -113,7 +107,7 @@ export default function RecurrentResultView({ results }) {
           <div className="detail-panel">
             <div className="plotwrap">
               <div className="plottitle">{r.model?.name || "Recurrent"} — mean cumulative function</div>
-              <Plot data={traces} layout={layout} config={{ displayModeBar: true, responsive: true }} style={{ width: "100%" }} useResizeHandler />
+              <Plot data={traces} layout={layout} download={`${name || r.model?.name || "Recurrent model"} — mean cumulative function`} />
             </div>
             <div className="aside">
               {(r.params || []).length > 0 && (
@@ -153,7 +147,7 @@ export default function RecurrentResultView({ results }) {
           </div>
         )}
 
-        {tab === "calc" && <RecurrentCalculator r={r} />}
+        {tab === "calc" && <RecurrentCalculator r={r} name={name} />}
 
         {tab === "detail" && (
           <div className="detail-panel" style={{ flexWrap: "wrap", alignItems: "flex-start" }}>

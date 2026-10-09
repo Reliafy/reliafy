@@ -66,7 +66,7 @@ export default function DegradationModelPage() {
         </div>
       </header>
 
-      <DegradationResultView results={model.results} modelId={model.id || id} />
+      <DegradationResultView results={model.results} modelId={model.id || id} name={model.name} />
 
       <p className="muted-line" style={{ marginTop: "1rem" }}>
         Monitor individual assets against this model under{" "}

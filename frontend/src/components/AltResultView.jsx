@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
+import { COLORWAY, DATA_INK, GRID, INK, fitLine } from "../plotTheme.js";
 import AltCalculator from "./AltCalculator.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import { stressName } from "./stressName.js";
@@ -11,8 +12,9 @@ const fmt = (v, d = 4) =>
 
 const ci = (pair) => (Array.isArray(pair) && pair.length === 2 ? `${fmt(pair[0])} – ${fmt(pair[1])}` : "—");
 
-// Palette for the per-secondary-stress series (two-stress models).
-const SERIES = ["#2f6df6", "#d0762f", "#2faa6a", "#a05ad0", "#d05a5a", "#0f9ab0"];
+// Per-secondary-stress series (two-stress models), and per-stress-level series
+// on the probability plot: the theme's series colours, in order.
+const SERIES = COLORWAY;
 
 // A fitted Accelerated Life model, laid out like the other result views: a
 // tabbed panel with the life-vs-stress plot (the ALT signature — characteristic
@@ -28,12 +30,12 @@ export default function AltResultView({ results, modelId }) {
   const traces = [];
   (plot.lines || []).forEach((ln, i) => {
     const color = SERIES[i % SERIES.length];
-    traces.push({
-      x: ln.stress, y: ln.life, mode: "lines", type: "scatter",
-      line: { color, width: 2 },
+    traces.push(fitLine({
+      x: ln.stress, y: ln.life,
+      line: { color },
       name: twoStress ? `${plot.secondary_label} = ${fmt(ln.secondary, 3)}` : "Fitted",
       legendgroup: `g${i}`,
-    });
+    }));
   });
   // Tested-level points, coloured to match their series.
   const secLevels = twoStress
@@ -43,8 +45,9 @@ export default function AltResultView({ results, modelId }) {
     const idx = twoStress ? Math.max(0, secLevels.indexOf(p.secondary)) : 0;
     traces.push({
       x: [p.stress], y: [p.life], mode: "markers", type: "scatter",
-      marker: { color: SERIES[idx % SERIES.length], size: 9, symbol: "diamond",
-                line: { color: "#fff", width: 1 } },
+      // One stress: tested levels are observed data (ink); two: their series' colour.
+      marker: { color: twoStress ? SERIES[idx % SERIES.length] : INK, size: 10, symbol: "diamond",
+                line: { color: "#fff", width: 1.5 } },
       name: "Tested level", legendgroup: `g${idx}`, showlegend: false,
       hovertemplate: `${plot.x_label}: %{x}<br>Characteristic life: %{y:.4g}<extra></extra>`,
     });
@@ -63,29 +66,28 @@ export default function AltResultView({ results, modelId }) {
     if (obs.n_ranges) {
       traces.push({
         x: obs.ranges.stress, y: times.map((t) => (t === 0 ? floor : t)), mode: "lines", type: "scatter",
-        line: { color: "rgba(208,118,47,0.55)", width: 3 }, name: "Failed between inspections",
+        line: { color: "rgba(20, 23, 28, 0.25)", width: 3 }, name: "Failed between inspections",
         hoverinfo: "skip", showlegend: true,
       });
     }
     if (obs.n_failures) {
       traces.push({
         x: obs.failures.stress, y: obs.failures.time, mode: "markers", type: "scatter",
-        marker: { color: "rgba(208,118,47,0.9)", size: 6, symbol: "circle" }, name: "Failure",
+        marker: { color: DATA_INK, size: 6, symbol: "circle" }, name: "Failure",
         hovertemplate: `${plot.x_label}: %{x}<br>Failed at: %{y:.4g}<extra></extra>`,
       });
     }
   }
 
   const layout = {
-    autosize: true, height: 420,
-    margin: { l: 70, r: 20, t: 20, b: 55 },
-    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-    xaxis: { title: plot.x_label || "Stress", zeroline: false, gridcolor: "#eef1f5" },
+    height: 420,
+    xaxis: { title: { text: plot.x_label || "Stress" } },
     yaxis: {
-      title: `${plot.y_label || "Characteristic life"}${r.unit ? ` (${r.unit})` : ""}`,
-      type: plot.log_y ? "log" : "linear", gridcolor: "#eef1f5",
+      title: { text: `${plot.y_label || "Characteristic life"}${r.unit ? ` (${r.unit})` : ""}` },
+      type: plot.log_y ? "log" : "linear",
+      // Log: label 1-2-5 steps in full ("2,000"), not bare digits.
+      ...(plot.log_y ? { dtick: "D2", tickformat: ",~g" } : {}),
     },
-    legend: { orientation: "h", y: -0.18 },
     showlegend: twoStress || !!obs,
   };
 
@@ -112,13 +114,12 @@ export default function AltResultView({ results, modelId }) {
 
       {tab === "plot" && (
         <div className="alt-plot-wrap">
-          <Plot data={traces} layout={layout} useResizeHandler style={{ width: "100%" }}
-                config={{ displayModeBar: false, responsive: true }} />
+          <Plot data={traces} layout={layout} />
           <p className="muted-line" style={{ margin: 0 }}>
             Each diamond is a tested stress level; the line is the fitted
             life-stress relationship, extended below the lowest test stress toward
             your use level. {plot.log_y ? "The life axis is logarithmic." : ""}
-            {obs ? ` Inspection data: each orange bar is a unit found failed between two read-outs${
+            {obs ? ` Inspection data: each grey bar is a unit found failed between two read-outs${
               obs.shown < obs.n_ranges + obs.n_failures ? ` (${obs.shown.toLocaleString()} of ${(obs.n_ranges + obs.n_failures).toLocaleString()} shown)` : ""
             }; the fit takes the whole interval, not a midpoint.` : ""}
           </p>
@@ -214,26 +215,22 @@ function ProbabilityPanel({ prob, unit, twoStress }) {
   });
 
   const layout = {
-    autosize: true, height: 440,
-    margin: { l: 62, r: 20, t: 20, b: 50 },
-    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
+    height: 440,
     xaxis: {
-      title: unit ? `Time (${unit})` : "Time",
+      title: { text: unit ? `Time (${unit})` : "Time" },
       tickvals: prob.x_ticks?.vals, ticktext: prob.x_ticks?.labels,
-      gridcolor: "#eef1f5", zeroline: false,
+      // Probability paper: both grids carry meaning.
+      showgrid: true, gridcolor: GRID,
     },
     yaxis: {
-      title: "Unreliability, F(t)",
+      title: { text: "Unreliability, F(t)" },
       tickvals: prob.y_ticks?.vals, ticktext: prob.y_ticks?.labels,
-      gridcolor: "#eef1f5", zeroline: false,
     },
-    legend: { orientation: "h", y: -0.16 },
   };
 
   return (
     <div className="alt-plot-wrap">
-      <Plot data={traces} layout={layout} useResizeHandler style={{ width: "100%" }}
-            config={{ displayModeBar: false, responsive: true }} />
+      <Plot data={traces} layout={layout} />
       <p className="muted-line" style={{ margin: 0 }}>
         Each colour is a tested stress level: points are the observed failures on
         {" "}{prob.distribution} probability paper, the line is the model's fit for

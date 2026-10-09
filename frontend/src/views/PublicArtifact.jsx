@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Plot from "../components/Plot.jsx";
+import { ACCENT, sentence } from "../plotTheme.js";
 import Logo from "../components/Logo.jsx";
 import { useAuth } from "../AuthProvider.jsx";
 import ResultView from "../components/ResultView.jsx";
@@ -91,18 +92,17 @@ function FleetView({ a }) {
               type: "bar",
               x: Array.from({ length: f.periods || 0 }, (_, i) => i + 1),
               y: f.per_period,
-              marker: { color: "#2f6df6" },
+              marker: { color: ACCENT },
             }]}
             layout={{
               height: 300,
-              margin: { l: 46, r: 16, t: 8, b: 42 },
-              xaxis: { title: { text: f.period_label || "period" }, dtick: 1 },
-              yaxis: { title: { text: "expected failures" } },
-              paper_bgcolor: "transparent",
-              plot_bgcolor: "transparent",
+              bargap: 0.35,
+              xaxis: {
+                title: { text: sentence(f.period_label || "period") },
+                tick0: 1, dtick: Math.max(1, Math.ceil((f.periods || 0) / 12)),
+              },
+              yaxis: { title: { text: "Expected failures" }, rangemode: "tozero" },
             }}
-            config={{ displayModeBar: false, responsive: true }}
-            style={{ width: "100%" }}
           />
         </div>
       )}
@@ -113,16 +113,16 @@ function FleetView({ a }) {
 function Body({ collection, a, token, unlock }) {
   switch (collection) {
     case "models":
-      return <div className="card"><ResultView result={a.results} /></div>;
+      return <div className="card"><ResultView result={a.results} name={a.name} /></div>;
     case "degradation_models":
-      return <div className="card"><DegradationResultView results={a.results} /></div>;
+      return <div className="card"><DegradationResultView results={a.results} name={a.name} /></div>;
     case "recurrent_models":
-      return <div className="card"><RecurrentResultView results={a.results} /></div>;
+      return <div className="card"><RecurrentResultView results={a.results} name={a.name} /></div>;
     case "strategy_analyses":
       return (
         <div className="card">
-          {a.kind === "optimal_replacement" && <ReplacementResult result={a.results} />}
-          {a.kind === "compare_two" && <CompareResult result={a.results} />}
+          {a.kind === "optimal_replacement" && <ReplacementResult result={a.results} name={a.name} />}
+          {a.kind === "compare_two" && <CompareResult result={a.results} name={a.name} />}
           {a.kind === "failure_finding" && <FfiResult result={a.results} />}
           {a.kind === "demonstration_test" && <DemoTestResult result={a.results} />}
         </div>

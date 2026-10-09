@@ -1,6 +1,8 @@
 import Plot from "./Plot.jsx";
+import { COLORWAY, referenceShape } from "../plotTheme.js";
 
-const COLORS = { a: "#0284c7", b: "#db2777" };
+// Item A and B take the theme's first two series colours (the form uses them too).
+export const COLORS = { a: COLORWAY[0], b: COLORWAY[1] };
 
 const fmt = (v) =>
   v == null
@@ -17,33 +19,19 @@ const METRICS = [
 
 // Presentational renderer for a two-model comparison result — used by the live
 // tool and by saved analyses.
-export default function CompareResult({ result }) {
+export default function CompareResult({ result, name = null }) {
   const u = result?.unit ? ` (${result.unit})` : "";
-  const traces = [
-    {
-      x: result.time, y: result.a.sf, mode: "lines",
-      line: { color: COLORS.a, width: 2.5 }, name: result.a.label,
-      type: "scatter", connectgaps: false,
-    },
-    {
-      x: result.time, y: result.b.sf, mode: "lines",
-      line: { color: COLORS.b, width: 2.5 }, name: result.b.label,
-      type: "scatter", connectgaps: false,
-    },
-  ];
+  const traces = ["a", "b"].map((k) => ({
+    x: result.time, y: result[k].sf, mode: "lines", type: "scatter",
+    line: { color: COLORS[k], width: 2 }, name: result[k].label, connectgaps: false,
+  }));
   const xc = result.verdict.crossover_time;
   const layout = {
-    autosize: true, height: 420,
-    margin: { l: 64, r: 20, t: 20, b: 70 },
-    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#ffffff",
-    font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
-    showlegend: true, legend: { orientation: "h", y: -0.2 },
-    xaxis: { title: { text: `t${u}`, standoff: 12 }, gridcolor: "#e2e8f0", zeroline: false },
-    yaxis: { title: { text: "Reliability, R(t)", standoff: 12 }, gridcolor: "#e2e8f0", range: [0, 1.02], zeroline: false },
-    shapes: xc == null ? [] : [{
-      type: "line", x0: xc, x1: xc, yref: "paper", y0: 0, y1: 1,
-      line: { color: "#94a3b8", width: 1, dash: "dot" },
-    }],
+    height: 420,
+    showlegend: true,
+    xaxis: { title: { text: `Time${u}` } },
+    yaxis: { title: { text: "Reliability, R(t)" }, range: [0, 1.02] },
+    shapes: xc == null ? [] : [referenceShape({ x: xc, line: { dash: "dot" } })],
   };
 
   return (
@@ -89,14 +77,14 @@ export default function CompareResult({ result }) {
           <p className="muted-line compare-tests">{result.tests.reason}</p>
         ))}
 
-      <Plot data={traces} layout={layout} config={{ displayModeBar: true, responsive: true }} style={{ width: "100%" }} useResizeHandler />
+      <Plot data={traces} layout={layout} download={`${name || `${result.a.label} vs ${result.b.label}`} — reliability`} />
 
       <table className="calc-table strategy-table">
         <thead>
           <tr>
             <th>Metric{u}</th>
-            <th style={{ color: COLORS.a }}>{result.a.label}</th>
-            <th style={{ color: COLORS.b }}>{result.b.label}</th>
+            <th><span className="combo-dot" style={{ background: COLORS.a }} />{result.a.label}</th>
+            <th><span className="combo-dot" style={{ background: COLORS.b }} />{result.b.label}</th>
           </tr>
         </thead>
         <tbody>

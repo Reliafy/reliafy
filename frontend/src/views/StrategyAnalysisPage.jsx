@@ -62,8 +62,8 @@ export default function StrategyAnalysisPage() {
       </header>
 
       <div className="card">
-        {doc.kind === "optimal_replacement" && <ReplacementResult result={doc.results} />}
-        {doc.kind === "compare_two" && <CompareResult result={doc.results} />}
+        {doc.kind === "optimal_replacement" && <ReplacementResult result={doc.results} name={doc.name} />}
+        {doc.kind === "compare_two" && <CompareResult result={doc.results} name={doc.name} />}
         {doc.kind === "failure_finding" && <FfiResult result={doc.results} />}
         {doc.kind === "demonstration_test" && <DemoTestResult result={doc.results} />}
       </div>

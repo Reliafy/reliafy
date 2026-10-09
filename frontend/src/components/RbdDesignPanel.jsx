@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
+import { ACCENT, DATA_INK, fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
 import { applyRbdDesign, designRbd } from "../api.js";
 import RbdCheapestDesign from "./RbdCheapestDesign.jsx";
 import RbdIntervals from "./RbdIntervals.jsx";
@@ -510,48 +511,37 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
   );
   const front = result.front || [];
   const traces = [
-    {
+    fitLine({
       x: front.map((d) => d.cost),
       y: front.map((d) => d.reliability),
-      type: "scatter",
       mode: "lines+markers",
-      line: { color: "#2f6df6", width: 2, shape: "hv" },
-      marker: { color: "#2f6df6", size: 7 },
+      line: { shape: "hv" },
+      marker: { color: ACCENT, size: 7 },
       name: "Best design for its cost",
-      hovertemplate: "Cost %{x}<br>R(t) %{y:.6f}<extra>click to inspect</extra>",
-    },
+      hovertemplate: "Cost %{x:,}<br>R(t) %{y:.6f}<extra>click to inspect</extra>",
+    }),
     {
       x: [result.current.cost],
       y: [result.current.reliability],
       type: "scatter",
       mode: "markers",
-      marker: { color: "#94a3b8", size: 11, symbol: "diamond" },
+      marker: { color: DATA_INK, size: 10, symbol: "diamond", line: { color: "#fff", width: 1.5 } },
       name: "As drawn",
-      hovertemplate: "As drawn<br>Cost %{x}<br>R(t) %{y:.6f}<extra></extra>",
+      hovertemplate: "As drawn<br>Cost %{x:,}<br>R(t) %{y:.6f}<extra></extra>",
     },
-    {
+    optimumMarker({
       x: [shown.cost],
       y: [shown.reliability],
-      type: "scatter",
       mode: "markers",
-      marker: { color: "#db2777", size: 15, symbol: "star", line: { color: "#fff", width: 1 } },
+      marker: { size: 12 },
       name: picked == null ? (result.mode === "target" ? "Cheapest reaching the target" : "Best within the budget") : "Selected design",
-      hovertemplate: "Cost %{x}<br>R(t) %{y:.6f}<extra></extra>",
-    },
+      showlegend: true,
+      hovertemplate: "Cost %{x:,}<br>R(t) %{y:.6f}<extra></extra>",
+    }),
   ];
   const shapes = [];
-  if (result.mode === "budget" && result.budget.cost != null) {
-    shapes.push({
-      type: "line", x0: result.budget.cost, x1: result.budget.cost, yref: "paper", y0: 0, y1: 1,
-      line: { color: "#64748b", width: 1, dash: "dash" },
-    });
-  }
-  if (result.mode === "target") {
-    shapes.push({
-      type: "line", y0: result.target, y1: result.target, xref: "paper", x0: 0, x1: 1,
-      line: { color: "#64748b", width: 1, dash: "dash" },
-    });
-  }
+  if (result.mode === "budget" && result.budget.cost != null) shapes.push(referenceShape({ x: result.budget.cost }));
+  if (result.mode === "target") shapes.push(referenceShape({ y: result.target }));
   return (
     <div className="rbd-design-result">
       <div className="params">
@@ -640,21 +630,12 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
           <Plot
             data={traces}
             layout={{
-              autosize: true,
               height: 380,
-              margin: { l: 70, r: 20, t: 16, b: 60 },
-              paper_bgcolor: "rgba(0,0,0,0)",
-              plot_bgcolor: "#ffffff",
-              font: { color: "#334155", family: "Inter, system-ui, sans-serif" },
-              legend: { orientation: "h", y: -0.2 },
-              xaxis: { title: { text: "Cost", standoff: 10 }, gridcolor: "#e2e8f0", zeroline: false },
-              yaxis: { title: { text: `R(t = ${fmtN(result.t)}${unit})`, standoff: 10 }, gridcolor: "#e2e8f0", zeroline: false },
+              xaxis: { title: { text: "Cost" } },
+              yaxis: { title: { text: `R(t = ${fmtN(result.t)}${unit})` } },
               shapes,
               hovermode: "closest",
             }}
-            config={{ displayModeBar: false, responsive: true }}
-            style={{ width: "100%" }}
-            useResizeHandler
             onClick={(ev) => {
               const p = ev?.points?.[0];
               if (p && p.curveNumber === 0) onPick(p.pointIndex);
