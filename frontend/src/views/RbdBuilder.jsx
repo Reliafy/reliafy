@@ -183,9 +183,10 @@ const EDGE_OPTIONS = {
 };
 
 // Fitting the view fills the canvas's width (block text is sized to read at
-// about 0.55), never zooms a small diagram past 1, and never zooms out so far
-// that the text is unreadable: past that a large diagram is a pan away.
-const FIT_OPTIONS = { padding: 0.02, minZoom: 0.45, maxZoom: 1, duration: 300 };
+// about 0.55), never zooms a small diagram past 0.75 (where block text is the
+// page's size), and never zooms out so far that the text is unreadable: past
+// that a large diagram is a pan away.
+const FIT_OPTIONS = { padding: 0.02, minZoom: 0.45, maxZoom: 0.75, duration: 300 };
 // The sized canvas (see sizeCanvas): its least height, the room kept above
 // and below the diagram for the zoom controls, and the frame below it (the
 // page's bottom padding).
