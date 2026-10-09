@@ -9,6 +9,8 @@ const ln = (mu, s) => ({ distribution: "Lognormal", distribution_id: "lognormal"
 test("a block's one line", () => {
   assert.equal(blockLine({ model: exp(5e-7), repair: exp(1 / 8) }, "Hours", true), "λ 5e-7/h · MTTR 8 h");
   assert.equal(lifeLine(wb(4000, 2), "Hours"), "Weibull · η 4,000 h · β 2");
+  assert.equal(lifeLine(wb(4000, 2), "Hours", { short: true }), "η 4,000 h · β 2");
+  assert.equal(lifeLine(exp(1e-3), "Cycles", { short: true }), "λ 0.001/cycle");
   assert.equal(blockLine({ model: wb(4000, 2), instant_repair: true }, "Hours", true), "Weibull · η 4,000 h · β 2 · instant repair");
   assert.equal(blockLine({ model: exp(1e-3) }, "Cycles", false), "λ 0.001/cycle");
 });

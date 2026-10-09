@@ -740,7 +740,7 @@ h6 {
   max-width: none;
   margin: 0;
   height: calc(100vh - 58px);
-  padding: 20px 38px 20px;
+  padding: 30px 38px 20px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -750,23 +750,28 @@ h6 {
   flex: 0 0 auto;
 }
 
-.rbd-app > header h1 {
-  font-size: var(--fs-20);
-}
-
-.rbd-wrap {
-  padding: 0;
+/* One card, as on the life model page: the tabs, then each tab's content
+   directly in it. The Builder's canvas runs to the card's edges. */
+.card.rbd-wrap {
+  --wrap-pad: 1.5rem;
+  padding: 1rem var(--wrap-pad) var(--wrap-pad);
   overflow: hidden;
   flex: 1 1 auto;
   min-height: 0;
-  margin-top: 14px;
+  margin-top: 0.85rem;
 }
+/* A canvas sized to its diagram: the card is only as tall as it needs. */
+.card.rbd-wrap:has(.rbd-canvas.is-sized) { flex: 0 1 auto; }
 
 .rbd-canvas {
   position: relative;
   width: 100%;
   height: 68vh;
   min-height: 440px;
+  /* Block text is drawn this much larger than the page's, in the diagram's
+     own units, so it reads at about 11–12 px when a wide diagram is fitted
+     (zoom ~0.55–0.6). */
+  --node-scale: 1.45;
 }
 
 /* Node boxes share a ~1.8:1 width:height ratio. */
@@ -782,9 +787,9 @@ h6 {
   border: 1px solid var(--line);
   background: var(--surf);
   color: var(--ink);
-  font-size: var(--fs-14);
+  font-size: calc(var(--fs-14) * var(--node-scale));
   font-weight: 600;
-  padding: 0.55rem 0.9rem;
+  padding: var(--sp-1) var(--sp-2);
   box-shadow: var(--shadow-card);
 }
 
@@ -793,11 +798,41 @@ h6 {
   box-shadow: 0 0 0 2px rgba(47, 109, 246, 0.25);
 }
 
-.rbd-canvas .react-flow__node.rbd-io {
-  background: var(--acc-d);
-  border-color: var(--acc-d);
-  color: #fff;
+/* Input and Output: small, quiet markers ("In", "Out") on the row of the
+   blocks they join, not solid slabs. The node keeps a block's height so its
+   handle stays level with theirs; the circle is drawn inside it. */
+.rbd-canvas .react-flow__node.rbd-io,
+.rbd-canvas .react-flow__node.rbd-io:hover,
+.rbd-canvas .react-flow__node.rbd-io.selected {
+  width: 44px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  font-size: 0;
 }
+.rbd-canvas .react-flow__node.rbd-io::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surf-2);
+}
+.rbd-canvas .react-flow__node.rbd-io.selected::before { border-color: var(--acc); box-shadow: var(--focus); }
+.rbd-canvas .react-flow__node.rbd-io::after {
+  position: relative;
+  font-size: calc(var(--fs-13) * var(--node-scale));
+  font-weight: 500;
+  color: var(--muted);
+}
+.rbd-canvas .react-flow__node-input.rbd-io::after { content: "In"; }
+.rbd-canvas .react-flow__node-output.rbd-io::after { content: "Out"; }
 
 /* Custom component node */
 .rbd-comp {
@@ -817,7 +852,7 @@ h6 {
   border: 1px solid var(--line);
   background: var(--surf);
   box-shadow: var(--shadow-card);
-  padding: 0.5rem 0.7rem;
+  padding: var(--sp-1) var(--sp-2);
 }
 
 .react-flow__node.selected .rbd-comp {
@@ -826,7 +861,8 @@ h6 {
 }
 
 .rbd-comp-title {
-  font-size: var(--fs-14);
+  font-size: calc(var(--fs-14) * var(--node-scale));
+  line-height: 1.2;
   font-weight: 600;
   color: var(--ink);
   max-width: 100%;
@@ -836,10 +872,10 @@ h6 {
 }
 
 .rbd-comp-model {
-  margin-top: 0.2rem;
-  font-size: var(--fs-12);
-  color: var(--acc-d);
-  font-weight: 500;
+  margin-top: 2px;
+  font-size: calc(var(--fs-13) * var(--node-scale));
+  line-height: 1.25;
+  color: var(--muted);
   word-break: break-word;
   max-width: 100%;
   overflow: hidden;
@@ -849,14 +885,25 @@ h6 {
 }
 
 .rbd-comp-empty {
-  margin-top: 0.2rem;
-  font-size: var(--fs-12);
+  margin-top: 2px;
+  font-size: calc(var(--fs-13) * var(--node-scale));
+  line-height: 1.25;
   color: var(--muted);
   max-width: 100%;
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* A block's line that must stay one line (its life, its repair): cut short
+   with an ellipsis, the whole on the block's tooltip. */
+.rbd-canvas .one-line {
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  -webkit-line-clamp: unset;
 }
 
 .rbd-menu-sep {
@@ -879,7 +926,7 @@ h6 {
   border: 1px solid #c4b5fd;
   background: #f5f3ff;
   box-shadow: var(--shadow-card);
-  padding: 0.5rem 0.75rem;
+  padding: var(--sp-1) var(--sp-2);
 }
 
 .react-flow__node.selected .rbd-knode {
@@ -892,7 +939,7 @@ h6 {
 }
 
 .rbd-knode-title {
-  font-size: var(--fs-14);
+  font-size: calc(var(--fs-14) * var(--node-scale));
   font-weight: 600;
   color: #6d28d9;
   text-align: center;
@@ -903,8 +950,9 @@ h6 {
 }
 
 .rbd-knode-sub {
-  margin-top: 0.2rem;
-  font-size: var(--fs-12);
+  margin-top: 2px;
+  font-size: calc(var(--fs-13) * var(--node-scale));
+  line-height: 1.25;
   color: var(--muted);
   text-align: center;
 }
@@ -923,7 +971,7 @@ h6 {
   border: 1px solid var(--line);
   background: var(--surf);
   box-shadow: var(--shadow-card);
-  padding: 0.5rem 0.75rem;
+  padding: var(--sp-1) var(--sp-2);
 }
 
 .react-flow__node.selected .rbd-block {
@@ -931,39 +979,45 @@ h6 {
 }
 
 .rbd-block-title {
-  font-size: var(--fs-14);
+  font-size: calc(var(--fs-14) * var(--node-scale));
+  line-height: 1.2;
   font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rbd-block-sub {
-  margin-top: 0.15rem;
-  font-size: var(--fs-12);
+  margin-top: 2px;
+  font-size: calc(var(--fs-13) * var(--node-scale));
+  line-height: 1.25;
   color: var(--muted);
+  max-width: 100%;
 }
 
 .rbd-block-count {
   margin-left: 0.35rem;
-  font-size: var(--fs-13);
+  font-size: calc(var(--fs-13) * var(--node-scale));
   font-weight: 600;
   color: var(--muted);
 }
 
 .rbd-block-model {
-  margin-top: 0.15rem;
-  font-size: var(--fs-12);
-  font-weight: 500;
-  color: var(--acc-d);
+  margin-top: 2px;
+  font-size: calc(var(--fs-13) * var(--node-scale));
+  line-height: 1.25;
+  color: var(--muted);
   text-align: center;
   word-break: break-word;
-  padding: 0 0.2rem;
+  max-width: 100%;
 }
 
-.rbd-standby {
-  border-color: #fcd34d;
-  background: var(--warn-bg);
-}
-.rbd-standby .rbd-block-title {
-  color: var(--warn);
+/* A standby block's four lines (name, kind, life, repair) fit its box. */
+.rbd-standby .rbd-block-sub,
+.rbd-standby .rbd-block-model {
+  font-size: calc(var(--fs-12) * var(--node-scale));
+  line-height: 1.15;
 }
 
 .rbd-series {
@@ -1063,11 +1117,19 @@ h6 {
   box-shadow: var(--focus);
 }
 
+/* Handles are quiet until a block is hovered or selected (then the accent:
+   where to drag from). */
 .rbd-canvas .react-flow__handle {
   width: 9px;
   height: 9px;
+  background: var(--faint);
+  border: 2px solid var(--surf);
+}
+.rbd-canvas .react-flow__node:hover .react-flow__handle,
+.rbd-canvas .react-flow__node.selected .react-flow__handle,
+.rbd-canvas .react-flow__handle.connectingfrom,
+.rbd-canvas .react-flow__handle.connectingto {
   background: var(--acc);
-  border: 2px solid #fff;
 }
 
 .rbd-canvas .react-flow__edge-path {
@@ -1100,15 +1162,22 @@ h6 {
    it. Absolutely positioned so the overlay stays one row tall when collapsed. */
 .rbd-ccf-menu { position: relative; }
 
+/* "Unit [Hours]": one bordered field, its label inside the border. */
 .rbd-unit-field {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--sp-2);
+  min-height: 32px;
+  box-sizing: border-box;
   background: var(--surf);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  padding: 0.3rem 0.55rem;
-  box-shadow: var(--shadow-card);
+  padding: 0 0 0 10px;
+}
+
+.rbd-unit-field:focus-within {
+  border-color: var(--acc);
+  box-shadow: var(--focus);
 }
 
 .rbd-unit-field span {
@@ -1118,20 +1187,17 @@ h6 {
 }
 
 .rbd-unit-input {
-  width: 110px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 0.25rem 0.45rem;
+  width: 96px;
+  border: none;
+  padding: 0 10px 0 0;
   font-size: var(--fs-14);
   font-family: inherit;
   color: var(--ink);
-  background: var(--surf);
+  background: transparent;
 }
 
 .rbd-unit-input:focus {
   outline: none;
-  border-color: var(--acc);
-  box-shadow: var(--focus);
 }
 
 /* Node unit-mismatch warning */
@@ -2585,19 +2651,29 @@ h1 .chip,
 }
 
 .rbd-tabs {
-  margin: 0;
-  padding: 0 1rem;
   flex: 0 0 auto;
 }
 
-.rbd-shell .rbd-canvas {
+/* The Builder: its toolbar, then the canvas, which runs to the card's sides
+   and bottom (no padded frame around it). Sized to its diagram when it can be. */
+.rbd-builder {
   flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rbd-builder .rbd-canvas {
+  flex: 1 1 auto;
+  width: auto;
   height: auto;
   min-height: 0;
+  margin: 0 calc(-1 * var(--wrap-pad)) calc(-1 * var(--wrap-pad));
+  border-top: 1px solid var(--line2);
 }
+.rbd-builder .rbd-canvas.is-sized { flex: none; }
 
 .rbd-calc-panel {
-  padding: 1rem 1.25rem 1.5rem;
+  padding: 0;
 }
 
 /* The result tabs (Calculator, Fault tree, …) scroll with the page (#311);
@@ -7363,15 +7439,28 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
   position: relative;
   box-sizing: border-box;
   /* A bare dot: it carries no life model and no number, so anything drawn
-     inside it would only invite the question "what does that mean?". */
+     inside it would only invite the question "what does that mean?". The
+     node is a block's height, the dot at its middle, so the paths through it
+     stay level with the blocks beside it. */
+  width: 26px;
+  height: 95px;
+}
+.rbd-junction::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
   width: 26px;
   height: 26px;
+  transform: translateY(-50%);
+  box-sizing: border-box;
   border-radius: 50%;
   border: 1.5px solid #a78bfa;
   background: #ede9fe;
   box-shadow: var(--shadow-card);
 }
-.react-flow__node.selected .rbd-junction { box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.3); }
+.react-flow__node.selected .rbd-junction::before { box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.3); }
+.rbd-junction .rbd-status { top: calc(50% - 21px); }
 
 /* Fit-method picker in the advanced options, and the warning a fitter emits
    when its optimisation failed but it returned numbers anyway. */
@@ -7621,9 +7710,9 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 /* A block's chips (#314): one neutral style with an icon each, overhanging
    the card's bottom edge so the card keeps its size; big enough to read at
    fit-to-view. */
-.rbd-chips { position: absolute; bottom: -11px; left: 8px; right: 8px; display: flex; gap: 4px; z-index: 2; overflow: hidden; }
+.rbd-chips { position: absolute; bottom: -14px; left: 8px; right: 8px; display: flex; gap: 4px; z-index: 2; overflow: hidden; }
 .rbd-chip {
-  font-size: var(--fs-12); font-weight: 500; line-height: 18px; border-radius: var(--r-sm); padding: 0 6px;
+  font-size: calc(var(--fs-12) * var(--node-scale)); font-weight: 500; line-height: 24px; border-radius: var(--r-sm); padding: 0 6px;
   color: var(--ink); background: var(--surf); border: 1px solid var(--line); white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -7704,19 +7793,17 @@ button.secondary.ccf:hover:not(:disabled) { color: #8a4a17; border-color: #d0762
 .rbd-intervals-check input { margin-top: 3px; flex: none; }
 .rbd-intervals .rbd-costs-table td .muted { font-size: var(--fs-12); font-weight: 400; }
 
-/* One toolbar across the top of the canvas: the diagram's settings on the
-   left, its actions on the right — which wrap onto a second row rather than
-   overlapping when the canvas is narrow — and, beneath, the common-cause
-   button and the validation card. Empty space passes clicks to the canvas. */
-.react-flow__panel.top.left.rbd-toolbar {
-  right: 15px;
+/* One toolbar above the canvas: the diagram's settings on the left, its
+   actions on the right, which wrap onto a second row when it is narrow. The
+   common-cause button floats over the canvas's top while blocks are selected. */
+.rbd-toolbar {
+  display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  align-items: flex-start;
-  row-gap: 0.5rem;
-  pointer-events: none;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  padding-bottom: var(--sp-3);
 }
-.rbd-toolbar > * { pointer-events: auto; }
 .rbd-toolbar-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-left: auto; align-items: center; }
 /* Save ▾, ⋯ and the validation status (#314). */
 .rbd-tb-trigger { min-height: 32px; }
@@ -7737,9 +7824,8 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
 .rbd-valid-pop .rbd-check { width: 100%; box-sizing: border-box; }
 /* The toolbar's settings inside ⋯: a phone's (#301); hidden on a wide screen. */
 .rbd-ovm-settings { display: none; }
-.rbd-mode-select .sel-trigger { min-height: 32px; box-shadow: var(--shadow-card); }
-.rbd-toolbar-float { flex-basis: 100%; display: flex; justify-content: center; pointer-events: none; }
-.rbd-toolbar-float > * { pointer-events: auto; }
+.rbd-mode-select .sel-trigger { min-height: 32px; }
+.rbd-toolbar-float { display: flex; justify-content: center; }
 .rbd-toolbar .rbd-toolbar-row { flex-wrap: wrap; row-gap: 0.4rem; min-width: 0; }
 
 /* ---- Excel import: sheet picker, column mapper, RCM / RBD import ---------- */
@@ -7954,10 +8040,8 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
     padding: 16px;
   }
   .card.rbd-wrap {
-    padding: 0.5rem 0 0;
-  }
-  .rbd-tabs {
-    padding: 0 0.5rem;
+    --wrap-pad: 1rem;
+    padding: 0.5rem var(--wrap-pad) var(--wrap-pad);
   }
   /* The toolbar collapses to its actions (#301): the unit and mode move
      into ⋯, so the canvas keeps the screen. */
