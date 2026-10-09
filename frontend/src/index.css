@@ -86,6 +86,8 @@
   --shadow-overlay: 0 12px 40px rgba(20, 23, 28, 0.16);
   /* Strong enough to see on any surface (the 9% accent tint is for fills). */
   --focus: 0 0 0 3px rgba(47, 109, 246, 0.35);
+  /* The selected node on a diagram canvas. */
+  --ring-sel: 0 0 0 2px rgba(47, 109, 246, 0.25);
 
   font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto,
     sans-serif;
@@ -822,7 +824,7 @@ h6 {
 
 .rbd-canvas .react-flow__node.rbd-node.selected {
   border-color: var(--acc);
-  box-shadow: 0 0 0 2px rgba(47, 109, 246, 0.25);
+  box-shadow: var(--ring-sel);
 }
 
 .rbd-canvas .react-flow__node.rbd-io {
@@ -854,7 +856,7 @@ h6 {
 
 .react-flow__node.selected .rbd-comp {
   border-color: var(--acc);
-  box-shadow: 0 0 0 2px rgba(47, 109, 246, 0.25);
+  box-shadow: var(--ring-sel);
 }
 
 .rbd-comp-title {
@@ -915,7 +917,7 @@ h6 {
 }
 
 .react-flow__node.selected .rbd-knode {
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.3);
+  box-shadow: var(--ring-sel);
 }
 
 .rbd-knode.invalid {
@@ -959,7 +961,7 @@ h6 {
 }
 
 .react-flow__node.selected .rbd-block {
-  box-shadow: 0 0 0 2px rgba(47, 109, 246, 0.25);
+  box-shadow: var(--ring-sel);
 }
 
 .rbd-block-title {
@@ -1170,19 +1172,16 @@ h6 {
 .react-flow__node .rbd-comp.unit-warn,
 .react-flow__node .rbd-block.unit-warn {
   border-color: var(--warn);
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
 }
 
 /* Manual working/failed status */
 .react-flow__node .state-working {
   border-color: var(--ok) !important;
-  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.3);
   background: var(--ok-bg);
 }
 
 .react-flow__node .state-failed {
   border-color: var(--danger) !important;
-  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.3);
   background: var(--danger-bg);
 }
 
@@ -1198,7 +1197,7 @@ h6 {
   font-weight: 600;
   border-radius: 50%;
   color: var(--on-fill);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--shadow-card);
   z-index: 2;
 }
 
@@ -1222,7 +1221,7 @@ h6 {
   border-radius: 50%;
   background: var(--warn);
   color: var(--on-fill);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--shadow-card);
 }
 
 /* Placeholder life model (assistant starting-point values, data.model.placeholder) */
@@ -1241,7 +1240,7 @@ h6 {
   color: var(--on-fill);
   border-radius: var(--r-sm);
   padding: 1px 6px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--shadow-card);
   z-index: 2;
 }
 
@@ -1796,7 +1795,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  box-shadow: 0 1px 2px rgba(47, 109, 246, 0.25);
+  box-shadow: var(--shadow-card);
   white-space: nowrap;
   transition: background 0.15s, opacity 0.15s;
 }
@@ -3235,7 +3234,14 @@ h1 .chip,
 .seg .seg-btn.active:hover:not(:disabled) {
   background: var(--acc-t);
   color: var(--acc-d);
-  box-shadow: inset 0 0 0 1px rgba(47, 109, 246, 0.4);
+  outline: 1px solid var(--acc-line);
+  outline-offset: -1px;
+}
+
+/* The active segment's outline would hide the browser's focus ring. */
+.seg-btn:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: -2px;
 }
 
 .seg-sm .seg-btn {
@@ -4230,7 +4236,7 @@ select:disabled {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   padding: 9px 16px;
   font-size: var(--fs-14);
   font-weight: 600;
@@ -4243,7 +4249,7 @@ select:disabled {
 .cta-solid {
   background: var(--acc);
   color: var(--on-fill);
-  box-shadow: 0 1px 2px rgba(47, 109, 246, 0.25);
+  box-shadow: var(--shadow-card);
 }
 
 .cta-solid:hover {
@@ -4325,7 +4331,7 @@ select:disabled {
 .landing-hero-viz {
   background: var(--surf);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--r);
   box-shadow: var(--shadow-card);
   padding: 14px 16px;
 }
@@ -4353,7 +4359,7 @@ select:disabled {
 .landing-card {
   background: var(--surf);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--r);
   padding: 22px;
 }
 
@@ -4361,7 +4367,7 @@ select:disabled {
 .landing-card-viz {
   background: var(--bg);
   border: 1px solid var(--line2);
-  border-radius: 10px;
+  border-radius: var(--r);
   padding: 6px 10px;
   margin-bottom: 16px;
 }
@@ -4471,7 +4477,7 @@ select:disabled {
   margin: 34px 0 8px;
   padding: 22px 24px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--r);
   background: var(--surf);
   display: flex;
   align-items: center;
@@ -5171,7 +5177,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   display: block;
   background: var(--surf);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--r);
   padding: 22px 24px;
   text-decoration: none;
   color: inherit;
@@ -5316,14 +5322,14 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-size: 0.9em;
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   padding: 1px 5px;
 }
 
 .blog-prose pre {
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r);
   padding: 14px 16px;
   overflow-x: auto;
   margin: 0 0 18px;
@@ -5368,7 +5374,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   border-left: 3px solid var(--acc);
   color: var(--muted);
   background: var(--acc-t);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
 }
 
 .blog-prose blockquote p {
@@ -5406,7 +5412,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-size: var(--fs-14);
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 6px 20px rgba(47, 109, 246, 0.35);
+  box-shadow: var(--shadow-overlay);
 }
 .chat-fab:hover { filter: brightness(1.05); }
 .chat-fab svg { width: 18px; height: 18px; }
@@ -5568,13 +5574,13 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   align-self: flex-end;
   background: var(--acc);
   color: var(--on-fill);
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: var(--r-sm);
 }
 .chat-assistant {
   align-self: flex-start;
   background: var(--surf);
   border: 1px solid var(--line);
-  border-bottom-left-radius: 4px;
+  border-bottom-left-radius: var(--r-sm);
 }
 .chat-error {
   align-self: stretch;
@@ -5856,12 +5862,12 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   gap: 10px;
   background: var(--surf);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--r);
   padding: 26px 24px;
 }
 .price-card.featured {
   border-color: var(--acc);
-  box-shadow: 0 10px 32px rgba(47, 109, 246, 0.12);
+  box-shadow: var(--shadow-overlay);
 }
 .price-flag {
   position: absolute;
@@ -6400,7 +6406,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   width: 100%;
   height: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r);
   margin: 1.4rem 0 0.4rem;
   box-shadow: var(--shadow-card);
 }
@@ -6432,7 +6438,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-size: var(--fs-14);
   font-weight: 500;
   padding: 6px 11px;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   transition: color 0.15s, background 0.15s;
 }
 .landing-nav-link:hover { color: var(--acc); background: var(--acc-t); }
@@ -6469,8 +6475,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   width: 100%;
   height: auto;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(20, 24, 32, 0.08);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-overlay);
 }
 @media (max-width: 860px) {
   .landing-spotlight { grid-template-columns: 1fr; gap: 24px; padding-top: 48px; }
@@ -6489,7 +6495,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .trio-card {
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--r);
   background: var(--surf);
   padding: 26px 24px;
 }
@@ -6708,13 +6714,13 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .chat-bubble.user {
   background: var(--acc);
   color: var(--on-fill);
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: var(--r-sm);
   white-space: pre-wrap;
 }
 .chat-bubble.agent {
   background: var(--surf);
   border: 1px solid var(--line);
-  border-bottom-left-radius: 4px;
+  border-bottom-left-radius: var(--r-sm);
   white-space: pre-wrap;
 }
 
@@ -7184,8 +7190,8 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .guide-prose li { margin: 4px 0; }
 .guide-prose img {
   display: block; width: 100%; max-width: 660px; margin: 18px 0 22px;
-  border: 1px solid var(--line); border-radius: 10px;
-  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.07);
+  border: 1px solid var(--line); border-radius: var(--r);
+  box-shadow: var(--shadow-card);
 }
 /* A screenshot the capture harness hasn't produced yet. */
 .guide-prose img.guide-img-pending {
@@ -7316,7 +7322,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .ref-prose p { margin: 0 0 12px; }
 .ref-prose pre {
   background: var(--surf-2); border: 1px solid var(--line);
-  border-radius: 8px; padding: 12px 14px; overflow-x: auto;
+  border-radius: var(--r-sm); padding: 12px 14px; overflow-x: auto;
   font-size: var(--fs-13); line-height: 1.55; margin: 0 0 12px;
 }
 .ref-prose h3 { font-size: var(--fs-16); margin: 20px 0 8px; }
@@ -7351,7 +7357,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   background: var(--cat-violet-t);
   box-shadow: var(--shadow-card);
 }
-.react-flow__node.selected .rbd-junction { box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.3); }
+.react-flow__node.selected .rbd-junction { box-shadow: var(--ring-sel); }
 
 /* Fit-method picker in the advanced options, and the warning a fitter emits
    when its optimisation failed but it returned numbers anyway. */
@@ -7853,7 +7859,8 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
     overflow-y: hidden;
     scrollbar-width: none;
     border-bottom: none;
-    box-shadow: inset 0 -1px 0 var(--line);
+    /* The line under the scrolling tabs, drawn behind the active tab's underline. */
+    background: linear-gradient(var(--line), var(--line)) left bottom / 100% 1px no-repeat;
   }
   .tabs::-webkit-scrollbar {
     display: none;
@@ -7985,9 +7992,9 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
   position: absolute; top: 0; right: 0; z-index: 2;
   display: inline-flex; align-items: center; justify-content: center;
   width: 32px; height: 32px; padding: 0;
-  border: 1px solid transparent; border-radius: 6px;
+  border: 1px solid transparent; border-radius: var(--r-sm);
   background: transparent; color: var(--muted);
   cursor: pointer;
 }
 .plot-dl:hover { background: var(--acc-t); color: var(--acc); }
-.plot-dl:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--acc-t); border-color: var(--acc); }
+.plot-dl:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--acc); }

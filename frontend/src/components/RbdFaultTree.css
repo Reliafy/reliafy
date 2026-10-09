@@ -1,5 +1,5 @@
 /* RBD builder — "Fault tree" tab (RbdFaultTree.jsx). Boxes match the builder's
-   blocks (white card, 9px radius, 184px wide); gates carry the standard
+   blocks (white card, 6px radius, 184px wide); gates carry the standard
    OR / AND / VOTE symbols below their description, basic events a circle. */
 
 /* Header: the time input on the left, the headline figures on the right. */
