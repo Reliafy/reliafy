@@ -1981,6 +1981,43 @@ button.link.sm {
   border-radius: 50%;
   flex-shrink: 0;
 }
+/* On/off switch (components/ui/Switch.jsx): a track and knob, label beside. */
+button.switch {
+  background: none;
+  color: var(--ink);
+  border: none;
+  box-shadow: none;
+  padding: 4px 2px;
+  min-height: 32px;
+  gap: 8px;
+  font-weight: 500;
+}
+button.switch:hover:not(:disabled) { background: none; }
+.switch-track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  flex: none;
+  border-radius: 999px;
+  border: 1px solid var(--subtle);
+  background: var(--surf-2);
+  transition: background 0.15s, border-color 0.15s;
+}
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--subtle);
+  transition: transform 0.15s, background 0.15s;
+}
+.switch[aria-checked="true"] .switch-track { background: var(--acc); border-color: var(--acc); }
+.switch[aria-checked="true"] .switch-knob { background: var(--on-fill); transform: translateX(14px); }
+.switch:focus-visible { outline: none; }
+.switch:focus-visible .switch-track { box-shadow: var(--focus); }
+@media (max-width: 720px) { button.switch { min-height: 44px; } }
 /* A chip that edits its value (an RCM decision): outlined, accent on hover. */
 button.chip-btn {
   box-shadow: none;
