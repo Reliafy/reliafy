@@ -2946,8 +2946,7 @@ h1 .chip,
   padding: 13px 16px 11px;
   border-bottom: 1px solid var(--line2);
 }
-.calc-cov-rail.collapsed .calc-cov-rail-head,
-.calc-axis-card.collapsed .calc-cov-rail-head {
+.calc-cov-rail.collapsed .calc-cov-rail-head {
   border-bottom: none;
 }
 
@@ -2964,18 +2963,7 @@ h1 .chip,
   gap: 0.7rem;
   padding: 12px 16px 14px;
 }
-/* Function selector spans the card; inputs fill the rail width. */
-.calc-eval-body .seg {
-  display: flex;
-  width: 100%;
-}
-.calc-eval-body .seg-btn {
-  flex: 1;
-  padding: 0.45rem 0.3rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* Inputs fill the rail width. */
 .calc-eval-body .calc-t {
   width: 100%;
 }
@@ -2983,11 +2971,68 @@ h1 .chip,
   width: 100%;
 }
 
+/* The calculator's answer (#313): function, time and value in one line. */
+.calc-answer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surf);
+  font-size: var(--fs-16);
+  color: var(--ink);
+}
+.calc-answer .calc-fn {
+  font-size: var(--fs-14);
+  font-weight: 500;
+  min-height: 36px;
+}
+.calc-t-input {
+  width: 110px;
+  min-height: 36px;
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-size: var(--fs-14);
+  font-variant-numeric: tabular-nums;
+}
+.calc-t-input:focus {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: var(--focus);
+}
+.calc-answer-value b {
+  font-size: var(--fs-20);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.calc-answer-ci {
+  font-size: var(--fs-14);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Axis limits, folded at the foot of the calculator's options. */
+.calc-axis > summary {
+  cursor: pointer;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--muted);
+}
+.calc-axis > summary:hover {
+  color: var(--ink);
+}
 .calc-axis-body {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  padding: 12px 16px 14px;
+  padding-top: 10px;
 }
 .calc-axis-body .calc-cov {
   width: 100%;
@@ -3234,44 +3279,6 @@ h1 .chip,
   outline: none;
   border-color: var(--acc);
   box-shadow: var(--focus);
-}
-
-.calc-values {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.calc-cell {
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 0.55rem 0.6rem;
-  background: var(--surf-2);
-}
-
-.calc-cell.active {
-  border-color: var(--acc);
-  background: rgba(47, 109, 246, 0.06);
-}
-
-.calc-cell-id {
-  font-weight: 600;
-  font-size: var(--fs-13);
-  color: var(--acc-d);
-  font-variant-numeric: tabular-nums;
-}
-
-.calc-cell-val {
-  font-size: var(--fs-16);
-  font-weight: 600;
-  margin-top: 0.15rem;
-}
-
-@media (max-width: 620px) {
-  .calc-values {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 
 /* Units for x */
@@ -5954,7 +5961,43 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 /* Selected fleet row */
 .selected-row { background: var(--acc-t); }
 
-/* Parameter CIs + randomness verdict on fit results */
+/* A muted one-line caption under a chart (how it was made). */
+.plot-caption {
+  margin: 6px 0 0;
+  font-size: var(--fs-13);
+  line-height: 1.45;
+  color: var(--muted);
+}
+/* A "?" that carries an explanation in its tooltip. */
+.help-q {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 2px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted);
+  cursor: help;
+  vertical-align: 1px;
+}
+.gof-sub {
+  font-size: var(--fs-12);
+  font-weight: 400;
+  color: var(--muted);
+}
+.gofh .gof-sub {
+  margin-left: 6px;
+}
+.rs-table-wrap {
+  overflow-x: auto;
+  max-width: 640px;
+}
+
+/* Parameter CIs on fit results */
 .param-ci {
   font-size: var(--fs-12);
   color: var(--muted);
@@ -6028,6 +6071,24 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .fit-flow-foot .row { flex-wrap: wrap; }
 .fit-flow-foot .steps { flex-wrap: wrap; row-gap: 6px; min-width: 0; }
+/* Result step: the model's name sits beside Save (#311). */
+.fit-save-name {
+  width: 280px;
+  max-width: 100%;
+  min-height: 40px;
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  padding: 0.45rem 0.7rem;
+  font: inherit;
+  font-size: var(--fs-14);
+}
+.fit-save-name:focus {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: var(--focus);
+}
 /* A phone: the stepper and the buttons wrap instead of scrolling the page. */
 @media (max-width: 560px) {
   .fit-flow-foot { flex-wrap: wrap; }
@@ -6035,6 +6096,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   .fit-flow-foot .steps .step-wrap { gap: 6px; }
   .fit-flow-foot .steps .sep { width: 10px; }
   .fit-flow-foot .row { flex-wrap: wrap; }
+  .fit-save-name { flex: 1 1 100%; width: auto; order: -1; }
 }
 
 /* ---- Settings page ---------------------------------------------------- */
