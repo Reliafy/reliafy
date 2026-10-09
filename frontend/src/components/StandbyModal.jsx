@@ -4,6 +4,7 @@ import ModelPicker from "./ModelPicker.jsx";
 import { BlockCostSection } from "./RbdBlockCosts.jsx";
 import { RbdUnitContext } from "./RbdNodes.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import { MeanEcho } from "./LifeModelModal.jsx";
 
 // In a repairable diagram (#156) the block is a standby group of identical
 // units: the duty unit and its spares each fail by the life model and are
@@ -77,64 +78,53 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
           Cancel
         </button>
         <button onClick={submit} disabled={!valid}>
-          Set standby
+          Save block
         </button>
       </div>
     </>
   );
 
   return (
-    <Modal title="Standby redundancy" onClose={onClose} footer={footer}>
-      <ModelPicker
-        label="Active unit life model"
-        value={model}
-        onChange={setModel}
-        rbdBlock
-      />
-
-      <div className="param-fields" style={{ marginTop: "1.25rem" }}>
-        <label className="param-field">
-          <span>spares</span>
-          <input
-            type="number"
-            min="1"
-            value={spares}
-            onChange={(e) => setSpares(e.target.value)}
-          />
-        </label>
-      </div>
-
-      <div className="standby-kind">
-        <SegmentedControl
-          label="Standby type"
-          value={kind}
-          onChange={setKind}
-          options={KINDS.map((k) => ({ value: k.id, label: k.label }))}
+    <Modal title={initial?.label && initial.label !== "Standby" ? initial.label : "Standby redundancy"} onClose={onClose} footer={footer}>
+      <section className="rbd-dlg-sec">
+        <h3>Failure</h3>
+        <ModelPicker
+          label="Each unit's life model"
+          value={model}
+          onChange={setModel}
+          rbdBlock
         />
-        <p className="hint">{KINDS.find((k) => k.id === kind).hint}</p>
-      </div>
+        <MeanEcho model={model} unit={unit} label="Mean life" />
+      </section>
 
-      {kind === "warm" && (
+      <section className="rbd-dlg-sec">
+        <h3>Standby</h3>
         <div className="param-fields">
-          <label className="param-field" title="How fast an idle spare ages relative to a running one: 0 is cold, 1 is hot.">
-            <span>dormancy factor</span>
+          <label className="param-field">
+            <span>Spares</span>
             <input
               type="number"
-              step="any"
-              min="0"
-              max="1"
-              value={dormancy}
-              onChange={(e) => setDormancy(e.target.value)}
+              min="1"
+              value={spares}
+              onChange={(e) => setSpares(e.target.value)}
             />
           </label>
-        </div>
-      )}
-
-      {cold && (
-        <div className="standby-cold">
-          <div className="param-fields">
-            <label className="param-field">
-              <span>start success p</span>
+          {kind === "warm" && (
+            <label className="param-field" title="How fast an idle spare ages relative to a running one: 0 is cold, 1 is hot.">
+              <span>Dormancy factor</span>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                max="1"
+                value={dormancy}
+                onChange={(e) => setDormancy(e.target.value)}
+              />
+            </label>
+          )}
+          {cold && (
+            <label className="param-field" title="The chance a spare starts when it's switched in.">
+              <span>Start success probability</span>
               <input
                 type="number"
                 step="any"
@@ -144,34 +134,49 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
                 onChange={(e) => setStartProb(e.target.value)}
               />
             </label>
-          </div>
-          {!repairable && (
+          )}
+        </div>
+        <div className="standby-kind">
+          <SegmentedControl
+            label="Standby type"
+            value={kind}
+            onChange={setKind}
+            options={KINDS.map((k) => ({ value: k.id, label: k.label }))}
+          />
+          <p className="hint">{KINDS.find((k) => k.id === kind).hint}</p>
+        </div>
+        {cold && !repairable && (
+          <div className="standby-cold">
             <ModelPicker
               label="Standby failure model (optional, dormant)"
               value={standbyModel}
               onChange={setStandbyModel}
               rbdBlock
             />
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </section>
 
       {repairable && (
-        <div style={{ marginTop: "1rem" }}>
+        <section className="rbd-dlg-sec">
+          <h3>Repair</h3>
           <ModelPicker
             label="Repair-time distribution (each failed unit)"
             value={initial?.repair}
             onChange={setRepair}
             rbdBlock
           />
+          <MeanEcho model={repair} unit={unit} label="MTTR" />
           <label className="rbd-instant-repair"
                  title="The group has its own repairer, who repairs one failed unit at a time; otherwise each failed unit is a job for the diagram's repair crews.">
             <input type="checkbox" checked={oneAtATime} onChange={(e) => setOneAtATime(e.target.checked)} />
             Repaired one unit at a time <span className="muted">— its own repairer, not the diagram's crews</span>
           </label>
-          <BlockCostSection initial={initial} onChange={setExtras} unit={unit} crews={crews && !oneAtATime}
-                            mode="standby" />
-        </div>
+        </section>
+      )}
+      {repairable && (
+        <BlockCostSection initial={initial} onChange={setExtras} unit={unit} crews={crews && !oneAtATime}
+                          mode="standby" />
       )}
     </Modal>
   );
