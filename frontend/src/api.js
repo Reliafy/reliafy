@@ -853,6 +853,17 @@ export function compareRbds(graph, otherId, { name = null, otherName = null, tMa
   });
 }
 
+// Check by simulation (#326): a standby or load-sharing block's exact mean
+// life beside its simulated mean and 95% interval. ``node`` is the block as
+// the builder stores it ({type, data}). Quick and free.
+export function checkBlockMean(node, unit = "") {
+  return request("/api/rbds/check-block-mean", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node, unit }),
+  });
+}
+
 // The cheapest design of a repairable diagram (#99): how many copies of each
 // priced block own it for ``horizon`` at the lowest total cost, optionally at
 // least ``minAvailability`` available. Returns { current, design, graph, ... };
