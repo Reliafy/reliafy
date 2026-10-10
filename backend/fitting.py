@@ -1256,6 +1256,11 @@ def fit(
     of words the same way, in place of ``c_invert``. Any SurPyval
     error is wrapped in :class:`FitError`.
     """
+    from backend import competing_risks  # local: it imports services that import this module
+
+    if not competing_risks.is_competing_risks(distribution):
+        # The failure-mode and group columns (#177) are read by competing risks only.
+        mapping = competing_risks.plain_mapping(mapping)
     options = dict(options or {})
     c_invert = bool(options.pop(CENSOR_INVERT_KEY, False)) and bool(mapping.get("c"))
     c_map = options.pop(CENSOR_MAP_KEY, None) if mapping.get("c") else None
@@ -1280,10 +1285,21 @@ def fit(
                               options.get("mixture") or MIXTURE_DEFAULT_COMPONENTS)
     elif distribution in DISTRIBUTIONS:
         result = _fit_distribution(distribution, df, mapping, options)
+    elif competing_risks.is_competing_risks(distribution):
+        # Life data by failure mode (#177).
+        if formula:
+            raise FitError("A regression by failure mode takes covariate columns, not a formula.")
+        if options:
+            raise FitError("Fit options apply to a single distribution, not to failure modes.")
+        try:
+            result = competing_risks.fit(distribution, df, mapping, covariates, unit)
+        except competing_risks.CompetingRisksError as exc:
+            raise FitError(str(exc)) from exc
     else:
         raise FitError(
             f"Unknown model '{distribution}'. Available: "
-            f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
+            f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS,
+                          *competing_risks.CR_MODELS])}."
         )
     result["unit"] = canonical_unit(unit)  # #265: "hours", "hrs" → "Hours"
     if result.get("kind") in ("distribution", "discrete", "regression") and param_intervals.note_for(
