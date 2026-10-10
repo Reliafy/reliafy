@@ -7,7 +7,7 @@ import ValidationPanel from "./RbdValidation.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
 import CovariatesModal from "./CovariatesModal.jsx";
-import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./RbdBand.jsx";
+import { BandControls, BandInterval, BandNote, BandTargets, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
 import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
 import AvailabilityPolicies, { SafetyNotes } from "./AvailabilityPolicies.jsx";
@@ -116,7 +116,7 @@ function AsOfNote({ result, idToLabel }) {
 // Reliability results (non-repairable RBD): headline MTTF / B-lives, the
 // system + per-node R(t)/F(t) curves, importance measures, and the structural
 // path/cut sets. Also used by the public read-only view.
-export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
+export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBandTargets = null }) {
   const x = result.time;
   const [active, setActive] = useState("sf");
   const unit = result.unit;
@@ -261,6 +261,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
 
       <Plot data={traces} layout={layout} download={`${name || "System"} — ${activeLabel}`} />
       <BandNote band={band} />
+      <BandTargets band={band} unit={unit} onChange={onBandTargets} />
 
       {impNodes.length > 0 && (
         <div className="rbd-importance">
@@ -1293,7 +1294,9 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
   const [covValues, setCovValues] = useState({}); // {nodeId: {covName: value}}
   const [calcSig, setCalcSig] = useState(null); // inputs used for the last calc
   const [showCov, setShowCov] = useState(false);
-  const [band, setBand] = useState({ on: false, level: 0.95 }); // confidence band (#103)
+  // Confidence band (#103), with intervals at several B-lives and times (#325).
+  const [band, setBand] = useState({ on: false, level: 0.95, b_lives: [1, 10, 50], times: [] });
+  const [bandRerun, setBandRerun] = useState(0);
   // "As of now" — the blocks' current states: repairable (#155) and
   // non-repairable (#173, where a failed block stays failed).
   const [asOf, setAsOf] = useState(false);
@@ -1383,7 +1386,7 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
 
   // Signature of the calculation inputs, so we can tell when the shown result
   // is out of date with the current "To" / covariate / conditional selections.
-  const bandSig = band.on ? band.level : null;
+  const bandSig = band.on ? JSON.stringify([band.level, band.b_lives, band.times]) : null;
   const tSent = tMax === "" || tMaxAuto ? null : Number(tMax); // null: the backend sizes the axis
   const inputSig = JSON.stringify({
     t: tSent, s: asOf && !graph.repairable ? "" : condAge, cov: covPayload(), band: bandSig,
@@ -1444,7 +1447,9 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
         {
           rbdId: graph.repairable ? rbdId : null,
           force,
-          band: band.on && !graph.repairable ? { level: band.level } : null,
+          band: band.on && !graph.repairable
+            ? { level: band.level, b_lives: band.b_lives, times: band.times?.length ? band.times : null }
+            : null,
           ...(graph.repairable
             ? {
                 simulate: simulate || force || quick,
@@ -1509,6 +1514,12 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
 
   // Validate first when the diagram hasn't been checked since it changed
   // (#300: the check is lost on save, and the Builder tab was the only way).
+  // New band targets (#325) recalculate at once, with the band as now set.
+  useEffect(() => {
+    if (bandRerun > 0) calculate(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bandRerun]);
+
   const calculate = async (force = false, opts = {}) => {
     let v = validation;
     if ((!v || stale) && onValidate) {
@@ -1897,6 +1908,7 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
           tMax={tSent}
           conditionalAge={result.conditional_age || 0}
           name={name}
+          onBandTargets={band.on ? (targets) => { setBand((b) => ({ ...b, ...targets })); setBandRerun((n) => n + 1); } : null}
         />
       )}
 
