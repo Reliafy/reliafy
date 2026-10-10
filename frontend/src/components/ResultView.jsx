@@ -7,7 +7,7 @@ import Coefficients from "./Coefficients.jsx";
 import ModelValidation from "./ModelValidation.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import CiNote from "./CiNote.jsx";
-import LifeAside from "./LifeSummary.jsx";
+import LifeAside, { paramView } from "./LifeSummary.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { distColor } from "../instrument.js";
 import { formatNumber } from "../format.js";
@@ -30,6 +30,12 @@ const DISCRETE_TABS = [
 ];
 
 const pct = (v) => `${(v * 100).toFixed(v < 0.1 ? 2 : 1)}%`;
+
+// A regression result read as its baseline distribution ("weibull_ph" →
+// "weibull"), so its parameters get their plain names ("Scale α (hours)").
+const baselineOf = (result) => ({
+  ...result, distribution_id: String(result.distribution_id || "").replace(/_(ph|aft|po|ah)$/, ""),
+});
 
 // Per-demand (Binomial) reliability: a probability, not a curve over time.
 // Models saved before #233 carry a Wilson 95% interval and no confidence /
@@ -282,6 +288,7 @@ export default function ResultView({ result, modelId = null, name = null, split 
             setState={setCalc}
             nextIdRef={calcNextId}
             name={name || result.distribution}
+            paramLabel={isRegression ? (p) => paramView(baselineOf(result), p).label : null}
           />
         )}
         {tab === "coef" && <Coefficients coefficients={result.coefficients} ratioLabel={result.ratio_label} />}
@@ -289,7 +296,9 @@ export default function ResultView({ result, modelId = null, name = null, split 
           <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} bestFit={bestFit} />
         )}
         {tab === "check" && (
-          <ModelValidation validation={result.validation} modelId={modelId} unit={result.unit} />
+          <ModelValidation validation={result.validation} diagnostics={result.diagnostics}
+                           residualsPath={result.functions?.residuals_path} modelId={modelId}
+                           unit={result.unit} />
         )}
       </div>
 
