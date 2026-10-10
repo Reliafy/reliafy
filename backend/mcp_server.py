@@ -2732,7 +2732,8 @@ class RbdNode(BaseModel):
     repair_quality: Optional[RepairQuality] = Field(None, description=(
         "Repairable component: how good each repair is — imperfect repair (Kijima I/II with q) and replacement "
         "at the N-th failure. Such a block has no exact long-run figures: analyze_rbd simulates them (and says "
-        "why). Not on standby groups, blocks replaced on condition or common-cause members' exact figures."))
+        "why). Not on standby groups, blocks replaced on condition or common-cause members' exact figures. Not "
+        "yet with a mixture (two-failure-mode) life: that can't be simulated quickly, so it's refused."))
     capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description=_CAPACITY_DESCRIPTION)
     covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
         "Non-repairable component/series/parallel block on a saved covariate (regression) model: covariates "
