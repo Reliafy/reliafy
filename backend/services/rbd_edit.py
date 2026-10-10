@@ -15,7 +15,8 @@ Ops (plain dicts, already shape-checked by the MCP layer's pydantic models)::
     {"op": "add_edge", "source": ..., "target": ...}
     {"op": "remove_edge", "source": ..., "target": ...}
     {"op": "set", "name"?, "unit"?, "repairable"?, "repair_crews"?, "maintenance_groups"?,
-     "safety_function"?, "target_sil"?, "costs"?: {"downtime_rate"?, "horizon"?, "discount_rate"?}}
+     "safety_function"?, "target_sil"?, "costs"?: {"downtime_rate"?, "horizon"?, "discount_rate"?},
+     "production"?: {"demand"?, "unit"?, "period"?}}
     {"op": "add_ccf", "members": [...], "beta": ..., "basis"?, "id"?}
     {"op": "remove_ccf", "id": ...}
 
@@ -59,11 +60,13 @@ _FIELD_TYPES = {
     "maintenance_group": ("component",),
     "crew_priority": ("component", "standby"),
     "repair_one_at_a_time": ("standby",),
+    # Throughput while it works (#122).
+    "capacity": ("component", "standby"),
 }
 UPDATE_FIELDS = ("label", *_FIELD_TYPES)
 #: Block settings ``update_node``'s ``clear`` can remove.
 CLEARABLE = ("costs", "preventive", "inspection", "maintenance_group", "crew_priority", "instant_repair",
-             "repair_one_at_a_time")
+             "repair_one_at_a_time") + ("capacity",)
 
 
 class EditError(ValueError):
@@ -287,6 +290,13 @@ class _Editor:
                     if not label:
                         raise EditError("label can't be blank.")
                     data["label"] = label
+                elif key == "capacity":
+                    from backend.services import rbd_capacity
+
+                    try:
+                        data["capacity"] = rbd_capacity.parse_capacity(value, where)
+                    except rbd_capacity.CapacityError as exc:
+                        raise EditError(str(exc)) from None
                 elif key in ("preventive", "inspection"):
                     # A block has a schedule or proof tests, not both: the new
                     # one replaces the other (and the RCM link it carried).
@@ -347,10 +357,34 @@ class _Editor:
             parts.append("made repairable (availability)" if op["repairable"]
                          else "made non-repairable (reliability)")
         parts += self._set_repairable_settings(op)
+        if op.get("production") is not None:
+            parts.append(self._set_production(op["production"]))
         if not parts:
             raise EditError("nothing to set — give name, unit, repairable, repair_crews, maintenance_groups, "
-                            "safety_function, target_sil and/or costs.")
+                            "safety_function, target_sil, costs and/or production.")
         return "; ".join(parts)
+
+    def _set_production(self, raw: dict) -> str:
+        """``set``'s demand, capacity unit and period (#122): each field given
+        replaces the saved one, 0 or "" clears it."""
+        from backend.services import rbd_capacity
+
+        merged = dict(self.graph.get("production") or {})
+        for key in ("demand", "unit", "period"):
+            if key in raw and raw[key] is not None:
+                if raw[key] in (0, ""):
+                    merged.pop(key, None)
+                else:
+                    merged[key] = raw[key]
+        try:
+            production = rbd_capacity.parse_production(merged)
+        except rbd_capacity.CapacityError as exc:
+            raise EditError(str(exc)) from None
+        if production:
+            self.graph["production"] = production
+        else:
+            self.graph.pop("production", None)
+        return "production set" if production else "production cleared"
 
     def _set_costs(self, costs: dict) -> list[str]:
         """``set``'s diagram costs (#99, #219): each field given replaces the
