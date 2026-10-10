@@ -36,6 +36,7 @@ def cheapest_rbd_design(
     blocks: list | None = Body(default=None),
     discount_rate: float | None = Body(default=None),
     trains: list | None = Body(default=None),
+    horizons: list | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -45,7 +46,9 @@ def cheapest_rbd_design(
     comparison and the diagram with the copies drawn on it. ``discount_rate``
     (% a year; default the diagram's) makes the totals present values (#219).
     ``trains`` (``[{name, blocks}]``, #227) are chains of blocks copied whole;
-    with them, ``blocks: []`` copies the trains alone."""
+    with them, ``blocks: []`` copies the trains alone. ``horizons`` (the
+    diagram's unit; default 5, 10 and 20 years) are priced alongside, with an
+    endless one when discounted (``by_horizon``, #319)."""
     if not billing_service.premium_compute_allowed(session, ctx.user):
         return JSONResponse(status_code=402, content=AVAILABILITY_PRO_PAYLOAD)
     owners = ctx.read_owners
@@ -57,7 +60,7 @@ def cheapest_rbd_design(
         result = rbd_costs.cheapest_design(
             graph, resolve_model, horizon=horizon, min_availability=min_availability,
             blocks=[str(b) for b in blocks] if blocks else ([] if trains and blocks is not None else None),
-            discount_rate=discount_rate, trains=trains,
+            discount_rate=discount_rate, trains=trains, horizons=horizons,
         )
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})

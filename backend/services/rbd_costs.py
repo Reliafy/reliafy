@@ -22,9 +22,13 @@ Costs are in whatever currency the user entered them. The total cost of
 ownership (and the cheapest design's) is undiscounted unless the diagram (or
 the request) gives a discount rate in % a year (#219, RePyability 0.12's
 ``discount_rate``): then it is the present value, the purchases at the start
-and the running costs discounted continuously, the horizon counting as
-``(1 - exp(-r H)) / r``. The window's cost (simulated or exact) is never
-discounted.
+and the running costs discounted continuously — RePyability's own
+``total_cost(discount_rate=r)`` (#319: Reliafy works out no discount factor of
+its own). Both also come over several horizons at once (``by_horizon``,
+:mod:`backend.services.rbd_discount`): from new (``expected_cost``, discounted
+from when each cost falls) and at the long-run rate, with an endless horizon's
+net present cost when discounted. The window's cost (simulated or exact) is
+never discounted.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from typing import Any, Optional
 import numpy as np
 
 from backend.services import rbd_analysis as ra
+from backend.services import rbd_discount
 from backend.services import rbd_maintenance as rm
 from backend.services.rbd_analysis import AnalysisError
 
@@ -243,6 +248,7 @@ def cost_summary(rbd, graph: dict, labels: dict, gate_ids: set, overrides: dict,
 
     diagram = rm.diagram_costs(graph)
     horizon = diagram["horizon"] or float(t_sim)
+    disc = rm.discount(graph)
     if exact is not None:
         by_category = {k: ra._f(v) for k, v in exact["by_category"].items()}
     elif simulated is not None and t_sim:
@@ -259,44 +265,54 @@ def cost_summary(rbd, graph: dict, labels: dict, gate_ids: set, overrides: dict,
         "acquisition_cost": acquisition,
         "horizon": horizon,
         "horizon_basis": "set" if diagram["horizon"] else "window",
-        **present_value(acquisition, rate, horizon, rm.discount(graph)),
+        **ownership(rbd, graph, overrides, rate, basis, horizon, disc),
         "simulated": simulated,
     }
 
 
-def present_value(acquisition: float, rate: Optional[float], horizon: float,
-                  disc: Optional[dict]) -> dict:
-    """The total cost of owning the system for ``horizon``: the purchases plus
-    the running ``rate`` over it, as ``RepairableRBD.total_cost`` gives it —
-    with a discount (:func:`rbd_maintenance.discount`) its present value, the
-    horizon counting as ``(1 - exp(-r H)) / r`` (#219). ``running_cost`` and
-    ``total_cost`` (None without a rate), the discount (% a year, and the
-    continuous rate per unit time RePyability takes; None undiscounted) and,
-    discounted, the undiscounted total beside it."""
-    r = disc["per_unit"] if disc else 0.0
-    # What a unit cost rate over the horizon is worth now, as total_cost
-    # counts it: the horizon itself undiscounted.
-    present = float(horizon) if r == 0.0 else -math.expm1(-r * float(horizon)) / r
-    has_rate = rate is not None
+def ownership(rbd, graph: dict, overrides: dict, rate: Optional[float], basis: Optional[str],
+              horizon: float, disc: Optional[dict]) -> dict:
+    """The total cost of owning the system for ``horizon`` and over the other
+    horizons compared (#319), all RePyability's: ``total_cost`` (the
+    purchases plus the long-run ``rate`` over it; with a discount,
+    :func:`rbd_maintenance.discount`, its present value, #219) as
+    ``running_cost`` and ``total_cost`` (None without a rate), the discount
+    (% a year, and the continuous rate per unit time RePyability takes; None
+    undiscounted), discounted the undiscounted total beside it, and
+    ``by_horizon`` (:func:`rbd_discount.by_horizon`: from new and at the
+    long-run rate, and an endless horizon's net present cost). A simulated
+    ``rate`` has no present value (``present_value_note`` says why)."""
+    table = rbd_discount.by_horizon(rbd, graph, overrides, horizon, rate, basis, disc)
+    row = next(r for r in table["rows"] if r["set"])
+    total = row["total_cost"]
+    acquisition = float(rbd.acquisition_cost)
     return {
-        "running_cost": ra._f(rate * present) if has_rate else None,
-        "total_cost": ra._f(acquisition + rate * present) if has_rate else None,
+        "running_cost": ra._f(total - acquisition) if total is not None else None,
+        "total_cost": total,
         "discount_rate": disc["annual"] if disc else None,
-        "discount_rate_per_unit": r if disc else None,
-        "undiscounted_total_cost": ra._f(acquisition + rate * horizon) if (disc and has_rate) else None,
+        "discount_rate_per_unit": disc["per_unit"] if disc else None,
+        "undiscounted_total_cost": row["undiscounted_total_cost"] if disc else None,
+        # From new over the horizon (exact or numerical), where RePyability has it.
+        "total_cost_from_new": row["from_new"],
+        "present_value_note": table["present_value_note"],
+        "by_horizon": table,
     }
 
 
-def with_discount(costs: Optional[dict], graph: dict, annual) -> Optional[dict]:
+def with_discount(costs: Optional[dict], graph: dict, annual, resolve_model=None) -> Optional[dict]:
     """An availability result's ``costs`` re-priced at ``annual`` % a year (0:
-    undiscounted) — the same long-run rate, purchases and horizon, so a saved
-    result needn't be run again for another rate (the MCP ``analyze_rbd``'s
-    ``discount_rate``)."""
+    undiscounted) — the same horizon, so a saved result needn't be simulated
+    again for another rate (the MCP ``analyze_rbd``'s ``discount_rate``). The
+    diagram is built again (``resolve_model`` resolves its saved models) for
+    RePyability to price it: its exact long-run rate where the result has one;
+    a simulated one stays undiscounted."""
     if not costs or annual is None:
         return costs
     disc = rm.discount(graph, annual)
-    return {**costs, **present_value(float(costs.get("acquisition_cost") or 0.0), costs.get("cost_rate"),
-                                     float(costs["horizon"]), disc)}
+    rbd, _, _, working, broken = ra._build_repairable_rbd(graph, resolve_model)
+    return {**costs, **ownership(rbd, graph, {"working_nodes": working, "broken_nodes": broken},
+                                 costs.get("cost_rate"), costs.get("cost_rate_basis"),
+                                 float(costs["horizon"]), disc)}
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +419,8 @@ def _checked_trains(trains: list[dict], graph: dict, rbd, labels: dict, gate_ids
 
 
 def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availability=None,
-                    blocks: Optional[list] = None, discount_rate=None, trains=None) -> dict:
+                    blocks: Optional[list] = None, discount_rate=None, trains=None,
+                    horizons=None) -> dict:
     """The number of active copies of each priced block (every block with a
     purchase price, or ``blocks``) that owns the diagram for ``horizon`` at the
     lowest total cost (``RepairableRBD.allocate_redundancy``), optionally only
@@ -418,7 +435,13 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
     the node its last feeds (a vote there keeps the number it needs, so a
     fourth train of a 2-out-of-3 makes it 2-out-of-4). With trains, the
     blocks copied one at a time default to the priced blocks outside them
-    (``blocks=[]``: none)."""
+    (``blocks=[]``: none).
+
+    ``by_horizon`` (#319) prices the choice over several horizons at once —
+    ``horizons`` (the diagram's unit) or 5, 10 and 20 years, and an endless
+    one when discounted — each the cheapest design for that horizon
+    (``allocate_redundancy`` again) against the design as drawn
+    (``total_cost`` over them all in one call)."""
     ra.require_blocks(graph)
     if not (graph or {}).get("repairable"):
         raise AnalysisError("The cheapest design is for repairable (availability) diagrams.")
@@ -428,6 +451,7 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
         raise AnalysisError("Set how long the system is owned (the horizon) to price it over.")
     disc = rm.discount(graph, discount_rate)
     r = disc["per_unit"] if disc else 0.0
+    given = rbd_discount.parse_horizons(horizons)
     floor = None
     if not rm._blank(min_availability):
         try:
@@ -475,6 +499,9 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
             f"this one has {len(chosen) + len(trained)}."
         )
     named = {**labels, **{t["key"]: t["name"] for t in trained}}
+    allocate_kw = dict(nodes=chosen or None, min_availability=floor, max_units=MAX_COPIES, discount_rate=r,
+                       # Trains are copied whole (#227); without, every node copied alone.
+                       **({"trains": {t["key"]: t["blocks"] for t in trained}} if trained else {}))
     if not rbd.downtime_cost_rate:
         note = ("The diagram has no system downtime cost, so extra copies only add cost — "
                 "set the cost of an hour of downtime to weigh them.")
@@ -482,11 +509,7 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
         note = None
     try:
         with np.errstate(all="ignore"):
-            alloc = rbd.allocate_redundancy(
-                horizon, nodes=chosen or None, min_availability=floor, max_units=MAX_COPIES, discount_rate=r,
-                # Trains are copied whole (#227); without, every node copied alone.
-                **({"trains": {t["key"]: t["blocks"] for t in trained}} if trained else {}),
-            )
+            alloc = rbd.allocate_redundancy(horizon, **allocate_kw)
             current = {
                 "total_cost": float(rbd.total_cost(horizon, discount_rate=r)),
                 "cost_rate": float(rbd.expected_cost_rate()),
@@ -564,8 +587,39 @@ def cheapest_design(graph: dict, resolve_model=None, horizon=None, min_availabil
         "common_cause": _common_cause_out(common_cause),
         # Trains first, so a block's copies are wired to the trains' copies too.
         "graph": apply_copies(apply_train_copies(graph, train_rows), units) if changed else None,
+        "by_horizon": _design_by_horizon(rbd, drawn, float(horizon), disc, given, allocate_kw, trained, labels),
         "repyability_version": ra._repyability_version(),
     }
+
+
+def _design_by_horizon(rbd, graph: dict, horizon: float, disc: Optional[dict], given: Optional[list],
+                       allocate_kw: dict, trained: list, labels: dict) -> dict:
+    """The cheapest design over each horizon compared (#319): the design as
+    drawn priced over them all by ``total_cost`` (an array, and endless when
+    discounted), and ``allocate_redundancy`` at each — its copies, total and
+    long-run availability. A horizon whose search fails says so (``error``)."""
+    rows = rbd_discount.horizons(graph, horizon, disc, given)
+    r = disc["per_unit"] if disc else 0.0
+    times = np.array([np.inf if row["endless"] else row["horizon"] for row in rows], dtype=float)
+    current = np.atleast_1d(rbd_discount._quiet(rbd.total_cost, times, discount_rate=r))
+    names = {t["key"]: t["name"] for t in trained}
+    out = []
+    for row, t, now in zip(rows, times, current):
+        entry: dict[str, Any] = {**row, "current_total": ra._f(now)}
+        try:
+            alloc = rbd_discount._quiet(rbd.allocate_redundancy, float(t), **allocate_kw)
+        except (ValueError, NotImplementedError) as exc:
+            entry.update(design_total=None, saving=None, copies=None, availability=None,
+                         error=ra.plain_reason(_friendly(str(exc), labels)))
+            out.append(entry)
+            continue
+        copies = [{"id": str(k), "label": names.get(k, labels.get(k, str(k))), "train": k in names, "copies": int(v)}
+                  for k, v in alloc.units.items()]
+        entry.update(design_total=ra._f(alloc.total_cost), availability=ra._f(alloc.availability),
+                     saving=ra._f(now - alloc.total_cost), copies=copies,
+                     changed=any(c["copies"] != 1 for c in copies))
+        out.append(entry)
+    return {"rows": out, "discount_rate": disc["annual"] if disc else None}
 
 
 def _common_cause_out(common: Optional[dict]) -> Optional[dict]:
