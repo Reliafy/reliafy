@@ -356,7 +356,7 @@ def public_results(model: Model) -> dict:
         functions["model_id"] = model.id
         functions["evaluate_path"] = f"/api/models/{model.id}/evaluate"
         # Confidence bounds aren't available for regression models.
-        if model.kind in ("distribution", "discrete", "nonparametric"):
+        if model.kind in ("distribution", "discrete", "nonparametric", fitting.more_models.FLEXIBLE_KIND):
             functions["confidence_path"] = f"/api/models/{model.id}/confidence"
             functions["life_path"] = f"/api/models/{model.id}/life"
         results["functions"] = functions
@@ -463,6 +463,12 @@ def evaluate_at(db, model: Model, times, owner_id, covariates: dict | None = Non
         live = entry["model"]
         row, used = _covariate_row(entry.get("fields") or [], covariates)
         Z = pd.DataFrame(row) if row else None
+    elif model.kind == fitting.more_models.FLEXIBLE_KIND:
+        # Royston-Parmar (#179): no from_params, so the live (rehydrated) fit.
+        entry = get_live_model(db, model.id, owner_id)
+        if entry is None:
+            raise ModelNotFound(model.id)
+        live = entry["model"]
     elif model.kind in ("distribution", "discrete") and results.get("params") and (
         dist_id in fitting.DISTRIBUTIONS or dist_id in fitting.DISCRETE
     ):
