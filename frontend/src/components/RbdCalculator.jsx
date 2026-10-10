@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
-import { COLORWAY, DANGER, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
+import { COLORWAY, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
 import { analyzeRbd, getActiveRbdJob, getRbdJob } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
@@ -11,6 +11,7 @@ import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./Rbd
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
 import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
 import AvailabilityPolicies, { SafetyNotes } from "./AvailabilityPolicies.jsx";
+import RbdPfdChart from "./RbdPfdChart.jsx";
 import { pctAt, pctDigits, precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
 import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
@@ -501,9 +502,10 @@ function SifAnswer({ safety }) {
   const pfd = safety.pfd_avg;
   const hasTarget = safety.target_sil != null;
   const tone = hasTarget && !met ? "bad" : optimistic ? "caveat" : hasTarget && met ? "good" : "neutral";
-  // Margin to the target's limit, or (no target) to the achieved band's.
-  const ref = hasTarget ? safety.target_sil : safety.sil;
-  const ratio = ref && pfd != null ? pfd / silLimit(ref) : null;
+  // Margin to the target's limit, or (no target) to the achieved band's: the
+  // PFDavg's, as worked out with it (#322); a result saved before says it here.
+  const ref = safety.margin?.sil ?? (hasTarget ? safety.target_sil : safety.sil);
+  const ratio = safety.margin ? safety.margin.ratio : ref && pfd != null ? pfd / silLimit(ref) : null;
   const margin = ratio == null
     ? null
     : ratio <= 1
@@ -580,38 +582,15 @@ function smoothedText(span, unit) {
 }
 
 // One chart (#311, #313): the exact A(t) with any simulation over the same
-// window drawn on it — or, for a safety function, PFD(t) = 1 − A(t) with the
-// PFDavg and the target SIL's limit.
+// window drawn on it — or, for a safety function, PFD(t) (RbdPfdChart).
 function AvailabilityChart({ exact, steady, unit, sim = null, safety = null }) {
   const u = unit ? ` ${unitInText(unit)}` : "";
   const c = exact?.curve || {};
   if (!(c.t?.length > 1)) return null;
   const fromNow = exact.from === "now";
   const xTitle = unit ? `Time ${fromNow ? "from now" : "from new"} (${unit})` : "Time";
-  if (safety) {
-    const pfd = c.availability.map((a) => (a == null ? null : 1 - a));
-    const limit = safety.target_sil ?? safety.sil;
-    const shapes = [
-      ...(safety.pfd_avg != null ? [referenceShape({ y: safety.pfd_avg })] : []),
-      ...(limit ? [referenceShape({ y: silLimit(limit), line: { color: DANGER, dash: "dot", width: 1 } })] : []),
-    ];
-    return (
-      <Plot
-        data={[fitLine({ x: c.t, y: pfd, name: "PFD(t)", hovertemplate: `t = %{x:,.4~g}${u}<br>PFD(t) = %{y:.3~g}<extra></extra>` })]}
-        layout={{
-          height: 300,
-          xaxis: { title: { text: xTitle } },
-          yaxis: { title: { text: "PFD(t)" }, rangemode: "tozero", exponentformat: "e" },
-          shapes,
-          showlegend: false,
-          annotations: limit
-            ? [{ x: 1, xref: "paper", y: silLimit(limit), yanchor: "bottom", xanchor: "right", showarrow: false,
-                 text: `SIL ${limit} limit`, font: { size: 12, color: DANGER } }]
-            : [],
-        }}
-      />
-    );
-  }
+  // PFD(t) from the library's unavailability, on a log axis with the SIL bands (#322).
+  if (safety) return <RbdPfdChart exact={exact} safety={safety} unit={unit} />;
   // The simulation over the same window, smoothed; the exact line as it is.
   const simY = sim ? rollingMean(sim.curve.t, sim.curve.availability) : null;
   const traces = [
@@ -953,6 +932,10 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
   const span = exactOk ? `${formatNumber(exact.window)}${u}` : "";
   const windowKpis = exactOk ? [
     { label: `Mission availability (${fromNow ? "next" : "first"} ${span})`, value: pctOf(exact.mission_availability) },
+    // A safety function's PFD over the window, the library's own unavailability (#322).
+    safety && exact.mission_unavailability != null && {
+      label: `Mean PFD (${fromNow ? "next" : "first"} ${span})`, value: formatNumber(exact.mission_unavailability),
+    },
     fromNow && { label: "Lowest A(t)", value: pctOf(exact.availability_min) },
     { label: "Expected failures", value: formatNumber(exact.expected_failures) },
     { label: "Expected outages", value: formatNumber(exact.expected_outages) },
@@ -1060,7 +1043,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           <p className="rbd-details-p">
             Figures over time are computed {fromNow ? "from the blocks' states now" : "with every block new at the start"}
             {steady != null && chartOk && !pfdChart ? "; the dashed line on the chart is the long-run availability" : ""}
-            {pfdChart ? "; the dashed line on the chart is the PFDavg, the dotted one the SIL limit" : ""}
+            {pfdChart ? "; the chart is PFD(t) on a log scale over the SIL bands, the dashed line the PFDavg and the dotted one the SIL limit" : ""}
             {sameWindow && !pfdChart ? "; the grey line is the simulation's estimate over the same window, smoothed" : ""}.
             {exact.cost_note ? ` No exact cost: ${exact.cost_note}` : ""}
           </p>
