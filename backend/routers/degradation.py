@@ -86,7 +86,8 @@ def degradation_options(ctx: AccessCtx = Depends(get_access)) -> dict:
             *degradation_fit.PATH_MODELS.values(),
         ],
         "distributions": [
-            {"id": k, "name": v["name"]} for k, v in DISTRIBUTIONS.items()
+            # A bounded distribution (Beta, Uniform) can't fit crossing times.
+            {"id": k, "name": v["name"]} for k, v in DISTRIBUTIONS.items() if not v.get("bounded")
         ],
         "population_methods": [
             {"id": "moments", "name": "Moments (Lu–Meeker)"},

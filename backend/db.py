@@ -164,6 +164,10 @@ def init_db() -> None:
     db.rbd_jobs.create_index([("uid", 1), ("rbd_id", 1), ("created_at", -1)])
     db.rbd_jobs.create_index([("uid", 1), ("cache_key", 1), ("created_at", -1)])
     db.rbd_jobs.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Run history (#112) by diagram, and the runtime quote's calibration log (#286).
+    from backend.services import rbd_runs
+
+    rbd_runs.ensure_indexes(db)
     # Metered AI calls (backend/services/billing.py): credit holds, looked up
     # per user and by whether they're settled; per-user concurrency slots,
     # dropped by TTL if a holder never released one; and which user uploaded

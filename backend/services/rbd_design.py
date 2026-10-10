@@ -192,6 +192,12 @@ def _parse_blocks(graph: dict, raw_blocks) -> list[dict]:
         if not data.get("model"):
             raise DesignError(f"“{label}” has no life model — set one to design it.")
         group = groups.get(bid)
+        if group is not None and ((graph.get("ccf_groups") or [])[group] or {}).get("mgl"):
+            # Its letters fix the group's size (#84): a copy can't join it.
+            raise DesignError(
+                f"“{label}” is in a common-cause group with the multiple Greek letter model, whose letters "
+                "fit the group's size, so it can't be given copies here. Use the beta factor for its group "
+                "to design it.")
         if group is not None and ntype != "component":
             # As drawn the whole block is one member; designed, each unit would
             # have to join the group, which changes what the group means.

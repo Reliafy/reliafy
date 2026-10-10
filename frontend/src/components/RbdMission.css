@@ -1,0 +1,56 @@
+/* Phased missions and networks (#160): the Phases editor, the Calculator
+   tab's "Phased mission" section and the network panel. */
+
+/* --- The Phases editor --------------------------------------------------- */
+.rbd-phases-modal { max-width: 680px; }
+.rbd-phase-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rbd-phase { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 12px; }
+.rbd-phase-head { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.rbd-phase-n {
+  min-width: 16px; line-height: 36px; color: var(--muted); font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+}
+.rbd-phase-name, .rbd-phase-duration { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-12); color: var(--muted); }
+.rbd-phase-name { flex: 1 1 180px; min-width: 0; }
+.rbd-phases-modal input {
+  background: var(--surf); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink);
+  padding: 0.45rem 0.6rem; font-size: var(--fs-14); font-family: inherit; min-height: 36px;
+}
+.rbd-phases-modal input:focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
+.rbd-phase-name input { width: 100%; }
+.rbd-phase-duration input { width: 120px; font-variant-numeric: tabular-nums; }
+.rbd-phase-tools { display: flex; gap: 2px; margin-left: auto; }
+.rbd-phase-tools button { min-width: 32px; justify-content: center; }
+.rbd-phase-needs { margin-top: 8px; font-size: var(--fs-13); }
+.rbd-phase-needs > summary { cursor: pointer; color: var(--muted); }
+.rbd-phase-needs[open] > summary { margin-bottom: 8px; }
+.rbd-phase-blocks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.rbd-phase-k { font-size: var(--fs-12); color: var(--muted); }
+.chip.rbd-need { line-height: 26px; padding: 0 9px; }
+.chip.rbd-need.is-off { text-decoration: line-through; }
+.rbd-phase-vote { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; color: var(--muted); }
+.rbd-phase-vote input { width: 72px; font-variant-numeric: tabular-nums; }
+
+/* --- The Calculator's "Phased mission" section --------------------------- */
+.rbd-mission { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.rbd-mission-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.rbd-mission-head h3 { margin: 0; font-size: var(--fs-16); font-weight: 600; color: var(--ink); }
+.rbd-mission-body { transition: opacity 0.15s; }
+.rbd-mission-body.is-stale { opacity: 0.6; }
+.rbd-mission-chart { margin-top: 12px; }
+.rbd-mission-error { color: var(--danger); font-size: var(--fs-13); margin: 0 0 8px; }
+.rbd-mission-table td, .rbd-mission-table th { white-space: nowrap; }
+.rbd-mission-table thead th:first-child { text-align: left; }
+.rbd-mission-table .calc-row-label { flex-direction: column; align-items: flex-start; gap: 2px; }
+.rbd-mission-needs { display: block; color: var(--muted); font-size: var(--fs-12); font-weight: 400; white-space: normal; }
+
+/* --- The network panel ---------------------------------------------------- */
+.calc-controls.rbd-network-controls { justify-content: flex-start; gap: 12px 24px; }
+.rbd-network-controls .sel-trigger { min-width: 150px; }
+.rbd-network .result-summary { margin-bottom: 12px; }
+
+@media (max-width: 640px) {
+  .rbd-phase-duration input { width: 100px; }
+  .rbd-network-controls .calc-t { flex: 1 1 140px; }
+  .rbd-network-controls .sel-trigger { min-width: 0; width: 100%; }
+}

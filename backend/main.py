@@ -20,9 +20,11 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.db import get_session, init_db
+from backend import life_bounds, more_models, regression_bands, regression_diagnostics
 from backend.fitting import (
     DISCRETE,
     DISTRIBUTIONS,
+    best_candidates,
     MIXTURE_ID,
     FIT_METHODS,
     distribution_capabilities,
@@ -30,6 +32,7 @@ from backend.fitting import (
     REGRESSION_MODELS,
     FitError,
     ModelNotFound,
+    _entry_for,
     bind_owner,
     confidence_bounds,
     covariate_units_from_form,
@@ -44,17 +47,26 @@ from backend.routers import auth as auth_router
 from backend.routers import models as models_router
 from backend.routers import rbds as rbds_router
 from backend.routers import rbd_jobs as rbd_jobs_router
+from backend.routers import rbd_block_check as rbd_block_check_router
 from backend.routers import rbd_compare as rbd_compare_router
+from backend.routers import rbd_runs as rbd_runs_router
 from backend.routers import rbd_fault_tree as rbd_fault_tree_router
 from backend.routers import rbd_design as rbd_design_router
+from backend.routers import rbd_allocation as rbd_allocation_router
+from backend.routers import rbd_capacity as rbd_capacity_router
 from backend.routers import rbd_costs as rbd_costs_router
 from backend.routers import rbd_sensitivity as rbd_sensitivity_router
 from backend.routers import rbd_intervals as rbd_intervals_router
+from backend.routers import rbd_block_inputs as rbd_block_inputs_router
+from backend.routers import rbd_measures as rbd_measures_router
+from backend.routers import rbd_missions as rbd_missions_router
+from backend.routers import rbd_tvc as rbd_tvc_router
 from backend.routers import strategy as strategy_router
 from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
 from backend.routers import reliability_agent as reliability_agent_router
 from backend.routers import degradation as degradation_router
+from backend.routers import degradation_induced as degradation_induced_router
 from backend.routers import recurrent as recurrent_router
 from backend.routers import alt as alt_router
 from backend.routers import rcm as rcm_router
@@ -74,6 +86,8 @@ from backend.routers import oauth as oauth_router
 from backend.routers import outage_logs as outage_logs_router
 from backend.routers import uploads as uploads_router
 from backend.routers import compare_groups as compare_groups_router
+from backend.routers import regression_diagnostics as regression_diagnostics_router
+from backend.routers import tvc as tvc_router
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
@@ -192,17 +206,30 @@ app.include_router(rbds_router.router)
 # Analysis jobs (#146): polling, and the compute service's callback.
 app.include_router(rbd_jobs_router.router)
 app.include_router(rbd_compare_router.router)
+app.include_router(rbd_block_check_router.router)
+app.include_router(rbd_runs_router.router)
 app.include_router(rbd_fault_tree_router.router)
 app.include_router(rbd_design_router.router)
+app.include_router(rbd_allocation_router.router)
+app.include_router(rbd_capacity_router.router)
 app.include_router(rbd_costs_router.router)
 app.include_router(rbd_sensitivity_router.router)
 app.include_router(rbd_intervals_router.router)
+# A block's model entered as its mean, and its mean and median (#299).
+app.include_router(rbd_block_inputs_router.router)
+app.include_router(rbd_measures_router.router)
+app.include_router(rbd_missions_router.router)
+app.include_router(rbd_tvc_router.router)
 app.include_router(strategy_router.router)
 app.include_router(compare_groups_router.router)
+app.include_router(regression_diagnostics_router.router)
+# Reliability along a covariate schedule (#60).
+app.include_router(tvc_router.router)
 app.include_router(billing_router.router)
 app.include_router(assistant_router.router)
 app.include_router(reliability_agent_router.router)
 app.include_router(degradation_router.router)
+app.include_router(degradation_induced_router.router)
 app.include_router(recurrent_router.router)
 app.include_router(alt_router.router)
 app.include_router(rcm_router.router)
@@ -301,7 +328,7 @@ def distributions_endpoint() -> dict:
             # It fits every candidate, so only methods they all support.
             "methods": sorted(
                 set.intersection(*(set(distribution_capabilities(k)["methods"])
-                                   for k in DISTRIBUTIONS)),
+                                   for k in best_candidates())),
                 key=[m["id"] for m in FIT_METHODS].index,
             ),
         },
@@ -313,7 +340,7 @@ def distributions_endpoint() -> dict:
             "params": [],
             # Which distribution to mix, offered in the advanced options.
             "mixture_distributions": [
-                {"id": k, "name": v["name"]} for k, v in DISTRIBUTIONS.items()
+                {"id": k, "name": v["name"]} for k, v in best_candidates().items()
             ],
         },
         *(
@@ -325,13 +352,15 @@ def distributions_endpoint() -> dict:
                 # Derived from SurPyval, not hand-listed: which fit methods and
                 # which model adjustments this distribution actually supports.
                 **distribution_capabilities(key),
+                **more_models.picker_flags(entry),
             }
             for key, entry in DISTRIBUTIONS.items()
         ),
     ]
     discrete = [
         {"id": key, "name": entry["name"], "covariates": False,
-         "discrete": True, "params": list(getattr(entry["dist"], "parameter_names", []))}
+         "discrete": True, "params": list(getattr(entry["dist"], "parameter_names", [])),
+         **more_models.picker_flags(entry)}
         for key, entry in DISCRETE.items()
     ]
     nonparametric = [
@@ -341,10 +370,12 @@ def distributions_endpoint() -> dict:
     ]
     regression = [
         {"id": key, "name": entry["name"], "covariates": True, "params": [],
-         "effect": entry.get("effect")}
+         "effect": entry.get("effect"), **more_models.picker_flags(entry),
+         # Covariates that change over time (#60): SurPyval's fit_tvc_from_df.
+         "tvc": hasattr(entry["fitter"], "fit_tvc_from_df")}
         for key, entry in REGRESSION_MODELS.items()
     ]
-    return {"distributions": plain + discrete + nonparametric + regression,
+    return {"distributions": plain + discrete + nonparametric + more_models.flexible_listing() + regression,
             "fit_methods": FIT_METHODS}
 
 
@@ -360,6 +391,10 @@ def fit_endpoint(
     xr: str | None = Form(default=None),
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
+    i: str | None = Form(default=None),
+    e: str | None = Form(default=None),
+    g: str | None = Form(default=None),
+    group: str | None = Form(default=None),
     z: list[str] = Form(default=[]),
     formula: str | None = Form(default=None),
     unit: str | None = Form(default=None),
@@ -372,7 +407,9 @@ def fit_endpoint(
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
     include_mixtures: str | None = Form(default=None),
+    c_map: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
+    cox: str | None = Form(default=None),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
@@ -387,7 +424,13 @@ def fit_endpoint(
     A plain (sync) handler: FastAPI runs it in its threadpool, so a slow fit
     never holds up other requests.
     """
-    mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}
+    # ``i`` (#60): an item column, for covariates that change over time.
+    # e / g: the failure-mode and group columns of a competing-risks fit (#177).
+    # ``group`` (#179): the Group by column of a shared-frailty model.
+    mapping = {
+        "x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr,
+        "i": i, "e": e, "g": g, "group": group,
+    }
     try:
         if dataset_id:
             dataset = datasets_service.get_dataset(session, dataset_id, owner_id=user["uid"])
@@ -405,8 +448,9 @@ def fit_endpoint(
             )
         options = options_from_form(
             offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
-            include_mixtures=include_mixtures,
+            include_mixtures=include_mixtures, c_map=c_map,
         )
+        options = regression_diagnostics.with_cox_form(options, cox)  # Cox ties / strata / cluster (#61)
         result = fit(
             distribution, df, mapping, covariates=z, formula=formula, unit=unit,
             options=options, covariate_units=covariate_units_from_form(covariate_units),
@@ -430,14 +474,21 @@ def fit_endpoint(
             content={"detail": "Failed to fit the model. The error has been logged."},
         )
     # Point the (unsaved) calculator at the in-memory evaluate / confidence
-    # endpoints. Confidence bounds aren't available for regression models.
+    # endpoints. A parametric regression model has bands at its covariates
+    # (#54); Cox PH has none, and says why.
     functions = result.get("functions")
     if functions and functions.get("model_id"):
         # The calculator endpoints only serve this fit back to its own account.
         bind_owner(functions["model_id"], user["uid"])
         functions["evaluate_path"] = f"/api/evaluate/{functions['model_id']}"
-        if result.get("kind") in ("distribution", "discrete", "nonparametric"):
+        if (result.get("kind") in ("distribution", "discrete", "nonparametric", more_models.FLEXIBLE_KIND)
+                or regression_bands.result_has_bands(result)):
             functions["confidence_path"] = f"/api/confidence/{functions['model_id']}"
+            functions["life_path"] = f"/api/life/{functions['model_id']}"
+        else:
+            functions.update(regression_bands.notes(result))
+        if result.get("kind") == "regression":  # the residual plots (#61)
+            functions["residuals_path"] = f"/api/residuals/{functions['model_id']}"
     return JSONResponse(content=result)
 
 
@@ -478,6 +529,7 @@ def confidence_endpoint(
             alpha_ci=float(body.get("alpha_ci", 0.05)),
             bound=body.get("bound", "two-sided"),
             owner=user["uid"],
+            values=body.get("values"),
         ))
     except ModelNotFound:
         return JSONResponse(
@@ -488,6 +540,30 @@ def confidence_endpoint(
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except (ValueError, TypeError):
         return JSONResponse(status_code=422, content={"detail": "Invalid confidence settings."})
+
+
+@app.post("/api/life/{model_id}")
+def life_endpoint(
+    model_id: str,
+    body: dict = Body(default={}),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """B-lives and MTTF with one-sided lower bounds at ``confidence`` — or,
+    with ``reliability`` [R, ...], the time at each reliability with its
+    ``bound`` (#288) — of a freshly-fitted model. Same access rule as
+    :func:`evaluate_endpoint`."""
+    try:
+        entry = _entry_for(model_id, user["uid"])
+        if regression_bands.is_regression(entry):  # at the body's covariates (#54)
+            return JSONResponse(content=regression_bands.life_answer(entry["model"], entry["fields"], body))
+        return JSONResponse(content=life_bounds.answer(entry["model"], body))
+    except ModelNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Model not found — re-fit to compute B-lives."},
+        )
+    except (ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid life request."})
 
 
 # ---------------------------------------------------------------------------

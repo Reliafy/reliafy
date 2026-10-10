@@ -76,11 +76,35 @@ def get_live(cache_id: str):
     return _STORE.get(cache_id)
 
 
+def _is_renewal(model) -> bool:
+    """An imperfect-repair (renewal / virtual-age) model (#65)."""
+    return type(model).__name__ == "RenewalModel"
+
+
+def _is_regression(model) -> bool:
+    """A proportional-intensity model: its intensity needs covariates (#65)."""
+    return getattr(model, "coeffs", None) is not None and hasattr(model, "feature_names")
+
+
+def live_family(model) -> str:
+    return "renewal" if _is_renewal(model) else "regression" if _is_regression(model) else "nhpp"
+
+
+MINIMAL_REPAIR_ONLY = ("{what} needs a minimal-repair model (Crow-AMSAA, Duane, HPP or Cox-Lewis): {why}")
+_FAMILY_WHY = {
+    "renewal": "this imperfect-repair model has no closed-form failure intensity.",
+    "regression": "this model's failure rate depends on each system's covariates.",
+}
+
+
 def serialize_live(cache_id: str) -> dict | None:
     """Serialise a stored live recurrent model so it can be persisted and
-    rehydrated without re-fitting. ``None`` if there's nothing to serialise."""
+    rehydrated without re-fitting. ``None`` if there's nothing to serialise,
+    or for an imperfect-repair model: its predictions start from each
+    system's history, which a restored model doesn't carry, so it is re-fitted
+    (quickly) instead."""
     m = _STORE.get(cache_id)
-    if m is None or not hasattr(m, "to_dict"):
+    if m is None or not hasattr(m, "to_dict") or _is_renewal(m):
         return None
     try:
         return {"model": m.to_dict()}
@@ -151,18 +175,55 @@ def build_inputs(df: pd.DataFrame, mapping: dict) -> dict:
     return out
 
 
+def all_models() -> list[dict]:
+    """Every recurrent model the app offers, by family (#65): the minimal-
+    repair Poisson processes, intensity regression and imperfect repair."""
+    from backend import recurrent_models as extra
+
+    out = [{"id": k, "name": v["name"], "family": "nhpp"} for k, v in MODELS.items()]
+    out += [{"id": k, "name": v["name"], "short": v["short"], "family": v["family"], "desc": v["desc"]}
+            for k, v in extra.EXTRA_MODELS.items()]
+    return out
+
+
+def fit_spec(df: pd.DataFrame, spec: dict, gof_test: bool = True) -> tuple[dict, str]:
+    """:func:`fit` from a saved model's spec (mapping, model, unit, options
+    and observation windows)."""
+    return fit(df, spec.get("mapping", {}), model_id=spec.get("model_id", "crow_amsaa"),
+               unit=spec.get("unit", ""), gof_test=gof_test, options=spec.get("options"),
+               windows=spec.get("windows"))
+
+
 @hides_solver_names
 def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str = "",
-        gof_test: bool = True) -> tuple[dict, str]:
+        gof_test: bool = True, options: dict | None = None, windows=None) -> tuple[dict, str]:
     """Fit the recurrent model and build the JSON-safe results payload.
 
     Returns ``(payload, cache_id)`` addressing the live parametric model.
     ``gof_test=False`` skips the (bootstrapped) Cramér-von Mises test, for a
-    re-fit that only wants the live model.
+    re-fit that only wants the live model. ``options`` are the model's own
+    settings (a baseline, a memory) and ``windows`` each system's observation
+    windows, entered by hand ({system: [[start, end], ...]} or text); window
+    columns come in the mapping (``ws`` / ``we``). A cause column (``mode``)
+    adds the MCF of each cause (#65).
     """
+    from backend import recurrent_models as extra
+
+    if model_id in extra.EXTRA_MODELS:
+        windows = extra.windows_from(df, mapping, windows) if (windows or mapping.get("ws")) else None
+        payload, live = extra.fit(df, mapping, model_id, unit, gof_test=gof_test, options=options,
+                                  windows=windows)
+        _add_marks(payload, df, mapping)
+        return payload, store_live(live)
     if model_id not in MODELS:
-        raise FitError(f"Unknown model '{model_id}'. Choose one of: {', '.join(MODEL_CHOICES)}.")
+        choices = MODEL_CHOICES + list(extra.EXTRA_MODELS)
+        raise FitError(f"Unknown model '{model_id}'. Choose one of: {', '.join(choices)}.")
     inputs = build_inputs(df, mapping)
+    gaps = None
+    if windows or mapping.get("ws"):
+        spans = extra.windows_from(df, mapping, windows)
+        if spans:
+            inputs, gaps = extra.apply_windows(inputs, spans)
     # The nonparametric MCF estimator doesn't support right truncation (tr) —
     # the parametric fitter does. Give each what it accepts.
     np_inputs = {k: v for k, v in inputs.items() if k != "tr"}
@@ -170,21 +231,77 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
     try:
         with np.errstate(all="ignore"):
             np_model = note_fit(NonParametricCounting.fit(**np_inputs))
-            fitter = MODELS[model_id]["fitter"]
-            para = note_fit(fitter.fit(**inputs))
+            para = note_fit(_fit_nhpp(model_id, inputs))
     except FitError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's message
-        raise FitError(str(exc)) from exc
+        raise FitError(extra.plain_error(exc)) from exc
 
     payload = _build_payload(np_model, para, inputs, model_id, unit, gof_test=gof_test)
-    if mapping.get("mode"):
-        # The failure modes a growth projection classifies (#232).
-        try:
-            payload["failure_modes"] = failure_modes(df, mapping)
-        except FitError:
-            payload["failure_modes"] = None
+    if gaps:
+        payload["windows"] = gaps
+    _add_marks(payload, df, mapping, inputs=None if gaps else inputs)
     return payload, store_live(para)
+
+
+def _fit_nhpp(model_id: str, inputs: dict):
+    """Fit a Poisson-process model. A Crow-AMSAA search that doesn't reach a
+    verified maximum (it can wander off from its default start when systems
+    are watched for different lengths) is started again from the same fit to
+    the times rescaled to the unit interval, whose scale maps back exactly."""
+    fitter = MODELS[model_id]["fitter"]
+    if model_id != "crow_amsaa":
+        return fitter.fit(**inputs)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # an unverified maximum is retried below
+        para = fitter.fit(**inputs)
+    if getattr(para, "maximum", "verified") == "verified":
+        return para
+    scale = float(np.max(inputs["x"])) if np.size(inputs["x"]) else 0.0
+    if not np.isfinite(scale) or scale <= 0:
+        return para
+    scaled = dict(inputs, x=np.asarray(inputs["x"], dtype=float) / scale)
+    for key in ("tl", "tr"):
+        if inputs.get(key) is not None:
+            scaled[key] = np.asarray(inputs[key], dtype=float) / scale
+    if inputs.get("windows"):
+        scaled["windows"] = {k: [(a / scale, b / scale) for a, b in v] for k, v in inputs["windows"].items()}
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            unit_fit = fitter.fit(**scaled)
+        alpha, beta = (float(v) for v in np.asarray(unit_fit.params, dtype=float))
+        if not (np.isfinite(alpha) and np.isfinite(beta)):
+            return para
+        retry = fitter.fit(**inputs, init=[alpha * scale, beta])
+    except Exception:  # noqa: BLE001 - keep the first fit
+        return para
+    return retry if -retry.neg_ll() >= -para.neg_ll() or not np.all(np.isfinite(para.params)) else para
+
+
+def _add_marks(payload: dict, df: pd.DataFrame, mapping: dict, inputs: dict | None = None) -> None:
+    """With a cause (failure-mode) column: the failure modes a growth
+    projection classifies (#232), and the MCF of each cause (#65). Not for a
+    gapped fit (the by-cause models take no windows)."""
+    from backend import recurrent_models as extra
+
+    if not mapping.get("mode"):
+        return
+    try:
+        payload["failure_modes"] = failure_modes(df, mapping)
+    except FitError:
+        payload["failure_modes"] = None
+    if payload.get("windows"):
+        payload["by_cause"] = {"causes": [], "reason": "Failures by cause aren't available with observation "
+                                                       "gaps (windows) yet."}
+        return
+    try:
+        ins = build_inputs(df, mapping) if inputs is None else inputs
+        keep = extra.keep_mask(df, mapping)
+        payload["by_cause"] = _json_safe(extra.by_cause(ins, extra.cause_labels(df, mapping, keep),
+                                                        payload.get("unit", "")))
+    except FitError as exc:
+        payload["by_cause"] = {"causes": [], "reason": str(exc)}
 
 
 def _power_law(model_id: str, params) -> tuple:
@@ -249,6 +366,7 @@ def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_t
     tests = trend_tests(para)
     payload = {
         "kind": "recurrent",
+        "family": "nhpp",
         "unit": canonical_unit(unit),
         "n_systems": n_systems,
         "n_events": n_events,
@@ -284,6 +402,8 @@ def end_of_observation(inputs: dict) -> float:
     tr = inputs.get("tr")
     if tr is not None and np.size(tr):
         t = max(t, float(np.nanmax(tr)))
+    for spans in (inputs.get("windows") or {}).values():  # a gapped fit (#65)
+        t = max([t, *(float(b) for _, b in spans)])
     return t
 
 
@@ -562,9 +682,15 @@ def _params_payload(para, model_id: str, values: list, horizon: float, unit: str
 
 
 def predict(model, horizon: float) -> dict:
-    """Expected cumulative failures by ``horizon`` from a fitted model."""
+    """Expected cumulative failures by ``horizon`` from a fitted model (an
+    imperfect-repair model's by simulation, with a fixed seed)."""
+    if _is_regression(model):
+        raise FitError("This model's failure rate depends on each system's covariates: read the expected "
+                       "failures off its chart for the average system, or per level.")
     with np.errstate(all="ignore"):
-        expected = float(np.asarray(model.mcf(np.array([float(horizon)])), dtype=float).ravel()[0])
+        x = np.array([float(horizon)])
+        values = model.mcf(x, random_state=0) if _is_renewal(model) else model.mcf(x)
+        expected = float(np.asarray(values, dtype=float).ravel()[0])
     return _json_safe({"horizon": float(horizon), "expected_events": expected})
 
 
@@ -826,6 +952,10 @@ def next_failure(model, age, within=None, quantiles=None) -> dict:
     ``∫ exp(−(Λ(age + t) − Λ(age))) dt``."""
     from scipy.integrate import quad
 
+    if _is_renewal(model):
+        from backend import recurrent_models as extra
+
+        return extra.renewal_next_failure(model, age, within=within, quantiles=quantiles)
     age = float(age)
     if not np.isfinite(age) or age < 0:
         raise FitError("The age must be zero or a positive time.")
@@ -877,6 +1007,9 @@ _OVERHAUL_GRID_POINTS = 200
 def _as_cif_model(model_or_params):
     """A model exposing ``cif(t)`` from either a live surpyval recurrence model
     or a ``{"model_id", "params"}`` spec (params as floats or ``{name, value}``)."""
+    fam = live_family(model_or_params)
+    if fam != "nhpp" and not isinstance(model_or_params, dict):
+        raise FitError(MINIMAL_REPAIR_ONLY.format(what="This", why=_FAMILY_WHY[fam]))
     if hasattr(model_or_params, "cif"):
         return model_or_params
     if isinstance(model_or_params, dict):

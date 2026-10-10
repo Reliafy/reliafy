@@ -323,7 +323,12 @@ def test_fit_all_regression_models(dist_id):
     import json
 
     df = _covariate_df()
-    result = fit(dist_id, df, {"x": "time", "c": "censored"}, formula="age + sex")
+    mapping = {"x": "time", "c": "censored"}
+    if REGRESSION_MODELS[dist_id].get("frailty"):
+        # A shared-frailty model needs its Group by column (#179).
+        df = df.assign(site=[f"S{i % 8}" for i in range(len(df))])
+        mapping["group"] = "site"
+    result = fit(dist_id, df, mapping, formula="age + sex")
     json.dumps(result, allow_nan=False)
     assert result["kind"] == "regression"
     assert any(c["name"] == "age" for c in result["coefficients"])
@@ -439,6 +444,8 @@ def test_probability_plot_excludes_censored_points():
 @pytest.mark.parametrize("dist_id", list(DISTRIBUTIONS))
 def test_fit_all_distributions(dist_id):
     values = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    if dist_id == "beta":
+        values = [v / 101 for v in values]  # the Beta lives on (0, 1)
     df = _df("x\n" + "\n".join(map(str, values)) + "\n")
     result = fit(dist_id, df, {"x": "x"})
     assert result["distribution_id"] == dist_id

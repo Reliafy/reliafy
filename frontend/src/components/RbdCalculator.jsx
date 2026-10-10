@@ -1,20 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
-import { COLORWAY, DANGER, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
+import { COLORWAY, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
 import { analyzeRbd, getActiveRbdJob, getRbdJob } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
 import CovariatesModal from "./CovariatesModal.jsx";
-import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./RbdBand.jsx";
+import { covariateWords } from "../rbdTvc.js";
+import { BandControls, BandInterval, BandNote, BandTargets, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
 import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
 import AvailabilityPolicies, { SafetyNotes } from "./AvailabilityPolicies.jsx";
+import RbdSafetyShares from "./RbdSafetyShares.jsx";
+import RbdPfdChart from "./RbdPfdChart.jsx";
 import { pctAt, pctDigits, precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
 import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
+import RbdProduction from "./RbdProduction.jsx";
 import WhatToImprove from "./WhatToImprove.jsx";
+import RbdRunsQuote from "./RbdRunsQuote.jsx";
+import { jobStatusLine, runsPath } from "../rbdRuns.js";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
@@ -116,7 +122,7 @@ function AsOfNote({ result, idToLabel }) {
 // Reliability results (non-repairable RBD): headline MTTF / B-lives, the
 // system + per-node R(t)/F(t) curves, importance measures, and the structural
 // path/cut sets. Also used by the public read-only view.
-export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
+export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBandTargets = null }) {
   const x = result.time;
   const [active, setActive] = useState("sf");
   const unit = result.unit;
@@ -199,7 +205,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
           <span>to</span>
           <span className="drop">{(result.ccf.reliability_with * 100).toFixed(1)}%</span>
           <span className="muted-line" style={{ margin: 0 }}>
-            ({result.ccf.groups.map((g) => `${g.members.join(" & ")} β=${g.beta}`).join("; ")}, at t={fmt(result.ccf.time)}{unit ? ` ${unitInText(unit)}` : ""})
+            ({result.ccf.groups.map((g) => `${g.members.join(" & ")} β ${formatPercent(g.beta)}`).join("; ")}, at t={fmt(result.ccf.time)}{unit ? ` ${unitInText(unit)}` : ""})
           </span>
         </div>
       )}
@@ -261,6 +267,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
 
       <Plot data={traces} layout={layout} download={`${name || "System"} — ${activeLabel}`} />
       <BandNote band={band} />
+      <BandTargets band={band} unit={unit} onChange={onBandTargets} />
 
       {impNodes.length > 0 && (
         <div className="rbd-importance">
@@ -283,6 +290,9 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
                 <th title="Risk Reduction Worth — how much better the system gets if this component were perfect">RRW</th>
                 <th title="Criticality importance (failure-oriented) — the share of system failures this component accounts for">Crit.</th>
                 <th title="Improvement potential — gain available from perfecting this component">Improv.</th>
+                {importance.structural && (
+                  <th title="Structural importance — from the diagram's structure alone, the share of the other components' working/failed states in which this one decides whether the system works. Needs no failure data.">Structural</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -295,6 +305,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
                   <td>{fmt(importance.risk_reduction_worth?.[id])}</td>
                   <td>{fmt(importance.criticality?.[id])}</td>
                   <td>{fmt(importance.improvement_potential?.[id])}</td>
+                  {importance.structural && <td>{fmt(importance.structural[id])}</td>}
                 </tr>
               ))}
             </tbody>
@@ -360,6 +371,8 @@ const IMP_COLS = [
     help: "Long-run share of system downtime caused by this block (failure-oriented criticality: Birnbaum × block unavailability ÷ system unavailability). Exact, at the long-run availabilities." },
   { key: "risk_achievement_worth", label: "RAW", fmt: fmt3,
     help: "Risk achievement worth: how many times worse system unavailability gets while this block is down." },
+  { key: "structural", label: "Structural", fmt: fmt3,
+    help: "From the diagram's structure alone: the share of the other blocks' up/down states in which this block decides whether the system is up. Needs no failure or repair data." },
   { key: "failure_criticality", label: "Drives trips", fmt: fmtPct,
     help: "Share of simulated system failures this block's failure triggered." },
   { key: "restoration_criticality", label: "Drives restoration", fmt: fmtPct,
@@ -385,6 +398,7 @@ function importanceRows(result) {
       // this column's name it would show 100% for every series block.
       crit: i.unavailability_criticality,
       risk_achievement_worth: i.risk_achievement_worth,
+      structural: i.structural,
       // No simulation entry means the block never tripped/restored the system.
       failure_criticality: crit[id] ? c.failure_criticality : null,
       restoration_criticality: crit[id] ? c.restoration_criticality : null,
@@ -501,9 +515,10 @@ function SifAnswer({ safety }) {
   const pfd = safety.pfd_avg;
   const hasTarget = safety.target_sil != null;
   const tone = hasTarget && !met ? "bad" : optimistic ? "caveat" : hasTarget && met ? "good" : "neutral";
-  // Margin to the target's limit, or (no target) to the achieved band's.
-  const ref = hasTarget ? safety.target_sil : safety.sil;
-  const ratio = ref && pfd != null ? pfd / silLimit(ref) : null;
+  // Margin to the target's limit, or (no target) to the achieved band's: the
+  // PFDavg's, as worked out with it (#322); a result saved before says it here.
+  const ref = safety.margin?.sil ?? (hasTarget ? safety.target_sil : safety.sil);
+  const ratio = safety.margin ? safety.margin.ratio : ref && pfd != null ? pfd / silLimit(ref) : null;
   const margin = ratio == null
     ? null
     : ratio <= 1
@@ -580,38 +595,15 @@ function smoothedText(span, unit) {
 }
 
 // One chart (#311, #313): the exact A(t) with any simulation over the same
-// window drawn on it — or, for a safety function, PFD(t) = 1 − A(t) with the
-// PFDavg and the target SIL's limit.
+// window drawn on it — or, for a safety function, PFD(t) (RbdPfdChart).
 function AvailabilityChart({ exact, steady, unit, sim = null, safety = null }) {
   const u = unit ? ` ${unitInText(unit)}` : "";
   const c = exact?.curve || {};
   if (!(c.t?.length > 1)) return null;
   const fromNow = exact.from === "now";
   const xTitle = unit ? `Time ${fromNow ? "from now" : "from new"} (${unit})` : "Time";
-  if (safety) {
-    const pfd = c.availability.map((a) => (a == null ? null : 1 - a));
-    const limit = safety.target_sil ?? safety.sil;
-    const shapes = [
-      ...(safety.pfd_avg != null ? [referenceShape({ y: safety.pfd_avg })] : []),
-      ...(limit ? [referenceShape({ y: silLimit(limit), line: { color: DANGER, dash: "dot", width: 1 } })] : []),
-    ];
-    return (
-      <Plot
-        data={[fitLine({ x: c.t, y: pfd, name: "PFD(t)", hovertemplate: `t = %{x:,.4~g}${u}<br>PFD(t) = %{y:.3~g}<extra></extra>` })]}
-        layout={{
-          height: 300,
-          xaxis: { title: { text: xTitle } },
-          yaxis: { title: { text: "PFD(t)" }, rangemode: "tozero", exponentformat: "e" },
-          shapes,
-          showlegend: false,
-          annotations: limit
-            ? [{ x: 1, xref: "paper", y: silLimit(limit), yanchor: "bottom", xanchor: "right", showarrow: false,
-                 text: `SIL ${limit} limit`, font: { size: 12, color: DANGER } }]
-            : [],
-        }}
-      />
-    );
-  }
+  // PFD(t) from the library's unavailability, on a log axis with the SIL bands (#322).
+  if (safety) return <RbdPfdChart exact={exact} safety={safety} unit={unit} />;
   // The simulation over the same window, smoothed; the exact line as it is.
   const simY = sim ? rollingMean(sim.curve.t, sim.curve.availability) : null;
   const traces = [
@@ -711,14 +703,9 @@ function methodLine(result, exactOk, hasSim) {
   return `Method: ${s}.${tail}`;
 }
 
-// "Queued — 2 ahead of you…" / "Running…" while a simulation job is in flight.
-function jobStatusText(job) {
-  if (!job) return "";
-  if (job.status === "running") return "Running the simulation…";
-  const ahead = job.queue_position;
-  if (ahead == null || ahead <= 0) return "Queued — you're next…";
-  return `Queued — ${ahead} ahead of you…`;
-}
+// "Queued — 2 ahead of you, starts in about 40 s. Then about 15 s, up to
+// 40 s." / "Running…" while a simulation job is in flight (#286's quote).
+const jobStatusText = jobStatusLine;
 
 // Poll intervals for a queued job: every 1.5 s, easing off to 6 s.
 const POLL_FIRST_MS = 1500;
@@ -732,7 +719,8 @@ const quickSeconds = (offer) => (offer ? Number(Number(offer.seconds).toPrecisio
 // running on the calculation service (#146), its place in the queue.
 // ``primary``: the simulation is this view's next step (no exact figures).
 function SimulationActions({ canSimulate, onSimulate, simulating, graph, quick = null, capMessage = null,
-                             onQuick = null, job = null, primary = false }) {
+                             onQuick = null, job = null, primary = false, tMax = null, currentState = null,
+                             rbdId = null }) {
   const [upgrade, setUpgrade] = useState(false);
   if (!onSimulate) return null;
   const canQuick = !canSimulate && !!onQuick && quick && quick.remaining_today > 0 && !capMessage;
@@ -762,6 +750,9 @@ function SimulationActions({ canSimulate, onSimulate, simulating, graph, quick =
           >
             {simulating && canSimulate ? "Simulating…" : canSimulate ? "Run simulation" : "Run full simulation (Pro)"}
           </button>
+          {canSimulate && !simulating && (
+            <RbdRunsQuote graph={graph} tMax={tMax} currentState={currentState} rbdId={rbdId} />
+          )}
           {canQuick && (
             <span className="muted">{quick.remaining_today} of {quick.per_day} free runs left today</span>
           )}
@@ -803,7 +794,8 @@ function windowWords(window, unit, label = null) {
 // Also used by the public read-only view.
 export function AvailabilityView({ result, unit, graph = null, onSimulate = null, onCompute = null, busy = null,
                                   onQuick = null, capMessage = null, job = null, windowLabel = null, top = null,
-                                  improve = null, more = null }) {
+                                  improve = null, more = null, production = null, tMax = null, currentState = null,
+                                  rbdId = null }) {
   const u = unit ? ` ${unitInText(unit)}` : "";
   const hpu = hoursPerUnit(unit);
   // A result saved before #154 is a simulation result (no has_simulation flag).
@@ -840,6 +832,10 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
     capMessage,
     onQuick,
     job,
+    // The quote beside "Run simulation" and the run history (#286, #112).
+    tMax,
+    currentState,
+    rbdId,
   };
 
   // The headline availability and what it's over.
@@ -953,6 +949,10 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
   const span = exactOk ? `${formatNumber(exact.window)}${u}` : "";
   const windowKpis = exactOk ? [
     { label: `Mission availability (${fromNow ? "next" : "first"} ${span})`, value: pctOf(exact.mission_availability) },
+    // A safety function's PFD over the window, the library's own unavailability (#322).
+    safety && exact.mission_unavailability != null && {
+      label: `Mean PFD (${fromNow ? "next" : "first"} ${span})`, value: formatNumber(exact.mission_unavailability),
+    },
     fromNow && { label: "Lowest A(t)", value: pctOf(exact.availability_min) },
     { label: "Expected failures", value: formatNumber(exact.expected_failures) },
     { label: "Expected outages", value: formatNumber(exact.expected_outages) },
@@ -978,6 +978,9 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           )}
         </div>
       )}
+      {/* Production availability (#122), for a diagram with capacities: a
+          second answer, so it sits under the first. */}
+      {production}
       {chart}
       {!needsSim && improve}
 
@@ -995,10 +998,18 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           <p className="rbd-details-p">
             Includes the diagram's {result.common_cause.groups} common-cause
             group{result.common_cause.groups === 1 ? "" : "s"} in every figure
+            {result.common_cause.frequency_left_out ? " but the exact failure frequency" : ""}
             {result.common_cause.availability_without_common_cause != null && (
               <> — without {result.common_cause.groups === 1 ? "it" : "them"} the long-run availability would
                 be {pctOf(result.common_cause.availability_without_common_cause)}</>
             )}.
+          </p>
+        )}
+        {/* #328: with proof tests that take time, only the exact failure frequency (and MUT/MDT) is left out. */}
+        {result.common_cause?.included && result.common_cause.frequency_left_out && (
+          <p className="rbd-details-p">
+            {result.common_cause.frequency_left_out}
+            {result.common_cause.importance_left_out ? ` ${result.common_cause.importance_left_out}` : ""}
           </p>
         )}
         {safety && !result.common_cause?.included && result.common_cause?.availability_with_common_cause != null && (
@@ -1008,6 +1019,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           </p>
         )}
         {safety && <SafetyNotes safety={safety} />}
+        {safety?.shares && <RbdSafetyShares shares={safety.shares} />}
 
         {blocks.length > 0 && impCols.length > 0 && (
           <div className="rbd-avail-imp">
@@ -1060,7 +1072,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           <p className="rbd-details-p">
             Figures over time are computed {fromNow ? "from the blocks' states now" : "with every block new at the start"}
             {steady != null && chartOk && !pfdChart ? "; the dashed line on the chart is the long-run availability" : ""}
-            {pfdChart ? "; the dashed line on the chart is the PFDavg, the dotted one the SIL limit" : ""}
+            {pfdChart ? "; the chart is PFD(t) on a log scale over the SIL bands, the dashed line the PFDavg and the dotted one the SIL limit" : ""}
             {sameWindow && !pfdChart ? "; the grey line is the simulation's estimate over the same window, smoothed" : ""}.
             {exact.cost_note ? ` No exact cost: ${exact.cost_note}` : ""}
           </p>
@@ -1092,6 +1104,9 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
               {precisionNote(result)}
               {result.horizon_shortened && " The window was shortened to keep the simulation quick; the long-run figures don't depend on it."}
             </p>
+            {rbdId && (
+              <p className="rbd-runs-history"><Link to={runsPath(rbdId)}>Run history</Link></p>
+            )}
           </div>
         ) : !needsSim && onSimulate ? (
           <div className="rbd-sim">
@@ -1272,7 +1287,10 @@ const WINDOW_PRESETS = [
   { id: "5y", label: "5 years", hours: 43800 },
 ];
 
-export default function RbdCalculator({ graph, validation, stale, onValidate = null, rbdId = null, name = null, onBuild }) {
+export default function RbdCalculator({
+  graph, validation, stale, onValidate = null, rbdId = null, name = null, onBuild, onProduction = null,
+  onNodeData = null,
+}) {
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | calculating | error
   const [error, setError] = useState(null);
@@ -1293,7 +1311,9 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
   const [covValues, setCovValues] = useState({}); // {nodeId: {covName: value}}
   const [calcSig, setCalcSig] = useState(null); // inputs used for the last calc
   const [showCov, setShowCov] = useState(false);
-  const [band, setBand] = useState({ on: false, level: 0.95 }); // confidence band (#103)
+  // Confidence band (#103), with intervals at several B-lives and times (#325).
+  const [band, setBand] = useState({ on: false, level: 0.95, b_lives: [1, 10, 50], times: [] });
+  const [bandRerun, setBandRerun] = useState(0);
   // "As of now" — the blocks' current states: repairable (#155) and
   // non-repairable (#173, where a failed block stays failed).
   const [asOf, setAsOf] = useState(false);
@@ -1332,6 +1352,8 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
           id: n.id,
           label: n.data.label || n.id,
           covariates: n.data.model.covariates,
+          modelId: n.data.model.modelId || n.data.model.model_id || null,
+          schedules: n.data.covariate_schedules || null, // #52
         })),
     [graph.nodes]
   );
@@ -1383,7 +1405,7 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
 
   // Signature of the calculation inputs, so we can tell when the shown result
   // is out of date with the current "To" / covariate / conditional selections.
-  const bandSig = band.on ? band.level : null;
+  const bandSig = band.on ? JSON.stringify([band.level, band.b_lives, band.times]) : null;
   const tSent = tMax === "" || tMaxAuto ? null : Number(tMax); // null: the backend sizes the axis
   const inputSig = JSON.stringify({
     t: tSent, s: asOf && !graph.repairable ? "" : condAge, cov: covPayload(), band: bandSig,
@@ -1444,7 +1466,9 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
         {
           rbdId: graph.repairable ? rbdId : null,
           force,
-          band: band.on && !graph.repairable ? { level: band.level } : null,
+          band: band.on && !graph.repairable
+            ? { level: band.level, b_lives: band.b_lives, times: band.times?.length ? band.times : null }
+            : null,
           ...(graph.repairable
             ? {
                 simulate: simulate || force || quick,
@@ -1509,6 +1533,12 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
 
   // Validate first when the diagram hasn't been checked since it changed
   // (#300: the check is lost on save, and the Builder tab was the only way).
+  // New band targets (#325) recalculate at once, with the band as now set.
+  useEffect(() => {
+    if (bandRerun > 0) calculate(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bandRerun]);
+
   const calculate = async (force = false, opts = {}) => {
     let v = validation;
     if ((!v || stale) && onValidate) {
@@ -1662,7 +1692,7 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
                 (node) =>
                   `${node.label}: ` +
                   node.covariates
-                    .map((c) => `${c.name}=${covValue(node, c)}`)
+                    .map((c) => covariateWords(c.name, covValue(node, c), node.schedules?.[c.name]))
                     .join(", ")
               )
               .join(" · ")}
@@ -1860,6 +1890,7 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
               Re-run
             </button>
           )}
+          {rbdId && <Link to={runsPath(rbdId)}>Run history</Link>}
         </div>
       )}
 
@@ -1877,7 +1908,13 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
           windowLabel={sentWindowLabel}
           top={top}
           improve={<WhatToImprove graph={graph} rbdId={rbdId} result={result} onTop={setTop} />}
+          tMax={tSent}
+          currentState={statePayload()}
+          rbdId={rbdId}
           more={<AvailabilityCompare graph={graph} rbdId={rbdId} result={result} />}
+          production={
+            <RbdProduction graph={graph} t={result.exact?.window ?? result.t_simulation ?? null} onProduction={onProduction} />
+          }
         />
       )}
       {result && !stale && result.kind === "repairable" && result.quick && !result.can_recompute && (
@@ -1897,15 +1934,29 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
           tMax={tSent}
           conditionalAge={result.conditional_age || 0}
           name={name}
+          onBandTargets={band.on ? (targets) => { setBand((b) => ({ ...b, ...targets })); setBandRerun((n) => n + 1); } : null}
         />
+      )}
+      {result && !stale && result.kind !== "repairable" && (
+        <RbdProduction graph={graph} t={evalT === "" ? null : Number(evalT)} onProduction={onProduction} />
       )}
 
       {showCov && (
         <CovariatesModal
           covNodes={covNodes}
           values={covValues}
-          onApply={(v) => {
+          unit={graph.unit}
+          tMax={tMax === "" || tMaxAuto ? null : Number(tMax)}
+          repairable={!!graph.repairable}
+          onApply={(v, schedules) => {
             setCovValues(v);
+            // #52: schedules live on their blocks, saved with the diagram.
+            const changed = Object.fromEntries(
+              covNodes
+                .filter((n) => JSON.stringify(n.schedules || null) !== JSON.stringify(schedules?.[n.id] || null))
+                .map((n) => [n.id, { covariate_schedules: schedules?.[n.id] || null }])
+            );
+            if (onNodeData && Object.keys(changed).length) onNodeData(changed);
             setShowCov(false);
           }}
           onClose={() => setShowCov(false)}

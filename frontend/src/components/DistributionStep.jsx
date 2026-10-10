@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Select from "./Select.jsx";
 import RefLink from "./RefLink.jsx";
+import { MORE_DESCRIPTIONS, pickerGroups } from "../moreModels.js";
 // Short blurbs shown under the dropdown for context (keyed by distribution id).
 const DESCRIPTIONS = {
   best: "Fits every distribution and keeps the lowest-AIC winner — let the data decide.",
@@ -70,9 +71,12 @@ const OPTION_HELP = {
 // Distribution picker plus advanced fit options (offset / LFP / zero
 // inflation / fixed parameters). ``options`` come from the backend
 // ([{ id, name, params, offsetable }]); ``fitOpts``/``onFitOpts`` hold
-// { offset, zi, lfp, fixed } for plain distributions.
+// { offset, zi, lfp, fixed } for plain distributions. A shared-frailty model
+// (#179) asks for its Group by column: ``columns`` to choose from (less
+// ``usedColumns``), ``group`` / ``onGroup``.
 export default function DistributionStep({ options, value, onChange, fitOpts, onFitOpts,
-                                          fitMethods = [], mapping = {} }) {
+                                          fitMethods = [], mapping = {}, columns = [], usedColumns = null,
+                                          group = "", onGroup = null }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((d) => d.id === value);
   // Advanced fit options (offset/LFP/ZI/fixed) apply to continuous parametric
@@ -86,7 +90,8 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
   // Advanced options carry the mixture's own settings, so the section is shown
   // for a mixture too — with the adjustments that can't apply disabled.
   const isPlain =
-    selected && !selected.covariates && !selected.nonparametric && !selected.discrete;
+    selected && !selected.covariates && !selected.nonparametric && !selected.discrete && !selected.flexible;
+  const blurb = DESCRIPTIONS[value] || MORE_DESCRIPTIONS[value];
   const opts = fitOpts || {};
 
   const how = opts.how || "MLE";
@@ -157,18 +162,8 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
   // Discrete / Non-parametric.
   const asOpt = (d) => ({ value: d.id, label: d.name });
   const isCovariateList = options.some((d) => d.covariates);
-  const groups = isCovariateList
-    ? [
-        ["Proportional hazards", options.filter((d) => !d.effect || d.effect === "hazard")],
-        ["Accelerated failure time", options.filter((d) => d.effect === "aft")],
-        ["Proportional odds", options.filter((d) => d.effect === "odds")],
-        ["Additive hazards", options.filter((d) => d.effect === "additive")],
-      ].filter(([, list]) => list.length)
-    : [
-        ["Continuous", options.filter((d) => !d.nonparametric && !d.discrete)],
-        ["Discrete", options.filter((d) => d.discrete)],
-        ["Non-parametric", options.filter((d) => d.nonparametric)],
-      ].filter(([, list]) => list.length);
+  // Rare and advanced models sit last, under "More models" (#179).
+  const groups = pickerGroups(options, isCovariateList);
   const selectOptions =
     groups.length > 1
       ? groups.flatMap(([heading, list]) => [{ heading }, ...list.map(asOpt)])
@@ -187,13 +182,27 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
           the distribution and how many components under Advanced fit options.
         </p>
       )}
-      {!isMixture && DESCRIPTIONS[value] && (
+      {!isMixture && blurb && (
         <p className="dist-blurb">
           {value === "best" && opts.include_mixtures
             ? "Fits every distribution and two-mode Weibull and LogNormal mixtures. The best mixture wins only if its BIC beats the best single distribution’s."
-            : DESCRIPTIONS[value]}
+            : blurb}
           <RefLink entryId={value} />
         </p>
+      )}
+      {selected?.frailty && onGroup && (
+        <div className="dist-field">
+          <span className="dist-label">Group by (site or batch)</span>
+          <Select
+            value={group || ""}
+            onChange={onGroup}
+            placeholder="Choose a column"
+            options={columns.filter((c) => !usedColumns?.has(c) || c === group).map((c) => ({ value: c, label: c }))}
+          />
+          <span className="muted-line">
+            Units in one group share a hidden risk; the fit says how much the groups differ.
+          </span>
+        </div>
       )}
       {value === "best" && (
         <label className="fitopts-row fitopts-mixtures" title={mixturesBlocked || OPTION_HELP.include_mixtures}>

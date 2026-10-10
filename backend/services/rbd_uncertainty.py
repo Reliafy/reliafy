@@ -416,6 +416,8 @@ def system_band(
     seed: int = SEED,
     target: Optional[float] = None,
     ages: Optional[dict] = None,
+    fractions=None,
+    times=None,
 ) -> dict:
     """The confidence band on a built RBD's reliability over ``grid`` (and
     intervals on its MTTF and B10/B50), from its fitted blocks' uncertainty.
@@ -427,6 +429,11 @@ def system_band(
     band runs from now. ``target`` adds ``design_life``: the interval on the
     time the system reliability falls to it, found per draw as RePyability's
     ``time_to_reliability_uncertainty`` finds it.
+
+    Several targets in one run (#325): ``fractions`` (e.g. ``[0.01, 0.1,
+    0.5]``) adds ``targets.b_lives``, the interval on each B-life, and
+    ``times`` adds ``targets.reliability``, the interval on the (mission)
+    reliability at each time, all from the same draws.
     """
     try:
         level = float(level) if level is not None else DEFAULT_LEVEL
@@ -473,4 +480,58 @@ def system_band(
     }
     if target is not None:
         out["design_life"] = _interval(_b_lives(life, life_sf, 1.0 - target), level)
+    if fractions or times:
+        out["targets"] = {
+            "b_lives": [{"fraction": float(f), **_interval(_b_lives(life, life_sf, float(f)), level)}
+                        for f in fractions or []],
+            "reliability": [],
+        }
+        if times:
+            at = np.asarray([float(t) for t in times], dtype=float)
+            drawn_at = UncertaintyResult(samples=_conditional(drawn, at, s, n), nominal=None, n_draws=n)
+            lo, hi = drawn_at.interval(level)
+            out["targets"]["reliability"] = [
+                {"t": float(t), "lower": ra._f(np.asarray(lo)[i]), "upper": ra._f(np.asarray(hi)[i])}
+                for i, t in enumerate(at)]
     return out
+
+
+#: The most B-lives and times a band takes at once (#325).
+MAX_TARGETS = 8
+
+
+def parse_targets(band: Optional[dict]) -> tuple[Optional[list], Optional[list]]:
+    """A band request's ``b_lives`` (percent failed, e.g. ``[1, 10, 50]``, or
+    fractions below 1) and ``times`` (positive, in the diagram's unit), as
+    fractions and times; None for each one not asked for. Raises
+    :class:`AnalysisError`."""
+    if not band:
+        return None, None
+    out = []
+    for key in ("b_lives", "times"):
+        raw = band.get(key)
+        if raw in (None, []):
+            out.append(None)
+            continue
+        if not isinstance(raw, (list, tuple)):
+            raise ra.AnalysisError(f"band.{key} must be a list of numbers.")
+        values = []
+        for v in raw:
+            if isinstance(v, bool):
+                raise ra.AnalysisError(f"band.{key} must be numbers.")
+            try:
+                x = float(v)
+            except (TypeError, ValueError):
+                raise ra.AnalysisError(f"band.{key} must be numbers.") from None
+            if not np.isfinite(x) or x <= 0:
+                raise ra.AnalysisError(f"band.{key} must be positive.")
+            if key == "b_lives":
+                x = x / 100.0 if x >= 1.0 else x
+                if not 0.0 < x < 1.0:
+                    raise ra.AnalysisError("A B-life is a percent failed between 0 and 100 (e.g. 10 for B10).")
+            values.append(x)
+        values = sorted(set(values))
+        if len(values) > MAX_TARGETS:
+            raise ra.AnalysisError(f"Give at most {MAX_TARGETS} {'B-lives' if key == 'b_lives' else 'times'}.")
+        out.append(values)
+    return out[0], out[1]

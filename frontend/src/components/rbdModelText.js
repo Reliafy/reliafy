@@ -85,6 +85,7 @@ export function lifeLine(model, unit, { short = false } = {}) {
   const withU = (v) => `${n3(v)}${u ? ` ${u}` : ""}`;
   if (model.kind === "regression") return `${model.distribution} · covariates`;
   const k = distKey(model);
+  if (k === "mixture") return model.distribution || "Mixture of failure modes"; // #318
   if (k === "exponential") {
     const r = param(model, "failure_rate");
     // "/h", "/cycle": a custom unit per one of it.

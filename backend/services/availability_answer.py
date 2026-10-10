@@ -92,7 +92,8 @@ def _empty_importance(importance) -> bool:
     for row in importance.values():
         if not isinstance(row, dict):
             return False
-        if any(v is not None for k, v in row.items() if k not in ("label", "pinned")):
+        # Structural importance (#68) needs no long run: it alone isn't a table.
+        if any(v is not None for k, v in row.items() if k not in ("label", "pinned", "structural")):
             return False
     return True
 
@@ -198,7 +199,9 @@ def finish(out: dict, payload: dict) -> dict:
     # #185: common-cause groups the figures leave out, beside them and as a warning.
     common = payload.get("common_cause")
     if common:
-        out["common_cause"] = common
+        # #328: the frequency note is the group's note; said once there.
+        out["common_cause"] = {k: v for k, v in common.items()
+                               if not (k == "frequency_left_out" and v == common.get("note"))}
         if common.get("note"):
             out["warnings"] = [*(out.get("warnings") or []), common["note"]]
 
@@ -219,12 +222,17 @@ def finish(out: dict, payload: dict) -> dict:
     # #186: one reason once; no table of nulls; the headline figure.
     _collapse_routes(out)
     if _empty_importance(out.get("importance")):
+        structural = {(row.get("label") or nid): row["structural"] for nid, row in out["importance"].items()
+                      if row.get("structural") is not None}
         out["importance"] = {}
+        if structural:
+            out["structural_importance"] = structural
         out["importance_note"] = (
             "Importance measures need the exact long-run values, which this diagram doesn't have (see "
-            "long_run_method)" + ("; the simulation's criticality indices (criticality) rank the blocks instead."
+            "long_run_method)" + ("; the simulation's criticality indices (criticality) rank the blocks instead"
                                   if out.get("criticality") else
-                                  "; run the simulation (simulate=true) for its criticality indices."))
+                                  "; run the simulation (simulate=true) for its criticality indices")
+            + ("; structural_importance, from the diagram's structure alone, needs none." if structural else "."))
     headline = _headline(out, payload)
     if headline is not None:
         if common:

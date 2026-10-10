@@ -241,6 +241,97 @@
           },
           "offsetable": true,
           "probability_plot": true
+        },
+        {
+          "id": "beta",
+          "name": "Beta (0 to 1)",
+          "params": [
+            {
+              "name": "alpha",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "beta",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": 1.0
+          },
+          "offsetable": false,
+          "probability_plot": true,
+          "bounded": true
+        },
+        {
+          "id": "beta4",
+          "name": "Beta (four-parameter)",
+          "params": [
+            {
+              "name": "alpha",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "beta",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "a",
+              "min": null,
+              "max": null
+            },
+            {
+              "name": "b",
+              "min": null,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": null,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": true,
+          "bounded": true
+        },
+        {
+          "id": "uniform",
+          "name": "Uniform",
+          "params": [
+            {
+              "name": "a",
+              "min": null,
+              "max": null
+            },
+            {
+              "name": "b",
+              "min": null,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": null,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": true,
+          "bounded": true
+        },
+        {
+          "id": "royston_parmar",
+          "name": "Royston-Parmar (flexible spline)",
+          "params": [],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": false,
+          "flexible": true
         }
       ]
     },
@@ -344,6 +435,72 @@
           ],
           "support": {
             "min": -1.0,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": false
+        },
+        {
+          "id": "discretized_lognormal",
+          "name": "Discretized lognormal",
+          "params": [
+            {
+              "name": "mu",
+              "min": null,
+              "max": null
+            },
+            {
+              "name": "sigma",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": false
+        },
+        {
+          "id": "discretized_gamma",
+          "name": "Discretized gamma",
+          "params": [
+            {
+              "name": "alpha",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "beta",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
+            "max": null
+          },
+          "offsetable": false,
+          "probability_plot": false
+        },
+        {
+          "id": "discretized_loglogistic",
+          "name": "Discretized log-logistic",
+          "params": [
+            {
+              "name": "alpha",
+              "min": 0.0,
+              "max": null
+            },
+            {
+              "name": "beta",
+              "min": 0.0,
+              "max": null
+            }
+          ],
+          "support": {
+            "min": 0.0,
             "max": null
           },
           "offsetable": false,
@@ -655,6 +812,87 @@
           "params": [],
           "support": null,
           "requires_covariates": true
+        },
+        {
+          "id": "additive_hazards",
+          "name": "Additive hazards (Lin-Ying)",
+          "effect": "additive",
+          "ratio_label": null,
+          "params": [],
+          "support": null,
+          "requires_covariates": true,
+          "semi_parametric": true
+        },
+        {
+          "id": "proportional_odds",
+          "name": "Proportional odds (semi-parametric)",
+          "effect": "odds",
+          "ratio_label": "odds ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true,
+          "semi_parametric": true
+        },
+        {
+          "id": "buckley_james",
+          "name": "Buckley-James AFT",
+          "effect": "aft",
+          "ratio_label": "time ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true,
+          "semi_parametric": true
+        },
+        {
+          "id": "weibull_frailty",
+          "name": "Weibull PH, shared frailty",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true,
+          "requires_group": true
+        },
+        {
+          "id": "exponential_frailty",
+          "name": "Exponential PH, shared frailty",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true,
+          "requires_group": true
+        },
+        {
+          "id": "lognormal_frailty",
+          "name": "Lognormal PH, shared frailty",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true,
+          "requires_group": true
+        },
+        {
+          "id": "gamma_frailty",
+          "name": "Gamma PH, shared frailty",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true,
+          "requires_group": true
+        },
+        {
+          "id": "cox_frailty",
+          "name": "Cox PH, shared frailty",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true,
+          "semi_parametric": true,
+          "requires_group": true
         }
       ]
     },
@@ -796,5 +1034,5 @@
       "applies_to": "Plain continuous distributions, 2-4 components"
     }
   ],
-  "total": 60
+  "total": 75
 }

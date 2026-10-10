@@ -7,6 +7,7 @@ import { unitInText } from "./unitText.js";
 import { paramView } from "./LifeSummary.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber } from "../format.js";
+import DegradationInducedLife from "./DegradationInducedLife.jsx";
 
 // Per-item colours: the theme's series colours while each item can have its
 // own; past that, every item is plain ink (colours are never reused). Items
@@ -16,6 +17,8 @@ const COLORS = COLORWAY;
 const TABS = [
   { id: "paths", label: "Path plot" },
   { id: "rel", label: "Reliability" },
+  // The life the path model induces (Lu-Meeker, #63): saved models only.
+  { id: "induced", label: "Induced life" },
 ];
 
 // Both charts share a height that keeps the page on one 900 px screen.
@@ -207,7 +210,7 @@ export default function DegradationResultView({ results, modelId, name = null })
   return (
     <>
       <div className="tabs">
-        {TABS.filter((t) => t.id !== "rel" || relTraces).map((t) => (
+        {TABS.filter((t) => (t.id !== "rel" || relTraces) && (t.id !== "induced" || modelId)).map((t) => (
           <button key={t.id} className={"tab" + (tab === t.id ? " active" : "")} onClick={() => setTab(t.id)}>
             {t.label}
           </button>
@@ -265,6 +268,10 @@ export default function DegradationResultView({ results, modelId, name = null })
               </p>
             </div>
           </div>
+        )}
+
+        {tab === "induced" && modelId && (
+          <DegradationInducedLife modelId={modelId} unit={r.unit} name={name} />
         )}
 
         {tab === "rel" && relTraces && (

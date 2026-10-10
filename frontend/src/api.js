@@ -140,9 +140,10 @@ export function getColumns(file) {
 // Advanced fit options shared by fit + save: offset (3-parameter), zero
 // inflation, limited failure population, fixed parameter values, and a mixture
 // component count (mutually exclusive with the rest — see normalize_options),
-// the fit method, and Best fit's "consider two-mode mixtures" (#236).
+// the fit method, Best fit's "consider two-mode mixtures" (#236) and Cox PH's
+// tie method, strata and cluster columns (#61).
 function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distribution, how,
-                                  include_mixtures } = {}) {
+                                  include_mixtures, cox } = {}) {
   if (offset) form.append("offset", "true");
   if (zi) form.append("zi", "true");
   if (lfp) form.append("lfp", "true");
@@ -151,17 +152,22 @@ function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distr
   if (mixture_distribution) form.append("mixture_distribution", mixture_distribution);
   if (how) form.append("how", how);
   if (include_mixtures) form.append("include_mixtures", "true");
+  const coxSet = cox && Object.fromEntries(Object.entries(cox).filter(([, v]) => v));
+  if (coxSet && Object.keys(coxSet).length) form.append("cox", JSON.stringify(coxSet));
 }
 
 // Column mapping -> form fields. ``mapping`` is { x, c, n, xl, xr, tl, tr }
 // -> column name or "", plus the boolean ``c_invert`` (the c column uses
-// 1 = failed and must be flipped), sent as "1"/"0" whenever c is mapped.
+// 1 = failed and must be flipped), sent as "1"/"0" whenever c is mapped, and
+// ``c_map`` ({"Failed": 0, "Running": 1}: a status column of words), sent as
+// JSON when it has entries (#291).
 function appendMapping(form, mapping) {
-  const { c_invert, ...columns } = mapping || {};
+  const { c_invert, c_map, ...columns } = mapping || {};
   for (const [field, column] of Object.entries(columns)) {
     if (column) form.append(field, column);
   }
   if (columns.c) form.append("c_invert", c_invert ? "1" : "0");
+  if (columns.c && c_map && Object.keys(c_map).length) form.append("c_map", JSON.stringify(c_map));
 }
 
 // Fit a model: distribution id, a data source (an uploaded `file` or a saved
@@ -252,7 +258,23 @@ export function confidenceAt(path, params, range) {
   });
 }
 
+// B-lives and MTTF with one-sided lower bounds (#288). ``path`` comes from the
+// result payload (functions.life_path); ``body`` is { confidence } or, for the
+// time at a reliability, { reliability: [R], confidence, bound }.
+export function lifeAt(path, body) {
+  return request(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // ---- Saved models ----------------------------------------------------------
+
+// Best fit's ranking of every distribution on a saved model's data (#293).
+export function compareModel(id) {
+  return request(`/api/models/${id}/compare`, { method: "POST" });
+}
 
 export function listModels() {
   return request("/api/models");
@@ -266,6 +288,19 @@ export function getModel(id) {
 // time; for a model saved before that, computed (and cached) on request.
 export function getModelValidation(id) {
   return request(`/api/models/${id}/validation`);
+}
+
+// A regression model's checks (#61): the proportional-hazards test, robust
+// standard errors, ties and strata. Stored at fit time; for a model saved
+// before them, computed (and cached) on request.
+export function getModelDiagnostics(id) {
+  return request(`/api/models/${id}/diagnostics`);
+}
+
+// The residuals behind the proportional-hazards test, for plotting. ``path``
+// comes from the result payload (functions.residuals_path).
+export function getResiduals(path) {
+  return request(path);
 }
 
 // Persist a fit. Same form fields as fitModel, plus a name.
@@ -329,7 +364,7 @@ export function createModelFromParams(name, distribution, params, { unit, extras
 // Refit a saved model in place with an edited spec (same dataset, same id --
 // everything referencing the model sees the updated fit).
 export function updateModelFit(id, { distribution, mapping, covariates, covariateUnits, formula, unit, fitOptions } = {}) {
-  const { c_invert, ...columns } = mapping || {};
+  const { c_invert, c_map, ...columns } = mapping || {};
   // Covariate units (#265): omitted keeps the model's own.
   const units = covariateUnits === undefined ? undefined : Object.fromEntries(
     (covariates || []).map((c) => [c, String(covariateUnits[c] || "").trim()]).filter(([, u]) => u)
@@ -341,6 +376,7 @@ export function updateModelFit(id, { distribution, mapping, covariates, covariat
       distribution,
       mapping: columns,
       c_invert: !!(columns.c && c_invert),
+      c_map: columns.c && c_map && Object.keys(c_map).length ? c_map : null,
       covariates: covariates || [],
       formula: formula || null,
       unit: unit || null,
@@ -352,6 +388,7 @@ export function updateModelFit(id, { distribution, mapping, covariates, covariat
       fixed: fitOptions?.fixed && Object.keys(fitOptions.fixed).length ? fitOptions.fixed : null,
       how: fitOptions?.how || null,
       include_mixtures: !!fitOptions?.include_mixtures,
+      cox: fitOptions?.cox && Object.values(fitOptions.cox).some(Boolean) ? fitOptions.cox : null,
       ...(units !== undefined ? { covariate_units: units } : {}),
     }),
   });
@@ -511,6 +548,36 @@ export function renameRbd(id, name) {
 
 export function deleteRbd(id) {
   return request(`/api/rbds/${id}`, { method: "DELETE" });
+}
+
+// A copy of a saved diagram (#290), saved under ``name``: the list row's
+// Duplicate. Plan limits apply as for any save.
+export async function duplicateRbd(id, name) {
+  const full = await getRbd(id);
+  return saveRbd(name, full.graph, null, null);
+}
+
+// A block's model from its mean (#299): ``{distribution_id, mean, given}``
+// (given: the shape or spread, by SurPyval name) or ``{distribution_id,
+// params}``; returns {params, mean, median} — SurPyval's.
+export function rbdBlockModel(body) {
+  return request("/api/rbd-blocks/model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// Which distributions take a mean, and what else each needs (cached).
+let meanForms = null;
+export function rbdMeanForms() {
+  if (!meanForms) {
+    meanForms = request("/api/rbd-blocks/mean-forms").then((d) => d.forms).catch((e) => {
+      meanForms = null;
+      throw e;
+    });
+  }
+  return meanForms;
 }
 
 // ---- Billing & AI credits --------------------------------------------------
@@ -729,6 +796,18 @@ export function analyzeRbd(
   });
 }
 
+// The node covariate modal's live preview (#52): each covariate's stair-step
+// path and the block's R(t) along it, for a saved regression model.
+// ``schedules`` {name: {expression} | {table, period?}}, ``constants`` the
+// other covariates' values, ``tMax`` the window (null: the model's own).
+export function previewRbdSchedule({ modelId, schedules, constants, tMax = null }) {
+  return request("/api/rbds/tvc-preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model_id: modelId, schedules: schedules || {}, constants: constants || {}, t_max: tMax }),
+  });
+}
+
 // An analysis job: {job_id, status: queued|running|done|failed,
 // queue_position, result (done), error (failed)}.
 export function getRbdJob(jobId) {
@@ -742,6 +821,48 @@ export function getActiveRbdJob(rbdId, kind = null) {
   return request(`/api/rbd-jobs?rbd_id=${encodeURIComponent(rbdId)}${k}`);
 }
 
+// How long a repairable diagram's simulation should take (#286), before it
+// runs: {available, median_s, p90_s, text: "about 15 s, up to 40 s"} or
+// {available: false, reason}. Nothing is run.
+export function quoteRbdSimulation({ graph, tMax = null, quick = false, currentState = null }) {
+  return request("/api/rbds/quote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t_max: tMax ?? null, quick: !!quick, current_state: currentState || null }),
+  });
+}
+
+// Simulation run history (#112): the caller's runs, newest first (a diagram's
+// with ``rbdId``), {runs, more, kept_days}; one run in full; several finished
+// runs side by side; the same inputs again ({run_id, status}); a download.
+export function listRbdRuns({ rbdId = null, limit = null } = {}) {
+  const q = new URLSearchParams();
+  if (rbdId) q.set("rbd_id", rbdId);
+  if (limit) q.set("limit", String(limit));
+  const qs = q.toString();
+  return request(`/api/rbd-runs${qs ? `?${qs}` : ""}`);
+}
+
+export function listRbdRunDiagrams() {
+  return request("/api/rbd-runs/diagrams");
+}
+
+export function getRbdRun(runId) {
+  return request(`/api/rbd-runs/${encodeURIComponent(runId)}`);
+}
+
+export function compareRbdRuns(runIds) {
+  return request(`/api/rbd-runs/compare?ids=${runIds.map(encodeURIComponent).join(",")}`);
+}
+
+export function rerunRbdRun(runId) {
+  return request(`/api/rbd-runs/${encodeURIComponent(runId)}/rerun`, { method: "POST" });
+}
+
+export function downloadRbdRun(runId, format = "csv") {
+  return downloadFile(`/api/rbd-runs/${encodeURIComponent(runId)}/export?format=${format}`, `run.${format}`);
+}
+
 // What to improve (#225): a repairable diagram's levers ranked by what a step
 // of each gains. ``costs`` maps lever ids to the cost of making that change;
 // ``order`` "benefit" ranks by gain alone, "benefit_per_cost" puts the costed
@@ -750,7 +871,7 @@ export function getActiveRbdJob(rbdId, kind = null) {
 // where the diagram needs it (Pro). 200 with the ranked levers (or a
 // ``status`` saying why not yet), or 202 with ``job`` to poll at getRbdJob.
 export function rbdSensitivity({ graph, rbdId = null, window = null, step = null, rankBy = null, costs = null,
-                                 order = null, simulate = false }) {
+                                 order = null, simulate = false, limits = null }) {
   return request("/api/rbds/sensitivity", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -763,6 +884,31 @@ export function rbdSensitivity({ graph, rbdId = null, window = null, step = null
       costs,
       order,
       simulate,
+      // {lever id: {min, max}} in the values shown (#324).
+      ...(limits ? { limits } : {}),
+    }),
+  });
+}
+
+// What to improve's other measures (#225, #325): ``measure`` "over_time",
+// "shares" (``groupBy`` "block" | "kind"), "joint", "rate" or "uncertainty"
+// (``method`` "delta" | "sobol", ``times`` for the availability at several
+// times). 200 with the figures, or 202 with ``job`` to poll at getRbdJob
+// (Sobol and times: Pro).
+export function rbdMeasures({ graph, rbdId = null, measure, window = null, groupBy = null, method = null,
+                              times = null, level = null }) {
+  return request("/api/rbds/measures", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      graph,
+      rbd_id: rbdId,
+      measure,
+      window,
+      group_by: groupBy,
+      method,
+      times,
+      level,
     }),
   });
 }
@@ -816,6 +962,17 @@ export function compareRbds(graph, otherId, { name = null, otherName = null, tMa
   });
 }
 
+// Check by simulation (#326): a standby or load-sharing block's exact mean
+// life beside its simulated mean and 95% interval. ``node`` is the block as
+// the builder stores it ({type, data}). Quick and free.
+export function checkBlockMean(node, unit = "") {
+  return request("/api/rbds/check-block-mean", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node, unit }),
+  });
+}
+
 // The cheapest design of a repairable diagram (#99): how many copies of each
 // priced block own it for ``horizon`` at the lowest total cost, optionally at
 // least ``minAvailability`` available. Returns { current, design, graph, ... };
@@ -861,6 +1018,26 @@ export function rbdFaultTree(graph, t = null, tMax = null) {
   });
 }
 
+// A phased mission (#160): the (unsaved) graph's phases worked out — mission
+// reliability, each phase's failure probability, the riskiest phase.
+export function rbdPhases(graph) {
+  return request("/api/rbds/phases", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph }),
+  });
+}
+
+// A network's two-terminal reliability (#160) at ``t`` (null = where it's
+// about 90%), with ``tMax`` the curve's end (null = automatic).
+export function rbdNetwork(graph, t = null, tMax = null) {
+  return request("/api/rbds/network", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t: t ?? null, t_max: tMax ?? null }),
+  });
+}
+
 // Redundancy design (non-repairable graphs): how many copies of each block.
 // ``blocks`` = [{id, cost, weight?, volume?, max_copies, required, strategy,
 // switching, name, types: [{name, model, cost, ...}]}]; give ``budget``
@@ -887,6 +1064,27 @@ export function applyRbdDesign({ graph, blocks, design, t }) {
   });
 }
 
+// What each block needs for the system to meet a target (#53): a reliability
+// at ``t`` (non-repairable) or a long-run availability (repairable). A 422
+// for an unreachable target carries ``err.data.reachable``.
+export function allocateRbd({ graph, target, method, t = null, options = {} }) {
+  return request("/api/rbds/allocate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, target, method, t, options }),
+  });
+}
+
+// The production availability (#122): the capacity distribution and the
+// share of the demand delivered — ``{production: null}`` without capacities.
+export function rbdProduction(graph, t = null) {
+  return request("/api/rbds/production", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t }),
+  });
+}
+
 
 // ---- Degradation & RUL -------------------------------------------------------
 
@@ -899,7 +1097,7 @@ export function getRecurrentOptions() {
   return request("/api/recurrent/options");
 }
 
-function recurrentForm(file, { datasetId, mapping, model, unit, name } = {}) {
+function recurrentForm(file, { datasetId, mapping, model, unit, name, options, windows } = {}) {
   const form = new FormData();
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
@@ -907,8 +1105,14 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name } = {}) {
   form.append("i", mapping.i);
   form.append("x", mapping.x);
   // Optional modifiers, matching the life-data column surface.
-  // ``mode`` is each failure's mode, for a growth projection (#232).
-  ["c", "n", "tl", "tr", "t", "mode"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
+  // ``mode`` is each failure's mode (or cause): a growth projection (#232)
+  // and the MCF by cause (#65); ``ws``/``we`` observation-window columns.
+  ["c", "n", "tl", "tr", "t", "mode", "ws", "we"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
+  // #65: covariate columns, a model's options, windows entered by hand.
+  (mapping.z || []).forEach((col) => form.append("z", col));
+  if (options?.baseline) form.append("baseline", options.baseline);
+  if (options?.m != null && options.m !== "") form.append("m", String(options.m));
+  if (windows && String(windows).trim()) form.append("windows", windows);
   if (model) form.append("model", model);
   if (unit) form.append("unit", unit);
   return form;
@@ -1112,6 +1316,17 @@ export function getDegradationModel(id) {
 // chosen confidence level. Refits the live model on demand.
 export function degradationReliability(id, confidence) {
   return request(`/api/degradation/models/${id}/reliability?confidence=${confidence}`);
+}
+
+// The failure-time distribution the path model induces (Lu-Meeker, #63):
+// its curve, mean and median; ``body`` may ask { times: [t] } for the
+// reliability at each and { reliability: [R] } for the time each is reached.
+export function degradationInducedLife(id, body = {}) {
+  return request(`/api/degradation/models/${id}/induced-life`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 export function renameDegradationModel(id, name) {

@@ -183,3 +183,67 @@ h(t) = t/σ²
 and want to spend only one parameter — small samples benefit from the
 constraint. **Watch out:** if β isn't really 2, you've hard-coded a wrong
 assumption; fit Weibull first and check.
+
+## beta
+
+**Life as a fraction between 0 and 1** — a proportion degraded, a fraction of
+rated life, a share of a mission.
+
+```
+f(x) = x^(α−1)·(1 − x)^(β−1) / B(α, β),   0 < x < 1
+```
+
+Both shapes `α` and `β` are positive; `α = β = 1` is the uniform.
+
+**Use it when** the quantity you recorded is bounded at 0 and 1 by its nature.
+**Watch out:** it can't fit times — anything at or past 1 is refused — so it
+never enters Best fit or a mixture. Rescale only when the bound is real, not to
+squeeze ordinary lifetimes into (0, 1).
+
+## beta4
+
+**A Beta on an interval of your data's own scale** — four parameters: the two
+shapes and the end points `a` and `b`.
+
+```
+f(x) = (x − a)^(α−1)·(b − x)^(β−1) / (B(α, β)·(b − a)^(α+β−1)),   a < x < b
+```
+
+**Use it when** life is known to sit between a floor and a ceiling, as with a
+part retired at a fixed limit. **Watch out:** the end points are estimated from
+the sample, so the fit says every unit fails by `b` — a strong claim past the
+largest observation. With shapes below 1 the likelihood has no maximum: fit by
+maximum product of spacings (MPS) then. Not a Best-fit candidate.
+
+## uniform
+
+**Equally likely anywhere between `a` and `b`.**
+
+```
+R(t) = (b − t)/(b − a),   a ≤ t ≤ b
+h(t) = 1/(b − t)
+```
+
+**Use it for** a quick bound when all you know is a range, or as a check on a
+fitted shape. **Watch out:** the estimates are the smallest and largest
+observations, and they carry no confidence bounds. Not a Best-fit candidate.
+
+## royston_parmar
+
+**A flexible spline for the survival curve** (Royston and Parmar): the log
+cumulative hazard is a restricted cubic spline in log time, with three spline
+terms on the proportional-hazards scale.
+
+```
+log H(t) = s(log t; γ₀, γ₁, γ₂, γ₃)
+```
+
+With one term it is exactly the Weibull. The coefficients `γ` have no physical
+meaning on their own; read the curve instead, which Reliafy draws over the
+data's Kaplan-Meier estimate.
+
+**Use it when** no single distribution follows the data — a hazard that rises
+and then falls, say — but you still want smooth curves, B-lives with bounds and
+an AIC to compare with the plain distributions on the same data. **Watch out:**
+like any spline, it follows the data closely inside their range and says little
+beyond it.

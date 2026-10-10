@@ -197,6 +197,7 @@ def test_sample_projection_view_is_ready_in_the_app(samples):
     assert view["result"]["projected"]["mtbf"] > view["result"]["demonstrated"]["mtbf"]
 
 
+@pytest.mark.real_seed  # counts or patches what a real seed does
 def test_an_existing_deployment_gets_the_failure_mode_column(monkeypatch):
     """Samples are seeded once and shared: a deployment seeded before #265
     has the compressor data without failure modes. The next start adds the
@@ -478,7 +479,8 @@ def test_a_dataset_behind_any_model_kind_cant_be_deleted(env, monkeypatch):
     owners = [A, config.SAMPLE_OWNER]
     rec = datasets_service.dependents_for_dataset(env.db, "sample-ds-compressor-events", owners)
     deg = datasets_service.dependents_for_dataset(env.db, "sample-ds-brake-wear", owners)
-    assert [d["kind"] for d in rec] == ["recurrent model"] and [d["kind"] for d in deg] == ["degradation model"]
+    # (Two sample recurrent models use the compressor history, #65.)
+    assert {d["kind"] for d in rec} == {"recurrent model"} and [d["kind"] for d in deg] == ["degradation model"]
 
 
 def test_an_alt_model_whose_dataset_is_gone_still_gives_wald_bounds(env):

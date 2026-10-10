@@ -79,9 +79,14 @@ from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 
 from backend import alt as alt_fit
+from backend import competing_risks
 from backend import config
 from backend import fitting
+from backend import life_bounds
+from backend import regression_bands
+from backend.regression_diagnostics import COX_KEY
 from backend import recurrent as recurrent_fit
+from backend import recurrent_models
 from backend import storage
 from backend.fitting import FitError
 from backend.services import access as access_service
@@ -94,13 +99,17 @@ from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
 from backend.services import import_guard
 from backend.services import oauth as oauth_service
+from backend.services import rbd_network, rbd_phases
 from backend.services import outage_logs as outage_logs_service
 from backend.services import models as models_service
+from backend.services import regression_diagnostics as checks_service
 from backend.services import public_links as links_service
+from backend.services import rbd_capacity
 from backend.services import rbd_edit
 from backend.services import rbd_graph
 from backend.services import rbd_import
 from backend.services import rbd_jobs as rbd_jobs_service
+from backend.services import rbd_runs as rbd_runs_service
 from backend.services import rbd_repeats
 from backend.services.rbd_import import structure as rbd_structure
 from backend.services import rbds as rbds_service
@@ -111,6 +120,7 @@ from backend.services import tokens as tokens_service
 from backend.services import uploads as uploads_service
 from backend.services import usage as usage_service
 from backend.services import rbd_analysis
+from backend.services import rbd_compare as rbd_compare_service
 from backend.services import rbd_costs
 from backend.services import rbd_export
 from backend.services.rbd_analysis import AnalysisError
@@ -317,14 +327,18 @@ slower for large files). If that fails too (no network), follow create_upload's 
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
-- Repairable systems (recurrent models): next_failure gives a system's chance of failing within a time and \
+- Repairable systems (recurrent models): fit_recurrent_model fits and saves one from event histories \
+(Crow-AMSAA and the other minimal-repair models, covariates on the repair rate, imperfect repair, observation \
+gaps, failures by cause); next_failure gives a system's chance of failing within a time and \
 the time to its next failure; growth_projection projects a growth test's MTBF once its fixes are in. \
 get_model on a recurrent model gives the growth verdict with β's 95% interval, the ROCOF and MTBF with bounds, \
 the demonstrated MTBF's 90% lower bound, Laplace and MIL-HDBK-189C trend tests and a goodness-of-fit test.
 - Test planning: plan_demonstration_test sizes a reliability demonstration test — units, test time per unit \
 and allowed failures to show reliability R over a mission at confidence C (success run / binomial; a longer \
 test per unit with a known Weibull shape; or an MTBF test); with producer_risk and a good design it keeps both \
-risks. It needs no saved data.
+risks. It needs no saved data; a B-life requirement goes in as b_life, and shape_model_id takes β from a saved \
+Weibull fit, warning when it is too poorly known. check_life_requirement checks "B10 >= 50,000 at 90% \
+confidence" on a saved life model: meets / does not meet, on the B-life's one-sided lower bound.
 - Housekeeping: delete_model, delete_dataset and delete_rbd permanently delete the user's own artifacts \
 (never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
 Only on the user's explicit \
@@ -407,7 +421,7 @@ _USER_ERRORS = (
 # Fitting runs server-side CPU those plans don't pay for (agents fit
 # locally with SurPyval, then save_model); fleets depend on usage arriving
 # through the Pro API.
-_FIT_TOOLS = {"fit_distribution", "fit_and_save_model", "fit_alt_model"}
+_FIT_TOOLS = {"fit_distribution", "fit_and_save_model", "fit_alt_model", "fit_recurrent_model"}
 _FLEET_TOOLS = {"list_fleets", "fleet_forecast", "list_fleet_alerts", "create_fleet_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
 # Never gated or counted: the way to Pro, and seeing where the allowance
@@ -631,6 +645,17 @@ class Param(BaseModel):
     value: float
 
 
+class CoxOptions(BaseModel):
+    tie_method: Optional[Literal["efron", "breslow", "exact", "kalbfleisch-prentice"]] = Field(
+        default=None, description="How tied failure times are handled (default efron).")
+    strata_column: Optional[str] = Field(
+        default=None, description="A dataset column to stratify on: each of its levels gets its own baseline "
+                                  "hazard and no coefficient (site, batch). Not one of the covariates.")
+    cluster_column: Optional[str] = Field(
+        default=None, description="A dataset column grouping rows that aren't independent (a unit or site id): "
+                                  "diagnostics.robust then gives standard errors clustered by it.")
+
+
 class DemandBatch(BaseModel):
     demands: int = Field(ge=1, description="Demands (trials) in this batch: proof tests, starts, activations.")
     failures: int = Field(ge=0, description="Failures among those demands (0 to demands).")
@@ -677,6 +702,7 @@ def _recurrent_brief(doc) -> dict:
         "name": doc.name,
         "kind": "recurrent",
         "model": (r.get("model") or {}).get("name"),
+        "family": r.get("family", "nhpp"),
         "beta": r.get("beta"),
         "growth": r.get("growth"),
         "n_systems": r.get("n_systems"),
@@ -740,6 +766,64 @@ def _recurrent_evidence(r: dict) -> dict:
         out["systems_vs_model"] = [
             {"system": row["system"], "failures": _sig(row["failures"]), "expected": _sig(row["expected"])}
             for row in rows[:_RESIDUAL_SYSTEMS]]
+    out.update(_recurrent_extras(r))
+    return out
+
+
+_CAUSES_LISTED = 12
+_UNITS_LISTED = 10
+
+
+def _recurrent_extras(r: dict) -> dict:
+    """#65: what a covariate, imperfect-repair, gapped or cause-marked fit
+    adds — each covariate's rate ratio in words, the repair effectiveness
+    and the repair test's verdict, each system's next failure, the
+    observation gaps and the growth of each cause."""
+    out: dict[str, Any] = {}
+    if r.get("fit_warning"):
+        out["fit_warning"] = r["fit_warning"]
+    if r.get("rates_at"):
+        out["rates_at"] = r["rates_at"]
+    if r.get("baseline"):
+        out["baseline"] = r["baseline"].get("name")
+    if r.get("coefficients"):
+        out["covariate_effects"] = [
+            {"covariate": c["name"], "rate_ratio": _sig(c.get("ratio")),
+             "rate_ratio_ci_95": [_sig(v) for v in c["ratio_ci"]] if c.get("ratio_ci") else None,
+             "effect": c.get("effect"), "reading": c.get("reading")}
+            for c in r["coefficients"]]
+        out["covariates"] = r.get("covariates")
+    rest = r.get("restoration")
+    if rest:
+        out["repair_effectiveness"] = {
+            "parameter": rest.get("parameter"), "value": _sig(rest.get("value")),
+            "effectiveness": _sig(rest.get("effectiveness")),
+            "effectiveness_ci_95": [_sig(v) for v in rest["effectiveness_ci"]] if rest.get("effectiveness_ci") else None,
+            "reading": rest.get("sentence"), "scale": rest.get("scale")}
+    rt = r.get("repair_test")
+    if rt:
+        out["repair_test"] = {"verdict": rt["verdict"], "reading": rt["sentence"],
+                              **{k: {"p_value": _sig(rt[k]["p_value"]), "rejected": rt[k]["rejected"]}
+                                 for k in ("perfect", "minimal") if rt.get(k)}}
+    nf = r.get("next_failure")
+    if nf and nf.get("units"):
+        out["next_failure_by_system"] = [
+            {"system": u["system"], "failures": u["failures"], "age": _sig(u["age"]),
+             "median_time_to_next": _sig(u.get("median")), "time_to_10pct_chance": _sig(u.get("b10"))}
+            for u in nf["units"][:_UNITS_LISTED]]
+    if r.get("windows"):
+        out["observation_gaps"] = r["windows"]
+    bc = r.get("by_cause")
+    if bc:
+        if bc.get("causes"):
+            out["by_cause"] = [
+                {"cause": c["label"], "failures": c["failures"], "share": _sig(c["share"]),
+                 **({"beta": _sig(c["fit"]["beta"]),
+                     "beta_ci_95": [_sig(v) for v in c["fit"]["beta_ci"]] if c["fit"].get("beta_ci") else None,
+                     "growth": c["fit"].get("growth")} if c.get("fit") else {})}
+                for c in bc["causes"][:_CAUSES_LISTED]]
+        elif bc.get("reason"):
+            out["by_cause_note"] = bc["reason"]
     return out
 
 
@@ -752,6 +836,23 @@ def _live_metrics(cache_id: str | None) -> dict | None:
         return fitting._life_metrics(entry["model"])
     except Exception:  # noqa: BLE001 - regression models etc. have no plain metrics
         return None
+
+
+def _saved_life(db, m, results: dict, owners) -> dict | None:
+    """A saved life distribution's B-lives and MTTF with their 90% lower
+    bounds (#288): as stored with the fit, or for one saved before, from the
+    live model. None for another kind or a fit that didn't converge."""
+    if m.kind not in ("distribution", "nonparametric", fitting.more_models.FLEXIBLE_KIND) \
+            or results.get("no_finite_maximum") \
+            or results.get("fit_warning"):
+        return None
+    if results.get("life"):
+        return results["life"]
+    try:
+        entry = fitting._MODEL_STORE.get(models_service._live_cache_id(db, m.id, owners)) or {}
+    except Exception:  # noqa: BLE001 - B-lives are a convenience
+        return None
+    return life_bounds.life_for(entry.get("model"))
 
 
 def _fit_lead(summary: dict) -> dict:
@@ -775,11 +876,55 @@ def _fit_failure_warning(fit_warning: str | None) -> str:
             "larger unit), checking for extreme or mistyped values, or another distribution.")
 
 
+def _cr_summary(result: dict) -> dict:
+    """A fit by failure mode (#177) for an agent: each mode's share of the
+    failures and of the units by the horizon (with its 95% interval), which
+    mode leads when, the reading, Gray's test and any regression — without
+    the plotting curves. Without a per-mode band (SurPyval gives none for
+    one mode's incidence) ``ci_95`` is left out and ``how`` says so."""
+    bounded = result.get("mode_bounds", True)
+    out = {
+        "distribution": result.get("distribution"),
+        "distribution_id": result.get("distribution_id"),
+        "kind": "competing_risks",
+        "n": result.get("n"),
+        "unit": result.get("unit", ""),
+        "failed": result.get("failed"),
+        "still_running": result.get("running"),
+        "horizon": result.get("horizon"),
+        "failure_modes": [{
+            "mode": k["name"], "failures": k["failures"], "share_of_failures_by_horizon": k.get("share"),
+            "units_failed_from_it_by_horizon": (k.get("at") or {}).get("cif"),
+            **({"ci_95": [(k.get("at") or {}).get("lower"), (k.get("at") or {}).get("upper")]} if bounded else {}),
+        } for k in result.get("causes") or []],
+        "leads": result.get("leads"),
+        "reading": result.get("reading"),
+        "how": ("Non-parametric cumulative incidence (Aalen-Johansen)"
+                + (" with Aalen's 95% pointwise bounds" if bounded else "")
+                + ": the chance of failing from each mode by the horizon while the other modes still act. The "
+                "modes add up to the all-cause failure probability"
+                + ("." if bounded else ", which has Kaplan-Meier 95% bounds; a single mode's incidence comes "
+                   "without an interval.")),
+    }
+    for key in ("gray", "regression"):
+        if result.get(key):
+            out[key] = result[key]
+    return out
+
+
+# What the models of #179 / #63 add (more_models): the full coefficient
+# table, the coefficient intervals' method where it isn't Wald, the shared
+# frailty and the Royston-Parmar spline.
+_MORE_MODEL_KEYS = ("coef_table", "ci_method", "frailty", "semi_parametric", "spline")
+
+
 def _fit_summary(result: dict) -> dict:
     """The parts of a fit payload worth handing to a model (no plot arrays).
 
     A fit the optimiser reported as failed leads with ``fit_ok: false`` and
     the warning, ahead of the numbers, so they aren't quoted as a result."""
+    if result.get("kind") == "competing_risks":
+        return _cr_summary(result)
     no_max = result.get("no_finite_maximum")  # #230: SurPyval 0.23 says so
     failed = bool(no_max) or result.get("fit_ok") is False or bool(result.get("fit_warning"))
     metrics = None if failed else (
@@ -806,13 +951,16 @@ def _fit_summary(result: dict) -> dict:
     }
     if result.get("maximum") and "maximum" not in out:
         out["maximum"] = result["maximum"]
+    if result.get("life") and not failed:
+        # #288: B1/B5/B10/B50 and MTTF with 90% one-sided lower bounds.
+        out["life"] = result["life"]
     if no_max:
         out["metrics_omitted"] = "The fit has no finite maximum, so no life metrics are given."
     elif failed:
         # #215: a median of 7.7e19 from a fit that didn't converge isn't a result.
         out["metrics_omitted"] = "The fit didn't converge, so no life metrics are given."
-    for key in ("extra_params", "coefficients", "randomness", "options", "validation", "gof_note",
-                "mixture_summary"):
+    for key in ("extra_params", "coefficients", "randomness", "options", "validation", "diagnostics",
+                "gof_note", "mixture_summary", "tvc", *_MORE_MODEL_KEYS):
         if result.get(key):
             out[key] = result[key]
     # #265: how the parameter intervals are taken; why a regression model has
@@ -859,37 +1007,63 @@ def get_model(
     model_id: Annotated[str, Field(description="A model id from list_models.")],
 ) -> dict[str, Any]:
     """Read one saved model in full: fitted parameters with 95% confidence intervals, goodness of fit
-    (log-likelihood, AIC, BIC), life metrics (median, MTTF, B10), regression coefficients for
+    (log-likelihood, AIC, BIC), life metrics (median, MTTF, B10), for a life distribution `life`: B1, B5,
+    B10, B50 and MTTF each with its one-sided 90% lower bound (the time you can be 90% sure it is at
+    least), regression coefficients for
     proportional-hazards models, and the time unit. Works for life and recurrent models.
     Recurrent (repairable-system) models report the growth verdict and its basis (β's 95% interval
     excluding 1 or not), the ROCOF and MTBF at the end of observation with 95% bounds, the demonstrated
     MTBF's 90% lower bound (Crow's exact bound for a time-terminated test), the Laplace and MIL-HDBK-189C
     trend tests, AIC/BIC with a Cramér-von Mises goodness-of-fit test, and the systems failing most above
-    the model (systems_vs_model).
+    the model (systems_vs_model). A covariate model adds covariate_effects (each rate ratio in words); an
+    imperfect-repair model repair_effectiveness, repair_test and next_failure_by_system; data with a
+    cause column by_cause (each cause's growth shape).
     Regression models also report `validation` (how good is this model?): Harrell's C with a plain
     reading (0.5 = coin toss, 1 = perfect ranking), the integrated Brier score against one
     Kaplan-Meier curve for every unit (lower is better), and the time-dependent AUC at the failure-time
-    quartiles — or `available: false` with the reason."""
+    quartiles — or `available: false` with the reason. They also report `diagnostics` (does the model's
+    assumption hold?): `ph_test`, the Grambsch-Therneau proportional-hazards test — a plain `title` and
+    `reading` first (verdict holds / check / fails), then one row per covariate and the GLOBAL row (chi-square,
+    df, p; a small p says that covariate's effect changes over time). A parametric PH model is tested with a
+    Cox model on the same covariates; AFT, PO and AH models say it doesn't apply. Cox PH models add `robust`
+    (sandwich standard errors, clustered when the fit named a cluster column, with robust 95% hazard-ratio
+    intervals and a verdict), `ties` (the tie method) and, when stratified, `strata`. For the reliability band
+    and B-lives at chosen covariates use reliability_at.
+    A model fitted by failure mode (kind competing_risks) reports each mode's share of the failures and of
+    the units by its horizon with 95% intervals, which mode leads when, the reading, and Gray's test or the
+    per-mode regression when it has them."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
+    if m is not None and m.kind == "competing_risks":
+        out = {**_life_brief(m), **_cr_summary(m.results or {})}
+        out.pop("params", None)
+        if (m.spec or {}).get("notes"):
+            out["notes"] = m.spec["notes"]
+        return out
     if m is not None:
         r = models_service.public_results(m)
         metrics = r.get("metrics")
-        if not metrics and m.kind == "distribution":
+        if not metrics and m.kind in ("distribution", fitting.more_models.FLEXIBLE_KIND):
             try:
                 metrics = _live_metrics(models_service._live_cache_id(db, m.id, owners))
             except Exception:  # noqa: BLE001 - metrics are a convenience
                 metrics = None
         out = {**_life_brief(m), "params": r.get("params", []), "gof": {g["id"]: g["value"] for g in r.get("gof") or []},
                "metrics": metrics}
-        for key in ("coefficients", "extra_params", "randomness", "options", "warnings"):
+        life = _saved_life(db, m, r, owners)
+        if life:
+            out["life"] = life
+        for key in ("coefficients", "extra_params", "randomness", "options", "warnings", "tvc",
+                    *_MORE_MODEL_KEYS):
             if r.get(key):
                 out[key] = r[key]
         if (r.get("functions") or {}).get("covariates"):
             out["covariates"] = r["functions"]["covariates"]
         if m.kind == "regression":
             out["validation"] = models_service.ensure_validation(db, m)
+            # #61: does the model's assumption hold?
+            out["diagnostics"] = checks_service.ensure_diagnostics(db, m)
         # #265: interval scale, regression life metrics and covariate units.
         for key in ("ci_note", "metrics_note", "covariate_units"):
             if r.get(key):
@@ -928,8 +1102,15 @@ def get_model(
 
 _FitDistribution = Annotated[str, Field(
     description="A distribution id — weibull, exponential, normal, lognormal, gamma, loglogistic, "
-                "expo_weibull, gumbel, logistic, … — or 'best' to fit every plain distribution and keep "
-                "the lowest-AIC one. Regression ids (e.g. weibull_ph) need covariates and a dataset.")]
+                "expo_weibull, gumbel, logistic, … — or 'best' to fit every plain (unbounded) distribution and "
+                "keep the lowest-AIC one. Bounded: beta (data in 0–1), beta4, uniform. Counts to failure (1, 2, "
+                "…): discrete_weibull, geometric, …, discretized_lognormal, discretized_gamma, "
+                "discretized_loglogistic. Flexible spline: royston_parmar. Regression ids need covariates and a "
+                "dataset: weibull_ph, weibull_aft, …, cox_ph, and the semi-parametric additive_hazards "
+                "(Lin-Ying), proportional_odds and buckley_james; shared frailty (weibull_frailty, "
+                "exponential_frailty, lognormal_frailty, gamma_frailty, cox_frailty) also needs group_column. "
+                "competing_risks fits life data by failure mode (with causes / cause_column); "
+                "competing_risks_cox and competing_risks_fine_gray add covariates per mode.")]
 _FitData = Annotated[Optional[list[float]], Field(
     description="Inline failure/suspension times, one per unit (the interval's lower bound when data_right is "
                 "given). Give this OR dataset_id.")]
@@ -978,11 +1159,31 @@ _FitTruncRightCol = Annotated[Optional[str], Field(
     description="Column holding each row's right-truncation age (blank = not truncated).")]
 _FitCovariates = Annotated[Optional[list[str]], Field(
     description="Dataset covariate columns — regression (proportional-hazards etc.) distributions only.")]
+_FitIdCol = Annotated[Optional[str], Field(
+    description="Covariates that change over time (a pump's load stepping between levels; regression models "
+                "and a dataset only): the column naming each item. Then each row is one stretch of an item's "
+                "life — time_column its start and time_right_column its stop, with censor_column 0 on the "
+                "stretch that ended in a failure and 1 otherwise — or, with time_column alone, a timeline: "
+                "each row's covariates take effect at its time and hold until the item's next row, whose last "
+                "row is the failure (0) or removal (1). The result adds `tvc`: the layout, the items, rows and "
+                "failures, and a plain reading per coefficient; reliability_at's covariate_schedule then "
+                "evaluates it along a schedule.")]
 _FitUnit = Annotated[Optional[str], Field(description="Time unit of the data, e.g. 'hours', 'cycles', 'km'.")]
 _FitCovariateUnits = Annotated[Optional[dict[str, str]], Field(
     description="Optional: the unit of each covariate, e.g. {\"temp_C\": \"°C\", \"load\": \"kN\"} — regression "
                 "fits only. Shown with the coefficients (per unit of the covariate) and the covariate inputs, and "
                 "kept with a saved model.")]
+_FitCoxOptions = Annotated[Optional[CoxOptions], Field(
+    description="cox_ph only, with a dataset: the tie method, a column to stratify on and a column to cluster the "
+                "robust standard errors by.")]
+# One parameter, two models (#177 / #179): the app maps them to different
+# roles (``g`` for competing risks, ``group`` for a shared frailty).
+_FitGroupColumn = Annotated[Optional[str], Field(
+    description="With dataset_id, a column of groups (site, batch, supplier, unit). Shared-frailty models "
+                "(…_frailty): the column naming each row's group — the units that share a frailty. The fit "
+                "reports frailty.theta (the spread between groups, with a 95% interval: one reaching 0 means the "
+                "groups may not differ) and each group's frailty (above 1 = fails sooner than average). Competing "
+                "risks (competing_risks…): the groups to compare each failure mode across with Gray's test.")]
 _FitIncludeMixtures = Annotated[bool, Field(
     description="With distribution='best' only: let two-component Weibull and LogNormal mixtures compete "
                 "with the single distributions (two failure modes in one dataset, an S-curve on probability "
@@ -990,6 +1191,18 @@ _FitIncludeMixtures = Annotated[bool, Field(
                 "best mixture beats the best single distribution (then it is listed first, else the mixtures "
                 "follow the singles), and selection_summary says so in plain words. A winning mixture comes "
                 "with mixture_summary, the two modes in plain words. Slower, so off by default.")]
+
+
+_FitCauses = Annotated[Optional[list[Optional[str]]], Field(
+    description="Competing risks (distribution='competing_risks'): the failure mode of each time in `data`, "
+                "null for a unit still running — e.g. [\"bearing\", \"seal\", null]. The modes compete: each "
+                "mode's cumulative incidence is the chance of failing from it with the others acting.")]
+_FitGroups = Annotated[Optional[list[str]], Field(
+    description="Competing risks only: a group per time in `data` (site, supplier). Adds Gray's test per "
+                "failure mode — does each mode's chance differ between the groups?")]
+_FitCauseCol = Annotated[Optional[str], Field(
+    description="Competing risks (distribution='competing_risks'): the dataset column naming each failure's "
+                "mode, blank for a unit still running.")]
 
 
 def _mcp_fit_error(exc: FitError, c_invert: bool) -> FitError:
@@ -1103,7 +1316,9 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
               censor_column, count_column, covariates, unit, data_right, trunc_left, trunc_right,
               time_right_column, trunc_left_column, trunc_right_column, method,
               save: bool, name: str | None, include_mixtures: bool = False,
-              covariate_units: dict | None = None) -> dict[str, Any]:
+              covariate_units: dict | None = None, cox_options: CoxOptions | None = None,
+              id_column: str | None = None, causes=None, groups=None, cause_column=None,
+              group_column: str | None = None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     if covariate_units:
@@ -1114,7 +1329,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                             f"{'is' if len(unknown) == 1 else 'are'} not in covariates "
                             f"({', '.join(covariates or []) or 'none given'}).")
     known = {fitting.BEST_ID, fitting.MIXTURE_ID, *fitting.DISTRIBUTIONS, *fitting.DISCRETE,
-             *fitting.NONPARAMETRIC, *fitting.REGRESSION_MODELS}
+             *fitting.NONPARAMETRIC, *fitting.REGRESSION_MODELS, *fitting.FLEXIBLE, *competing_risks.CR_MODELS}
     dist = (distribution or "weibull").strip()
     if dist not in known:
         dist = fitting.resolve_distribution_id(dist)  # FitError -> tool error listing the options
@@ -1126,9 +1341,11 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
     stray = ([k for k, v in (("time_column", time_column), ("censor_column", censor_column),
                              ("count_column", count_column), ("time_right_column", time_right_column),
                              ("trunc_left_column", trunc_left_column),
-                             ("trunc_right_column", trunc_right_column)) if v] if data is not None
+                             ("trunc_right_column", trunc_right_column), ("cause_column", cause_column),
+                             ("group_column", group_column)) if v] if data is not None
              else [k for k, v in (("censored", censored), ("counts", counts), ("data_right", data_right),
-                                  ("trunc_left", trunc_left), ("trunc_right", trunc_right)) if v is not None])
+                                  ("trunc_left", trunc_left), ("trunc_right", trunc_right), ("causes", causes),
+                                  ("groups", groups)) if v is not None])
     if stray:
         other = "dataset_id" if data is not None else "inline data"
         raise ToolError(f"{', '.join(stray)} only appl{'ies' if len(stray) == 1 else 'y'} with {other} — "
@@ -1143,11 +1360,12 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         cols: dict[str, list] = ({"xl": list(data), "xr": _per_row(data_right, len(data), "data_right")}
                                  if data_right is not None else {"x": list(data)})
         for key, values, label in (("c", censored, "censored"), ("n", counts, "counts"),
-                                   ("tl", trunc_left, "trunc_left"), ("tr", trunc_right, "trunc_right")):
+                                   ("tl", trunc_left, "trunc_left"), ("tr", trunc_right, "trunc_right"),
+                                   ("e", causes, "causes"), ("g", groups, "groups")):
             if values is not None:
                 cols[key] = _per_row(values, len(data), label)
         mapping = {k: k for k in cols}
-        if covariates:
+        if covariates or id_column:
             raise ToolError("Covariates need a dataset — upload one with upload_dataset and pass dataset_id.")
         df = pd.DataFrame(cols)
     else:
@@ -1158,13 +1376,31 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         if not time_column:
             raise ToolError(f"Say which column holds the times (time_column). Columns: {', '.join(names)}.")
         times = {"xl": time_column, "xr": time_right_column} if time_right_column else {"x": time_column}
+        # group_column is a shared frailty's Group by (#179) or competing risks' groups (#177).
+        frailty = (fitting.REGRESSION_MODELS.get(dist) or {}).get("frailty")
         mapping = {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
-                   "tr": trunc_right_column}
+                   "tr": trunc_right_column, "i": id_column, "e": cause_column,
+                   ("group" if frailty else "g"): group_column}
         mapping = {k: v for k, v in mapping.items() if v}
         for col in [*mapping.values(), *(covariates or [])]:
             if col not in names:
                 raise ToolError(f"Column '{col}' isn't in the dataset. Columns: {', '.join(names)}.")
         df = datasets_service.load_dataframe(dataset)
+    # #177: failure modes are read by the competing-risks ids only, and need them.
+    by_mode = competing_risks.is_competing_risks(dist)
+    if by_mode and "e" not in mapping:
+        raise ToolError(f"{dist} fits life data by failure mode: give each failure's mode in `causes` (inline, "
+                        "null for a unit still running) or `cause_column`.")
+    if not by_mode and "e" in mapping:
+        raise ToolError("causes / cause_column and groups / group_column fit competing risks: pass "
+                        "distribution='competing_risks' (or competing_risks_cox / competing_risks_fine_gray "
+                        "with covariates).")
+    if not by_mode and "g" in mapping:
+        # A group column without failure modes: groups for Gray's test (#177)
+        # need modes, and a shared frailty's Group by (#179) a frailty model.
+        raise ToolError("groups / group_column apply to a shared-frailty model (e.g. weibull_frailty, with "
+                        "covariates) or to competing risks (with causes / cause_column) — choose one of "
+                        "those, or drop the group column.")
     options: dict[str, Any] = {}
     if c_invert:
         if "c" not in mapping:
@@ -1181,9 +1417,18 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             raise ToolError("include_mixtures applies to distribution='best' only. To fit a mixture on "
                             "purpose, use distribution='mixture'.")
         options["include_mixtures"] = True
+    if cox_options is not None:
+        cox = {k: v for k, v in (("tie_method", cox_options.tie_method), ("strata", cox_options.strata_column),
+                                 ("cluster", cox_options.cluster_column)) if v}
+        if cox and dataset is None:
+            raise ToolError("cox_options need a dataset (their columns are dataset columns) — pass dataset_id.")
+        if cox:
+            options[COX_KEY] = cox
     options = options or None
 
-    checks = _censor_checks(df, mapping, c_invert, censor_column)
+    # #60: rows are stretches of an item's life, not units — no per-row counts.
+    checks = _censor_checks(df, {k: v for k, v in mapping.items() if k != "c"} if id_column else mapping,
+                            c_invert, censor_column)
     if not save:
         result = fitting.fit(dist, df, mapping, covariates=covariates, unit=unit, options=options,
                              covariate_units=covariate_units)
@@ -1250,6 +1495,12 @@ def fit_distribution(
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
     covariate_units: _FitCovariateUnits = None,
+    cox_options: _FitCoxOptions = None,
+    id_column: _FitIdCol = None,
+    causes: _FitCauses = None,
+    groups: _FitGroups = None,
+    cause_column: _FitCauseCol = None,
+    group_column: _FitGroupColumn = None,
 ) -> dict[str, Any]:
     """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
     goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Saves nothing — use
@@ -1261,13 +1512,24 @@ def fit_distribution(
     every (or all but one) row is censored almost always means the flags are inverted; censoring gives the failures
     and censored units the fit used — check them against what the user said. Weibull beta < 1 = infant
     mortality, ≈ 1 = random failures, > 1 = wear-out. Regression fits also report `validation`: how good
-    the model is (Harrell's C, Brier score against no covariates, time-dependent AUC; see get_model)."""
+    the model is (Harrell's C, Brier score against no covariates, time-dependent AUC; see get_model), and
+    `diagnostics`: whether its assumption holds (the proportional-hazards test with a verdict, robust standard
+    errors for Cox PH, ties and strata; see get_model).
+    Covariates that change over time (start-stop or timeline rows): pass id_column with a regression id.
+    Non-parametric fits (kaplan_meier, …) report `life`: B-lives with lower bounds and the mean life to a
+    horizon (restricted while the curve doesn't reach zero) with its interval. Life data by failure mode:
+    distribution='competing_risks' with each failure's mode (causes / cause_column; blank = still running)
+    reports each mode's share of failures and of units by a round horizon with 95% intervals, which mode
+    leads when, a one-line reading and, with groups / group_column, Gray's test per mode; competing_risks_cox
+    and competing_risks_fine_gray add covariate ratios per mode."""
     return _fit(ctx, distribution=distribution, data=data, data_right=data_right, censored=censored,
                 counts=counts, trunc_left=trunc_left, trunc_right=trunc_right, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=False, name=None, covariate_units=covariate_units)
+                include_mixtures=include_mixtures, save=False, name=None, covariate_units=covariate_units,
+                cox_options=cox_options, id_column=id_column, causes=causes, groups=groups,
+                cause_column=cause_column, group_column=group_column)
 
 
 @_tool("fit_and_save_model", _WRITE, "Fit and save a model")
@@ -1294,6 +1556,12 @@ def fit_and_save_model(
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
     covariate_units: _FitCovariateUnits = None,
+    cox_options: _FitCoxOptions = None,
+    id_column: _FitIdCol = None,
+    causes: _FitCauses = None,
+    groups: _FitGroups = None,
+    cause_column: _FitCauseCol = None,
+    group_column: _FitGroupColumn = None,
     demand_batches: Annotated[Optional[list[DemandBatch]], Field(
         min_length=1, description=(
             "Save a per-demand (one-shot) model instead of a life distribution: one {demands, failures, "
@@ -1316,7 +1584,9 @@ def fit_and_save_model(
                                 ("time_right_column", time_right_column), ("censor_column", censor_column),
                                 ("count_column", count_column), ("trunc_left_column", trunc_left_column),
                                 ("trunc_right_column", trunc_right_column), ("covariates", covariates),
-                                ("method", method)) if v is not None]
+                                ("method", method), ("id_column", id_column), ("causes", causes),
+                                ("groups", groups), ("cause_column", cause_column),
+                                ("group_column", group_column)) if v is not None]
         if stray:
             raise ToolError(f"{', '.join(stray)} don't apply to a per-demand model — drop them.")
         return _save_per_demand(ctx, name, demand_batches, demand_confidence)
@@ -1325,7 +1595,9 @@ def fit_and_save_model(
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=True, name=name, covariate_units=covariate_units)
+                include_mixtures=include_mixtures, save=True, name=name, covariate_units=covariate_units,
+                cox_options=cox_options, id_column=id_column, causes=causes, groups=groups,
+                cause_column=cause_column, group_column=group_column)
 
 
 def _per_demand_summary(result: dict) -> dict:
@@ -1529,7 +1801,8 @@ def _reliability_bounds(db, m, ts: list[float], owners, ev: dict, confidence: fl
         return None, None, (f"No {level} bounds: this model was saved from parameters alone, without the data "
                             "they were fitted to, so there's no covariance matrix to base them on. Save it "
                             "with its data (or fit it in Reliafy) for bounds.")
-    if m.kind not in ("distribution", "discrete", "regression") or ev["method"] != "exact":
+    if m.kind not in ("distribution", "discrete", "regression", fitting.more_models.FLEXIBLE_KIND) \
+            or ev["method"] != "exact":
         return None, None, f"No {level} bounds: confidence bounds aren't available for this {m.kind} model."
     try:
         entry = fitting._MODEL_STORE.get(models_service._live_cache_id(db, m.id, owners))
@@ -1539,6 +1812,8 @@ def _reliability_bounds(db, m, ts: list[float], owners, ev: dict, confidence: fl
     if live is None:
         return None, None, (f"No {level} bounds: the data this model was fitted to is no longer available, "
                             "so its covariance can't be recovered.")
+    if m.kind == "regression" and not regression_bands.has_bands(live):
+        return None, None, f"No {level} bounds. {regression_bands.no_bands_note(results) or ''}".strip()
     if not hasattr(live, "cb"):
         return None, None, (f"No {level} bounds: this model type ({results.get('distribution') or dist_id}) "
                             "doesn't provide covariance-based confidence bounds.")
@@ -1558,9 +1833,40 @@ def _reliability_bounds(db, m, ts: list[float], owners, ev: dict, confidence: fl
             "confidence bounds from the fit's covariance — the same method as the app's confidence band — "
             "computed at exactly these times.")
     if m.kind == "regression":
-        note += (" For this proportional-hazards model they're at the covariate values used; the app's "
-                 "calculator doesn't draw a band for these models.")
+        note += (" For this regression model they're at the covariate values used, as the app's calculator "
+                 "draws its band.")
     return r, f, note
+
+
+def _reliability_along(db, m, times, owners, schedule, covariates, conditional_age, confidence) -> dict:
+    """reliability_at along a covariate schedule (#60)."""
+    from backend import tvc
+
+    if m.kind != "regression":
+        raise ToolError(f"“{m.name}” is a {m.kind} model with no covariates — a covariate_schedule needs a "
+                        "regression model.")
+    if covariates:
+        raise ToolError("Give `covariates` (fixed values) or `covariate_schedule` (values that change), not both.")
+    entry = models_service.get_live_model(db, m.id, owners)
+    if entry is None:
+        raise ToolError("Model not found.")
+    try:
+        ev = tvc.evaluate_points(entry["model"], entry.get("fields") or [], schedule, times,
+                                 conditional_age=conditional_age, confidence=confidence)
+    except FitError as exc:
+        raise ToolError(str(exc)) from exc
+    out = {"model": m.name, "model_id": m.id, "unit": (m.results or {}).get("unit", ""), "method": "exact",
+           "covariate_schedule": ev["schedule"], "points": ev["points"], "mean_life": ev["mean_life"],
+           "note": ("Evaluated exactly along the covariate schedule: each row's values hold from its time "
+                    "until the next row's (SurPyval's sf_tvc). Hazard rate and density aren't given along a "
+                    "schedule." + ("" if ev["mean_life"] is not None else
+                                   " No mean life: a Cox model's baseline stops at its last failure."))}
+    if conditional_age is not None:
+        out["conditional_age"] = float(conditional_age)
+    if confidence is not None:
+        out["confidence"] = float(confidence)
+        out["bounds_note"] = ev.get("bounds_note")
+    return out
 
 
 @_tool("reliability_at", _READ, "Evaluate a model's reliability")
@@ -1580,6 +1886,14 @@ def reliability_at(
                                 "and failure_bounds [lower, upper] at each time (the app's Fisher-matrix "
                                 "confidence bounds); null, with bounds_note saying why, where the model has "
                                 "none.")] = None,
+    covariate_schedule: Annotated[Optional[list[dict[str, Any]]], Field(
+        min_length=1, max_length=50,
+        description="Regression models only: covariates that change over time, as change-points "
+                    "[{\"t\": 0, \"values\": {\"load_pct\": 60}}, {\"t\": 4000, \"values\": {\"load_pct\": 90}}] "
+                    "— each row's values take effect at its time t (in the model's unit) and hold until the "
+                    "next; a covariate a row leaves out keeps its previous value. Evaluates along that path "
+                    "(SurPyval's sf_tvc) instead of at fixed covariates, and adds mean_life along it. Use "
+                    "instead of `covariates`.")] = None,
 ) -> dict[str, Any]:
     """Evaluate a saved life model at given times: reliability R(t) (probability of surviving to t),
     failure probability F(t) = 1 − R(t), hazard rate h(t), cumulative hazard H(t) and density f(t).
@@ -1588,8 +1902,11 @@ def reliability_at(
     interpolated on their stored curve (method=interpolated). Proportional-hazards models report the
     covariate values used (the fit's defaults for any not given). With `confidence` (e.g. 0.95), each
     time also gets two-sided confidence bounds on R(t) and F(t) — quote those alongside the point values;
-    models without a covariance (non-parametric, mixtures, parameters saved without data) get null bounds
-    and a bounds_note saying why."""
+    models without a covariance (non-parametric, mixtures, parameters saved without data, Cox PH) get null
+    bounds and a bounds_note saying why. Regression models also report `life` at those covariates: B1, B5,
+    B10, B50 and the MTTF, each B-life with its one-sided lower bound at `confidence` (90% if not given) — or,
+    for Cox PH, a note on why there are none. Regression models also take a covariate_schedule: covariates that change over time (a load that
+    steps up at 4,000 hours), evaluated along that path."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
@@ -1603,6 +1920,9 @@ def reliability_at(
     if covariates and m.kind != "regression":
         raise ToolError(f"“{m.name}” is a {m.kind} model with no covariates — drop `covariates`, or pick a "
                         "proportional-hazards model (get_model lists its covariates).")
+    if covariate_schedule is not None:
+        return _reliability_along(db, m, times, owners, covariate_schedule, covariates, conditional_age,
+                                  confidence)
 
     ts = [float(t) for t in times]
     later = [conditional_age + t for t in ts] if conditional_age is not None else []
@@ -1683,7 +2003,71 @@ def reliability_at(
             p["failure_bounds"] = f_bounds[i] if f_bounds else None
         out["confidence"] = float(confidence)
         out["bounds_note"] = bounds_note
+    if m.kind == "regression" and not (m.results or {}).get("no_finite_maximum"):
+        life = _regression_life(db, m, owners, out.get("covariates_used"), confidence)
+        if life is not None:
+            out["life"] = life
     return out
+
+
+def _regression_life(db, m, owners, covariates: Optional[dict], confidence: Optional[float]) -> Optional[dict]:
+    """A regression model's B1, B5, B10, B50 and MTTF at the covariates used
+    (#54), each B-life with its one-sided lower bound at ``confidence`` (90%
+    when not given) — SurPyval's qf / quantile_cb / mean at that row. Cox PH
+    has none: ``{"note"}`` says why. None when it can't be had."""
+    try:
+        entry = models_service.get_live_model(db, m.id, owners)
+    except Exception:  # noqa: BLE001 - B-lives are a convenience here
+        return None
+    if not entry or entry.get("model") is None:
+        return None
+    if not regression_bands.has_bands(entry["model"]):
+        return {"note": regression_bands.life_note(entry["model"])}
+    level = confidence if confidence is not None else life_bounds.DEFAULT_CONFIDENCE
+    try:
+        life = regression_bands.life_answer(entry["model"], entry.get("fields") or [],
+                                            {"covariates": covariates or {}, "confidence": level})
+    except (ValueError, TypeError):
+        return None
+    life.pop("covariates", None)  # the same as covariates_used
+    return life
+
+
+@_tool("check_life_requirement", _READ, "Check a B-life requirement")
+def check_life_requirement(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="A saved life distribution model id (list_models).")],
+    b_life: Annotated[float, Field(gt=0, lt=100, description="The B-life's percent failed: 10 for B10, 1 for B1, "
+                                                             "0.1 for B0.1.")],
+    life: Annotated[float, Field(gt=0, description="The life required, in the model's unit: 'B10 >= life'.")],
+    confidence: Annotated[float, Field(gt=0, lt=1, description="The confidence the requirement must be shown "
+                                                               "at, e.g. 0.9.")] = 0.9,
+) -> dict[str, Any]:
+    """Check a B-life requirement on a saved life model (#295): does "B10 >= 50,000 cycles at 90% confidence"
+    hold? The verdict turns on the B-life's one-sided lower bound at that confidence (SurPyval's Fisher-matrix
+    bound on the quantile), never the estimate: verdict 'meets' (lower >= life), 'does_not_meet', or 'unknown'
+    for a model with no confidence bounds (parameters saved without data, a mixture, a non-MLE fit). Returns
+    the estimate, the lower bound and a one-sentence summary to relay. A best estimate above the requirement
+    with a bound below it does NOT meet it — plan_demonstration_test (b_life, shape_model_id) can size a test
+    to show it."""
+    user, db = _caller(ctx), _db()
+    owners = _owners(user["uid"])
+    m = models_service.get_model(db, model_id, owners)
+    if m is None:
+        raise ToolError("Model not found.")
+    results = m.results or {}
+    if m.kind not in ("distribution", "nonparametric", fitting.more_models.FLEXIBLE_KIND):
+        raise ToolError(f"“{m.name}” is a {m.kind} model — a B-life requirement needs a life distribution "
+                        "(or a non-parametric estimate or a Royston-Parmar spline).")
+    unit = results.get("unit") or ""
+    try:
+        out = models_service.life(db, m.id, {"requirement": {"b": b_life, "life": life},
+                                             "confidence": confidence, "unit": unit}, owners)
+    except models_service.ModelNotFound:
+        raise ToolError("Model not found.") from None
+    return {"model": m.name, "model_id": m.id, "unit": unit,
+            **{k: (_sig(v) if isinstance(v, float) and k in ("estimate", "lower") else v)
+               for k, v in out.items()}}
 
 
 # ---------------------------------------------------------------------------
@@ -2153,14 +2537,46 @@ def get_rbd(
 class BlockModel(BaseModel):
     distribution_id: Optional[str] = Field(None, description=(
         "Inline distribution: weibull, exponential, normal, lognormal, gamma, loglogistic, expo_weibull, "
-        "gumbel, logistic. Pair with params. Give this OR saved_model_id."))
+        "gumbel, logistic. Pair with params. Give this OR saved_model_id. 'mixture' = two (or more) failure "
+        "modes in one population, e.g. infant mortality plus wear-out: give base_distribution_id and params "
+        "numbered by mode, each mode's weight its share (the weights add to 1), e.g. weibull [alpha1, beta1, "
+        "weight1, alpha2, beta2, weight2]."))
+    base_distribution_id: Optional[str] = Field(None, description=(
+        "distribution_id 'mixture' only: the distribution every mode follows (weibull, lognormal, …)."))
     params: Optional[list[Param]] = Field(None, description=(
         "By SurPyval name: weibull [alpha (scale), beta (shape)], exponential [failure_rate], "
         "normal/lognormal [mu, sigma], gamma [alpha, beta]."))
+    mean: Optional[float] = Field(None, gt=0, description=(
+        "Instead of params: the model's mean in the diagram's unit — an MTBF for a life, an MTTR for a repair — "
+        "with `given` for the shape or spread it leaves open. Turned into SurPyval params (stored as params) "
+        "from SurPyval's own mean. exponential, weibull, lognormal, normal, gamma and loglogistic only."))
+    given: Optional[dict[str, float]] = Field(None, description=(
+        "With mean: weibull {beta}, lognormal {sigma} (the log-spread), normal {sigma}, gamma {alpha}, "
+        "loglogistic {beta} (above 1); exponential needs none."))
     saved_model_id: Optional[str] = Field(None, description=(
         "A saved life model id (list_models) instead of inline params: a parametric (or proportional-hazards) "
-        "model, not a non-parametric one (Kaplan-Meier etc.), which RBD blocks don't take."))
+        "model — a saved mixture fit included — not a non-parametric one (Kaplan-Meier etc.), which RBD blocks "
+        "don't take."))
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
+
+
+class SchedulePhase(BaseModel):
+    t: float = Field(ge=0, description="When this phase starts (diagram time unit); the first is 0.")
+    value: Union[float, str] = Field(description="The covariate's value (a categorical covariate's level) from t on.")
+
+
+class CovariateSchedule(BaseModel):
+    """One covariate's path over the diagram's time (#52)."""
+    model_config = ConfigDict(extra="forbid")
+    expression: Optional[str] = Field(None, max_length=400, description=(
+        "Numeric covariate: its value as an expression in t (diagram time), changing in STEPS — t only through "
+        "floor/ceil/'//' or a comparison. E.g. phases '60 if t < 1000 else (90 if t < 3000 else 75)', duty cycle "
+        "'90 if t % 24 < 8 else 30', stepped ramp '60 + 5 * floor(t / 500)', geometric "
+        "'60 * 1.1 ** floor(t / 1000)'. Names t, pi, e; functions sin cos tan exp log log2 sqrt floor ceil abs "
+        "min max. Give this OR table."))
+    table: Optional[list[SchedulePhase]] = Field(None, max_length=50, description=(
+        "Phases instead: the value from each t on (first t = 0). Required for a categorical covariate."))
+    period: Optional[float] = Field(None, gt=0, description="With table: repeat the phases every period.")
 
 
 class CostRange(BaseModel):
@@ -2212,6 +2628,34 @@ class ProofTest(BaseModel):
         "With coverage < 1: the interval of the full test that finds every failure (a whole multiple of interval)."))
 
 
+class CapacityLevel(BaseModel):
+    """One level a block works at (#122)."""
+    model_config = ConfigDict(extra="forbid")
+    value: float = Field(gt=0, description="The throughput at this level, in the diagram's capacity unit.")
+    probability: float = Field(gt=0, le=1, description="The share of its working time at this level.")
+
+
+#: A block's capacity: one throughput, or levels with probabilities (#122).
+_CAPACITY_DESCRIPTION = (
+    "Component or standby block: its throughput while it works (e.g. 250 for a 250 kW inverter), for the "
+    "production availability analyze_rbd reports; or, for a block that works at several levels, a list of "
+    "{value, probability} adding up to 1 (e.g. a pump at full rate 80% of its up time and half rate 20%). A "
+    "series chain carries the least of its blocks' capacities, a parallel group their sum; a block without one "
+    "limits nothing. Set the demand with create_rbd production (or edit_rbd set production).")
+
+
+class Production(BaseModel):
+    """The diagram's demand for the production availability (#122)."""
+    model_config = ConfigDict(extra="forbid")
+    demand: Optional[float] = Field(None, ge=0, description=(
+        "What the system is asked to deliver, in the blocks' capacity unit; 0 clears it."))
+    unit: Optional[str] = Field(None, max_length=20, description="The capacity unit, e.g. 'kW' or 'm3/h'.")
+    period: Optional[float] = Field(None, ge=0, description=(
+        "Repairable: the time (diagram unit) production is counted over from new, e.g. 8760 h for a year — "
+        "analyze_rbd then gives the output lost over it. Non-repairable: the time the capacity is read at. 0 "
+        "clears it."))
+
+
 class MaintenanceGroup(BaseModel):
     model_config = ConfigDict(extra="forbid")
     setup_cost: Optional[float] = Field(None, ge=0, description="Charged once per group stop (shared mobilisation).")
@@ -2232,6 +2676,19 @@ class DiagramCosts(BaseModel):
         "calendar time unit (hours … years)."))
 
 
+class RepairQuality(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: Literal["perfect", "kijima1", "kijima2"] = Field(description=(
+        "perfect = every repair leaves it as good as new (the default); kijima1 / kijima2 = imperfect repair by "
+        "Kijima's virtual age: a repair takes the age a unit gained since its last repair (I) or its whole age "
+        "(II) down to q times it."))
+    q: Optional[float] = Field(None, ge=0, le=1, description=(
+        "kijima1/kijima2: the restoration factor, 0 as good as new to 1 as bad as old (minimal repair)."))
+    replace_after: Optional[int] = Field(None, ge=1, le=1000, description=(
+        "kijima1/kijima2 with q > 0: replace the unit, as new, at its N-th failure since it was renewed (its "
+        "repair cost is charged at every failure, its replacement cost at the replacement)."))
+
+
 class RbdNode(BaseModel):
     id: str = Field(description="Unique node id. The diagram needs exactly one 'input' and one 'output' node.")
     type: Literal["input", "output", "component", "series", "parallel", "knode", "standby", "subsystem"] = Field(
@@ -2245,7 +2702,10 @@ class RbdNode(BaseModel):
     repair: Optional[BlockModel] = Field(None, description="Repairable diagrams only: time-to-repair distribution "
                                                            "(component, standby).")
     n: Optional[int] = Field(None, description="series/parallel: number of identical units; knode: number REQUIRED to work.")
-    k: Optional[int] = Field(None, description="knode: number of branches feeding the gate.")
+    k: Optional[int] = Field(None, description=(
+        "knode: number of branches feeding the gate. standby: number of units RUNNING (default 1), e.g. k=2 with "
+        "spares=1 for a 2-of-3 duty/standby train; warm spares need k=1 (no exact figures otherwise), and a "
+        "spare's own model works with k up to 2."))
     spares: Optional[int] = Field(None, description="standby: number of spares.")
     cold: Optional[bool] = Field(None, description="standby: true = cold (spares don't age while idle).")
     dormancy: Optional[float] = Field(None, ge=0, le=1, description=(
@@ -2269,11 +2729,40 @@ class RbdNode(BaseModel):
     repair_one_at_a_time: Optional[bool] = Field(None, description=(
         "Repairable standby group: one repairer of its own, so its failed units are repaired one at a time "
         "(otherwise each failed unit is a job for the diagram's repair crews). No costs on such a group."))
+    repair_quality: Optional[RepairQuality] = Field(None, description=(
+        "Repairable component: how good each repair is — imperfect repair (Kijima I/II with q) and replacement "
+        "at the N-th failure. Such a block has no exact long-run figures: analyze_rbd simulates them (and says "
+        "why). Not on standby groups, blocks replaced on condition or common-cause members' exact figures. Not "
+        "yet with a mixture (two-failure-mode) life: that can't be simulated quickly, so it's refused."))
+    capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description=_CAPACITY_DESCRIPTION)
+    covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
+        "Non-repairable component/series/parallel block on a saved covariate (regression) model: covariates "
+        "that change over time, by name, e.g. {\"load_pct\": {\"expression\": \"90 if t % 24 < 8 else 30\"}}. "
+        "The block's reliability follows the model along that path (values clipped to the model's fitted "
+        "range, with a warning); covariates left out stay at their defaults."))
 
 
 class RbdEdge(BaseModel):
     source: str
     target: str
+
+
+class MissionPhase(BaseModel):
+    """One phase of a phased mission (#160), in order."""
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, description="The phase's name, e.g. 'Take-off' (distinct).")
+    duration: float = Field(ge=0, description="How long it lasts (diagram unit).")
+    not_needed: Optional[list[str]] = Field(None, description=(
+        "Block ids this phase doesn't need (they still age and can fail, and stay failed for later phases)."))
+    votes: Optional[dict[str, int]] = Field(None, description=(
+        "knode id -> working inputs it needs in this phase (instead of its n), e.g. both engines at take-off."))
+
+
+class NetworkTerminals(BaseModel):
+    """An undirected network's two terminals (#160)."""
+    model_config = ConfigDict(extra="forbid")
+    source: str = Field("input", description="First terminal: a node id (default the input node).")
+    target: str = Field("output", description="Second terminal: a node id (default the output node).")
 
 
 class StageComponent(BaseModel):
@@ -2376,6 +2865,19 @@ def create_rbd(
         "is down), horizon (how long it is owned) and discount_rate (% a year). Blocks carry their own costs "
         "(repair, replace, downtime, acquisition). cheapest_design needs block acquisition prices, a horizon "
         "and a downtime_rate; edit_rbd's set costs changes these later."))] = None,
+    production: Annotated[Optional[Production], Field(description=(
+        "The demand the blocks' capacities serve (graph-form nodes' capacity), its unit and a period: "
+        "analyze_rbd then reports the production availability — the share of the demand delivered — and the "
+        "output lost over the period."))] = None,
+    phases: Annotated[Optional[list[MissionPhase]], Field(max_length=50, description=(
+        "Non-repairable only: a phased mission — the phases in order, each with a duration, the blocks it doesn't "
+        "need and per-phase knode counts. analyze_rbd then adds phased_mission (mission reliability, each "
+        "phase's failure probability, the riskiest phase)."))] = None,
+    network: Annotated[Optional[NetworkTerminals], Field(description=(
+        "Graph form, non-repairable: read the diagram as an UNDIRECTED network — blocks are nodes that fail, "
+        "edges are links that work both ways and never fail; analyze_rbd gives the two terminals' connection "
+        "reliability (exact) and each block's Birnbaum importance. No knodes, repeats or common-cause groups."
+    ))] = None,
 ) -> dict[str, Any]:
     """Build, validate and save a reliability block diagram to the user's workspace. Layout is automatic.
 
@@ -2399,14 +2901,22 @@ def create_rbd(
     (stages form), e.g. a lognormal time to repair. Blocks may carry costs, preventive (age/block/condition-
     based replacement), inspection (hidden failures with proof tests: staggered via offset, imperfect via
     coverage + full_test), maintenance_group and crew_priority (graph form; a stage component takes costs,
-    preventive and inspection too, the rest are added with edit_rbd update_node); the diagram repair_crews,
+    preventive and inspection too, the rest are added with edit_rbd update_node), and repair_quality (imperfect
+    repair by Kijima I/II with q, replacement at the N-th failure: simulated figures); the diagram repair_crews,
     maintenance_groups, safety_function, target_sil and costs. A safety function needs its proof tests
     (inspection) — without them its PFDavg treats every failure as revealed at once. Common-cause groups
     (common_cause_beta on a stage, or edit_rbd add_ccf) are followed over time in repairable diagrams: in every
     figure where RePyability's chains take them (members with exponential lives, revealed failures with
     exponential repairs or proof tests whose repairs take no, fixed or exponential time, no scheduled
     maintenance, crews for every repair), otherwise left out with the reason (the validation warnings say so);
-    a safety function's PFDavg keeps them wherever the long run can (proof tests that take time, say).
+    with proof tests that take time they stay in every figure but the exact failure frequency (and mean up/down
+    time), which is left out with the reason (common_cause.frequency_left_out). Groups of 3+ may use the multiple
+    Greek letter model (edit_rbd add_ccf mgl). A life may be a mixture of failure modes (distribution_id
+    'mixture', or a saved mixture fit), and a standby node may run k units (k-of-n standby).
+    Covariates over time (non-repairable): a block on a saved covariate (regression) model may set
+    covariate_schedules — a covariate's value as a stepped expression in t (phases, a duty cycle, a stepped
+    ramp) or a phase table — and analyze_rbd then follows the model along that path (warnings say where a value
+    is held at the model's fitted range).
     Returns the node ids (the stages form generates them) and structure_summary, the diagram in one line
     (e.g. "PLC → (Pump A ∥ Pump B)"; 2-of-3(…) for voting) — check it matches what the user described; change
     the diagram later with edit_rbd."""
@@ -2421,17 +2931,23 @@ def create_rbd(
     settings = _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil, costs)
     if settings and not repairable:
         raise ToolError(f"{', '.join(settings)} apply to repairable diagrams only — set repairable=true.")
+    mission = _mission_settings(phases, network, repairable, stages is not None)
     if stages is not None:
         graph = _stage_graph(db, uid, stages, repairable)
         graph["unit"] = unit
         graph.update(settings)
+        rbd_graph._carry_mission(mission, graph)
     else:
         graph = rbd_graph.normalize_graph(
             {"nodes": [n.model_dump(exclude_none=True) for n in nodes],
              "edges": [e.model_dump() for e in edges or []],
-             "unit": unit, "repairable": repairable, **settings},
+             "unit": unit, "repairable": repairable, **settings, **mission},
             resolve_saved_model=lambda mid: models_service.get_model(db, mid, owners),
         )
+    if production is not None:
+        demand = rbd_capacity.parse_production(production.model_dump(exclude_none=True))
+        if demand:
+            graph["production"] = demand
     check = rbds_service.validate_graph(db, graph, owners)
     if not check.get("valid", False):
         raise ToolError("Invalid RBD structure: " + "; ".join(check.get("errors") or ["unknown problem"]))
@@ -2439,6 +2955,22 @@ def create_rbd(
     _cap(db, user, "rbds", "RBDs")
     rbd = rbds_service.save_rbd(db, name.strip(), graph, uid)
     return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), **_rbd_outline(graph, check, include_graph)}
+
+
+def _mission_settings(phases, network, repairable: bool, stages: bool) -> dict:
+    """create_rbd's phased mission and network settings (#160) as graph keys."""
+    out: dict[str, Any] = {}
+    if (phases or network) and repairable:
+        raise ToolError("phases and network apply to non-repairable diagrams — drop repairable=true.")
+    if phases and network:
+        raise ToolError("A diagram is either a phased mission or a network, not both.")
+    if network is not None:
+        if stages:
+            raise ToolError("A network is drawn with nodes + edges (the graph form), not stages.")
+        out["network"] = network.model_dump()
+    if phases:
+        out["phases"] = [p.model_dump(exclude_none=True) for p in phases]
+    return out
 
 
 def _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil, costs=None) -> dict:
@@ -2467,6 +2999,11 @@ def _structure_summary(graph: dict) -> str:
     """The diagram in one line (#265), e.g. "PLC → (Pump A ∥ Pump B)", so a
     wrong structure shows at once — as the import preview gives it (#195).
     A bridge (or other wiring that isn't series-parallel) says so instead."""
+    if rbd_network.is_network(graph):  # #160: undirected, so no series-parallel line
+        try:
+            return rbd_network.summary(graph)
+        except rbd_network.NetworkError:
+            pass
     try:
         line = rbd_structure.structure_line(graph)
     except Exception:  # noqa: BLE001 - a summary never fails the write
@@ -2557,8 +3094,13 @@ class UpdateNodeOp(_Op):
     maintenance_group: Optional[str] = None
     crew_priority: Optional[float] = None
     repair_one_at_a_time: Optional[bool] = None
+    repair_quality: Optional[RepairQuality] = Field(None, description="Replaces the block's repair quality.")
+    capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description="Replaces the capacity.")
+    covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
+        "Replaces the block's covariate schedules (#52; see create_rbd's node)."))
     clear: Optional[list[Literal["costs", "preventive", "inspection", "maintenance_group", "crew_priority",
-                                 "instant_repair", "repair_one_at_a_time"]]] = Field(
+                                 "instant_repair", "repair_one_at_a_time", "repair_quality", "capacity",
+                                 "covariate_schedules"]]] = Field(
         None, description="Remove these block settings.")
 
 
@@ -2582,6 +3124,14 @@ class SetOp(_Op):
     costs: Optional[DiagramCosts] = Field(None, description=(
         "Repairable: the diagram's own costs — downtime_rate, horizon, discount_rate; fields left out are kept, "
         "0 clears one. A block's costs (repair, replace, downtime, acquisition) are update_node costs."))
+    production: Optional[Production] = Field(None, description=(
+        "The demand, capacity unit and period for the production availability; fields left out are kept, 0 or "
+        "\"\" clears one. Blocks' capacities are update_node capacity."))
+    phases: Optional[list[MissionPhase]] = Field(None, max_length=50, description=(
+        "Non-repairable: replaces the phased mission's phases ([] clears them)."))
+    network: Optional[Union[bool, NetworkTerminals]] = Field(None, description=(
+        "true or {source, target}: read the diagram as an undirected network between those terminals (default "
+        "input and output); false: back to a block diagram."))
 
 
 class AddCcfOp(_Op):
@@ -2592,6 +3142,10 @@ class AddCcfOp(_Op):
         "What beta is a fraction of: 'rate' (default) splits each member's failure rate and holds over the whole "
         "life; 'probability' is the PRA basic-event split, for small failure probabilities only (a short mission "
         "or proof-test interval) — over a lifetime it overstates the group's reliability and gives no MTTF."))
+    mgl: Optional[list[float]] = Field(None, description=(
+        "Groups of 3+: the multiple Greek letter model's letters after beta — [gamma] for 3 members, [gamma, "
+        "delta] for 4, … — each 0 to 1 (gamma = the chance a shared failure takes at least three). Omit for the "
+        "beta factor (a shared cause takes the whole group)."))
     id: Optional[str] = Field(None, description="Group id (default ccf-1, ccf-2, …).")
 
 
@@ -2617,6 +3171,8 @@ def _op_dict(op: BaseModel) -> dict:
         elif isinstance(value, dict):
             value = {k: v.model_dump(exclude_none=True) if isinstance(v, BaseModel) else v
                      for k, v in value.items()}
+        elif isinstance(value, list):
+            value = [v.model_dump(exclude_none=True) if isinstance(v, BaseModel) else v for v in value]
         out[key] = value
     return out
 
@@ -2679,15 +3235,18 @@ def edit_rbd(
       blocks adds no bypass. Every edge added is reported. Input/output can't be removed.
     - update_node {id | ids, label?, model?, repair?, n?, k?, spares?, cold?, subsystem_rbd_id?,
       instant_repair?, costs?, preventive?, inspection?, maintenance_group?, crew_priority?,
-      repair_one_at_a_time?, clear?: [field…]} — merges only the fields given (ids: same change to many
-      nodes); clear removes block settings. A node's type can't change: remove and re-add.
+      repair_one_at_a_time?, repair_quality?, covariate_schedules?, clear?: [field…]} — merges only the fields
+      given (ids: same change to many nodes); clear removes block settings. A standby's k is its units running. A
+      node's type can't change: remove and re-add.
     - add_edge / remove_edge {source, target}
     - set {name?, unit?, repairable?, repair_crews? (0 = as many as needed), maintenance_groups?,
       safety_function?, target_sil? (0 clears), costs? {downtime_rate?, horizon?, discount_rate? (% a year); 0
       clears}}
-    - add_ccf {members, beta, basis?, id?} / remove_ccf {id} — common-cause (beta-factor) groups (basis 'rate',
-      the default, for lifetime analysis); a repairable diagram follows them over time in every figure where
-      RePyability's chains take them (else they're left out, and the warnings say why).
+    - add_ccf {members, beta, basis?, mgl?, id?} / remove_ccf {id} — common-cause groups (basis 'rate', the
+      default, for lifetime analysis): the beta factor, or with mgl (3+ members) the multiple Greek letter
+      model; a repairable diagram follows them over time in every figure where RePyability's chains take them
+      (else they're left out, and the warnings say why; with proof tests that take time only the exact failure
+      frequency is left out). Removing a member of an MGL group drops its last letter.
     Removing a node drops it from its common-cause group (and the group if under 2 members remain).
     Changing connections re-lays out the diagram automatically. Returns one line per op, structure_summary
     (the diagram after the edit in one line, e.g. "PLC → (Pump A ∥ Pump B)"), the validation
@@ -2830,6 +3389,8 @@ def _as_of_now_summary(result: dict, labels: dict) -> dict:
             "level": band.get("level"), "n_draws": band.get("n_draws"),
             "mttf": band.get("mttf"), "b_life": band.get("blife"),
             **({"design_life": band["design_life"]} if "design_life" in band else {}),
+            # Several targets from the same draws (#325): B-lives and reliability at times.
+            **({"targets": band["targets"]} if band.get("targets") else {}),
             "uncertain_blocks": [b.get("label") for b in band.get("uncertain") or []],
             "fixed_blocks": [{"label": b.get("label"), "reason": b.get("reason")}
                              for b in band.get("fixed") or []],
@@ -2840,7 +3401,7 @@ def _as_of_now_summary(result: dict, labels: dict) -> dict:
 _EXACT_KEYS = ("status", "message", "from", "current_state", "window", "unit", "availability_start",
                "availability_end", "availability_min", "availability_min_at", "mission_availability",
                "expected_failures", "planned_outages", "expected_outages", "downtime", "cost", "cost_note",
-               "method", "n_blocks", "cached")
+               "method", "n_blocks", "cached", "mission_unavailability")
 
 
 def _exact_summary(exact: dict | None) -> dict | None:
@@ -2854,6 +3415,11 @@ def _exact_summary(exact: dict | None) -> dict | None:
     if curve.get("t"):
         out["curve"] = [{"t": p["t"], "availability": p["reliability"]}
                         for p in _downsample(curve["t"], curve.get("availability") or [])]
+        if curve.get("unavailability"):
+            # A safety function's PFD(t): the library's unavailability, not 1 − A(t) (#322).
+            pfd = _downsample(curve["t"], curve["unavailability"])
+            for point, p in zip(out["curve"], pfd):
+                point["pfd"] = p["reliability"]
     if exact.get("per_node"):
         out["blocks_by_downtime"] = exact["per_node"][:10]
     if exact.get("routes"):
@@ -2934,7 +3500,23 @@ def _precision_centred(precision: dict) -> dict:
 
 _COST_KEYS = ("cost_rate", "cost_rate_basis", "downtime_cost_rate", "by_category", "acquisition_cost", "horizon",
               "horizon_basis", "running_cost", "total_cost", "discount_rate", "discount_rate_per_unit",
-              "undiscounted_total_cost")
+              "undiscounted_total_cost", "total_cost_from_new", "present_value_note")
+
+
+def _by_horizon_summary(table: dict | None) -> dict | None:
+    """The cost of ownership over several horizons for an agent (#319): each
+    row's horizon (None: endless, the net present cost), the total at the
+    long-run rate and from new."""
+    if not table or not table.get("rows"):
+        return None
+    out = {"rows": [{k: r.get(k) for k in ("horizon", "years", "endless", "total_cost", "from_new",
+                                            "undiscounted_total_cost") if r.get(k) is not None or k == "horizon"}
+                    for r in table["rows"]],
+           "from_new_basis": table.get("from_new_basis")}
+    for k in ("from_new_note", "present_value_note"):
+        if table.get(k):
+            out[k] = table[k]
+    return out
 
 
 def _costs_summary(costs: dict | None) -> dict | None:
@@ -2944,7 +3526,10 @@ def _costs_summary(costs: dict | None) -> dict | None:
     if not costs:
         return None
     out = {k: costs[k] for k in _COST_KEYS if costs.get(k) is not None}
-    out["present_value"] = bool(costs.get("discount_rate"))
+    out["present_value"] = bool(costs.get("discount_rate")) and costs.get("total_cost") is not None
+    by_horizon = _by_horizon_summary(costs.get("by_horizon"))
+    if by_horizon:
+        out["by_horizon"] = by_horizon
     if out.get("by_category"):
         out["by_category"] = {k: v for k, v in out["by_category"].items() if v}
     blocks = [{k: b.get(k) for k in ("id", "label", "rate", "cost_share", "acquisition")}
@@ -2978,7 +3563,9 @@ _SUMMARY_KEYS = (
     "available", "kind", "unit",
     # Non-repairable.
     "mttf", "b_life", "reliability_at", "conditional_age", "from", "reliability_now", "mean_residual_life",
-    "design_life",
+    "design_life", "phased_mission",
+    # Network (#160).
+    "terminals", "time", "reliability", "mean_time_to_disconnect",
     # Repairable.
     "availability", "steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
     "failure_frequency", "has_simulation", "cached", "needs_simulation", "code", "reason",
@@ -3020,6 +3607,31 @@ def _top_importance(out: dict) -> Optional[dict]:
     return {**head, "blocks": [{"label": label, "value": v} for label, v in rows[:_TOP_BLOCKS]]}
 
 
+def _production_answer(db, graph: dict, owners: list, t: Optional[float]) -> Optional[dict]:
+    """analyze_rbd's production availability (#122) for a diagram whose
+    blocks carry capacities, or None; a figure the engine can't give comes
+    back as ``{"available": false, "reason"}``."""
+    if not rbd_capacity.has_capacity(graph):
+        return None
+    try:
+        res = rbd_capacity.production_for_owner(db, graph, owners, t=t)
+    except (rbd_capacity.CapacityError, AnalysisError) as exc:
+        return {"available": False, "reason": str(exc)}
+    if res is None:
+        return None
+    keep = ("basis", "t", "demand", "capacity_unit", "production_availability", "meets_demand", "availability",
+            "mean_capacity", "shortfall_rate", "unlimited", "period", "uncapped")
+    out = {"available": True, **{k: res[k] for k in keep if res.get(k) is not None}}
+    out["levels"] = res["levels"][:30]
+    if res.get("notes"):
+        out["notes"] = res["notes"]
+    out["note"] = (
+        "production_availability is the expected share of the demand delivered (capacity-weighted, unlike the "
+        "plain up/down availability); meets_demand the share of time the full demand is met; shortfall_rate the "
+        "average output lost per unit time; period.lost the output lost over the period from new.")
+    return out
+
+
 def _summary_only(out: dict) -> dict:
     """analyze_rbd's summary_only answer (#265): the headline figures without
     the curves, full importance tables and route details."""
@@ -3042,6 +3654,8 @@ def _summary_only(out: dict) -> dict:
     if isinstance(out.get("simulation"), dict):
         lean["simulation"] = {k: v for k, v in out["simulation"].items() if k in ("available", "state", "code",
                                                                                  "job_id")}
+    if isinstance(out.get("production"), dict):
+        lean["production"] = {k: v for k, v in out["production"].items() if k != "levels"}
     top = _top_importance(out)
     if top:
         lean["top_importance"] = top
@@ -3076,10 +3690,14 @@ def _await_job(db, job_id: str, wait_s: float) -> Optional[dict]:
 
 
 def _job_pending(db, job: dict) -> dict:
+    # The runtime quote and roughly when it starts (#286), for availability jobs.
+    eta = rbd_runs_service.progress(db, job) if job.get("kind") == rbd_jobs_service.KIND_AVAILABILITY else {}
     return {
         "job_id": job["_id"],
         "status": job.get("status"),
         "queue_position": rbd_jobs_service.queue_position(db, job),
+        **({"estimate": eta["quote"]["text"]} if eta.get("quote") else {}),
+        **({"starts_in": eta["wait_text"]} if eta.get("wait_text") else {}),
         "note": "The simulation is queued or running on Reliafy's calculation service. Call get_job with "
                 "this job_id in a few seconds for the result.",
     }
@@ -3123,7 +3741,12 @@ def analyze_rbd(
         "falls to it (from now with current_state)."))] = None,
     confidence: Annotated[Optional[float], Field(ge=0.5, lt=1, description=(
         "Non-repairable: also give confidence intervals at this level (e.g. 0.9) on the MTTF, B-lives and "
-        "design life, from the parameter uncertainty of blocks that use saved fitted models."))] = None,
+        "design life, from the parameter uncertainty of blocks that use saved fitted models; with `times` "
+        "(up to 8) also on the reliability at each, and with b_lives on each of those B-lives — all from one "
+        "run of draws (confidence.targets)."))] = None,
+    b_lives: Annotated[Optional[list[float]], Field(max_length=8, description=(
+        "Non-repairable, with confidence: the B-lives to give intervals on, as percent failed (e.g. [1, 10, "
+        "50] for B1, B10, B50), each with its point value."))] = None,
     include_curves: Annotated[bool, Field(description=(
         "Non-repairable with common-cause groups: also return ccf.curve_without, the system reliability without "
         "the groups at the times of `curve`. Off by default to keep the answer small."))] = False,
@@ -3144,8 +3767,12 @@ def analyze_rbd(
     diagrams, on every plan: the exact long-run availability, mean up/down time and failure frequency, how
     the long-run values were found (long_run_method: exact / numerical / simulated, e.g. the repair crews'
     Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety: whether common
-    cause is in it, common_cause_included; with no proof-tested block, a warning that the PFDavg and SIL are
-    optimistic), common-cause groups in every figure where RePyability follows them over time (the headline
+    cause is in it, common_cause_included; margin: the PFDavg against the target SIL's limit, or the achieved
+    band's; with no proof-tested block, a warning that the PFDavg and SIL are optimistic; safety.shares: each
+    element's share of the PFDavg (pfd_share, Fussell–Vesely: a common cause sits in its members' shares) and
+    of the dangerous failures (failure_share, adding up to 1 with each common-cause group's on a row of its
+    own); in `exact`, PFD(t) as curve[].pfd and its mean over the window, mission_unavailability — the
+    library's own unavailability, precise where 1 − A(t) loses digits), common-cause groups in every figure where RePyability follows them over time (the headline
     `availability` says common_cause_included, with the long run without_common_cause alongside; where they're
     refused, common_cause.note says why and every figure leaves them out — a safety function's PFDavg may still
     include them, and then leads the headline), proof_test_note when A(t) saw-tooths with proof tests, and (in
@@ -3153,7 +3780,9 @@ def analyze_rbd(
     failures, outages, downtime and cost — each with its method (exact / numerical; no simulation) — from
     new or from current_state. A priced diagram adds `costs`: the long-run cost rate, and the total cost of
     ownership over its horizon (a present value when discounted: discount_rate, or the diagram's own, set
-    with edit_rbd's set costs). The Monte-Carlo simulation (distributions, criticality; from current_state,
+    with edit_rbd's set costs) — at the long-run rate (total_cost) and from new (total_cost_from_new, exact or
+    numerical, each cost discounted from when it falls) — and by_horizon: both over 5, 10 and 20 years too, and
+    for ever when discounted (the net present cost, horizon None). The Monte-Carlo simulation (distributions, criticality; from current_state,
     next_failure and mean_residual_life: the time to the next system failure and its cause) is a paid feature
     (Pro or purchased credits) and, unless simulate=true, runs only where a figure needs it (a diagram whose
     figures from new are all exact or numerical answers without one: simulation.on_request). Its per_node rows
@@ -3164,7 +3793,17 @@ def analyze_rbd(
     'simulation_only', e.g. limited repair crews for wear-out lives) returns available=false without entitlement; asked
     with simulate=false (and no saved result matching the diagram as it is now) it returns available=false,
     needs_simulation=true, code 'needs_simulation' and a reason naming what needs the simulation, with no
-    figure fields — call again with simulate=true (Pro or credits) or offer export_rbd_python."""
+    figure fields — call again with simulate=true (Pro or credits) or offer export_rbd_python.
+    Blocks with a capacity (create_rbd / edit_rbd capacity, and production's demand) add `production`, exact and
+    free: the capacity distribution (levels), production_availability (the share of the demand delivered —
+    report it beside the plain availability: it weighs partial outages), meets_demand, mean_capacity and, for a
+    repairable diagram, the long run plus the output lost over production.period (else t_max) from new; a
+    non-repairable diagram reads it at the last of `times` (else production.period).
+    A network diagram (create_rbd network) returns kind 'network': the terminals' connection reliability at
+    `time` (where it is about 90%; `times` adds reliability_at), mean_time_to_disconnect and each block's
+    Birnbaum importance — exact, or simulated when too large (method says which). A non-repairable diagram
+    with phases adds phased_mission: mission_reliability (exact or simulated), each phase's
+    failure_probability and reliability_at_end, and riskiest_phase."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -3205,6 +3844,16 @@ def analyze_rbd(
     if design:
         head["warnings"] = design
 
+    if rbd_network.is_network(graph):  # #160: two-terminal reliability of an undirected network
+        if conditional_age is not None or current_state or target_reliability is not None or confidence is not None:
+            raise ToolError("conditional_age, current_state, target_reliability and confidence apply to block "
+                            "diagrams; this one is a network (its terminals' connection reliability). Drop them.")
+        result = rbd_network.analyze_for_owner(db, graph, owners, t_max=t_max, at_times=times)
+        out = {**head, "available": True, **rbd_network.agent_summary(result)}
+        if summary_only:
+            out.pop("curve", None)
+            out["importance"] = out["importance"][:_TOP_BLOCKS]
+        return out
     try:
         if graph.get("repairable"):
             actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
@@ -3250,7 +3899,9 @@ def analyze_rbd(
                 # Simulation-only diagram: nothing to show until the job is done.
                 return {**head, "kind": "repairable", "available": False, **pending}
             if discount_rate is not None and payload.get("costs"):
-                payload = {**payload, "costs": rbd_costs.with_discount(payload["costs"], graph, discount_rate)}
+                payload = {**payload, "costs": rbd_costs.with_discount(
+                    payload["costs"], graph, discount_rate,
+                    lambda mid: models_service.get_live_model(db, mid, owners))}
             out = {**head, "available": True, **_availability_summary(payload)}
             sim_status = payload.get("simulation_status") or {}
             sim_state = sim_status.get("state")
@@ -3274,6 +3925,9 @@ def analyze_rbd(
                 }
             else:
                 out["simulation"] = {"available": bool(payload.get("has_simulation")), "state": sim_state}
+            produced = None if current_state else _production_answer(db, graph, owners, t_max)
+            if produced is not None:
+                out["production"] = produced
             done = availability_answer.finish(out, payload)
             return _summary_only(done) if summary_only else done
 
@@ -3282,11 +3936,21 @@ def analyze_rbd(
         result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
                                             at_times=times, current_state=state,
                                             target_reliability=target_reliability,
-                                            band={"level": confidence} if confidence is not None else None)
+                                            band=({"level": confidence, "b_lives": b_lives,
+                                                   "times": [t for t in times or [] if t > 0][:8] or None}
+                                                  if confidence is not None else None))
         out = {**head, "available": True, **_reliability_summary(result, graph, times, include_curves)}
+        produced = None if current_state else _production_answer(db, graph, owners, times[-1] if times else None)
+        if produced is not None:
+            out["production"] = produced
         if result.get("warnings"):
             # RePyability's common-cause warnings, and why the MTTF is missing (#210).
             out["warnings"] = list(dict.fromkeys([*(head.get("warnings") or []), *result["warnings"]]))
+        if rbd_phases.has_phases(graph):  # #160: the phased mission, alongside
+            try:
+                out["phased_mission"] = rbd_phases.agent_summary(rbd_phases.analyze_for_owner(db, graph, owners))
+            except AnalysisError as exc:
+                out["phased_mission"] = {"available": False, "message": str(exc)}
         return _summary_only(out) if summary_only else out
     except (ToolError, *_USER_ERRORS, models_service.ModelNotFound, fitting.ModelNotFound,
             rbds_service.RbdNotFound):
@@ -3342,6 +4006,115 @@ def get_job(
     if job.get("status") == "failed":
         return {**out, "available": False, "message": job.get("error") or rbd_jobs_service.FAILED_ERROR}
     return {**out, "available": False, **_job_pending(db, job)}
+
+
+# ---- Run history and runtime quotes (#112, #286) -------------------------------------------
+
+def _run_brief(row: dict) -> dict:
+    """A runs-list row for an agent: plain fields, no UI labels."""
+    out = {k: row.get(k) for k in ("run_id", "rbd_id", "rbd_name", "status", "created_at", "finished_at",
+                                    "runtime_s", "replications", "window", "unit", "availability", "error")}
+    out["ran_by"] = "you" if row["by"]["you"] else (row["by"].get("name") or "a teammate")
+    out["via"] = row["via"].get("label") or "not recorded"
+    out["method"] = row["method"]["label"]
+    if row.get("quote"):
+        out["quoted"] = row["quote"].get("text")
+    return {k: v for k, v in out.items() if v is not None}
+
+
+@_tool("list_rbd_runs", _READ, "List simulation runs")
+def list_rbd_runs(
+    ctx: Context,
+    rbd_id: Annotated[Optional[str], Field(description="Only this diagram's runs (an RBD id from list_rbds).")] = None,
+    limit: Annotated[int, Field(ge=1, le=100, description="How many runs, newest first.")] = 20,
+) -> dict[str, Any]:
+    """The user's availability simulations of repairable diagrams, newest first — from the app or any MCP
+    connector: who ran it and from where (via), status (queued, running, done, failed), method (full, quick
+    estimate, fixed replications; "from now" with a current state), the calculation's runtime in seconds, when,
+    the replications and window, and for a finished run the simulated window availability with its confidence
+    interval. Runs are kept for 7 days after they finish on the free plan and 90 days on Pro or a team's
+    diagram, each run for the period its owner's plan gave it when it started; `kept_days` and `retention`
+    say which applies to this user now. Read one in full with get_rbd_run."""
+    user, db = _caller(ctx), _db()
+    if rbd_id:
+        _get_rbd(db, user["uid"], rbd_id)
+    out = rbd_runs_service.list_runs(db, _reader(user), rbd_id, limit)
+    return {"runs": [_run_brief(r) for r in out["runs"]], "more": out["more"], "kept_days": out["kept_days"],
+            "retention": out["retention"]["text"]}
+
+
+@_tool("get_rbd_run", _READ, "Read a simulation run")
+def get_rbd_run(
+    ctx: Context,
+    run_id: Annotated[str, Field(description="A run_id from list_rbd_runs (or a job_id from analyze_rbd).")],
+    include_curve: Annotated[bool, Field(description=(
+        "Also return the simulated availability over time A(t) with its confidence band (t, availability, "
+        "lower, upper)."))] = False,
+) -> dict[str, Any]:
+    """One availability simulation in full: its stored results (the same figures analyze_rbd gives, with
+    their confidence intervals), the inputs it ran on (window, seed, replications, any current state, and
+    whether the diagram has changed since), the RePyability and SurPyval versions, the precision it achieved
+    (precision.reached: whether it met its target), and what was quoted before it ran against its runtime.
+    To run it again, call analyze_rbd with recompute=true."""
+    user, db = _caller(ctx), _db()
+    reader = _reader(user)
+    job = rbd_runs_service.get_visible(db, reader, run_id)
+    if job is None:
+        raise ToolError("Run not found.")
+    entitled = billing_service.premium_compute_allowed(db, user)
+    view = rbd_runs_service.detail(db, reader, job, entitled)
+    out = _run_brief(view)
+    out.update(inputs=view["inputs"], engines=view["engines"])
+    if view.get("rbd_id"):
+        out["url"] = _url(f"/rbds/runs/{run_id}")
+    if job.get("status") == "done":
+        payload = view["result"]
+        out["result"] = _availability_summary(payload)
+        if include_curve and payload.get("curve"):
+            out["curve"] = {k: payload["curve"].get(k) for k in ("t", "availability", "lower", "upper", "confidence")}
+    elif job.get("status") in rbd_jobs_service.ACTIVE:
+        out.update({k: view.get(k) for k in ("queue_position", "wait_text") if view.get(k) is not None})
+    return out
+
+
+@_tool("quote_rbd_simulation", _READ, "Quote a simulation's runtime")
+def quote_rbd_simulation(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="A repairable RBD id from list_rbds.")],
+    t_max: Annotated[Optional[float], Field(gt=0, description=(
+        "The window, as analyze_rbd's t_max (default: the automatic one)."))] = None,
+    current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
+        "Blocks' states now, as analyze_rbd's current_state."))] = None,
+) -> dict[str, Any]:
+    """How long analyze_rbd's availability simulation of a repairable diagram should take, before anything
+    runs or is queued: estimate (in words, e.g. "about 15 s, up to 40 s"), median_s and p90_s (90% of runs
+    finish within it), from a model of past runs' times; and how many jobs are queued on the calculation
+    service ahead of a new one, with roughly how long until it would start. Nothing is run or charged."""
+    from backend.routers.rbd_runs import quote_for
+
+    user, db = _caller(ctx), _db()
+    rbd = _get_rbd(db, user["uid"], rbd_id)
+    graph = rbd.graph or {}
+    if not graph.get("repairable"):
+        raise ToolError("Only repairable diagrams are simulated; this one is analysed exactly (analyze_rbd).")
+    state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
+             if current_state else None)
+    quick = not billing_service.premium_compute_allowed(db, user)
+    quote = quote_for(db, graph, t_max, quick, state)
+    out: dict[str, Any] = {"rbd_id": rbd.id, "name": rbd.name, "available": bool(quote.get("available"))}
+    if not quote.get("available"):
+        return {**out, "message": quote.get("reason")}
+    out.update(estimate=quote["text"], median_s=round(quote["median_s"], 2), p90_s=round(quote["p90_s"], 2),
+               replications=quote["replications"], window=quote["window"], unit=graph.get("unit") or "")
+    if quote.get("capped"):
+        out["note"] = "The run stops at its time limit, so it takes about that long."
+    from backend.services import compute_queue as _queue
+
+    if _queue.configured():
+        ahead = db.rbd_jobs.count_documents({"status": {"$in": list(rbd_jobs_service.ACTIVE)},
+                                             "created_at": {"$gte": rbd_jobs_service._stale_before()}})
+        out["jobs_in_queue"] = ahead
+    return out
 
 
 @_tool("export_rbd_python", _READ, "Export an RBD as Python")
@@ -3488,6 +4261,10 @@ def cheapest_design(
         "motor) whose last block feeds one node. A copy is another path alongside the train into that node, "
         "so copies of a train into a 2-out-of-3 vote make it 2-out-of-4 (\"should we add a fourth pump "
         "train?\"). Name one of identical trains; at least one of its blocks needs a purchase price."))] = None,
+    horizons: Annotated[Optional[list[float]], Field(max_length=6, description=(
+        "Other ownership horizons to price the choice over (diagram unit), e.g. [43800, 175200] for 5 and 20 "
+        "years in hours; default 5, 10 and 20 years in a calendar unit. by_horizon gives the cheapest design "
+        "at each, and for ever (the net present cost) when discounted."))] = None,
 ) -> dict[str, Any]:
     """The redundancy that owns a repairable diagram at the lowest total cost (RePyability's
     allocate_redundancy, scored exactly): how many active, independently repaired copies of each priced block
@@ -3495,7 +4272,9 @@ def cheapest_design(
     production) it saves, optionally keeping the long-run availability at least min_availability. With trains,
     whole trains of blocks are copied too (design.trains gives each train's copies, 1 = as drawn). Returns the
     design as drawn and the cheapest side by side (total cost, purchase, running cost rate, availability), the
-    copies per block and the saving; the totals are present values when discounted. Needs block purchase prices
+    copies per block and the saving; the totals are present values when discounted. by_horizon prices the
+    choice over several horizons at once (5, 10 and 20 years, or `horizons`, and endless when discounted): the
+    cheapest design at each (its copies), its total and the design as drawn. Needs block purchase prices
     (edit_rbd update_node costs.acquisition), an ownership horizon and the system downtime cost (edit_rbd set
     costs.horizon and costs.downtime_rate; create_rbd takes the same costs). The diagram's common-cause groups
     are in the scoring wherever analyze_rbd has them: a grouped block's copies join its group (common_cause
@@ -3520,7 +4299,8 @@ def cheapest_design(
     try:
         result = rbd_costs.cheapest_design(
             graph, lambda mid: models_service.get_live_model(db, mid, owners), horizon=horizon,
-            min_availability=min_availability, blocks=blocks, discount_rate=discount_rate, trains=trains)
+            min_availability=min_availability, blocks=blocks, discount_rate=discount_rate, trains=trains,
+            horizons=horizons)
     except AnalysisError as exc:
         raise ToolError(_cheapest_design_hint(str(exc), graph)) from None
     keep = ("unit", "horizon", "min_availability", "discount_rate", "method", "max_copies", "current", "saving",
@@ -3533,7 +4313,60 @@ def cheapest_design(
         out["note"] += " " + _COSTS_HOW["downtime_rate"]
     out["present_value"] = result["discount_rate"] is not None
     out["design"] = {k: v for k, v in result["design"].items() if k != "units"}
+    if result.get("by_horizon"):
+        # The choice over several horizons (#319); horizon None is endless (the net present cost).
+        out["by_horizon"] = [
+            {**{k: r.get(k) for k in ("horizon", "years", "endless", "current_total", "design_total", "saving",
+                                      "availability", "error") if r.get(k) is not None or k == "horizon"},
+             # Block ids (a train by its name), as design.blocks and design.trains name them.
+             "copies": {(c["label"] if c["train"] else c["id"]): c["copies"] for c in r.get("copies") or []}}
+            for r in result["by_horizon"]["rows"]]
     return out
+
+
+@_tool("compare_rbds", _READ, "Compare two repairable RBDs")
+def compare_rbds(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="Design A: a repairable RBD id from list_rbds.")],
+    other_rbd_id: Annotated[str, Field(description=(
+        "Design B: another repairable RBD id — typically a copy of A with one change (clone_rbd, then edit_rbd)."))],
+    t_max: Annotated[Optional[float], Field(gt=0, description=(
+        "The window both are compared over, from new (diagram unit); default the longer of their automatic "
+        "windows."))] = None,
+) -> dict[str, Any]:
+    """Is design B better than design A, and by how much? The difference (B − A) in the window's mean
+    availability from new — exact where both designs have exact values over the window (method 'exact': no
+    simulation noise, nothing simulated), else from paired simulations with common random numbers (blocks with
+    the same id draw the same failures) and a confidence interval — with both long-run availabilities. With
+    both designs priced, the difference in what owning each for the window costs, purchases included
+    (differences.cost: acquisition is the difference in purchase prices, running the rest; b_higher means B
+    costs more) and the long-run cost-rate difference (exact, per unit time). Pro (or purchased credits), as
+    Compare with… in the app."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    a = _get_rbd(db, uid, rbd_id)
+    b = _get_rbd(db, uid, other_rbd_id)
+    head = {"rbd_id": a.id, "other_rbd_id": b.id, "url": _url(f"/rbds/b/{a.id}")}
+    for doc in (a, b):
+        if not (doc.graph or {}).get("repairable"):
+            raise ToolError(f"“{doc.name}” is non-repairable (analysed for reliability): only repairable "
+                            "(availability) diagrams are compared.")
+    if not billing_service.premium_compute_allowed(db, user):
+        _soft_refusal("pro_only")
+        return {**head, "available": False, "code": "pro_required",
+                "message": (f"Comparing designs is part of Reliafy Pro ({PRO_PRICE}; purchased AI credits unlock it "
+                            f"too), as in the app — upgrade at {_billing_url()} (or call upgrade_link). analyze_rbd "
+                            "on each design stays free.")}
+    try:
+        result = rbd_compare_service.compare_graphs(db, a.graph or {}, b.graph or {}, [*_owners(uid), a.owner_id],
+                                                    [*_owners(uid), b.owner_id], t_simulation=t_max)
+    except AnalysisError as exc:
+        raise ToolError(str(exc)) from None
+    result["designs"]["a"]["name"] = a.name
+    result["designs"]["b"]["name"] = b.name
+    keep = ("unit", "t_simulation", "horizon_shortened", "method", "designs", "differences", "cost_note",
+            "n_simulations", "common_random_numbers", "shared_blocks")
+    return {**head, "available": True, **{k: result[k] for k in keep if result.get(k) is not None}}
 
 
 def _fault_tree_name(row: dict) -> str:
@@ -3636,7 +4469,7 @@ def rbd_fault_tree(
 # What a lever row carries in rbd_sensitivity's answer (the app's row has more).
 _SENSITIVITY_ROW_KEYS = ("rank", "id", "block", "name", "lever", "change", "value", "shown_value", "shown_to",
                          "effect_basis", "cost_to_change", "benefit_per_cost", "per_unit_cost", "plain",
-                         "interval", "distinguishable", "unranked")
+                         "interval", "distinguishable", "unranked", "limit", "limited")
 
 
 def _sensitivity_summary(payload: dict, limit: int) -> dict:
@@ -3670,6 +4503,160 @@ def _sensitivity_summary(payload: dict, limit: int) -> dict:
     return out
 
 
+def _thin(values: list, every: int) -> list:
+    return values[::every] if isinstance(values, list) else values
+
+
+def _measure_summary(payload: dict) -> dict:
+    """A measure's answer for an agent: the plain answer first, its figures
+    (curves thinned to about 11 points), the basis and notes."""
+    status = payload.get("status")
+    keep = {k: payload.get(k) for k in ("measure", "question", "unit", "basis", "basis_reason") if k in payload}
+    if status != "ok":
+        return {**keep, "available": False, "code": status, "message": payload.get("message"),
+                **({"fixed_blocks": payload["fixed"]} if payload.get("fixed") else {})}
+    out: dict[str, Any] = {**keep, "available": True, "answer": payload.get("answer")}
+    measure = payload.get("measure")
+    every = 6
+    if measure in ("over_time", "rate"):
+        out["time"] = _thin(payload.get("time") or [], every)
+        out["series"] = [{**{k: v for k, v in s.items() if k != "values"},
+                          "values": _thin(s.get("values") or [], every)} for s in payload.get("series") or []]
+        out["series_note"] = ("over_time: each block's Birnbaum importance (the probability the system works only "
+                              "while it does) at each time; rate: each block's part in the availability's rate of "
+                              "change per unit time (negative pulls it down).")
+    for key in ("leaders", "group_by", "shares", "levers", "pairs", "rate", "jumps", "causes", "causes_window",
+                "causes_basis", "causes_note", "fastest_fall", "pulling_down", "horizon", "level", "method",
+                "availability", "at_times", "inputs", "fixed", "variance", "n_draws", "n_draws_sobol",
+                "n_draws_over_time", "window", "pinned", "notes", "repyability_version"):
+        if payload.get(key) not in (None, [], {}):
+            out[key] = payload[key]
+    if measure == "rate" and "rate" in out:
+        out["rate"] = _thin(out["rate"], every)
+    if measure == "uncertainty":
+        out["shares_note"] = ("Each uncertain input's share of the long-run availability's variance: first_order "
+                              "(the delta method's part, or Sobol's first-order index) and total (Sobol's, counting "
+                              "interactions). Inputs are the blocks whose saved fitted model is drawn; blocks "
+                              "sharing a saved model are one input. fixed lists the blocks kept fixed and why.")
+    return out
+
+
+def _measure_answer(db, user: dict, actx, graph: dict, rbd, owners: list, **raw) -> dict:
+    """rbd_sensitivity's other measures (#225): computed (or queued and
+    awaited) as the app's What to improve tabs."""
+    from backend.routers.rbd_measures import measures_payload
+
+    try:
+        status, payload = measures_payload(db, actx, graph, rbd, owners, **raw)
+    except AnalysisError as exc:
+        raise ToolError(str(exc)) from None
+    if status == 503:
+        raise ToolError(payload.get("detail") or rbd_jobs_service.QUEUE_UNAVAILABLE)
+    if status == 202:
+        job = _await_job(db, payload["job"]["job_id"], config.MCP_JOB_WAIT_S)
+        if job is None:
+            raise ToolError("The calculation was lost. Run rbd_sensitivity again.")
+        if job.get("status") == "failed":
+            raise ToolError(job.get("error") or rbd_jobs_service.FAILED_ERROR)
+        if job.get("status") != "done":
+            return {"available": False, "measure": raw.get("measure"), **_job_pending(db, job),
+                    "note": "The measure is running on Reliafy's calculation service. Call get_job with this "
+                            "job_id in a few seconds for it."}
+        payload = job.get("result") or {}
+    if payload.get("status") == "pro_required" and user.get("mcp_plan", "pro") != "pro":
+        _soft_refusal("pro_only")
+    return _measure_summary(payload)
+
+
+@_tool("allocate_targets", _READ, "Allocate a system target to an RBD's blocks")
+def allocate_targets(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="An RBD id from list_rbds.")],
+    target: Annotated[float, Field(gt=0, lt=1, description=(
+        "The system target: a reliability at t for a non-repairable diagram (e.g. 0.95), a long-run availability "
+        "for a repairable one (e.g. 0.995)."))],
+    method: Annotated[Optional[Literal["equal", "simple", "minimum_effort", "improvement", "cost_based",
+                                       "availability", "mttf_mttr"]], Field(description=(
+        "Non-repairable: equal (every block the same reliability; a first cut), simple (the smallest change from "
+        "50/50 by the diagram's structure alone, weighted; no component data), minimum_effort (series systems "
+        "only: raise the weakest blocks to one common level, the least total effort), improvement (cut every free "
+        "block's unreliability by one factor, keeping their ratios; with fixed blocks) or cost_based (the cheapest "
+        "way by Mettas's cost function, from each block's max and feasibility; any structure — the default). "
+        "Repairable: availability (each block's availability, and the MTTF or MTTR that gives it; the default) or "
+        "mttf_mttr (the cheapest MTTF and MTTR pair per block)."))] = None,
+    t: Annotated[Optional[float], Field(gt=0, description=(
+        "Non-repairable: the mission time (diagram unit) the target reliability is for. Required there."))] = None,
+    availability_method: Annotated[Optional[Literal["cost_based", "improvement", "minimum_effort", "equal"]],
+                                   Field(description=(
+        "method=availability: how to apportion it (default cost_based)."))] = None,
+    levers: Annotated[Optional[Literal["both", "mttf", "mttr"]], Field(description=(
+        "method=mttf_mttr: change both (default), only the MTTFs (reliability) or only the MTTRs "
+        "(maintainability)."))] = None,
+    fixed: Annotated[Optional[list[str]], Field(description=(
+        "Block ids that keep what they have now (improvement, cost_based, availability, mttf_mttr)."))] = None,
+    weights: Annotated[Optional[dict[str, float]], Field(description=(
+        "simple or improvement (and availability with improvement): a weight per block id, default 1; a larger "
+        "weight changes a block more, 0 leaves it."))] = None,
+    maximum: Annotated[Optional[dict[str, float]], Field(description=(
+        "cost_based (and availability with cost_based): the most each block's reliability (or availability) can "
+        "reach, per block id; default approaching 1."))] = None,
+    feasibility: Annotated[Optional[dict[str, float]], Field(description=(
+        "cost_based: how easily each block improves, in [0, 1), default 0.5; higher is easier (cheaper)."))] = None,
+    max_mttf: Annotated[Optional[dict[str, float]], Field(description=(
+        "mttf_mttr: the longest MTTF each block can reach (diagram unit)."))] = None,
+    min_mttr: Annotated[Optional[dict[str, float]], Field(description=(
+        "mttf_mttr: the shortest MTTR each block can reach (diagram unit)."))] = None,
+    mttf_feasibility: Annotated[Optional[dict[str, float]], Field(description=(
+        "mttf_mttr: how easily each block's MTTF rises, in [0, 1), default 0.5."))] = None,
+    mttr_feasibility: Annotated[Optional[dict[str, float]], Field(description=(
+        "mttf_mttr: how easily each block's MTTR falls, in [0, 1), default 0.5."))] = None,
+) -> dict[str, Any]:
+    """Design to a system target (the app's Targets tab): what each block needs — its reliability at t, or for a
+    repairable diagram its availability and the MTTF/MTTR that give it — for the system to meet the target,
+    against what it has now. Methods differ in what they assume: equal and simple use only the structure;
+    minimum_effort needs a series system; improvement and cost_based start from the blocks' current values (with
+    fixed blocks, maxima and feasibilities). The blocks are treated as independent, so a non-repairable diagram
+    with common-cause groups is refused. Returns system.current and system.allocated (the target, or more when
+    already met) and blocks[] {label, current, required, fixed, (repairable) current_mttf/current_mttr and
+    mttf/mttr}. An unreachable target returns reached=false with reachable {low, high}: the range the system can
+    reach with those settings. Exact, free on every plan; nothing is saved."""
+    from backend.services import rbd_allocation
+
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    rbd = _get_rbd(db, uid, rbd_id)
+    graph = rbd.graph or {}
+    owners = [*_owners(uid), rbd.owner_id]
+    repairable = bool(graph.get("repairable"))
+    chosen = method or ("availability" if repairable else "cost_based")
+    if repairable and chosen not in rbd_allocation.REPAIRABLE_METHODS:
+        raise ToolError(f"This diagram is repairable: use method availability or mttf_mttr, not {chosen}.")
+    if not repairable and chosen not in rbd_allocation.NONREPAIRABLE_METHODS:
+        raise ToolError(f"This diagram is non-repairable: {chosen} applies to repairable diagrams. Use equal, "
+                        "simple, minimum_effort, improvement or cost_based.")
+    options = {k: v for k, v in {
+        "fixed": fixed, "weights": weights, "max": maximum, "feasibility": feasibility,
+        "availability_method": availability_method, "levers": levers, "max_mttf": max_mttf,
+        "min_mttr": min_mttr, "mttf_feasibility": mttf_feasibility, "mttr_feasibility": mttr_feasibility,
+    }.items() if v is not None}
+    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}"), "method": chosen,
+            "target": target}
+    try:
+        res = rbd_allocation.allocate_for_owner(db, graph, owners, target, chosen, t=t, options=options)
+    except rbd_allocation.AllocationError as exc:
+        if exc.reachable is not None:
+            return {**head, "reached": False, "message": str(exc), "reachable": exc.reachable}
+        raise ToolError(str(exc)) from None
+    out = {**head, "reached": True, "kind": res["kind"], "unit": res.get("unit") or None,
+           "system": res["system"], "blocks": res["blocks"]}
+    for key in ("t", "availability_method", "levers"):
+        if res.get(key) is not None:
+            out[key] = res[key]
+    if res.get("notes"):
+        out["notes"] = res["notes"]
+    return out
+
+
 @_tool("rbd_sensitivity", _READ, "What to improve in a repairable RBD")
 def rbd_sensitivity(
     ctx: Context,
@@ -3694,6 +4681,30 @@ def rbd_sensitivity(
         "Where RePyability has no exact route (e.g. limited repair crews for wear-out lives), simulate the "
         "effects (Pro or credits; a minute or two). False: say so instead."))] = True,
     limit: Annotated[int, Field(ge=1, le=200, description="How many ranked levers to return.")] = 15,
+    lever_limits: Annotated[Optional[dict[str, dict[str, float]]], Field(description=(
+        "measure='levers': how far each lever may go, by lever id (from levers[].id), as {min, max} in the "
+        "values shown (shown_value: a mean repair time in the diagram's unit, a coverage as a fraction), e.g. "
+        "{\"motor|repairability.mu\": {\"min\": 4}} = the motor's mean repair time can't go below 4. A step "
+        "stops at the limit (limited: 'yours'), as it stops at a lever's own range (limited: 'range', e.g. a "
+        "coverage of 1)."))] = None,
+    measure: Annotated[Literal["levers", "over_time", "shares", "joint", "rate", "uncertainty"], Field(
+        description=(
+            "levers (default): the ranked steps. over_time: which blocks matter most, and when (each block's "
+            "Birnbaum importance from new over `window`, or the analysis horizon). shares: where an all-round "
+            "improvement pays off (each group's share of the gain from improving every lever by the same "
+            "fraction; group_by). joint: which pairs are complements (improve together) or substitutes. rate: "
+            "what's moving availability now (each block's part in dA/dt over time) and who causes the system's "
+            "failures (Barlow-Proschan shares). uncertainty: whose parameter uncertainty widens the answer — "
+            "the long-run availability's interval over draws of the blocks' saved fitted models and each "
+            "input's share of its variance."))] = "levers",
+    group_by: Annotated[Literal["block", "kind"], Field(description=(
+        "measure='shares': by block, or by kind of lever (lives, repair times, proof tests, ...)."))] = "block",
+    uncertainty_method: Annotated[Literal["delta", "sobol"], Field(description=(
+        "measure='uncertainty': delta (default; free, quick: the delta method) or sobol (first-order and total "
+        "Sobol indices from draws; Pro or credits, a compute job)."))] = "delta",
+    times: Annotated[Optional[list[float]], Field(max_length=6, description=(
+        "measure='uncertainty': also the availability at these times from new, and the mean availability over "
+        "[0, t] for each, with their intervals, all from one run (Pro or credits, a compute job)."))] = None,
 ) -> dict[str, Any]:
     """What to improve first in a repairable diagram: every lever RePyability exposes — each block's mean life
     and mean repair time (and its other model parameters), its scheduled-replacement and proof-test intervals,
@@ -3708,7 +4719,11 @@ def rbd_sensitivity(
     interval; say when an interval spans zero). Common-cause groups are in it as in analyze_rbd's availability:
     each group's beta is then a lever ('Common-cause β': a lower beta, fewer shared failures) and its members'
     life and repair move together; where they're refused, notes say why. A long calculation may come back as a
-    job_id: call get_job with it until done."""
+    job_id: call get_job with it until done. lever_limits stops a lever's step at the user's limit (e.g. a
+    repair time that can't go below 4 hours). Other measures (measure=...) each answer one question with a
+    plain `answer` to quote first, then their figures: over_time, shares, joint, rate, uncertainty (see
+    measure); `question` is the question it answers. A measure RePyability refuses for the diagram comes back
+    with available=false and its reason."""
     from backend.routers.rbd_sensitivity import sensitivity_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -3724,9 +4739,12 @@ def rbd_sensitivity(
     owners = [*_owners(uid), rbd.owner_id]
     actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid, read_owners=_owners(uid),
                      list_owners=uid, share_fallback=False)
+    if measure != "levers":
+        return {**head, **_measure_answer(db, user, actx, graph, rbd, owners, measure=measure, window=window,
+                                          group_by=group_by, method=uncertainty_method, times=times)}
     status, payload = sensitivity_payload(db, actx, graph, rbd, owners, window=window, step=step,
                                           rank_by=rank_by, costs=costs_to_change, order=order,
-                                          simulate=simulate)
+                                          simulate=simulate, limits=lever_limits)
     if status == 503:
         raise ToolError(payload.get("detail") or rbd_jobs_service.QUEUE_UNAVAILABLE)
     if status == 202:
@@ -3790,7 +4808,7 @@ def _intervals_summary(payload: dict, graph: Optional[dict] = None) -> dict:
                 "crews": payload.get("crews"), "message": payload.get("message")
                 + " Call again with assume_unlimited_crews=true (and simulate_with_crews=true to see the effect)."}
     rows = [{k: r.get(k) for k in ("id", "label", "interval_now", "interval", "never", "offset_now", "offset",
-                                   "changed") if k in r} for r in payload.get("blocks") or []]
+                                   "changed", "coverage", "full_test") if k in r} for r in payload.get("blocks") or []]
     out: dict[str, Any] = {
         "available": True,
         **{k: payload.get(k) for k in ("schedule", "unit", "safety_function", "target", "basis", "stagger",
@@ -3809,6 +4827,15 @@ def _intervals_summary(payload: dict, graph: Optional[dict] = None) -> dict:
             if together.get("met") else {"met": False, "message": together.get("message")})
     if payload.get("allowed"):
         out["allowed"] = payload["allowed"]
+    if payload.get("fixed"):
+        # The blocks with this schedule left out of `blocks` (#257): kept as drawn.
+        out["fixed_blocks"] = payload["fixed"]
+    if payload.get("untested"):
+        # What each partly-covering block's untested fraction costs in the plan (#323).
+        out["untested"] = [{**{k: u.get(k) for k in ("id", "label", "coverage", "full_test", "pfd_cost",
+                                                      "availability_cost", "cost_rate_change") if k in u},
+                            "with_full_coverage": _interval_figures(u.get("with_full_coverage"))}
+                           for u in payload["untested"]]
     for key in ("crews", "common_cause"):
         if payload.get(key):
             out[key] = payload[key]
@@ -3908,7 +4935,11 @@ def optimise_maintenance_intervals(
     Free (exact); a large proof-test search runs as a job (call get_job). Nothing is saved: apply the plan with
     edit_rbd using edit_rbd_ops. It needs blocks with proof tests (inspection) or age replacement (preventive)
     and something priced to weigh (their costs, or the system downtime_rate); a refusal gives the exact
-    edit_rbd ops that add what's missing."""
+    edit_rbd ops that add what's missing. Blocks left out of `blocks` keep their intervals (fixed_blocks). A
+    block whose proof tests miss some failures (coverage below 1, with a full_test) keeps its full test, and
+    its interval is chosen among those that divide it; `untested` says what its untested fraction costs in the
+    plan: pfd_cost (safety function) or availability_cost, the plan's figures with that block's tests finding
+    every failure beside the plan's."""
     from backend.routers.rbd_intervals import intervals_payload
     from backend.services import rbd_intervals
     from backend.services.access import PERSONAL, AccessCtx
@@ -4156,9 +5187,10 @@ def _ffi_shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, 
 def _lean_demonstration(out: dict) -> dict:
     """The demonstration plan without the app's plotting fields: the trade-off
     table as {row label: values by allowed failures}."""
-    keep = ("method", "solve_for", "summary", "units", "test_time_per_unit", "total_test_time",
-            "test_multiple", "failures", "unit", "consumer_risk", "pass_probability", "producer_risk",
-            "producer_risk_target", "design_reliability", "design_mtbf", "assumptions")
+    keep = ("method", "solve_for", "summary", "b_life", "units", "test_time_per_unit", "total_test_time",
+            "test_multiple", "failures", "unit", "shape", "shape_model", "shape_sensitivity", "consumer_risk",
+            "pass_probability", "producer_risk", "producer_risk_target", "design_reliability", "design_mtbf",
+            "assumptions")
     lean = {k: out[k] for k in keep if out.get(k) is not None}
     t = out.get("tradeoff") or {}
     lean["tradeoff"] = {
@@ -4206,20 +5238,62 @@ def plan_demonstration_test(
         "Optional, e.g. 0.2: the most chance of FAILING the good design (design_reliability / design_mtbf). "
         "Plans the smallest test keeping BOTH risks (consumer's <= 1 - confidence, producer's <= this) and "
         "chooses the failures allowed itself (failures is ignored)."))] = None,
+    b_life: Annotated[Optional[float], Field(gt=0, lt=100, description=(
+        "Optional: a B-life requirement instead of `reliability` — the percent failed, e.g. 10 for "
+        "'B10 >= mission_time' (= reliability 0.9 over mission_time, which is then required)."))] = None,
+    shape_model_id: Annotated[Optional[str], Field(description=(
+        "Optional: a saved Weibull model (list_models) to take the shape β from, instead of `shape`. The "
+        "plan then reports shape_sensitivity across β's 95% interval, with a warning when β is too poorly "
+        "known for the plan."))] = None,
+    shape_bound: Annotated[Literal["estimate", "lower"], Field(description=(
+        "With shape_model_id: plan with β's estimate, or its 95% lower bound (conservative when each unit "
+        "runs longer than the mission)."))] = "estimate",
 ) -> dict[str, Any]:
     """Plan a reliability demonstration test: how many units to test, for how long, with how many failures
     allowed, to show reliability R over a mission at confidence C (success run / binomial; Weibayes with a
     known Weibull shape to trade test time for units; or an MTBF chi-squared test). With producer_risk and a
     good design's reliability (or MTBF), the plan keeps both the consumer's and the producer's risk (a
     success run alone often fails a good design). Returns a one-line plan, both risks, the assumptions and a
-    units-vs-failures(-vs-test-length) trade-off table."""
-    _caller(ctx)
+    units-vs-failures(-vs-test-length) trade-off table. A B-life requirement ("B10 >= 50,000 cycles at
+    90%") goes in as b_life=10, mission_time=50000; shape_model_id takes β from a saved Weibull fit and warns
+    (shape_sensitivity.warning) when its interval is too wide for the plan — relay that warning."""
+    user = _caller(ctx)
+    extra: dict[str, Any] = {}
+    if shape_model_id:
+        if shape is not None:
+            raise ToolError("Give shape or shape_model_id, not both.")
+        extra = _demo_shape_from_model(_db(), user["uid"], shape_model_id, shape_bound)
+        shape = extra.pop("shape")
+        unit = unit or extra.pop("unit")
+    extra.pop("unit", None)
     out = strategy_store.compute("demonstration_test", {
         "method": method, "reliability": reliability, "confidence": confidence, "mission_time": mission_time,
         "failures": failures, "test_multiple": test_multiple, "shape": shape, "units": units, "mtbf": mtbf,
         "design_reliability": design_reliability, "design_mtbf": design_mtbf, "producer_risk": producer_risk,
-        "unit": unit or ""})
+        "unit": unit or "", "b_life": b_life, **extra})
     return _lean_demonstration(out)
+
+
+def _demo_shape_from_model(db, uid: str, model_id: str, bound: str) -> dict:
+    """A saved Weibull model's β for a demonstration plan (#295): ``shape``
+    (the estimate or its 95% lower bound), ``shape_interval``, ``shape_model``
+    (its name) and its ``unit``."""
+    m = models_service.get_model(db, model_id, _owners(uid))
+    if m is None:
+        raise ToolError("Model not found.")
+    r = m.results or {}
+    if m.kind != "distribution" or (r.get("distribution_id") or m.distribution_id) != "weibull":
+        raise ToolError(f"“{m.name}” isn't a Weibull life model, so it has no shape β to plan with.")
+    found = _weibull_beta_ci(db, uid, model_id, {"distribution_id": "weibull"})
+    beta = next((p["value"] for p in r.get("params") or [] if p.get("name") == "beta"), None)
+    if found is None:
+        if bound == "lower":
+            raise ToolError(f"“{m.name}” has no interval on β (it wasn't fitted to data by maximum "
+                            "likelihood), so it has no lower bound: use shape_bound='estimate'.")
+        return {"shape": float(beta), "shape_model": m.name, "unit": r.get("unit") or ""}
+    est, lo, hi = found
+    return {"shape": lo if bound == "lower" else est, "shape_interval": [lo, hi], "shape_model": m.name,
+            "unit": r.get("unit") or ""}
 
 
 @_tool("optimal_overhaul", _READ, "Optimal overhaul interval")
@@ -4234,7 +5308,7 @@ def optimal_overhaul(
     include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Optimal overhaul interval for a repairable system (minimal repair between overhauls) from a saved
-    recurrent-event model. Only a deteriorating system (growth shape beta > 1) has a finite optimum. For a
+    minimal-repair recurrent-event model (Crow-AMSAA, Duane, HPP or Cox-Lewis). Only a deteriorating system (growth shape beta > 1) has a finite optimum. For a
     Crow-AMSAA model fitted to data, shape_uncertainty gives the answer at each end of beta's 95% interval;
     relay uncertainty_note when present — the recommendation is then less firm than it reads."""
     user, db = _caller(ctx), _db()
@@ -4431,6 +5505,148 @@ def growth_projection(
     return _projection_out(payload)
 
 
+_RECURRENT_MODEL_IDS = tuple(recurrent_fit.MODELS) + ("pi_nhpp", "grp_i", "grp_ii", "ara", "ari", "g1")
+
+
+@_tool("fit_recurrent_model", _WRITE, "Fit a recurrent-event model")
+def fit_recurrent_model(
+    ctx: Context,
+    model: Annotated[Literal[_RECURRENT_MODEL_IDS], Field(description=(
+        "Minimal repair (each repair leaves the system as bad as old): crow_amsaa (power law, the "
+        "reliability-growth model), duane, hpp (constant rate), cox_lewis (log-linear). Covariates on the repair "
+        "rate: pi_nhpp (proportional intensity; needs covariates). Imperfect repair (each repair restores part "
+        "of the age; Weibull time to failure): grp_i / grp_ii (generalized renewal, Kijima I / II), ara, ari, "
+        "g1."))] = "crow_amsaa",
+    name: Annotated[Optional[str], Field(description="Name for the saved model (required unless save=false).")] = None,
+    save: Annotated[bool, Field(description="Save the model (default). false: fit and report only, nothing "
+                                            "stored.")] = True,
+    times: Annotated[Optional[list[float]], Field(max_length=20000, description=(
+        "Inline: event times, one row per failure (or end-of-observation row), each in its system's own "
+        "time from new (or from the start of its records)."))] = None,
+    systems: Annotated[Optional[list[str]], Field(max_length=20000, description=(
+        "Inline: the system each row belongs to (one system if omitted)."))] = None,
+    censored: Annotated[Optional[list[int]], Field(max_length=20000, description=(
+        "Inline: 0 = a failure at that time, 1 = the system's end of observation (still running then). Omit "
+        "when every row is a failure; then give observed_to."))] = None,
+    observed_to: Annotated[Optional[Union[float, list[float]]], Field(description=(
+        "Inline: each system's end of observation, one number for all or one per row. Without it (or c = 1 "
+        "rows) a system is taken as watched only to its last failure."))] = None,
+    causes: Annotated[Optional[list[Optional[str]]], Field(max_length=20000, description=(
+        "Inline: each failure's cause or failure mode (null on end-of-observation rows): adds the MCF and a "
+        "Crow-AMSAA fit per cause."))] = None,
+    covariates: Annotated[Optional[dict[str, list[Union[float, str]]]], Field(description=(
+        "Inline, for pi_nhpp: {name: one value per row}, constant within a system — numbers, or text levels "
+        "(e.g. site), compared with the level most systems have."))] = None,
+    windows: Annotated[Optional[dict[str, list[list[float]]]], Field(description=(
+        "Observation gaps (minimal-repair models only): {system: [[start, end], ...]}, the periods each system "
+        "was watched; a system not listed is watched from 0 to its end of observation. Rows are then failures "
+        "only, each inside one of its system's windows."))] = None,
+    dataset_id: _FitDataset = None,
+    system_column: Annotated[Optional[str], Field(description="With dataset_id: the system id column.")] = None,
+    time_column: _FitTimeCol = None,
+    censor_column: Annotated[Optional[str], Field(description=(
+        "With dataset_id: 0 = failure, 1 = end of observation."))] = None,
+    observed_to_column: Annotated[Optional[str], Field(description=(
+        "With dataset_id: each system's end of observation."))] = None,
+    cause_column: Annotated[Optional[str], Field(description="With dataset_id: each failure's cause.")] = None,
+    covariate_columns: Annotated[Optional[list[str]], Field(description=(
+        "With dataset_id, for pi_nhpp: covariate columns (numbers or text levels)."))] = None,
+    window_start_column: Annotated[Optional[str], Field(description=(
+        "With dataset_id: each row's observation-window start (with window_end_column; a row with a window and "
+        "no time is a window with no failures)."))] = None,
+    window_end_column: Annotated[Optional[str], Field(description="With dataset_id: each row's window end.")] = None,
+    baseline: Annotated[Optional[Literal["crow_amsaa", "duane", "cox_lewis"]], Field(description=(
+        "pi_nhpp and ari: the baseline failure-rate model (default crow_amsaa)."))] = None,
+    memory: Annotated[Optional[Union[int, Literal["all"]]], Field(description=(
+        "ara and ari: how many past repairs each repair acts on (default 2 for ara, 1 for ari), or 'all'."))] = None,
+    unit: _FitUnit = None,
+) -> dict[str, Any]:
+    """Fit a recurrent-event (repairable-system) model to failure histories — many failures per system — and
+    save it (or, with save=false, just report it). Minimal-repair models report the growth verdict from the
+    growth shape's 95% interval, the ROCOF and MTBF at the end of the data with bounds and the demonstrated
+    MTBF; pi_nhpp each covariate's effect on the repair rate in words; the imperfect-repair models the repair
+    effectiveness in words ("each repair takes away about 36% of the system's age"), the repair test's verdict
+    (as good as new, as bad as old, or partial) and each system's next failure. A cause column adds each
+    cause's growth. The saved model works with optimal_overhaul (minimal repair), next_failure and
+    growth_projection, and opens in the app. Data inline (times + systems) or from a saved dataset."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    if save and not (name or "").strip():
+        raise ToolError("Give the model a name, or pass save=false to fit without saving.")
+    if (times is None) == (dataset_id is None):
+        raise ToolError("Give either inline `times` (with `systems`) or a `dataset_id` — exactly one.")
+    if dataset_id is not None:
+        dataset = datasets_service.get_dataset(db, dataset_id, uid)
+        if dataset is None:
+            raise ToolError("Dataset not found.")
+        names = [c["name"] for c in dataset.columns]
+        if not system_column or not time_column:
+            raise ToolError(f"Say which columns hold the system and the time (system_column, time_column). "
+                            f"Columns: {', '.join(names)}.")
+        mapping = {k: v for k, v in {"i": system_column, "x": time_column, "c": censor_column,
+                                     "tr": observed_to_column, "mode": cause_column, "ws": window_start_column,
+                                     "we": window_end_column}.items() if v}
+        for col in [*mapping.values(), *(covariate_columns or [])]:
+            if col not in names:
+                raise ToolError(f"Column '{col}' isn't in the dataset. Columns: {', '.join(names)}.")
+        if covariate_columns:
+            mapping["z"] = list(covariate_columns)
+        df = datasets_service.load_dataframe(dataset)
+    else:
+        n = len(times)
+        if not n:
+            raise ToolError("`times` is empty.")
+        cols: dict[str, list] = {"system": _per_row(systems, n, "systems") if systems is not None else ["1"] * n,
+                                 "time": list(times)}
+        mapping = {"i": "system", "x": "time"}
+        if censored is not None:
+            cols["c"] = _per_row(censored, n, "censored")
+            mapping["c"] = "c"
+        if observed_to is not None:
+            cols["observed_to"] = (_per_row(observed_to, n, "observed_to") if isinstance(observed_to, list)
+                                   else [float(observed_to)] * n)
+            mapping["tr"] = "observed_to"
+        if causes is not None:
+            cols["cause"] = _per_row(causes, n, "causes")
+            mapping["mode"] = "cause"
+        for cov, values in (covariates or {}).items():
+            if cov in cols:
+                raise ToolError(f"Covariate name '{cov}' clashes with a data column; rename it.")
+            cols[cov] = _per_row(values, n, f"covariates['{cov}']")
+        if covariates:
+            mapping["z"] = list(covariates)
+        df = pd.DataFrame(cols)
+        dataset = None
+    options = {k: v for k, v in (("baseline", baseline), ("m", memory)) if v is not None}
+    spec = {"mapping": mapping, "model_id": model, "unit": (unit or "").strip(), **({"options": options} if options else {}),
+            **({"windows": recurrent_models.parse_windows(windows)} if windows else {})}
+    if not save:
+        payload, _ = recurrent_fit.fit_spec(df, spec)
+        out = {"saved": False, "model": payload.get("model"), "family": payload.get("family"),
+               "unit": payload.get("unit"), "n_systems": payload.get("n_systems"),
+               "n_events": payload.get("n_events"), "params": payload.get("params"),
+               "growth": payload.get("growth"), **_recurrent_evidence(payload)}
+        return out
+    created = None
+    try:
+        recurrent_fit.fit_spec(df, spec, gof_test=False)  # checked before anything is stored
+        if dataset is None:
+            csv_bytes = df.to_csv(index=False).encode()
+            reused = db.datasets.find_one({"checksum": storage.checksum(csv_bytes), "owner_id": uid})
+            if reused is None:
+                _cap(db, user, "datasets", "datasets")
+            dataset = datasets_service.create_dataset(db, f"{name.strip()} (data)", csv_bytes, uid)
+            created = None if reused is not None else dataset
+        doc = recurrent_service.save_model(db, name.strip(), dataset, spec, uid)
+    except FitError:
+        if created is not None:
+            datasets_service.delete_dataset(db, created.id, uid)
+        raise
+    r = doc.results or {}
+    return {"saved": True, "model_id": doc.id, "dataset_id": dataset.id, **_recurrent_brief(doc),
+            "params": r.get("params"), **_recurrent_evidence(r)}
+
+
 @_tool("next_failure", _READ, "Next failure of a repairable system")
 def next_failure(
     ctx: Context,
@@ -4446,7 +5662,10 @@ def next_failure(
     """A repairable system's next failure from a saved recurrent-event model (Crow-AMSAA, Duane, HPP or Cox-Lewis;
     minimal repair, so its failures are the model's Poisson process): the current failure intensity (ROCOF)
     and instantaneous MTBF at its age, the mean and quantiles of the time to its next failure, and the chance
-    of at least one failure (and the expected number) within each time ahead. Exact, closed form."""
+    of at least one failure (and the expected number) within each time ahead. Exact, closed form. An
+    imperfect-repair model (generalized renewal, ARA, ARI, G1) answers for a system that has run `age` since
+    new without a failure; for the fitted systems' own next failures, get_model's next_failure_by_system.
+    A covariate model can't answer without covariates."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     doc = recurrent_service.get_model(db, model_id, owners)

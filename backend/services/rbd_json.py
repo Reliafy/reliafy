@@ -44,7 +44,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Optional
 
-from backend.services import import_guard, rbd_export, rbd_repeats
+from backend.services import import_guard, rbd_capacity, rbd_export, rbd_repeats
 from backend.services import rbd_analysis as ra
 
 #: The top-level key of Reliafy's own part of the document.
@@ -157,6 +157,17 @@ class _Exporter:
             except ra.AnalysisError as exc:
                 raise _Missing(str(exc)) from None
             units = [primary] + [spare] * spares
+            from backend.services import rbd_standby
+
+            try:
+                k = rbd_standby.operating(data, label)
+                if k > 1:
+                    # k-of-n standby (#84), as the analysis builds it.
+                    switch = float(data.get("startProb", 1.0)) if dormancy == 0.0 else 1.0
+                    return _serialise(rbd_standby.nonrepairable_model(
+                        data, label, primary, spare, spares, dormancy, switch)), None
+            except (ra.AnalysisError, TypeError, ValueError) as exc:
+                raise _Missing(str(exc)) from None
             if dormancy == 0.0:
                 try:
                     switch = float(data.get("startProb", 1.0))
@@ -250,9 +261,13 @@ class _Exporter:
                     basis = ra.ccf_basis(group)
                 except ra.AnalysisError as exc:
                     raise ExportError(str(exc)) from None
-                model = {"kind": "beta_factor", "beta": beta}
-                if basis != "probability":
-                    model["basis"] = basis
+                from backend.services import rbd_ccf_models
+
+                try:
+                    # The beta factor, or the multiple Greek letter model (#84).
+                    model = rbd_ccf_models.document_model(group, basis)
+                except (ra.AnalysisError, TypeError, ValueError) as exc:
+                    raise ExportError(str(exc)) from None
                 ccf.append({"members": members, "model": model})
         return _rbd_dict(
             "NonRepairableRBD",
@@ -286,7 +301,8 @@ class _Exporter:
         try:
             # As the analysis builds it: the common-cause groups wherever it
             # takes them in (#226).
-            rbd, *_ = ra._build_repairable_rbd(spec_graph, resolve_model=None)
+            rbd, *_ = ra._build_repairable_rbd(spec_graph, resolve_model=None,
+                                               capacity=rbd_capacity.graph_capacities(graph))
         except ra.AnalysisError as exc:
             raise ExportError(f"This diagram can't be written as RePyability JSON yet: {exc}") from None
         self.common_cause = ra.common_cause_status(rbd)
@@ -329,14 +345,22 @@ def core(graph: dict, resolve_model: Optional[Callable] = None,
 
 def _core(graph: dict, resolve_model, resolve_subsystem) -> tuple[dict, dict, "_Exporter"]:
     ex = _Exporter(resolve_model, resolve_subsystem)
+    from backend.services import rbd_network
+
     try:
         if graph.get("repairable"):
             doc = ex.repairable(graph)
+        elif rbd_network.is_network(graph):  # #160: a network's own document
+            doc = rbd_network.json_core(ex, graph)
         else:
             doc = ex.nonrepairable(graph)
+            # Block capacities (#122), as rbd_to_dict writes them.
+            doc["capacity"] = rbd_capacity.document_capacity(graph)
     except ExportError:
         raise
     except ra.AnalysisError as exc:
+        raise ExportError(str(exc)) from None
+    except rbd_capacity.CapacityError as exc:
         raise ExportError(str(exc)) from None
     except (TypeError, ValueError, KeyError) as exc:
         raise ExportError(f"This diagram has a block setting RePyability can't read ({exc}).") from None

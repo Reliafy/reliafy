@@ -264,20 +264,32 @@ def test_saved_model_confidence_endpoint(client):
     assert r.status_code == 422
 
 
-def test_regression_model_has_no_confidence_path(client):
+def test_regression_model_confidence_path(client):
+    """A parametric regression model has a band at its covariates (#54);
+    Cox PH has none, and says why instead."""
     df = pd.DataFrame({"t": [100, 200, 150, 300, 250, 400, 120, 220, 180, 350, 90, 410],
                        "c": [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1],
                        "temp": [60, 60, 60, 80, 80, 80, 100, 100, 100, 70, 70, 70]})
-    csv = io.BytesIO(df.to_csv(index=False).encode())
-    saved = client.post(
-        "/api/models",
-        data={"name": "PH", "distribution": "weibull_ph", "x": "t", "c": "c", "z": "temp"},
-        files={"file": ("d.csv", csv, "text/csv")},
-    ).json()
+
+    def save(dist):
+        csv = io.BytesIO(df.to_csv(index=False).encode())
+        return client.post(
+            "/api/models",
+            data={"name": "PH", "distribution": dist, "x": "t", "c": "c", "z": "temp"},
+            files={"file": ("d.csv", csv, "text/csv")},
+        ).json()
+
+    saved = save("weibull_ph")
     assert saved["kind"] == "regression"
-    # Regression models don't expose confidence bounds.
-    assert "confidence_path" not in saved["results"]["functions"]
-    assert client.post(f"/api/models/{saved['id']}/confidence", json={}).status_code == 422
+    path = saved["results"]["functions"]["confidence_path"]
+    r = client.post(path, json={"values": {"temp": 90}, "bound": "two-sided"})
+    assert r.status_code == 200 and r.json()["lower"] and r.json()["upper"]
+
+    cox = save("cox_ph")
+    assert "confidence_path" not in cox["results"]["functions"]
+    assert "semi-parametric" in cox["results"]["functions"]["bands_note"]
+    r = client.post(f"/api/models/{cox['id']}/confidence", json={})
+    assert r.status_code == 422 and "semi-parametric" in r.json()["detail"]
 
 
 # ---- edit / refit in place ----------------------------------------------------

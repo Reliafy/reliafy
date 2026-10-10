@@ -1,0 +1,8 @@
+/* The interval optimiser's block picker (#257): chips, all ticked by default. */
+.rbd-intervals-blocks { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.rbd-intervals-blocks-label { font-size: var(--fs-13); color: var(--muted); }
+.rbd-intervals-blocks .chip-btn { min-height: 32px; }
+.rbd-intervals tr.is-fixed td { color: var(--muted); }
+@media (max-width: 640px) {
+  .rbd-intervals-blocks .chip-btn { min-height: 44px; }
+}

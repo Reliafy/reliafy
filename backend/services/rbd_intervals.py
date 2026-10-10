@@ -10,7 +10,13 @@
 * **Proof tests** (``schedule="proof_test"``): the test interval of each block
   with hidden failures, from a calendar (``allowed``: monthly, quarterly, …,
   in the diagram's unit, and the block's own interval), every combination
-  tried up to RePyability's 2000 and a local search beyond. With ``stagger``
+  tried up to RePyability's 2000 and a local search beyond. A block whose
+  tests miss some failures (a ``coverage`` below 1, #323) keeps its full
+  tests' interval, so its interval is chosen among those that divide it
+  (RePyability 0.13): the calendar's that do, else the full test's halves,
+  thirds and quarters. What the untested fraction costs shows beside the
+  plan: the PFDavg (or availability) with that block's tests finding every
+  failure (``untested``). With ``stagger``
   the first tests' times are chosen too, as even shares of the interval
   (``offset_shares="stagger"``): testing redundant channels apart finds a
   common-cause failure sooner. The best plan with every test at the same time
@@ -160,8 +166,11 @@ def _label(node: dict) -> str:
 def maintained(graph: dict) -> dict:
     """The blocks under age replacement and with proof tests, as drawn:
     ``{"replacement": [row], "proof_test": [row], "partial": [row]}`` (a row
-    ``{id, label, interval, offset}``); ``partial`` are tested blocks whose
-    tests miss failures (coverage below 1), whose intervals aren't chosen."""
+    ``{id, label, interval, offset}``); ``partial`` are the tested blocks
+    whose tests miss failures (coverage below 1, their rows with
+    ``coverage`` and ``full_test``), which are among ``proof_test`` too:
+    their intervals are chosen among those that divide the full test's
+    (#323)."""
     out: dict[str, list] = {"replacement": [], "proof_test": [], "partial": []}
     for node in (graph or {}).get("nodes") or []:
         if node.get("type") != "component":
@@ -177,7 +186,13 @@ def maintained(graph: dict) -> dict:
                 offset = 0.0 if _blank(test.get("offset")) else float(test.get("offset"))
                 coverage = test.get("coverage")
                 partial = not _blank(coverage) and float(coverage) < 1.0
-                out["partial" if partial else "proof_test"].append({**row, "interval": interval, "offset": offset})
+                entry = {**row, "interval": interval, "offset": offset}
+                if partial:
+                    full = test.get("full_test")
+                    entry["coverage"] = float(coverage)
+                    entry["full_test"] = None if _blank(full) else float(full)
+                    out["partial"].append(entry)
+                out["proof_test"].append(entry)
         except (TypeError, ValueError):
             continue  # an unset or bad interval: the build reports it
     return out
@@ -205,10 +220,6 @@ def _schedule(opts: dict, found: dict) -> str:
 
 
 def _none_message(found: dict) -> str:
-    if found["partial"]:
-        return ("The proof-tested blocks' tests miss some failures (a coverage below 1), whose intervals must "
-                "divide their full tests', so they aren't chosen here. Give a block age replacement or full-"
-                "coverage proof tests (double-click it → Cost & maintenance).")
     return ("No block has scheduled replacement by age or proof tests to choose intervals for: give one a "
             "preventive schedule (age replacement) or proof tests (double-click it → Cost & maintenance).")
 
@@ -216,8 +227,6 @@ def _none_message(found: dict) -> str:
 def _chosen(opts: dict, found: dict, schedule: str) -> list[dict]:
     rows = found[schedule]
     if not rows:
-        if schedule == "proof_test" and found["partial"]:
-            raise AnalysisError(_none_message(found))
         what = "age replacement" if schedule == "replacement" else "proof tests"
         raise AnalysisError(f"No block has {what} to choose intervals for: give one a "
                             + ("preventive schedule (age replacement)" if schedule == "replacement"
@@ -226,7 +235,7 @@ def _chosen(opts: dict, found: dict, schedule: str) -> list[dict]:
         by_id = {r["id"]: r for r in rows}
         missing = [b for b in opts["blocks"] if b not in by_id]
         if missing:
-            what = "under age replacement" if schedule == "replacement" else "proof-tested (with full coverage)"
+            what = "under age replacement" if schedule == "replacement" else "proof-tested"
             raise AnalysisError(f"Block(s) {', '.join(missing)} aren't {what}, so their intervals can't be "
                                 "chosen here.")
         rows = [by_id[b] for b in opts["blocks"]]
@@ -238,20 +247,59 @@ def _chosen(opts: dict, found: dict, schedule: str) -> list[dict]:
     return rows
 
 
+def _divides(interval: float, full: float) -> bool:
+    k = full / interval
+    return k >= 1.0 - 1e-9 and abs(k - round(k)) <= 1e-9 * k
+
+
+def _full_test(row: dict) -> Optional[float]:
+    """A partly-covering block's full tests' interval (its own interval
+    times the whole number of tests to a full one, as the analysis takes
+    it), or None for a full-coverage block."""
+    if row.get("coverage") is None:
+        return None
+    full = row.get("full_test")
+    if not full or full <= 0:
+        return None
+    return row["interval"] * max(round(full / row["interval"]), 1)
+
+
+def _dividing(row: dict, options_: list, given: bool) -> list:
+    """The intervals a block chooses from that divide its full tests'
+    interval (all of them for a full-coverage block): what RePyability takes
+    for a block whose tests miss failures (#323). The calendar's that don't
+    are dropped; given ones that don't are refused, with ones that do."""
+    full = _full_test(row)
+    if full is None:
+        return options_
+    kept = [v for v in options_ if _divides(v, full)]
+    if given:
+        if not kept:
+            some = ", ".join(f"{full / k:g}" for k in range(1, 5))
+            raise AnalysisError(
+                f"{row['label']}'s tests find only {row['coverage']:.0%} of failures, so its interval must divide its "
+                f"full test's ({full:g}): give intervals that do ({some}, …).")
+        return kept
+    if len(kept) < 3:
+        kept = sorted({*kept, *(float(f"{full / k:.6g}") for k in range(1, 5) if _divides(full / k, full))})
+    return kept
+
+
 def _allowed(opts: dict, graph: dict, rows: list[dict], found: dict) -> Optional[dict]:
     """The intervals each chosen proof-tested block chooses from: the ones
-    given, else the calendar with its own interval; None for one block with
-    nothing given and no calendar unit (searched continuously)."""
+    given, else the calendar with its own interval (those that divide its
+    full test's, for a block whose tests miss failures); None for one block
+    with nothing given and no calendar unit (searched continuously)."""
     given = opts.get("allowed")
     base = calendar(graph)
     out = {}
     for row in rows:
         if isinstance(given, dict) and row["id"] in given:
-            options_ = list(given[row["id"]])
+            options_ = _dividing(row, list(given[row["id"]]), True)
         elif isinstance(given, list):
-            options_ = list(given)
+            options_ = _dividing(row, list(given), True)
         elif base is not None:
-            options_ = sorted({*base, row["interval"]})
+            options_ = _dividing(row, sorted({*base, row["interval"]}), False)
         else:
             options_ = None
         if options_ is None:
@@ -259,7 +307,7 @@ def _allowed(opts: dict, graph: dict, rows: list[dict], found: dict) -> Optional
             break
         out[row["id"]] = options_
     if out is None:
-        if len(rows) == 1 and len(found["proof_test"]) + len(found["partial"]) == 1 and not opts.get("stagger"):
+        if len(rows) == 1 and len(found["proof_test"]) == 1 and not opts.get("stagger"):
             return None
         raise AnalysisError("Give the intervals to choose from: the diagram's time unit isn't a calendar one, "
                             "so there's no monthly / quarterly / yearly calendar to start from.")
@@ -290,7 +338,7 @@ def plan(graph: dict, **raw) -> dict:
     if schedule == "replacement":
         return {"schedule": schedule, "n_blocks": len(rows), "evaluations": 0, "inline": True}
     allowed = _allowed(opts, graph, rows, found)
-    every = len(rows) == len(found["proof_test"]) + len(found["partial"])
+    every = len(rows) == len(found["proof_test"])
     n = _evaluations(rows, allowed, bool(opts.get("stagger")) and len(rows) > 1, every)
     return {"schedule": schedule, "n_blocks": len(rows), "evaluations": n, "inline": n <= INLINE_EVALUATIONS}
 
@@ -472,15 +520,16 @@ def optimise(graph: dict, resolve_model=None, **raw) -> dict:
                 "note": f"The common-cause groups are left out: {reason.rstrip('.')}. The {what} optimistic by "
                         "their contribution."}
 
+    partial = found["partial"] if schedule == "proof_test" else []
     try:
         result = _choose(drawn, resolve_model, with_ccf, schedule, ids, allowed, stagger, min_av, max_cost,
-                         opts, safety, unit)
+                         opts, safety, unit, partial)
     except NotImplementedError as exc:
         if not (with_ccf and str(exc).startswith(("Common-cause", "Node(s)"))):
             raise
         common_cause = left_out(ra._component_message(str(exc), labels))
         result = _choose(drawn, resolve_model, False, schedule, ids, allowed, stagger, min_av, max_cost, opts,
-                         safety, unit)
+                         safety, unit, partial)
     if groups and common_cause is None:
         status = result.pop("common_cause_status", None) or {}
         common_cause = ({"groups": groups, "included": True, "note": None} if status.get("included")
@@ -491,6 +540,18 @@ def optimise(graph: dict, resolve_model=None, **raw) -> dict:
 
     intervals, offsets = result.pop("intervals"), result.pop("offsets")
     rows = _rows(chosen, intervals, offsets, schedule)
+    for row in rows:
+        own = next((p for p in partial if p["id"] == row["id"]), None)
+        if own is not None:
+            row["coverage"], row["full_test"] = own["coverage"], _full_test(own)
+    for row in rows:
+        if row.get("coverage") is not None and row.get("full_test"):
+            notes.append(f"{row['label']}'s tests find {row['coverage']:.0%} of failures and a full test every "
+                         f"{row['full_test']:,.6g}{(' ' + unit_in_text(unit)) if unit else ''} finds the rest, so its "
+                         "interval is chosen among those that divide it.")
+    # The blocks with this schedule left out of the choice (#257): kept as drawn.
+    fixed = [{k: r[k] for k in ("id", "label", "interval", "offset", "coverage") if r.get(k) is not None}
+             for r in found[schedule] if r["id"] not in ids]
     changed = any(r["changed"] for r in rows)
     together = result.pop("together", None)
     if together is not None:
@@ -504,6 +565,7 @@ def optimise(graph: dict, resolve_model=None, **raw) -> dict:
         "safety_function": safety,
         "target": target,
         "blocks": rows,
+        "fixed": fixed,
         **result,
         "together": together,
         "stagger": stagger,
@@ -516,8 +578,38 @@ def optimise(graph: dict, resolve_model=None, **raw) -> dict:
     return out
 
 
+def _untested(planned, partial: list, safety: bool, cost, availability) -> list:
+    """What each partly-covering block's untested fraction costs in the plan
+    (#323): the plan's figures with that block's tests finding every failure
+    (RePyability's ``inspection.coverage`` lever at 1), beside the plan's."""
+    if not partial or availability is None:
+        return []
+    levers = {(lv.key, lv.name): lv for lv in planned.levers()}
+    out = []
+    for row in partial:
+        lever = levers.get((row["id"], "inspection.coverage"))
+        if lever is None:
+            continue
+        try:
+            full_cost, full_av, _ = _exact(planned.with_levers({lever: 1.0}))
+        except (ValueError, TypeError):
+            continue
+        if full_av is None:
+            continue
+        entry: dict[str, Any] = {"id": row["id"], "label": row["label"], "coverage": row["coverage"],
+                                 "full_test": _full_test(row),
+                                 "with_full_coverage": _figures(full_cost, full_av, safety, None, None),
+                                 "availability_cost": ra._f(float(full_av) - float(availability))}
+        if safety:
+            entry["pfd_cost"] = ra._f(float(full_av) - float(availability))
+        if cost is not None and full_cost is not None:
+            entry["cost_rate_change"] = ra._f(float(full_cost) - float(cost))
+        out.append(entry)
+    return out
+
+
 def _choose(drawn: dict, resolve_model, with_ccf: bool, schedule: str, ids: list, allowed: Optional[dict],
-            stagger: bool, min_av, max_cost, opts: dict, safety: bool, unit: str) -> dict:
+            stagger: bool, min_av, max_cost, opts: dict, safety: bool, unit: str, partial=()) -> dict:
     """The library's choice on the diagram (with or without its common-cause
     groups), and the figures as drawn and with the plan, exactly (as if every
     repair started at once where the crews are limited)."""
@@ -592,6 +684,7 @@ def _choose(drawn: dict, resolve_model, with_ccf: bool, schedule: str, ids: list
         "intervals": intervals,
         "offsets": offsets,
         "plan": _figures(cost, availability, safety, min_av, max_cost),
+        "untested": _untested(planned, list(partial), safety, cost, availability),
         "current": current,
         "current_note": None if current is not None else now_reason,
         "together": together,

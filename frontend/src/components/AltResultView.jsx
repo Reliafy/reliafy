@@ -14,7 +14,10 @@ const fmt = (v, d = 4) =>
     ? "—"
     : Number(v).toLocaleString(undefined, { maximumSignificantDigits: d });
 
-const ci = (pair) => (Array.isArray(pair) && pair.length === 2 ? `${fmt(pair[0])} – ${fmt(pair[1])}` : "—");
+// An interval end the server sends as null is unbounded (it overflowed on the
+// log scale): an upper one reads as ∞.
+const ci = (pair) => (Array.isArray(pair) && pair.length === 2
+  ? `${fmt(pair[0])} – ${pair[1] == null ? "∞" : fmt(pair[1])}` : "—");
 
 // Per-secondary-stress series (two-stress models), and per-stress-level series
 // on the probability plot: the theme's series colours, in order.

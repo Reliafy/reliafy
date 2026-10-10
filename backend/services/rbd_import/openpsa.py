@@ -23,10 +23,10 @@ Supported:
   converted to a rate per hour) and arithmetic expressions; uncertainty deviates
   (lognormal/normal/uniform/gamma/beta) are replaced by their mean, with a
   warning;
-* ``define-CCF-group model="beta-factor"`` (and an ``MGL`` group of two,
-  whose one factor is its beta) -> ``ccf_groups`` on the rate basis,
-  Reliafy's lifetime default (#210, #229), with a note; other CCF models are
-  skipped with a warning;
+* ``define-CCF-group model="beta-factor"`` and ``model="MGL"`` (a factor
+  per level, beta, gamma, …; a group of two is a beta-factor group) ->
+  ``ccf_groups`` on the rate basis, Reliafy's lifetime default (#210, #229,
+  #84), with a note; other CCF models are skipped with a warning;
 * basic events with a fixed probability (a plain number, or an exponential
   over a fixed time rather than the mission time) -> a block *without* a
   life model, listed in the import notes with its probability. Reliafy
@@ -595,11 +595,17 @@ def _ccf_groups(conv: _Converter, used: set[str]) -> list[dict]:
             continue
         model = (g.get("model") or "").lower()
         factors = [c for c in g.iter() if _tag(c) == "factor"]
+        if model == "mgl" and len(set(members)) > 2:
+            # The multiple Greek letter model (#84): a factor per level, 2 to n.
+            group = _mgl_group(conv, name, members, factors, used)
+            if group is not None:
+                out.append(group)
+            continue
         # An MGL group of two has one factor, its beta: a beta-factor group (#229).
         pair_mgl = model == "mgl" and len(set(members)) == 2 and len(factors) == 1
         if model != "beta-factor" and not pair_mgl:
             conv.warn(f"Common-cause group “{name}” uses the {g.get('model')} model; only beta-factor "
-                      "groups (and MGL groups of two) are imported, so this one was skipped.")
+                      "and MGL groups are imported, so this one was skipped.")
             continue
         if len(factors) != 1:
             conv.warn(f"Common-cause group “{name}”: expected one beta factor; skipped.")
@@ -614,11 +620,37 @@ def _ccf_groups(conv: _Converter, used: set[str]) -> list[dict]:
         names = ", ".join(f"“{g['name']}”" for g in out)
         conv.warn(
             f"Common-cause group{'s' if len(out) > 1 else ''} {names} {'were' if len(out) > 1 else 'was'} "
-            "imported as beta-factor groups splitting each member's failure rate (Reliafy's basis for "
+            "imported splitting each member's failure rate (Reliafy's basis for "
             "lifetime analysis, #210). PRA codes split the probability of failing, which agrees while it "
             "is small; over a lifetime it would make the group more reliable than it is. The Fault tree tab "
-            "draws each group's shared cause as an event of its own.")
+            "draws each beta-factor group's shared cause as an event of its own.")
     return out
+
+
+def _mgl_group(conv: _Converter, name: str, members: list, factors: list, used: set) -> Optional[dict]:
+    """A multiple Greek letter group (#84): its factors in level order are
+    beta, gamma, delta, …; a group of n members has n - 1 of them."""
+    count = len(set(members))
+    def level(f):
+        try:
+            return int(f.get("level"))
+        except (TypeError, ValueError):
+            return None
+
+    levels = [level(f) for f in factors]
+    if None in levels or sorted(levels) != list(range(2, count + 1)):
+        conv.warn(f"Common-cause group “{name}”: an MGL group of {count} members needs a factor for each level "
+                  f"from 2 to {count}; skipped.")
+        return None
+    letters = []
+    for f in sorted(factors, key=level):
+        kids = _children(f)
+        letters.append(conv.num(kids[0], name) if kids else float("nan"))
+    if not 0 < letters[0] < 1 or not all(0 <= x <= 1 for x in letters[1:]):
+        conv.warn(f"Common-cause group “{name}”: its MGL factors must be probabilities (beta between 0 and 1); "
+                  "skipped.")
+        return None
+    return {"name": name, "members": [m for m in members if m in used], "beta": letters[0], "mgl": letters[1:]}
 
 
 def _roots(model: _Model) -> list[str]:

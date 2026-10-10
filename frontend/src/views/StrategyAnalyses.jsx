@@ -5,6 +5,7 @@ import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 import { RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 import { CompareIcon, CostIcon, StrategyIcon, TestIcon } from "../components/icons.jsx";
 
@@ -69,6 +70,8 @@ export default function StrategyAnalyses() {
           </Link>
         ))}
       </nav>
+
+      <SafetyStarterCard />
 
       {error && <div className="card error">{error}</div>}
 

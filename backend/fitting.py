@@ -83,10 +83,11 @@ from surpyval import (
 from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
-from backend import param_intervals
+from backend import life_bounds, np_life, param_intervals
 from backend.units import canonical_unit, unit_in_text
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
+from backend import regression_bands, regression_diagnostics
 from backend.services.method_labels import hides_solver_names, note_fit
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
@@ -167,6 +168,23 @@ REGRESSION_MODELS = {
     "logistic_ah": {"name": "Logistic AH", "fitter": LogisticAH, "effect": "additive"},
     "gumbel_ah": {"name": "Gumbel AH", "fitter": GumbelAH, "effect": "additive"},
 }
+
+# More models (#179, #72, #63) — bounded and discretized distributions, the
+# semi-parametric and shared-frailty regressions, Royston-Parmar — are
+# registered from their own module, into the same registries.
+from backend import more_models  # noqa: E402
+
+DISTRIBUTIONS.update(more_models.BOUNDED)
+DISCRETE.update(more_models.DISCRETIZED)
+REGRESSION_MODELS.update(more_models.REGRESSION)
+FLEXIBLE = more_models.FLEXIBLE
+
+
+def best_candidates() -> dict:
+    """The plain distributions Best fit (and a mixture) can use: every one
+    but the bounded ones, whose finite support can't fit most life data."""
+    return {k: v for k, v in DISTRIBUTIONS.items() if not v.get("bounded")}
+
 
 # What exp(coefficient) means per regression effect (None = no natural ratio;
 # additive-hazards coefficients are additive, shown as the coefficient only).
@@ -329,7 +347,46 @@ def preview(file_bytes: bytes, rows: int = 5, distinct: bool = False) -> dict:
     out = {"columns": columns, "preview": sample, "n_rows": int(df.shape[0])}
     if distinct:
         out["n_unique"] = [int(n) for n in df.nunique(dropna=True).tolist()]
+        # What the Data step needs to guess the time and status columns, map a
+        # text status ("Failed" / "Running") and count failures before a fit:
+        # each column's dtype, blank cells, and its values when there are few.
+        out["dtypes"] = [str(t) for t in df.dtypes]
+        out["blanks"] = [int(n) for n in df.isna().sum().tolist()]
+        out["values"] = [_few_values(df[c]) for c in df.columns]
     return out
+
+
+def _few_values(series: pd.Series, limit: int = 12) -> Optional[dict]:
+    """``{value: rows}`` for a column with at most ``limit`` distinct non-blank
+    values (a status column), else None. Whole numbers read as ``"1"``, not
+    ``"1.0"``, and text is trimmed, as :func:`map_censor_column` matches them."""
+    values = series.dropna()
+    if values.nunique() > limit:
+        return None
+    out: dict = {}
+    for value, count in values.map(_status_label).value_counts(sort=True).items():
+        out[str(value)] = out.get(str(value), 0) + int(count)
+    return out
+
+
+def _status_label(value) -> str:
+    if isinstance(value, (bool, np.bool_)):
+        return str(bool(value))
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        f = float(value)
+        return str(int(f)) if math.isfinite(f) and f == int(f) else str(value)
+    return str(value).strip()
+
+
+def _status_key(value) -> str:
+    """A status value as it is matched: its label, case-folded, with a numeric
+    string read as a number (so ``1``, ``1.0`` and ``"1"`` agree)."""
+    label = _status_label(value)
+    try:
+        f = float(label)
+    except ValueError:
+        return label.casefold()
+    return str(int(f)) if math.isfinite(f) and f == int(f) else label.casefold()
 
 
 # The censoring convention, stated once and reused in every message that needs
@@ -353,8 +410,47 @@ CENSOR_CONVENTION = (
 # than the mapping, because the mapping is column *names* only.
 CENSOR_INVERT_KEY = "c_invert"
 
+# Fit option that reads a status column of words ("Failed" / "Running",
+# "F" / "S", "yes" / "no") as censor codes: ``{value: 0 | 1}``, matched
+# case-insensitively. Stored with the fit options like ``c_invert``.
+CENSOR_MAP_KEY = "c_map"
+
 # Censor codes SurPyval understands (see the module docstring).
 _CENSOR_CODES = (0, 1, -1, 2)
+
+
+def map_censor_column(df: pd.DataFrame, column: str, codes: dict) -> pd.DataFrame:
+    """Return a copy of ``df`` with ``column``'s values replaced by the censor
+    codes ``codes`` gives them (``{"Failed": 0, "Running": 1}``).
+
+    Every non-blank value must be in ``codes``; a blank or unmapped value is
+    refused in plain words rather than reaching SurPyval as NaN.
+    """
+    if column not in df.columns:
+        raise FitError(f"Status column '{column}' isn't in the data.")
+    lookup = {}
+    for value, code in (codes or {}).items():
+        try:
+            code = int(code)
+        except (TypeError, ValueError):
+            code = None
+        if code not in _CENSOR_CODES:
+            raise FitError(f"'{value}' in '{column}' must mean failed (0) or still running (1).")
+        lookup[_status_key(value)] = code
+    blank = df[column].isna() | (df[column].astype(str).str.strip() == "")
+    if blank.any():
+        n = int(blank.sum())
+        raise FitError(
+            f"{n} row{'s' if n != 1 else ''} {'have' if n != 1 else 'has'} no value in '{column}'. "
+            "Fill in whether each unit failed or was still running, then try again."
+        )
+    mapped = df[column].map(lambda v: lookup.get(_status_key(v)))
+    if mapped.isna().any():
+        shown = ", ".join(sorted({_status_label(v) for v in df[column][mapped.isna()]})[:5])
+        raise FitError(f"Say whether these values in '{column}' mean failed or still running: {shown}.")
+    out = df.copy()
+    out[column] = mapped.astype(int)
+    return out
 
 
 def invert_censor_column(df: pd.DataFrame, column: str) -> pd.DataFrame:
@@ -882,8 +978,10 @@ def options_from_form(
     how: Optional[str] = None,
     c_invert: Optional[str] = None,
     include_mixtures: Optional[str] = None,
+    c_map: Optional[str] = None,
 ) -> Optional[dict]:
-    """Build an options dict from HTML-form string fields (both fit routers)."""
+    """Build an options dict from HTML-form string fields (both fit routers).
+    ``c_map`` is a JSON object of status words to censor codes."""
 
     def truthy(v):
         return str(v or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -891,6 +989,14 @@ def options_from_form(
     opts = {"offset": truthy(offset), "zi": truthy(zi), "lfp": truthy(lfp)}
     if truthy(c_invert):
         opts[CENSOR_INVERT_KEY] = True
+    if c_map and str(c_map).strip():
+        try:
+            value = json.loads(c_map)
+        except json.JSONDecodeError:
+            value = None
+        if not isinstance(value, dict) or not value:
+            raise FitError('c_map must be a JSON object, e.g. {"Failed": 0, "Running": 1}.')
+        opts[CENSOR_MAP_KEY] = value
     if fixed and str(fixed).strip():
         try:
             opts["fixed"] = json.loads(fixed)
@@ -1048,9 +1154,9 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
                 "fit method can't be chosen for it."
             )
         base = mixture_base(opts)
-        if base not in DISTRIBUTIONS:
+        if base not in best_candidates():
             raise FitError(
-                f"'{base}' can't be mixed. Choose one of: {', '.join(DISTRIBUTIONS)}."
+                f"'{base}' can't be mixed. Choose one of: {', '.join(best_candidates())}."
             )
         return {"mixture": out["mixture"] or MIXTURE_DEFAULT_COMPONENTS,
                 "mixture_distribution": base}
@@ -1163,16 +1269,54 @@ def fit(
     ``options`` (plain distributions only) may hold ``offset``/``zi``/``lfp``
     booleans and a ``fixed`` mapping. ``options["c_invert"]`` applies to every
     model kind: it flips a 1 = failed censor column into the convention before
-    anything (including the all-censored guard) looks at it. Any SurPyval
+    anything (including the all-censored guard) looks at it, and
+    ``options["c_map"]`` (``{"Failed": 0, "Running": 1}``) reads a status column
+    of words the same way, in place of ``c_invert``. Any SurPyval
     error is wrapped in :class:`FitError`.
     """
+    from backend import competing_risks  # local: it imports services that import this module
+
+    # Failure modes (#177) don't combine with covariates that change over time
+    # (#60) or with Cox PH's own options (#61): refuse rather than drop one.
+    by_mode = competing_risks.is_competing_risks(distribution) or any(
+        (mapping or {}).get(k) for k in competing_risks.EXTRA_KEYS)
+    if by_mode and (mapping or {}).get("i"):
+        raise FitError("Failure modes (competing risks) can't be fitted with covariates that change over time. "
+                       "Drop the item column to fit by failure mode, or drop the failure-mode and group "
+                       "columns to fit the covariates over time.")
+    if by_mode and (options or {}).get(regression_diagnostics.COX_KEY):
+        raise FitError("Tie methods, strata and clusters apply to a single Cox PH fit, not to failure modes. "
+                       "Drop them to fit by failure mode, or drop the failure-mode and group columns.")
+    if not competing_risks.is_competing_risks(distribution):
+        # The failure-mode and group columns (#177) are read by competing risks only.
+        mapping = competing_risks.plain_mapping(mapping)
     options = dict(options or {})
     c_invert = bool(options.pop(CENSOR_INVERT_KEY, False)) and bool(mapping.get("c"))
+    c_map = options.pop(CENSOR_MAP_KEY, None) if mapping.get("c") else None
+    options.pop(CENSOR_MAP_KEY, None)
+    if c_map:
+        # The map already says which way round each value is.
+        df = map_censor_column(df, mapping["c"], c_map)
+        c_invert = False
     if c_invert:
         df = invert_censor_column(df, mapping["c"])
+    # Cox PH's tie method, strata and cluster columns (#61): regression only.
+    cox_opts = options.pop(regression_diagnostics.COX_KEY, None)
+    # #179: the Group by column is a frailty model's alone.
+    mapping = more_models.check_group(distribution, mapping, covariates)
     options = normalize_options(distribution, options)
-    if distribution in REGRESSION_MODELS:
-        result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units)
+    if mapping.get("i"):
+        # #60: an item column means covariates that change over time.
+        from backend import tvc
+
+        if cox_opts:
+            raise FitError("Tie methods, strata and clusters aren't available with covariates that change over "
+                           "time. Drop them, or fit without the item column.")
+        result = tvc.fit(distribution, df, mapping, covariates, formula, covariate_units)
+    elif distribution in REGRESSION_MODELS:
+        result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units, cox_opts)
+    elif cox_opts:
+        raise FitError("Tie methods, strata and clusters apply to Cox PH only. Choose Cox PH, or drop them.")
     elif distribution == BEST_ID:
         result = _fit_best(df, mapping, options)
     elif distribution in NONPARAMETRIC:
@@ -1184,11 +1328,22 @@ def fit(
                               options.get("mixture") or MIXTURE_DEFAULT_COMPONENTS)
     elif distribution in DISTRIBUTIONS:
         result = _fit_distribution(distribution, df, mapping, options)
+    elif competing_risks.is_competing_risks(distribution):
+        # Life data by failure mode (#177).
+        if formula:
+            raise FitError("A regression by failure mode takes covariate columns, not a formula.")
+        if options:
+            raise FitError("Fit options apply to a single distribution, not to failure modes.")
+        try:
+            result = competing_risks.fit(distribution, df, mapping, covariates, unit)
+        except competing_risks.CompetingRisksError as exc:
+            raise FitError(str(exc)) from exc
+    elif distribution in FLEXIBLE:
+        result = more_models.fit_flexible(distribution, df, mapping)
     else:
-        raise FitError(
-            f"Unknown model '{distribution}'. Available: "
-            f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
-        )
+        available = ", ".join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS,
+                               *FLEXIBLE, *competing_risks.CR_MODELS])
+        raise FitError(f"Unknown model '{distribution}'. Available: {available}.")
     result["unit"] = canonical_unit(unit)  # #265: "hours", "hrs" → "Hours"
     if result.get("kind") in ("distribution", "discrete", "regression") and param_intervals.note_for(
             result.get("params")):
@@ -1196,10 +1351,19 @@ def fit(
     if result.get("mixture_summary") and result["unit"]:
         result["mixture_summary"] = (mixture_summary(result, unit_in_text(result["unit"]))
                                      or result["mixture_summary"])
+    if result.get("kind") in ("distribution", "nonparametric"):
+        # B-lives and MTTF with their 90% lower bounds (#288); a
+        # non-parametric estimate's mean life is restricted (#85).
+        entry = _MODEL_STORE.get((result.get("functions") or {}).get("model_id"))
+        life = life_bounds.life_for(entry and entry.get("model"), bool(result.get("no_finite_maximum")))
+        if life:
+            result["life"] = life
     if c_invert:
         # Persist alongside the other fit options so a saved model's spec
         # re-fits the data the same way round (see models_service._refit).
         result["options"] = {**(result.get("options") or {}), CENSOR_INVERT_KEY: True}
+    if c_map:
+        result["options"] = {**(result.get("options") or {}), CENSOR_MAP_KEY: c_map}
     # Confidence bounds and probability-paper transforms can produce non-finite
     # values at the extremes (e.g. a Weibull bound that maps to ±inf/NaN). These
     # are not valid JSON, so coerce them to null — Plotly renders them as gaps.
@@ -1363,6 +1527,9 @@ def result_from_params(
     randomness = _randomness_verdict(distribution_id, result["params"])
     if randomness is not None:
         result["randomness"] = randomness
+    life = life_bounds.life_for(model)  # values only: no data, no covariance
+    if life:
+        result["life"] = life
     return _json_safe(result)
 
 
@@ -1537,7 +1704,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
     ranking = []
     failed = []
     support_msg = None  # rows every candidate refused (SurPyval 0.23)
-    for dist_id, entry in DISTRIBUTIONS.items():
+    for dist_id, entry in best_candidates().items():
         kwargs = dict(base_kwargs)
         for key in ("zi", "lfp"):
             if options.get(key):
@@ -1640,7 +1807,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         result["selection"]["failed"] = failed
         result["warnings"] = [
             *(result.get("warnings") or []),
-            f"Only {len(ranking)} of the {len(DISTRIBUTIONS) + len(bases)} candidates could be fitted "
+            f"Only {len(ranking)} of the {len(best_candidates()) + len(bases)} candidates could be fitted "
             f"(failed: {', '.join(f['name'] for f in failed)}), so the choice is among those only.",
         ]
     return result
@@ -2237,6 +2404,8 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
             "R": [float(v) for v in R[finite]],
             "cb_lower": [None if not np.isfinite(v) else float(v) for v in lower[finite]],
             "cb_upper": [None if not np.isfinite(v) else float(v) for v in upper[finite]],
+            # #85: simultaneous 95% bands, for the plot's whole-curve toggle.
+            "bands": np_life.bands(model),
         },
         "functions": {"meta": FUNCTIONS, "curves": curves, "model_id": cache_id},
         "gof": [],
@@ -2329,10 +2498,15 @@ def _fit_regression(
     covariates: Optional[list],
     formula: Optional[str],
     covariate_units: Optional[dict] = None,
+    cox_opts: Optional[dict] = None,
 ) -> dict:
     entry = REGRESSION_MODELS[distribution]
     fitter = entry["fitter"]
     mapping = {k: v for k, v in mapping.items() if v}
+    try:
+        cox_opts = regression_diagnostics.clean_cox_options(distribution, cox_opts, df.columns, covariates)
+    except regression_diagnostics.CoxOptionError as exc:
+        raise FitError(str(exc)) from exc
 
     # Only pass columns that were actually mapped — not every fitter (e.g. Cox)
     # accepts every optional column keyword. Inspection (interval-censored)
@@ -2361,11 +2535,15 @@ def _fit_regression(
             raise FitError(str(exc)) from exc
     elif covariates:
         fit_kwargs["Z_cols"] = list(covariates)
+    cox_kwargs = regression_diagnostics.cox_fit_kwargs(cox_opts)
+    fit_kwargs = more_models.regression_fit_kwargs(distribution, mapping, fit_kwargs)
 
     try:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            model = note_fit(fitter.fit_from_df(df, **fit_kwargs))
+            model = note_fit(fitter.fit_from_df(df, **fit_kwargs, **cox_kwargs))
+        # A stratified Cox model reads its stratum from the covariate row.
+        model = regression_diagnostics.stratify(model, cox_opts)
         reissue_deprecations(caught)
         gof = _goodness_of_fit(model)
     except Exception as exc:
@@ -2447,6 +2625,10 @@ def _fit_regression(
     # so the frontend can re-evaluate at other covariate values.
     raw_vars = _raw_covariates(model, covariates)
     fields = _covariate_fields(df, raw_vars)
+    if cox_opts.get("strata"):
+        # The stratum is a calculator input like a categorical covariate.
+        raw_vars = [*raw_vars, cox_opts["strata"]]
+        fields = [*fields, regression_diagnostics.strata_field(df, cox_opts["strata"])]
     units = clean_covariate_units(covariate_units, raw_vars)
     if units:
         # Optional units (#265): on each calculator input and on the
@@ -2462,6 +2644,11 @@ def _fit_regression(
     except Exception:
         curves = None
     model_id = _store_model(model, grid, fields)
+    # Does the model's assumption hold? (#61) The Cox model the checks ran on
+    # is kept for the residual plots.
+    diagnostics, diag_model = regression_diagnostics.diagnose(
+        model, df, mapping, fit_kwargs, distribution, entry.get("effect", "hazard"), cox_opts)
+    _MODEL_STORE[model_id]["diag"] = diag_model
 
     functions = None
     if curves is not None:
@@ -2497,7 +2684,9 @@ def _fit_regression(
             extra["at_covariate_means"] = at_means
     if units:
         extra["covariate_units"] = units
-    return {
+    if cox_opts:
+        extra["options"] = {regression_diagnostics.COX_KEY: cox_opts}
+    return more_models.enrich_regression(distribution, model, {
         **extra,
         "maximum": getattr(model, "maximum", None),
         "distribution": entry["name"],
@@ -2513,7 +2702,8 @@ def _fit_regression(
         "functions": functions,
         # How good is this model? Harrell's C, Brier score, AUC (#176).
         "validation": validate_regression(model, df, mapping, raw_vars),
-    }
+        "diagnostics": diagnostics,
+    }, mapping)
 
 
 def _raw_covariates(model, covariates: Optional[list]) -> list:
@@ -2547,14 +2737,27 @@ def clean_covariate_units(units, names=None) -> dict:
     return out
 
 
+def _is_step_regression(model) -> bool:
+    """A semi-parametric regression (Cox): a step-function baseline."""
+    try:
+        from surpyval.univariate.regression.semi_parametric_regression_model import (
+            SemiParametricRegressionModel,
+        )
+    except ImportError:  # pragma: no cover - a SurPyval that moved it
+        return type(model).__name__ == "SemiParametricRegressionModel" or more_models.is_step_model(model)
+    return isinstance(model, SemiParametricRegressionModel) or more_models.is_step_model(model)
+
+
 def regression_metrics_at_defaults(model, fields: list) -> Optional[dict]:
     """A parametric regression model's median, B10 and MTTF at the covariate
     row the calculator opens on (each numeric covariate at its training-data
     mean, a categorical one at its most common level), labelled with that
-    row; None for a model without a quantile function (Cox) or when they
-    can't be computed."""
+    row; None for a model without a quantile function or when they can't be
+    computed. A Cox model is left out even where SurPyval gives it a ``qf``:
+    its curve is a step function that often stops short of 0, so a B10 would
+    be an event time and the mean has no tail to integrate."""
     qf = getattr(model, "qf", None)
-    if not callable(qf):
+    if not callable(qf) or _is_step_regression(model):
         return None
     Z = pd.DataFrame({f["name"]: [f["default"]] for f in fields}) if fields else None
     try:
@@ -2676,14 +2879,16 @@ def confidence_bounds(
     x_max=None,
     *,
     owner: str | None = None,
+    values: Optional[dict] = None,
 ) -> dict:
     """Confidence bounds of a fitted model's ``on`` function over its grid.
 
     Wraps SurPyval's ``model.cb`` — configurable significance ``alpha_ci`` and
     ``bound`` (two-sided / lower / upper). Available for plain, discrete and
-    non-parametric models; regression (proportional-hazards) models don't
-    expose confidence bounds. Two-sided returns both arrays; a one-sided bound
-    returns just the relevant side (the other is ``None``).
+    non-parametric models, and for parametric regression models at the
+    covariate ``values`` (#54; the fit's defaults for any left out); Cox PH
+    has none. Two-sided returns both arrays; a one-sided bound returns just
+    the relevant side (the other is ``None``).
     """
     if on not in _CB_FUNCTIONS:
         raise FitError(f"Can't compute confidence bounds on '{on}'.")
@@ -2695,12 +2900,19 @@ def confidence_bounds(
     entry = _entry_for(model_id, owner)
     model = entry["model"]
     grid = _custom_grid(entry["grid"], x_min, x_max)
+    regression = regression_bands.is_regression(entry)
+    if regression and not regression_bands.has_bands(model):
+        raise FitError(regression_bands.band_note(model))
     if not hasattr(model, "cb"):
         raise FitError("This model type doesn't provide confidence bounds.")
 
     try:
-        with np.errstate(all="ignore"):
-            cb = np.asarray(model.cb(grid, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            if regression:
+                cb = regression_bands.band(model, entry["fields"], values, grid, on, alpha_ci, bound)
+            else:
+                cb = _cb_off_pinned_points(model, grid, on, alpha_ci, bound)
     except Exception as exc:
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
 
@@ -2722,6 +2934,27 @@ def confidence_bounds(
         "lower": lower,
         "upper": upper,
     }
+
+
+def _cb_off_pinned_points(model, grid, on, alpha_ci, bound) -> np.ndarray:
+    """``model.cb`` over ``grid``, leaving out the points where a parametric
+    model's reliability is pinned at 1 or 0 (before a lifetime's support
+    starts, at t = 0): its value there is certain, so the bound is the value
+    itself. Asked there, SurPyval 0.23's Wald bound has a zero variance it
+    calls undefined, and returns nan at every point of the call — a lognormal's
+    calculator lost its whole band to the grid's t = 0."""
+    if not hasattr(model, "dist"):
+        return np.asarray(model.cb(grid, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+    sf = np.asarray(model.sf(grid), dtype=float)
+    free = np.isfinite(sf) & (sf > 0) & (sf < 1)
+    if free.all() or not free.any():
+        return np.asarray(model.cb(grid, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+    inner = np.asarray(model.cb(grid[free], on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+    value = np.asarray(getattr(model, on)(grid[~free]), dtype=float)
+    out = np.empty((grid.size, 2) if inner.ndim == 2 else grid.size, dtype=float)
+    out[free] = inner
+    out[~free] = value[:, None] if inner.ndim == 2 else value
+    return out
 
 
 # The reliability functions exposed in the calculator tab, with display labels.
@@ -2747,8 +2980,12 @@ def _eval_functions(model, grid, Z=None) -> dict:
     curves = {"x": grid.tolist()}
     raw = {}
     for fn in ("sf", "ff", "hf", "Hf", "df"):
+        func = getattr(model, fn, None)
+        if func is None:
+            # Buckley-James has no hazard or density (#179): those are absent.
+            curves[fn] = None
+            continue
         with np.errstate(all="ignore"):
-            func = getattr(model, fn)
             y = np.asarray(func(grid) if Z is None else func(grid, Z), dtype=float)
         raw[fn] = y
         # JSON can't carry inf/nan; null them so the frontend skips those points.

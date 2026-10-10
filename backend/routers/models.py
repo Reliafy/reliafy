@@ -11,7 +11,7 @@ from backend import config
 from backend.db import get_session
 from backend.http_limits import read_upload
 from backend.fitting import FitError, covariate_units_from_form, options_from_form, per_demand_batches_from_df
-from backend import storage
+from backend import regression_diagnostics, storage
 from backend.routers import excel as excel_router
 from backend.services import billing as billing_service
 from backend.services import excel as excel_service
@@ -118,6 +118,10 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "preview": preview.get("preview", []),
         "preview_columns": preview.get("columns", []),
         "n_unique": preview.get("n_unique"),
+        # Column facts for the fit wizard's Data step (see fitting.preview).
+        "dtypes": preview.get("dtypes"),
+        "blanks": preview.get("blanks"),
+        "values": preview.get("values"),
         "models": [_model_summary(m, ctx) for m in models],
         "other_models": others,
         "profile": profile,
@@ -324,6 +328,10 @@ def save_model(
     xr: str | None = Form(default=None),
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
+    i: str | None = Form(default=None),
+    e: str | None = Form(default=None),
+    g: str | None = Form(default=None),
+    group: str | None = Form(default=None),
     z: list[str] = Form(default=[]),
     formula: str | None = Form(default=None),
     unit: str | None = Form(default=None),
@@ -336,7 +344,9 @@ def save_model(
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
     include_mixtures: str | None = Form(default=None),
+    c_map: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
+    cox: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -347,7 +357,13 @@ def save_model(
     denied = _creation_denied(session, ctx, "models")
     if denied is not None:
         return denied
-    mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}
+    # ``i`` (#60): an item column, for covariates that change over time.
+    # e / g: the failure-mode and group columns of a competing-risks fit (#177).
+    # ``group`` (#179): the Group by column of a shared-frailty model.
+    mapping = {
+        "x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr,
+        "i": i, "e": e, "g": g, "group": group,
+    }
     try:
         if dataset_id:
             # Scope to the workspace principal (+samples) so the saved model
@@ -369,10 +385,10 @@ def save_model(
         model = models_service.save_model(
             session, name, dataset, distribution, mapping, z, formula, unit,
             owner_id=ctx.write_owner,
-            options=options_from_form(
+            options=regression_diagnostics.with_cox_form(options_from_form(
                 offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
-                include_mixtures=include_mixtures,
-            ),
+                include_mixtures=include_mixtures, c_map=c_map,
+            ), cox),
             covariate_units=covariate_units_from_form(covariate_units),
         )
         access_service.stamp_editor(session, "models", model.id, ctx)
@@ -505,7 +521,9 @@ def update_model_fit(
     how: str | None = Body(default=None),
     c_invert: bool = Body(default=False),
     include_mixtures: bool = Body(default=False),
+    c_map: dict | None = Body(default=None),
     covariate_units: dict | None = Body(default=None),
+    cox: dict | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -520,7 +538,8 @@ def update_model_fit(
         return JSONResponse(status_code=status, content=payload)
     options = {"offset": offset, "zi": zi, "lfp": lfp, "fixed": fixed or None,
                "mixture": mixture, "mixture_distribution": mixture_distribution,
-               "how": how, "c_invert": bool(c_invert), "include_mixtures": bool(include_mixtures)}
+               "how": how, "c_invert": bool(c_invert), "include_mixtures": bool(include_mixtures),
+               "c_map": c_map or None, "cox": cox or None}
     try:
         model = models_service.update_fit(
             session, model_id, existing.owner_id, distribution,
@@ -630,4 +649,48 @@ def confidence_model(
     except models_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@router.post("/models/{model_id}/life")
+def life_model(
+    model_id: str,
+    body: dict = Body(default={}),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """A saved model's B-lives and MTTF with one-sided lower bounds at
+    ``confidence`` — or, with ``reliability`` [R, ...], the time at each
+    reliability with its ``bound`` (#288)."""
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        return JSONResponse(
+            content=models_service.life(session, model_id, body, [*ctx.read_owners, model.owner_id])
+        )
+    except models_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid life request."})
+
+
+@router.post("/models/{model_id}/compare")
+def compare_model(
+    model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> JSONResponse:
+    """Best fit's ranking of every plain distribution on a saved life model's
+    own data (#293), best first. Saves nothing."""
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    if model.kind != "distribution":
+        return JSONResponse(status_code=422, content={
+            "detail": "Only a fitted life distribution can be compared with the others."})
+    try:
+        return JSONResponse(content=models_service.compare(session, model))
+    except models_service.ModelNotFound:
+        return JSONResponse(status_code=422, content={
+            "detail": "This model's dataset is gone, so there's nothing to compare on."})
+    except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})

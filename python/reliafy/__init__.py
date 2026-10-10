@@ -277,7 +277,8 @@ def demonstration_test(reliability: float | None = None, *, confidence: float = 
                        units: int | None = None, method: str = "attribute",
                        mtbf: float | None = None, design_reliability: float | None = None,
                        design_mtbf: float | None = None, producer_risk: float | None = None,
-                       unit: str | None = None) -> dict:
+                       unit: str | None = None, b_life: float | None = None,
+                       shape_interval: list[float] | None = None) -> dict:
     """Plan a reliability demonstration test: the units to test (or, given
     ``units``, the test time per unit) to show ``reliability`` over a mission
     at ``confidence`` with at most ``failures`` failures. ``test_multiple``
@@ -285,11 +286,15 @@ def demonstration_test(reliability: float | None = None, *, confidence: float = 
     with ``mtbf`` plans a constant-failure-rate test instead.
     ``design_reliability`` (or ``design_mtbf``) gives a good design's chance
     of passing; with ``producer_risk`` too, the plan keeps both risks and
-    chooses the failures allowed itself."""
+    chooses the failures allowed itself. ``b_life`` (10 for B10) with
+    ``mission_time`` plans for "B10 ≥ mission_time" instead of
+    ``reliability``; ``shape_interval`` ([lower, upper], β's interval) adds
+    ``shape_sensitivity``, with a warning when β is too poorly known."""
     body = {"reliability": reliability, "confidence": confidence, "mission_time": mission_time,
             "failures": failures, "test_multiple": test_multiple, "shape": shape,
             "units": units, "method": method, "mtbf": mtbf, "design_reliability": design_reliability,
-            "design_mtbf": design_mtbf, "producer_risk": producer_risk, "unit": unit}
+            "design_mtbf": design_mtbf, "producer_risk": producer_risk, "unit": unit,
+            "b_life": b_life, "shape_interval": shape_interval}
     return _request("POST", "/api/v1/strategy/demonstration-test",
                     {k: v for k, v in body.items() if v is not None})
 

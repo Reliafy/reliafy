@@ -1,10 +1,12 @@
 import { useContext, useState } from "react";
 import Modal from "./Modal.jsx";
+import RbdCapacityFold from "./RbdCapacityFields.jsx";
 import ModelPicker from "./ModelPicker.jsx";
 import { BlockCostSection } from "./RbdBlockCosts.jsx";
 import { RbdUnitContext } from "./RbdNodes.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { MeanEcho } from "./LifeModelModal.jsx";
+import { BlockNameField, MeanEcho } from "./LifeModelModal.jsx";
+import RbdMeanCheck from "./RbdMeanCheck.jsx";
 
 // In a repairable diagram (#156) the block is a standby group of identical
 // units: the duty unit and its spares each fail by the life model and are
@@ -28,19 +30,30 @@ function initialKind(initial) {
   const d = initial?.dormancy ?? (initial?.cold ? 0 : 1);
   return d <= 0 ? "cold" : d >= 1 ? "hot" : "warm";
 }
+// A spare's chance of starting when switched in, as first offered on a cold
+// standby: a perfect switch-over, with a hint at typical real values under
+// the field. Anything set before is kept.
+export const COLD_START_DEFAULT = 1;
+export const COLD_START_HINT = "Spares don't always start: 0.95–0.99 is typical for generators and pumps.";
+
 export default function StandbyModal({ initial, onClose, onSubmit, repairable = false, crews = false }) {
   const unit = useContext(RbdUnitContext) || "";
+  // "Standby" is the new block's own name: the field starts empty.
+  const [name, setName] = useState(initial?.label && initial.label !== "Standby" ? initial.label : "");
   const [model, setModel] = useState(initial?.model ?? null);
   const [repair, setRepair] = useState(initial?.repair ?? null);
   const [oneAtATime, setOneAtATime] = useState(!!initial?.repair_one_at_a_time);
   const [extras, setExtras] = useState({ extras: null, valid: true });
   const [spares, setSpares] = useState(initial?.spares ?? 1);
+  // k-of-n standby (#84): how many units run at once.
+  const [running, setRunning] = useState(initial?.k ?? 1);
   const [kind, setKind] = useState(initialKind(initial));
   const [dormancy, setDormancy] = useState(
     initial?.dormancy > 0 && initial?.dormancy < 1 ? initial.dormancy : 0.2
   );
   const cold = kind === "cold";
-  const [startProb, setStartProb] = useState(initial?.startProb ?? 1);
+  const wasCold = initialKind(initial) === "cold";
+  const [startProb, setStartProb] = useState(wasCold ? initial?.startProb ?? 1 : COLD_START_DEFAULT);
   const [standbyModel, setStandbyModel] = useState(initial?.standbyModel ?? null);
 
   const sparesNum = Number(spares);
@@ -49,18 +62,33 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
   const validProb = !cold || (probNum >= 0 && probNum <= 1);
   const dormNum = Number(dormancy);
   const validDorm = kind !== "warm" || (dormNum > 0 && dormNum < 1);
-  const valid = validSpares && validProb && validDorm && (!repairable || (repair && extras.valid));
+  const runNum = Number(running);
+  const validRunning = Number.isInteger(runNum) && runNum >= 1;
+  // What the engine can't work out exactly for a non-repairable block (#84).
+  const ownSpare = cold && !repairable && !!standbyModel;
+  const limit = repairable || !validRunning || runNum < 2 ? null
+    : kind === "warm" ? "Warm spares with 2 or more units running can't be worked out exactly yet — make them cold or hot, or run one unit."
+    : ownSpare && runNum >= 3 ? "Cold spares with a model of their own work with at most 2 units running — give them the running units' model, or run fewer."
+    : null;
+  // The group's throughput while it works (#122): the block is up, and
+  // delivers this, while its k running units are.
+  const [cap, setCap] = useState({ value: initial?.capacity ?? null, valid: true });
+  const valid = validSpares && validRunning && !limit && validProb && validDorm
+    && (!repairable || (repair && extras.valid)) && cap.valid;
 
   const submit = () => {
     if (!valid) return;
     const config = {
+      label: name.trim() || initial?.label || "Standby",
       model,
       spares: sparesNum,
+      k: runNum > 1 ? runNum : null,
       cold,
       dormancy: cold ? 0 : kind === "hot" ? 1 : dormNum,
       startProb: cold ? probNum : 1,
       // A repairable group's units are identical: no separate spare model.
       standbyModel: cold && !repairable ? standbyModel : null,
+      capacity: cap.value,
     };
     if (repairable) {
       Object.assign(config, { repair, repair_one_at_a_time: oneAtATime || null, ...(extras.extras || {}) });
@@ -71,7 +99,8 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
   const footer = (
     <>
       <span className="hint">
-        One active unit with {spares} standby spare(s){repairable ? ", each repaired after it fails" : ""}.
+        {runNum > 1 ? `${runNum} running` : "One active unit"} with {spares} standby spare(s)
+        {repairable ? ", each repaired after it fails" : ""}.
       </span>
       <div className="row" style={{ margin: 0 }}>
         <button className="secondary" onClick={onClose}>
@@ -86,6 +115,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
 
   return (
     <Modal title={initial?.label && initial.label !== "Standby" ? initial.label : "Standby redundancy"} onClose={onClose} footer={footer}>
+      <BlockNameField value={name} onChange={setName} placeholder="e.g. Cooling pumps (duty/standby)" />
       <section className="rbd-dlg-sec">
         <h3>Failure</h3>
         <ModelPicker
@@ -93,6 +123,8 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
           value={model}
           onChange={setModel}
           rbdBlock
+          unit={unit}
+          meanEntry="Mean life, MTBF"
         />
         <MeanEcho model={model} unit={unit} label="Mean life" />
       </section>
@@ -100,6 +132,10 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
       <section className="rbd-dlg-sec">
         <h3>Standby</h3>
         <div className="param-fields">
+          <label className="param-field" title="How many units must run at once: 2 running and 1 spare is a 2-of-3 duty/standby train.">
+            <span>Units running</span>
+            <input type="number" min="1" step="1" value={running} onChange={(e) => setRunning(e.target.value)} />
+          </label>
           <label className="param-field">
             <span>Spares</span>
             <input
@@ -123,8 +159,8 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             </label>
           )}
           {cold && (
-            <label className="param-field" title="The chance a spare starts when it's switched in.">
-              <span>Start success probability</span>
+            <label className="param-field" title="The chance a spare starts when it's switched in: 1 is a perfect switch-over, 0.99 one failed start in 100 demands.">
+              <span>Chance a spare starts</span>
               <input
                 type="number"
                 step="any"
@@ -136,6 +172,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             </label>
           )}
         </div>
+        {cold && <p className="hint standby-start-hint">{COLD_START_HINT}</p>}
         <div className="standby-kind">
           <SegmentedControl
             label="Standby type"
@@ -145,6 +182,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
           />
           <p className="hint">{KINDS.find((k) => k.id === kind).hint}</p>
         </div>
+        {limit && <p className="hint rbd-limit" role="alert">{limit}</p>}
         {cold && !repairable && (
           <div className="standby-cold">
             <ModelPicker
@@ -154,6 +192,15 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
               rbdBlock
             />
           </div>
+        )}
+        {!repairable && (
+          <RbdMeanCheck unit={unit} node={valid && model ? {
+            type: "standby",
+            data: {
+              label: initial?.label, model, spares: sparesNum, k: runNum, dormancy: cold ? 0 : kind === "hot" ? 1 : dormNum,
+              cold, startProb: cold ? probNum : 1, standbyModel: cold ? standbyModel : null,
+            },
+          } : null} />
         )}
       </section>
 
@@ -165,6 +212,8 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             value={initial?.repair}
             onChange={setRepair}
             rbdBlock
+            unit={unit}
+            meanEntry="Mean repair time, MTTR"
           />
           <MeanEcho model={repair} unit={unit} label="MTTR" />
           <label className="rbd-instant-repair"
@@ -178,6 +227,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
         <BlockCostSection initial={initial} onChange={setExtras} unit={unit} crews={crews && !oneAtATime}
                           mode="standby" />
       )}
+      <RbdCapacityFold initial={initial?.capacity} onChange={setCap} />
     </Modal>
   );
 }

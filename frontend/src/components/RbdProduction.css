@@ -1,0 +1,50 @@
+/* Production availability (#122): the Calculator's Production section and the
+   block dialog's Capacity section. */
+.rbd-production {
+  margin: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rbd-production-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.rbd-production-head h3 { margin: 0; font-size: var(--fs-16); font-weight: 600; color: var(--ink); }
+.rbd-production-fields { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.rbd-production-body { display: flex; flex-direction: column; gap: 12px; }
+.rbd-production-body.stale { opacity: 0.6; }
+.rbd-production-levels { max-width: 360px; }
+.rbd-production-levels td { font-variant-numeric: tabular-nums; }
+
+.rbd-capacity .seg { align-self: flex-start; }
+.rbd-capacity-one input { width: 10rem; }
+.rbd-capacity-levels { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.rbd-capacity-head,
+.rbd-capacity-row { display: grid; grid-template-columns: 8rem 9rem 2.25rem; gap: 8px; align-items: center; }
+.rbd-capacity-head { font-size: var(--fs-12); color: var(--muted); }
+.rbd-capacity-row input {
+  width: 100%;
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  padding: 0.45rem 0.6rem;
+  font-size: var(--fs-14);
+  font-family: inherit;
+}
+.rbd-capacity-row input:focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
+.rbd-capacity-row button { min-height: 36px; }
+.rbd-capacity-error { margin: 0; font-size: var(--fs-13); color: var(--danger); }
+@media (max-width: 640px) {
+  .rbd-production-fields { width: 100%; }
+  .rbd-production-fields .calc-t { flex: 1 1 6rem; }
+  .rbd-production-fields .calc-t input { width: 100% !important; }
+  .rbd-capacity-head,
+  .rbd-capacity-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 2.75rem; width: 100%; }
+}

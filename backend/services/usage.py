@@ -279,6 +279,7 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/fit/{d}", "fit"),
     ("POST", "/api/evaluate/{id}", "model_evaluate"),
     ("POST", "/api/confidence/{id}", "model_evaluate"),
+    ("POST", "/api/life/{id}", "model_evaluate"),
     ("POST", "/api/datasets", "dataset_upload"),
     ("POST", "/api/datasets/paste", "dataset_upload"),
     ("DELETE", "/api/datasets/{id}", "dataset_delete"),
@@ -288,6 +289,8 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("PUT", "/api/models/{id}/fit", "model_refit"),
     ("POST", "/api/models/{id}/evaluate", "model_evaluate"),
     ("POST", "/api/models/{id}/confidence", "model_evaluate"),
+    ("POST", "/api/models/{id}/life", "model_evaluate"),
+    ("POST", "/api/models/{id}/compare", "model_compare"),
     ("DELETE", "/api/models/{id}", "model_delete"),
     # RBDs (a repairable analysis is re-labelled availability_exact, or
     # availability_sim when the simulation runs, by the route)
@@ -305,6 +308,8 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/rbds/design/apply", "rbd_design_apply"),
     ("POST", "/api/rbds/design", "rbd_design"),
     ("POST", "/api/rbds/fault-tree", "rbd_fault_tree"),
+    ("POST", "/api/rbds/allocate", "rbd_allocate"),
+    ("POST", "/api/rbds/production", "rbd_production"),
     # Outage logs: an RBD's observed history (issue #159)
     ("POST", "/api/rbds/{id}/outage-logs/preview", "outage_log_preview"),
     ("POST", "/api/rbds/{id}/outage-logs", "outage_log_upload"),

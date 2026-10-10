@@ -227,6 +227,13 @@ def _develop(
         members = [m for m in group.members if m in tree.events]
         if not members:
             continue
+        if not hasattr(group.model, "beta"):
+            # A multiple Greek letter group (#84) has a shared cause per set of
+            # members, which this tree's one shared event per group can't draw.
+            raise AnalysisError(
+                "Common-cause group (" + ", ".join(labels.get(m, str(m)) for m in members) + ") uses the multiple "
+                "Greek letter model, which the fault tree doesn't draw yet: it draws beta-factor groups. Its "
+                "reliability, with the group, is on the Calculator tab.")
         beta, basis = group.model.beta, group.model.basis
         shared = f"{prefix}ccf:{i}"
         b.events[shared] = _Share(reliabilities[members[0]], beta, "CommonCause", basis)
