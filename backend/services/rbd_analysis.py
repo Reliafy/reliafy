@@ -2115,6 +2115,10 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
     from backend.services import rbd_maintenance, rbd_policies
 
     current_state = state  # the blocks' states now (the loop below reads each block's pin as ``state``)
+    if isinstance(graph.get("network"), dict):  # #160: a network is never an availability diagram
+        from backend.services.rbd_network import NETWORK_ONLY
+
+        raise AnalysisError(NETWORK_ONLY)
     _check_limits(graph)
     require_blocks(graph)
     nodes = graph.get("nodes") or []

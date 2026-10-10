@@ -86,7 +86,8 @@ def _units(node: dict) -> int:
         if node.get("type") == "parallel":
             return max(int(data.get("n") or 1), 1)
         if node.get("type") == "standby":
-            return 1 + max(int(data.get("spares") or 0), 0)
+            # k running units (k-of-n standby, #84) plus the spares.
+            return max(int(data.get("k") or 1), 1) + max(int(data.get("spares") or 0), 0)
     except (TypeError, ValueError):
         return 1
     return 1
@@ -111,6 +112,10 @@ def features(graph: dict, options: Optional[dict] = None) -> dict:
     from backend.services import rbd_analysis
 
     options = options or {}
+    if isinstance((graph or {}).get("network"), dict):  # #160: a network isn't simulated for availability
+        from backend.services.rbd_network import NETWORK_ONLY
+
+        return {"available": False, "reason": NETWORK_ONLY}
     nodes = [n for n in (graph or {}).get("nodes") or [] if isinstance(n, dict)]
     if any(n.get("type") in _OPAQUE_TYPES for n in nodes):
         return {"available": False, "reason": UNAVAILABLE_OPAQUE}
