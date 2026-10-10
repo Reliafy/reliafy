@@ -362,6 +362,8 @@ def fit_endpoint(
     xr: str | None = Form(default=None),
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
+    e: str | None = Form(default=None),
+    g: str | None = Form(default=None),
     z: list[str] = Form(default=[]),
     formula: str | None = Form(default=None),
     unit: str | None = Form(default=None),
@@ -390,7 +392,8 @@ def fit_endpoint(
     A plain (sync) handler: FastAPI runs it in its threadpool, so a slow fit
     never holds up other requests.
     """
-    mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}
+    # e / g: the failure-mode and group columns of a competing-risks fit (#177).
+    mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr, "e": e, "g": g}
     try:
         if dataset_id:
             dataset = datasets_service.get_dataset(session, dataset_id, owner_id=user["uid"])
