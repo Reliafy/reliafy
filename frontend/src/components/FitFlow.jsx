@@ -11,6 +11,7 @@ import {
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import ColumnMapper from "./ColumnMapper.jsx";
 import Covariates from "./Covariates.jsx";
+import CoxOptions from "./CoxOptions.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import ResultView from "./ResultView.jsx";
@@ -113,6 +114,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [distributions, setDistributions] = useState([]);
   const [distribution, setDistribution] = useState("weibull");
   const [fitOpts, setFitOpts] = useState({});
+  const [coxOpts, setCoxOpts] = useState({}); // Cox PH: ties, strata, cluster (#61)
   const [datasets, setDatasets] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -314,6 +316,11 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   }, [file, mapping]);
   const summary = csv ? statusSummary(mapping, facts, csv.n_rows) || fileSplit : null;
 
+  // Cox PH's own options travel with a Cox fit only.
+  const coxFit = distribution === "cox_ph" ? { fitOptions: { cox: coxOpts } } : {};
+  const coxColumns = (csv?.columns || []).filter(
+    (c) => !mappedColumns.has(c) && !(advanced ? false : covariates.includes(c)));
+
   const onFit = async () => {
     if (!file && !datasetId) return;
     setLoading(true);
@@ -323,7 +330,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         unit,
         ...(datasetId ? { datasetId } : {}),
         ...(hasCovariates ? (advanced ? { formula } : { covariates, covariateUnits: covUnits }) : {}),
-        ...(hasCovariates ? {} : { fitOptions: fitOpts }),
+        ...(hasCovariates ? coxFit : { fitOptions: fitOpts }),
       };
       const res = await fitModel(distribution, file, mapping, opts);
       setSplit(await dataSplit(file, mapping).catch(() => null));
@@ -374,7 +381,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         unit,
         datasetId: datasetId || undefined,
         ...(hasCovariates
-          ? (advanced ? { formula } : { covariates, covariateUnits: covUnits })
+          ? { ...(advanced ? { formula } : { covariates, covariateUnits: covUnits }), ...coxFit }
           : { fitOptions: fitOpts }),
       });
       onSaved?.(saved);
@@ -689,6 +696,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             fitMethods={fitMethods}
             mapping={mapping}
           />
+          {hasCovariates && distribution === "cox_ph" && (
+            <CoxOptions value={coxOpts} onChange={setCoxOpts} columns={coxColumns} />
+          )}
         </div>
       )}
 

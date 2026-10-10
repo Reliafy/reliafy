@@ -4,6 +4,7 @@ import ColumnMapper from "./ColumnMapper.jsx";
 import Covariates from "./Covariates.jsx";
 import Units from "./Units.jsx";
 import DistributionStep from "./DistributionStep.jsx";
+import CoxOptions from "./CoxOptions.jsx";
 import { getDataset, getDistributions, updateModelFit } from "../api.js";
 import { EMPTY_MAPPING, columnFacts, dataStepProblems } from "../lifeData.js";
 
@@ -16,7 +17,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
   // The censor inversion and status-word map are stored with the fit options
   // (spec.options) but edited alongside the column they apply to, so they
   // ride on the mapping here.
-  const { c_invert: savedInvert, c_map: savedMap, ...savedOptions } = spec.options || {};
+  const { c_invert: savedInvert, c_map: savedMap, cox: savedCox, ...savedOptions } = spec.options || {};
   const [mapping, setMapping] = useState({
     ...EMPTY_MAPPING, ...(spec.mapping || {}), c_invert: !!savedInvert, c_map: savedMap || null,
   });
@@ -30,6 +31,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
   const [distributions, setDistributions] = useState([]);
   const [distribution, setDistribution] = useState(spec.distribution_id || model.distribution_id || "weibull");
   const [fitOpts, setFitOpts] = useState(savedOptions);
+  const [coxOpts, setCoxOpts] = useState(savedCox || {}); // Cox PH: ties, strata, cluster (#61)
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -85,7 +87,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
         covariateUnits: hasCovariates && !advanced ? covUnits : {},
         formula: hasCovariates && advanced ? formula : null,
         unit,
-        fitOptions: hasCovariates ? null : fitOpts,
+        fitOptions: hasCovariates ? (distribution === "cox_ph" ? { cox: coxOpts } : null) : fitOpts,
       });
       onUpdated(updated);
     } catch (err) {
@@ -146,6 +148,13 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
               fitOpts={fitOpts}
               onFitOpts={setFitOpts}
             />
+            {hasCovariates && distribution === "cox_ph" && (
+              <CoxOptions
+                value={coxOpts}
+                onChange={setCoxOpts}
+                columns={columns.filter((c) => !mappedColumns.has(c) && (advanced || !covariates.includes(c)))}
+              />
+            )}
           </div>
         </>
       )}
