@@ -31,6 +31,14 @@ Right-click the canvas to add a component, then drag from one block's handle to
 another to connect them. Series is a straight chain; parallel is two blocks that
 both branch from the same predecessor and both feed the same successor.
 
+**+ Add block** can do the wiring for you. Select a block first and it offers
+**Add after (in series)**, which puts the new block between that block and
+whatever it fed, and **Add alongside (in parallel)**, which gives the new block
+the same connections and merges the pair through a junction. Select a line of
+blocks joined one after another and **Add alongside the selection** bypasses the
+whole line. Select a connection and **Insert on this line** splits it. A
+connection never fails, so there's nothing to put alongside one.
+
 Dragging every link gets tedious once a diagram grows, so there's a shortcut:
 **select two or more blocks and press `C`**. Blocks are grouped into columns by
 position and consecutive columns are wired together — so a block and the two
