@@ -305,6 +305,11 @@ function HttpDocs({ base }) {
                                //  brier: {model, baseline, improvement, from, to, reading},
                                //  auc: [{time, value}], n_units, sampled, note}
                                // or {available: false, reason}
+  "diagnostics": { … }         // regression models only: does the model hold?
+                               // {ph_test: {available, verdict, title, reading,
+                               //            rows: [{covariate, statistic, df, p}],
+                               //            global: {statistic, df, p}},
+                               //  robust?, ties?, strata?}   (Cox PH adds the last three)
 }`}
       />
 
@@ -516,12 +521,12 @@ function HttpDocs({ base }) {
 
 // What each MCP tool does, in plain English (mirrors backend/mcp_server.py).
 const MCP_TOOLS = [
-  ["list_models / get_model", "Your saved life and recurrent models — distribution, parameters with confidence intervals, goodness of fit, MTTF and B10. Regression models add how good the model is: Harrell’s C, the integrated Brier score against no covariates, and the time-dependent AUC."],
-  ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset, and report the result — nothing is saved. A regression fit reports the same validation scores as get_model. A fit whose data don’t pin the model down (say, every failure at one stress) says so — fit_ok: false, maximum: “no finite maximum” and the parameter that runs off — so its numbers aren’t quoted as estimates. With “best”, include_mixtures: true lets two-mode Weibull and LogNormal mixtures compete: the single distributions keep their AIC ranking, BIC decides only whether the best mixture beats the best single (selection_summary says which won and by how much), and a winning mixture says what its two modes are in plain words."],
+  ["list_models / get_model", "Your saved life and recurrent models — distribution, parameters with confidence intervals, goodness of fit, MTTF and B10. Regression models add how good the model is: Harrell’s C, the integrated Brier score against no covariates, and the time-dependent AUC — and whether it holds: the proportional-hazards test with a GLOBAL row and a plain verdict, and for Cox PH robust standard errors, the tie method and strata."],
+  ["fit_distribution", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset, and report the result — nothing is saved. A regression fit reports the same validation scores and model checks as get_model; a Cox PH fit takes cox_options (tie method, a column to stratify on, a column to cluster the robust standard errors by). A fit whose data don’t pin the model down (say, every failure at one stress) says so — fit_ok: false, maximum: “no finite maximum” and the parameter that runs off — so its numbers aren’t quoted as estimates. With “best”, include_mixtures: true lets two-mode Weibull and LogNormal mixtures compete: the single distributions keep their AIC ranking, BIC decides only whether the best mixture beats the best single (selection_summary says which won and by how much), and a winning mixture says what its two modes are in plain words."],
   ["fit_and_save_model", "The same fit, saved as a model in your workspace (Claude asks before saving). With demand_batches it saves a per-demand model instead."],
   ["fit_per_demand", "Per-demand (one-shot) reliability — a valve that must open, a standby start — from one or several batches of demands and failures (sites, lots of different sizes), inline or from a dataset: the failure probability per demand and the reliability per demand with exact (Clopper-Pearson) bounds at your confidence. With zero failures, the success-run demonstration. Nothing is saved."],
   ["save_model", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval — with an optional dataset reference and notes."],
-  ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age, and with confidence bounds (the same as the app’s band) where the model has them."],
+  ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — optionally for a unit that has already survived to some age, and with confidence bounds (the same as the app’s band) where the model has them. A regression model is evaluated at the covariates you give, with its band and its B-lives with lower bounds at them (Cox PH has neither, and says why)."],
   ["fit_alt_model", "Fit and save an accelerated life test model — failure times at several stress levels and a life-stress relationship (Arrhenius, Eyring, inverse power, dual-stress) — inline or from a dataset, including inspection data (failed between two read-outs) and delayed entry. Fitting is Pro."],
   ["alt_use_level", "Extrapolate a saved ALT model to the use stress: characteristic, mean and B-lives, the reliability over a mission and the acceleration factor, with confidence bounds — a band on R(t), lower bounds on B10, B1 and the mission reliability, intervals on the coefficients — by the Wald, likelihood-ratio or bootstrap method (the bootstrap is Pro, runs as a job, and isn’t available for interval data)."],
   ["list_datasets / get_dataset / upload_dataset", "Your datasets, reading one’s columns and rows a page at a time, and saving new data — CSV text, or a CSV or Excel file sent with create_upload."],
