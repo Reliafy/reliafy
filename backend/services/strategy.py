@@ -672,6 +672,9 @@ def demonstration_test(
     design_mtbf=None,
     unit: Optional[str] = None,
     producer_risk=None,
+    b_life=None,
+    shape_interval=None,
+    shape_model=None,
 ) -> dict:
     """Plan a reliability demonstration test with RePyability (#129).
 
@@ -702,6 +705,14 @@ def demonstration_test(
 
     Every plan carries its operating characteristic (``oc_curve``): the
     chance of passing against the design's true reliability (or MTBF).
+
+    ``b_life`` (#295, the x in Bx: 10 for B10) states the requirement as a
+    B-life instead: "B10 ≥ ``mission_time``" is ``reliability`` 0.9 over
+    ``mission_time``. ``shape_interval`` ([lower, upper], e.g. a saved
+    Weibull fit's 95% interval on β, named by ``shape_model``) adds
+    ``shape_sensitivity``: the plan at each end of the interval, and a
+    warning when β is too poorly known for the plan
+    (:mod:`backend.services.demo_shape`).
     """
     from repyability import demonstration as demo
 
@@ -717,8 +728,22 @@ def demonstration_test(
     if method == "mtbf":
         return _demo_mtbf(demo, mtbf, c, r, n_given, design_mtbf, unit_s, pr)
 
-    R = _demo_prob(reliability, "Target reliability")
+    from backend.services import demo_shape
+
+    b_pct = None
+    if not _blank(b_life):
+        R = demo_shape.b_life_reliability(b_life, StrategyError)
+        b_pct = float(b_life)
+        if not _blank(reliability) and abs(_demo_prob(reliability, "Target reliability") - R) > 1e-9:
+            raise StrategyError(f"Give the B-life or the target reliability, not both: B{b_pct:g} is a "
+                                f"reliability of {_pct(R)}.")
+        if _blank(mission_time):
+            raise StrategyError(f"A B-life requirement needs its life: B{b_pct:g} ≥ what? Give the life "
+                                "(mission_time).")
+    else:
+        R = _demo_prob(reliability, "Target reliability")
     t = None if _blank(mission_time) else _demo_positive(mission_time, "Mission time")
+    interval = demo_shape.check_interval(shape_interval, StrategyError)
     beta = None if _blank(shape) else _demo_positive(shape, "Weibull shape (beta)", _DEMO_MAX_SHAPE)
     k = 1.0 if _blank(test_multiple) else _demo_positive(
         test_multiple, "Test length (multiple of the mission)", _DEMO_MAX_MULTIPLE)
@@ -776,7 +801,12 @@ def demonstration_test(
     )
 
     per_unit = k * t if t is not None else None
-    if t is not None:
+    if b_pct is not None:
+        target = f"B{b_pct:g} ≥ {_time_phrase(t, unit_s)}"
+        duration = f"{_time_phrase(per_unit, unit_s)} each"
+        if k != 1.0:
+            duration += f" ({_multiple_phrase(k)} the life)"
+    elif t is not None:
         target = f"R({_time_phrase(t, unit_s)}) ≥ {_pct(R)}"
         duration = f"{_time_phrase(per_unit, unit_s)} each"
         if k != 1.0:
@@ -793,7 +823,10 @@ def demonstration_test(
     if pass_prob is not None:
         summary += _demo_risks_sentence(f"reliability is {_pct(design)}", pass_prob, pr, consumer_risk, c)
 
-    assumptions = [
+    assumptions = [] if b_pct is None else [
+        f"B{b_pct:g} ≥ {_time_phrase(t, unit_s)} means at most {b_pct:g}% fail by then: "
+        f"R({_time_phrase(t, unit_s)}) ≥ {_pct(R)}, the reliability this test shows."]
+    assumptions += [
         "Each unit passes or fails independently with the same reliability (a binomial, attribute "
         "test); test units are representative of production and run under use conditions.",
         (f"The test passes only if none of the {n:,} units fails; it fails at the first failure."
@@ -820,10 +853,23 @@ def demonstration_test(
             "producer's risk" + (f", at most {_pct(pr)})." if pr is not None else ").")
         )
 
+    sensitivity = None
+    if interval is not None and beta is not None:
+        sensitivity = demo_shape.shape_sensitivity(
+            demo, R=R, c=c, r=r, k=k, n=n, beta=beta, interval=interval, solve_for=solve_for, t=t,
+            unit=unit_s, fmt=fmt_num, time_phrase=_time_phrase)
+        if sensitivity["warning"]:
+            assumptions.append(sensitivity["warning"])
+    model_name = str(shape_model).strip()[:200] if not _blank(shape_model) and beta is not None else None
+
     return {
         "method": "attribute",
         "solve_for": solve_for,
         "unit": unit_s,
+        "b_life": b_pct,
+        "shape_interval": list(interval) if interval is not None else None,
+        "shape_model": model_name,
+        "shape_sensitivity": sensitivity,
         "reliability": R,
         "confidence": c,
         "mission_time": t,

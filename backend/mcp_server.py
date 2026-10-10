@@ -329,7 +329,9 @@ the demonstrated MTBF's 90% lower bound, Laplace and MIL-HDBK-189C trend tests a
 - Test planning: plan_demonstration_test sizes a reliability demonstration test — units, test time per unit \
 and allowed failures to show reliability R over a mission at confidence C (success run / binomial; a longer \
 test per unit with a known Weibull shape; or an MTBF test); with producer_risk and a good design it keeps both \
-risks. It needs no saved data.
+risks. It needs no saved data; a B-life requirement goes in as b_life, and shape_model_id takes β from a saved \
+Weibull fit, warning when it is too poorly known. check_life_requirement checks "B10 >= 50,000 at 90% \
+confidence" on a saved life model: meets / does not meet, on the B-life's one-sided lower bound.
 - Housekeeping: delete_model, delete_dataset and delete_rbd permanently delete the user's own artifacts \
 (never shared samples; a dataset still used by a model, or a model a fleet runs on, can't be deleted). \
 Only on the user's explicit \
@@ -1928,6 +1930,43 @@ def _regression_life(db, m, owners, covariates: Optional[dict], confidence: Opti
         return None
     life.pop("covariates", None)  # the same as covariates_used
     return life
+
+
+@_tool("check_life_requirement", _READ, "Check a B-life requirement")
+def check_life_requirement(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="A saved life distribution model id (list_models).")],
+    b_life: Annotated[float, Field(gt=0, lt=100, description="The B-life's percent failed: 10 for B10, 1 for B1, "
+                                                             "0.1 for B0.1.")],
+    life: Annotated[float, Field(gt=0, description="The life required, in the model's unit: 'B10 >= life'.")],
+    confidence: Annotated[float, Field(gt=0, lt=1, description="The confidence the requirement must be shown "
+                                                               "at, e.g. 0.9.")] = 0.9,
+) -> dict[str, Any]:
+    """Check a B-life requirement on a saved life model (#295): does "B10 >= 50,000 cycles at 90% confidence"
+    hold? The verdict turns on the B-life's one-sided lower bound at that confidence (SurPyval's Fisher-matrix
+    bound on the quantile), never the estimate: verdict 'meets' (lower >= life), 'does_not_meet', or 'unknown'
+    for a model with no confidence bounds (parameters saved without data, a mixture, a non-MLE fit). Returns
+    the estimate, the lower bound and a one-sentence summary to relay. A best estimate above the requirement
+    with a bound below it does NOT meet it — plan_demonstration_test (b_life, shape_model_id) can size a test
+    to show it."""
+    user, db = _caller(ctx), _db()
+    owners = _owners(user["uid"])
+    m = models_service.get_model(db, model_id, owners)
+    if m is None:
+        raise ToolError("Model not found.")
+    results = m.results or {}
+    if m.kind not in ("distribution", "nonparametric"):
+        raise ToolError(f"“{m.name}” is a {m.kind} model — a B-life requirement needs a life distribution "
+                        "(or a non-parametric estimate).")
+    unit = results.get("unit") or ""
+    try:
+        out = models_service.life(db, m.id, {"requirement": {"b": b_life, "life": life},
+                                             "confidence": confidence, "unit": unit}, owners)
+    except models_service.ModelNotFound:
+        raise ToolError("Model not found.") from None
+    return {"model": m.name, "model_id": m.id, "unit": unit,
+            **{k: (_sig(v) if isinstance(v, float) and k in ("estimate", "lower") else v)
+               for k, v in out.items()}}
 
 
 # ---------------------------------------------------------------------------
@@ -4400,9 +4439,10 @@ def _ffi_shape_uncertainty(db, uid: str, model_id: Optional[str], inputs: dict, 
 def _lean_demonstration(out: dict) -> dict:
     """The demonstration plan without the app's plotting fields: the trade-off
     table as {row label: values by allowed failures}."""
-    keep = ("method", "solve_for", "summary", "units", "test_time_per_unit", "total_test_time",
-            "test_multiple", "failures", "unit", "consumer_risk", "pass_probability", "producer_risk",
-            "producer_risk_target", "design_reliability", "design_mtbf", "assumptions")
+    keep = ("method", "solve_for", "summary", "b_life", "units", "test_time_per_unit", "total_test_time",
+            "test_multiple", "failures", "unit", "shape", "shape_model", "shape_sensitivity", "consumer_risk",
+            "pass_probability", "producer_risk", "producer_risk_target", "design_reliability", "design_mtbf",
+            "assumptions")
     lean = {k: out[k] for k in keep if out.get(k) is not None}
     t = out.get("tradeoff") or {}
     lean["tradeoff"] = {
@@ -4450,20 +4490,62 @@ def plan_demonstration_test(
         "Optional, e.g. 0.2: the most chance of FAILING the good design (design_reliability / design_mtbf). "
         "Plans the smallest test keeping BOTH risks (consumer's <= 1 - confidence, producer's <= this) and "
         "chooses the failures allowed itself (failures is ignored)."))] = None,
+    b_life: Annotated[Optional[float], Field(gt=0, lt=100, description=(
+        "Optional: a B-life requirement instead of `reliability` — the percent failed, e.g. 10 for "
+        "'B10 >= mission_time' (= reliability 0.9 over mission_time, which is then required)."))] = None,
+    shape_model_id: Annotated[Optional[str], Field(description=(
+        "Optional: a saved Weibull model (list_models) to take the shape β from, instead of `shape`. The "
+        "plan then reports shape_sensitivity across β's 95% interval, with a warning when β is too poorly "
+        "known for the plan."))] = None,
+    shape_bound: Annotated[Literal["estimate", "lower"], Field(description=(
+        "With shape_model_id: plan with β's estimate, or its 95% lower bound (conservative when each unit "
+        "runs longer than the mission)."))] = "estimate",
 ) -> dict[str, Any]:
     """Plan a reliability demonstration test: how many units to test, for how long, with how many failures
     allowed, to show reliability R over a mission at confidence C (success run / binomial; Weibayes with a
     known Weibull shape to trade test time for units; or an MTBF chi-squared test). With producer_risk and a
     good design's reliability (or MTBF), the plan keeps both the consumer's and the producer's risk (a
     success run alone often fails a good design). Returns a one-line plan, both risks, the assumptions and a
-    units-vs-failures(-vs-test-length) trade-off table."""
-    _caller(ctx)
+    units-vs-failures(-vs-test-length) trade-off table. A B-life requirement ("B10 >= 50,000 cycles at
+    90%") goes in as b_life=10, mission_time=50000; shape_model_id takes β from a saved Weibull fit and warns
+    (shape_sensitivity.warning) when its interval is too wide for the plan — relay that warning."""
+    user = _caller(ctx)
+    extra: dict[str, Any] = {}
+    if shape_model_id:
+        if shape is not None:
+            raise ToolError("Give shape or shape_model_id, not both.")
+        extra = _demo_shape_from_model(_db(), user["uid"], shape_model_id, shape_bound)
+        shape = extra.pop("shape")
+        unit = unit or extra.pop("unit")
+    extra.pop("unit", None)
     out = strategy_store.compute("demonstration_test", {
         "method": method, "reliability": reliability, "confidence": confidence, "mission_time": mission_time,
         "failures": failures, "test_multiple": test_multiple, "shape": shape, "units": units, "mtbf": mtbf,
         "design_reliability": design_reliability, "design_mtbf": design_mtbf, "producer_risk": producer_risk,
-        "unit": unit or ""})
+        "unit": unit or "", "b_life": b_life, **extra})
     return _lean_demonstration(out)
+
+
+def _demo_shape_from_model(db, uid: str, model_id: str, bound: str) -> dict:
+    """A saved Weibull model's β for a demonstration plan (#295): ``shape``
+    (the estimate or its 95% lower bound), ``shape_interval``, ``shape_model``
+    (its name) and its ``unit``."""
+    m = models_service.get_model(db, model_id, _owners(uid))
+    if m is None:
+        raise ToolError("Model not found.")
+    r = m.results or {}
+    if m.kind != "distribution" or (r.get("distribution_id") or m.distribution_id) != "weibull":
+        raise ToolError(f"“{m.name}” isn't a Weibull life model, so it has no shape β to plan with.")
+    found = _weibull_beta_ci(db, uid, model_id, {"distribution_id": "weibull"})
+    beta = next((p["value"] for p in r.get("params") or [] if p.get("name") == "beta"), None)
+    if found is None:
+        if bound == "lower":
+            raise ToolError(f"“{m.name}” has no interval on β (it wasn't fitted to data by maximum "
+                            "likelihood), so it has no lower bound: use shape_bound='estimate'.")
+        return {"shape": float(beta), "shape_model": m.name, "unit": r.get("unit") or ""}
+    est, lo, hi = found
+    return {"shape": lo if bound == "lower" else est, "shape_interval": [lo, hi], "shape_model": m.name,
+            "unit": r.get("unit") or ""}
 
 
 @_tool("optimal_overhaul", _READ, "Optimal overhaul interval")

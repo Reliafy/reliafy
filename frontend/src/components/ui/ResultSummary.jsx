@@ -3,15 +3,16 @@
 // folded under ResultDetails.
 //
 //   tone      "good" (green: a good verdict) | "caveat" (amber: a warning or
-//             a result with a catch) | "neutral" (a plan or a fact)
+//             a result with a catch) | "bad" (red: a failing verdict, e.g. a
+//             requirement not met) | "neutral" (a plan or a fact)
 //   sentence  node — the answer, with <b> around its numbers
 //   stats     [{ label, value, hint? }] — at most 4, values formatted by the
 //             caller (format.js: formatNumber / formatPercent)
 //   children  an optional short muted line under the sentence
-const ICON = { good: "✓", caveat: "!" };
+const ICON = { good: "✓", caveat: "!", bad: "✕" };
 
 export default function ResultSummary({ tone = "neutral", sentence, stats = [], children, className }) {
-  const t = ["good", "caveat", "neutral"].includes(tone) ? tone : "neutral";
+  const t = ["good", "caveat", "bad", "neutral"].includes(tone) ? tone : "neutral";
   const tiles = stats.filter(Boolean).slice(0, 4);
   return (
     <section className={`result-summary rs-${t}` + (className ? " " + className : "")} aria-label="Result">

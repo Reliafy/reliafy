@@ -226,13 +226,22 @@ MAX_POINTS = 50
 def answer(model, body: Optional[dict], no_finite_maximum: bool = False) -> dict:
     """The app's life request on a live model: ``{"confidence"}`` gives the
     :func:`life_summary`; with ``"reliability": [R, ...]`` (and ``"bound"``,
-    lower by default) the :func:`time_at_reliability` instead. ``"tau"``
-    sets a non-parametric estimate's mean-life horizon (#85). Raises
+    lower by default) the :func:`time_at_reliability` instead; with
+    ``"requirement": {"b", "life"}`` (and an optional ``"unit"`` for the
+    sentence) the check of :mod:`backend.life_requirement`. ``"tau"`` sets a
+    non-parametric estimate's mean-life horizon (#85). Raises
     ValueError on a bad request."""
     body = body or {}
     confidence = body.get("confidence", DEFAULT_CONFIDENCE)
     if model is None or not hasattr(model, "qf"):
         raise ValueError("This model has no quantile function, so no B-lives.")
+    if body.get("requirement") is not None:
+        # #295: "B10 ≥ 50,000 at 90%": {"requirement": {"b": 10, "life": 50000}}.
+        from backend.life_requirement import check_requirement
+
+        req = body["requirement"] if isinstance(body["requirement"], dict) else {}
+        return check_requirement(model, req.get("b"), req.get("life"), confidence,
+                                 no_finite_maximum=no_finite_maximum, unit=str(body.get("unit") or ""))
     if body.get("reliability") is not None:
         rel = body["reliability"]
         rel = rel if isinstance(rel, (list, tuple)) else [rel]

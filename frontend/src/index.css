@@ -602,6 +602,7 @@ h6 {
 }
 .rs-good .rs-answer { background: var(--ok-bg); border-color: var(--ok-line); }
 .rs-caveat .rs-answer { background: var(--warn-bg); border-color: var(--warn-line); }
+.rs-bad .rs-answer { background: var(--danger-bg); border-color: var(--danger-line); }
 .rs-icon {
   flex: none;
   display: inline-flex;
@@ -617,6 +618,7 @@ h6 {
 }
 .rs-good .rs-icon { background: var(--ok); }
 .rs-caveat .rs-icon { background: var(--warn); }
+.rs-bad .rs-icon { background: var(--danger); }
 .rs-sentence {
   margin: 0;
   font-size: var(--fs-16);

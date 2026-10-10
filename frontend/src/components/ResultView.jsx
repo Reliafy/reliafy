@@ -287,7 +287,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
             </div>
             {!isRegression && (
               <LifeAside result={result} split={split} bestFit={bestFit} level={level} onLevel={setLevel}
-                         compare={compare} onPick={onPick} />
+                         compare={compare} onPick={onPick} modelId={modelId} name={name} />
             )}
           </div>
         )}

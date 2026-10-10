@@ -3,6 +3,7 @@ import Modal from "./Modal.jsx";
 import GoodnessOfFit from "./GoodnessOfFit.jsx";
 import Select from "./Select.jsx";
 import Chip from "./ui/Chip.jsx";
+import RequirementCheck from "./RequirementCheck.jsx";
 import { openGuide } from "./HelpButton.jsx";
 import { lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
@@ -211,7 +212,7 @@ function TauInput({ tau, unit, onChange }) {
   );
 }
 
-function LifeCard({ result, level, onLevel }) {
+function LifeCard({ result, level, onLevel, modelId = null, name = null }) {
   const [tau, setTau] = useState(null);
   const { life, pending } = useLife(result, level, tau);
   if (!life) return null;
@@ -273,6 +274,10 @@ function LifeCard({ result, level, onLevel }) {
         </div>
       ))}
       {life.bounds_note && <p className="param-ci-note">{life.bounds_note}</p>}
+      {/* #295: "B10 ≥ 50,000 at 90%?" — a row that opens a small form. */}
+      {canPick && (
+        <RequirementCheck result={result} level={level} onLevel={onLevel} levels={levels} modelId={modelId} name={name} />
+      )}
     </div>
   );
 }
@@ -364,8 +369,9 @@ function CompareDistributions({ result, compare, onPick }) {
 // ``children`` (the plot) goes on the left; the panel sits on the right.
 // ``level`` / ``onLevel``: the confidence (%) of the life card's lower bounds,
 // shared with the calculator. ``compare`` / ``onPick``: see CompareDistributions.
+// ``modelId`` / ``name``: the saved model, for the requirement check's test plan.
 export default function LifeAside({ result, split = null, bestFit = false, level = 90, onLevel = null,
-                                   compare = null, onPick = null }) {
+                                   compare = null, onPick = null, modelId = null, name = null }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const aic = (result.gof || []).find((g) => g.id === "aic") || (result.gof || [])[0];
   const id = distId(result);
@@ -433,7 +439,7 @@ export default function LifeAside({ result, split = null, bestFit = false, level
           </button>
         )}
       </div>
-      {showLife && <LifeCard result={result} level={level} onLevel={onLevel} />}
+      {showLife && <LifeCard result={result} level={level} onLevel={onLevel} modelId={modelId} name={name} />}
       {caveat && <div className="life-reading caveat">{result.fit_warning}</div>}
       {reading && (
         <div className="life-reading">
