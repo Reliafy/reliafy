@@ -216,7 +216,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
         returns={`{ "interval": 176.4, "method": "…", "mttf": 8760, "target_availability": 0.99 }`}
       />
       <ClientFn
-        sig="strategy.demonstration_test(reliability, *, confidence=0.95, mission_time=None, failures=0, test_multiple=1.0, shape=None, units=None, method='attribute', mtbf=None, design_reliability=None, design_mtbf=None, producer_risk=None, unit=None)"
+        sig="strategy.demonstration_test(reliability, *, confidence=0.95, mission_time=None, failures=0, test_multiple=1.0, shape=None, units=None, method='attribute', mtbf=None, design_reliability=None, design_mtbf=None, producer_risk=None, unit=None, b_life=None, shape_interval=None)"
         endpoint="POST /api/v1/strategy/demonstration-test"
         desc="Plan a reliability demonstration test: units to test, test time per unit, allowed failures."
         params={[
@@ -228,6 +228,8 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
           { name: "units", type: "int", req: false, desc: "Units available: solve for test time per unit (needs shape)." },
           { name: "design_reliability / design_mtbf", type: "number", req: false, desc: "A good design's true reliability (or MTBF): its chance of passing." },
           { name: "producer_risk", type: "number", req: false, desc: "With the good design: the most chance of failing it, e.g. 0.2. The plan keeps both risks and chooses the failures allowed." },
+          { name: "b_life", type: "number", req: false, desc: "A B-life requirement instead of reliability: 10 for “B10 ≥ mission_time”." },
+          { name: "shape_interval", type: "number[2]", req: false, desc: "β’s interval [lower, upper]: adds shape_sensitivity, warning when β is too poorly known for the plan." },
         ]}
         returns={`{ "units": 128, "failures": 8, "consumer_risk": 0.097, "producer_risk": 0.192, "summary": "Test 128 units…", "oc_curve": {…}, "tradeoff": {…} }`}
       />
@@ -424,6 +426,8 @@ function HttpDocs({ base }) {
           { name: "units", type: "int", req: false, desc: "Units available: solve for the test time per unit instead." },
           { name: "method / mtbf", type: "string / number", req: false, desc: "method=\"mtbf\" with an MTBF plans a constant-rate (chi-squared) test." },
           { name: "design_reliability", type: "number", req: false, desc: "A design's true reliability: its chance of passing." },
+          { name: "b_life", type: "number", req: false, desc: "A B-life requirement instead of reliability: 10 for “B10 ≥ mission_time”." },
+          { name: "shape_interval", type: "number[2]", req: false, desc: "β’s interval [lower, upper] (e.g. a fit’s 95% interval): adds shape_sensitivity, with a warning when β is too poorly known for the plan." },
           { name: "unit", type: "string", req: false, desc: "Time unit for display." },
         ]}
         returns={`{ "method": "attribute", "solve_for": "units", "units": 59,
@@ -545,7 +549,8 @@ const MCP_TOOLS = [
   ["import_excel", "Import an Excel workbook: a sheet as a dataset, an FMEA / RCM worksheet into a new or existing RCM study, or the RBD template as a diagram. Given an existing diagram (rbd_id), the import is saved as a new copy of it and the original is left unchanged, unless replace=true overwrites it; the result says which, with the saved diagram’s id."],
   ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function. For a saved Weibull fitted to data, the answer at each end of the shape’s 95% interval too, with a note when it makes the recommendation less firm."],
   ["optimal_overhaul", "Optimal overhaul interval from a recurrent (repairable-system) model. For a Crow-AMSAA model fitted to data, the answer at each end of the growth shape’s 95% interval too, with a note when it makes the recommendation less firm."],
-  ["plan_demonstration_test", "Plan a reliability demonstration test — units, test time per unit and allowed failures to show a reliability at a confidence — with a units-vs-failures trade-off table. With producer_risk and a good design, a plan that keeps both risks. Needs no saved data."],
+  ["check_life_requirement", "Does a saved life model meet a B-life requirement — “B10 ≥ 50,000 cycles at 90% confidence”? Meets or does not meet on the B-life’s one-sided lower bound (never the estimate), with both numbers and a sentence."],
+  ["plan_demonstration_test", "Plan a reliability demonstration test — units, test time per unit and allowed failures to show a reliability, or a B-life, at a confidence — with a units-vs-failures trade-off table. With producer_risk and a good design, a plan that keeps both risks. Takes the Weibull shape from a saved model if you like (its estimate or its lower bound), and warns when that shape is too poorly known for the plan."],
   ["growth_projection", "Reliability growth projection (MIL-HDBK-189C, AMSAA-Crow): the MTBF a growth test reaches once its delayed fixes are in, from a recurrent model whose data has a failure-mode column — the demonstrated, projected and growth-potential MTBF, each mode’s share and the rate new modes are still appearing, with a fix-effectiveness factor per fixed mode. Inline data is Pro (it fits)."],
   ["next_failure", "A repairable system’s next failure from a recurrent model at its current age: the chance of a failure within a time (say, before its next service), and the mean and percentiles of the time to it. Exact."],
   ["list_fleets / fleet_forecast", "Expected failures across a fleet of in-service items. A first-failures forecast gives the exact (Poisson-binomial) P10–P90 interval, each period’s interval and each item’s chance of failing (item_probabilities: true adds it period by period); it runs on regression and ALT models with each item’s own covariates or stress, and stops counting at a warranty limit. For a fleet on a recurrent model, every repeat failure of each repairable system, with Poisson ranges and the chance of a failure before each item’s next service."],
