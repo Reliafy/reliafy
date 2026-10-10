@@ -1,0 +1,78 @@
+/* Covariates that change over time (#60): the Data step's switch, the
+   coefficients' readings and the schedule calculator. */
+
+.tvc-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+.tvc-toggle .cov-adv-toggle { color: var(--ink); font-size: var(--fs-14); font-weight: 500; }
+
+/* Coefficients tab: the coefficients, then what they mean and the baseline. */
+.tvc-coef {
+  display: grid;
+  grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.tvc-coef .gof-metrics-card { max-width: none; }
+.tvc-coef-side { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.tvc-reading {
+  margin: 0;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line2);
+  font-size: var(--fs-14);
+  line-height: 1.5;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.tvc-reading:last-child { border-bottom: none; }
+.tvc-data-line { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+@media (max-width: 760px) {
+  .tvc-coef { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Calculator. */
+.tvc-calc .tvc-msg { margin: 0 0 0.4rem; }
+.tvc-schedule { display: flex; flex-direction: column; gap: 6px; }
+.tvc-schedule-h { font-size: var(--fs-13); font-weight: 500; color: var(--ink); }
+.tvc-table-wrap { overflow-x: auto; }
+.tvc-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.tvc-table th {
+  padding: 0 6px 4px 0;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+}
+.tvc-table td { padding: 0 6px 6px 0; vertical-align: middle; }
+.tvc-table td:last-child, .tvc-table th:last-child { width: 28px; padding-right: 0; }
+.tvc-table input {
+  width: 100%;
+  min-width: 64px;
+  min-height: 36px;
+  padding: 0.35rem 0.5rem;
+  font-size: var(--fs-14);
+}
+.tvc-table .combo-remove { margin: 0; }
+.tvc-zero { display: inline-block; padding: 0 0.5rem; font-size: var(--fs-14); color: var(--muted); }
+.tvc-add { align-self: flex-start; }
+.tvc-pair { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 8px; }
+.tvc-pair .calc-t input { width: 100%; }
+.tvc-schedule-sub { font-weight: 400; color: var(--muted); }
+
+/* Phone: the answer, then the inputs and life, then the chart. */
+@media (max-width: 900px) {
+  .tvc-calc .calc-main { display: contents; }
+  .tvc-calc .calc-answer, .tvc-calc .calc-warn, .tvc-calc .tvc-msg { order: 1; }
+  .tvc-calc .calc-side-rail { order: 2; }
+  .tvc-calc .tvc-plot { order: 3; width: 100%; }
+  .tvc-calc .calc-answer { margin-bottom: 0; }
+}
+@media (max-width: 560px) {
+  .tvc-table input, .tvc-table .combo-remove, .tvc-add { min-height: 44px; }
+}
+.tvc-coef .param-ci-note { margin: 0; padding: 8px 16px 12px; font-size: var(--fs-12); color: var(--muted); }
