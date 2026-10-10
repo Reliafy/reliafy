@@ -947,6 +947,9 @@ def validate_graph(
 
         errors.extend(rbd_maintenance.validation_errors(graph))
         errors.extend(rbd_policies.validation_errors(graph))
+        from backend.services import rbd_sim_guard
+
+        errors.extend(rbd_sim_guard.errors(graph))
         warnings.extend(rbd_policies.validation_warnings(graph))
         # A repairable diagram's groups take either basis (its chain splits
         # the rate whatever it is): only a malformed one is an error.
@@ -2121,6 +2124,10 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
         raise AnalysisError(NETWORK_ONLY)
     _check_limits(graph)
     require_blocks(graph)
+    # A mixture life repaired imperfectly can't be simulated in good time yet.
+    from backend.services import rbd_sim_guard
+
+    rbd_sim_guard.check(graph)
     nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
     edges = [
