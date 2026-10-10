@@ -4919,6 +4919,9 @@ select:disabled {
 .stats.admin-artifacts { flex-wrap: wrap; margin: 0; }
 .stats.admin-artifacts .stat { min-width: 140px; padding: 10px 14px; }
 .admin-foot { margin: 1rem 0 0; font-size: var(--fs-12); color: var(--subtle); }
+.card.admin-mcp { margin-bottom: 1rem; }
+.admin-mcp-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); }
+.admin-mcp .muted-line { margin: 8px 0 0; }
 
 /* Admin: product usage */
 .usage-legend { margin-top: 12px; }
