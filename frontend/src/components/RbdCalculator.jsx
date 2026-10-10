@@ -7,6 +7,7 @@ import ValidationPanel from "./RbdValidation.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
 import CovariatesModal from "./CovariatesModal.jsx";
+import { covariateWords } from "../rbdTvc.js";
 import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
 import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
@@ -1272,7 +1273,9 @@ const WINDOW_PRESETS = [
   { id: "5y", label: "5 years", hours: 43800 },
 ];
 
-export default function RbdCalculator({ graph, validation, stale, onValidate = null, rbdId = null, name = null, onBuild }) {
+export default function RbdCalculator({
+  graph, validation, stale, onValidate = null, rbdId = null, name = null, onBuild, onNodeData = null,
+}) {
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | calculating | error
   const [error, setError] = useState(null);
@@ -1332,6 +1335,8 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
           id: n.id,
           label: n.data.label || n.id,
           covariates: n.data.model.covariates,
+          modelId: n.data.model.modelId || n.data.model.model_id || null,
+          schedules: n.data.covariate_schedules || null, // #52
         })),
     [graph.nodes]
   );
@@ -1662,7 +1667,7 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
                 (node) =>
                   `${node.label}: ` +
                   node.covariates
-                    .map((c) => `${c.name}=${covValue(node, c)}`)
+                    .map((c) => covariateWords(c.name, covValue(node, c), node.schedules?.[c.name]))
                     .join(", ")
               )
               .join(" · ")}
@@ -1904,8 +1909,18 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
         <CovariatesModal
           covNodes={covNodes}
           values={covValues}
-          onApply={(v) => {
+          unit={graph.unit}
+          tMax={tMax === "" || tMaxAuto ? null : Number(tMax)}
+          repairable={!!graph.repairable}
+          onApply={(v, schedules) => {
             setCovValues(v);
+            // #52: schedules live on their blocks, saved with the diagram.
+            const changed = Object.fromEntries(
+              covNodes
+                .filter((n) => JSON.stringify(n.schedules || null) !== JSON.stringify(schedules?.[n.id] || null))
+                .map((n) => [n.id, { covariate_schedules: schedules?.[n.id] || null }])
+            );
+            if (onNodeData && Object.keys(changed).length) onNodeData(changed);
             setShowCov(false);
           }}
           onClose={() => setShowCov(false)}
