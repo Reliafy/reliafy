@@ -4,6 +4,7 @@ import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import ApiAccessPanel from "../components/ApiAccessPanel.jsx";
 import ConnectedAppsPanel from "../components/ConnectedAppsPanel.jsx";
+import McpOnRequest from "../components/McpOnRequest.jsx";
 import { initials } from "../components/Sidebar.jsx";
 import Button from "../components/ui/Button.jsx";
 import Card, { CardHeader } from "../components/ui/Card.jsx";
@@ -27,9 +28,11 @@ const TABS = [
 const PLAN_NAME = { free: "Free", agent: "Agent", pro: "Pro" };
 
 // The plan at a glance: which plan, MCP calls against this period's
-// allowance, and the way up. Only where this deployment has plans.
+// allowance (or, while the MCP connector is off, how to ask for it), and the
+// way up. Only where this deployment has plans.
 function PlanCard() {
   const navigate = useNavigate();
+  const { mcp: mcpOn } = useAppConfig();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -63,12 +66,16 @@ function PlanCard() {
         <p className="muted-line">Loading…</p>
       ) : (
         <>
-          <ul className="bill-usage">
-            <li>
-              <span>MCP calls {mcp.period === "day" ? "today" : "this month"}</span>
-              <span className="bill-usage-n">{n(mcp.calls_used)}{quota}</span>
-            </li>
-          </ul>
+          {mcpOn ? (
+            <ul className="bill-usage">
+              <li>
+                <span>MCP calls {mcp.period === "day" ? "today" : "this month"}</span>
+                <span className="bill-usage-n">{n(mcp.calls_used)}{quota}</span>
+              </li>
+            </ul>
+          ) : (
+            <McpOnRequest />
+          )}
           <div className="row set-plan-acts">
             {plan !== "pro" && !data.admin && (
               <Button onClick={() => navigate("/billing")}>Upgrade to Pro</Button>

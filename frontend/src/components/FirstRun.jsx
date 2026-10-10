@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import { trackEvent } from "../telemetry.js";
+import { MCP_CONTACT } from "../appConfig.js";
+import { useAppConfig } from "../ConfigProvider.jsx";
 import { PasteIcon, RbdIcon, UploadIcon, WaveIcon } from "./icons.jsx";
 import { SAMPLE_MODEL } from "../firstRun.js";
 
@@ -59,6 +61,15 @@ function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
 }
 
 function AgentLine() {
+  const { mcp } = useAppConfig();
+  if (!mcp) {
+    return (
+      <p className="first-run-agent">
+        Work from Claude or another AI agent? The MCP connector is available on request: email{" "}
+        <a href={`mailto:${MCP_CONTACT}`}>{MCP_CONTACT}</a>.
+      </p>
+    );
+  }
   return (
     <p className="first-run-agent">
       Work from Claude or another AI agent?{" "}
