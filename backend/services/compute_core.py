@@ -397,10 +397,10 @@ RUNNERS: dict[str, Callable[[dict], dict]] = {
     "availability": run_availability,
     "sensitivity": run_sensitivity,
     "intervals": run_intervals,
-    # What to improve's other measures (#225): heavy uncertainty runs.
-    "measures": run_measures,
     # ALT bootstrap confidence bounds at a use stress (#231).
     "alt_bounds": run_alt_bounds,
+    # What to improve's other measures (#225): heavy uncertainty runs.
+    "measures": run_measures,
 }
 KINDS = tuple(RUNNERS)
 
