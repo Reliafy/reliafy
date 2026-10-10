@@ -56,7 +56,8 @@ def induced_life(live, times=None, reliability=None) -> dict:
     "curve": {"x", "sf", "life_sf"}}``, plus ``"at_times"`` (reliability at
     each of ``times``) and ``"at_reliability"`` (the time by which each
     reliability in ``reliability`` is reached) when asked. ``life_sf`` is the
-    pseudo-failure-time fit's curve on the same grid. Raises ValueError for a
+    pseudo-failure-time fit's curve on the same grid, and ``life_median`` /
+    ``life_mean`` that fit's median and mean. Raises ValueError for a
     bad request; a model SurPyval can't induce a life for comes back
     ``{"available": False, "reason"}``."""
     times = _points(times, "times", 0.0, math.inf) if times is not None else None
@@ -82,6 +83,12 @@ def induced_life(live, times=None, reliability=None) -> dict:
         "b10": _f(q[0]),
         "prob_never_fails": never,
     }
+    try:
+        # The pseudo-failure-time fit's own, to read the two against each other.
+        out["life_median"] = _f(np.asarray(live.qf(np.array([0.5])), dtype=float).ravel()[0])
+        out["life_mean"] = _f(live.life_model.mean())
+    except Exception:  # noqa: BLE001 - the comparison is a convenience
+        pass
     if hi:
         grid = np.linspace(0.0, hi * 1.05, GRID_POINTS)
         curve = {"x": grid.tolist(), "sf": _col(dist.sf(grid))}

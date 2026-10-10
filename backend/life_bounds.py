@@ -32,6 +32,9 @@ NO_COVARIANCE = ("No confidence bounds: they come from the fit's covariance, whi
 MIXTURE_NOTE = "No confidence bounds: a mixture has no covariance matrix."
 NOT_MLE_NOTE = "No confidence bounds: only a maximum-likelihood fit has them."
 NO_MAXIMUM_NOTE = "No confidence bounds: the fit has no finite maximum, so its covariance means nothing."
+# A model that bounds its curve but not its quantiles (Royston-Parmar, #179).
+CURVE_ONLY_NOTE = ("No bounds on the B-lives: this model's confidence bounds are on its curve (the calculator's "
+                   "band), not on its quantiles.")
 
 
 def _num(v) -> Optional[float]:
@@ -60,7 +63,9 @@ def _is_nonparametric(model) -> bool:
 def _no_bounds_reason(model) -> Optional[str]:
     """Why ``model`` can't bound a quantile, or None when it can."""
     if not hasattr(model, "quantile_cb"):
-        return MIXTURE_NOTE if hasattr(model, "m") and hasattr(model, "w") else NO_COVARIANCE
+        if hasattr(model, "m") and hasattr(model, "w"):
+            return MIXTURE_NOTE
+        return CURVE_ONLY_NOTE if hasattr(model, "cb") and hasattr(model, "knots") else NO_COVARIANCE
     if _is_nonparametric(model):
         return None
     method = getattr(model, "method", "MLE")

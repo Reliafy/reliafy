@@ -236,6 +236,8 @@ def test_royston_parmar_matches_surpyval():
     km = sp.KaplanMeier.fit(x=DF.t.to_numpy(float), c=DF.c.to_numpy(float))
     assert r["estimate"]["R"] == pytest.approx(list(km.R), rel=1e-9)
     assert r["spline"]["n_terms"] == 3
+    # SurPyval bounds its curve, not its quantiles: the life card says so.
+    assert r["life"]["bounds_note"].startswith("No bounds on the B-lives")
 
 
 def test_royston_parmar_confidence_and_life_from_the_live_model():
@@ -378,6 +380,8 @@ def test_induced_life_matches_surpyval():
     assert out["at_times"][0]["reliability"] == pytest.approx(float(direct.sf(np.array([1400.0]))[0]))
     assert out["at_reliability"][0]["t"] == pytest.approx(float(direct.qf(np.array([0.1]))[0]))
     assert out["prob_never_fails"] == pytest.approx(direct.prob_never_fails)
+    assert out["life_median"] == pytest.approx(float(live.qf(np.array([0.5]))[0]))
+    assert out["life_mean"] == pytest.approx(float(live.life_model.mean()))
     grid = np.asarray(out["curve"]["x"])
     assert out["curve"]["life_sf"] == pytest.approx(list(np.asarray(live.sf(grid), dtype=float)), abs=1e-9)
     with pytest.raises(ValueError, match="from 0 to 1"):
