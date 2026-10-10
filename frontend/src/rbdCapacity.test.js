@@ -14,6 +14,7 @@ test("rows round-trip a number and levels", () => {
 
 test("empty rows are no capacity; bad rows say why", () => {
   assert.deepEqual(capacityFromRows([{ value: "", share: "" }]), { value: null, valid: true });
+  assert.deepEqual(capacityFromRows([{ value: "", share: "100" }]), { value: null, valid: true });
   assert.match(capacityFromRows([{ value: "-1", share: "100" }]).error, /positive/);
   assert.match(capacityFromRows([{ value: "5", share: "60" }, { value: "4", share: "30" }]).error, /add up to 100%/);
   assert.match(capacityFromRows([{ value: "5", share: "" }]).error, /share/);

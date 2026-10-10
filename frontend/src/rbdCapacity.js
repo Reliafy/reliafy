@@ -28,7 +28,9 @@ export function capacityRows(capacity) {
 // The dialog's rows as a stored capacity: {value, valid, error}. Empty rows
 // mean no capacity; one level is stored as its number.
 export function capacityFromRows(rows) {
-  const filled = rows.filter((r) => String(r.value ?? "").trim() !== "" || String(r.share ?? "").trim() !== "");
+  // A row is a level once it has a capacity (a share alone is a level not
+  // yet typed in, as the one-value field's preset 100% is).
+  const filled = rows.filter((r) => String(r.value ?? "").trim() !== "");
   if (!filled.length) return { value: null, valid: true };
   const levels = [];
   for (const r of filled) {
