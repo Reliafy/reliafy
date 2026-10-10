@@ -1,0 +1,36 @@
+/* Competing risks (#177): the failure-mode panel beside the incidence chart,
+   and the tables in its dialog and Coefficients tab. */
+.detail-panel .cr-by {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-12);
+  font-weight: 400;
+  color: var(--muted);
+}
+.detail-panel .cr-t {
+  width: 5.4em;
+  padding: 3px 6px;
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  color: var(--ink);
+}
+.detail-panel .cr-name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.cr-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.detail-panel .gofr .cr-note { font-size: var(--fs-12); line-height: 1.45; }
+
+.cr-modal-lead { margin: 0 0 12px; font-size: var(--fs-14); line-height: 1.5; color: var(--ink); }
+.cr-table th:not(:first-child), .cr-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.cr-coef .cr-table th:nth-child(2), .cr-coef .cr-table td:nth-child(2) { text-align: left; }
+.cr-table tr.cr-sig td { background: var(--acc-t); }
+.cr-coef { max-width: 760px; margin-top: 20px; }
+.cr-coef .muted-line { margin: 8px 0 0; }
+
+.dist-picker .cr-group-field { margin-top: 12px; }
+
+@media (max-width: 640px) {
+  .detail-panel .cr-t { min-height: 36px; }
+}

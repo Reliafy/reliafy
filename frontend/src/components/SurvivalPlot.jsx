@@ -50,7 +50,7 @@ export default function SurvivalPlot({ estimate, unit, download = null }) {
         download={download}
       />
       {options.length > 1 && (
-        <div className="np-band-row">
+        <div className="plot-option-row">
           <SegmentedControl
             size="sm"
             label="95% band"
