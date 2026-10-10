@@ -242,6 +242,8 @@ def constants(graph: dict) -> list[str]:
         "# How long the system is owned, for the total cost of ownership (None:",
         "# the simulated window, as in Reliafy).",
         f"HORIZON = {_num(horizon) if horizon else None}",
+        "# Other horizons it is priced over too (5, 10 and 20 years in a calendar unit).",
+        f"COMPARE_HORIZONS = [{', '.join(_num(h) for h in _compare_horizons(graph, horizon, disc))}]",
     ]
     if not disc:
         return out + ["# Undiscounted (a rate per unit time makes the total a present value).",
@@ -254,6 +256,15 @@ def constants(graph: dict) -> list[str]:
         f"DISCOUNT_RATE = {disc['per_unit']!r}",
         f"DISCOUNT_PERCENT = {_num(disc['annual'])}",
     ]
+
+
+def _compare_horizons(graph: dict, horizon: Optional[float], disc: Optional[dict]) -> list[float]:
+    """The finite horizons Reliafy prices beside the set one (#319)."""
+    from backend.services import rbd_discount
+
+    chosen = horizon or rbd_analysis._availability_horizon(graph)
+    return [r["horizon"] for r in rbd_discount.horizons(graph, chosen, disc)
+            if not r["endless"] and not r["set"]]
 
 
 # Hooks in the repairable main(): (original text, replacement with extras).
@@ -309,6 +320,49 @@ _SAVE_COSTS = '''    if rbd.has_costs or rbd.acquisition_cost:
 '''
 
 _HELPERS = '''
+def ownership_by_horizon(horizon, rate, basis, overrides):
+    """The total cost of owning the system over HORIZON and COMPARE_HORIZONS
+    (and, discounted, for ever: the net present cost), all RePyability's:
+    total_cost at the long-run rate (a present value at DISCOUNT_RATE), and
+    expected_cost from new, each cost discounted from when it falls (exact or
+    numerical, where RePyability has it; not above
+    EXACT_WINDOW_MEAN_MAX_BLOCKS blocks, as in Reliafy). A simulated rate has
+    no present value: RePyability discounts only its own exact costs."""
+    finite = sorted({float(horizon), *COMPARE_HORIZONS})
+    times = np.array(finite + ([np.inf] if DISCOUNT_RATE else []))
+    if basis == "exact":
+        with np.errstate(all="ignore"):
+            totals = list(np.atleast_1d(rbd.total_cost(times, discount_rate=DISCOUNT_RATE, **overrides)))
+    else:
+        plain = [rbd.acquisition_cost + rate * t for t in finite]
+        totals = [None] * len(times) if DISCOUNT_RATE else plain
+    new = [None] * len(finite)
+    if not rbd.has_costs:
+        new = [rbd.acquisition_cost] * len(finite)
+    elif (N_BLOCKS <= EXACT_WINDOW_MEAN_MAX_BLOCKS
+          and rbd.analysis_routes()["expected_cost"].route in ("exact", "numerical")):
+        # The set horizon on its own, then the others together (as Reliafy
+        # does; it skips them when the set one alone takes over 1.5 s).
+        rest = [t for t in finite if t != float(horizon)]
+        try:
+            with np.errstate(all="ignore"):
+                new[finite.index(float(horizon))] = float(
+                    rbd.expected_cost(float(horizon), discount_rate=DISCOUNT_RATE, **overrides).total)
+                if rest:
+                    cost = rbd.expected_cost(np.array(rest), discount_rate=DISCOUNT_RATE, **overrides)
+                    for t, v in zip(rest, np.atleast_1d(cost.total)):
+                        new[finite.index(t)] = float(v)
+        except NotImplementedError as exc:
+            print(f"  (no cost from new over some horizons: {exc})")
+    rows = []
+    for i, t in enumerate(times):
+        row = {"horizon": float(t) if np.isfinite(t) else None, "endless": not np.isfinite(t),
+               "total_cost": None if totals[i] is None else float(totals[i]),
+               "from_new": float(new[i]) if i < len(new) and new[i] is not None else None}
+        rows.append(row)
+    return rows
+
+
 def pilot_unavailability(overrides):
     """A quick simulated unavailability (as Reliafy sets the precision target
     when there is no exact value)."""
@@ -331,19 +385,29 @@ def report_costs(sim, overrides):
         rate = sim.cost.cost_rate if sim.cost is not None else float("nan")
         basis = "simulation"
     horizon = HORIZON if HORIZON else T_SIMULATION
-    # Discounted, the running costs' present value: the horizon counts as
-    # (1 - exp(-r H)) / r, as in RePyability's total_cost(discount_rate=r).
-    present = -np.expm1(-DISCOUNT_RATE * horizon) / DISCOUNT_RATE if DISCOUNT_RATE else horizon
-    total = rbd.acquisition_cost + rate * present
     print(f"\\nLong-run cost rate ({basis}): {rate:,.6g}{unit}")
-    print(f"Total cost of ownership over {horizon:,.6g}"
-          + (f" (present value at {DISCOUNT_PERCENT:g}% a year)" if DISCOUNT_RATE else "")
-          + f": {total:,.6g} (purchase {rbd.acquisition_cost:,.6g} + running {rate * present:,.6g})")
+    rows = ownership_by_horizon(horizon, rate, basis, overrides)
+    total = next(r for r in rows if r["horizon"] == horizon)["total_cost"]
+    plain = rbd.acquisition_cost + rate * horizon
+    if total is None:
+        print(f"Total cost of ownership over {horizon:,.6g}: {plain:,.6g} undiscounted (no present value:"
+              " RePyability discounts only its own exact long-run rate)")
+    else:
+        print(f"Total cost of ownership over {horizon:,.6g}"
+              + (f" (present value at {DISCOUNT_PERCENT:g}% a year)" if DISCOUNT_RATE else "")
+              + f": {total:,.6g} (purchase {rbd.acquisition_cost:,.6g}"
+              + f" + running {total - rbd.acquisition_cost:,.6g})")
+    for row in rows:
+        what = f"over {row['horizon']:,.6g}" if not row["endless"] else "for ever (net present cost)"
+        print(f"  owned {what}: "
+              + ("-" if row["total_cost"] is None else f"{row['total_cost']:,.6g}") + " at the long-run rate"
+              + ("" if row["from_new"] is None else f", {row['from_new']:,.6g} from new"))
     out = {"cost_rate": rate, "cost_rate_basis": basis, "horizon": horizon,
            "acquisition_cost": rbd.acquisition_cost, "total_cost": total,
-           "discount_rate": DISCOUNT_PERCENT or None, "discount_rate_per_unit": DISCOUNT_RATE or None}
+           "discount_rate": DISCOUNT_PERCENT or None, "discount_rate_per_unit": DISCOUNT_RATE or None,
+           "by_horizon": rows}
     if DISCOUNT_RATE:
-        out["undiscounted_total_cost"] = rbd.acquisition_cost + rate * horizon
+        out["undiscounted_total_cost"] = plain
     if sim.cost is not None:
         cost = sim.cost
         window = cost.mean_interval(CONFIDENCE)
@@ -425,7 +489,34 @@ def report_safety(sim, overrides):
           f" -> {'SIL ' + str(sil) if sil else 'no SIL band'}"
           + (f" (target SIL {TARGET_SIL}: {'met' if sil and sil >= TARGET_SIL else 'NOT met'})"
              if TARGET_SIL else ""))
-    return {"pfd_avg": pfd, "basis": basis, "common_cause": ccf, "sil": sil, "target_sil": TARGET_SIL}
+    # The margin to the band's limit (the target's, else the achieved one's).
+    ref = TARGET_SIL or sil
+    margin = None if ref is None else {"sil": ref, "limit": 10.0 ** -ref, "ratio": pfd / 10.0 ** -ref}
+    if margin:
+        print(f"  {margin['ratio']:.3g} x the SIL {ref} limit ({margin['limit']:g})")
+    return {"pfd_avg": pfd, "basis": basis, "common_cause": ccf, "sil": sil, "target_sil": TARGET_SIL,
+            "margin": margin, "over_time": pfd_over_time(overrides)}
+
+
+def pfd_over_time(overrides):
+    """PFD(t) over WINDOW on the app's grid, and its mean: RePyability's own
+    unavailability (point_unavailability, mission_unavailability), which keeps
+    the digits 1 - A(t) loses near 1. None without an exact route over time."""
+    if rbd.analysis_routes()["point_availability"].route not in ("exact", "numerical"):
+        return None
+    times = np.unique(np.concatenate([
+        np.linspace(0.0, WINDOW, EXACT_POINTS),
+        np.geomspace(WINDOW * 1e-4, WINDOW * 0.05, EXACT_EARLY_POINTS),
+    ]))
+    try:
+        with np.errstate(all="ignore"):
+            down = rbd.point_unavailability(times, state=node_states(), **overrides)
+            mission = float(rbd.mission_unavailability(WINDOW, state=node_states(), **overrides))
+    except NotImplementedError:
+        return None
+    print(f"  PFD(t) over {WINDOW:,.6g}: mean {mission:.4g}, highest {np.max(down):.4g}")
+    return {"times": times.tolist(), "pfd": np.asarray(down, dtype=float).tolist(),
+            "mission_unavailability": mission}
 '''
 
 

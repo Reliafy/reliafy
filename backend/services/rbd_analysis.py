@@ -34,7 +34,7 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
-from backend.services import rbd_repeats
+from backend.services import rbd_repeats, rbd_unavailability
 from backend.services.method_labels import generic_engine_fields, hide_engine_names, route_reason
 from backend.units import normalize_unit, unit_in_text
 from repyability.rbd.helper_classes import PerfectReliability
@@ -3439,6 +3439,9 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
         with warnings.catch_warnings(), np.errstate(all="ignore"):
             warnings.simplefilter("ignore", RuntimeWarning)
             curve = np.asarray(rbd.point_availability(grid, **overrides, **state_kw), dtype=float)
+            # A safety function's PFD(t) from the library's unavailability (#322).
+            pfd = (rbd_unavailability.over_time(rbd, grid, window, overrides, state_kw)
+                   if graph.get("safety_function") else None)
             events = rbd.expected_events(window, **overrides, **state_kw)
             if rbd.has_costs:
                 if (summary.get("expected_cost") or {}).get("route") in _OVER_TIME_OK:
@@ -3491,7 +3494,9 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
         **base,
         "status": "ok",
         "message": None,
-        "curve": {"t": _clean(grid), "availability": _clean(curve)},
+        "curve": {"t": _clean(grid), "availability": _clean(curve),
+                  **({"unavailability": pfd["unavailability"]} if pfd else {})},
+        **({"mission_unavailability": pfd["mission_unavailability"]} if pfd else {}),
         "availability_start": _f(curve[0]),
         "availability_end": _f(curve[-1]),
         "availability_min": None if i_min is None else _f(curve[i_min]),
