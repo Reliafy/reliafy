@@ -4,7 +4,7 @@ import { listRbdRunDiagrams, listRbdRuns } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { relativeTime } from "../instrument.js";
-import { availabilityText, byText, runtimeText, statusChip, viaText } from "../rbdRuns.js";
+import { availabilityText, byText, keptLine, runtimeText, statusChip, viaText } from "../rbdRuns.js";
 import "../components/RbdRuns.css";
 
 const MAX_COMPARE = 6;
@@ -42,6 +42,7 @@ export default function RbdRuns() {
   }, [active, data, rbdId]);
 
   const runs = data?.runs || [];
+  const kept = keptLine(data);
   const diagram = diagrams.find((d) => d.rbd_id === rbdId);
   const toggle = (id) =>
     setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].slice(-MAX_COMPARE)));
@@ -52,11 +53,7 @@ export default function RbdRuns() {
       <PageHeader
         crumbs={[{ label: "RBDs", to: "/rbds" }, ...(rbdId ? [{ label: diagram?.name || "Diagram", to: `/rbds/b/${rbdId}` }] : [])]}
         title="Simulation runs"
-        meta={
-          data
-            ? `Availability simulations from the app and your connectors, kept ${data.kept_days} days.`
-            : "Availability simulations from the app and your connectors."
-        }
+        meta="Availability simulations from the app and your connectors."
         primary={
           <button type="button" disabled={picked.length < 2} onClick={compare}
                   title={picked.length < 2 ? "Tick two or more finished runs" : undefined}>
@@ -146,6 +143,14 @@ export default function RbdRuns() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* How long runs are kept: 7 days free, 90 on Pro (#282). */}
+      {kept && (
+        <p className="rbd-runs-kept">
+          {kept.text}
+          {kept.upgrade && <>{" "}<Link to="/billing">Upgrade to Pro</Link></>}
+        </p>
       )}
     </div>
   );

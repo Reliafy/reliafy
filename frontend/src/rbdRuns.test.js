@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  availabilityText, byText, compareSummary, jobStatusLine, runsPath, runtimeText, runtimeVsQuote, statusChip, viaText,
+  availabilityText, byText, compareSummary, jobStatusLine, keptLine, runsPath, runtimeText, runtimeVsQuote, statusChip, viaText,
 } from "./rbdRuns.js";
 
 test("runtimes read in seconds, then minutes", () => {
@@ -70,4 +70,16 @@ test("queue status with the quote and the wait", () => {
 test("runs paths", () => {
   assert.equal(runsPath(), "/rbds/runs");
   assert.equal(runsPath("a b"), "/rbds/runs?rbd=a%20b");
+});
+
+test("how long runs are kept: free with an upgrade link, Pro plainly", () => {
+  assert.equal(keptLine(null), null);
+  assert.deepEqual(
+    keptLine({ retention: { plan: "free", text: "Runs are kept for 7 days on the free plan. Pro keeps them for 90 days." } }),
+    { text: "Runs are kept for 7 days on the free plan. Pro keeps them for 90 days.", upgrade: true },
+  );
+  assert.deepEqual(keptLine({ retention: { plan: "pro", text: "Runs are kept for 90 days." } }),
+    { text: "Runs are kept for 90 days.", upgrade: false });
+  // An older server: the days alone.
+  assert.deepEqual(keptLine({ kept_days: 7 }), { text: "Runs are kept for 7 days.", upgrade: false });
 });

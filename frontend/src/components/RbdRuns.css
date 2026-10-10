@@ -75,3 +75,13 @@
     max-width: 60vw;
   }
 }
+
+/* How long runs are kept: one quiet line under the list. */
+.rbd-runs-kept {
+  margin: 12px 0 0;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+.rbd-runs-kept a {
+  color: var(--acc);
+}

@@ -95,3 +95,12 @@ export function jobStatusLine(job) {
 
 // "/rbds/runs?rbd=…": a diagram's runs.
 export const runsPath = (rbdId = null) => (rbdId ? `/rbds/runs?rbd=${encodeURIComponent(rbdId)}` : "/rbds/runs");
+
+// The runs list's one quiet line on how long runs are kept (#282): the
+// server's words, with an upgrade link on the free plan. Null until loaded.
+export function keptLine(data) {
+  const r = data?.retention;
+  if (r?.text) return { text: r.text, upgrade: r.plan !== "pro" };
+  if (data?.kept_days) return { text: `Runs are kept for ${data.kept_days} days.`, upgrade: false };
+  return null;
+}
