@@ -250,6 +250,7 @@ def test_compare_endpoint_with_a_saved_diagram(client):
     assert other.status_code == 404
 
 
+@pytest.mark.real_seed  # counts or patches what a real seed does
 def test_sample_result_saved_before_the_precision_report_is_reseeded(client):
     """Saved results keep their cache key (they're still valid estimates), but
     the showcase sample is re-seeded once to show the precision report."""

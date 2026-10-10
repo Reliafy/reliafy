@@ -495,6 +495,7 @@ def test_public_link_non_repairable_unchanged(client):
 
 # ---- Samples ------------------------------------------------------------------------
 
+@pytest.mark.real_seed  # counts the simulations a real seed runs
 def test_sample_is_seeded_with_a_result_and_served_to_free_users(client):
     from backend.services import samples
 
