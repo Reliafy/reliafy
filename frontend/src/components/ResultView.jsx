@@ -13,6 +13,7 @@ import { distColor } from "../instrument.js";
 import { formatNumber } from "../format.js";
 import { bestFitSentence, compareRows } from "../lifeResults.js";
 import Chip from "./ui/Chip.jsx";
+import { TvcCalculator, TvcCoefficients, initTvcState } from "./TvcResult.jsx";
 
 // The fit statistics open from the panel beside the plot.
 const DISTRIBUTION_TABS = [
@@ -161,9 +162,12 @@ export default function ResultView({ result, modelId = null, name = null, split 
   // One confidence for the life card's bounds and the calculator's (#288).
   const level = Number(calc.ci.level);
   const setLevel = (v) => setCalc((st) => ({ ...st, ci: { ...st.ci, level: v } }));
+  // Covariates that change over time (#60): the schedule calculator's inputs.
+  const [tvcCalc, setTvcCalc] = useState(() => (result.tvc ? initTvcState(result) : null));
   const [prevResult, setPrevResult] = useState(result);
   if (result !== prevResult) {
     setPrevResult(result);
+    setTvcCalc(result.tvc ? initTvcState(result) : null);
     setCalc(initCalcState(result.functions));
     calcNextId.current = 1;
     setTab(defaultTab);
@@ -177,6 +181,8 @@ export default function ResultView({ result, modelId = null, name = null, split 
     ? DISCRETE_TABS
     : DISTRIBUTION_TABS;
   if (!result.functions) tabs = tabs.filter((t) => t.id !== "calc");
+  // Units' covariates follow paths, so the fixed-covariate scores don't apply.
+  if (result.tvc) tabs = tabs.filter((t) => t.id !== "check");
   if (!isNonparametric && !isDiscrete && !hasPlot)
     tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
 
@@ -273,7 +279,10 @@ export default function ResultView({ result, modelId = null, name = null, split 
             )}
           </div>
         )}
-        {tab === "calc" && (
+        {tab === "calc" && result.tvc && (
+          <TvcCalculator result={result} state={tvcCalc} setState={setTvcCalc} name={name || result.distribution} />
+        )}
+        {tab === "calc" && !result.tvc && (
           <Calculator
             functions={result.functions}
             unit={result.unit}
@@ -284,7 +293,8 @@ export default function ResultView({ result, modelId = null, name = null, split 
             name={name || result.distribution}
           />
         )}
-        {tab === "coef" && <Coefficients coefficients={result.coefficients} ratioLabel={result.ratio_label} />}
+        {tab === "coef" && (result.tvc ? <TvcCoefficients result={result} />
+          : <Coefficients coefficients={result.coefficients} ratioLabel={result.ratio_label} />)}
         {tab === "gof" && (
           <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} bestFit={bestFit} />
         )}
