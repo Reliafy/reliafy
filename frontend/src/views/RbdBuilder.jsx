@@ -25,6 +25,7 @@ import RbdSaveModal from "../components/RbdSaveModal.jsx";
 import RbdCalculator from "../components/RbdCalculator.jsx";
 import RbdFaultTree from "../components/RbdFaultTree.jsx";
 import RbdDesignPanel from "../components/RbdDesignPanel.jsx";
+import RbdTargets from "../components/RbdTargets.jsx";
 import RbdCostsModal from "../components/RbdCostsModal.jsx";
 import RbdCrewsModal from "../components/RbdCrewsModal.jsx";
 import { applyBlockExtras } from "../components/RbdBlockCosts.jsx";
@@ -43,6 +44,7 @@ import {
   ComponentNode,
   KNode,
   RbdCcfContext,
+  RbdRenameContext,
   RbdRepairableContext,
   RbdUnitContext,
   StructureNode,
@@ -51,7 +53,17 @@ import { lazy, Suspense } from "react";
 import { unitInText } from "../components/unitText.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import Chip from "../components/ui/Chip.jsx";
+import Switch from "../components/ui/Switch.jsx";
 import { formatPercent } from "../format.js";
+import {
+  allInstant, chainPairs, inPlaceItems, insertAfter, insertAlongside, insertOnEdge, setInstantRepair, trackSelection,
+} from "../rbdBuilderOps.js";
+import { safetyStarter } from "../rbdSafetyStarter.js";
+// Phased missions and undirected networks (#160).
+import RbdPhasesModal from "../components/RbdPhasesModal.jsx";
+import RbdPhasesResult from "../components/RbdPhasesResult.jsx";
+import RbdNetworkPanel, { NetworkOnlyNote } from "../components/RbdNetworkPanel.jsx";
+import { MISSION_KEYS, missionFields, undirectedEdges } from "../rbdMission.js";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -364,13 +376,33 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   // Repair crews, maintenance groups and a safety function (#156, #157):
   // {repair_crews, maintenance_groups, safety_function, target_sil}.
   const [policies, setPolicies] = useState({});
+  // The demand the blocks' capacities serve (#122): {demand, unit, period}.
+  const [production, setProduction] = useState(null);
+  // A phased mission's phases and a network's terminals (#160): {phases, network}.
+  const [mission, setMission] = useState({});
+  const network = !!mission.network;
   // Carried with the diagram wherever the costs are (save, validate, analyse).
   const costsField = useMemo(
-    () => ({ ...(diagramCosts ? { costs: diagramCosts } : {}), ...policyFields(policies) }),
-    [diagramCosts, policies]
+    () => ({
+      ...(diagramCosts ? { costs: diagramCosts } : {}),
+      ...policyFields(policies),
+      ...(production ? { production } : {}),
+      ...mission,
+    }),
+    [diagramCosts, policies, production, mission]
   );
+  // The diagram's kind: a block diagram (non-repairable or repairable) or a
+  // network. Phases are kept (a network ignores them) so switching back
+  // doesn't lose them.
+  const setMode = useCallback((v) => {
+    setRepairable(v === "repairable");
+    setMission((m) => {
+      const { network: _n, ...rest } = m;
+      return v === "network" ? { ...rest, network: { source: "input", target: "output" } } : rest;
+    });
+  }, []);
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
-  const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'tree' | 'design' | 'outages'
+  const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'tree' | 'design' | 'targets' | 'outages'
   // The canvas fills the frame; the result tabs scroll with the page (#311).
   useEffect(() => { onTab?.(tab); }, [onTab, tab]);
   // A tab's empty state (#271) sends the user back to the canvas — or, on a
@@ -514,10 +546,35 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   // stacked ones becomes a fan-out into a redundant stage; box-select a region
   // and it wires the whole thing up in one press. addEdge skips connections that
   // already exist, so pressing it twice is harmless.
+  // Clicked one at a time (#299), the blocks are wired in the order clicked:
+  // a series chain, whatever their positions on screen.
+  const clickOrder = useRef({ ids: [], ordered: true });
+  const onSelectionChange = useCallback(({ nodes: selected }) => {
+    clickOrder.current = trackSelection(clickOrder.current, (selected || []).map((n) => n.id));
+  }, []);
   const connectSelected = useCallback(() => {
     const chosen = nodes.filter((n) => n.selected);
     if (chosen.length < 2) {
-      setConnectHint("Select two or more blocks first, then press C.");
+      setConnectHint("Click two or more blocks in order (shift-click), then press C.");
+      return;
+    }
+    const order = clickOrder.current;
+    const chosenIds = new Set(chosen.map((n) => n.id));
+    if (order.ordered && order.ids.length === chosen.length && order.ids.every((id) => chosenIds.has(id))) {
+      let added = 0;
+      setEdges((eds) => {
+        const next = chainPairs(order.ids).reduce(
+          (acc, [source, target]) => addEdge({ source, target, ...EDGE_OPTIONS }, acc),
+          eds
+        );
+        added = next.length - eds.length;
+        return next;
+      });
+      setConnectHint(
+        added
+          ? `Connected ${added} link${added === 1 ? "" : "s"} in the order you clicked.`
+          : "Those blocks are already connected."
+      );
       return;
     }
     const columns = [];
@@ -629,6 +686,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     [setNodes]
   );
 
+  // A new block in a diagram whose every block is repaired instantly is too
+  // (#299: set once for the whole diagram).
   const addComponent = useCallback(
     (flowPos) => {
       const n = idRef.current++;
@@ -637,23 +696,26 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         nds.concat({
           id,
           type: "component",
-          data: { label: `Component ${n}`, model: null },
+          data: {
+            label: `Component ${n}`, model: null,
+            ...(repairable && allInstant(nds) ? { instant_repair: true } : {}),
+          },
           position: flowPos || { x: 240, y: 40 + ((n * 70) % 200) },
           ...HORIZONTAL,
         })
       );
     },
-    [setNodes]
+    [setNodes, repairable]
   );
 
   const addKNode = useCallback(
-    (flowPos, n, k) => {
+    (flowPos, n, k, label = null) => {
       const i = idRef.current++;
       setNodes((nds) =>
         nds.concat({
           id: `k${i}`,
           type: "knode",
-          data: { n, k },
+          data: { n, k, ...(label ? { label } : {}) },
           position: flowPos || { x: 240, y: 40 + ((i * 70) % 200) },
         })
       );
@@ -739,17 +801,17 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
 
   // Apply the n/k from the modal: add a new node or update the edited one.
   const submitKnode = useCallback(
-    ({ n, k }) => {
+    ({ n, k, label }) => {
       if (knodeCtx?.mode === "edit") {
         setNodes((nds) =>
-          nds.map((node) =>
-            node.id === knodeCtx.nodeId
-              ? { ...node, data: { ...node.data, n, k } }
-              : node
-          )
+          nds.map((node) => {
+            if (node.id !== knodeCtx.nodeId) return node;
+            const { label: _old, ...rest } = node.data;
+            return { ...node, data: { ...rest, n, k, ...(label ? { label } : {}) } };
+          })
         );
       } else {
-        addKNode(knodeCtx?.flowPos, n, k);
+        addKNode(knodeCtx?.flowPos, n, k, label);
       }
       setModal(null);
       setKnodeCtx(null);
@@ -785,7 +847,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
                 // a null removes the key, as for a component's extras.
                 data: applyBlockExtras({ ...node.data, ...config }, {
                   costs: config.costs, crew_priority: config.crew_priority,
-                  repair_one_at_a_time: config.repair_one_at_a_time,
+                  repair_one_at_a_time: config.repair_one_at_a_time, capacity: config.capacity,
                 }),
               }
             : node
@@ -873,6 +935,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       setCcfGroups(graph?.ccf_groups || []);
       setDiagramCosts(graph?.costs || null);
       setPolicies(policyFields(graph));
+      setProduction(graph?.production || null);
+      setMission(missionFields(graph));
       setSavedRbdId(id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
@@ -900,6 +964,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     setCcfGroups([]);
     setDiagramCosts(null);
     setPolicies({});
+    setProduction(null);
+    setMission({});
     setSavedRbdId(null);
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
@@ -923,6 +989,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     if (graph.ccf_groups != null) setCcfGroups(graph.ccf_groups);
     if (graph.costs !== undefined) setDiagramCosts(graph.costs || null);
     if (POLICY_KEYS.some((k) => graph[k] !== undefined)) setPolicies(policyFields(graph));
+    if (graph.production !== undefined) setProduction(graph.production || null);
+    if (MISSION_KEYS.some((k) => graph[k] !== undefined)) setMission(missionFields(graph));
     fitWhenMeasured(norm.nodes);
   }, [setNodes, setEdges, fitWhenMeasured]);
 
@@ -963,11 +1031,13 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
 
   // Assign a life model (saved or from parameters) to the node the modal targets.
   const setNodeModel = useCallback(
-    ({ model, repair, extras }) => {
+    ({ model, repair, extras, label }) => {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === modalNodeId
-            ? { ...node, data: applyBlockExtras({ ...node.data, model, ...(repair !== undefined ? { repair } : {}) }, extras) }
+            ? { ...node, data: applyBlockExtras({
+                ...node.data, model, ...(repair !== undefined ? { repair } : {}), ...(label ? { label } : {}),
+              }, extras) }
             : node
         )
       );
@@ -1049,6 +1119,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
             nodeId: node.id,
             n: node.data?.n ?? 2,
             k: node.data?.k ?? 3,
+            label: node.data?.label || "",
           });
           setModal("knode");
           break;
@@ -1084,6 +1155,106 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     [setEdges]
   );
 
+  // Inline rename (#289): double-click a block's name, or select it and
+  // press F2. A repeated block renames the block it repeats.
+  const [renaming, setRenaming] = useState(null);
+  const rename = useMemo(() => ({
+    renaming,
+    start: (id) => { closeMenu(); setRenaming(id); },
+    cancel: () => setRenaming(null),
+    commit: (id, label) => {
+      const name = String(label || "").trim();
+      if (name) {
+        setNodes((nds) => {
+          const target = originalId(nds, id);
+          return nds.map((n) => (n.id === target ? { ...n, data: { ...n.data, label: name } } : n));
+        });
+      }
+      setRenaming(null);
+    },
+  }), [renaming, closeMenu, setNodes]);
+  useEffect(() => {
+    if (tab !== "builder" || modal || renaming) return undefined;
+    const onKey = (e) => {
+      if (e.key !== "F2") return;
+      const el = e.target;
+      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName)) return;
+      const chosen = liveRef.current.nodes.filter((n) => n.selected && n.type !== "input" && n.type !== "output");
+      // One block selected, or of several the one clicked last.
+      const last = clickOrder.current.ids[clickOrder.current.ids.length - 1];
+      const target = chosen.length === 1 ? chosen[0].id : chosen.some((n) => n.id === last) ? last : null;
+      if (!target) return;
+      e.preventDefault();
+      rename.start(target);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, modal, renaming, rename]);
+
+  // "+ Add block" (#299): the block lands in the middle of the canvas in view,
+  // a step down and right of the last one so a few in a row don't stack.
+  const addOffset = useRef(0);
+  const centrePos = useCallback(() => {
+    const r = wrapper.current?.getBoundingClientRect();
+    if (!r) return undefined;
+    const step = (addOffset.current++ % 5) * 40;
+    const p = screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+    return { x: p.x - 80 + step, y: p.y - 30 + step };
+  }, [screenToFlowPosition]);
+
+  // "+ Add block" in place (#282): with a block, a line of blocks or a
+  // connection selected, the new component is wired in — after the block or
+  // on the connection (in series), or alongside the block or line (in
+  // parallel, merged through a junction; a network shares the connections).
+  // It becomes the selection.
+  const inPlace = useMemo(() => inPlaceItems(nodes, edges), [nodes, edges]);
+  const addInPlace = useCallback((key) => {
+    const choice = inPlaceItems(nodes, edges);
+    const item = choice?.items.find((i) => i.key === key);
+    if (!item || item.reason) return;
+    const n = idRef.current++;
+    const block = {
+      id: `c${n}`,
+      type: "component",
+      data: { label: `Component ${n}`, model: null, ...(repairable && allInstant(nodes) ? { instant_repair: true } : {}) },
+      position: { x: 0, y: 0 },
+      ...HORIZONTAL,
+    };
+    const graph = { nodes, edges };
+    const out = key === "after" ? insertAfter(graph, choice.ids[0], block)
+      : key === "split" ? insertOnEdge(graph, choice.edge, block)
+      : insertAlongside(graph, choice.ids, block, { junctionId: newId("knode"), junctions: !network });
+    setNodes(out.nodes);
+    setEdges(out.edges.map((e) => (e.type ? e : { ...EDGE_OPTIONS, ...e })));
+    // The canvas is as tall as the diagram: fit it again with the new block in.
+    fitWhenMeasured([block]);
+    const name = (id) => nodes.find((x) => x.id === id)?.data?.label || "the block";
+    setConnectHint(
+      key === "after" ? `Added ${block.data.label} after ${name(choice.ids[0])}, in series.`
+        : key === "split" ? `Added ${block.data.label} on the line, in series.`
+        : key === "alongside" ? `Added ${block.data.label} alongside ${name(choice.ids[0])}, in parallel.`
+        : `Added ${block.data.label} alongside the ${choice.ids.length} selected blocks, in parallel.`
+    );
+  }, [nodes, edges, repairable, network, newId, setNodes, setEdges, fitWhenMeasured]);
+
+  // The toolbar's Safety function switch (#298): on, the diagram is a
+  // repairable safety function (its results lead with PFDavg and the SIL);
+  // off, it isn't, and its target SIL goes with it.
+  const setSafety = useCallback((on) => {
+    setPolicies((p) => policyFields({ ...p, safety_function: on || null, target_sil: on ? p.target_sil : null }));
+    if (on) {
+      setRepairable(true);
+      // A safety function is a block diagram, never a network (#160).
+      setMission(({ network: _n, ...rest }) => rest);
+    }
+  }, []);
+
+  // "Repaired instantly", once for the whole diagram (#299).
+  const everyInstant = useMemo(() => allInstant(nodes), [nodes]);
+  const toggleAllInstant = useCallback(() => {
+    setNodes((nds) => setInstantRepair(nds, !allInstant(nds)));
+  }, [setNodes]);
+
   // The maintenance groups the blocks name (#157), for the group pickers.
   const groupNames = useMemo(
     () => [...new Set(nodes.map((n) => n.data?.maintenance_group).filter(Boolean))].sort(),
@@ -1103,6 +1274,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     [nodes]
   );
   const labelFor = (id) => nodes.find((n) => n.id === id)?.data?.label || id;
+  // A network's connections are drawn without arrows (#160).
+  const flowEdges = useMemo(() => (network ? undirectedEdges(edges) : edges), [network, edges]);
 
   const openCcfForSelection = () => {
     if (selectedComponentIds.length < 2) return;
@@ -1110,21 +1283,23 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     setModal("ccf");
   };
   // A group keeps a basis only when it isn't the rate (the default, #210).
-  const withBasis = (g, beta, basis) => {
-    const { basis: _old, ...rest } = g;
-    return basis === "probability" ? { ...rest, beta, basis } : { ...rest, beta };
+  const withBasis = (g, beta, basis, mgl) => {
+    const { basis: _old, mgl: _letters, ...rest } = g;
+    // The multiple Greek letter model's letters after β, when chosen (#84).
+    const out = basis === "probability" ? { ...rest, beta, basis } : { ...rest, beta };
+    return mgl?.length ? { ...out, mgl } : out;
   };
-  const submitCcf = ({ beta, basis }) => {
+  const submitCcf = ({ beta, basis, mgl }) => {
     setCcfGroups((prev) => {
-      if (ccfCtx?.groupId) return prev.map((g) => (g.id === ccfCtx.groupId ? withBasis(g, beta, basis) : g));
+      if (ccfCtx?.groupId) return prev.map((g) => (g.id === ccfCtx.groupId ? withBasis(g, beta, basis, mgl) : g));
       const id = `ccf-${Date.now().toString(36)}-${Math.round(Math.random() * 1e4)}`;
-      return [...prev, withBasis({ id, members: ccfCtx.members }, beta, basis)];
+      return [...prev, withBasis({ id, members: ccfCtx.members }, beta, basis, mgl)];
     });
     setModal(null);
     setCcfCtx(null);
   };
   const editCcf = (g) => {
-    setCcfCtx({ members: g.members, beta: g.beta, basis: g.basis, groupId: g.id });
+    setCcfCtx({ members: g.members, beta: g.beta, basis: g.basis, mgl: g.mgl, groupId: g.id });
     setModal("ccf");
   };
   const removeCcf = (gid) => setCcfGroups((prev) => prev.filter((g) => g.id !== gid));
@@ -1133,6 +1308,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     <RbdUnitContext.Provider value={rbdUnit}>
     <RbdRepairableContext.Provider value={repairable}>
     <RbdCcfContext.Provider value={ccfMap}>
+    <RbdRenameContext.Provider value={rename}>
     <div className="rbd-shell">
     <div className="tabs rbd-tabs">
       <button
@@ -1161,6 +1337,13 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         Design
       </button>
       <button
+        className={"tab" + (tab === "targets" ? " active" : "")}
+        onClick={() => setTab("targets")}
+        title="What each block needs for the system to meet a target"
+      >
+        Targets
+      </button>
+      <button
         className={"tab" + (tab === "outages" ? " active" : "")}
         onClick={() => setTab("outages")}
       >
@@ -1171,6 +1354,42 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     {/* One row above the canvas (#314): the diagram's settings on the left;
         Validate, Save ▾ and ⋯ on the right. On a phone the settings move into ⋯. */}
     <div className="rbd-toolbar">
+      {/* Add a block without right-clicking (#299); on a phone the only way. */}
+      <ToolbarMenu label={<span>+ Add<span className="rbd-add-word"> block</span></span>} title="Add a block: wired in after or alongside what's selected, or in the middle of the canvas"
+                   aria="Add block" className="rbd-add-menu">
+        {/* In place first, when something is selected (#282); then anywhere. */}
+        {inPlace && (
+          <>
+            {inPlace.items.map((i) => (
+              <button key={i.key} className="ovm-item" disabled={!!i.reason} title={i.reason || undefined}
+                      onClick={() => addInPlace(i.key)}>
+                {i.label}
+              </button>
+            ))}
+            <div className="rbd-menu-sep" role="separator" />
+          </>
+        )}
+        <button className="ovm-item" onClick={() => addComponent(centrePos())}>Component</button>
+        <button className="ovm-item" onClick={() => addKNode(centrePos(), 1, 2)}
+                title="Merge parallel branches back into one — any branch is enough">
+          Junction
+        </button>
+        <button className="ovm-item" onClick={() => {
+          setKnodeCtx({ mode: "add", flowPos: centrePos(), n: 2, k: 3 });
+          setModal("knode");
+        }}>
+          Voting node (MooN)…
+        </button>
+        <button className="ovm-item" onClick={() => addBlock("standby", centrePos())}>Standby group</button>
+        {!repairable && (
+          <>
+            <button className="ovm-item" onClick={() => addBlock("loadshare", centrePos())}>Load-sharing</button>
+            <button className="ovm-item" onClick={() => addBlock("series", centrePos())}>Series (n identical)</button>
+            <button className="ovm-item" onClick={() => addBlock("parallel", centrePos())}>Parallel (n identical)</button>
+            <button className="ovm-item" onClick={() => addBlock("subsystem", centrePos())}>Sub-system</button>
+          </>
+        )}
+      </ToolbarMenu>
       <div className="rbd-toolbar-row rbd-tb-settings">
         <label className="rbd-unit-field">
           <span>Unit</span>
@@ -1184,17 +1403,28 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         </label>
         <Select
           className="rbd-mode-select"
-          value={repairable ? "repairable" : "non"}
-          onChange={(v) => setRepairable(v === "repairable")}
-          title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time."
+          value={repairable ? "repairable" : network ? "network" : "non"}
+          onChange={setMode}
+          title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time. A network's connections work both ways: it analyses whether two points stay connected."
           options={[
             { value: "non", label: "Non-repairable" },
             { value: "repairable", label: "Repairable" },
+            { value: "network", label: "Network" },
           ]}
         />
+        {/* A safety function (#298): on, the results lead with PFDavg and the SIL. A network isn't one. */}
+        {!network && (
+        <Switch
+          className="rbd-safety-switch"
+          checked={repairable && !!policies.safety_function}
+          onChange={setSafety}
+          label="Safety function"
+          title="A safety instrumented function (IEC 61511): its results lead with PFDavg and the SIL band. Turning it on makes the diagram repairable."
+        />
+        )}
         {repairable && policies.safety_function && (
-          <Chip onClick={() => setModal("safety")} title="This diagram is a safety function: its results lead with PFDavg and the SIL. Click to edit.">
-            Safety function{policies.target_sil ? ` · SIL ${policies.target_sil} target` : ""}
+          <Chip onClick={() => setModal("safety")} title="The SIL this function must meet. Click to change it.">
+            {policies.target_sil ? `Target SIL ${policies.target_sil}` : "Set a target SIL"}
           </Chip>
         )}
         {/* Common-cause groups: a chip that drops the list beneath it. */}
@@ -1215,7 +1445,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
                     <span className="rbd-ccf-row-members" title={(g.members || []).map(labelFor).join(", ")}>
                       {(g.members || []).map(labelFor).join(" · ")}
                     </span>
-                    <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β {formatPercent(g.beta)}{g.basis === "probability" ? " (prob.)" : ""}</button>
+                    <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β {formatPercent(g.beta)}{g.mgl?.length ? " · MGL" : ""}{g.basis === "probability" ? " (prob.)" : ""}</button>
                     <button className="rbd-ccf-row-x" onClick={() => removeCcf(g.id)} title="Ungroup" aria-label="Ungroup">×</button>
                   </div>
                 ))}
@@ -1272,13 +1502,36 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
             </label>
             <label>
               <span>System</span>
-              <select value={repairable ? "repairable" : "non"} onChange={(e) => setRepairable(e.target.value === "repairable")}>
+              <select value={repairable ? "repairable" : network ? "network" : "non"} onChange={(e) => setMode(e.target.value)}>
                 <option value="non">Non-repairable</option>
                 <option value="repairable">Repairable</option>
+                <option value="network">Network</option>
               </select>
             </label>
           </div>
           <button className="ovm-item" onClick={autoLayout}>Auto-arrange</button>
+          {!repairable && !network && (
+            <button
+              className="ovm-item"
+              onClick={() => setModal("phases")}
+              title="A mission through phases (take-off, cruise, landing), each with its own duration and the blocks it needs"
+            >
+              Phased mission…{mission.phases?.length ? " ✓" : ""}
+            </button>
+          )}
+          {repairable && (
+            <button
+              className="ovm-item"
+              role="menuitemcheckbox"
+              aria-checked={everyInstant}
+              onClick={toggleAllInstant}
+              title={everyInstant
+                ? "Every block is repaired instantly: it still fails and costs, but is never down. Click to use each block's repair time again."
+                : "Repair every block instantly — it still fails and costs, but is never down (e.g. proof-tested channels, or no repair-time data). Each block's repair time is kept for later."}
+            >
+              Every block repaired instantly{everyInstant ? " ✓" : ""}
+            </button>
+          )}
           {repairable && (
             <button
               className="ovm-item"
@@ -1321,10 +1574,11 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     >
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={flowEdges}
         nodeTypes={nodeTypes}
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
+        onSelectionChange={onSelectionChange}
         onConnect={onConnect}
         onPaneContextMenu={onPaneContextMenu}
         onNodeContextMenu={onNodeContextMenu}
@@ -1375,6 +1629,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
               >
                 Add component
               </button>
+              {!network && (
+                <>
               <button
                 onClick={() => {
                   addKNode(menu.flow, 1, 2);
@@ -1391,8 +1647,10 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
                   closeMenu();
                 }}
               >
-                Add n-out-of-k node
+                Add voting node (MooN)
               </button>
+                </>
+              )}
               {/* A standby group works in both: repairable, its units are each repaired (#156). */}
               <button onClick={() => { addBlock("standby", menu.flow); closeMenu(); }}>
                 Add standby node
@@ -1468,12 +1726,13 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
                           nodeId: menu.id,
                           n: node?.data.n ?? 2,
                           k: node?.data.k ?? 3,
+                          label: node?.data.label || "",
                         });
                         setModal("knode");
                         closeMenu();
                       }}
                     >
-                      Edit n and k
+                      Edit vote (MooN)
                     </button>
                     <div className="rbd-menu-sep" />
                   </>
@@ -1553,7 +1812,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
                   </button>
                 )}
                 <div className="rbd-menu-sep" />
-                {menu.nodeType === "component" && !repairable && (
+                {menu.nodeType === "component" && !repairable && !network && (
                   <button
                     onClick={() => {
                       repeatNode(menu.id);
@@ -1603,7 +1862,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           {connectHint ? (
             <span className="rbd-hint-flash">{connectHint}</span>
           ) : (
-            "Right-click to add · drag to connect · double-click to edit"
+            "Add blocks with + Add block or a right-click · select a block or a line first to wire it in · drag to connect · double-click to edit"
           )}
         </div>
       )}
@@ -1615,6 +1874,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           crews={!!policies.repair_crews}
           groups={groupNames}
           safety={repairable && !!policies.safety_function}
+          capacity={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
           onClose={() => {
             setModal(null);
             setModalNodeId(null);
@@ -1702,6 +1962,22 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           }}
         />
       )}
+      {modal === "phases" && (
+        <RbdPhasesModal
+          initial={mission.phases}
+          nodes={nodes}
+          edges={edges}
+          unit={rbdUnit}
+          onClose={() => setModal(null)}
+          onSubmit={(phases) => {
+            setMission((m) => {
+              const { phases: _p, ...rest } = m;
+              return phases ? { ...rest, phases } : rest;
+            });
+            setModal(null);
+          }}
+        />
+      )}
       {modal === "saverbd" && (
         <RbdSaveModal
           initialName={savedRbdName}
@@ -1723,6 +1999,15 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       className="rbd-calc-panel"
       style={{ display: tab === "calc" ? undefined : "none" }}
     >
+      {network ? (
+        <RbdNetworkPanel
+          graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+          active={tab === "calc"}
+          name={savedRbdName}
+          onNetworkChange={(n) => setMission((m) => ({ ...m, network: n }))}
+          onBuild={toBuilder}
+        />
+      ) : (
       <RbdCalculator
         graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         validation={validation}
@@ -1731,12 +2016,25 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         rbdId={savedRbdId}
         name={savedRbdName}
         onBuild={toBuilder}
+        onProduction={setProduction}
+        onNodeData={(updates) =>
+          // #52: covariate schedules set in the calculator, put on their blocks (unsaved).
+          setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: { ...n.data, ...updates[n.id] } } : n)))
+        }
+      />
+      )}
+      <RbdPhasesResult
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        active={tab === "calc"}
+        name={savedRbdName}
+        onEdit={savedRbdReadOnly ? null : () => setModal("phases")}
       />
     </div>
     <div
       className="rbd-calc-panel"
       style={{ display: tab === "tree" ? undefined : "none" }}
     >
+      {network ? <NetworkOnlyNote what="A fault tree" onCalc={() => setTab("calc")} /> : (
       <RbdFaultTree
         graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         validation={validation}
@@ -1745,11 +2043,13 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         name={savedRbdName}
         onBuild={toBuilder}
       />
+      )}
     </div>
     <div
       className="rbd-calc-panel"
       style={{ display: tab === "design" ? undefined : "none" }}
     >
+      {network ? <NetworkOnlyNote what="Redundancy design" onCalc={() => setTab("calc")} /> : (
       <RbdDesignPanel
         graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         onApply={applyDesign}
@@ -1762,6 +2062,18 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           window.setTimeout(() => fitView(FIT_OPTIONS), 60);
         }}
       />
+      )}
+    </div>
+    <div
+      className="rbd-calc-panel"
+      style={{ display: tab === "targets" ? undefined : "none" }}
+    >
+      {network ? <NetworkOnlyNote what="Target allocation" onCalc={() => setTab("calc")} /> : (
+      <RbdTargets
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        onBuild={toBuilder}
+      />
+      )}
     </div>
     {tab === "outages" && (
       <div className="rbd-calc-panel">
@@ -1782,6 +2094,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       </div>
     )}
     </div>
+    </RbdRenameContext.Provider>
     </RbdCcfContext.Provider>
     </RbdRepairableContext.Provider>
     </RbdUnitContext.Provider>
@@ -1792,7 +2105,13 @@ export default function RbdBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const imported = id ? null : location.state?.imported || null;
+  // An imported diagram, or the safety function starter (#298), opens unsaved.
+  const starterKind = id ? null : location.state?.starter || null;
+  const starter = useMemo(() => (starterKind === "safety" ? safetyStarter() : null),
+    // A fresh copy each time the starter is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [starterKind, location.key]);
+  const imported = id ? null : location.state?.imported || starter;
   const [notesHidden, setNotesHidden] = useState(false);
   const [meta, setMeta] = useState({});
   const [tab, setTab] = useState("builder");
@@ -1815,10 +2134,18 @@ export default function RbdBuilder() {
       />
       {imported && !notesHidden && (
         <div className="card note rbd-import-note">
-          <p>
-            <b>Imported from {imported.source_format || "file"}</b> — not saved yet. Check the blocks, then Save to keep it.
-            {" "}<button className="link" onClick={() => setNotesHidden(true)}>Dismiss</button>
-          </p>
+          {imported.starter ? (
+            <p>
+              <b>A starter safety function</b> — not saved yet. Calculate it as it is, or rename the blocks and set
+              each one’s λDU and proof test to your loop’s, then Save.
+              {" "}<button className="link" onClick={() => setNotesHidden(true)}>Dismiss</button>
+            </p>
+          ) : (
+            <p>
+              <b>Imported from {imported.source_format || "file"}</b> — not saved yet. Check the blocks, then Save to keep it.
+              {" "}<button className="link" onClick={() => setNotesHidden(true)}>Dismiss</button>
+            </p>
+          )}
           {imported.warnings?.length > 0 && (
             <ul>
               {imported.warnings.map((w, i) => <li key={i}>{w}</li>)}
@@ -1829,7 +2156,7 @@ export default function RbdBuilder() {
       <div className="card rbd-wrap">
         <ReactFlowProvider>
           <Builder
-            key={id || "new"}
+            key={id || (starter ? `starter-${location.key}` : "new")}
             rbdId={id}
             imported={imported}
             onNew={() => navigate("/rbds/b")}

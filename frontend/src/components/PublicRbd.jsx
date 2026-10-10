@@ -9,6 +9,7 @@ import {
 } from "./RbdNodes.jsx";
 import { AvailabilityView, Results, savedOn } from "./RbdCalculator.jsx";
 import { normalizeRbdGraph } from "../rbdGraph.js";
+import { isNetwork, undirectedEdges } from "../rbdMission.js";
 import { PYTHON_EXPORT_TIP, downloadPublicRbdPython } from "../api.js";
 
 // Read-only rendering of a publicly linked RBD: the diagram on a non-editable
@@ -33,10 +34,12 @@ function canvasGraph(graph) {
 
 function Canvas({ graph }) {
   const { nodes, edges } = useMemo(() => canvasGraph(graph), [graph]);
+  // A network's links work both ways: no arrows (#160).
+  const shown = useMemo(() => (isNetwork(graph) ? undirectedEdges(edges) : edges), [graph, edges]);
   return (
     <ReactFlow
       nodes={nodes}
-      edges={edges}
+      edges={shown}
       nodeTypes={RBD_NODE_TYPES}
       nodesDraggable={false}
       nodesConnectable={false}

@@ -47,12 +47,20 @@ from backend.routers import auth as auth_router
 from backend.routers import models as models_router
 from backend.routers import rbds as rbds_router
 from backend.routers import rbd_jobs as rbd_jobs_router
+from backend.routers import rbd_block_check as rbd_block_check_router
 from backend.routers import rbd_compare as rbd_compare_router
+from backend.routers import rbd_runs as rbd_runs_router
 from backend.routers import rbd_fault_tree as rbd_fault_tree_router
 from backend.routers import rbd_design as rbd_design_router
+from backend.routers import rbd_allocation as rbd_allocation_router
+from backend.routers import rbd_capacity as rbd_capacity_router
 from backend.routers import rbd_costs as rbd_costs_router
 from backend.routers import rbd_sensitivity as rbd_sensitivity_router
 from backend.routers import rbd_intervals as rbd_intervals_router
+from backend.routers import rbd_block_inputs as rbd_block_inputs_router
+from backend.routers import rbd_measures as rbd_measures_router
+from backend.routers import rbd_missions as rbd_missions_router
+from backend.routers import rbd_tvc as rbd_tvc_router
 from backend.routers import strategy as strategy_router
 from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
@@ -198,11 +206,20 @@ app.include_router(rbds_router.router)
 # Analysis jobs (#146): polling, and the compute service's callback.
 app.include_router(rbd_jobs_router.router)
 app.include_router(rbd_compare_router.router)
+app.include_router(rbd_block_check_router.router)
+app.include_router(rbd_runs_router.router)
 app.include_router(rbd_fault_tree_router.router)
 app.include_router(rbd_design_router.router)
+app.include_router(rbd_allocation_router.router)
+app.include_router(rbd_capacity_router.router)
 app.include_router(rbd_costs_router.router)
 app.include_router(rbd_sensitivity_router.router)
 app.include_router(rbd_intervals_router.router)
+# A block's model entered as its mean, and its mean and median (#299).
+app.include_router(rbd_block_inputs_router.router)
+app.include_router(rbd_measures_router.router)
+app.include_router(rbd_missions_router.router)
+app.include_router(rbd_tvc_router.router)
 app.include_router(strategy_router.router)
 app.include_router(compare_groups_router.router)
 app.include_router(regression_diagnostics_router.router)

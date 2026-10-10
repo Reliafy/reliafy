@@ -9,37 +9,12 @@ import { lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
 import { bestFitSentence, boundWords, compareRows, criterionLabel, timeAtValue } from "../lifeResults.js";
 import { unitInText } from "./unitText.js";
-import { MORE_PARAMS } from "../moreModels.js";
+import { PARAMS, paramLabel } from "../paramLabels.js";
 
 // The side panel beside a fitted life distribution's plot (#311): its
 // parameters by their plain names with their intervals, the data, and a quiet
 // one-line reading of what the fit says — the answer next to the chart, not
 // stacked above the tabs.
-
-// Plain names for SurPyval's parameters. ``time``: the value is in the
-// model's time unit; ``rate``: per unit time.
-const PARAMS = {
-  weibull: { alpha: ["Scale α", "time"], beta: ["Shape β"] },
-  exponential: { failure_rate: ["Failure rate λ", "rate"] },
-  normal: { mu: ["Mean μ", "time"], sigma: ["Std dev σ", "time"] },
-  lognormal: { mu: ["Log-mean μ"], sigma: ["Log-std σ"] },
-  gamma: { alpha: ["Shape α"], beta: ["Rate β", "rate"] },
-  loglogistic: { alpha: ["Scale α", "time"], beta: ["Shape β"] },
-  expo_weibull: { alpha: ["Scale α", "time"], beta: ["Shape β"], mu: ["Exponent μ"] },
-  gumbel: { mu: ["Location μ", "time"], sigma: ["Scale σ", "time"] },
-  gumbel_lev: { mu: ["Location μ", "time"], sigma: ["Scale σ", "time"] },
-  logistic: { mu: ["Location μ", "time"], sigma: ["Scale σ", "time"] },
-  rayleigh: { sigma: ["Scale σ", "time"] },
-  ...MORE_PARAMS, // #179 / #72 / #63
-};
-
-// "Hours" → "hour" for "per hour"; any other unit as written.
-function singular(unit) {
-  const u = unitInText(unit);
-  return /^(seconds|minutes|hours|days|weeks|months|years|cycles|kilometres|miles|operations|rounds)$/.test(u)
-    ? u.slice(0, -1)
-    : u;
-}
 
 function distId(result) {
   if (result.distribution_id && result.distribution_id !== "best") return result.distribution_id;
@@ -49,13 +24,8 @@ function distId(result) {
 
 // A parameter with its plain label (unit included) and formatted value.
 export function paramView(result, p) {
-  const spec = PARAMS[distId(result)]?.[p.name];
-  const unit = result.unit ? unitInText(result.unit) : "";
-  const label = spec ? spec[0] : p.name;
-  const kind = spec?.[1];
-  const suffix = kind === "time" && unit ? ` (${unit})` : kind === "rate" && unit ? ` (per ${singular(result.unit)})` : "";
   return {
-    label: label + suffix,
+    label: paramLabel(distId(result), p.name, result.unit),
     value: formatNumber(p.value),
     ci: p.ci ? `${formatNumber(p.ci[0])}–${formatNumber(p.ci[1])}` : null,
   };

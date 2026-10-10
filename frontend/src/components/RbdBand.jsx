@@ -1,4 +1,7 @@
+import { useState } from "react";
 import Select from "./Select.jsx";
+import { ResultDetails } from "./ui/ResultSummary.jsx";
+import { formatNumber } from "../format.js";
 import { BAND_FILL } from "../plotTheme.js";
 
 // Confidence band on a non-repairable RBD's reliability (#103): the spread of
@@ -102,5 +105,70 @@ export function BandNote({ band }) {
         </p>
       )}
     </div>
+  );
+}
+
+// Intervals at several targets from the same draws (#325): B-lives (B1, B10,
+// B50 by default) and the reliability at chosen times, each with its point
+// value; editable when ``onChange`` is given ({b_lives, times}).
+const listText = (xs) => (xs || []).map((v) => Number(v.toPrecision(6))).join(", ");
+const parseList = (text) => text.split(/[\s,;]+/).filter(Boolean).map(Number);
+
+export function BandTargets({ band, unit, onChange }) {
+  const targets = band?.targets;
+  const [bText, setBText] = useState(() => listText((targets?.b_lives || []).map((r) => r.fraction * 100)) || "1, 10, 50");
+  const [tText, setTText] = useState(() => listText((targets?.reliability || []).map((r) => r.t)));
+  if (!band || !(band.uncertain || []).length) return null;
+  const b = parseList(bText);
+  const ts = parseList(tText);
+  const ok = b.length <= 8 && ts.length <= 8 && b.every((v) => v > 0 && v < 100) && ts.every((v) => v > 0);
+  const u = unit ? ` ${unit.toLowerCase()}` : "";
+  const rows = [
+    ...(targets?.b_lives || []).map((r) => ({
+      key: `b${r.fraction}`, label: `B${Number((r.fraction * 100).toPrecision(3))} life`,
+      value: r.value == null ? "—" : `${formatNumber(r.value)}${u}`,
+      iv: `${formatNumber(r.lower)} – ${r.upper == null ? "beyond" : formatNumber(r.upper)}`,
+    })),
+    ...(targets?.reliability || []).map((r) => ({
+      key: `t${r.t}`, label: `R(${formatNumber(r.t)}${u})`,
+      value: r.value == null ? "—" : `${(r.value * 100).toFixed(2)}%`,
+      iv: r.lower == null ? "—" : `${(r.lower * 100).toFixed(2)}% – ${(r.upper * 100).toFixed(2)}%`,
+    })),
+  ];
+  return (
+    <ResultDetails summary="B-lives and reliability with intervals">
+      {rows.length > 0 && (
+        <div className="rbd-avail-imp-scroll">
+          <table className="calc-table rbd-band-targets">
+            <thead><tr><th>Target</th><th>Best estimate</th><th>{pct(band.level)} interval</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.key}><td className="calc-row-label">{r.label}</td><td>{r.value}</td><td>{r.iv}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {onChange && (
+        <div className="param-fields rbd-band-target-inputs">
+          <label className="param-field rbd-cost-field">
+            <span>B-lives (% failed)</span>
+            <input type="text" value={bText} onChange={(e) => setBText(e.target.value)} placeholder="1, 10, 50" />
+          </label>
+          <label className="param-field rbd-cost-field">
+            <span>Reliability at times</span>
+            <input type="text" value={tText} onChange={(e) => setTText(e.target.value)} placeholder="e.g. 500, 1000" />
+            <small>{unit || "time"} · up to 8</small>
+          </label>
+          <button type="button" className="secondary" disabled={!ok} style={{ alignSelf: "flex-start", marginTop: 22 }}
+                  onClick={() => onChange({ b_lives: b, times: ts })}>
+            Update
+          </button>
+        </div>
+      )}
+      <p className="muted-line" style={{ margin: 0 }}>
+        Every interval comes from the same {band.n_draws?.toLocaleString()} draws of the fitted models, in one run.
+      </p>
+    </ResultDetails>
   );
 }

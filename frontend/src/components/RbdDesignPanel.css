@@ -15,6 +15,22 @@
   width: 9rem;
 }
 
+/* At phone width the goal's two options wrap inside the panel rather than
+   push the page wide. */
+.rbd-design-goal .calc-t,
+.rbd-design-goal .calc-t > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.rbd-design-goal .seg {
+  flex-wrap: wrap;
+}
+
+.rbd-design-goal .seg-btn {
+  flex: 1 1 auto;
+}
+
 .rbd-design-toggles {
   display: flex;
   flex-wrap: wrap;

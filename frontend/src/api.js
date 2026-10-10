@@ -550,6 +550,36 @@ export function deleteRbd(id) {
   return request(`/api/rbds/${id}`, { method: "DELETE" });
 }
 
+// A copy of a saved diagram (#290), saved under ``name``: the list row's
+// Duplicate. Plan limits apply as for any save.
+export async function duplicateRbd(id, name) {
+  const full = await getRbd(id);
+  return saveRbd(name, full.graph, null, null);
+}
+
+// A block's model from its mean (#299): ``{distribution_id, mean, given}``
+// (given: the shape or spread, by SurPyval name) or ``{distribution_id,
+// params}``; returns {params, mean, median} — SurPyval's.
+export function rbdBlockModel(body) {
+  return request("/api/rbd-blocks/model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// Which distributions take a mean, and what else each needs (cached).
+let meanForms = null;
+export function rbdMeanForms() {
+  if (!meanForms) {
+    meanForms = request("/api/rbd-blocks/mean-forms").then((d) => d.forms).catch((e) => {
+      meanForms = null;
+      throw e;
+    });
+  }
+  return meanForms;
+}
+
 // ---- Billing & AI credits --------------------------------------------------
 
 // Plan/credit status + caps/usage + available packs.
@@ -766,6 +796,18 @@ export function analyzeRbd(
   });
 }
 
+// The node covariate modal's live preview (#52): each covariate's stair-step
+// path and the block's R(t) along it, for a saved regression model.
+// ``schedules`` {name: {expression} | {table, period?}}, ``constants`` the
+// other covariates' values, ``tMax`` the window (null: the model's own).
+export function previewRbdSchedule({ modelId, schedules, constants, tMax = null }) {
+  return request("/api/rbds/tvc-preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model_id: modelId, schedules: schedules || {}, constants: constants || {}, t_max: tMax }),
+  });
+}
+
 // An analysis job: {job_id, status: queued|running|done|failed,
 // queue_position, result (done), error (failed)}.
 export function getRbdJob(jobId) {
@@ -779,6 +821,48 @@ export function getActiveRbdJob(rbdId, kind = null) {
   return request(`/api/rbd-jobs?rbd_id=${encodeURIComponent(rbdId)}${k}`);
 }
 
+// How long a repairable diagram's simulation should take (#286), before it
+// runs: {available, median_s, p90_s, text: "about 15 s, up to 40 s"} or
+// {available: false, reason}. Nothing is run.
+export function quoteRbdSimulation({ graph, tMax = null, quick = false, currentState = null }) {
+  return request("/api/rbds/quote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t_max: tMax ?? null, quick: !!quick, current_state: currentState || null }),
+  });
+}
+
+// Simulation run history (#112): the caller's runs, newest first (a diagram's
+// with ``rbdId``), {runs, more, kept_days}; one run in full; several finished
+// runs side by side; the same inputs again ({run_id, status}); a download.
+export function listRbdRuns({ rbdId = null, limit = null } = {}) {
+  const q = new URLSearchParams();
+  if (rbdId) q.set("rbd_id", rbdId);
+  if (limit) q.set("limit", String(limit));
+  const qs = q.toString();
+  return request(`/api/rbd-runs${qs ? `?${qs}` : ""}`);
+}
+
+export function listRbdRunDiagrams() {
+  return request("/api/rbd-runs/diagrams");
+}
+
+export function getRbdRun(runId) {
+  return request(`/api/rbd-runs/${encodeURIComponent(runId)}`);
+}
+
+export function compareRbdRuns(runIds) {
+  return request(`/api/rbd-runs/compare?ids=${runIds.map(encodeURIComponent).join(",")}`);
+}
+
+export function rerunRbdRun(runId) {
+  return request(`/api/rbd-runs/${encodeURIComponent(runId)}/rerun`, { method: "POST" });
+}
+
+export function downloadRbdRun(runId, format = "csv") {
+  return downloadFile(`/api/rbd-runs/${encodeURIComponent(runId)}/export?format=${format}`, `run.${format}`);
+}
+
 // What to improve (#225): a repairable diagram's levers ranked by what a step
 // of each gains. ``costs`` maps lever ids to the cost of making that change;
 // ``order`` "benefit" ranks by gain alone, "benefit_per_cost" puts the costed
@@ -787,7 +871,7 @@ export function getActiveRbdJob(rbdId, kind = null) {
 // where the diagram needs it (Pro). 200 with the ranked levers (or a
 // ``status`` saying why not yet), or 202 with ``job`` to poll at getRbdJob.
 export function rbdSensitivity({ graph, rbdId = null, window = null, step = null, rankBy = null, costs = null,
-                                 order = null, simulate = false }) {
+                                 order = null, simulate = false, limits = null }) {
   return request("/api/rbds/sensitivity", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -800,6 +884,31 @@ export function rbdSensitivity({ graph, rbdId = null, window = null, step = null
       costs,
       order,
       simulate,
+      // {lever id: {min, max}} in the values shown (#324).
+      ...(limits ? { limits } : {}),
+    }),
+  });
+}
+
+// What to improve's other measures (#225, #325): ``measure`` "over_time",
+// "shares" (``groupBy`` "block" | "kind"), "joint", "rate" or "uncertainty"
+// (``method`` "delta" | "sobol", ``times`` for the availability at several
+// times). 200 with the figures, or 202 with ``job`` to poll at getRbdJob
+// (Sobol and times: Pro).
+export function rbdMeasures({ graph, rbdId = null, measure, window = null, groupBy = null, method = null,
+                              times = null, level = null }) {
+  return request("/api/rbds/measures", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      graph,
+      rbd_id: rbdId,
+      measure,
+      window,
+      group_by: groupBy,
+      method,
+      times,
+      level,
     }),
   });
 }
@@ -853,6 +962,17 @@ export function compareRbds(graph, otherId, { name = null, otherName = null, tMa
   });
 }
 
+// Check by simulation (#326): a standby or load-sharing block's exact mean
+// life beside its simulated mean and 95% interval. ``node`` is the block as
+// the builder stores it ({type, data}). Quick and free.
+export function checkBlockMean(node, unit = "") {
+  return request("/api/rbds/check-block-mean", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node, unit }),
+  });
+}
+
 // The cheapest design of a repairable diagram (#99): how many copies of each
 // priced block own it for ``horizon`` at the lowest total cost, optionally at
 // least ``minAvailability`` available. Returns { current, design, graph, ... };
@@ -898,6 +1018,26 @@ export function rbdFaultTree(graph, t = null, tMax = null) {
   });
 }
 
+// A phased mission (#160): the (unsaved) graph's phases worked out — mission
+// reliability, each phase's failure probability, the riskiest phase.
+export function rbdPhases(graph) {
+  return request("/api/rbds/phases", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph }),
+  });
+}
+
+// A network's two-terminal reliability (#160) at ``t`` (null = where it's
+// about 90%), with ``tMax`` the curve's end (null = automatic).
+export function rbdNetwork(graph, t = null, tMax = null) {
+  return request("/api/rbds/network", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t: t ?? null, t_max: tMax ?? null }),
+  });
+}
+
 // Redundancy design (non-repairable graphs): how many copies of each block.
 // ``blocks`` = [{id, cost, weight?, volume?, max_copies, required, strategy,
 // switching, name, types: [{name, model, cost, ...}]}]; give ``budget``
@@ -921,6 +1061,27 @@ export function applyRbdDesign({ graph, blocks, design, t }) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ graph, blocks, design, t }),
+  });
+}
+
+// What each block needs for the system to meet a target (#53): a reliability
+// at ``t`` (non-repairable) or a long-run availability (repairable). A 422
+// for an unreachable target carries ``err.data.reachable``.
+export function allocateRbd({ graph, target, method, t = null, options = {} }) {
+  return request("/api/rbds/allocate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, target, method, t, options }),
+  });
+}
+
+// The production availability (#122): the capacity distribution and the
+// share of the demand delivered — ``{production: null}`` without capacities.
+export function rbdProduction(graph, t = null) {
+  return request("/api/rbds/production", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t }),
   });
 }
 

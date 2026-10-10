@@ -770,6 +770,55 @@ def _instrument_air_availability_graph() -> dict:
      'ccf_groups': []}
 
 
+def _lognormal_repair(mu: float, sigma: float) -> dict:
+    return {
+        "source": "params",
+        "distribution": "Lognormal",
+        "distribution_id": "lognormal",
+        "params": [{"name": "mu", "value": mu}, {"name": "sigma", "value": sigma}],
+    }
+
+
+def _solar_farm_graph() -> dict:
+    """Repairable solar-farm diagram with block capacities (#122).
+
+    Four 250 kW inverters in parallel feed a 1,000 kW step-up transformer and
+    the grid connection. An inverter runs derated at 200 kW for a tenth of its
+    up time (a cooling fault, say): a block with two capacity levels. Against
+    a 900 kW export demand, losing one inverter costs output without taking
+    the farm down, so the production availability (the share of the demand
+    delivered) sits below the plain up/down availability, and the farm reports
+    the energy lost over a year. Illustrative figures, in hours.
+    """
+    inverter_levels = [{"value": 250.0, "probability": 0.9}, {"value": 200.0, "probability": 0.1}]
+    nodes = [{"id": "input", "type": "input", "position": {"x": 0, "y": 195}, "data": {"label": "Input"}}]
+    for i, letter in enumerate("ABCD"):
+        nodes.append({
+            "id": f"inv{letter}", "type": "component", "position": {"x": 240, "y": 130 * i},
+            "data": {"label": f"Inverter {letter}", "model": _weibull(15000.0, 1.2),
+                     "repair": _lognormal_repair(3.746, 0.5), "capacity": inverter_levels},
+        })
+    nodes += [
+        {"id": "transformer", "type": "component", "position": {"x": 500, "y": 195},
+         "data": {"label": "Step-up transformer",
+                  "model": {"source": "params", "distribution": "Exponential", "distribution_id": "exponential",
+                            "params": [{"name": "failure_rate", "value": 1 / 150000}]},
+                  "repair": _lognormal_repair(4.944, 0.6), "capacity": 1000.0}},
+        {"id": "grid", "type": "component", "position": {"x": 740, "y": 195},
+         "data": {"label": "Grid connection",
+                  "model": {"source": "params", "distribution": "Exponential", "distribution_id": "exponential",
+                            "params": [{"name": "failure_rate", "value": 1 / 40000}]},
+                  "repair": _lognormal_repair(1.999, 0.4), "capacity": 1000.0}},
+        {"id": "output", "type": "output", "position": {"x": 980, "y": 195}, "data": {"label": "Output"}},
+    ]
+    edges = [{"id": f"e-input-inv{c}", "source": "input", "target": f"inv{c}"} for c in "ABCD"]
+    edges += [{"id": f"e-inv{c}-transformer", "source": f"inv{c}", "target": "transformer"} for c in "ABCD"]
+    edges += [{"id": "e-transformer-grid", "source": "transformer", "target": "grid"},
+              {"id": "e-grid-output", "source": "grid", "target": "output"}]
+    return {"nodes": nodes, "edges": edges, "unit": "Hours", "repairable": True, "ccf_groups": [],
+            "production": {"demand": 900.0, "unit": "kW", "period": 8760.0}}
+
+
 SAMPLE_RBDS = [
     {
         "id": "sample-rbd-pump-station",
@@ -785,6 +834,11 @@ SAMPLE_RBDS = [
         "id": "sample-rbd-instrument-air-availability",
         "name": "Instrument air — availability with repair times (sample)",
         "graph": _instrument_air_availability_graph(),
+    },
+    {
+        "id": "sample-rbd-solar-farm",
+        "name": "Solar farm — four inverters, energy lost (sample)",
+        "graph": _solar_farm_graph(),
     },
 ]
 

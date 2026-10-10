@@ -124,7 +124,7 @@ def test_open_psa_mgl_pair_is_a_beta_factor_group():
     assert not any("only beta-factor" in w for w in d.warnings)
 
 
-def test_open_psa_mgl_of_three_is_still_skipped():
+def test_open_psa_mgl_of_three_comes_in_as_an_mgl_group():
     xml = """<opsa-mef><define-gate name="T"><atleast min="2">
         <basic-event name="A"/><basic-event name="B"/><basic-event name="C"/></atleast></define-gate>
         <define-CCF-group name="Trio" model="MGL">
@@ -133,8 +133,10 @@ def test_open_psa_mgl_of_three_is_still_skipped():
           <factors><factor level="2"><float value="0.1"/></factor><factor level="3"><float value="0.3"/></factor></factors>
         </define-CCF-group></opsa-mef>"""
     d = one(xml)
-    assert "ccf_groups" not in d.graph
-    assert any("“Trio” uses the MGL model" in w for w in d.warnings)
+    # The multiple Greek letter model (#84): beta and gamma, by level.
+    (group,) = d.graph["ccf_groups"]
+    assert len(group["members"]) == 3 and group["beta"] == 0.1 and group["mgl"] == [0.3]
+    assert not any("uses the MGL model" in w for w in d.warnings)
 
 
 # ---------------------------------------------------------------------------

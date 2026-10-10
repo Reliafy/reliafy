@@ -90,7 +90,8 @@ COST_NAMES = {
 RANGED_COSTS = ("repair", "replace")
 POLICIES = ("age", "block", "condition")
 #: Block fields beyond the models that make a block a component spec.
-EXTRA_KEYS = ("instant_repair", "costs", "preventive", "inspection", "maintenance_group", "crew_priority")
+EXTRA_KEYS = ("instant_repair", "costs", "preventive", "inspection", "maintenance_group", "crew_priority",
+              "repair_quality")
 #: The default simulation window covers at least this many of the longest
 #: maintenance or test interval in the diagram.
 HORIZON_INTERVALS = 10
@@ -374,6 +375,10 @@ def repairable_component(data: dict, label: str, reliability, resolve_model=None
     priority = crew_priority(data, label)
     if priority is not None:
         spec["priority"] = priority
+    # Imperfect repair and replacement at the N-th failure (#68).
+    from backend.services import rbd_repair_quality
+
+    spec.update(rbd_repair_quality.spec_entries(data, label))
     return spec
 
 
@@ -476,6 +481,9 @@ def validation_errors(graph: dict) -> list[str]:
                     f"“{label}”: a block with hidden failures can't be in a maintenance group — "
                     "nobody knows it has failed when the group stops.")
             crew_priority(data, label)
+            from backend.services import rbd_repair_quality
+
+            errors.extend(rbd_repair_quality.errors(data, label))
         except AnalysisError as exc:
             errors.append(str(exc))
         except Exception:  # noqa: BLE001 - a duration model that won't build

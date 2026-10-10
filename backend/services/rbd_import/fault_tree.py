@@ -427,7 +427,17 @@ def to_graph(
                     f"Common-cause group “{g.get('name') or '?'}” has fewer than two members "
                     "left in the diagram and was dropped.")
                 continue
-            out_groups.append({"members": members, "beta": float(g["beta"])})
+            group = {"members": members, "beta": float(g["beta"])}
+            if g.get("mgl"):
+                # A multiple Greek letter group (#84) needs a letter per member
+                # beyond the first: one that lost members can't keep them.
+                if len(g["mgl"]) != len(members) - 2:
+                    warnings.append(
+                        f"Common-cause group “{g.get('name') or '?'}” uses the MGL model, but not all its members "
+                        "are in the diagram, so its letters don't fit; it was dropped.")
+                    continue
+                group["mgl"] = [float(x) for x in g["mgl"]]
+            out_groups.append(group)
         if out_groups:
             graph["ccf_groups"] = out_groups
     return graph, warnings

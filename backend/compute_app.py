@@ -144,6 +144,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _surpyval_version():
+    try:
+        import surpyval
+
+        return getattr(surpyval, "__version__", None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def run_job(job_id: str, kind: str, request: dict, callback_url: str) -> bool:
     """Run one job and report it. Returns whether the final callback landed."""
     started = _now()
@@ -170,6 +179,8 @@ def run_job(job_id: str, kind: str, request: dict, callback_url: str) -> bool:
         "finished_at": _now(),
         "timings": {"compute_s": round(time.perf_counter() - t0, 3)},
         "repyability_version": _repyability_version(),
+        # The engines a run's history shows it ran on (#112).
+        "surpyval_version": _surpyval_version(),
     }
     return post_callback(callback_url, payload)
 

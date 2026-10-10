@@ -23,7 +23,8 @@ jobs:
       # RePyability isn't in requirements.txt: like the Dockerfile, install the
       # pinned tag --no-deps so it can't re-resolve surpyval from PyPI.
       - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.13"
-      - run: pytest backend/tests
+      # The slowest tests are listed, so a slower run says where the time went.
+      - run: pytest backend/tests --durations=40
 
   frontend:
     runs-on: ubuntu-latest

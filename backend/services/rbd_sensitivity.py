@@ -188,6 +188,13 @@ class _Lever:
         self.cls = None
         self.params = None
         self.index = None
+        # RePyability's range of the lever's values (#324), and the user's own
+        # limit on what a user reads ({"min", "max"}, e.g. a mean repair time
+        # that can't go below 4 hours).
+        lo, hi = getattr(lever, "bounds", (-math.inf, math.inf)) or (-math.inf, math.inf)
+        self.bounds = (float(lo), float(hi))
+        self.limit: dict = {}
+        self.clamped: Optional[str] = None  # "yours" / "range": the last step stopped at a limit
         self._describe(rbd)
 
     # -- naming --------------------------------------------------------------
@@ -230,15 +237,8 @@ class _Lever:
         self.label, self.noun, self.kind = self.name, self.name, "factor"
 
     # -- steps ---------------------------------------------------------------
-    def stepped(self, step: float, up: bool) -> Optional[float]:
-        """The lever's raw value moved one step: for a mean lever, the
-        parameter that makes the mean ``1 ± step`` times as long; otherwise
-        ``1 ± step`` times the value (one more for a count), within the
-        lever's bounds. None where there is no such step (a value at 0, or
-        at a bound)."""
-        if self.discrete:
-            return self.value + 1.0 if up else None
-        k = 1.0 + step if up else 1.0 - step
+    def _raw_at(self, k: float) -> float:
+        """The raw value that makes what a user reads ``k`` times as large."""
         theta = self.value
         if self.mean_kind == "scale":
             return theta * k
@@ -248,13 +248,70 @@ class _Lever:
             return theta + math.log(k)
         if self.mean_kind == "shift":
             return theta + (k - 1.0) * self.mean
-        if theta == 0.0:
+        return theta * k
+
+    def _raw_limit(self, shown: float) -> Optional[float]:
+        """The raw value at which what a user reads is ``shown``."""
+        if self.mean_kind is None:
+            return shown
+        if self.mean_kind == "shift":
+            return self.value + (shown - self.mean)
+        if not self.mean or shown <= 0 or (shown / self.mean) <= 0:
             return None
-        moved = theta * k
-        if self.kind == "probability":
-            moved = min(max(moved, 0.0), 1.0)
-        if moved == theta:
+        return self._raw_at(shown / self.mean)
+
+    def _range(self) -> tuple[float, float, Optional[str], Optional[str]]:
+        """The raw values a step may reach: RePyability's bounds narrowed by
+        the user's limit, and which of the two sets each end."""
+        lo, hi = self.bounds
+        lo_by = "range" if math.isfinite(lo) else None
+        hi_by = "range" if math.isfinite(hi) else None
+        for side in ("min", "max"):
+            shown = self.limit.get(side)
+            if shown is None:
+                continue
+            raw = self._raw_limit(shown)
+            if raw is None:
+                continue
+            # A rate falls as the mean rises: the shown minimum is a raw maximum.
+            raw_side = side if self.mean_kind != "rate" else ("max" if side == "min" else "min")
+            if raw_side == "min" and raw > lo:
+                lo, lo_by = raw, "yours"
+            elif raw_side == "max" and raw < hi:
+                hi, hi_by = raw, "yours"
+        return lo, hi, lo_by, hi_by
+
+    def stepped(self, step: float, up: bool) -> Optional[float]:
+        """The lever's raw value moved one step: for a mean lever, the
+        parameter that makes the mean ``1 ± step`` times as long; otherwise
+        ``1 ± step`` times the value (one more for a count). A step that
+        would pass RePyability's bounds for the lever (a coverage can't pass
+        1, #324) or the user's limit stops at it (``clamped`` says which).
+        None where there is no such step (a value at 0, or already at a
+        limit)."""
+        self.clamped = None
+        lo, hi, lo_by, hi_by = self._range()
+        theta = self.value
+        if self.discrete:
+            if not up:
+                return None
+            moved = theta + 1.0
+            if moved > hi + 1e-9:
+                self.clamped = hi_by
+                return None
+            return moved
+        if self.mean_kind is None and theta == 0.0:
             return None
+        k = 1.0 + step if up else 1.0 - step
+        moved = self._raw_at(k)
+        if moved > hi:
+            moved, self.clamped = hi, hi_by
+        elif moved < lo:
+            moved, self.clamped = lo, lo_by
+        if abs(moved - theta) <= 1e-12 * max(abs(theta), 1.0):
+            return None
+        if (moved - theta > 0) != (self._raw_at(k) - theta > 0):
+            return None  # the limit lies behind the value: no step the way that helps
         return moved
 
     def shown(self, raw: Optional[float]) -> Optional[float]:
@@ -279,7 +336,8 @@ class _Lever:
         return {"scale": theta / mean, "rate": -theta / mean, "log": 1.0 / mean, "shift": 1.0}[self.mean_kind]
 
     def change_words(self, step: float, up: bool) -> str:
-        """"10% shorter mean repair time", "one more repair crew"."""
+        """"10% shorter mean repair time", "one more repair crew", "a
+        shorter mean repair time, to your limit"."""
         if self.discrete:
             return f"one more {self.noun}"
         pct = f"{round(step * 100):g}%"
@@ -287,6 +345,8 @@ class _Lever:
             word = "longer" if up else "shorter"
         else:
             word = "higher" if up else "lower"
+        if self.clamped:
+            return f"a {word} {self.noun}, to {'your' if self.clamped == 'yours' else 'its'} limit"
         return f"a {pct} {word} {self.noun}"
 
 
@@ -385,6 +445,44 @@ def parse_costs(raw) -> dict:
     return out
 
 
+def parse_limits(raw) -> dict:
+    """``{lever_id: {"min": x, "max": y}}``: how far a user lets each lever
+    go (#324), in what a user reads (a mean repair time in the diagram's
+    unit, a coverage as a fraction). Blank ends are dropped."""
+    if raw in (None, {}):
+        return {}
+    if not isinstance(raw, dict):
+        raise AnalysisError("limits must be an object of lever id → {min, max}.")
+    out: dict = {}
+    for key, value in raw.items():
+        if value in (None, {}):
+            continue
+        if not isinstance(value, dict):
+            raise AnalysisError(f"The limit for {key!r} must be an object with min and/or max.")
+        ends = {}
+        for side in ("min", "max"):
+            v = value.get(side)
+            if v is None or v == "":
+                continue
+            if isinstance(v, bool):
+                raise AnalysisError(f"The {side} limit for {key!r} must be a number.")
+            try:
+                x = float(v)
+            except (TypeError, ValueError):
+                raise AnalysisError(f"The {side} limit for {key!r} must be a number.") from None
+            if not math.isfinite(x):
+                raise AnalysisError(f"The {side} limit for {key!r} must be finite.")
+            ends[side] = x
+        unknown = set(value) - {"min", "max"}
+        if unknown:
+            raise AnalysisError(f"A limit takes min and max only; {key!r} has {', '.join(sorted(unknown))}.")
+        if "min" in ends and "max" in ends and ends["min"] > ends["max"]:
+            raise AnalysisError(f"The limit for {key!r} has its min above its max.")
+        if ends:
+            out[str(key)] = ends
+    return out
+
+
 def parse_window(value) -> Optional[float]:
     if value is None or value == "":
         return None
@@ -407,7 +505,7 @@ def parse_order(value) -> str:
 
 
 def options(window=None, step=None, rank_by=None, costs=None, n_simulations=None, seed=None,
-            order=None) -> dict:
+            order=None, limits=None) -> dict:
     """The validated options of a sensitivity request (plain JSON)."""
     rank = rank_by or "availability"
     if rank not in RANK_BY:
@@ -418,6 +516,7 @@ def options(window=None, step=None, rank_by=None, costs=None, n_simulations=None
         "rank_by": rank,
         "order": parse_order(order),
         "costs": parse_costs(costs),
+        "limits": parse_limits(limits),
     }
     if n_simulations is not None:
         n = int(n_simulations)
@@ -568,6 +667,7 @@ def analyze_sensitivity(
     simulate: bool = True,
     n_simulations: Optional[int] = None,
     seed: Optional[int] = None,
+    limits: Optional[dict] = None,
 ) -> dict:
     """The levers of a repairable diagram ranked by what a step of each
     gains (see the module docstring). ``window`` takes the mean over
@@ -578,7 +678,10 @@ def analyze_sensitivity(
     unit spent, then the rest by benefit; ``simulate=False``
     refuses rather than simulating where there is no exact or numerical
     route (the caller's paid gate). ``n_simulations`` / ``seed`` fix a
-    simulation's size and streams (else a time budget sizes it)."""
+    simulation's size and streams (else a time budget sizes it).
+    ``limits`` ({lever id: {"min", "max"}}, in what a user reads) stops a
+    lever's step at the user's limit, as RePyability's bounds stop it at the
+    lever's range (#324)."""
     started = time.perf_counter()
     ra.require_blocks(graph)
     if not (graph or {}).get("repairable"):
@@ -588,6 +691,7 @@ def analyze_sensitivity(
         raise AnalysisError("rank_by must be 'availability' or 'cost'.")
     order = parse_order(order)
     costs = parse_costs(costs)
+    limits = parse_limits(limits)
     n_blocks = ra.count_blocks(graph)
     if n_blocks > MAX_BLOCKS:
         raise AnalysisError(too_large_message(n_blocks))
@@ -599,6 +703,11 @@ def analyze_sensitivity(
     unknown = sorted(set(costs) - {lv.id for lv in found})
     if unknown:
         raise AnalysisError(f"costs names {', '.join(unknown)}, which are not levers of this diagram.")
+    unknown = sorted(set(limits) - {lv.id for lv in found})
+    if unknown:
+        raise AnalysisError(f"limits names {', '.join(unknown)}, which are not levers of this diagram.")
+    for lv in found:
+        lv.limit = limits.get(lv.id, {})
 
     value = "mission_availability" if window is not None else "mean_availability"
     route, reason = _route(rbd, value)
@@ -657,6 +766,7 @@ def analyze_sensitivity(
         **result,
         "levers": rows,
         "costs": costs,
+        "limits": limits,
         "notes": notes,
     })
     out["compute_seconds"] = time.perf_counter() - started
@@ -690,6 +800,11 @@ def _deterministic(rbd, found, overrides, window, step, rank_by, quantities, rou
         d = derivative.get(rank_q)
         row = _row(lv, derivative, quantities)
         if lv.discrete:
+            if lv.stepped(step, True) is None:
+                row["unranked"] = "Already at your limit." if lv.clamped == "yours" else "Already at its limit."
+                row["direction"] = "increase"
+                rows.append(row)
+                continue
             # RePyability's value for a count is the change one more makes.
             effect = {q: derivative.get(q) for q in quantities}
             row.update(_with_step(lv, step, True, effect, "exact" if route == "exact" else route, quantities))
@@ -708,7 +823,10 @@ def _deterministic(rbd, found, overrides, window, step, rank_by, quantities, rou
         target = lv.stepped(step, up)
         if target is None:
             row["unranked"] = ("At zero: a step in proportion to it moves nothing." if lv.value == 0
+                               and lv.mean_kind is None
+                               else "Already at your limit in the direction that helps." if lv.clamped == "yours"
                                else "Already at its limit in the direction that helps.")
+            row["direction"] = "increase" if up else "decrease"
             rows.append(row)
             continue
         linear = window is not None or lv.raw.calendar
@@ -767,6 +885,7 @@ def _row(lv: _Lever, derivative: dict, quantities) -> dict:
         # Per unit of what a user reads (per hour of mean repair time).
         "derivative_shown": {q: (v * per_shown if v is not None and per_shown is not None else None)
                              for q, v in derivative.items()},
+        **({"limit": dict(lv.limit)} if lv.limit else {}),
     }
 
 
@@ -776,6 +895,7 @@ def _with_step(lv: _Lever, step: float, up: bool, effect: dict, basis: str, quan
         target = lv.value + 1.0
     return {
         "direction": "increase" if up else "decrease",
+        **({"limited": lv.clamped} if lv.clamped else {}),
         "change": lv.change_words(step, up),
         "to": target,
         "shown_to": lv.shown(target),
@@ -897,7 +1017,8 @@ def _simulated(graph, rbd, found, overrides, window, step, rank_by, quantities, 
             derivative = {q: ways[True][1][q][0] for q in quantities if q in ways[True][1]}
         row = _row(lv, derivative, quantities)
         if not ways:
-            row["unranked"] = "No valid step to simulate."
+            at_limit = lv.stepped(step, True) is None and lv.clamped == "yours"
+            row["unranked"] = "Already at your limit." if at_limit else "No valid step to simulate."
             rows.append(row)
             continue
         rank_q = "cost_rate" if rank_by == "cost" else "availability"
@@ -910,6 +1031,7 @@ def _simulated(graph, rbd, found, overrides, window, step, rank_by, quantities, 
 
         up = max(ways, key=lambda w: gain(ways[w]))
         target, eff = ways[up]
+        lv.stepped(step, up)  # whether that way's step stopped at a limit, for its words
         effect = {q: eff[q][0] for q in quantities if q in eff}
         row.update(_with_step(lv, step, up, effect, "simulation", quantities, target))
         row["interval"] = {q: [eff[q][0] - z * eff[q][1], eff[q][0] + z * eff[q][1]] for q in quantities if q in eff}

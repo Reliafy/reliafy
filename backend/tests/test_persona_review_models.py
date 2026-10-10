@@ -197,6 +197,7 @@ def test_sample_projection_view_is_ready_in_the_app(samples):
     assert view["result"]["projected"]["mtbf"] > view["result"]["demonstrated"]["mtbf"]
 
 
+@pytest.mark.real_seed  # counts or patches what a real seed does
 def test_an_existing_deployment_gets_the_failure_mode_column(monkeypatch):
     """Samples are seeded once and shared: a deployment seeded before #265
     has the compressor data without failure modes. The next start adds the

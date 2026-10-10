@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { cheapestRbdDesign } from "../api.js";
 import { graphSignature } from "./RbdValidation.jsx";
 import { fmtMoney } from "./AvailabilityCosts.jsx";
+import { copiesText, horizonWords } from "../rbdOwnership.js";
 import { unitInText } from "./unitText.js";
 
 // The Design tab for a repairable diagram (#99): how many copies of each block
@@ -238,6 +239,31 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
               </tbody>
             </table>
           </div>
+          {/* The choice over several horizons (#319): the cheapest design at each. */}
+          {(result.by_horizon?.rows || []).length > 1 && (
+            <div className="rbd-avail-imp-scroll">
+              <table className="calc-table rbd-costs-table rbd-horizons-table">
+                <thead>
+                  <tr><th>Owned for</th><th>Cheapest design</th><th>As drawn</th><th>Cheapest</th><th>Saving</th></tr>
+                </thead>
+                <tbody>
+                  {result.by_horizon.rows.map((r) => (
+                    <tr key={r.endless ? "endless" : r.horizon} className={r.set ? "changed" : ""}>
+                      <td className="calc-row-label">
+                        {horizonWords(r, graph.unit)}
+                        {r.set && <small className="muted"> (set)</small>}
+                        {r.endless && <small className="muted"> (net present cost)</small>}
+                      </td>
+                      <td>{r.error ? <span className="muted" title={r.error}>—</span> : copiesText(r.copies)}</td>
+                      <td>{fmtMoney(r.current_total)}</td>
+                      <td>{fmtMoney(r.design_total)}</td>
+                      <td>{fmtMoney(r.saving)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {result.note && <p className="hint" style={{ margin: 0 }}>{result.note}</p>}
           {result.common_cause?.note && <p className="hint" style={{ margin: 0 }}>{result.common_cause.note}</p>}
           {result.changed && (!stale || appliedCurrent) && (
@@ -262,7 +288,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
             RePyability {result.repyability_version} · allocate_redundancy ({result.method}), up to {result.max_copies} copies
             of each priced block{result.design.trains?.length ? " and train" : ""}. Copies of a proof-tested block are tested together.{" "}
             {result.discount_rate > 0
-              ? `Totals are present values at ${result.discount_rate}% a year: purchases at the start, running costs discounted continuously.`
+              ? `Totals are present values at ${result.discount_rate}% a year: purchases at the start, running costs discounted continuously${result.by_horizon?.rows?.some((r) => r.endless) ? "; for ever is the net present cost" : ""}.`
               : "Costs aren't discounted."}
           </p>
         </div>

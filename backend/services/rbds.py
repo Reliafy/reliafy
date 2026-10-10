@@ -254,6 +254,7 @@ def _export_resolvers(db, owner_id):
             "params": results.get("params") or [],
             "extras": results.get("extras"),
             "unit": results.get("unit"),
+            "base_distribution_id": results.get("base_distribution_id"),
         }
 
     return resolve_model, resolve_subsystem
@@ -301,7 +302,14 @@ def validate_graph(db, graph: dict, owner_id: str) -> dict:
         sub = get_rbd(db, sub_id, owner_id)
         return sub.graph if sub is not None else None
 
-    return rbd_analysis.validate_graph(graph, resolve_subsystem=resolve_subsystem)
+    # #160: a network has its own check; a phased mission's problems are warnings.
+    from backend.services import rbd_network, rbd_phases
+
+    if rbd_network.is_network(graph):
+        return rbd_network.validate(graph, resolve_subsystem=resolve_subsystem)
+    out = rbd_analysis.validate_graph(graph, resolve_subsystem=resolve_subsystem)
+    extra = rbd_phases.validation_warnings(graph)
+    return {**out, "warnings": [*(out.get("warnings") or []), *extra]} if extra else out
 
 
 def validate_rbd(db, rbd_id: str, owner_id: str) -> dict:

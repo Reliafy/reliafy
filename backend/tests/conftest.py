@@ -13,6 +13,77 @@ def _fast_sample_availability(monkeypatch):
     monkeypatch.setattr(samples, "SAMPLE_AVAIL_SIMS", 10)
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "real_seed: seed the samples for real, not from the suite's snapshot")
+
+
+# The samples, seeded once per test run: (collection, documents) pairs.
+_SEED_SNAPSHOT: list | None = None
+
+# Seeds the samples into an empty in-memory database, in a process of its
+# own so no test's patches reach it, and pickles the documents to stdout.
+_SEED_SCRIPT = """
+import pickle, sys
+from datetime import datetime, timezone
+import mongomock
+mongomock.utcnow = lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+from backend import config
+from backend.services import samples
+samples.SAMPLE_AVAIL_SIMS = 10
+db = mongomock.MongoClient()[config.MONGODB_DB]
+samples.seed_samples(db)
+pickle.dump([(n, list(db[n].find())) for n in db.list_collection_names()], sys.stdout.buffer)
+"""
+
+
+def _sample_snapshot() -> list:
+    global _SEED_SNAPSHOT
+    if _SEED_SNAPSHOT is None:
+        import pickle
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[2]
+        out = subprocess.run([sys.executable, "-c", _SEED_SCRIPT], cwd=root,
+                             capture_output=True, check=True)
+        _SEED_SNAPSHOT = pickle.loads(out.stdout)
+    return _SEED_SNAPSHOT
+
+
+@pytest.fixture(autouse=True)
+def _seed_samples_once(monkeypatch, request):
+    """Seeding fits every sample model (the imperfect-repair one runs a
+    bootstrap goodness-of-fit test) and takes about 15 s; dozens of tests
+    seed a fresh database, many through the app's startup. The samples are
+    seeded once per run, in a clean process, and a seed into a database
+    holding none of them copies those documents. A database that already
+    holds any of them (a re-seed, an upgrade) is seeded for real, as is any
+    test marked ``real_seed``."""
+    if request.node.get_closest_marker("real_seed"):
+        return
+    import copy
+
+    from backend import config as app_config
+    from backend.services import samples
+
+    real_seed = samples.seed_samples
+
+    def seed_from_snapshot(db) -> None:
+        if not app_config.SEED_SAMPLES:
+            return
+        snapshot = _sample_snapshot()
+        if any(db[name].count_documents({"_id": {"$in": [d["_id"] for d in docs]}})
+               for name, docs in snapshot if docs):
+            return real_seed(db)
+        for name, docs in snapshot:
+            if docs:
+                db[name].insert_many(copy.deepcopy(docs))
+
+    monkeypatch.setattr(samples, "seed_samples", seed_from_snapshot)
+
+
 @pytest.fixture(autouse=True)
 def _fresh_exact_cache():
     """The exact availability figures are kept in a per-process cache; each

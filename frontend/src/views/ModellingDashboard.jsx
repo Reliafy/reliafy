@@ -6,6 +6,7 @@ import { TYPE_LABEL, loadAllModels } from "../allModels.js";
 import { relativeTime } from "../instrument.js";
 import { trackEvent } from "../telemetry.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 
 const ACTIVATED_KEY = "reliafy_activated";
 const RECENT = 5;
@@ -45,6 +46,8 @@ export default function ModellingDashboard() {
       <PageHeader title="Modelling" meta="Fit life data, repairable systems, accelerated tests and degradation." />
 
       <StartHere info={firstRun} sampleModelId={sampleModelId} />
+
+      <SafetyStarterCard />
 
       {recent.length > 0 && (
         <section className="recent-models" aria-labelledby="recent-models-title">

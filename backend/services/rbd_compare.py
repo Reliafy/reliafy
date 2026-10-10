@@ -18,15 +18,26 @@ simulation.
 
 The result keeps each compared quantity under ``differences`` in one shape:
 ``availability`` always, and ``cost`` (#99) when both designs are priced — the
-difference in the window's simulated cost from the same paired simulations
-(so the same common random numbers), with the exact long-run cost-rate
-difference alongside where RePyability has it. The run stops on the
-availability target; the cost interval shows the precision it reached.
+difference in what owning each for the window from new costs, purchases
+included (#321, RePyability 0.13's ``compare(quantity="cost")``, its #234),
+with the exact long-run cost-rate difference alongside where RePyability has
+it. The run stops on the availability target; the cost interval shows the
+precision it reached.
+
+Since RePyability 0.13 ``compare`` is exact where both designs have exact
+values over the window (``mission_availability``, ``expected_cost``; its
+#236): the difference then has no simulation noise at all, and nothing is
+simulated (#321). A quantity with no exact route for either design is
+simulated as above; one that has is exact even when the other is simulated.
+``compare`` takes no pinned blocks, so with pins the exact difference is the
+designs' own ``mission_availability`` / ``expected_cost`` with the pins held,
+which is what ``compare`` works out without them.
 """
 
 from __future__ import annotations
 
 import time
+import warnings
 from typing import Optional
 
 import numpy as np
@@ -69,11 +80,17 @@ def _design(graph: dict, resolve_model) -> dict:
                 cost_rate = float(rbd.expected_cost_rate(**overrides))
         except NotImplementedError:
             cost_rate = None
+    acquisition = float(rbd.acquisition_cost)
     return {
         "rbd": rbd,
+        "graph": graph,
         "overrides": overrides,
         "steady": steady,
+        # Running costs (the paired run's cost samples), and purchases too:
+        # what compare(quantity="cost") counts (#321).
         "priced": bool(rbd.has_costs),
+        "acquisition": acquisition,
+        "owned": bool(rbd.has_costs) or acquisition > 0,
         "cost_rate": cost_rate,
         "blocks": {nid for nid in rbd.components if nid not in gate_ids},
         # Common-cause groups (#226): in the design's figures, or not and why.
@@ -163,20 +180,34 @@ def compare_availability(
     resolve_model_b=None,
     t_simulation: Optional[float] = None,
     n_simulations: Optional[int] = None,
+    exact: bool = True,
 ) -> dict:
-    """Design B against design A: the simulated difference in the window's mean
-    availability (B − A) with its confidence interval, and both exact long-run
-    availabilities and their difference.
+    """Design B against design A: the difference in the window's mean
+    availability (B − A) — exact where both designs have exact values over
+    the window, else simulated with its confidence interval — and both exact
+    long-run availabilities and their difference; with both designs priced,
+    the difference in what owning each for the window costs, purchases
+    included (#321).
 
     The window is the longer of the two designs' default horizons unless
     ``t_simulation`` is given. ``n_simulations`` runs exactly that many
-    simulations of each instead of running to the precision target."""
+    simulations of each instead of running to the precision target, and,
+    like ``exact=False`` (``compare``'s ``control_variate=False``), simulates
+    every quantity."""
     a = _design(graph_a, resolve_model_a)
     b = _design(graph_b, resolve_model_b)
     t_chosen, capped = ra.chosen_horizon(t_simulation, graph_a, graph_b)
     user_horizon = t_chosen is not None
     t_sim = t_chosen if user_horizon else max(
         ra._availability_horizon(graph_a), ra._availability_horizon(graph_b))
+    costed = a["owned"] and b["owned"]
+    quantities = ("availability", "cost") if costed else ("availability",)
+    # Exact where both designs have exact values over the window (#321): with
+    # every compared quantity exact, nothing is simulated.
+    simulate_all = bool(n_simulations) or not exact
+    exacts = {} if simulate_all else _exact_window(a, b, t_sim, quantities)
+    if all(q in exacts for q in quantities):
+        return _result(a, b, graph_a, t_sim, capped, exacts, None)
     # Pilot: time paired replications (and learn whether the blocks' draws
     # can be replayed for common random numbers at all). A chosen window is
     # probed with a couple first, and the pilot batch skipped when it alone
@@ -216,16 +247,17 @@ def compare_availability(
     fb: list = []
     ca: list = []
     cb: list = []
-    costed = a["priced"] and b["priced"]
     index = 0
     reached = False
     while len(fa) < max_n:
-        (xa, ya), (xb, yb) = _batch_runs(a, b, t_sim, min(batch, max_n - len(fa)), index, paired)
+        n_batch = min(batch, max_n - len(fa))
+        (xa, ya), (xb, yb) = _batch_runs(a, b, t_sim, n_batch, index, paired)
         fa.extend(xa)
         fb.extend(xb)
         if costed:
-            ca.extend(ya)
-            cb.extend(yb)
+            # A design priced by its purchases alone runs at no cost.
+            ca.extend(ya if ya is not None else np.zeros(n_batch))
+            cb.extend(yb if yb is not None else np.zeros(n_batch))
         index += 1
         est, se = _difference(np.asarray(fa), np.asarray(fb), paired)
         # Batches that saw no downtime in either design say nothing yet.
@@ -235,6 +267,31 @@ def compare_availability(
             break
     fa_arr, fb_arr = np.asarray(fa), np.asarray(fb)
     est, se = _difference(fa_arr, fb_arr, paired)
+    simulated = {
+        "availability": {
+            **_interval(est, se, z),
+            "tolerance": tolerance,
+            "reached": reached,
+            "values": (ra._f(np.mean(fa_arr)), ra._f(np.mean(fb_arr))),
+        },
+    }
+    if costed:
+        simulated["cost"] = _cost_simulated(a, b, np.asarray(ca), np.asarray(cb), paired, z)
+    # The quantities with an exact route at the window run (shortened or not)
+    # are exact; the simulation stands for the rest.
+    exacts = {} if simulate_all else _exact_window(a, b, t_sim, quantities)
+    run = {
+        "simulated": simulated,
+        "n_simulations": len(fa),
+        "max_simulations": None if n_simulations else max_n,
+        "common_random_numbers": paired,
+        "shortened": shortened,
+    }
+    return _result(a, b, graph_a, t_sim, capped, exacts, run)
+
+
+def _interval(est: float, se: float, z: float) -> dict:
+    """A simulated difference (B − A) with its interval and verdict."""
     half = z * se if np.isfinite(se) else None
     lower = est - half if half is not None else None
     upper = est + half if half is not None else None
@@ -244,54 +301,154 @@ def compare_availability(
         verdict = "a_higher"
     else:
         verdict = "no_detectable_difference"
-
-    exact_a, exact_b = ra._f(a["steady"]), ra._f(b["steady"])
-    differences = {
-        # B − A.
-        "availability": {
-            "estimate": ra._f(est),
-            "lower": ra._f(lower),
-            "upper": ra._f(upper),
-            "standard_error": ra._f(se),
-            "half_width": ra._f(half),
-            "confidence": ra._AVAIL_CONFIDENCE,
-            "tolerance": tolerance,
-            "reached": reached,
-            "verdict": verdict,
-            "exact": (exact_b - exact_a) if exact_a is not None and exact_b is not None else None,
-        },
+    return {
+        "estimate": ra._f(est),
+        "lower": ra._f(lower),
+        "upper": ra._f(upper),
+        "standard_error": ra._f(se),
+        "half_width": ra._f(half),
+        "confidence": ra._AVAIL_CONFIDENCE,
+        "verdict": verdict,
+        "method": "simulated",
     }
+
+
+def _exact_interval(est: float) -> dict:
+    """An exact difference (B − A): no interval, no noise."""
+    verdict = "b_higher" if est > 0 else "a_higher" if est < 0 else "no_detectable_difference"
+    return {
+        "estimate": ra._f(est), "lower": ra._f(est), "upper": ra._f(est), "standard_error": 0.0,
+        "half_width": 0.0, "confidence": ra._AVAIL_CONFIDENCE, "verdict": verdict, "method": "exact",
+        "tolerance": None, "reached": True,
+    }
+
+
+def _held(design: dict) -> bool:
+    ov = design["overrides"]
+    return bool(ov["working_nodes"] or ov["broken_nodes"])
+
+
+def _exact_window(a: dict, b: dict, t_sim: float, quantities) -> dict:
+    """``{quantity: {"difference", "values": (A, B), "route"}}`` for each of
+    ``quantities`` both designs have exact (or numerical) values of over the
+    window from new: RePyability's ``compare`` (exact by default since 0.13),
+    with each design's own value beside it (``mission_availability``, and
+    the purchases plus ``expected_cost``: what ``compare(quantity="cost")``
+    counts). With pinned blocks, which ``compare`` doesn't take, the
+    difference is those values' (``compare``'s own exact route). Not above
+    :data:`rbd_analysis.EXACT_WINDOW_MEAN_MAX_BLOCKS` blocks, as for an
+    availability result's window."""
+    if not (ra.window_mean_exact_ok(a["graph"]) and ra.window_mean_exact_ok(b["graph"])):
+        return {}
+    routes = [ra.window_routes(d["rbd"]) for d in (a, b)]
+    out: dict = {}
+    for q in quantities:
+        key = "mission_availability" if q == "availability" else "expected_cost"
+        needs = [d["priced"] for d in (a, b)] if q == "cost" else [True, True]
+        if any(need and r[key] not in ra._OVER_TIME_OK for need, r in zip(needs, routes)):
+            continue
+        try:
+            with warnings.catch_warnings(), np.errstate(all="ignore"):
+                warnings.simplefilter("ignore", RuntimeWarning)
+                values = tuple(_window_value(d, t_sim, q) for d in (a, b))
+                difference = None
+                if not (_held(a) or _held(b)):
+                    # B − A by the library itself; two simulations at most
+                    # should it ever find no exact route after all.
+                    got = b["rbd"].compare(a["rbd"], float(t_sim), mc_samples=2, seed=0, quantity=q)
+                    if got.method != "exact":
+                        continue
+                    difference = float(got.estimate)
+        except (NotImplementedError, ValueError):
+            continue
+        if difference is None:
+            difference = values[1] - values[0]
+        route = "numerical" if "numerical" in (routes[0][key], routes[1][key]) else "exact"
+        out[q] = {"difference": difference, "values": values, "route": route}
+    return out
+
+
+def _window_value(design: dict, t_sim: float, quantity: str) -> float:
+    """A design's exact value over the window from new: its mission
+    availability, or what owning it costs (purchases plus the expected
+    running cost)."""
+    rbd, ov = design["rbd"], design["overrides"]
+    if quantity == "availability":
+        return float(rbd.mission_availability(float(t_sim), **ov))
+    running = float(rbd.expected_cost(float(t_sim), **ov).mean) if design["priced"] else 0.0
+    return running + design["acquisition"]
+
+
+def _result(a: dict, b: dict, graph_a: dict, t_sim: float, capped: bool, exact: dict,
+            run: Optional[dict]) -> dict:
+    """The comparison: each quantity exact where :func:`_exact_window` found
+    it, else from the paired simulation ``run`` (None: nothing simulated)."""
+    sims = (run or {}).get("simulated") or {}
+    costed = a["owned"] and b["owned"]
+    differences: dict = {}
+    windows: dict = {}
+    for q in ("availability", "cost") if costed else ("availability",):
+        if q in exact:
+            differences[q] = {**_exact_interval(exact[q]["difference"]), "route": exact[q]["route"]}
+            windows[q] = exact[q]["values"]
+        else:
+            sim = dict(sims[q])
+            windows[q] = sim.pop("values")
+            differences[q] = sim
+    exact_a, exact_b = ra._f(a["steady"]), ra._f(b["steady"])
+    # The long-run difference (B − A), beside the window's.
+    differences["availability"]["exact"] = (exact_b - exact_a) if exact_a is not None and exact_b is not None \
+        else None
     if costed:
-        differences["cost"] = _cost_difference(a, b, np.asarray(ca), np.asarray(cb), paired, z)
+        cost = differences["cost"]
+        # Per unit time (the window's difference is a total over it).
+        cost["exact"] = (ra._f(b["cost_rate"] - a["cost_rate"])
+                         if a["cost_rate"] is not None and b["cost_rate"] is not None else None)
+        cost["exact_kind"] = "rate"
+        cost["includes_acquisition"] = True
+        cost["acquisition"] = b["acquisition"] - a["acquisition"]
+        if cost.get("estimate") is not None:
+            cost["running"] = ra._f(cost["estimate"] - cost["acquisition"])
+        cost.setdefault("tolerance", None)
+        cost.setdefault("reached", None)
     cost_note = None
-    if a["priced"] != b["priced"]:
-        cost_note = (f"Only design {'A' if a['priced'] else 'B'} is priced, so costs aren't "
+    if a["owned"] != b["owned"]:
+        cost_note = (f"Only design {'A' if a['owned'] else 'B'} is priced, so costs aren't "
                      "compared — give both designs costs to compare them.")
+    simulated_any = run is not None and any(d.get("method") == "simulated" for d in differences.values())
+    designs = {}
+    for key, design, i in (("a", a, 0), ("b", b, 1)):
+        exact_value = exact_a if key == "a" else exact_b
+        row = {
+            "steady_state_availability": exact_value,
+            "unavailability": (1.0 - exact_value) if exact_value is not None else None,
+            "window_availability": ra._f(windows["availability"][i]),
+            "window_availability_basis": differences["availability"].get("route", "simulation")
+            if differences["availability"]["method"] == "exact" else "simulation",
+            "priced": design["owned"],
+            "cost_rate": ra._f(design["cost_rate"]) if design["cost_rate"] is not None else None,
+            "acquisition_cost": design["acquisition"],
+            # Owning it for the window from new: purchases and running costs.
+            "window_cost": ra._f(windows["cost"][i]) if costed and windows["cost"][i] is not None else None,
+            **({"common_cause_included": design["common_cause"]["included"],
+                "common_cause_reason": design["common_cause"]["reason"]}
+               if design["common_cause"] is not None else {}),
+        }
+        if costed and row["window_cost"] is not None:
+            row["window_running_cost"] = ra._f(row["window_cost"] - design["acquisition"])
+        designs[key] = row
     return {
         "kind": "repairable_comparison",
         "unit": (graph_a.get("unit") or "").strip(),
         "t_simulation": float(t_sim),
-        "horizon_shortened": shortened,
-        "designs": {
-            key: {
-                "steady_state_availability": exact,
-                "unavailability": (1.0 - exact) if exact is not None else None,
-                "window_availability": ra._f(np.mean(arr)),
-                "priced": design["priced"],
-                "cost_rate": ra._f(design["cost_rate"]) if design["cost_rate"] is not None else None,
-                "window_cost": ra._f(np.mean(costs)) if costed and len(costs) else None,
-                **({"common_cause_included": design["common_cause"]["included"],
-                    "common_cause_reason": design["common_cause"]["reason"]}
-                   if design["common_cause"] is not None else {}),
-            }
-            for key, exact, arr, design, costs in (
-                ("a", exact_a, fa_arr, a, ca), ("b", exact_b, fb_arr, b, cb))
-        },
+        "horizon_shortened": bool(capped or (run or {}).get("shortened")),
+        "method": "simulated" if simulated_any else "exact",
+        "designs": designs,
         "differences": differences,
         "cost_note": cost_note,
-        "n_simulations": len(fa),
-        "max_simulations": None if n_simulations else max_n,
-        "common_random_numbers": paired,
+        "n_simulations": (run or {}).get("n_simulations", 0) if simulated_any else 0,
+        "max_simulations": (run or {}).get("max_simulations") if simulated_any else None,
+        "common_random_numbers": (run or {}).get("common_random_numbers", True) if simulated_any else None,
         "shared_blocks": len(a["blocks"] & b["blocks"]),
         "repyability_version": ra._repyability_version(),
     }
@@ -308,39 +465,15 @@ def _unavailability(design: dict, t_sim: float) -> float:
     return u if u is not None else float("nan")
 
 
-def _cost_difference(a: dict, b: dict, ca: np.ndarray, cb: np.ndarray, paired: bool,
-                     z: float) -> dict:
-    """The difference in the window's cost (B − A), from the same simulations
-    as the availability (so paired by common random numbers when they are),
-    and the exact long-run cost-rate difference when both rates are exact.
-    ``b_higher`` means design B costs more."""
-    est, se = _difference(ca, cb, paired)
-    half = z * se if np.isfinite(se) else None
-    lower = est - half if half is not None else None
-    upper = est + half if half is not None else None
-    if lower is not None and lower > 0:
-        verdict = "b_higher"
-    elif upper is not None and upper < 0:
-        verdict = "a_higher"
-    else:
-        verdict = "no_detectable_difference"
-    exact = None
-    if a["cost_rate"] is not None and b["cost_rate"] is not None:
-        exact = b["cost_rate"] - a["cost_rate"]
-    return {
-        "estimate": ra._f(est),
-        "lower": ra._f(lower),
-        "upper": ra._f(upper),
-        "standard_error": ra._f(se),
-        "half_width": ra._f(half),
-        "confidence": ra._AVAIL_CONFIDENCE,
-        "tolerance": None,
-        "reached": None,
-        "verdict": verdict,
-        # Per unit time (the simulated difference is a total over the window).
-        "exact": ra._f(exact) if exact is not None else None,
-        "exact_kind": "rate",
-    }
+def _cost_simulated(a: dict, b: dict, ca: np.ndarray, cb: np.ndarray, paired: bool, z: float) -> dict:
+    """The simulated difference (B − A) in what owning each design for the
+    window costs — its running cost from the same simulations as the
+    availability (so paired by common random numbers when they are) plus its
+    purchases, as ``compare(quantity="cost")`` counts it (#321). ``b_higher``
+    means design B costs more."""
+    oa, ob = ca + a["acquisition"], cb + b["acquisition"]
+    est, se = _difference(oa, ob, paired)
+    return {**_interval(est, se, z), "values": (ra._f(np.mean(oa)), ra._f(np.mean(ob)))}
 
 
 def compare_graphs(db, graph_a: dict, graph_b: dict, owners_a, owners_b,

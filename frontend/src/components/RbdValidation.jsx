@@ -17,6 +17,9 @@ export function graphSignature(graph) {
     unit: graph.unit || "",
     // Diagram-level costs (#99) change a repairable diagram's results.
     ...(graph.costs ? { costs: graph.costs } : {}),
+    // A network is checked as one; phases add their own warnings (#160).
+    ...(graph.network ? { network: graph.network } : {}),
+    ...(graph.phases ? { phases: graph.phases } : {}),
   });
 }
 

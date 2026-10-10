@@ -1,0 +1,21 @@
+{
+  "model": "LogNormalAFT",
+  "about": "How long a repairable diagram's availability simulation takes (#286): ln T = intercept + log_replications * ln n + log1p_events_per_replication * ln(1 + e) + log_blocks * ln b, with log-normal residuals of spread sigma. n is the replications, e the expected block failures in one replication (each block's units times the window over its mean life), b the blocks. T is in seconds on the machine the coefficients were fitted on; machine_factors scale it to each machine Reliafy runs simulations on.",
+  "intercept": -6.934,
+  "sigma": 0.678,
+  "coefficients": {
+    "log_replications": 0.580,
+    "log1p_events_per_replication": 0.571,
+    "log_blocks": 0.245
+  },
+  "fitted_on": {
+    "data": "tools/quote_bench/data/pilot-dev-laptop.jsonl",
+    "points": 800,
+    "censored": 4,
+    "machine": "dev laptop (8 cores, 3 workers)"
+  },
+  "machine_factors": {
+    "compute": 1.0,
+    "web": 1.0
+  }
+}

@@ -253,8 +253,8 @@ def test_request_is_self_contained_and_runs_without_a_database(monkeypatch):
 def test_job_kinds_are_a_registry():
     from backend.services import compute_core
 
-    assert compute_core.KINDS == ("availability", "sensitivity", "intervals", "alt_bounds")
-    assert set(compute_core.RUNNERS) == {"availability", "sensitivity", "intervals", "alt_bounds"}
+    assert compute_core.KINDS == ("availability", "sensitivity", "intervals", "alt_bounds", "measures")
+    assert set(compute_core.RUNNERS) == {"availability", "sensitivity", "intervals", "alt_bounds", "measures"}
     with pytest.raises(compute_core.InvalidRequest, match="Unknown kind"):
         compute_core.run("next_failure", {"graph": _graph()})
 
@@ -422,7 +422,8 @@ def test_next_failure_from_now_with_and_without_the_queue(client, monkeypatch, q
     local = local.json()
     assert local["current_state"] and local["next_failure"]["mean"] > 0
     if not queued:
-        assert client.db.rbd_jobs.count_documents({}) == 0
+        # Nothing queued: the run is recorded finished, for the history (#112).
+        assert client.db.rbd_jobs.count_documents({"status": {"$ne": "done"}}) == 0
         return
 
     from backend import compute_app
@@ -548,7 +549,10 @@ def test_no_queue_runs_in_process_exactly_as_before(client, monkeypatch):
     body = r.json()
     assert body["cached"] is False and body["quick"] is False and body["n_simulations"] == 20
     assert body["has_simulation"] is True and body["simulation_status"] == {"state": "done"}
-    assert "job" not in body and client.db.rbd_jobs.count_documents({}) == 0
+    assert "job" not in body
+    # Nothing queued: one finished run, recorded for the history (#112).
+    [run] = client.db.rbd_jobs.find({})
+    assert run["status"] == "done" and run["in_process"] is True and run["machine"] == "web"
 
 
 # ---- Through the queue ------------------------------------------------------------------
