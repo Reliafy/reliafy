@@ -86,7 +86,10 @@ export default function RecurrentStats({ r }) {
               </div>
             ))}
           </dl>
-          <p className="rs-note">Likelihood-ratio tests of the fit against each kind of repair, at 5%. {rt.conclusion}</p>
+          <p className="rs-note">
+            Likelihood-ratio tests of the fit against each kind of repair, at 5%.{" "}
+            {rt.conclusion ? `${rt.conclusion[0].toUpperCase()}${rt.conclusion.slice(1)}.` : ""}
+          </p>
         </section>
       )}
 
