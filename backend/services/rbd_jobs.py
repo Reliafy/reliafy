@@ -95,7 +95,7 @@ def _stale_before() -> datetime:
 
 def create(db, *, uid: str, kind: str, request: dict, cache_key: str, rbd_id: Optional[str],
            quick: bool, store: bool, free_sim_day: Optional[str] = None,
-           context: Optional[dict] = None, owners=None) -> dict:
+           context: Optional[dict] = None, owners=None, extra: Optional[dict] = None) -> dict:
     now = _now()
     job = {
         "_id": uuid.uuid4().hex,
@@ -117,6 +117,8 @@ def create(db, *, uid: str, kind: str, request: dict, cache_key: str, rbd_id: Op
         # The read scope cache_key was built in, for the store guard (#92).
         "owners": list(owners) if isinstance(owners, (list, tuple, set, frozenset)) else owners,
     }
+    # Run history (#112) and the runtime quote (#286): see rbd_runs.
+    job.update(extra or {})
     db.rbd_jobs.insert_one(job)
     return job
 
@@ -181,7 +183,7 @@ def _store_result(db, job: dict, result: dict) -> Optional[str]:
 
 
 def finish(db, job_id: str, status: str, *, result: Optional[dict] = None, error: Optional[str] = None,
-           timings: Optional[dict] = None, started_at=None) -> bool:
+           timings: Optional[dict] = None, started_at=None, engines: Optional[dict] = None) -> bool:
     """Record a job's outcome, once: True if this call finished it (a repeat
     — e.g. a retried task's second callback — changes nothing). A successful
     result is stored on the diagram when the job may; a failed free run is
@@ -210,6 +212,10 @@ def finish(db, job_id: str, status: str, *, result: Optional[dict] = None, error
             logger.exception("Couldn't save job %s's result on RBD %s", job_id, job.get("rbd_id"))
             computed_at = None
         db.rbd_jobs.update_one({"_id": job_id}, {"$set": {"computed_at": computed_at}})
+        if job.get("kind") == KIND_AVAILABILITY:
+            from backend.services import rbd_runs
+
+            rbd_runs.on_finished(db, job, update["result"], timings, engines)
     elif job.get("quick"):
         free_sims.refund(db, job.get("uid"), job.get("free_sim_day"))
     return True
@@ -233,7 +239,9 @@ def apply_callback(db, payload: dict) -> bool:
         if not isinstance(result, dict):
             return finish(db, job_id, "failed", error=FAILED_ERROR, started_at=payload.get("started_at"))
         return finish(db, job_id, "done", result=result, timings=payload.get("timings"),
-                      started_at=payload.get("started_at"))
+                      started_at=payload.get("started_at"),
+                      engines={"repyability": payload.get("repyability_version"),
+                               "surpyval": payload.get("surpyval_version")})
     if status == "failed":
         return finish(db, job_id, "failed", error=str(payload.get("error") or FAILED_ERROR),
                       timings=payload.get("timings"), started_at=payload.get("started_at"))
@@ -301,6 +309,11 @@ def view(db, job: dict, entitled: bool) -> dict:
         "finished_at": _iso(job.get("finished_at")),
         "queue_position": queue_position(db, job),
     }
+    if job.get("kind") == KIND_AVAILABILITY and job.get("status") in ACTIVE:
+        # How long it should take, and roughly when it starts (#286).
+        from backend.services import rbd_runs
+
+        out.update(rbd_runs.progress(db, job))
     if job.get("status") == "done":
         if job.get("kind") in _PLAIN_RESULT_KINDS:
             out["result"] = generic_engine_fields({**(job.get("result") or {}), "job_id": job["_id"]})
@@ -312,6 +325,8 @@ def view(db, job: dict, entitled: bool) -> dict:
 
 
 def _job_accepted(db, job: dict) -> tuple[int, dict]:
+    from backend.services import rbd_runs
+
     return 202, {
         "kind": "repairable",
         "job": True,
@@ -319,6 +334,8 @@ def _job_accepted(db, job: dict) -> tuple[int, dict]:
         "status": job["status"],
         "quick": bool(job.get("quick")),
         "queue_position": queue_position(db, job),
+        # The quote, and roughly when it starts (#286).
+        **rbd_runs.progress(db, job),
     }
 
 
@@ -337,11 +354,13 @@ def run_availability(
     force: bool = False,
     state: Optional[dict] = None,
     context: Optional[dict] = None,
+    run_info: Optional[dict] = None,
 ) -> tuple[int, dict]:
     """Run (or queue) an availability simulation the caller is allowed to run.
     ``quick`` is a free, time-capped run counted against the daily cap;
     ``state`` a canonical current state to start from; ``context`` what a
-    finished job is shown with (see :func:`job_payload`).
+    finished job is shown with (see :func:`job_payload`); ``run_info`` who
+    ran it and from where (:func:`rbd_runs.run_info`, for the history).
 
     Returns ``(status, payload)``: 200 with the simulation's result
     (in-process, or a finished identical job), 202 with a job to poll, 429
@@ -375,8 +394,11 @@ def run_availability(
     if request is None:
         # In-process: no queue configured (self-hosted, dev, tests), or a
         # diagram that needs saved models re-fitted (see compute_core).
+        from backend.services import rbd_runs
+
         try:
-            result = rbds_service.analyze_graph(db, graph, resolve_owners, t_max=t_max, **options)
+            result, seconds = rbd_runs.timed(rbds_service.analyze_graph, db, graph, resolve_owners,
+                                             t_max=t_max, **options)
         except Exception:
             free_sims.refund(db, uid, free_day)
             raise
@@ -384,14 +406,21 @@ def run_availability(
         if store and rbd_id:
             computed_at = rbds_service.save_availability_result(db, rbd_id, cache_key, result, uid,
                                                                 resolve_owners)
+        # Recorded as a finished run, for the history (#112).
+        rbd_runs.record_in_process(
+            db, uid=uid, graph=graph, options={"t_simulation": t_max, **options}, cache_key=cache_key,
+            rbd_id=rbd_id, quick=quick, store=store, result=result, runtime_s=seconds,
+            computed_at=computed_at, context=context, owners=resolve_owners, info=run_info)
         payload = _result_payload(result, computed_at, entitled)
         if quick:
             payload["free_sims"] = free_sims.summary(db, uid)
         return 200, payload
 
+    from backend.services import rbd_runs
+
     job = create(db, uid=uid, kind=KIND_AVAILABILITY, request=request, cache_key=cache_key,
                  rbd_id=rbd_id, quick=quick, store=store, free_sim_day=free_day, context=context,
-                 owners=resolve_owners)
+                 owners=resolve_owners, extra=rbd_runs.new_fields(db, request, run_info, in_process=False))
     try:
         compute_queue.enqueue(job["_id"], KIND_AVAILABILITY, request)
     except compute_queue.QueueError as exc:

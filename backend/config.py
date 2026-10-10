@@ -369,6 +369,14 @@ RBD_JOB_STALE_S = _int("RBD_JOB_STALE_S", 40 * 60)
 # Finished jobs (and their results) are kept this long, then the TTL index
 # drops them.
 RBD_JOB_TTL_DAYS = _int("RBD_JOB_TTL_DAYS", 7)
+# Availability simulations are the run history (#112): kept this long after
+# they finish (RBD_JOB_TTL_DAYS when 0).
+RBD_RUN_TTL_DAYS = _int("RBD_RUN_TTL_DAYS", 0)
+# The runtime quote (#286): the calculation service's machine type (each type
+# has its own calibration factor), and how many jobs it runs at once (its
+# max instances × concurrency; the queue's max concurrent dispatches).
+COMPUTE_MACHINE = (os.environ.get("COMPUTE_MACHINE") or "").strip() or "compute"
+COMPUTE_PARALLEL_JOBS = _int("COMPUTE_PARALLEL_JOBS", 2)
 # MCP analyze_rbd waits this long for a queued simulation before answering
 # with the job id (the agent then calls get_job).
 MCP_JOB_WAIT_S = _float("MCP_JOB_WAIT_S", 20.0)

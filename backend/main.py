@@ -49,6 +49,7 @@ from backend.routers import rbds as rbds_router
 from backend.routers import rbd_jobs as rbd_jobs_router
 from backend.routers import rbd_block_check as rbd_block_check_router
 from backend.routers import rbd_compare as rbd_compare_router
+from backend.routers import rbd_runs as rbd_runs_router
 from backend.routers import rbd_fault_tree as rbd_fault_tree_router
 from backend.routers import rbd_design as rbd_design_router
 from backend.routers import rbd_allocation as rbd_allocation_router
@@ -206,6 +207,7 @@ app.include_router(rbds_router.router)
 app.include_router(rbd_jobs_router.router)
 app.include_router(rbd_compare_router.router)
 app.include_router(rbd_block_check_router.router)
+app.include_router(rbd_runs_router.router)
 app.include_router(rbd_fault_tree_router.router)
 app.include_router(rbd_design_router.router)
 app.include_router(rbd_allocation_router.router)

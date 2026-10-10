@@ -109,6 +109,7 @@ from backend.services import rbd_edit
 from backend.services import rbd_graph
 from backend.services import rbd_import
 from backend.services import rbd_jobs as rbd_jobs_service
+from backend.services import rbd_runs as rbd_runs_service
 from backend.services import rbd_repeats
 from backend.services.rbd_import import structure as rbd_structure
 from backend.services import rbds as rbds_service
@@ -3688,10 +3689,14 @@ def _await_job(db, job_id: str, wait_s: float) -> Optional[dict]:
 
 
 def _job_pending(db, job: dict) -> dict:
+    # The runtime quote and roughly when it starts (#286), for availability jobs.
+    eta = rbd_runs_service.progress(db, job) if job.get("kind") == rbd_jobs_service.KIND_AVAILABILITY else {}
     return {
         "job_id": job["_id"],
         "status": job.get("status"),
         "queue_position": rbd_jobs_service.queue_position(db, job),
+        **({"estimate": eta["quote"]["text"]} if eta.get("quote") else {}),
+        **({"starts_in": eta["wait_text"]} if eta.get("wait_text") else {}),
         "note": "The simulation is queued or running on Reliafy's calculation service. Call get_job with "
                 "this job_id in a few seconds for the result.",
     }
@@ -4000,6 +4005,112 @@ def get_job(
     if job.get("status") == "failed":
         return {**out, "available": False, "message": job.get("error") or rbd_jobs_service.FAILED_ERROR}
     return {**out, "available": False, **_job_pending(db, job)}
+
+
+# ---- Run history and runtime quotes (#112, #286) -------------------------------------------
+
+def _run_brief(row: dict) -> dict:
+    """A runs-list row for an agent: plain fields, no UI labels."""
+    out = {k: row.get(k) for k in ("run_id", "rbd_id", "rbd_name", "status", "created_at", "finished_at",
+                                    "runtime_s", "replications", "window", "unit", "availability", "error")}
+    out["ran_by"] = "you" if row["by"]["you"] else (row["by"].get("name") or "a teammate")
+    out["via"] = row["via"].get("label") or "not recorded"
+    out["method"] = row["method"]["label"]
+    if row.get("quote"):
+        out["quoted"] = row["quote"].get("text")
+    return {k: v for k, v in out.items() if v is not None}
+
+
+@_tool("list_rbd_runs", _READ, "List simulation runs")
+def list_rbd_runs(
+    ctx: Context,
+    rbd_id: Annotated[Optional[str], Field(description="Only this diagram's runs (an RBD id from list_rbds).")] = None,
+    limit: Annotated[int, Field(ge=1, le=100, description="How many runs, newest first.")] = 20,
+) -> dict[str, Any]:
+    """The user's availability simulations of repairable diagrams, newest first — from the app or any MCP
+    connector: who ran it and from where (via), status (queued, running, done, failed), method (full, quick
+    estimate, fixed replications; "from now" with a current state), the calculation's runtime in seconds, when,
+    the replications and window, and for a finished run the simulated window availability with its confidence
+    interval. Runs are kept for a limited time (kept_days). Read one in full with get_rbd_run."""
+    user, db = _caller(ctx), _db()
+    if rbd_id:
+        _get_rbd(db, user["uid"], rbd_id)
+    out = rbd_runs_service.list_runs(db, _reader(user), rbd_id, limit)
+    return {"runs": [_run_brief(r) for r in out["runs"]], "more": out["more"], "kept_days": out["kept_days"]}
+
+
+@_tool("get_rbd_run", _READ, "Read a simulation run")
+def get_rbd_run(
+    ctx: Context,
+    run_id: Annotated[str, Field(description="A run_id from list_rbd_runs (or a job_id from analyze_rbd).")],
+    include_curve: Annotated[bool, Field(description=(
+        "Also return the simulated availability over time A(t) with its confidence band (t, availability, "
+        "lower, upper)."))] = False,
+) -> dict[str, Any]:
+    """One availability simulation in full: its stored results (the same figures analyze_rbd gives, with
+    their confidence intervals), the inputs it ran on (window, seed, replications, any current state, and
+    whether the diagram has changed since), the RePyability and SurPyval versions, the precision it achieved
+    (precision.reached: whether it met its target), and what was quoted before it ran against its runtime.
+    To run it again, call analyze_rbd with recompute=true."""
+    user, db = _caller(ctx), _db()
+    reader = _reader(user)
+    job = rbd_runs_service.get_visible(db, reader, run_id)
+    if job is None:
+        raise ToolError("Run not found.")
+    entitled = billing_service.premium_compute_allowed(db, user)
+    view = rbd_runs_service.detail(db, reader, job, entitled)
+    out = _run_brief(view)
+    out.update(inputs=view["inputs"], engines=view["engines"])
+    if view.get("rbd_id"):
+        out["url"] = _url(f"/rbds/runs/{run_id}")
+    if job.get("status") == "done":
+        payload = view["result"]
+        out["result"] = _availability_summary(payload)
+        if include_curve and payload.get("curve"):
+            out["curve"] = {k: payload["curve"].get(k) for k in ("t", "availability", "lower", "upper", "confidence")}
+    elif job.get("status") in rbd_jobs_service.ACTIVE:
+        out.update({k: view.get(k) for k in ("queue_position", "wait_text") if view.get(k) is not None})
+    return out
+
+
+@_tool("quote_rbd_simulation", _READ, "Quote a simulation's runtime")
+def quote_rbd_simulation(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="A repairable RBD id from list_rbds.")],
+    t_max: Annotated[Optional[float], Field(gt=0, description=(
+        "The window, as analyze_rbd's t_max (default: the automatic one)."))] = None,
+    current_state: Annotated[Optional[dict[str, BlockState]], Field(description=(
+        "Blocks' states now, as analyze_rbd's current_state."))] = None,
+) -> dict[str, Any]:
+    """How long analyze_rbd's availability simulation of a repairable diagram should take, before anything
+    runs or is queued: estimate (in words, e.g. "about 15 s, up to 40 s"), median_s and p90_s (90% of runs
+    finish within it), from a model of past runs' times; and how many jobs are queued on the calculation
+    service ahead of a new one, with roughly how long until it would start. Nothing is run or charged."""
+    from backend.routers.rbd_runs import quote_for
+
+    user, db = _caller(ctx), _db()
+    rbd = _get_rbd(db, user["uid"], rbd_id)
+    graph = rbd.graph or {}
+    if not graph.get("repairable"):
+        raise ToolError("Only repairable diagrams are simulated; this one is analysed exactly (analyze_rbd).")
+    state = ({nid: v.model_dump(exclude_none=True) for nid, v in current_state.items()}
+             if current_state else None)
+    quick = not billing_service.premium_compute_allowed(db, user)
+    quote = quote_for(db, graph, t_max, quick, state)
+    out: dict[str, Any] = {"rbd_id": rbd.id, "name": rbd.name, "available": bool(quote.get("available"))}
+    if not quote.get("available"):
+        return {**out, "message": quote.get("reason")}
+    out.update(estimate=quote["text"], median_s=round(quote["median_s"], 2), p90_s=round(quote["p90_s"], 2),
+               replications=quote["replications"], window=quote["window"], unit=graph.get("unit") or "")
+    if quote.get("capped"):
+        out["note"] = "The run stops at its time limit, so it takes about that long."
+    from backend.services import compute_queue as _queue
+
+    if _queue.configured():
+        ahead = db.rbd_jobs.count_documents({"status": {"$in": list(rbd_jobs_service.ACTIVE)},
+                                             "created_at": {"$gte": rbd_jobs_service._stale_before()}})
+        out["jobs_in_queue"] = ahead
+    return out
 
 
 @_tool("export_rbd_python", _READ, "Export an RBD as Python")

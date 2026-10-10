@@ -19,6 +19,7 @@ from backend.services import free_sims as free_sims_service
 from backend.services import import_guard
 from backend.services import rbd_import
 from backend.services import rbd_jobs as rbd_jobs_service
+from backend.services import rbd_runs as rbd_runs_service
 from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
@@ -454,6 +455,8 @@ def availability_payload(
             force=force,
             state=state,
             context={"exact": free.get("exact")},
+            # Who ran it, from the app or which connector (#112).
+            run_info=rbd_runs_service.run_info(ctx, surface),
         )
         if code == 200:
             sim = res
@@ -487,7 +490,9 @@ def availability_payload(
     if sim is not None and sim.get("free_sims"):
         out["free_sims"] = sim["free_sims"]
     if job is not None:
-        out["job"] = {k: job.get(k) for k in ("job_id", "status", "queue_position", "quick")}
+        # With the runtime quote and the wait from the jobs ahead (#286).
+        out["job"] = {k: job.get(k) for k in ("job_id", "status", "queue_position", "quick", "quote", "wait_s",
+                                              "wait_text")}
         if job.get("free_sims"):
             out["free_sims"] = job["free_sims"]
         return 202, out

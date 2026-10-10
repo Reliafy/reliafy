@@ -821,6 +821,48 @@ export function getActiveRbdJob(rbdId, kind = null) {
   return request(`/api/rbd-jobs?rbd_id=${encodeURIComponent(rbdId)}${k}`);
 }
 
+// How long a repairable diagram's simulation should take (#286), before it
+// runs: {available, median_s, p90_s, text: "about 15 s, up to 40 s"} or
+// {available: false, reason}. Nothing is run.
+export function quoteRbdSimulation({ graph, tMax = null, quick = false, currentState = null }) {
+  return request("/api/rbds/quote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t_max: tMax ?? null, quick: !!quick, current_state: currentState || null }),
+  });
+}
+
+// Simulation run history (#112): the caller's runs, newest first (a diagram's
+// with ``rbdId``), {runs, more, kept_days}; one run in full; several finished
+// runs side by side; the same inputs again ({run_id, status}); a download.
+export function listRbdRuns({ rbdId = null, limit = null } = {}) {
+  const q = new URLSearchParams();
+  if (rbdId) q.set("rbd_id", rbdId);
+  if (limit) q.set("limit", String(limit));
+  const qs = q.toString();
+  return request(`/api/rbd-runs${qs ? `?${qs}` : ""}`);
+}
+
+export function listRbdRunDiagrams() {
+  return request("/api/rbd-runs/diagrams");
+}
+
+export function getRbdRun(runId) {
+  return request(`/api/rbd-runs/${encodeURIComponent(runId)}`);
+}
+
+export function compareRbdRuns(runIds) {
+  return request(`/api/rbd-runs/compare?ids=${runIds.map(encodeURIComponent).join(",")}`);
+}
+
+export function rerunRbdRun(runId) {
+  return request(`/api/rbd-runs/${encodeURIComponent(runId)}/rerun`, { method: "POST" });
+}
+
+export function downloadRbdRun(runId, format = "csv") {
+  return downloadFile(`/api/rbd-runs/${encodeURIComponent(runId)}/export?format=${format}`, `run.${format}`);
+}
+
 // What to improve (#225): a repairable diagram's levers ranked by what a step
 // of each gains. ``costs`` maps lever ids to the cost of making that change;
 // ``order`` "benefit" ranks by gain alone, "benefit_per_cost" puts the costed
