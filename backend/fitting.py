@@ -1341,11 +1341,9 @@ def fit(
     elif distribution in FLEXIBLE:
         result = more_models.fit_flexible(distribution, df, mapping)
     else:
-        raise FitError(
-            f"Unknown model '{distribution}'. Available: "
-            f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS,
-                          *FLEXIBLE, *competing_risks.CR_MODELS])}."
-        )
+        available = ", ".join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS,
+                               *FLEXIBLE, *competing_risks.CR_MODELS])
+        raise FitError(f"Unknown model '{distribution}'. Available: {available}.")
     result["unit"] = canonical_unit(unit)  # #265: "hours", "hrs" → "Hours"
     if result.get("kind") in ("distribution", "discrete", "regression") and param_intervals.note_for(
             result.get("params")):
