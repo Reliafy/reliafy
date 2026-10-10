@@ -89,7 +89,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
             How do I model availability?
           </button>
         ) : (
-          "Pick a saved model or enter parameters."
+          "Enter a mean or parameters, or pick a saved model."
         )}
       </span>
       <div className="row" style={{ margin: 0 }}>
