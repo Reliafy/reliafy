@@ -332,6 +332,20 @@ def test_redundancy_heuristic_keeps_false_positives_low():
     assert not rbd_analysis.series_redundancy_warnings(rbd_graph.normalize_graph(GRAPH))
 
 
+def test_the_builders_own_block_names_are_not_a_redundant_pair():
+    """#289: "Component 3" then "Component 4" are new blocks, not a pair;
+    a redundancy word beside one still warns."""
+    from backend.services import rbd_analysis, rbd_graph
+
+    def warned(*labels):
+        return rbd_analysis.series_redundancy_warnings(rbd_graph.normalize_graph(_chain(*labels)))
+
+    assert not warned("Component 3", "Component 4")
+    assert not warned("component 12", "Component 2")
+    assert warned("Component 3", "Spare pump")
+    assert warned("Pump 3", "Pump 4")
+
+
 def test_a_standby_nodes_own_label_is_not_a_redundant_pair():
     """#183: "duty/standby" in a standby (or parallel / load-sharing) node's
     label describes its own units, not its neighbours in series."""

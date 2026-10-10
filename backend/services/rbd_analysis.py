@@ -979,6 +979,9 @@ _UNIT_SUFFIX = re.compile(
     r"^(?P<stem>.*?[a-z0-9])(?:[\s\-_#/.]+(?P<tok>[a-h]|\d+|i{1,3}|iv|left|right|port|starboard|north|"
     r"south|east|west|primary|secondary|upper|lower)|(?P<num>\d+))$")
 _BLOCK_TYPES = ("component", "series", "parallel", "standby", "subsystem", "loadshare")
+#: The builder's own names for a new block ("Component 3"): not a user's
+#: naming, so no sign of a redundant pair (#289).
+_AUTO_LABEL = re.compile(r"^\s*component\s+\d+\s*$", re.I)
 #: Blocks that are themselves redundancy: a "duty/standby" in their label
 #: describes their own units, not a partner wired next to them (#183).
 _REDUNDANT_TYPES = ("parallel", "standby", "loadshare")
@@ -1024,8 +1027,9 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
             continue
         seen.add((s, t))
         la, lb = label(s), label(t)
+        auto = bool(_AUTO_LABEL.match(la) or _AUTO_LABEL.match(lb))
         (stem_a, tok_a), (stem_b, tok_b) = _label_stem(la), _label_stem(lb)
-        if stem_a and stem_a == stem_b and tok_a != tok_b:
+        if not auto and stem_a and stem_a == stem_b and tok_a != tok_b:
             why = "the same item with a different unit suffix"
         elif any(_REDUNDANCY_WORDS.search(lab) and nodes[nid].get("type") not in _REDUNDANT_TYPES
                  for nid, lab in ((s, la), (t, lb))):
