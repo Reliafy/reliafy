@@ -26,6 +26,7 @@ either: its present values are left out, with the reason
 
 from __future__ import annotations
 
+import time
 import warnings
 from typing import Any, Optional
 
@@ -39,6 +40,9 @@ from backend.services.rbd_analysis import AnalysisError
 DEFAULT_YEARS = (5, 10, 20)
 #: The most finite horizons one request prices.
 MAX_HORIZONS = 6
+#: Seconds the set horizon's cost from new may take for the other horizons'
+#: to be worked out too.
+FROM_NEW_BUDGET_S = 1.5
 
 NO_PRESENT_VALUE = (
     "No present value: this diagram has no exact long-run cost rate (the simulated one stands in), "
@@ -164,12 +168,29 @@ def from_new(rbd, graph: dict, overrides: dict, rows: list[dict],
     if route not in ra._OVER_TIME_OK:
         return none, None, f"{NO_FROM_NEW}."
     r = disc["per_unit"] if disc else 0.0
+    out: list = [None] * n
+    # The set horizon first, on its own; the others together after it, unless
+    # it alone took longer than FROM_NEW_BUDGET_S (a block replaced on
+    # condition, say, whose curves are long to follow).
+    first = next((i for i, row in enumerate(rows) if row["set"]), None)
+    rest = [i for i in range(n) if finite[i] and i != first]
+    started = time.perf_counter()
     try:
-        cost = _quiet(rbd.expected_cost, times[finite], discount_rate=r, **overrides)
+        if first is not None:
+            out[first] = ra._f(_quiet(rbd.expected_cost, float(times[first]), discount_rate=r, **overrides).total)
     except (NotImplementedError, ValueError) as exc:
         return none, None, f"{NO_FROM_NEW}: {ra.plain_reason(str(exc))}"
-    values = iter(np.atleast_1d(np.asarray(cost.total, dtype=float)))
-    return [ra._f(next(values)) if f else None for f in finite], route, None
+    if rest and time.perf_counter() - started > FROM_NEW_BUDGET_S:
+        return out, route, "The costs from new over the other horizons take too long to work out here."
+    if rest:
+        try:
+            cost = _quiet(rbd.expected_cost, times[rest], discount_rate=r, **overrides)
+        except (NotImplementedError, ValueError) as exc:
+            # A long horizon can be beyond what the library follows exactly.
+            return out, route, f"{NO_FROM_NEW} over the other horizons: {ra.plain_reason(str(exc))}"
+        for i, v in zip(rest, np.atleast_1d(np.asarray(cost.total, dtype=float))):
+            out[i] = ra._f(v)
+    return out, route, None
 
 
 def by_horizon(rbd, graph: dict, overrides: dict, chosen: float, rate: Optional[float],

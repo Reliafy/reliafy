@@ -324,9 +324,19 @@ def ownership_by_horizon(horizon, rate, basis, overrides):
         new = [rbd.acquisition_cost] * len(finite)
     elif (N_BLOCKS <= EXACT_WINDOW_MEAN_MAX_BLOCKS
           and rbd.analysis_routes()["expected_cost"].route in ("exact", "numerical")):
-        with np.errstate(all="ignore"):
-            cost = rbd.expected_cost(np.array(finite), discount_rate=DISCOUNT_RATE, **overrides)
-        new = list(np.atleast_1d(cost.total))
+        # The set horizon on its own, then the others together (as Reliafy
+        # does; it skips them when the set one alone takes over 1.5 s).
+        rest = [t for t in finite if t != float(horizon)]
+        try:
+            with np.errstate(all="ignore"):
+                new[finite.index(float(horizon))] = float(
+                    rbd.expected_cost(float(horizon), discount_rate=DISCOUNT_RATE, **overrides).total)
+                if rest:
+                    cost = rbd.expected_cost(np.array(rest), discount_rate=DISCOUNT_RATE, **overrides)
+                    for t, v in zip(rest, np.atleast_1d(cost.total)):
+                        new[finite.index(t)] = float(v)
+        except NotImplementedError as exc:
+            print(f"  (no cost from new over some horizons: {exc})")
     rows = []
     for i, t in enumerate(times):
         row = {"horizon": float(t) if np.isfinite(t) else None, "endless": not np.isfinite(t),
