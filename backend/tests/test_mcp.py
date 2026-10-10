@@ -35,7 +35,7 @@ READ_TOOLS = {
     "failure_finding_interval",
     "optimal_overhaul", "plan_demonstration_test", "list_fleets", "fleet_forecast", "list_fleet_alerts",
     "upgrade_link", "system_history", "list_share_links", "get_account", "get_dataset", "inspect_upload",
-    "compare_groups", "cheapest_design", "fit_per_demand", "rbd_sensitivity", "rbd_fault_tree",
+    "compare_groups", "cheapest_design", "compare_rbds", "fit_per_demand", "rbd_sensitivity", "rbd_fault_tree",
     "optimise_maintenance_intervals", "growth_projection", "next_failure", "alt_use_level",
     "check_life_requirement",
 }

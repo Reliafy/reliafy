@@ -117,6 +117,7 @@ from backend.services import tokens as tokens_service
 from backend.services import uploads as uploads_service
 from backend.services import usage as usage_service
 from backend.services import rbd_analysis
+from backend.services import rbd_compare as rbd_compare_service
 from backend.services import rbd_costs
 from backend.services import rbd_export
 from backend.services.rbd_analysis import AnalysisError
@@ -3220,7 +3221,7 @@ def _as_of_now_summary(result: dict, labels: dict) -> dict:
 _EXACT_KEYS = ("status", "message", "from", "current_state", "window", "unit", "availability_start",
                "availability_end", "availability_min", "availability_min_at", "mission_availability",
                "expected_failures", "planned_outages", "expected_outages", "downtime", "cost", "cost_note",
-               "method", "n_blocks", "cached")
+               "method", "n_blocks", "cached", "mission_unavailability")
 
 
 def _exact_summary(exact: dict | None) -> dict | None:
@@ -3234,6 +3235,11 @@ def _exact_summary(exact: dict | None) -> dict | None:
     if curve.get("t"):
         out["curve"] = [{"t": p["t"], "availability": p["reliability"]}
                         for p in _downsample(curve["t"], curve.get("availability") or [])]
+        if curve.get("unavailability"):
+            # A safety function's PFD(t): the library's unavailability, not 1 − A(t) (#322).
+            pfd = _downsample(curve["t"], curve["unavailability"])
+            for point, p in zip(out["curve"], pfd):
+                point["pfd"] = p["reliability"]
     if exact.get("per_node"):
         out["blocks_by_downtime"] = exact["per_node"][:10]
     if exact.get("routes"):
@@ -3314,7 +3320,23 @@ def _precision_centred(precision: dict) -> dict:
 
 _COST_KEYS = ("cost_rate", "cost_rate_basis", "downtime_cost_rate", "by_category", "acquisition_cost", "horizon",
               "horizon_basis", "running_cost", "total_cost", "discount_rate", "discount_rate_per_unit",
-              "undiscounted_total_cost")
+              "undiscounted_total_cost", "total_cost_from_new", "present_value_note")
+
+
+def _by_horizon_summary(table: dict | None) -> dict | None:
+    """The cost of ownership over several horizons for an agent (#319): each
+    row's horizon (None: endless, the net present cost), the total at the
+    long-run rate and from new."""
+    if not table or not table.get("rows"):
+        return None
+    out = {"rows": [{k: r.get(k) for k in ("horizon", "years", "endless", "total_cost", "from_new",
+                                            "undiscounted_total_cost") if r.get(k) is not None or k == "horizon"}
+                    for r in table["rows"]],
+           "from_new_basis": table.get("from_new_basis")}
+    for k in ("from_new_note", "present_value_note"):
+        if table.get(k):
+            out[k] = table[k]
+    return out
 
 
 def _costs_summary(costs: dict | None) -> dict | None:
@@ -3324,7 +3346,10 @@ def _costs_summary(costs: dict | None) -> dict | None:
     if not costs:
         return None
     out = {k: costs[k] for k in _COST_KEYS if costs.get(k) is not None}
-    out["present_value"] = bool(costs.get("discount_rate"))
+    out["present_value"] = bool(costs.get("discount_rate")) and costs.get("total_cost") is not None
+    by_horizon = _by_horizon_summary(costs.get("by_horizon"))
+    if by_horizon:
+        out["by_horizon"] = by_horizon
     if out.get("by_category"):
         out["by_category"] = {k: v for k, v in out["by_category"].items() if v}
     blocks = [{k: b.get(k) for k in ("id", "label", "rate", "cost_share", "acquisition")}
@@ -3524,8 +3549,10 @@ def analyze_rbd(
     diagrams, on every plan: the exact long-run availability, mean up/down time and failure frequency, how
     the long-run values were found (long_run_method: exact / numerical / simulated, e.g. the repair crews'
     Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety: whether common
-    cause is in it, common_cause_included; with no proof-tested block, a warning that the PFDavg and SIL are
-    optimistic), common-cause groups in every figure where RePyability follows them over time (the headline
+    cause is in it, common_cause_included; margin: the PFDavg against the target SIL's limit, or the achieved
+    band's; with no proof-tested block, a warning that the PFDavg and SIL are optimistic; in `exact`, PFD(t)
+    as curve[].pfd and its mean over the window, mission_unavailability — the library's own unavailability,
+    precise where 1 − A(t) loses digits), common-cause groups in every figure where RePyability follows them over time (the headline
     `availability` says common_cause_included, with the long run without_common_cause alongside; where they're
     refused, common_cause.note says why and every figure leaves them out — a safety function's PFDavg may still
     include them, and then leads the headline), proof_test_note when A(t) saw-tooths with proof tests, and (in
@@ -3533,7 +3560,9 @@ def analyze_rbd(
     failures, outages, downtime and cost — each with its method (exact / numerical; no simulation) — from
     new or from current_state. A priced diagram adds `costs`: the long-run cost rate, and the total cost of
     ownership over its horizon (a present value when discounted: discount_rate, or the diagram's own, set
-    with edit_rbd's set costs). The Monte-Carlo simulation (distributions, criticality; from current_state,
+    with edit_rbd's set costs) — at the long-run rate (total_cost) and from new (total_cost_from_new, exact or
+    numerical, each cost discounted from when it falls) — and by_horizon: both over 5, 10 and 20 years too, and
+    for ever when discounted (the net present cost, horizon None). The Monte-Carlo simulation (distributions, criticality; from current_state,
     next_failure and mean_residual_life: the time to the next system failure and its cause) is a paid feature
     (Pro or purchased credits) and, unless simulate=true, runs only where a figure needs it (a diagram whose
     figures from new are all exact or numerical answers without one: simulation.on_request). Its per_node rows
@@ -3630,7 +3659,9 @@ def analyze_rbd(
                 # Simulation-only diagram: nothing to show until the job is done.
                 return {**head, "kind": "repairable", "available": False, **pending}
             if discount_rate is not None and payload.get("costs"):
-                payload = {**payload, "costs": rbd_costs.with_discount(payload["costs"], graph, discount_rate)}
+                payload = {**payload, "costs": rbd_costs.with_discount(
+                    payload["costs"], graph, discount_rate,
+                    lambda mid: models_service.get_live_model(db, mid, owners))}
             out = {**head, "available": True, **_availability_summary(payload)}
             sim_status = payload.get("simulation_status") or {}
             sim_state = sim_status.get("state")
@@ -3868,6 +3899,10 @@ def cheapest_design(
         "motor) whose last block feeds one node. A copy is another path alongside the train into that node, "
         "so copies of a train into a 2-out-of-3 vote make it 2-out-of-4 (\"should we add a fourth pump "
         "train?\"). Name one of identical trains; at least one of its blocks needs a purchase price."))] = None,
+    horizons: Annotated[Optional[list[float]], Field(max_length=6, description=(
+        "Other ownership horizons to price the choice over (diagram unit), e.g. [43800, 175200] for 5 and 20 "
+        "years in hours; default 5, 10 and 20 years in a calendar unit. by_horizon gives the cheapest design "
+        "at each, and for ever (the net present cost) when discounted."))] = None,
 ) -> dict[str, Any]:
     """The redundancy that owns a repairable diagram at the lowest total cost (RePyability's
     allocate_redundancy, scored exactly): how many active, independently repaired copies of each priced block
@@ -3875,7 +3910,9 @@ def cheapest_design(
     production) it saves, optionally keeping the long-run availability at least min_availability. With trains,
     whole trains of blocks are copied too (design.trains gives each train's copies, 1 = as drawn). Returns the
     design as drawn and the cheapest side by side (total cost, purchase, running cost rate, availability), the
-    copies per block and the saving; the totals are present values when discounted. Needs block purchase prices
+    copies per block and the saving; the totals are present values when discounted. by_horizon prices the
+    choice over several horizons at once (5, 10 and 20 years, or `horizons`, and endless when discounted): the
+    cheapest design at each (its copies), its total and the design as drawn. Needs block purchase prices
     (edit_rbd update_node costs.acquisition), an ownership horizon and the system downtime cost (edit_rbd set
     costs.horizon and costs.downtime_rate; create_rbd takes the same costs). The diagram's common-cause groups
     are in the scoring wherever analyze_rbd has them: a grouped block's copies join its group (common_cause
@@ -3900,7 +3937,8 @@ def cheapest_design(
     try:
         result = rbd_costs.cheapest_design(
             graph, lambda mid: models_service.get_live_model(db, mid, owners), horizon=horizon,
-            min_availability=min_availability, blocks=blocks, discount_rate=discount_rate, trains=trains)
+            min_availability=min_availability, blocks=blocks, discount_rate=discount_rate, trains=trains,
+            horizons=horizons)
     except AnalysisError as exc:
         raise ToolError(_cheapest_design_hint(str(exc), graph)) from None
     keep = ("unit", "horizon", "min_availability", "discount_rate", "method", "max_copies", "current", "saving",
@@ -3913,7 +3951,60 @@ def cheapest_design(
         out["note"] += " " + _COSTS_HOW["downtime_rate"]
     out["present_value"] = result["discount_rate"] is not None
     out["design"] = {k: v for k, v in result["design"].items() if k != "units"}
+    if result.get("by_horizon"):
+        # The choice over several horizons (#319); horizon None is endless (the net present cost).
+        out["by_horizon"] = [
+            {**{k: r.get(k) for k in ("horizon", "years", "endless", "current_total", "design_total", "saving",
+                                      "availability", "error") if r.get(k) is not None or k == "horizon"},
+             # Block ids (a train by its name), as design.blocks and design.trains name them.
+             "copies": {(c["label"] if c["train"] else c["id"]): c["copies"] for c in r.get("copies") or []}}
+            for r in result["by_horizon"]["rows"]]
     return out
+
+
+@_tool("compare_rbds", _READ, "Compare two repairable RBDs")
+def compare_rbds(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="Design A: a repairable RBD id from list_rbds.")],
+    other_rbd_id: Annotated[str, Field(description=(
+        "Design B: another repairable RBD id — typically a copy of A with one change (clone_rbd, then edit_rbd)."))],
+    t_max: Annotated[Optional[float], Field(gt=0, description=(
+        "The window both are compared over, from new (diagram unit); default the longer of their automatic "
+        "windows."))] = None,
+) -> dict[str, Any]:
+    """Is design B better than design A, and by how much? The difference (B − A) in the window's mean
+    availability from new — exact where both designs have exact values over the window (method 'exact': no
+    simulation noise, nothing simulated), else from paired simulations with common random numbers (blocks with
+    the same id draw the same failures) and a confidence interval — with both long-run availabilities. With
+    both designs priced, the difference in what owning each for the window costs, purchases included
+    (differences.cost: acquisition is the difference in purchase prices, running the rest; b_higher means B
+    costs more) and the long-run cost-rate difference (exact, per unit time). Pro (or purchased credits), as
+    Compare with… in the app."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    a = _get_rbd(db, uid, rbd_id)
+    b = _get_rbd(db, uid, other_rbd_id)
+    head = {"rbd_id": a.id, "other_rbd_id": b.id, "url": _url(f"/rbds/b/{a.id}")}
+    for doc in (a, b):
+        if not (doc.graph or {}).get("repairable"):
+            raise ToolError(f"“{doc.name}” is non-repairable (analysed for reliability): only repairable "
+                            "(availability) diagrams are compared.")
+    if not billing_service.premium_compute_allowed(db, user):
+        _soft_refusal("pro_only")
+        return {**head, "available": False, "code": "pro_required",
+                "message": (f"Comparing designs is part of Reliafy Pro ({PRO_PRICE}; purchased AI credits unlock it "
+                            f"too), as in the app — upgrade at {_billing_url()} (or call upgrade_link). analyze_rbd "
+                            "on each design stays free.")}
+    try:
+        result = rbd_compare_service.compare_graphs(db, a.graph or {}, b.graph or {}, [*_owners(uid), a.owner_id],
+                                                    [*_owners(uid), b.owner_id], t_simulation=t_max)
+    except AnalysisError as exc:
+        raise ToolError(str(exc)) from None
+    result["designs"]["a"]["name"] = a.name
+    result["designs"]["b"]["name"] = b.name
+    keep = ("unit", "t_simulation", "horizon_shortened", "method", "designs", "differences", "cost_note",
+            "n_simulations", "common_random_numbers", "shared_blocks")
+    return {**head, "available": True, **{k: result[k] for k in keep if result.get(k) is not None}}
 
 
 def _fault_tree_name(row: dict) -> str:
