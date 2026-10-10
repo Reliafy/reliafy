@@ -1949,7 +1949,7 @@ def _regression_life(db, m, owners, covariates: Optional[dict], confidence: Opti
     if not entry or entry.get("model") is None:
         return None
     if not regression_bands.has_bands(entry["model"]):
-        return {"note": regression_bands.SEMI_PARAMETRIC_LIFE_NOTE}
+        return {"note": regression_bands.life_note(entry["model"])}
     level = confidence if confidence is not None else life_bounds.DEFAULT_CONFIDENCE
     try:
         life = regression_bands.life_answer(entry["model"], entry.get("fields") or [],

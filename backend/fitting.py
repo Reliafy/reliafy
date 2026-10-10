@@ -2904,7 +2904,7 @@ def confidence_bounds(
     grid = _custom_grid(entry["grid"], x_min, x_max)
     regression = regression_bands.is_regression(entry)
     if regression and not regression_bands.has_bands(model):
-        raise FitError(regression_bands.SEMI_PARAMETRIC_NOTE)
+        raise FitError(regression_bands.band_note(model))
     if not hasattr(model, "cb"):
         raise FitError("This model type doesn't provide confidence bounds.")
 

@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from backend import fitting, regression_bands
+from backend import fitting, more_models, regression_bands
 from backend.fitting import REGRESSION_MODELS, FitError, fit
 
 OWNER = "user-a"
@@ -73,13 +73,33 @@ def test_band_follows_the_covariates_and_defaults_the_rest():
     assert fitting.confidence_bounds(mid, values={}) == fitting.confidence_bounds(mid, values=defaults)
 
 
-@pytest.mark.parametrize("dist", [d for d in REGRESSION_MODELS if d != "cox_ph"])
+# The regressions of #179 (semi-parametric, shared frailty) have none: below.
+@pytest.mark.parametrize("dist", [d for d in REGRESSION_MODELS if d != "cox_ph" and d not in more_models.REGRESSION])
 def test_every_parametric_family_has_a_band(dist):
     r = fit(dist, _rossi(), MAPPING, covariates=COVS)
     assert regression_bands.result_has_bands(r)
     out = fitting.confidence_bounds(r["functions"]["model_id"], on="sf", alpha_ci=0.1, values=ROW)
     lo, hi = out["lower"][100], out["upper"][100]
     assert lo is not None and hi is not None and lo <= hi
+
+
+@pytest.mark.parametrize("dist", list(more_models.REGRESSION))
+def test_more_regressions_have_no_band_and_say_why(dist):
+    """SurPyval bounds neither the curves nor the quantiles of the
+    semi-parametric and shared-frailty regressions: no band or life path,
+    and the notes name them rather than Cox PH."""
+    df = _rossi()
+    df["grp"] = (df.index % 20).astype(str)
+    mapping = {**MAPPING, "group": "grp"} if more_models.REGRESSION[dist].get("frailty") else MAPPING
+    r = fit(dist, df, mapping, covariates=COVS)
+    assert not regression_bands.result_has_bands(r)
+    notes = regression_bands.notes(r)
+    assert "Cox PH" not in notes["bands_note"] and "No B-lives" in notes["life_note"]
+    with pytest.raises(FitError, match="doesn't bound"):
+        fitting.confidence_bounds(r["functions"]["model_id"], values=ROW)
+    entry = fitting._MODEL_STORE[r["functions"]["model_id"]]
+    with pytest.raises(ValueError, match="No B-lives"):
+        regression_bands.life_answer(entry["model"], entry["fields"], {})
 
 
 def test_cox_has_no_band_and_says_why():

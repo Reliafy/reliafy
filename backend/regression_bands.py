@@ -33,6 +33,15 @@ STRATIFIED_NOTE = (
     "No confidence band: each stratum of a stratified Cox model has its own step-curve baseline, with no "
     "parameters to carry the uncertainty through.")
 NO_MTTF_NOTE = "MTTF: none at these covariates — the model's reliability never falls to 0."
+# The regressions of #179 (semi-parametric, shared frailty): SurPyval bounds
+# neither their curves nor their quantiles.
+NO_BOUNDS_NOTE = (
+    "No confidence band: SurPyval doesn't bound this model's curves (a semi-parametric or shared-frailty "
+    "regression). Fit Weibull PH (or another parametric model) on the same covariates for a band.")
+NO_BOUNDS_LIFE_NOTE = (
+    "No B-lives with bounds: SurPyval doesn't bound this model's quantiles (a semi-parametric or "
+    "shared-frailty regression). Fit Weibull PH (or another parametric model) on the same covariates for "
+    "B-lives and a confidence band.")
 
 
 def is_regression(entry: Optional[dict]) -> bool:
@@ -52,16 +61,44 @@ def _is_cox(result: dict) -> bool:
     return (result.get("distribution_id") or "") == "cox_ph"
 
 
+def _unbounded(result: dict) -> bool:
+    """One of the regressions of #179, which have no band either."""
+    from backend import more_models
+
+    return (result.get("distribution_id") or "") in more_models.REGRESSION
+
+
+def _is_cox_model(model) -> bool:
+    """A live Cox PH model (stratified or not), as opposed to another model
+    without bands."""
+    from backend.regression_diagnostics import StratifiedCox
+
+    return isinstance(model, StratifiedCox) or type(model).__name__ == "SemiParametricRegressionModel"
+
+
+def band_note(model) -> str:
+    """Why a live regression model has no band, in words."""
+    return SEMI_PARAMETRIC_NOTE if _is_cox_model(model) else NO_BOUNDS_NOTE
+
+
+def life_note(model) -> str:
+    """Why a live regression model has no bounded B-lives, in words."""
+    return SEMI_PARAMETRIC_LIFE_NOTE if _is_cox_model(model) else NO_BOUNDS_LIFE_NOTE
+
+
 def result_has_bands(result: Optional[dict]) -> bool:
     """From a fit payload alone: a regression model with a band and bounded
     B-lives (every parametric family; not Cox PH)."""
     r = result or {}
-    return r.get("kind") == "regression" and not _is_cox(r) and bool(r.get("functions"))
+    return (r.get("kind") == "regression" and not _is_cox(r) and not _unbounded(r)
+            and bool(r.get("functions")))
 
 
 def no_bands_note(result: Optional[dict]) -> Optional[str]:
     """Why a regression fit has no band, in words (None when it has one)."""
     r = result or {}
+    if r.get("kind") == "regression" and _unbounded(r):
+        return NO_BOUNDS_NOTE
     if r.get("kind") != "regression" or not _is_cox(r):
         return None
     strata = ((r.get("options") or {}).get("cox") or {}).get("strata")
@@ -73,7 +110,10 @@ def notes(result: Optional[dict]) -> dict:
     no B-lives (Cox PH): what the calculator and the life card say instead
     of nothing. ``{}`` for any other fit."""
     note = no_bands_note(result)
-    return {"bands_note": note, "life_note": SEMI_PARAMETRIC_LIFE_NOTE} if note else {}
+    if not note:
+        return {}
+    return {"bands_note": note,
+            "life_note": NO_BOUNDS_LIFE_NOTE if _unbounded(result or {}) else SEMI_PARAMETRIC_LIFE_NOTE}
 
 
 def covariate_row(fields: list, values: Optional[dict]) -> Optional[pd.DataFrame]:
@@ -111,7 +151,7 @@ def band(model, fields: list, values: Optional[dict], grid: np.ndarray, on: str,
     itself; asking SurPyval at those points only risks a zero variance it
     calls undefined (see ``fitting._cb_off_pinned_points``)."""
     if not has_bands(model):
-        raise ValueError(SEMI_PARAMETRIC_NOTE)
+        raise ValueError(band_note(model))
     Z = covariate_row(fields, values)
     grid = np.asarray(grid, dtype=float)
     with np.errstate(all="ignore"), warnings.catch_warnings():
@@ -168,7 +208,7 @@ def life_answer(model, fields: list, body: Optional[dict], no_finite_maximum: bo
     from backend import life_bounds
 
     if not has_bands(model):
-        raise ValueError(SEMI_PARAMETRIC_LIFE_NOTE)
+        raise ValueError(life_note(model))
     body = dict(body or {})
     Z = covariate_row(fields, body.pop("covariates", None))
     out = life_bounds.answer(AtCovariates(model, Z), body, no_finite_maximum=no_finite_maximum)
