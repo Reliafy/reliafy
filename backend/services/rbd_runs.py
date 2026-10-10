@@ -385,10 +385,10 @@ def _inputs(db, job: dict) -> dict:
     if job.get("rbd_id"):
         doc = db.rbds.find_one({"_id": job["rbd_id"]}, {"graph": 1})
         if doc is not None:
-            def canon(g):
-                return json.dumps(rbds_service.canonical_analysis_graph(g), sort_keys=True, default=str)
+            # Compared as values (a JSON round trip may turn 2.0 into 2).
             try:
-                changed = canon(graph) != canon(doc.get("graph") or {})
+                changed = (rbds_service.canonical_analysis_graph(graph)
+                           != rbds_service.canonical_analysis_graph(doc.get("graph") or {}))
             except Exception:  # noqa: BLE001
                 changed = None
     return {

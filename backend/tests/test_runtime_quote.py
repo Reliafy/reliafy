@@ -124,6 +124,16 @@ def test_the_plan_caps_runs_at_their_time_limits(monkeypatch):
     full = rq.quote_runtime(g, {})
     assert full["mode"] == "tolerance" and full["replications"] == ra._AVAIL_SIMS
     assert full["cap_s"] == ra._AVAIL_TIME_BUDGET and full["p90_s"] <= ra._AVAIL_TIME_BUDGET
+    # It usually stops after its first batch: the estimate is that batch's
+    # median, the ceiling the whole plan's 90th percentile.
+    f = rq.features(g, {})
+    assert full["typical_replications"] == ra._AVAIL_BATCH
+    first = sv.LogNormal.from_params([rq.log_median(ra._AVAIL_BATCH, f["events_per_replication"], 5),
+                                      rq.coefficients()["sigma"]])
+    plan = sv.LogNormal.from_params([rq.log_median(ra._AVAIL_SIMS, f["events_per_replication"], 5),
+                                     rq.coefficients()["sigma"]])
+    assert full["median_s"] == pytest.approx(min(float(first.qf(0.5)), ra._AVAIL_TIME_BUDGET))
+    assert full["p90_s"] == pytest.approx(min(float(plan.qf(0.9)), ra._AVAIL_TIME_BUDGET))
     # A huge chosen window: the floor of replications past the budget, up to the longer limit.
     huge = rq.quote_runtime(_graph(60, rate=0.05), {"t_simulation": 1e6})
     assert huge["replications"] == ra._AVAIL_MIN_SIMS and huge["cap_s"] == ra._AVAIL_USER_TIME_LIMIT

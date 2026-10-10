@@ -62,6 +62,11 @@ def test_an_in_process_run_is_in_the_history_with_what_it_ran_on(client):
     inputs = detail["inputs"]
     assert inputs["blocks"] == 3 and inputs["unit"] == "hours" and inputs["window"] > 0
     assert inputs["window_chosen"] is False and inputs["diagram_changed_since"] is False
+    # Edited since: the run still shows what it ran on.
+    edited = dict(graph, nodes=[*graph["nodes"]])
+    edited["nodes"][2] = {**edited["nodes"][2], "data": {**edited["nodes"][2]["data"], "label": "PLC"}}
+    client.db.rbds.update_one({"_id": rbd_id}, {"$set": {"graph": edited}})
+    assert client.get(f"/api/rbd-runs/{row['run_id']}").json()["inputs"]["diagram_changed_since"] is True
     assert inputs["seed"] is not None and inputs["replications"] == 20
     # Logged against the quote's model, for the machine factor.
     [log] = client.db.rbd_runtime_log.find({})

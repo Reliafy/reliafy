@@ -14,7 +14,9 @@ before anything runs (``tools/quote_bench``, whose pilot chose the form):
 module. The quote is the median and the 90th percentile of that log-normal
 (SurPyval's ``LogNormal``), scaled by the machine's factor and held to the
 run's own time limit where it has one: a run to the precision target stops
-at its time budget, and a quick run at its few seconds.
+at its time budget, and a quick run at its few seconds. A run to the
+precision target usually stops after its first batch, so its estimate is
+that batch's median and its ceiling the whole plan's 90th percentile.
 
 Machine factors. The pilot was timed on a dev laptop, so each machine
 Reliafy simulates on gets one scalar (``compute``: the calculation service;
@@ -195,6 +197,17 @@ def quote_runtime(graph: dict, options: Optional[dict] = None, *, machine: str =
     n, cap, mode = _plan(options, f["chosen_window"], f["events_per_replication"], f["blocks"], factor)
     log_med = log_median(n, f["events_per_replication"], f["blocks"])
     median, p90 = _quantiles(log_med, factor)
+    typical = n
+    if mode == "tolerance":
+        # A run to the precision target stops once it is precise enough,
+        # checked after each batch; most stop after the first. So the
+        # estimate is the first batch's median, and the ceiling the whole
+        # plan's 90th percentile (how many batches it needs isn't known
+        # before it runs).
+        from backend.services import rbd_analysis as ra
+
+        typical = min(int(ra._AVAIL_BATCH), n)
+        median = _quantiles(log_median(typical, f["events_per_replication"], f["blocks"]), factor)[0]
     capped = cap is not None and median >= cap
     if cap is not None:
         median, p90 = min(median, cap), min(p90, cap)
@@ -206,6 +219,8 @@ def quote_runtime(graph: dict, options: Optional[dict] = None, *, machine: str =
         "capped": bool(capped),
         "mode": mode,
         "replications": n,
+        # The replications the estimate (median_s) is for.
+        "typical_replications": typical,
         "events_per_replication": f["events_per_replication"],
         "blocks": f["blocks"],
         "window": f["window"],
