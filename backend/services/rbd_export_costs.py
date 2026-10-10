@@ -106,6 +106,17 @@ def component(script, data: dict, label: str, var: str, life: str, repair: str) 
         entries.append(f'"group": {_lit(group)}')
     if priority is not None:
         entries.append(f'"priority": {_num(priority)}')
+    from backend.services import rbd_repair_quality
+
+    try:
+        quality = rbd_repair_quality.script_entries(data, label)
+    except AnalysisError as exc:
+        script.missing(var, str(exc), label)
+        return
+    if quality:
+        # Imperfect repair (#68): the simulation follows it; the exact values refuse it.
+        L.append(f"# Repaired imperfectly: {rbd_repair_quality.describe(data)} (Kijima's virtual age).")
+        entries += quality
     if data.get("inspection"):
         L.append("# Hidden failures: found only at the proof tests below.")
     if (pm or {}).get("policy") == "condition":
@@ -260,13 +271,19 @@ _EXACT_OR_NOT = '''    # Exact long-run figures (independent blocks; Birnbaum/Ve
     try:
         with np.errstate(all="ignore"):
             availability = float(rbd.mean_availability(**overrides))
+            birnbaum = rbd.birnbaum_importance(**overrides)
+    except NotImplementedError:
+        availability = float("nan")
+        birnbaum = {n: float("nan") for n in LABELS}
+    # The failure frequency (and the mean up and down times built on it) can
+    # be refused alone: with common-cause groups whose proof tests take time.
+    try:
+        with np.errstate(all="ignore"):
             mean_up = float(rbd.mean_up_time(**overrides))
             mean_down = float(rbd.mean_down_time(**overrides))
             frequency = float(rbd.system_failure_frequency(**overrides))
-            birnbaum = rbd.birnbaum_importance(**overrides)
     except NotImplementedError:
-        availability = mean_up = mean_down = frequency = float("nan")
-        birnbaum = {n: float("nan") for n in LABELS}
+        mean_up = mean_down = frequency = float("nan")
 '''
 _TOLERANCE = '''    tolerance = availability_tolerance(1.0 - availability)
 '''

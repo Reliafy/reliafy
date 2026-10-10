@@ -157,6 +157,17 @@ class _Exporter:
             except ra.AnalysisError as exc:
                 raise _Missing(str(exc)) from None
             units = [primary] + [spare] * spares
+            from backend.services import rbd_standby
+
+            try:
+                k = rbd_standby.operating(data, label)
+                if k > 1:
+                    # k-of-n standby (#84), as the analysis builds it.
+                    switch = float(data.get("startProb", 1.0)) if dormancy == 0.0 else 1.0
+                    return _serialise(rbd_standby.nonrepairable_model(
+                        data, label, primary, spare, spares, dormancy, switch)), None
+            except (ra.AnalysisError, TypeError, ValueError) as exc:
+                raise _Missing(str(exc)) from None
             if dormancy == 0.0:
                 try:
                     switch = float(data.get("startProb", 1.0))
@@ -250,9 +261,13 @@ class _Exporter:
                     basis = ra.ccf_basis(group)
                 except ra.AnalysisError as exc:
                     raise ExportError(str(exc)) from None
-                model = {"kind": "beta_factor", "beta": beta}
-                if basis != "probability":
-                    model["basis"] = basis
+                from backend.services import rbd_ccf_models
+
+                try:
+                    # The beta factor, or the multiple Greek letter model (#84).
+                    model = rbd_ccf_models.document_model(group, basis)
+                except (ra.AnalysisError, TypeError, ValueError) as exc:
+                    raise ExportError(str(exc)) from None
                 ccf.append({"members": members, "model": model})
         return _rbd_dict(
             "NonRepairableRBD",
