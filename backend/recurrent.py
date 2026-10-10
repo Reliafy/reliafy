@@ -181,7 +181,7 @@ def all_models() -> list[dict]:
     from backend import recurrent_models as extra
 
     out = [{"id": k, "name": v["name"], "family": "nhpp"} for k, v in MODELS.items()]
-    out += [{"id": k, "name": v["name"], "family": v["family"], "desc": v["desc"]}
+    out += [{"id": k, "name": v["name"], "short": v["short"], "family": v["family"], "desc": v["desc"]}
             for k, v in extra.EXTRA_MODELS.items()]
     return out
 

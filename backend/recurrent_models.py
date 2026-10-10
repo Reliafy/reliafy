@@ -749,14 +749,14 @@ def restoration(model_id: str, opts: dict, value: float, ci) -> dict:
         ratio = 1.0 + value
         rci = [1.0 + ci[0], 1.0 + ci[1]] if ci else None
         trend = "shrinks" if ratio < 1 else "grows" if ratio > 1 else "stays the same"
-        text = (f"Each time between failures is about {ratio:.2f}× the one before: the gap {trend} with "
-                f"every repair")
-        if ratio < 1:
-            text += " (deterioration)"
-        elif ratio > 1:
-            text += " (improvement)"
-        out.update({"effectiveness": None, "ratio": ratio, "ratio_ci": rci,
-                    "sentence": text + (f". We're 95% sure it's {rci[0]:.2f}× to {rci[1]:.2f}×." if rci else ".")})
+        text = f"Each time between failures is about {ratio:.2f}× the one before"
+        short = f"{text}: the gap {trend} with every repair."
+        if rci:
+            text += f" (we're 95% sure: {rci[0]:.2f}× to {rci[1]:.2f}×)"
+        text += f": the gap {trend} with every repair"
+        text += " (deterioration)." if ratio < 1 else " (improvement)." if ratio > 1 else "."
+        out.update({"effectiveness": None, "ratio": ratio, "ratio_ci": rci, "sentence": text, "short": short,
+                    "scale": "Below 1, failures come closer together; above 1, further apart."})
         return out
     if kind == "kijima":
         eff = 1.0 - value
@@ -779,15 +779,14 @@ def restoration(model_id: str, opts: dict, value: float, ci) -> dict:
                 "is added (worse than a minimal repair)")
     else:
         text = f"Each repair takes away about {_pct(max(eff, 0.0))} of {what}"
+    short = text + "."
     if eci:
         lo, hi = max(eci[0], -9.99), min(eci[1], 9.99)
-        if lo >= 0:
-            text += f". We're 95% sure it's between {_pct(lo)} and {_pct(hi)}"
-        else:
-            text += f". The 95% interval runs from {_pct(lo)} to {_pct(hi)}"
-    text += (" (0% is a minimal repair, as bad as old)." if model_id == "ari"
-             else " (100% is as good as new, 0% as bad as old).")
-    out.update({"effectiveness": eff, "effectiveness_ci": eci, "sentence": text})
+        text += f" (we're 95% sure: {_pct(lo)} to {_pct(hi)})"
+    text += "."
+    scale = ("0% is a minimal repair (as bad as old)." if model_id == "ari"
+             else "100% is as good as new, 0% as bad as old.")
+    out.update({"effectiveness": eff, "effectiveness_ci": eci, "sentence": text, "short": short, "scale": scale})
     return out
 
 
@@ -817,7 +816,7 @@ def repair_verdict(model, model_id: str) -> dict | None:
     elif best and worst:
         if best["rejected"] and worst["rejected"]:
             verdict = "partial"
-            sentence = ("Repairs are partial: better than a minimal repair (as bad as old), short of "
+            sentence = ("Repairs are partial: better than as bad as old, short of "
                         + ("the most an ARI repair can do." if top == "maximal repair" else "as good as new."))
         elif worst["rejected"]:
             verdict = "maximal" if top == "maximal repair" else "perfect"
