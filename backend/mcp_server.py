@@ -2543,6 +2543,25 @@ class BlockModel(BaseModel):
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
 
 
+class SchedulePhase(BaseModel):
+    t: float = Field(ge=0, description="When this phase starts (diagram time unit); the first is 0.")
+    value: Union[float, str] = Field(description="The covariate's value (a categorical covariate's level) from t on.")
+
+
+class CovariateSchedule(BaseModel):
+    """One covariate's path over the diagram's time (#52)."""
+    model_config = ConfigDict(extra="forbid")
+    expression: Optional[str] = Field(None, max_length=400, description=(
+        "Numeric covariate: its value as an expression in t (diagram time), changing in STEPS — t only through "
+        "floor/ceil/'//' or a comparison. E.g. phases '60 if t < 1000 else (90 if t < 3000 else 75)', duty cycle "
+        "'90 if t % 24 < 8 else 30', stepped ramp '60 + 5 * floor(t / 500)', geometric "
+        "'60 * 1.1 ** floor(t / 1000)'. Names t, pi, e; functions sin cos tan exp log log2 sqrt floor ceil abs "
+        "min max. Give this OR table."))
+    table: Optional[list[SchedulePhase]] = Field(None, max_length=50, description=(
+        "Phases instead: the value from each t on (first t = 0). Required for a categorical covariate."))
+    period: Optional[float] = Field(None, gt=0, description="With table: repeat the phases every period.")
+
+
 class CostRange(BaseModel):
     min: float = Field(ge=0)
     max: float = Field(ge=0)
@@ -2649,6 +2668,11 @@ class RbdNode(BaseModel):
     repair_one_at_a_time: Optional[bool] = Field(None, description=(
         "Repairable standby group: one repairer of its own, so its failed units are repaired one at a time "
         "(otherwise each failed unit is a job for the diagram's repair crews). No costs on such a group."))
+    covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
+        "Non-repairable component/series/parallel block on a saved covariate (regression) model: covariates "
+        "that change over time, by name, e.g. {\"load_pct\": {\"expression\": \"90 if t % 24 < 8 else 30\"}}. "
+        "The block's reliability follows the model along that path (values clipped to the model's fitted "
+        "range, with a warning); covariates left out stay at their defaults."))
 
 
 class RbdEdge(BaseModel):
@@ -2787,6 +2811,10 @@ def create_rbd(
     exponential repairs or proof tests whose repairs take no, fixed or exponential time, no scheduled
     maintenance, crews for every repair), otherwise left out with the reason (the validation warnings say so);
     a safety function's PFDavg keeps them wherever the long run can (proof tests that take time, say).
+    Covariates over time (non-repairable): a block on a saved covariate (regression) model may set
+    covariate_schedules — a covariate's value as a stepped expression in t (phases, a duty cycle, a stepped
+    ramp) or a phase table — and analyze_rbd then follows the model along that path (warnings say where a value
+    is held at the model's fitted range).
     Returns the node ids (the stages form generates them) and structure_summary, the diagram in one line
     (e.g. "PLC → (Pump A ∥ Pump B)"; 2-of-3(…) for voting) — check it matches what the user described; change
     the diagram later with edit_rbd."""
@@ -2937,8 +2965,10 @@ class UpdateNodeOp(_Op):
     maintenance_group: Optional[str] = None
     crew_priority: Optional[float] = None
     repair_one_at_a_time: Optional[bool] = None
+    covariate_schedules: Optional[dict[str, CovariateSchedule]] = Field(None, description=(
+        "Replaces the block's covariate schedules (#52; see create_rbd's node)."))
     clear: Optional[list[Literal["costs", "preventive", "inspection", "maintenance_group", "crew_priority",
-                                 "instant_repair", "repair_one_at_a_time"]]] = Field(
+                                 "instant_repair", "repair_one_at_a_time", "covariate_schedules"]]] = Field(
         None, description="Remove these block settings.")
 
 
@@ -3059,7 +3089,7 @@ def edit_rbd(
       blocks adds no bypass. Every edge added is reported. Input/output can't be removed.
     - update_node {id | ids, label?, model?, repair?, n?, k?, spares?, cold?, subsystem_rbd_id?,
       instant_repair?, costs?, preventive?, inspection?, maintenance_group?, crew_priority?,
-      repair_one_at_a_time?, clear?: [field…]} — merges only the fields given (ids: same change to many
+      repair_one_at_a_time?, covariate_schedules?, clear?: [field…]} — merges only the fields given (ids: same change to many
       nodes); clear removes block settings. A node's type can't change: remove and re-add.
     - add_edge / remove_edge {source, target}
     - set {name?, unit?, repairable?, repair_crews? (0 = as many as needed), maintenance_groups?,
