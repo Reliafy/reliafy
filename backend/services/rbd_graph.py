@@ -22,7 +22,11 @@ Compact node (what an assistant writes and reads)::
      "n": 2, "k": 3, "spares": 1, "cold": true,
      "standbyModel": {...}, "startProb": 0.98,  # cold standby: spare's own model, switch reliability
      "dormancy": 0.3,                         # standby: 0 cold, 1 hot, between = warm
-     "subsystem_rbd_id": "<saved rbd id>"}
+     "subsystem_rbd_id": "<saved rbd id>",
+     "covariate_schedules": {"load_pct": {"expression": "90 if t % 24 < 8 else 30"}}}  # #52
+
+A block on a saved regression model may set ``covariate_schedules``: each
+covariate's path over time (see :mod:`backend.services.rbd_tvc`).
 
 A repeated block — the same physical component drawn again elsewhere — is a
 component node with ``"repeat_of": "<id of the component it repeats>"`` and
@@ -479,6 +483,17 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
         data["standbyModel"] = normalize_model(data["standbyModel"], f"{where} spare", resolve_saved_model)
     if data.get("repair") is not None:
         data["repair"] = normalize_repair(data["repair"], where)
+    if raw.get("covariate_schedules") is not None and "covariate_schedules" not in data:
+        data["covariate_schedules"] = raw["covariate_schedules"]
+    if data.get("covariate_schedules") is not None:  # #52
+        from backend.services import rbd_tvc
+
+        try:
+            data["covariate_schedules"] = rbd_tvc.on_node(data, ntype)
+        except rbd_tvc.ScheduleError as exc:
+            raise GraphError(f"{where}: {exc}") from None
+        if data["covariate_schedules"] is None:
+            del data["covariate_schedules"]
     for key in ("costs", "preventive", "inspection", "rcm_source", "repair_quality"):
         if data.get(key) is not None and not isinstance(data[key], dict):
             raise GraphError(f"{where}: {key} must be an object.")
@@ -621,6 +636,8 @@ def compact_graph(graph: dict) -> dict:
                 node[key] = d[key]
         if isinstance(d.get("rbd"), dict) and d["rbd"].get("id"):
             node["subsystem_rbd_id"] = d["rbd"]["id"]
+        if d.get("covariate_schedules"):  # #52
+            node["covariate_schedules"] = d["covariate_schedules"]
         nodes.append(node)
     edges = [{"source": e.get("source"), "target": e.get("target")} for e in graph.get("edges") or []]
     out = {"nodes": nodes, "edges": edges, "unit": graph.get("unit") or ""}

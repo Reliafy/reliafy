@@ -154,6 +154,8 @@ export function compactGraph(graph = {}) {
     // Repairable blocks: instant repair, costs and maintenance (#99/#100).
     for (const k of BLOCK_KEYS) if (d[k] != null) node[k] = d[k];
     if (d.rbd?.id) node.subsystem_rbd_id = d.rbd.id;
+    // A regression block's covariates over time (#52).
+    if (d.covariate_schedules) node.covariate_schedules = d.covariate_schedules;
     return node;
   });
   const edges = (graph.edges || []).map((e) => ({ source: e.source, target: e.target }));

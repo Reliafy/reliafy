@@ -154,6 +154,10 @@ def _ph_reliability(model: dict, where: str, resolve_model, cov_values):
         raise AnalysisError(
             f"{where}: saved model not found — re-fit it or pick another."
         )
+    if getattr(cov_values, "schedules", None):  # #52: along its covariate schedule
+        from backend.services import rbd_tvc
+
+        return rbd_tvc.node(entry, cov_values, where)
     fitted = entry["model"]
     fields = entry.get("fields") or []
     row: dict = {}
@@ -363,6 +367,10 @@ def _node_reliability(
     data = node.get("data") or {}
     label = data.get("label") or node.get("id")
     cov_values = (covariates or {}).get(node.get("id"))
+    if data.get("covariate_schedules"):  # #52: covariates that follow a schedule
+        from backend.services import rbd_tvc
+
+        cov_values = rbd_tvc.attach(data, ntype, label, cov_values)
 
     if ntype == "component":
         model = _build_distribution(data.get("model"), label, resolve_model, cov_values)
@@ -1740,6 +1748,9 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
     rbd, labels, node_types, reliabilities, working_nodes, broken_nodes, baseline = _build_rbd(
         graph, resolve_subsystem, None, resolve_model, covariates
     )
+    from backend.services import rbd_tvc  # #52: where a schedule leaves the fitted range
+
+    notes.extend(rbd_tvc.notes_of(reliabilities))
     # RePyability's native what-if override for the system-level calls.
     overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
     sets = _structure_sets(rbd)
@@ -2173,6 +2184,10 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             # The override fixes its state; the stand-in is never consulted.
             components[nid] = _always_up()
             continue
+        if data.get("covariate_schedules"):  # #52: a schedule can't follow repairs
+            from backend.services import rbd_tvc
+
+            rbd_tvc.refuse_repairable(data, label)
         reliability = _build_distribution(data.get("model"), label, resolve_model, None)
         if ntype == "standby":
             # A duty unit plus spares, each repaired on its own (#156).

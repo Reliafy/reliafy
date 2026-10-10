@@ -290,7 +290,8 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
         raise _Missing(
             f"Block '{label}' uses a fitted proportional-hazards/regression "
             f"model ({what}), which Reliafy evaluates at the covariate values "
-            "set on the calculator. Set its parameters here, e.g. "
+            "set on the calculator (or along the block's covariate schedule). "
+            "Set its parameters here, e.g. "
             "surv.Weibull.from_params([alpha, beta]) for the covariates you "
             "want."
         )
@@ -444,6 +445,10 @@ class _Script:
         snapshot = (len(self.lines), len(self.placeholders), set(self.imports),
                     self.uses_surv, self.uses_missing, dict(self.subsystems))
         self.lines.append("")
+        if data.get("covariate_schedules"):  # #52: covariates along a schedule
+            from backend.services import rbd_tvc
+
+            self.comment(rbd_tvc.export_note(data, label))
         expr = self._nonrepairable_block(node, ntype, data, label, var, visited)
         if pinned and len(self.placeholders) > snapshot[1]:
             # Reliafy analyses a pinned block via the override alone, so a

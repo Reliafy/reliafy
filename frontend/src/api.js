@@ -796,6 +796,18 @@ export function analyzeRbd(
   });
 }
 
+// The node covariate modal's live preview (#52): each covariate's stair-step
+// path and the block's R(t) along it, for a saved regression model.
+// ``schedules`` {name: {expression} | {table, period?}}, ``constants`` the
+// other covariates' values, ``tMax`` the window (null: the model's own).
+export function previewRbdSchedule({ modelId, schedules, constants, tMax = null }) {
+  return request("/api/rbds/tvc-preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model_id: modelId, schedules: schedules || {}, constants: constants || {}, t_max: tMax }),
+  });
+}
+
 // An analysis job: {job_id, status: queued|running|done|failed,
 // queue_position, result (done), error (failed)}.
 export function getRbdJob(jobId) {

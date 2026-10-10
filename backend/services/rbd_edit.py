@@ -64,11 +64,13 @@ _FIELD_TYPES = {
     "repair_quality": ("component",),
     # Throughput while it works (#122).
     "capacity": ("component", "standby"),
+    # A regression block's covariates over time (#52).
+    "covariate_schedules": ("component", "series", "parallel"),
 }
 UPDATE_FIELDS = ("label", *_FIELD_TYPES)
 #: Block settings ``update_node``'s ``clear`` can remove.
 CLEARABLE = ("costs", "preventive", "inspection", "maintenance_group", "crew_priority", "instant_repair",
-             "repair_one_at_a_time", "repair_quality", "capacity")
+             "repair_one_at_a_time", "repair_quality", "capacity", "covariate_schedules")
 
 
 class EditError(ValueError):
@@ -321,6 +323,13 @@ class _Editor:
                 data.pop(key, None)
                 if key in ("preventive", "inspection"):
                     data.pop("rcm_source", None)
+            if data.get("covariate_schedules") and ({"covariate_schedules", "model"} & set(changes)):  # #52
+                from backend.services import rbd_tvc
+
+                try:
+                    data["covariate_schedules"] = rbd_tvc.on_node(data, ntype)
+                except rbd_tvc.ScheduleError as exc:
+                    raise EditError(f"{where}: {exc}") from None
             rbd_graph.check_counts(ntype, data, where)
             node["data"] = data
         parts = [f"updated {', '.join(changes)}"] if changes else []

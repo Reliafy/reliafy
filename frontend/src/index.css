@@ -2840,6 +2840,234 @@ h1 .chip,
   color: var(--ink);
 }
 
+/* #52: a covariate as a constant or a schedule over time, with a live preview */
+.rbd-cov-modal {
+  max-width: 680px;
+}
+
+.rbd-cov-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.rbd-cov-row + .rbd-cov-row {
+  margin-top: var(--sp-2);
+}
+
+.rbd-cov-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.rbd-cov-name {
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.rbd-sched {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.rbd-sched-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+}
+
+.rbd-sched input {
+  background-color: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  padding: 0.4rem 0.6rem;
+  font-size: var(--fs-14);
+  font-family: inherit;
+}
+
+.rbd-sched input:focus {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: var(--focus);
+}
+
+.rbd-sched input:disabled {
+  color: var(--muted);
+  background: var(--surf-2);
+}
+
+.rbd-sched-expr input {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: var(--fs-13);
+}
+
+@media (max-width: 600px) {
+  .rbd-sched-presets .chip-btn {
+    min-height: 32px;
+  }
+}
+
+.rbd-sched-hint,
+.rbd-sched-note {
+  margin: 0;
+  font-size: var(--fs-12);
+}
+
+.rbd-sched-table {
+  align-self: flex-start;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+
+.rbd-sched-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  padding: 0 var(--sp-2) var(--sp-1) 0;
+}
+
+.rbd-sched-table td {
+  padding: 0 var(--sp-2) var(--sp-1) 0;
+}
+
+.rbd-sched-table input {
+  width: 110px;
+}
+
+.rbd-sched-table-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.rbd-sched-table-foot .link {
+  font-size: var(--fs-13);
+}
+
+.rbd-sched-period {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.rbd-sched-period input {
+  width: 110px;
+}
+
+.rbd-sched-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  transition: opacity 0.15s;
+}
+
+.rbd-sched-preview.is-loading {
+  opacity: 0.6;
+}
+
+.rbd-sched-sparks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-3);
+}
+
+.rbd-spark {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  min-width: 0;
+}
+
+.rbd-spark figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--muted);
+  margin-bottom: var(--sp-1);
+}
+
+.rbd-spark figcaption > span:first-child {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.rbd-spark-read {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rbd-spark svg {
+  display: block;
+  width: 100%;
+  height: 64px;
+}
+
+.rbd-spark-line {
+  fill: none;
+  stroke: var(--acc);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.rbd-spark-range {
+  fill: var(--acc-t);
+}
+
+.rbd-spark-cross {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+
+.rbd-spark-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-12);
+  color: var(--subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.rbd-sched-warn,
+.rbd-sched-error {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-13);
+}
+
+.rbd-sched-warn {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+}
+
+.rbd-sched-error {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-line);
+}
+
+.rbd-sched-loading {
+  margin: 0;
+  min-height: 1em;
+}
+
 
 
 
