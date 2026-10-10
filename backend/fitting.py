@@ -87,6 +87,7 @@ from backend import life_bounds, param_intervals
 from backend.units import canonical_unit, unit_in_text
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
+from backend import regression_bands, regression_diagnostics
 from backend.services.method_labels import hides_solver_names, note_fit
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
@@ -1266,9 +1267,13 @@ def fit(
         c_invert = False
     if c_invert:
         df = invert_censor_column(df, mapping["c"])
+    # Cox PH's tie method, strata and cluster columns (#61): regression only.
+    cox_opts = options.pop(regression_diagnostics.COX_KEY, None)
     options = normalize_options(distribution, options)
     if distribution in REGRESSION_MODELS:
-        result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units)
+        result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units, cox_opts)
+    elif cox_opts:
+        raise FitError("Tie methods, strata and clusters apply to Cox PH only. Choose Cox PH, or drop them.")
     elif distribution == BEST_ID:
         result = _fit_best(df, mapping, options)
     elif distribution in NONPARAMETRIC:
@@ -2436,10 +2441,15 @@ def _fit_regression(
     covariates: Optional[list],
     formula: Optional[str],
     covariate_units: Optional[dict] = None,
+    cox_opts: Optional[dict] = None,
 ) -> dict:
     entry = REGRESSION_MODELS[distribution]
     fitter = entry["fitter"]
     mapping = {k: v for k, v in mapping.items() if v}
+    try:
+        cox_opts = regression_diagnostics.clean_cox_options(distribution, cox_opts, df.columns, covariates)
+    except regression_diagnostics.CoxOptionError as exc:
+        raise FitError(str(exc)) from exc
 
     # Only pass columns that were actually mapped — not every fitter (e.g. Cox)
     # accepts every optional column keyword. Inspection (interval-censored)
@@ -2468,11 +2478,14 @@ def _fit_regression(
             raise FitError(str(exc)) from exc
     elif covariates:
         fit_kwargs["Z_cols"] = list(covariates)
+    cox_kwargs = regression_diagnostics.cox_fit_kwargs(cox_opts)
 
     try:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            model = note_fit(fitter.fit_from_df(df, **fit_kwargs))
+            model = note_fit(fitter.fit_from_df(df, **fit_kwargs, **cox_kwargs))
+        # A stratified Cox model reads its stratum from the covariate row.
+        model = regression_diagnostics.stratify(model, cox_opts)
         reissue_deprecations(caught)
         gof = _goodness_of_fit(model)
     except Exception as exc:
@@ -2554,6 +2567,10 @@ def _fit_regression(
     # so the frontend can re-evaluate at other covariate values.
     raw_vars = _raw_covariates(model, covariates)
     fields = _covariate_fields(df, raw_vars)
+    if cox_opts.get("strata"):
+        # The stratum is a calculator input like a categorical covariate.
+        raw_vars = [*raw_vars, cox_opts["strata"]]
+        fields = [*fields, regression_diagnostics.strata_field(df, cox_opts["strata"])]
     units = clean_covariate_units(covariate_units, raw_vars)
     if units:
         # Optional units (#265): on each calculator input and on the
@@ -2569,6 +2586,11 @@ def _fit_regression(
     except Exception:
         curves = None
     model_id = _store_model(model, grid, fields)
+    # Does the model's assumption hold? (#61) The Cox model the checks ran on
+    # is kept for the residual plots.
+    diagnostics, diag_model = regression_diagnostics.diagnose(
+        model, df, mapping, fit_kwargs, distribution, entry.get("effect", "hazard"), cox_opts)
+    _MODEL_STORE[model_id]["diag"] = diag_model
 
     functions = None
     if curves is not None:
@@ -2604,6 +2626,8 @@ def _fit_regression(
             extra["at_covariate_means"] = at_means
     if units:
         extra["covariate_units"] = units
+    if cox_opts:
+        extra["options"] = {regression_diagnostics.COX_KEY: cox_opts}
     return {
         **extra,
         "maximum": getattr(model, "maximum", None),
@@ -2620,6 +2644,7 @@ def _fit_regression(
         "functions": functions,
         # How good is this model? Harrell's C, Brier score, AUC (#176).
         "validation": validate_regression(model, df, mapping, raw_vars),
+        "diagnostics": diagnostics,
     }
 
 
@@ -2796,14 +2821,16 @@ def confidence_bounds(
     x_max=None,
     *,
     owner: str | None = None,
+    values: Optional[dict] = None,
 ) -> dict:
     """Confidence bounds of a fitted model's ``on`` function over its grid.
 
     Wraps SurPyval's ``model.cb`` — configurable significance ``alpha_ci`` and
     ``bound`` (two-sided / lower / upper). Available for plain, discrete and
-    non-parametric models; regression (proportional-hazards) models don't
-    expose confidence bounds. Two-sided returns both arrays; a one-sided bound
-    returns just the relevant side (the other is ``None``).
+    non-parametric models, and for parametric regression models at the
+    covariate ``values`` (#54; the fit's defaults for any left out); Cox PH
+    has none. Two-sided returns both arrays; a one-sided bound returns just
+    the relevant side (the other is ``None``).
     """
     if on not in _CB_FUNCTIONS:
         raise FitError(f"Can't compute confidence bounds on '{on}'.")
@@ -2815,13 +2842,19 @@ def confidence_bounds(
     entry = _entry_for(model_id, owner)
     model = entry["model"]
     grid = _custom_grid(entry["grid"], x_min, x_max)
+    regression = regression_bands.is_regression(entry)
+    if regression and not regression_bands.has_bands(model):
+        raise FitError(regression_bands.SEMI_PARAMETRIC_NOTE)
     if not hasattr(model, "cb"):
         raise FitError("This model type doesn't provide confidence bounds.")
 
     try:
         with np.errstate(all="ignore"), warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            cb = _cb_off_pinned_points(model, grid, on, alpha_ci, bound)
+            if regression:
+                cb = regression_bands.band(model, entry["fields"], values, grid, on, alpha_ci, bound)
+            else:
+                cb = _cb_off_pinned_points(model, grid, on, alpha_ci, bound)
     except Exception as exc:
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
 
