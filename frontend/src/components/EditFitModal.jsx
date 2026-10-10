@@ -6,6 +6,8 @@ import Units from "./Units.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import { getDataset, getDistributions, updateModelFit } from "../api.js";
 import { EMPTY_MAPPING, columnFacts, dataStepProblems } from "../lifeData.js";
+import { TvcToggle } from "./TvcColumns.jsx";
+import { tvcMapping, tvcProblems } from "../tvcData.js";
 
 // Edit a saved model's fit spec and refit in place: same dataset, same id.
 // Prefilled from the stored spec; anything referencing the model (RCM
@@ -21,6 +23,8 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
     ...EMPTY_MAPPING, ...(spec.mapping || {}), c_invert: !!savedInvert, c_map: savedMap || null,
   });
   const [facts, setFacts] = useState({});
+  // Covariates that change over time (#60): the saved item column says so.
+  const [tvc, setTvc] = useState(spec.mapping?.i ? (spec.mapping.xl ? "intervals" : "timeline") : null);
   const [nRows, setNRows] = useState(0);
   const [unit, setUnit] = useState(spec.unit || "");
   const [covariates, setCovariates] = useState(spec.covariates || []);
@@ -50,7 +54,8 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
   const hasCovariates = advanced ? !!formula.trim() : covariates.length > 0;
   const options = distributions.filter((d) => !!d.covariates === hasCovariates);
   // The Data step's checks, in plain words (#291).
-  const problems = columns ? dataStepProblems(mapping, facts, nRows) : [];
+  const problems = !columns ? [] : tvc ? tvcProblems(mapping, facts, tvc, hasCovariates ? 1 : 0)
+    : dataStepProblems(mapping, facts, nRows);
   const mappingValid = problems.length === 0;
 
   // Keep the selection valid when toggling between plain/covariate modes.
@@ -116,13 +121,20 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
       {columns === null && !error && <p className="muted-line">Loading dataset…</p>}
       {columns && (
         <>
-          <ColumnMapper columns={columns} mapping={mapping} onChange={setMapping} facts={facts} />
+          <ColumnMapper columns={columns} mapping={mapping} onChange={setMapping} facts={facts} timeVarying={tvc} />
           {problems.length > 0 && (
             <ul className="ds-problems" role="status">
               {problems.map((p) => <li key={p}>{p}</li>)}
             </ul>
           )}
           <Units value={unit} onChange={setUnit} />
+          <TvcToggle
+            layout={tvc}
+            onChange={(layout) => {
+              setTvc(layout);
+              setMapping((m) => tvcMapping(m, layout, columns, facts, nRows));
+            }}
+          />
           <Covariates
             columns={columns}
             selected={covariates}
