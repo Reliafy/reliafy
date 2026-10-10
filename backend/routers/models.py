@@ -11,7 +11,7 @@ from backend import config
 from backend.db import get_session
 from backend.http_limits import read_upload
 from backend.fitting import FitError, covariate_units_from_form, options_from_form, per_demand_batches_from_df
-from backend import storage
+from backend import regression_diagnostics, storage
 from backend.routers import excel as excel_router
 from backend.services import billing as billing_service
 from backend.services import excel as excel_service
@@ -342,6 +342,7 @@ def save_model(
     include_mixtures: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
+    cox: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -374,10 +375,10 @@ def save_model(
         model = models_service.save_model(
             session, name, dataset, distribution, mapping, z, formula, unit,
             owner_id=ctx.write_owner,
-            options=options_from_form(
+            options=regression_diagnostics.with_cox_form(options_from_form(
                 offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
                 include_mixtures=include_mixtures, c_map=c_map,
-            ),
+            ), cox),
             covariate_units=covariate_units_from_form(covariate_units),
         )
         access_service.stamp_editor(session, "models", model.id, ctx)
@@ -512,6 +513,7 @@ def update_model_fit(
     include_mixtures: bool = Body(default=False),
     c_map: dict | None = Body(default=None),
     covariate_units: dict | None = Body(default=None),
+    cox: dict | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -527,7 +529,7 @@ def update_model_fit(
     options = {"offset": offset, "zi": zi, "lfp": lfp, "fixed": fixed or None,
                "mixture": mixture, "mixture_distribution": mixture_distribution,
                "how": how, "c_invert": bool(c_invert), "include_mixtures": bool(include_mixtures),
-               "c_map": c_map or None}
+               "c_map": c_map or None, "cox": cox or None}
     try:
         model = models_service.update_fit(
             session, model_id, existing.owner_id, distribution,
