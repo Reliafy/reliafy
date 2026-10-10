@@ -79,6 +79,7 @@ from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 
 from backend import alt as alt_fit
+from backend import competing_risks
 from backend import config
 from backend import fitting
 from backend import life_bounds
@@ -759,7 +760,8 @@ def _saved_life(db, m, results: dict, owners) -> dict | None:
     """A saved life distribution's B-lives and MTTF with their 90% lower
     bounds (#288): as stored with the fit, or for one saved before, from the
     live model. None for another kind or a fit that didn't converge."""
-    if m.kind != "distribution" or results.get("no_finite_maximum") or results.get("fit_warning"):
+    if m.kind not in ("distribution", "nonparametric") or results.get("no_finite_maximum") \
+            or results.get("fit_warning"):
         return None
     if results.get("life"):
         return results["life"]
@@ -791,11 +793,44 @@ def _fit_failure_warning(fit_warning: str | None) -> str:
             "larger unit), checking for extreme or mistyped values, or another distribution.")
 
 
+def _cr_summary(result: dict) -> dict:
+    """A fit by failure mode (#177) for an agent: each mode's share of the
+    failures and of the units by the horizon (with its 95% interval), which
+    mode leads when, the reading, Gray's test and any regression — without
+    the plotting curves."""
+    out = {
+        "distribution": result.get("distribution"),
+        "distribution_id": result.get("distribution_id"),
+        "kind": "competing_risks",
+        "n": result.get("n"),
+        "unit": result.get("unit", ""),
+        "failed": result.get("failed"),
+        "still_running": result.get("running"),
+        "horizon": result.get("horizon"),
+        "failure_modes": [{
+            "mode": k["name"], "failures": k["failures"], "share_of_failures_by_horizon": k.get("share"),
+            "units_failed_from_it_by_horizon": (k.get("at") or {}).get("cif"),
+            "ci_95": [(k.get("at") or {}).get("lower"), (k.get("at") or {}).get("upper")],
+        } for k in result.get("causes") or []],
+        "leads": result.get("leads"),
+        "reading": result.get("reading"),
+        "how": ("Non-parametric cumulative incidence (Aalen-Johansen) with Aalen's 95% pointwise bounds: the "
+                "chance of failing from each mode by the horizon while the other modes still act. The modes "
+                "add up to the all-cause failure probability."),
+    }
+    for key in ("gray", "regression"):
+        if result.get(key):
+            out[key] = result[key]
+    return out
+
+
 def _fit_summary(result: dict) -> dict:
     """The parts of a fit payload worth handing to a model (no plot arrays).
 
     A fit the optimiser reported as failed leads with ``fit_ok: false`` and
     the warning, ahead of the numbers, so they aren't quoted as a result."""
+    if result.get("kind") == "competing_risks":
+        return _cr_summary(result)
     no_max = result.get("no_finite_maximum")  # #230: SurPyval 0.23 says so
     failed = bool(no_max) or result.get("fit_ok") is False or bool(result.get("fit_warning"))
     metrics = None if failed else (
@@ -890,10 +925,19 @@ def get_model(
     Regression models also report `validation` (how good is this model?): Harrell's C with a plain
     reading (0.5 = coin toss, 1 = perfect ranking), the integrated Brier score against one
     Kaplan-Meier curve for every unit (lower is better), and the time-dependent AUC at the failure-time
-    quartiles — or `available: false` with the reason."""
+    quartiles — or `available: false` with the reason.
+    A model fitted by failure mode (kind competing_risks) reports each mode's share of the failures and of
+    the units by its horizon with 95% intervals, which mode leads when, the reading, and Gray's test or the
+    per-mode regression when it has them."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
+    if m is not None and m.kind == "competing_risks":
+        out = {**_life_brief(m), **_cr_summary(m.results or {})}
+        out.pop("params", None)
+        if (m.spec or {}).get("notes"):
+            out["notes"] = m.spec["notes"]
+        return out
     if m is not None:
         r = models_service.public_results(m)
         metrics = r.get("metrics")
@@ -953,7 +997,9 @@ def get_model(
 _FitDistribution = Annotated[str, Field(
     description="A distribution id — weibull, exponential, normal, lognormal, gamma, loglogistic, "
                 "expo_weibull, gumbel, logistic, … — or 'best' to fit every plain distribution and keep "
-                "the lowest-AIC one. Regression ids (e.g. weibull_ph) need covariates and a dataset.")]
+                "the lowest-AIC one. Regression ids (e.g. weibull_ph) need covariates and a dataset. "
+                "competing_risks fits life data by failure mode (with causes / cause_column); "
+                "competing_risks_cox and competing_risks_fine_gray add covariates per mode.")]
 _FitData = Annotated[Optional[list[float]], Field(
     description="Inline failure/suspension times, one per unit (the interval's lower bound when data_right is "
                 "given). Give this OR dataset_id.")]
@@ -1014,6 +1060,21 @@ _FitIncludeMixtures = Annotated[bool, Field(
                 "best mixture beats the best single distribution (then it is listed first, else the mixtures "
                 "follow the singles), and selection_summary says so in plain words. A winning mixture comes "
                 "with mixture_summary, the two modes in plain words. Slower, so off by default.")]
+
+
+_FitCauses = Annotated[Optional[list[Optional[str]]], Field(
+    description="Competing risks (distribution='competing_risks'): the failure mode of each time in `data`, "
+                "null for a unit still running — e.g. [\"bearing\", \"seal\", null]. The modes compete: each "
+                "mode's cumulative incidence is the chance of failing from it with the others acting.")]
+_FitGroups = Annotated[Optional[list[str]], Field(
+    description="Competing risks only: a group per time in `data` (site, supplier). Adds Gray's test per "
+                "failure mode — does each mode's chance differ between the groups?")]
+_FitCauseCol = Annotated[Optional[str], Field(
+    description="Competing risks (distribution='competing_risks'): the dataset column naming each failure's "
+                "mode, blank for a unit still running.")]
+_FitGroupCol = Annotated[Optional[str], Field(
+    description="Competing risks only: a dataset column of groups (site, supplier) to compare each failure "
+                "mode across with Gray's test.")]
 
 
 def _mcp_fit_error(exc: FitError, c_invert: bool) -> FitError:
@@ -1127,7 +1188,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
               censor_column, count_column, covariates, unit, data_right, trunc_left, trunc_right,
               time_right_column, trunc_left_column, trunc_right_column, method,
               save: bool, name: str | None, include_mixtures: bool = False,
-              covariate_units: dict | None = None) -> dict[str, Any]:
+              covariate_units: dict | None = None, causes=None, groups=None, cause_column=None,
+              group_column=None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     if covariate_units:
@@ -1138,7 +1200,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                             f"{'is' if len(unknown) == 1 else 'are'} not in covariates "
                             f"({', '.join(covariates or []) or 'none given'}).")
     known = {fitting.BEST_ID, fitting.MIXTURE_ID, *fitting.DISTRIBUTIONS, *fitting.DISCRETE,
-             *fitting.NONPARAMETRIC, *fitting.REGRESSION_MODELS}
+             *fitting.NONPARAMETRIC, *fitting.REGRESSION_MODELS, *competing_risks.CR_MODELS}
     dist = (distribution or "weibull").strip()
     if dist not in known:
         dist = fitting.resolve_distribution_id(dist)  # FitError -> tool error listing the options
@@ -1150,9 +1212,11 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
     stray = ([k for k, v in (("time_column", time_column), ("censor_column", censor_column),
                              ("count_column", count_column), ("time_right_column", time_right_column),
                              ("trunc_left_column", trunc_left_column),
-                             ("trunc_right_column", trunc_right_column)) if v] if data is not None
+                             ("trunc_right_column", trunc_right_column), ("cause_column", cause_column),
+                             ("group_column", group_column)) if v] if data is not None
              else [k for k, v in (("censored", censored), ("counts", counts), ("data_right", data_right),
-                                  ("trunc_left", trunc_left), ("trunc_right", trunc_right)) if v is not None])
+                                  ("trunc_left", trunc_left), ("trunc_right", trunc_right), ("causes", causes),
+                                  ("groups", groups)) if v is not None])
     if stray:
         other = "dataset_id" if data is not None else "inline data"
         raise ToolError(f"{', '.join(stray)} only appl{'ies' if len(stray) == 1 else 'y'} with {other} — "
@@ -1167,7 +1231,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         cols: dict[str, list] = ({"xl": list(data), "xr": _per_row(data_right, len(data), "data_right")}
                                  if data_right is not None else {"x": list(data)})
         for key, values, label in (("c", censored, "censored"), ("n", counts, "counts"),
-                                   ("tl", trunc_left, "trunc_left"), ("tr", trunc_right, "trunc_right")):
+                                   ("tl", trunc_left, "trunc_left"), ("tr", trunc_right, "trunc_right"),
+                                   ("e", causes, "causes"), ("g", groups, "groups")):
             if values is not None:
                 cols[key] = _per_row(values, len(data), label)
         mapping = {k: k for k in cols}
@@ -1183,12 +1248,21 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             raise ToolError(f"Say which column holds the times (time_column). Columns: {', '.join(names)}.")
         times = {"xl": time_column, "xr": time_right_column} if time_right_column else {"x": time_column}
         mapping = {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
-                   "tr": trunc_right_column}
+                   "tr": trunc_right_column, "e": cause_column, "g": group_column}
         mapping = {k: v for k, v in mapping.items() if v}
         for col in [*mapping.values(), *(covariates or [])]:
             if col not in names:
                 raise ToolError(f"Column '{col}' isn't in the dataset. Columns: {', '.join(names)}.")
         df = datasets_service.load_dataframe(dataset)
+    # #177: failure modes are read by the competing-risks ids only, and need them.
+    by_mode = competing_risks.is_competing_risks(dist)
+    if by_mode and "e" not in mapping:
+        raise ToolError(f"{dist} fits life data by failure mode: give each failure's mode in `causes` (inline, "
+                        "null for a unit still running) or `cause_column`.")
+    if not by_mode and ("e" in mapping or "g" in mapping):
+        raise ToolError("causes / cause_column and groups / group_column fit competing risks: pass "
+                        "distribution='competing_risks' (or competing_risks_cox / competing_risks_fine_gray "
+                        "with covariates).")
     options: dict[str, Any] = {}
     if c_invert:
         if "c" not in mapping:
@@ -1274,6 +1348,10 @@ def fit_distribution(
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
     covariate_units: _FitCovariateUnits = None,
+    causes: _FitCauses = None,
+    groups: _FitGroups = None,
+    cause_column: _FitCauseCol = None,
+    group_column: _FitGroupCol = None,
 ) -> dict[str, Any]:
     """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
     goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Saves nothing — use
@@ -1285,13 +1363,20 @@ def fit_distribution(
     every (or all but one) row is censored almost always means the flags are inverted; censoring gives the failures
     and censored units the fit used — check them against what the user said. Weibull beta < 1 = infant
     mortality, ≈ 1 = random failures, > 1 = wear-out. Regression fits also report `validation`: how good
-    the model is (Harrell's C, Brier score against no covariates, time-dependent AUC; see get_model)."""
+    the model is (Harrell's C, Brier score against no covariates, time-dependent AUC; see get_model).
+    Non-parametric fits (kaplan_meier, …) report `life`: B-lives with lower bounds and the mean life to a
+    horizon (restricted while the curve doesn't reach zero) with its interval. Life data by failure mode:
+    distribution='competing_risks' with each failure's mode (causes / cause_column; blank = still running)
+    reports each mode's share of failures and of units by a round horizon with 95% intervals, which mode
+    leads when, a one-line reading and, with groups / group_column, Gray's test per mode; competing_risks_cox
+    and competing_risks_fine_gray add covariate ratios per mode."""
     return _fit(ctx, distribution=distribution, data=data, data_right=data_right, censored=censored,
                 counts=counts, trunc_left=trunc_left, trunc_right=trunc_right, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=False, name=None, covariate_units=covariate_units)
+                include_mixtures=include_mixtures, save=False, name=None, covariate_units=covariate_units,
+                causes=causes, groups=groups, cause_column=cause_column, group_column=group_column)
 
 
 @_tool("fit_and_save_model", _WRITE, "Fit and save a model")
@@ -1318,6 +1403,10 @@ def fit_and_save_model(
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
     covariate_units: _FitCovariateUnits = None,
+    causes: _FitCauses = None,
+    groups: _FitGroups = None,
+    cause_column: _FitCauseCol = None,
+    group_column: _FitGroupCol = None,
     demand_batches: Annotated[Optional[list[DemandBatch]], Field(
         min_length=1, description=(
             "Save a per-demand (one-shot) model instead of a life distribution: one {demands, failures, "
@@ -1340,7 +1429,8 @@ def fit_and_save_model(
                                 ("time_right_column", time_right_column), ("censor_column", censor_column),
                                 ("count_column", count_column), ("trunc_left_column", trunc_left_column),
                                 ("trunc_right_column", trunc_right_column), ("covariates", covariates),
-                                ("method", method)) if v is not None]
+                                ("method", method), ("causes", causes), ("groups", groups),
+                                ("cause_column", cause_column), ("group_column", group_column)) if v is not None]
         if stray:
             raise ToolError(f"{', '.join(stray)} don't apply to a per-demand model — drop them.")
         return _save_per_demand(ctx, name, demand_batches, demand_confidence)
@@ -1349,7 +1439,8 @@ def fit_and_save_model(
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=True, name=name, covariate_units=covariate_units)
+                include_mixtures=include_mixtures, save=True, name=name, covariate_units=covariate_units,
+                causes=causes, groups=groups, cause_column=cause_column, group_column=group_column)
 
 
 def _per_demand_summary(result: dict) -> dict:
