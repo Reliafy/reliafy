@@ -13,6 +13,7 @@ import ColumnMapper from "./ColumnMapper.jsx";
 import Covariates from "./Covariates.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
+import { groupProblem, withGroup } from "../moreModels.js";
 import ResultView from "./ResultView.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import {
@@ -113,6 +114,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [distributions, setDistributions] = useState([]);
   const [distribution, setDistribution] = useState("weibull");
   const [fitOpts, setFitOpts] = useState({});
+  // A shared-frailty model's Group by column (#179), sent with the mapping.
+  const [group, setGroup] = useState("");
   const [datasets, setDatasets] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -155,6 +158,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     }
   }, [options, distribution]);
 
+  const selectedOpt = distributions.find((d) => d.id === distribution);
+  const fitMapping = withGroup(mapping, selectedOpt, group);
   const distName =
     distribution === "best"
       ? "best model"
@@ -174,6 +179,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setUnit(simplePaste ? "" : g.unit);
     setSimple(simplePaste);
     setCovariates([]);
+    setGroup("");
     return { mapping: map, unit: simplePaste ? "" : g.unit };
   };
 
@@ -325,7 +331,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         ...(hasCovariates ? (advanced ? { formula } : { covariates, covariateUnits: covUnits }) : {}),
         ...(hasCovariates ? {} : { fitOptions: fitOpts }),
       };
-      const res = await fitModel(distribution, file, mapping, opts);
+      const res = await fitModel(distribution, file, fitMapping, opts);
       setSplit(await dataSplit(file, mapping).catch(() => null));
       setResult(res);
       const src = file?.name || sourceName || "dataset";
@@ -370,7 +376,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setSaving(true);
     setError(null);
     try {
-      const saved = await saveModel(name.trim(), distribution, file, mapping, {
+      const saved = await saveModel(name.trim(), distribution, file, fitMapping, {
         unit,
         datasetId: datasetId || undefined,
         ...(hasCovariates
@@ -431,7 +437,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-        <button onClick={onFit} disabled={!distribution || loading}>
+        <button onClick={onFit} disabled={!distribution || loading || !!groupProblem(selectedOpt, group)}
+                title={groupProblem(selectedOpt, group) || undefined}>
           {loading ? "Fitting…" : `Fit ${distName}`}
         </button>
       </>
@@ -688,6 +695,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             onFitOpts={setFitOpts}
             fitMethods={fitMethods}
             mapping={mapping}
+            columns={csv?.columns || []}
+            usedColumns={new Set([...mappedColumns, ...covariates])}
+            group={group}
+            onGroup={setGroup}
           />
         </div>
       )}
