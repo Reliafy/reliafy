@@ -251,7 +251,7 @@ export function StructureNode({ data: nodeData, type }) {
     body = (
       <>
         <div className="rbd-block-sub one-line">
-          {standbyKind(data) +
+          {standbyKind(data) + (data.k > 1 ? ` · ${data.k} running` : "") /* k-of-n standby, #84 */ +
             ` · ${data.spares ?? 1} spare${(data.spares ?? 1) === 1 ? "" : "s"}`}
           {repairable && data.repair_one_at_a_time ? " · one repairer" : ""}
         </div>
