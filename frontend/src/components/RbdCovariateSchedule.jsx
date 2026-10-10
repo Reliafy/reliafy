@@ -2,6 +2,7 @@ import { useId, useRef, useState } from "react";
 import Select from "./Select.jsx";
 import { withUnit } from "./stressName.js";
 import { formatNumber } from "../format.js";
+import { unitInText } from "./unitText.js";
 import { PRESETS, presetExpression, stairPoints, stairValueAt } from "../rbdTvc.js";
 
 // One covariate's schedule in the node covariate modal (#52): an expression
@@ -44,7 +45,7 @@ export default function RbdCovariateSchedule({ field, draft, onDraft, unit, tMax
 }
 
 function unitWord(unit) {
-  return String(unit || "time").toLowerCase();
+  return unitInText(unit) || "time";
 }
 
 // A categorical covariate's phases: the level from each time on, optionally

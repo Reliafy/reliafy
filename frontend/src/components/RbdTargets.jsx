@@ -8,7 +8,7 @@ import Select from "./Select.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { graphSignature } from "./RbdValidation.jsx";
-import { unitAbbr } from "./rbdModelText.js";
+import { modelMean, unitAbbr } from "./rbdModelText.js";
 import "./RbdTargets.css";
 import "./RbdDesignPanel.css";
 
@@ -96,14 +96,13 @@ const COLUMNS = {
 
 const num = (v) => (v === "" || v == null ? null : Number(v));
 
-// A starting mission time: a quarter of the shortest characteristic life.
+// A starting mission time: a quarter of the shortest mean life (the block
+// dialogs' own mean, rbdModelText's).
 function suggestTime(nodes) {
   const lives = [];
   for (const n of nodes) {
-    const m = n.data?.model;
-    const p = Object.fromEntries((m?.params || []).map((x) => [x.name, Number(x.value)]));
-    if (m?.distribution_id === "weibull" && p.alpha > 0) lives.push(p.alpha);
-    else if (m?.distribution_id === "exponential" && p.failure_rate > 0) lives.push(1 / p.failure_rate);
+    const mean = modelMean(n.data?.model);
+    if (mean > 0) lives.push(mean);
   }
   if (!lives.length) return "";
   return String(Number((Math.min(...lives) / 4).toPrecision(2)));

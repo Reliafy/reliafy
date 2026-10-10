@@ -3,6 +3,7 @@ import Select from "./Select.jsx";
 import { getDistributions } from "../api.js";
 import { modelMean, unitAbbr } from "./rbdModelText.js";
 import { formatNumber } from "../format.js";
+import { PARAMS, paramLabel } from "../paramLabels.js";
 import "./RbdBlockOptions.css";
 
 // A life of two failure modes in one population (#318) — early failures and
@@ -12,20 +13,10 @@ import "./RbdBlockOptions.css";
 // numbered by mode with their weights), so the analysis treats both alike.
 
 const BASES = ["weibull", "lognormal", "exponential", "gamma", "normal"];
-// Each parameter in plain words, by distribution (a time-scaled one with the
-// diagram's unit): [label, what its value is in].
-const LABELS = {
-  weibull: { alpha: ["Scale α", "time"], beta: ["Shape β"] },
-  exponential: { failure_rate: ["Failure rate λ", "rate"] },
-  lognormal: { mu: ["Log-mean μ"], sigma: ["Log-spread σ"] },
-  normal: { mu: ["Mean μ", "time"], sigma: ["Spread σ", "time"] },
-  gamma: { alpha: ["Shape α"], beta: ["Rate β", "rate"] },
-};
-function paramLabel(base, name, unit) {
-  const [label, kind] = LABELS[base]?.[name] || [name];
-  const u = (unit || "").trim().toLowerCase();
-  if (!u || !kind) return [label, label];
-  return [label, kind === "time" ? `${label} (${u})` : `${label} (per ${u.replace(/s$/, "")})`];
+// Each parameter in plain words (the shared labels, #299): [short, with the
+// diagram's unit].
+function paramLabels(base, name, unit) {
+  return [PARAMS[base]?.[name]?.[0] || name, paramLabel(base, name, unit)];
 }
 
 export const isMixture = (model) => model?.distribution_id === "mixture";
@@ -133,7 +124,7 @@ export default function RbdMixtureBuilder({ on, onToggle, initial, onChange, uni
               <legend>Mode {j}</legend>
               <div className="param-fields">
                 {names.map((n) => {
-                  const [short, full] = paramLabel(base, n, unit);
+                  const [short, full] = paramLabels(base, n, unit);
                   return (
                     <label className="param-field" key={n}>
                       <span>{full}</span>

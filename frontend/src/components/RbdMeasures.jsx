@@ -6,6 +6,7 @@ import { CATEGORY, COLORWAY, DATA_INK } from "../plotTheme.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber } from "../format.js";
+import { unitInText } from "./unitText.js";
 import "./RbdMeasures.css";
 
 // What to improve's other measures (#225, #325), one tab each beside the
@@ -31,7 +32,7 @@ const POLL_MAX_MS = 6000;
 const TOP = 6; // curves and bars shown
 
 const pct = (v, d = 1) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(d)}%`);
-const unitWord = (unit) => (unit ? ` ${unit.toLowerCase()}` : "");
+const unitWord = (unit) => (unit ? ` ${unitInText(unit)}` : "");
 
 // The backend's sentence with its numbers in bold.
 export function boldNumbers(text) {
