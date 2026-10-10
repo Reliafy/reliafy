@@ -52,6 +52,11 @@ import { unitInText } from "../components/unitText.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { formatPercent } from "../format.js";
+// Phased missions and undirected networks (#160).
+import RbdPhasesModal from "../components/RbdPhasesModal.jsx";
+import RbdPhasesResult from "../components/RbdPhasesResult.jsx";
+import RbdNetworkPanel, { NetworkOnlyNote } from "../components/RbdNetworkPanel.jsx";
+import { MISSION_KEYS, missionFields, undirectedEdges } from "../rbdMission.js";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -364,11 +369,24 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   // Repair crews, maintenance groups and a safety function (#156, #157):
   // {repair_crews, maintenance_groups, safety_function, target_sil}.
   const [policies, setPolicies] = useState({});
+  // A phased mission's phases and a network's terminals (#160): {phases, network}.
+  const [mission, setMission] = useState({});
+  const network = !!mission.network;
   // Carried with the diagram wherever the costs are (save, validate, analyse).
   const costsField = useMemo(
-    () => ({ ...(diagramCosts ? { costs: diagramCosts } : {}), ...policyFields(policies) }),
-    [diagramCosts, policies]
+    () => ({ ...(diagramCosts ? { costs: diagramCosts } : {}), ...policyFields(policies), ...mission }),
+    [diagramCosts, policies, mission]
   );
+  // The diagram's kind: a block diagram (non-repairable or repairable) or a
+  // network. Phases are kept (a network ignores them) so switching back
+  // doesn't lose them.
+  const setMode = useCallback((v) => {
+    setRepairable(v === "repairable");
+    setMission((m) => {
+      const { network: _n, ...rest } = m;
+      return v === "network" ? { ...rest, network: { source: "input", target: "output" } } : rest;
+    });
+  }, []);
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
   const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'tree' | 'design' | 'outages'
   // The canvas fills the frame; the result tabs scroll with the page (#311).
@@ -873,6 +891,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       setCcfGroups(graph?.ccf_groups || []);
       setDiagramCosts(graph?.costs || null);
       setPolicies(policyFields(graph));
+      setMission(missionFields(graph));
       setSavedRbdId(id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
@@ -900,6 +919,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     setCcfGroups([]);
     setDiagramCosts(null);
     setPolicies({});
+    setMission({});
     setSavedRbdId(null);
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
@@ -923,6 +943,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     if (graph.ccf_groups != null) setCcfGroups(graph.ccf_groups);
     if (graph.costs !== undefined) setDiagramCosts(graph.costs || null);
     if (POLICY_KEYS.some((k) => graph[k] !== undefined)) setPolicies(policyFields(graph));
+    if (MISSION_KEYS.some((k) => graph[k] !== undefined)) setMission(missionFields(graph));
     fitWhenMeasured(norm.nodes);
   }, [setNodes, setEdges, fitWhenMeasured]);
 
@@ -1103,6 +1124,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     [nodes]
   );
   const labelFor = (id) => nodes.find((n) => n.id === id)?.data?.label || id;
+  // A network's connections are drawn without arrows (#160).
+  const flowEdges = useMemo(() => (network ? undirectedEdges(edges) : edges), [network, edges]);
 
   const openCcfForSelection = () => {
     if (selectedComponentIds.length < 2) return;
@@ -1184,12 +1207,13 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         </label>
         <Select
           className="rbd-mode-select"
-          value={repairable ? "repairable" : "non"}
-          onChange={(v) => setRepairable(v === "repairable")}
-          title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time."
+          value={repairable ? "repairable" : network ? "network" : "non"}
+          onChange={setMode}
+          title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time. A network's connections work both ways: it analyses whether two points stay connected."
           options={[
             { value: "non", label: "Non-repairable" },
             { value: "repairable", label: "Repairable" },
+            { value: "network", label: "Network" },
           ]}
         />
         {repairable && policies.safety_function && (
@@ -1272,13 +1296,23 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
             </label>
             <label>
               <span>System</span>
-              <select value={repairable ? "repairable" : "non"} onChange={(e) => setRepairable(e.target.value === "repairable")}>
+              <select value={repairable ? "repairable" : network ? "network" : "non"} onChange={(e) => setMode(e.target.value)}>
                 <option value="non">Non-repairable</option>
                 <option value="repairable">Repairable</option>
+                <option value="network">Network</option>
               </select>
             </label>
           </div>
           <button className="ovm-item" onClick={autoLayout}>Auto-arrange</button>
+          {!repairable && !network && (
+            <button
+              className="ovm-item"
+              onClick={() => setModal("phases")}
+              title="A mission through phases (take-off, cruise, landing), each with its own duration and the blocks it needs"
+            >
+              Phased mission…{mission.phases?.length ? " ✓" : ""}
+            </button>
+          )}
           {repairable && (
             <button
               className="ovm-item"
@@ -1321,7 +1355,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     >
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={flowEdges}
         nodeTypes={nodeTypes}
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
@@ -1375,6 +1409,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
               >
                 Add component
               </button>
+              {!network && (
+                <>
               <button
                 onClick={() => {
                   addKNode(menu.flow, 1, 2);
@@ -1393,6 +1429,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
               >
                 Add n-out-of-k node
               </button>
+                </>
+              )}
               {/* A standby group works in both: repairable, its units are each repaired (#156). */}
               <button onClick={() => { addBlock("standby", menu.flow); closeMenu(); }}>
                 Add standby node
@@ -1553,7 +1591,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
                   </button>
                 )}
                 <div className="rbd-menu-sep" />
-                {menu.nodeType === "component" && !repairable && (
+                {menu.nodeType === "component" && !repairable && !network && (
                   <button
                     onClick={() => {
                       repeatNode(menu.id);
@@ -1702,6 +1740,22 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           }}
         />
       )}
+      {modal === "phases" && (
+        <RbdPhasesModal
+          initial={mission.phases}
+          nodes={nodes}
+          edges={edges}
+          unit={rbdUnit}
+          onClose={() => setModal(null)}
+          onSubmit={(phases) => {
+            setMission((m) => {
+              const { phases: _p, ...rest } = m;
+              return phases ? { ...rest, phases } : rest;
+            });
+            setModal(null);
+          }}
+        />
+      )}
       {modal === "saverbd" && (
         <RbdSaveModal
           initialName={savedRbdName}
@@ -1723,6 +1777,15 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       className="rbd-calc-panel"
       style={{ display: tab === "calc" ? undefined : "none" }}
     >
+      {network ? (
+        <RbdNetworkPanel
+          graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+          active={tab === "calc"}
+          name={savedRbdName}
+          onNetworkChange={(n) => setMission((m) => ({ ...m, network: n }))}
+          onBuild={toBuilder}
+        />
+      ) : (
       <RbdCalculator
         graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         validation={validation}
@@ -1732,11 +1795,19 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         name={savedRbdName}
         onBuild={toBuilder}
       />
+      )}
+      <RbdPhasesResult
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        active={tab === "calc"}
+        name={savedRbdName}
+        onEdit={savedRbdReadOnly ? null : () => setModal("phases")}
+      />
     </div>
     <div
       className="rbd-calc-panel"
       style={{ display: tab === "tree" ? undefined : "none" }}
     >
+      {network ? <NetworkOnlyNote what="A fault tree" onCalc={() => setTab("calc")} /> : (
       <RbdFaultTree
         graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         validation={validation}
@@ -1745,11 +1816,13 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         name={savedRbdName}
         onBuild={toBuilder}
       />
+      )}
     </div>
     <div
       className="rbd-calc-panel"
       style={{ display: tab === "design" ? undefined : "none" }}
     >
+      {network ? <NetworkOnlyNote what="Redundancy design" onCalc={() => setTab("calc")} /> : (
       <RbdDesignPanel
         graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
         onApply={applyDesign}
@@ -1762,6 +1835,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           window.setTimeout(() => fitView(FIT_OPTIONS), 60);
         }}
       />
+      )}
     </div>
     {tab === "outages" && (
       <div className="rbd-calc-panel">
