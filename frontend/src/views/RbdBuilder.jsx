@@ -25,6 +25,7 @@ import RbdSaveModal from "../components/RbdSaveModal.jsx";
 import RbdCalculator from "../components/RbdCalculator.jsx";
 import RbdFaultTree from "../components/RbdFaultTree.jsx";
 import RbdDesignPanel from "../components/RbdDesignPanel.jsx";
+import RbdTargets from "../components/RbdTargets.jsx";
 import RbdCostsModal from "../components/RbdCostsModal.jsx";
 import RbdCrewsModal from "../components/RbdCrewsModal.jsx";
 import { applyBlockExtras } from "../components/RbdBlockCosts.jsx";
@@ -364,13 +365,19 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   // Repair crews, maintenance groups and a safety function (#156, #157):
   // {repair_crews, maintenance_groups, safety_function, target_sil}.
   const [policies, setPolicies] = useState({});
+  // The demand the blocks' capacities serve (#122): {demand, unit, period}.
+  const [production, setProduction] = useState(null);
   // Carried with the diagram wherever the costs are (save, validate, analyse).
   const costsField = useMemo(
-    () => ({ ...(diagramCosts ? { costs: diagramCosts } : {}), ...policyFields(policies) }),
-    [diagramCosts, policies]
+    () => ({
+      ...(diagramCosts ? { costs: diagramCosts } : {}),
+      ...policyFields(policies),
+      ...(production ? { production } : {}),
+    }),
+    [diagramCosts, policies, production]
   );
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
-  const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'tree' | 'design' | 'outages'
+  const [tab, setTab] = useState(initialTab); // 'builder' | 'calc' | 'tree' | 'design' | 'targets' | 'outages'
   // The canvas fills the frame; the result tabs scroll with the page (#311).
   useEffect(() => { onTab?.(tab); }, [onTab, tab]);
   // A tab's empty state (#271) sends the user back to the canvas — or, on a
@@ -785,7 +792,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
                 // a null removes the key, as for a component's extras.
                 data: applyBlockExtras({ ...node.data, ...config }, {
                   costs: config.costs, crew_priority: config.crew_priority,
-                  repair_one_at_a_time: config.repair_one_at_a_time,
+                  repair_one_at_a_time: config.repair_one_at_a_time, capacity: config.capacity,
                 }),
               }
             : node
@@ -873,6 +880,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       setCcfGroups(graph?.ccf_groups || []);
       setDiagramCosts(graph?.costs || null);
       setPolicies(policyFields(graph));
+      setProduction(graph?.production || null);
       setSavedRbdId(id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
@@ -900,6 +908,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     setCcfGroups([]);
     setDiagramCosts(null);
     setPolicies({});
+    setProduction(null);
     setSavedRbdId(null);
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
@@ -923,6 +932,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     if (graph.ccf_groups != null) setCcfGroups(graph.ccf_groups);
     if (graph.costs !== undefined) setDiagramCosts(graph.costs || null);
     if (POLICY_KEYS.some((k) => graph[k] !== undefined)) setPolicies(policyFields(graph));
+    if (graph.production !== undefined) setProduction(graph.production || null);
     fitWhenMeasured(norm.nodes);
   }, [setNodes, setEdges, fitWhenMeasured]);
 
@@ -1159,6 +1169,13 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         title="How many copies of each block: most reliable within a budget, or cheapest to reach a target"
       >
         Design
+      </button>
+      <button
+        className={"tab" + (tab === "targets" ? " active" : "")}
+        onClick={() => setTab("targets")}
+        title="What each block needs for the system to meet a target"
+      >
+        Targets
       </button>
       <button
         className={"tab" + (tab === "outages" ? " active" : "")}
@@ -1615,6 +1632,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           crews={!!policies.repair_crews}
           groups={groupNames}
           safety={repairable && !!policies.safety_function}
+          capacity={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
           onClose={() => {
             setModal(null);
             setModalNodeId(null);
@@ -1731,6 +1749,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         rbdId={savedRbdId}
         name={savedRbdName}
         onBuild={toBuilder}
+        onProduction={setProduction}
       />
     </div>
     <div
@@ -1761,6 +1780,15 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           // Once the canvas is shown again (it can't be fitted while hidden).
           window.setTimeout(() => fitView(FIT_OPTIONS), 60);
         }}
+      />
+    </div>
+    <div
+      className="rbd-calc-panel"
+      style={{ display: tab === "targets" ? undefined : "none" }}
+    >
+      <RbdTargets
+        graph={{ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }}
+        onBuild={toBuilder}
       />
     </div>
     {tab === "outages" && (
