@@ -228,7 +228,7 @@ function LifeCard({ result, level, onLevel }) {
       key: b.label, label: LIFE_NAMES[b.label] || b.label, value: b.value, lower: b.lower,
       what: `${b.label}: ${Math.round(b.p * 100)}% have failed by then`,
     })),
-    { key: "MTTF", label: restricted ? "Mean life to" : "MTTF (mean)", value: life.mttf?.value,
+    { key: "MTTF", label: restricted ? "Mean to" : "MTTF (mean)", value: life.mttf?.value,
       lower: life.mttf?.lower,
       what: restricted
         ? `Mean life to ${formatNumber(life.mttf.tau)}${unit ? ` ${unit}` : ""}: the average time to failure, `
