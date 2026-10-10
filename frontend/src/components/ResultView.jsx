@@ -258,7 +258,7 @@ export default function ResultView({ result, modelId = null, name = null, split 
               <SurvivalPlot estimate={result.estimate} unit={result.unit}
                             download={`${name || result.distribution} — survival curve`} />
             </div>
-            <LifeAside result={result} split={split} />
+            <LifeAside result={result} split={split} level={level} onLevel={setLevel} />
           </div>
         )}
         {tab === "plot" && (
