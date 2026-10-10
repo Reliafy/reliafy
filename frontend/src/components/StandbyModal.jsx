@@ -5,6 +5,7 @@ import { BlockCostSection } from "./RbdBlockCosts.jsx";
 import { RbdUnitContext } from "./RbdNodes.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { MeanEcho } from "./LifeModelModal.jsx";
+import RbdMeanCheck from "./RbdMeanCheck.jsx";
 
 // In a repairable diagram (#156) the block is a standby group of identical
 // units: the duty unit and its spares each fail by the life model and are
@@ -35,6 +36,8 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
   const [oneAtATime, setOneAtATime] = useState(!!initial?.repair_one_at_a_time);
   const [extras, setExtras] = useState({ extras: null, valid: true });
   const [spares, setSpares] = useState(initial?.spares ?? 1);
+  // k-of-n standby (#84): how many units run at once.
+  const [running, setRunning] = useState(initial?.k ?? 1);
   const [kind, setKind] = useState(initialKind(initial));
   const [dormancy, setDormancy] = useState(
     initial?.dormancy > 0 && initial?.dormancy < 1 ? initial.dormancy : 0.2
@@ -49,13 +52,23 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
   const validProb = !cold || (probNum >= 0 && probNum <= 1);
   const dormNum = Number(dormancy);
   const validDorm = kind !== "warm" || (dormNum > 0 && dormNum < 1);
-  const valid = validSpares && validProb && validDorm && (!repairable || (repair && extras.valid));
+  const runNum = Number(running);
+  const validRunning = Number.isInteger(runNum) && runNum >= 1;
+  // What the engine can't work out exactly for a non-repairable block (#84).
+  const ownSpare = cold && !repairable && !!standbyModel;
+  const limit = repairable || !validRunning || runNum < 2 ? null
+    : kind === "warm" ? "Warm spares with 2 or more units running can't be worked out exactly yet — make them cold or hot, or run one unit."
+    : ownSpare && runNum >= 3 ? "Cold spares with a model of their own work with at most 2 units running — give them the running units' model, or run fewer."
+    : null;
+  const valid = validSpares && validRunning && !limit && validProb && validDorm
+    && (!repairable || (repair && extras.valid));
 
   const submit = () => {
     if (!valid) return;
     const config = {
       model,
       spares: sparesNum,
+      k: runNum > 1 ? runNum : null,
       cold,
       dormancy: cold ? 0 : kind === "hot" ? 1 : dormNum,
       startProb: cold ? probNum : 1,
@@ -71,7 +84,8 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
   const footer = (
     <>
       <span className="hint">
-        One active unit with {spares} standby spare(s){repairable ? ", each repaired after it fails" : ""}.
+        {runNum > 1 ? `${runNum} running` : "One active unit"} with {spares} standby spare(s)
+        {repairable ? ", each repaired after it fails" : ""}.
       </span>
       <div className="row" style={{ margin: 0 }}>
         <button className="secondary" onClick={onClose}>
@@ -100,6 +114,10 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
       <section className="rbd-dlg-sec">
         <h3>Standby</h3>
         <div className="param-fields">
+          <label className="param-field" title="How many units must run at once: 2 running and 1 spare is a 2-of-3 duty/standby train.">
+            <span>Units running</span>
+            <input type="number" min="1" step="1" value={running} onChange={(e) => setRunning(e.target.value)} />
+          </label>
           <label className="param-field">
             <span>Spares</span>
             <input
@@ -145,6 +163,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
           />
           <p className="hint">{KINDS.find((k) => k.id === kind).hint}</p>
         </div>
+        {limit && <p className="hint rbd-limit" role="alert">{limit}</p>}
         {cold && !repairable && (
           <div className="standby-cold">
             <ModelPicker
@@ -154,6 +173,15 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
               rbdBlock
             />
           </div>
+        )}
+        {!repairable && (
+          <RbdMeanCheck unit={unit} node={valid && model ? {
+            type: "standby",
+            data: {
+              label: initial?.label, model, spares: sparesNum, k: runNum, dormancy: cold ? 0 : kind === "hot" ? 1 : dormNum,
+              cold, startProb: cold ? probNum : 1, standbyModel: cold ? standbyModel : null,
+            },
+          } : null} />
         )}
       </section>
 

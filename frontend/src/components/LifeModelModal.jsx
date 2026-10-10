@@ -8,6 +8,8 @@ import {
 import { RbdUnitContext } from "./RbdNodes.jsx";
 import { modelMean, modelMedian, unitAbbr } from "./rbdModelText.js";
 import { formatNumber } from "../format.js";
+import RbdMixtureBuilder, { isMixture } from "./RbdMixtureBuilder.jsx";
+import RbdRepairQuality from "./RbdRepairQuality.jsx";
 
 // "Mean 13.6 h · median 12 h" under a model's inputs, so what the parameters
 // mean is visible as they're typed (#299).
@@ -49,7 +51,11 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
   const [extras, setExtras] = useState({ extras: null, valid: true });
   const ctl = useBlockExtras(initial, setExtras);
   const unit = useContext(RbdUnitContext) || "";
-  const valid = model && (!repairable || repair || instant) && extras.valid;
+  // Two failure modes built here (#318); a saved mixture comes from the picker.
+  const [mixture, setMixture] = useState(isMixture(initial?.model) && initial?.model?.source !== "saved");
+  // Imperfect repair / replacement at the N-th failure (#68).
+  const [quality, setQuality] = useState({ value: initial?.repair_quality ?? null, valid: true });
+  const valid = model && (!repairable || repair || instant) && extras.valid && quality.valid;
 
   const submit = () => {
     if (!valid) return;
@@ -57,7 +63,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
     onSubmit({
       model,
       repair: instant ? repair ?? undefined : repair,
-      extras: { ...(extras.extras || {}), instant_repair: instant || null },
+      extras: { ...(extras.extras || {}), instant_repair: instant || null, repair_quality: quality.value },
     });
   };
 
@@ -96,9 +102,18 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
     <Modal title={initial?.label || "Block"} onClose={onClose} footer={footer}>
       <section className="rbd-dlg-sec">
         <h3>Failure</h3>
-        <ModelPicker label={safety ? "Life model (dangerous undetected failures, λDU)" : "Life model (time to failure)"}
-                     value={initial?.model} onChange={setModel} rbdBlock />
-        <MeanEcho model={model} unit={unit} label="Mean life" />
+        {!mixture && (
+          <>
+            <ModelPicker label={safety ? "Life model (dangerous undetected failures, λDU)" : "Life model (time to failure)"}
+                         value={initial?.model} onChange={setModel} rbdBlock />
+            <MeanEcho model={model} unit={unit} label="Mean life" />
+          </>
+        )}
+        <RbdMixtureBuilder on={mixture} initial={initial?.model} unit={unit} onChange={setModel}
+                           onToggle={(on) => {
+                             setMixture(on);
+                             if (!on) setModel(isMixture(initial?.model) ? null : initial?.model ?? null);
+                           }} />
       </section>
       {repairable && safety && maintenance}
       {repairable && (
@@ -122,6 +137,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
           {crews && <PriorityField ctl={ctl} />}
         </section>
       )}
+      {repairable && <RbdRepairQuality initial={initial?.repair_quality} onChange={setQuality} />}
       {repairable && !safety && maintenance}
       {repairable && (
         <Fold title="Costs" summary={costsSummary(ctl)} open={hasCosts && !safety}>

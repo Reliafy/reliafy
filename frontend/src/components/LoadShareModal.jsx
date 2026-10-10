@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import { listModels } from "../api.js";
+import RbdMeanCheck from "./RbdMeanCheck.jsx";
+import { RbdUnitContext } from "./RbdNodes.jsx";
 
 // Configure a load-sharing node: pick the load-life model (a saved AFT model
 // with the load as its single covariate), the total shared load, the number of
@@ -12,6 +14,7 @@ export default function LoadShareModal({ initial, onClose, onSubmit }) {
   const [load, setLoad] = useState(initial?.load ?? "");
   const [units, setUnits] = useState(initial?.units ?? 2);
   const [k, setK] = useState(initial?.k ?? 1);
+  const unit = useContext(RbdUnitContext) || "";
 
   useEffect(() => {
     // Load-sharing units must be covariate (regression) models — the AFT ones.
@@ -77,6 +80,10 @@ export default function LoadShareModal({ initial, onClose, onSubmit }) {
         </label>
       </div>
       {kk > nUnits && <p className="hint">k can't exceed the number of units.</p>}
+      <RbdMeanCheck unit={unit} node={valid ? {
+        type: "loadshare",
+        data: { label: initial?.label, model: { source: "saved", modelId }, load: loadNum, units: nUnits, k: kk },
+      } : null} />
     </Modal>
   );
 }
