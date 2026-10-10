@@ -7373,6 +7373,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .ccf-slider-row { display: flex; align-items: center; gap: 12px; }
 .ccf-slider-row input[type="range"] { flex: 1; }
 .ccf-beta-num { width: 76px; }
+.ccf-beta-pct { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 
 /* CCF impact callout in the RBD results */
 .rbd-ccf-impact {
@@ -7792,6 +7793,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .rbd-dlg-fold > summary .muted { font-size: var(--fs-13); font-weight: 400; color: var(--muted); }
 .rbd-dlg-fold-body { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; }
 .rbd-dlg-echo { margin: 0; font-size: var(--fs-13); color: var(--muted); font-variant-numeric: tabular-nums; }
+.rbd-dlg-echo.is-error { color: var(--danger); }
 .rbd-maint-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .rbd-maint-head .seg { flex-wrap: wrap; }
 .rbd-maint-head button.link { font-size: var(--fs-13); }
@@ -8244,3 +8246,55 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
 .detail-panel .gofr.gofr-link .gv { color: var(--acc); }
 .detail-panel .gofr.gofr-link:hover { background: var(--acc-hover); }
 .detail-panel .gofr.gofr-link:focus-visible { outline: none; box-shadow: inset var(--focus); }
+
+/* ---- RBD builder usability (#289, #298, #299) --------------------------- */
+/* A block's name at the top of its dialog, and renamed in place on the canvas. */
+.rbd-dlg-name { display: flex; flex-direction: column; gap: 4px; margin: 0 0 var(--sp-4); font-size: var(--fs-13); font-weight: 500; color: var(--muted); }
+.rbd-dlg-name input {
+  width: 100%; max-width: 360px; box-sizing: border-box; padding: 0.45rem 0.6rem; font: inherit; font-size: var(--fs-14);
+  color: var(--ink); background: var(--surf); border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.rbd-dlg-name input:focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
+input.rbd-rename {
+  width: 100%; box-sizing: border-box; padding: 2px 4px; margin: 0;
+  font: inherit; font-size: calc(var(--fs-14) * var(--node-scale)); font-weight: 600; color: var(--ink);
+  border: 1px solid var(--acc); border-radius: var(--r-sm); box-shadow: var(--focus); background: var(--surf);
+}
+/* The toolbar's Safety function switch (#298) and "+ Add block" (#299). */
+.rbd-safety-switch { font-size: var(--fs-13); white-space: nowrap; }
+.rbd-add-menu .rbd-tb-trigger { font-weight: 600; }
+/* "Verify a safety function" (#298): one slim card on the home, RBD and Strategy pages. */
+.sif-card {
+  display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3) var(--sp-4); margin: var(--sp-4) 0;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surf);
+}
+.sif-card-ic {
+  width: 40px; height: 40px; flex: none; border-radius: var(--r); background: var(--acc-t); color: var(--acc);
+  display: grid; place-items: center;
+}
+.sif-card-ic svg { width: 21px; height: 21px; }
+.sif-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sif-card-body b { font-size: var(--fs-14); font-weight: 600; color: var(--ink); }
+.sif-card-body span { font-size: var(--fs-13); color: var(--muted); }
+.sif-card-body button.link { font-size: var(--fs-13); }
+.sif-card-cta { font-size: var(--fs-13); font-weight: 600; color: var(--acc); white-space: nowrap; text-decoration: none; }
+.sif-card-cta:hover { text-decoration: underline; }
+@media (max-width: 640px) {
+  .sif-card { flex-wrap: wrap; align-items: flex-start; }
+  .sif-card-cta { min-height: 44px; display: inline-flex; align-items: center; margin-left: 56px; }
+}
+/* "Where the PFDavg comes from" (#298): a quiet bar under each share. */
+.rbd-sif-shares { display: flex; flex-direction: column; gap: 8px; }
+.rbd-sif-shares-table td { font-variant-numeric: tabular-nums; }
+.rbd-sif-shares-table thead th:first-child { text-align: left; }
+.rbd-sif-bar {
+  display: inline-block; vertical-align: middle; width: 48px; height: 6px; margin-right: 8px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--acc) calc(var(--share) * 100%), var(--line2) 0);
+}
+.rbd-avail-imp-scroll .rbd-sif-shares-table .calc-row-label { white-space: normal; }
+@media (max-width: 640px) {
+  .rbd-sif-bar { display: none; }
+  .rbd-avail-imp-scroll .rbd-sif-shares-table th { white-space: normal; }
+  /* "+ Add block" says "+ Add" so the toolbar keeps one row. */
+  .rbd-add-word { display: none; }
+}
