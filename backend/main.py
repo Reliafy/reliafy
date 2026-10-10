@@ -20,10 +20,11 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.db import get_session, init_db
-from backend import life_bounds, regression_bands, regression_diagnostics
+from backend import life_bounds, more_models, regression_bands, regression_diagnostics
 from backend.fitting import (
     DISCRETE,
     DISTRIBUTIONS,
+    best_candidates,
     MIXTURE_ID,
     FIT_METHODS,
     distribution_capabilities,
@@ -57,6 +58,7 @@ from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
 from backend.routers import reliability_agent as reliability_agent_router
 from backend.routers import degradation as degradation_router
+from backend.routers import degradation_induced as degradation_induced_router
 from backend.routers import recurrent as recurrent_router
 from backend.routers import alt as alt_router
 from backend.routers import rcm as rcm_router
@@ -210,6 +212,7 @@ app.include_router(billing_router.router)
 app.include_router(assistant_router.router)
 app.include_router(reliability_agent_router.router)
 app.include_router(degradation_router.router)
+app.include_router(degradation_induced_router.router)
 app.include_router(recurrent_router.router)
 app.include_router(alt_router.router)
 app.include_router(rcm_router.router)
@@ -308,7 +311,7 @@ def distributions_endpoint() -> dict:
             # It fits every candidate, so only methods they all support.
             "methods": sorted(
                 set.intersection(*(set(distribution_capabilities(k)["methods"])
-                                   for k in DISTRIBUTIONS)),
+                                   for k in best_candidates())),
                 key=[m["id"] for m in FIT_METHODS].index,
             ),
         },
@@ -320,7 +323,7 @@ def distributions_endpoint() -> dict:
             "params": [],
             # Which distribution to mix, offered in the advanced options.
             "mixture_distributions": [
-                {"id": k, "name": v["name"]} for k, v in DISTRIBUTIONS.items()
+                {"id": k, "name": v["name"]} for k, v in best_candidates().items()
             ],
         },
         *(
@@ -332,13 +335,15 @@ def distributions_endpoint() -> dict:
                 # Derived from SurPyval, not hand-listed: which fit methods and
                 # which model adjustments this distribution actually supports.
                 **distribution_capabilities(key),
+                **more_models.picker_flags(entry),
             }
             for key, entry in DISTRIBUTIONS.items()
         ),
     ]
     discrete = [
         {"id": key, "name": entry["name"], "covariates": False,
-         "discrete": True, "params": list(getattr(entry["dist"], "parameter_names", []))}
+         "discrete": True, "params": list(getattr(entry["dist"], "parameter_names", [])),
+         **more_models.picker_flags(entry)}
         for key, entry in DISCRETE.items()
     ]
     nonparametric = [
@@ -348,10 +353,10 @@ def distributions_endpoint() -> dict:
     ]
     regression = [
         {"id": key, "name": entry["name"], "covariates": True, "params": [],
-         "effect": entry.get("effect")}
+         "effect": entry.get("effect"), **more_models.picker_flags(entry)}
         for key, entry in REGRESSION_MODELS.items()
     ]
-    return {"distributions": plain + discrete + nonparametric + regression,
+    return {"distributions": plain + discrete + nonparametric + more_models.flexible_listing() + regression,
             "fit_methods": FIT_METHODS}
 
 
@@ -370,6 +375,7 @@ def fit_endpoint(
     i: str | None = Form(default=None),
     e: str | None = Form(default=None),
     g: str | None = Form(default=None),
+    group: str | None = Form(default=None),
     z: list[str] = Form(default=[]),
     formula: str | None = Form(default=None),
     unit: str | None = Form(default=None),
@@ -401,9 +407,10 @@ def fit_endpoint(
     """
     # ``i`` (#60): an item column, for covariates that change over time.
     # e / g: the failure-mode and group columns of a competing-risks fit (#177).
+    # ``group`` (#179): the Group by column of a shared-frailty model.
     mapping = {
         "x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr,
-        "i": i, "e": e, "g": g,
+        "i": i, "e": e, "g": g, "group": group,
     }
     try:
         if dataset_id:
@@ -455,7 +462,7 @@ def fit_endpoint(
         # The calculator endpoints only serve this fit back to its own account.
         bind_owner(functions["model_id"], user["uid"])
         functions["evaluate_path"] = f"/api/evaluate/{functions['model_id']}"
-        if (result.get("kind") in ("distribution", "discrete", "nonparametric")
+        if (result.get("kind") in ("distribution", "discrete", "nonparametric", more_models.FLEXIBLE_KIND)
                 or regression_bands.result_has_bands(result)):
             functions["confidence_path"] = f"/api/confidence/{functions['model_id']}"
             functions["life_path"] = f"/api/life/{functions['model_id']}"

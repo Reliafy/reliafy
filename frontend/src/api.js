@@ -1151,6 +1151,17 @@ export function degradationReliability(id, confidence) {
   return request(`/api/degradation/models/${id}/reliability?confidence=${confidence}`);
 }
 
+// The failure-time distribution the path model induces (Lu-Meeker, #63):
+// its curve, mean and median; ``body`` may ask { times: [t] } for the
+// reliability at each and { reliability: [R] } for the time each is reached.
+export function degradationInducedLife(id, body = {}) {
+  return request(`/api/degradation/models/${id}/induced-life`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function renameDegradationModel(id, name) {
   return request(`/api/degradation/models/${id}`, {
     method: "PATCH",

@@ -77,3 +77,31 @@ mean-equals-variance property is a strong claim. If your data's variance clearly
 exceeds its mean, prefer the negative binomial. Note too that this models a
 *count*, not a time to failure — for repairable-system event histories, the
 recurrent-event models are the right tool.
+
+## discretized_lognormal
+
+**A lognormal on the counts 1, 2, 3, …** — the continuous lognormal rounded up
+to whole cycles, so `R(k)` equals the lognormal's survival at `k`.
+
+```
+P(K = k) = F(k) − F(k − 1)
+```
+
+`μ` and `σ` keep their lognormal meanings (mean and spread of log life).
+
+**Use it for** cycles or demands to failure that look right-skewed, as fatigue
+does. **Watch out:** as for the lognormal, the hazard rises then falls.
+
+## discretized_gamma
+
+**A gamma on the counts 1, 2, 3, …** — the continuous gamma rounded up to whole
+cycles. `α` is the shape and `β` the rate, as for the gamma.
+
+**Use it for** counts to failure that build up through stages or shocks.
+
+## discretized_loglogistic
+
+**A log-logistic on the counts 1, 2, 3, …** — the continuous log-logistic
+rounded up to whole cycles, with `α` the scale and `β` the shape.
+
+**Use it for** counts with a heavier tail than the discretized lognormal.

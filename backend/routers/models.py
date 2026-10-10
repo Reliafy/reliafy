@@ -331,6 +331,7 @@ def save_model(
     i: str | None = Form(default=None),
     e: str | None = Form(default=None),
     g: str | None = Form(default=None),
+    group: str | None = Form(default=None),
     z: list[str] = Form(default=[]),
     formula: str | None = Form(default=None),
     unit: str | None = Form(default=None),
@@ -358,9 +359,10 @@ def save_model(
         return denied
     # ``i`` (#60): an item column, for covariates that change over time.
     # e / g: the failure-mode and group columns of a competing-risks fit (#177).
+    # ``group`` (#179): the Group by column of a shared-frailty model.
     mapping = {
         "x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr,
-        "i": i, "e": e, "g": g,
+        "i": i, "e": e, "g": g, "group": group,
     }
     try:
         if dataset_id:

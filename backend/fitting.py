@@ -169,6 +169,23 @@ REGRESSION_MODELS = {
     "gumbel_ah": {"name": "Gumbel AH", "fitter": GumbelAH, "effect": "additive"},
 }
 
+# More models (#179, #72, #63) — bounded and discretized distributions, the
+# semi-parametric and shared-frailty regressions, Royston-Parmar — are
+# registered from their own module, into the same registries.
+from backend import more_models  # noqa: E402
+
+DISTRIBUTIONS.update(more_models.BOUNDED)
+DISCRETE.update(more_models.DISCRETIZED)
+REGRESSION_MODELS.update(more_models.REGRESSION)
+FLEXIBLE = more_models.FLEXIBLE
+
+
+def best_candidates() -> dict:
+    """The plain distributions Best fit (and a mixture) can use: every one
+    but the bounded ones, whose finite support can't fit most life data."""
+    return {k: v for k, v in DISTRIBUTIONS.items() if not v.get("bounded")}
+
+
 # What exp(coefficient) means per regression effect (None = no natural ratio;
 # additive-hazards coefficients are additive, shown as the coefficient only).
 _RATIO_LABELS = {"hazard": "hazard ratio", "aft": "time ratio", "odds": "odds ratio"}
@@ -1137,9 +1154,9 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
                 "fit method can't be chosen for it."
             )
         base = mixture_base(opts)
-        if base not in DISTRIBUTIONS:
+        if base not in best_candidates():
             raise FitError(
-                f"'{base}' can't be mixed. Choose one of: {', '.join(DISTRIBUTIONS)}."
+                f"'{base}' can't be mixed. Choose one of: {', '.join(best_candidates())}."
             )
         return {"mixture": out["mixture"] or MIXTURE_DEFAULT_COMPONENTS,
                 "mixture_distribution": base}
@@ -1285,6 +1302,8 @@ def fit(
         df = invert_censor_column(df, mapping["c"])
     # Cox PH's tie method, strata and cluster columns (#61): regression only.
     cox_opts = options.pop(regression_diagnostics.COX_KEY, None)
+    # #179: the Group by column is a frailty model's alone.
+    mapping = more_models.check_group(distribution, mapping, covariates)
     options = normalize_options(distribution, options)
     if mapping.get("i"):
         # #60: an item column means covariates that change over time.
@@ -1319,11 +1338,13 @@ def fit(
             result = competing_risks.fit(distribution, df, mapping, covariates, unit)
         except competing_risks.CompetingRisksError as exc:
             raise FitError(str(exc)) from exc
+    elif distribution in FLEXIBLE:
+        result = more_models.fit_flexible(distribution, df, mapping)
     else:
         raise FitError(
             f"Unknown model '{distribution}'. Available: "
             f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS,
-                          *competing_risks.CR_MODELS])}."
+                          *FLEXIBLE, *competing_risks.CR_MODELS])}."
         )
     result["unit"] = canonical_unit(unit)  # #265: "hours", "hrs" → "Hours"
     if result.get("kind") in ("distribution", "discrete", "regression") and param_intervals.note_for(
@@ -1685,7 +1706,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
     ranking = []
     failed = []
     support_msg = None  # rows every candidate refused (SurPyval 0.23)
-    for dist_id, entry in DISTRIBUTIONS.items():
+    for dist_id, entry in best_candidates().items():
         kwargs = dict(base_kwargs)
         for key in ("zi", "lfp"):
             if options.get(key):
@@ -1788,7 +1809,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         result["selection"]["failed"] = failed
         result["warnings"] = [
             *(result.get("warnings") or []),
-            f"Only {len(ranking)} of the {len(DISTRIBUTIONS) + len(bases)} candidates could be fitted "
+            f"Only {len(ranking)} of the {len(best_candidates()) + len(bases)} candidates could be fitted "
             f"(failed: {', '.join(f['name'] for f in failed)}), so the choice is among those only.",
         ]
     return result
@@ -2517,6 +2538,7 @@ def _fit_regression(
     elif covariates:
         fit_kwargs["Z_cols"] = list(covariates)
     cox_kwargs = regression_diagnostics.cox_fit_kwargs(cox_opts)
+    fit_kwargs = more_models.regression_fit_kwargs(distribution, mapping, fit_kwargs)
 
     try:
         with warnings.catch_warnings(record=True) as caught:
@@ -2666,7 +2688,7 @@ def _fit_regression(
         extra["covariate_units"] = units
     if cox_opts:
         extra["options"] = {regression_diagnostics.COX_KEY: cox_opts}
-    return {
+    return more_models.enrich_regression(distribution, model, {
         **extra,
         "maximum": getattr(model, "maximum", None),
         "distribution": entry["name"],
@@ -2683,7 +2705,7 @@ def _fit_regression(
         # How good is this model? Harrell's C, Brier score, AUC (#176).
         "validation": validate_regression(model, df, mapping, raw_vars),
         "diagnostics": diagnostics,
-    }
+    }, mapping)
 
 
 def _raw_covariates(model, covariates: Optional[list]) -> list:
@@ -2724,8 +2746,8 @@ def _is_step_regression(model) -> bool:
             SemiParametricRegressionModel,
         )
     except ImportError:  # pragma: no cover - a SurPyval that moved it
-        return type(model).__name__ == "SemiParametricRegressionModel"
-    return isinstance(model, SemiParametricRegressionModel)
+        return type(model).__name__ == "SemiParametricRegressionModel" or more_models.is_step_model(model)
+    return isinstance(model, SemiParametricRegressionModel) or more_models.is_step_model(model)
 
 
 def regression_metrics_at_defaults(model, fields: list) -> Optional[dict]:
@@ -2960,8 +2982,12 @@ def _eval_functions(model, grid, Z=None) -> dict:
     curves = {"x": grid.tolist()}
     raw = {}
     for fn in ("sf", "ff", "hf", "Hf", "df"):
+        func = getattr(model, fn, None)
+        if func is None:
+            # Buckley-James has no hazard or density (#179): those are absent.
+            curves[fn] = None
+            continue
         with np.errstate(all="ignore"):
-            func = getattr(model, fn)
             y = np.asarray(func(grid) if Z is None else func(grid, Z), dtype=float)
         raw[fn] = y
         # JSON can't carry inf/nan; null them so the frontend skips those points.

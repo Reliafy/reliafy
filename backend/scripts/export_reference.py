@@ -71,8 +71,14 @@ def build() -> dict:
                 "support": _support(e["dist"]),
                 "offsetable": bool(e.get("offsetable")),
                 "probability_plot": True,
+                **({"bounded": True} if e.get("bounded") else {}),
             }
             for eid, e in fitting.DISTRIBUTIONS.items()
+        ] + [
+            # Royston-Parmar (#179): a flexible spline, fitted by its own fitter.
+            {"id": eid, "name": e["name"], "params": [], "support": {"min": 0.0, "max": None},
+             "offsetable": False, "probability_plot": False, "flexible": True}
+            for eid, e in fitting.FLEXIBLE.items()
         ],
     })
 
@@ -118,6 +124,8 @@ def build() -> dict:
                 "params": [],
                 "support": None,
                 "requires_covariates": True,
+                **({"semi_parametric": True} if e.get("semi") else {}),
+                **({"requires_group": True} if e.get("frailty") else {}),
             }
             for eid, e in fitting.REGRESSION_MODELS.items()
         ],

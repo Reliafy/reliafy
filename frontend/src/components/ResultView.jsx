@@ -3,7 +3,6 @@ import ProbabilityPlot from "./ProbabilityPlot.jsx";
 import SurvivalPlot from "./SurvivalPlot.jsx";
 import Calculator, { initCalcState } from "./Calculator.jsx";
 import GoodnessOfFit from "./GoodnessOfFit.jsx";
-import Coefficients from "./Coefficients.jsx";
 import ModelValidation from "./ModelValidation.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import CiNote from "./CiNote.jsx";
@@ -15,6 +14,7 @@ import { formatNumber } from "../format.js";
 import { bestFitSentence, compareRows } from "../lifeResults.js";
 import Chip from "./ui/Chip.jsx";
 import { TvcCalculator, TvcCoefficients, initTvcState } from "./TvcResult.jsx";
+import { FlexibleSurvival, RegressionCoefficients } from "./MoreModelPanels.jsx";
 
 // The fit statistics open from the panel beside the plot.
 const DISTRIBUTION_TABS = [
@@ -22,6 +22,11 @@ const DISTRIBUTION_TABS = [
   { id: "calc", label: "Calculator" },
 ];
 const NONPARAMETRIC_TABS = [
+  { id: "survival", label: "Survival curve" },
+  { id: "calc", label: "Calculator" },
+];
+// Royston-Parmar (#179): its curve over the data's Kaplan-Meier curve.
+const FLEXIBLE_TABS = [
   { id: "survival", label: "Survival curve" },
   { id: "calc", label: "Calculator" },
 ];
@@ -152,12 +157,13 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   const isRegression = result.kind === "regression";
   const isNonparametric = result.kind === "nonparametric";
   const isDiscrete = result.kind === "discrete";
+  const isFlexible = result.kind === "flexible";
   // Params-only models (created from parameters, no data) have no probability
   // plot or goodness-of-fit — just the functions.
   const hasPlot = !!result.plot;
   const defaultTab = isRegression
     ? (result.functions ? "calc" : "coef")
-    : isNonparametric
+    : isNonparametric || isFlexible
     ? "survival"
     : isDiscrete
     ? "calc"
@@ -185,7 +191,9 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
     setTab(defaultTab);
   }
 
-  let tabs = isNonparametric
+  let tabs = isFlexible
+    ? FLEXIBLE_TABS
+    : isNonparametric
     ? NONPARAMETRIC_TABS
     : isRegression
     ? REGRESSION_TABS
@@ -195,7 +203,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   if (!result.functions) tabs = tabs.filter((t) => t.id !== "calc");
   // Units' covariates follow paths, so the fixed-covariate scores don't apply.
   if (result.tvc) tabs = tabs.filter((t) => t.id !== "check");
-  if (!isNonparametric && !isDiscrete && !hasPlot)
+  if (!isNonparametric && !isDiscrete && !isFlexible && !hasPlot)
     tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
 
   // PH models show their baseline parameters in the calculator's side rail;
@@ -228,7 +236,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   const extra = result.extra_params || [];
   const moreParams = !isRegression && !hasPlot && !isNonparametric && (params.length > 2 || extra.length > 0);
   const details = !isRegression && (
-    moreParams || optionWords.length > 0 || selectionNote || isNonparametric || isDiscrete ||
+    moreParams || optionWords.length > 0 || selectionNote || isNonparametric || isDiscrete || isFlexible ||
     result.params_only || result.mixture > 1
   );
 
@@ -270,7 +278,10 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
       </div>
 
       <div className="tab-panel">
-        {tab === "survival" && (
+        {tab === "survival" && isFlexible && (
+          <FlexibleSurvival result={result} split={split} level={level} onLevel={setLevel} name={name} />
+        )}
+        {tab === "survival" && !isFlexible && (
           <div className="detail-panel life-panel">
             <div className="plotwrap">
               <SurvivalPlot estimate={result.estimate} unit={result.unit}
@@ -308,7 +319,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
           />
         )}
         {tab === "coef" && (result.tvc ? <TvcCoefficients result={result} />
-          : <Coefficients coefficients={result.coefficients} ratioLabel={result.ratio_label} />)}
+          : <RegressionCoefficients result={result} />)}
         {tab === "gof" && (
           <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} bestFit={bestFit} />
         )}
@@ -349,6 +360,13 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
             <p className="rs-note">
               Non-parametric empirical estimate — no distribution assumed, so no fitted parameters
               or goodness-of-fit.
+            </p>
+          )}
+          {isFlexible && (
+            <p className="rs-note">
+              Royston-Parmar spline with {result.spline?.n_terms ?? 3} terms on the log cumulative hazard. Its
+              coefficients have no physical meaning on their own: read the curve, drawn over the data's own
+              Kaplan-Meier curve. Its AIC compares with the plain distributions' on the same data.
             </p>
           )}
           {isDiscrete && (
