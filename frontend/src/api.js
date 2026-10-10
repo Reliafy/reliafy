@@ -787,7 +787,7 @@ export function getActiveRbdJob(rbdId, kind = null) {
 // where the diagram needs it (Pro). 200 with the ranked levers (or a
 // ``status`` saying why not yet), or 202 with ``job`` to poll at getRbdJob.
 export function rbdSensitivity({ graph, rbdId = null, window = null, step = null, rankBy = null, costs = null,
-                                 order = null, simulate = false }) {
+                                 order = null, simulate = false, limits = null }) {
   return request("/api/rbds/sensitivity", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -800,6 +800,31 @@ export function rbdSensitivity({ graph, rbdId = null, window = null, step = null
       costs,
       order,
       simulate,
+      // {lever id: {min, max}} in the values shown (#324).
+      ...(limits ? { limits } : {}),
+    }),
+  });
+}
+
+// What to improve's other measures (#225, #325): ``measure`` "over_time",
+// "shares" (``groupBy`` "block" | "kind"), "joint", "rate" or "uncertainty"
+// (``method`` "delta" | "sobol", ``times`` for the availability at several
+// times). 200 with the figures, or 202 with ``job`` to poll at getRbdJob
+// (Sobol and times: Pro).
+export function rbdMeasures({ graph, rbdId = null, measure, window = null, groupBy = null, method = null,
+                              times = null, level = null }) {
+  return request("/api/rbds/measures", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      graph,
+      rbd_id: rbdId,
+      measure,
+      window,
+      group_by: groupBy,
+      method,
+      times,
+      level,
     }),
   });
 }
