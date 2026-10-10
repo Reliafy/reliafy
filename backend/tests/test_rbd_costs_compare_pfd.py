@@ -78,8 +78,10 @@ def test_costs_by_horizon_are_the_librarys():
     assert [r["total_cost"] for r in rows] == pytest.approx(long_run, rel=1e-12)
     assert rows[-1]["total_cost"] == pytest.approx(lib.acquisition_cost + lib.expected_cost_rate() / SEVEN, rel=1e-12)
     # From new: expected_cost, discounted from when each cost falls; none for ever.
+    # (The library integrates a discounted cost from new to 1e-8 of itself;
+    # the set horizon is worked out on its own, the others together.)
     new = lib.expected_cost(YEARS, discount_rate=SEVEN).total
-    assert [r["from_new"] for r in rows[:3]] == pytest.approx(new, rel=1e-12)
+    assert [r["from_new"] for r in rows[:3]] == pytest.approx(new, rel=1e-8)
     assert rows[-1]["from_new"] is None and c["by_horizon"]["from_new_basis"] in ("exact", "numerical")
     assert [r["undiscounted_total_cost"] for r in rows[:3]] == pytest.approx(lib.total_cost(YEARS), rel=1e-12)
     # The headline is the set horizon's, unchanged in meaning (#219).
@@ -410,3 +412,18 @@ def test_mcp_analyze_rbd_gives_pfd_over_time(env):
     assert out["safety"]["margin"]["sil"] == 2
     assert out["exact"]["mission_unavailability"] == pytest.approx(out["safety"]["pfd_avg"], rel=1e-6)
     assert all("pfd" in p for p in out["exact"]["curve"])
+
+
+def test_a_slow_or_refused_horizon_leaves_the_set_one():
+    """A block replaced on condition, slow to follow from new (and refused
+    over 20 years): the set horizon keeps its cost from new, the others are
+    left out and say why."""
+    from backend.tests.test_rbd_crews_maintenance import _export_graph
+
+    g = _export_graph()
+    table = ra.analyze_availability(g, simulate=False)["costs"]["by_horizon"]
+    news = [r["from_new"] for r in table["rows"]]
+    assert table["rows"][0]["set"] and news[0] is not None and news[-1] is None
+    assert table["from_new_note"]
+    lib = _lib(g)
+    assert news[0] == pytest.approx(lib.expected_cost(table["rows"][0]["horizon"]).total, rel=1e-12)
