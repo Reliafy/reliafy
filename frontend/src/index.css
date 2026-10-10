@@ -3562,6 +3562,7 @@ h1 .chip,
 
 /* Optional covariate units (#265) */
 .cov-units { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; align-items: center; margin-top: 0.6rem; }
+.map-help { font-size: var(--fs-12); line-height: 1.4; color: var(--muted); }
 .cov-units .map-help { flex: 1 0 100%; }
 .cov-unit { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-14); color: var(--ink); }
 .cov-unit input {

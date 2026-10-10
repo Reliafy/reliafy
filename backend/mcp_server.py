@@ -845,7 +845,7 @@ def _fit_summary(result: dict) -> dict:
         # #215: a median of 7.7e19 from a fit that didn't converge isn't a result.
         out["metrics_omitted"] = "The fit didn't converge, so no life metrics are given."
     for key in ("extra_params", "coefficients", "randomness", "options", "validation", "diagnostics",
-                "gof_note", "mixture_summary"):
+                "gof_note", "mixture_summary", "tvc"):
         if result.get(key):
             out[key] = result[key]
     # #265: how the parameter intervals are taken; why a regression model has
@@ -928,7 +928,7 @@ def get_model(
         life = _saved_life(db, m, r, owners)
         if life:
             out["life"] = life
-        for key in ("coefficients", "extra_params", "randomness", "options", "warnings"):
+        for key in ("coefficients", "extra_params", "randomness", "options", "warnings", "tvc"):
             if r.get(key):
                 out[key] = r[key]
         if (r.get("functions") or {}).get("covariates"):
@@ -1025,6 +1025,15 @@ _FitTruncRightCol = Annotated[Optional[str], Field(
     description="Column holding each row's right-truncation age (blank = not truncated).")]
 _FitCovariates = Annotated[Optional[list[str]], Field(
     description="Dataset covariate columns — regression (proportional-hazards etc.) distributions only.")]
+_FitIdCol = Annotated[Optional[str], Field(
+    description="Covariates that change over time (a pump's load stepping between levels; regression models "
+                "and a dataset only): the column naming each item. Then each row is one stretch of an item's "
+                "life — time_column its start and time_right_column its stop, with censor_column 0 on the "
+                "stretch that ended in a failure and 1 otherwise — or, with time_column alone, a timeline: "
+                "each row's covariates take effect at its time and hold until the item's next row, whose last "
+                "row is the failure (0) or removal (1). The result adds `tvc`: the layout, the items, rows and "
+                "failures, and a plain reading per coefficient; reliability_at's covariate_schedule then "
+                "evaluates it along a schedule.")]
 _FitUnit = Annotated[Optional[str], Field(description="Time unit of the data, e.g. 'hours', 'cycles', 'km'.")]
 _FitCovariateUnits = Annotated[Optional[dict[str, str]], Field(
     description="Optional: the unit of each covariate, e.g. {\"temp_C\": \"°C\", \"load\": \"kN\"} — regression "
@@ -1153,7 +1162,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
               censor_column, count_column, covariates, unit, data_right, trunc_left, trunc_right,
               time_right_column, trunc_left_column, trunc_right_column, method,
               save: bool, name: str | None, include_mixtures: bool = False,
-              covariate_units: dict | None = None, cox_options: CoxOptions | None = None) -> dict[str, Any]:
+              covariate_units: dict | None = None, cox_options: CoxOptions | None = None,
+              id_column: str | None = None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     if covariate_units:
@@ -1197,7 +1207,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             if values is not None:
                 cols[key] = _per_row(values, len(data), label)
         mapping = {k: k for k in cols}
-        if covariates:
+        if covariates or id_column:
             raise ToolError("Covariates need a dataset — upload one with upload_dataset and pass dataset_id.")
         df = pd.DataFrame(cols)
     else:
@@ -1209,7 +1219,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             raise ToolError(f"Say which column holds the times (time_column). Columns: {', '.join(names)}.")
         times = {"xl": time_column, "xr": time_right_column} if time_right_column else {"x": time_column}
         mapping = {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
-                   "tr": trunc_right_column}
+                   "tr": trunc_right_column, "i": id_column}
         mapping = {k: v for k, v in mapping.items() if v}
         for col in [*mapping.values(), *(covariates or [])]:
             if col not in names:
@@ -1240,7 +1250,9 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             options[COX_KEY] = cox
     options = options or None
 
-    checks = _censor_checks(df, mapping, c_invert, censor_column)
+    # #60: rows are stretches of an item's life, not units — no per-row counts.
+    checks = _censor_checks(df, {k: v for k, v in mapping.items() if k != "c"} if id_column else mapping,
+                            c_invert, censor_column)
     if not save:
         result = fitting.fit(dist, df, mapping, covariates=covariates, unit=unit, options=options,
                              covariate_units=covariate_units)
@@ -1308,6 +1320,7 @@ def fit_distribution(
     include_mixtures: _FitIncludeMixtures = False,
     covariate_units: _FitCovariateUnits = None,
     cox_options: _FitCoxOptions = None,
+    id_column: _FitIdCol = None,
 ) -> dict[str, Any]:
     """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
     goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Saves nothing — use
@@ -1321,14 +1334,15 @@ def fit_distribution(
     mortality, ≈ 1 = random failures, > 1 = wear-out. Regression fits also report `validation`: how good
     the model is (Harrell's C, Brier score against no covariates, time-dependent AUC; see get_model), and
     `diagnostics`: whether its assumption holds (the proportional-hazards test with a verdict, robust standard
-    errors for Cox PH, ties and strata; see get_model)."""
+    errors for Cox PH, ties and strata; see get_model).
+    Covariates that change over time (start-stop or timeline rows): pass id_column with a regression id."""
     return _fit(ctx, distribution=distribution, data=data, data_right=data_right, censored=censored,
                 counts=counts, trunc_left=trunc_left, trunc_right=trunc_right, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
                 include_mixtures=include_mixtures, save=False, name=None, covariate_units=covariate_units,
-                cox_options=cox_options)
+                cox_options=cox_options, id_column=id_column)
 
 
 @_tool("fit_and_save_model", _WRITE, "Fit and save a model")
@@ -1356,6 +1370,7 @@ def fit_and_save_model(
     include_mixtures: _FitIncludeMixtures = False,
     covariate_units: _FitCovariateUnits = None,
     cox_options: _FitCoxOptions = None,
+    id_column: _FitIdCol = None,
     demand_batches: Annotated[Optional[list[DemandBatch]], Field(
         min_length=1, description=(
             "Save a per-demand (one-shot) model instead of a life distribution: one {demands, failures, "
@@ -1378,7 +1393,7 @@ def fit_and_save_model(
                                 ("time_right_column", time_right_column), ("censor_column", censor_column),
                                 ("count_column", count_column), ("trunc_left_column", trunc_left_column),
                                 ("trunc_right_column", trunc_right_column), ("covariates", covariates),
-                                ("method", method)) if v is not None]
+                                ("method", method), ("id_column", id_column)) if v is not None]
         if stray:
             raise ToolError(f"{', '.join(stray)} don't apply to a per-demand model — drop them.")
         return _save_per_demand(ctx, name, demand_batches, demand_confidence)
@@ -1388,7 +1403,7 @@ def fit_and_save_model(
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
                 include_mixtures=include_mixtures, save=True, name=name, covariate_units=covariate_units,
-                cox_options=cox_options)
+                cox_options=cox_options, id_column=id_column)
 
 
 def _per_demand_summary(result: dict) -> dict:
@@ -1628,6 +1643,37 @@ def _reliability_bounds(db, m, ts: list[float], owners, ev: dict, confidence: fl
     return r, f, note
 
 
+def _reliability_along(db, m, times, owners, schedule, covariates, conditional_age, confidence) -> dict:
+    """reliability_at along a covariate schedule (#60)."""
+    from backend import tvc
+
+    if m.kind != "regression":
+        raise ToolError(f"“{m.name}” is a {m.kind} model with no covariates — a covariate_schedule needs a "
+                        "regression model.")
+    if covariates:
+        raise ToolError("Give `covariates` (fixed values) or `covariate_schedule` (values that change), not both.")
+    entry = models_service.get_live_model(db, m.id, owners)
+    if entry is None:
+        raise ToolError("Model not found.")
+    try:
+        ev = tvc.evaluate_points(entry["model"], entry.get("fields") or [], schedule, times,
+                                 conditional_age=conditional_age, confidence=confidence)
+    except FitError as exc:
+        raise ToolError(str(exc)) from exc
+    out = {"model": m.name, "model_id": m.id, "unit": (m.results or {}).get("unit", ""), "method": "exact",
+           "covariate_schedule": ev["schedule"], "points": ev["points"], "mean_life": ev["mean_life"],
+           "note": ("Evaluated exactly along the covariate schedule: each row's values hold from its time "
+                    "until the next row's (SurPyval's sf_tvc). Hazard rate and density aren't given along a "
+                    "schedule." + ("" if ev["mean_life"] is not None else
+                                   " No mean life: a Cox model's baseline stops at its last failure."))}
+    if conditional_age is not None:
+        out["conditional_age"] = float(conditional_age)
+    if confidence is not None:
+        out["confidence"] = float(confidence)
+        out["bounds_note"] = ev.get("bounds_note")
+    return out
+
+
 @_tool("reliability_at", _READ, "Evaluate a model's reliability")
 def reliability_at(
     ctx: Context,
@@ -1645,6 +1691,14 @@ def reliability_at(
                                 "and failure_bounds [lower, upper] at each time (the app's Fisher-matrix "
                                 "confidence bounds); null, with bounds_note saying why, where the model has "
                                 "none.")] = None,
+    covariate_schedule: Annotated[Optional[list[dict[str, Any]]], Field(
+        min_length=1, max_length=50,
+        description="Regression models only: covariates that change over time, as change-points "
+                    "[{\"t\": 0, \"values\": {\"load_pct\": 60}}, {\"t\": 4000, \"values\": {\"load_pct\": 90}}] "
+                    "— each row's values take effect at its time t (in the model's unit) and hold until the "
+                    "next; a covariate a row leaves out keeps its previous value. Evaluates along that path "
+                    "(SurPyval's sf_tvc) instead of at fixed covariates, and adds mean_life along it. Use "
+                    "instead of `covariates`.")] = None,
 ) -> dict[str, Any]:
     """Evaluate a saved life model at given times: reliability R(t) (probability of surviving to t),
     failure probability F(t) = 1 − R(t), hazard rate h(t), cumulative hazard H(t) and density f(t).
@@ -1656,7 +1710,8 @@ def reliability_at(
     models without a covariance (non-parametric, mixtures, parameters saved without data, Cox PH) get null
     bounds and a bounds_note saying why. Regression models also report `life` at those covariates: B1, B5,
     B10, B50 and the MTTF, each B-life with its one-sided lower bound at `confidence` (90% if not given) — or,
-    for Cox PH, a note on why there are none."""
+    for Cox PH, a note on why there are none. Regression models also take a covariate_schedule: covariates that change over time (a load that
+    steps up at 4,000 hours), evaluated along that path."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
@@ -1670,6 +1725,9 @@ def reliability_at(
     if covariates and m.kind != "regression":
         raise ToolError(f"“{m.name}” is a {m.kind} model with no covariates — drop `covariates`, or pick a "
                         "proportional-hazards model (get_model lists its covariates).")
+    if covariate_schedule is not None:
+        return _reliability_along(db, m, times, owners, covariate_schedule, covariates, conditional_age,
+                                  confidence)
 
     ts = [float(t) for t in times]
     later = [conditional_age + t for t in ts] if conditional_age is not None else []

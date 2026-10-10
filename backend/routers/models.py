@@ -328,6 +328,7 @@ def save_model(
     xr: str | None = Form(default=None),
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
+    i: str | None = Form(default=None),
     z: list[str] = Form(default=[]),
     formula: str | None = Form(default=None),
     unit: str | None = Form(default=None),
@@ -353,7 +354,8 @@ def save_model(
     denied = _creation_denied(session, ctx, "models")
     if denied is not None:
         return denied
-    mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}
+    # ``i`` (#60): an item column, for covariates that change over time.
+    mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr, "i": i}
     try:
         if dataset_id:
             # Scope to the workspace principal (+samples) so the saved model

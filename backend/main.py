@@ -77,6 +77,7 @@ from backend.routers import outage_logs as outage_logs_router
 from backend.routers import uploads as uploads_router
 from backend.routers import compare_groups as compare_groups_router
 from backend.routers import regression_diagnostics as regression_diagnostics_router
+from backend.routers import tvc as tvc_router
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
@@ -203,6 +204,8 @@ app.include_router(rbd_intervals_router.router)
 app.include_router(strategy_router.router)
 app.include_router(compare_groups_router.router)
 app.include_router(regression_diagnostics_router.router)
+# Reliability along a covariate schedule (#60).
+app.include_router(tvc_router.router)
 app.include_router(billing_router.router)
 app.include_router(assistant_router.router)
 app.include_router(reliability_agent_router.router)
@@ -364,6 +367,7 @@ def fit_endpoint(
     xr: str | None = Form(default=None),
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
+    i: str | None = Form(default=None),
     z: list[str] = Form(default=[]),
     formula: str | None = Form(default=None),
     unit: str | None = Form(default=None),
@@ -393,7 +397,8 @@ def fit_endpoint(
     A plain (sync) handler: FastAPI runs it in its threadpool, so a slow fit
     never holds up other requests.
     """
-    mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}
+    # ``i`` (#60): an item column, for covariates that change over time.
+    mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr, "i": i}
     try:
         if dataset_id:
             dataset = datasets_service.get_dataset(session, dataset_id, owner_id=user["uid"])

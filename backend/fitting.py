@@ -1270,7 +1270,15 @@ def fit(
     # Cox PH's tie method, strata and cluster columns (#61): regression only.
     cox_opts = options.pop(regression_diagnostics.COX_KEY, None)
     options = normalize_options(distribution, options)
-    if distribution in REGRESSION_MODELS:
+    if mapping.get("i"):
+        # #60: an item column means covariates that change over time.
+        from backend import tvc
+
+        if cox_opts:
+            raise FitError("Tie methods, strata and clusters aren't available with covariates that change over "
+                           "time. Drop them, or fit without the item column.")
+        result = tvc.fit(distribution, df, mapping, covariates, formula, covariate_units)
+    elif distribution in REGRESSION_MODELS:
         result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units, cox_opts)
     elif cox_opts:
         raise FitError("Tie methods, strata and clusters apply to Cox PH only. Choose Cox PH, or drop them.")

@@ -16,6 +16,9 @@ import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import ResultView from "./ResultView.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
+import { TvcToggle } from "./TvcColumns.jsx";
+import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts } from "../tvcData.js";
+import { guessUnit, isNumeric } from "../datasetGuess.js";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
   dataStepProblems, dataSplit,
@@ -108,6 +111,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // asked for, with "Change columns" to see the full mapping (#291).
   const [simple, setSimple] = useState(false);
   const [covariates, setCovariates] = useState([]);
+  // Covariates that change over time (#60): null, "intervals" or "timeline".
+  const [tvc, setTvc] = useState(null);
   const [covUnits, setCovUnits] = useState({}); // optional unit per covariate (#265)
   const [advanced, setAdvanced] = useState(false);
   const [formula, setFormula] = useState("");
@@ -171,12 +176,17 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       // A pasted flag column is 0 = failed, 1 = still running, as the paste box says.
       ? { ...EMPTY_MAPPING, x: "time", c: cols.columns.includes("censored") ? "censored" : "" }
       : g.mapping;
+    // Start and stop rows of items (#60): fit their covariates over time.
+    const timeVarying = simplePaste ? null : guessTvc(cols.columns, facts, cols.n_rows);
+    const tvcMap = timeVarying && tvcMapping(map, "intervals", cols.columns, facts, cols.n_rows);
+    const used = new Set(Object.values(tvcMap || {}).filter((v) => typeof v === "string" && v));
     setCsv(cols);
-    setMapping(map);
-    setUnit(simplePaste ? "" : g.unit);
+    setMapping(tvcMap || map);
+    setTvc(timeVarying ? "intervals" : null);
+    setUnit(simplePaste ? "" : g.unit || (timeVarying ? guessUnit(timeVarying.xl) : ""));
     setSimple(simplePaste);
-    setCovariates([]);
-    return { mapping: map, unit: simplePaste ? "" : g.unit };
+    setCovariates(timeVarying ? cols.columns.filter((c) => !used.has(c) && isNumeric(facts[c]?.dtype)) : []);
+    return { mapping: tvcMap || map, unit: simplePaste ? "" : g.unit };
   };
 
   const pickFile = async (picked) => {
@@ -298,9 +308,15 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // What the mapping reads as, and what stops it fitting, before the fit.
   const facts = useMemo(() => (csv ? columnFacts(csv) : {}), [csv]);
   const problems = useMemo(
-    () => (csv ? dataStepProblems(mapping, facts, csv.n_rows) : []),
-    [csv, mapping, facts]
+    () => (!csv ? [] : tvc ? tvcProblems(mapping, facts, tvc, hasCovariates ? 1 : 0)
+      : dataStepProblems(mapping, facts, csv.n_rows)),
+    [csv, mapping, facts, tvc, hasCovariates]
   );
+  // Covariates over time on or off, or the rows' layout changed (#60).
+  const changeTvc = (layout) => {
+    setTvc(layout);
+    setMapping((m) => tvcMapping(m, layout, csv.columns, facts, csv.n_rows));
+  };
   const mappingValid = problems.length === 0;
   // With a count column the value counts aren't units: read the file instead.
   const [fileSplit, setFileSplit] = useState(null);
@@ -314,7 +330,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     }
     return () => { live = false; };
   }, [file, mapping]);
-  const summary = csv ? statusSummary(mapping, facts, csv.n_rows) || fileSplit : null;
+  const summary = csv && !tvc ? statusSummary(mapping, facts, csv.n_rows) || fileSplit : null;
 
   // Cox PH's own options travel with a Cox fit only.
   const coxFit = distribution === "cox_ph" ? { fitOptions: { cox: coxOpts } } : {};
@@ -626,11 +642,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 unit={unit}
                 onUnitChange={setUnit}
                 facts={facts}
+                timeVarying={tvc}
               />
               <ResultDetails
                 summary="Advanced (regression): covariates"
-                open={covariates.length > 0 || advanced}
+                open={covariates.length > 0 || advanced || !!tvc}
               >
+                <TvcToggle layout={tvc} onChange={changeTvc} />
                 <Covariates
                   columns={csv.columns}
                   selected={covariates}
@@ -651,6 +669,14 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             <ul className="ds-problems" role="status">
               {problems.map((p) => <li key={p}>{p}</li>)}
             </ul>
+          ) : tvc ? (
+            <p className="ds-summary" role="status">
+              {tvcSummaryParts(mapping, facts, csv.n_rows, tvc).map((part, i) => {
+                const [num, ...rest] = part.split(" ");
+                return <span key={part}>{i > 0 && ", "}<b>{num}</b> {rest.join(" ")}</span>;
+              })}
+              <span className="ds-summary-note"> · covariates change over time</span>
+            </p>
           ) : summary ? (
             <p className="ds-summary" role="status">
               {summaryParts(summary).map((part, i) => {
@@ -680,7 +706,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       {step === 3 && (
         <div className="fit-step">
           <p className="muted-line">
-            {hasCovariates
+            {tvc
+              ? "Covariates change over time — choose a regression model. Each item's covariates follow its rows."
+              : hasCovariates
               ? "Covariates detected — choose a regression model (proportional-hazards or accelerated-failure-time)."
               : "Choose a parametric distribution or a non-parametric estimator."}
           </p>
