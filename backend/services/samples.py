@@ -80,6 +80,37 @@ _SEAL_ALT_CSV = (
     "320,0,100,0.9\n510,0,100,0.9\n380,0,100,0.9\n610,0,100,0.9\n450,0,100,0.9\n"
 ).encode()
 
+# Covariates that change over time (#60): 30 process pumps whose duty is
+# switched between 60, 75 and 90% load as the plant's demand changes. One row
+# per stretch at one load (start-stop rows): censored is 0 on the stretch
+# that ended in a bearing failure, 1 otherwise; pumps still running at the
+# 8,000-hour review end on a 1. Simulated from a Weibull proportional-hazards
+# model (shape 1.8; each +10% load multiplies the hazard by about 1.6), so a
+# Weibull PH fit recovers it.
+_PUMP_LOAD_CSV = (
+    "pump,start_h,stop_h,censored,load_pct\n"
+    "P-01,0,1500,1,90\nP-01,1500,3700,1,75\nP-01,3700,4289,0,90\nP-02,0,1672,0,90\nP-03,0,2300,1,60\n"
+    "P-03,2300,3100,1,90\nP-03,3100,3900,1,60\nP-03,3900,5266,0,90\nP-04,0,1700,1,60\nP-04,1700,3800,1,75\n"
+    "P-04,3800,4600,1,60\nP-04,4600,5600,1,90\nP-04,5600,7700,1,60\nP-04,7700,8000,1,75\nP-05,0,1100,1,60\n"
+    "P-05,1100,2100,1,75\nP-05,2100,3900,1,60\nP-05,3900,5800,1,90\nP-05,5800,6096,0,60\nP-06,0,1795,0,75\n"
+    "P-07,0,1900,1,90\nP-07,1900,3400,1,75\nP-07,3400,5800,1,60\nP-07,5800,8000,1,75\nP-08,0,1200,1,90\n"
+    "P-08,1200,2800,1,75\nP-08,2800,4298,0,90\nP-09,0,900,1,90\nP-09,900,2100,1,75\nP-09,2100,2900,1,60\n"
+    "P-09,2900,3900,1,75\nP-09,3900,5400,1,90\nP-09,5400,7258,0,75\nP-10,0,1300,1,90\nP-10,1300,3800,1,60\n"
+    "P-10,3800,6000,1,75\nP-10,6000,6828,0,60\nP-11,0,1400,1,90\nP-11,1400,2700,1,60\nP-11,2700,4200,1,90\n"
+    "P-11,4200,6300,1,75\nP-11,6300,8000,1,60\nP-12,0,2100,1,60\nP-12,2100,3000,1,75\nP-12,3000,5100,1,60\n"
+    "P-12,5100,5273,0,90\nP-13,0,2300,1,90\nP-13,2300,3660,0,75\nP-14,0,1900,1,75\nP-14,1900,2262,0,90\n"
+    "P-15,0,1200,1,60\nP-15,1200,3200,1,90\nP-15,3200,5800,1,75\nP-15,5800,6897,0,90\nP-16,0,1200,1,60\n"
+    "P-16,1200,1434,0,90\nP-17,0,1700,1,75\nP-17,1700,2800,1,60\nP-17,2800,3692,0,90\nP-18,0,1700,1,60\n"
+    "P-18,1700,3800,1,75\nP-18,3800,4600,1,90\nP-18,4600,6400,1,75\nP-18,6400,6692,0,90\nP-19,0,2400,1,60\n"
+    "P-19,2400,4900,1,75\nP-19,4900,5900,1,60\nP-19,5900,8000,1,90\nP-20,0,1400,1,75\nP-20,1400,2136,0,60\n"
+    "P-21,0,800,1,90\nP-21,800,3400,1,75\nP-21,3400,5000,1,90\nP-21,5000,6400,1,60\nP-21,6400,7900,1,75\n"
+    "P-21,7900,8000,1,60\nP-22,0,1900,1,90\nP-22,1900,1963,0,60\nP-23,0,2400,1,75\nP-23,2400,2574,0,90\n"
+    "P-24,0,1500,1,75\nP-24,1500,2800,1,90\nP-24,2800,3900,1,75\nP-24,3900,4063,0,90\nP-25,0,1800,1,60\n"
+    "P-25,1800,3227,0,90\nP-26,0,1329,0,90\nP-27,0,1600,1,60\nP-27,1600,2133,0,75\nP-28,0,1700,1,75\n"
+    "P-28,1700,2695,0,60\nP-29,0,2000,1,60\nP-29,2000,2517,0,90\nP-30,0,2000,1,60\nP-30,2000,3800,1,75\n"
+    "P-30,3800,4288,0,90\n"
+).encode()
+
 # Long-format recurrent-event history: 4 compressors, each run to a 5000-hour
 # test, with repair (failure) times. Gaps between failures SHRINK over each
 # system's life — a deteriorating repairable fleet (Crow-AMSAA β ≈ 2), the
@@ -158,6 +189,11 @@ SAMPLE_DATASETS = [
         "id": "sample-ds-brake-wear",
         "name": "Brake pad wear (sample)",
         "csv": _BRAKE_WEAR_CSV,
+    },
+    {
+        "id": "sample-ds-pump-load",
+        "name": "Pump bearings under changing load (sample)",
+        "csv": _PUMP_LOAD_CSV,
     },
 ]
 
@@ -284,6 +320,17 @@ SAMPLE_MODELS = [
         "distribution": "weibull_ph",
         "mapping": {"x": "hours", "c": "censored"},
         "covariates": ["temp_C", "load"],
+        "unit": "hours",
+    },
+    {
+        # #60: the item column makes it a fit with covariates that change over time.
+        "id": "sample-model-pump-load-weibull-ph",
+        "name": "Pump bearings — Weibull PH on changing load (sample)",
+        "dataset_id": "sample-ds-pump-load",
+        "distribution": "weibull_ph",
+        "mapping": {"i": "pump", "xl": "start_h", "xr": "stop_h", "c": "censored"},
+        "covariates": ["load_pct"],
+        "covariate_units": {"load_pct": "%"},
         "unit": "hours",
     },
 ]
@@ -779,6 +826,7 @@ def seed_samples(db) -> None:
             result = fitting.fit(
                 spec["distribution"], df, spec["mapping"],
                 spec.get("covariates"), spec.get("formula"), spec.get("unit"),
+                covariate_units=spec.get("covariate_units"),
             )
             if existing is not None:
                 db.models.update_one(
@@ -799,6 +847,7 @@ def seed_samples(db) -> None:
                     "covariates": spec.get("covariates") or [],
                     "formula": spec.get("formula"),
                     "unit": spec.get("unit", ""),
+                    **({"covariate_units": spec["covariate_units"]} if spec.get("covariate_units") else {}),
                 },
                 results=result,
                 surpyval_version=getattr(surpyval, "__version__", None),
