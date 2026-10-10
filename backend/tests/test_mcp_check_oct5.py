@@ -272,14 +272,22 @@ def test_fault_tree_cut_set_share_alone_and_the_overlap_note(env):
 
 def test_rebuilt_interval_that_overflows_is_null_not_inf():
     """A coefficient tiny next to its standard error (the insulating-fluid
-    sample's Arrhenius ``a``) overflows on the log scale: the end is sent as
-    null, so the model page's JSON stays valid."""
+    sample's inverse-power ``a``, about 5e-26) can overflow on the log scale:
+    the end is sent as null, so the model page's JSON stays valid."""
     import json
+
     from fastapi.testclient import TestClient
+
+    from backend.auth import get_current_user
     from backend.main import app
-    with TestClient(app) as c:
-        r = c.get("/api/alt/models/sample-alt-fluid")
-    assert r.status_code == 200
+
+    app.dependency_overrides[get_current_user] = lambda: {"uid": "u-alt-inf", "email": "a@example.org", "name": "A"}
+    try:
+        with TestClient(app) as c:
+            r = c.get("/api/alt/models/sample-alt-fluid")
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+    assert r.status_code == 200, r.text
     json.loads(r.text)  # strict JSON: no Infinity
-    coeffs = r.json()["results"]["coefficients"]
-    assert all(v is None or isinstance(v, float) for co in coeffs for v in (co.get("ci") or []))
+    for co in r.json()["results"]["coefficients"]:
+        assert all(v is None or isinstance(v, (int, float)) for v in (co.get("ci") or []))
