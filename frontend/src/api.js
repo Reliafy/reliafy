@@ -140,9 +140,10 @@ export function getColumns(file) {
 // Advanced fit options shared by fit + save: offset (3-parameter), zero
 // inflation, limited failure population, fixed parameter values, and a mixture
 // component count (mutually exclusive with the rest — see normalize_options),
-// the fit method, and Best fit's "consider two-mode mixtures" (#236).
+// the fit method, Best fit's "consider two-mode mixtures" (#236) and Cox PH's
+// tie method, strata and cluster columns (#61).
 function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distribution, how,
-                                  include_mixtures } = {}) {
+                                  include_mixtures, cox } = {}) {
   if (offset) form.append("offset", "true");
   if (zi) form.append("zi", "true");
   if (lfp) form.append("lfp", "true");
@@ -151,6 +152,8 @@ function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distr
   if (mixture_distribution) form.append("mixture_distribution", mixture_distribution);
   if (how) form.append("how", how);
   if (include_mixtures) form.append("include_mixtures", "true");
+  const coxSet = cox && Object.fromEntries(Object.entries(cox).filter(([, v]) => v));
+  if (coxSet && Object.keys(coxSet).length) form.append("cox", JSON.stringify(coxSet));
 }
 
 // Column mapping -> form fields. ``mapping`` is { x, c, n, xl, xr, tl, tr }
@@ -287,6 +290,19 @@ export function getModelValidation(id) {
   return request(`/api/models/${id}/validation`);
 }
 
+// A regression model's checks (#61): the proportional-hazards test, robust
+// standard errors, ties and strata. Stored at fit time; for a model saved
+// before them, computed (and cached) on request.
+export function getModelDiagnostics(id) {
+  return request(`/api/models/${id}/diagnostics`);
+}
+
+// The residuals behind the proportional-hazards test, for plotting. ``path``
+// comes from the result payload (functions.residuals_path).
+export function getResiduals(path) {
+  return request(path);
+}
+
 // Persist a fit. Same form fields as fitModel, plus a name.
 export function saveModel(
   name,
@@ -372,6 +388,7 @@ export function updateModelFit(id, { distribution, mapping, covariates, covariat
       fixed: fitOptions?.fixed && Object.keys(fitOptions.fixed).length ? fitOptions.fixed : null,
       how: fitOptions?.how || null,
       include_mixtures: !!fitOptions?.include_mixtures,
+      cox: fitOptions?.cox && Object.values(fitOptions.cox).some(Boolean) ? fitOptions.cox : null,
       ...(units !== undefined ? { covariate_units: units } : {}),
     }),
   });
