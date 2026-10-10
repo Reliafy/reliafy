@@ -177,17 +177,62 @@ def _f(v) -> Optional[float]:
     return f if math.isfinite(f) else None
 
 
-def summary_rows(model) -> list[dict]:
+def _attribute_values(model, name: str, k: int) -> list:
+    """``model.<name>`` (a method on some models, an array on others) as
+    ``k`` floats or Nones."""
+    v = getattr(model, name, None)
+    try:
+        arr = np.asarray(v() if callable(v) else v, dtype=float).ravel()
+    except Exception:  # noqa: BLE001 - not available
+        return [None] * k
+    return [_f(a) for a in arr] if arr.size == k else [None] * k
+
+
+def _rows_from_attributes(model, ratio: bool = False) -> list[dict]:
+    """The coefficient table from what the model already holds, where its
+    ``summary()`` gives no table (SurPyval 0.23's additive-hazards,
+    Buckley-James and Royston-Parmar models): each parameter's estimate,
+    SurPyval's standard error and p-value where it has them, and the 95%
+    Wald interval from that standard error, as every regression's
+    coefficients get (``fitting._fit_regression``). ``ratio``: the model's
+    coefficients have a ratio (exp(estimate)), as a Buckley-James AFT's do;
+    an additive hazard's and a spline's don't."""
+    from backend.param_intervals import wald_interval
+
+    names = list(getattr(model, "parameter_names", None) or [])
+    params = np.asarray(getattr(model, "params", []), dtype=float).ravel()
+    if not names or len(names) != params.size:
+        return []
+    k = len(names)
+    ses = _attribute_values(model, "standard_errors", k)
+    ps = _attribute_values(model, "p_values", k)
+    part = "parameters" if getattr(model, "knots", None) is not None else "coefficients"
+    rows = []
+    for name, value, se, p in zip(names, params, ses, ps):
+        value = _f(value)
+        ci = wald_interval(value, se) if value is not None and se is not None else None
+        exp_value = _f(math.exp(value)) if ratio and value is not None and abs(value) < 700 else None
+        rows.append({"part": part, "name": str(name), "value": value, "exp_value": exp_value, "se": se,
+                     "ci": [_f(ci[0]), _f(ci[1])] if ci else None, "p": p})
+    return rows
+
+
+def summary_rows(model, ratio: bool = False) -> list[dict]:
     """``model.summary()`` as plain rows: the part (baseline, coefficients,
     frailty), the name, the estimate, exp(estimate), its standard error, the
-    95% interval and the Wald p-value, None where SurPyval gives none."""
+    95% interval and the Wald p-value, None where SurPyval gives none. A
+    model whose ``summary()`` is no table (or that has none) gets its rows
+    from its own attributes (:func:`_rows_from_attributes`, with exp(estimate)
+    when ``ratio``)."""
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             table = model.summary()
-    except Exception:  # noqa: BLE001 - a model without a table reports none
-        return []
-    if not isinstance(table, pd.DataFrame) or table.empty:
+    except Exception:  # noqa: BLE001 - no table: read the attributes
+        table = None
+    if not isinstance(table, pd.DataFrame):
+        return _rows_from_attributes(model, ratio)
+    if table.empty:
         return []
     table = table.reset_index()
     rows = []
@@ -216,7 +261,10 @@ def _frailty_block(model, mapping: dict) -> dict:
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            cb = np.asarray(model.param_cb("theta", alpha_ci=0.05, method=method), dtype=float).ravel()
+            # Wald is the default, and the only interval a Cox frailty's
+            # param_cb gives in SurPyval 0.23 (it takes no ``method``).
+            kw = {"method": "lr"} if method == "lr" else {}
+            cb = np.asarray(model.param_cb("theta", alpha_ci=0.05, **kw), dtype=float).ravel()
         if cb.size == 2:
             ci = [_f(cb[0]), _f(cb[1])]
     except Exception:  # noqa: BLE001 - no interval rather than a wrong one
@@ -259,7 +307,7 @@ def enrich_regression(distribution: str, model, result: dict, mapping: dict) -> 
     if entry is None:
         return result
     out = dict(result)
-    rows = summary_rows(model)
+    rows = summary_rows(model, ratio=entry.get("effect") in ("aft", "hazard", "odds"))
     if rows:
         out["coef_table"] = rows
     p_by_name = {r["name"]: r["p"] for r in rows if r["part"] in ("coefficients", "parameters")}

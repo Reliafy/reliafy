@@ -4,8 +4,10 @@ A parametric regression model (Weibull PH, Lognormal AFT, …) has a
 reliability curve for every covariate row, and SurPyval bounds each one:
 ``cb(x, Z, on, alpha_ci, bound)`` is the Fisher-matrix (Wald) band of a
 function at a row ``Z``, ``quantile_cb(p, Z, …)`` bounds its quantiles (the
-B-lives) and ``mean(Z)`` is its mean life. This module only picks the row
-and shapes those numbers; it computes nothing itself.
+B-lives) and its mean life is SurPyval's ``mean_tvc`` at that row held
+constant (the integral of ``sf`` that a later SurPyval's ``mean(Z)`` runs
+too). This module only picks the row and shapes those numbers; it computes
+nothing itself.
 
 Cox PH is semi-parametric: its baseline is a step curve estimated from the
 failures, with no parameters to carry the uncertainty through, so SurPyval
@@ -168,6 +170,19 @@ def band(model, fields: list, values: Optional[dict], grid: np.ndarray, on: str,
     return out
 
 
+def mean_at(model, Z: Optional[pd.DataFrame]):
+    """The mean life of a parametric regression model at one covariate row:
+    ``model.mean(Z)`` where SurPyval has it, else ``mean_tvc`` along that row
+    held constant (SurPyval 0.23 has the path integral, not ``mean(Z)``)."""
+    mean = getattr(model, "mean", None)
+    if callable(mean):
+        return mean(Z)
+    from surpyval.univariate.regression.tvc_schedule import StepSchedule
+
+    row = np.asarray(model._prepare_Z(Z), dtype=float).reshape(1, -1)[0]
+    return model.mean_tvc(StepSchedule.constant(row))
+
+
 class AtCovariates:
     """A regression model held at one covariate row, with the univariate
     quantile interface :mod:`backend.life_bounds` reads (``qf``,
@@ -192,7 +207,7 @@ class AtCovariates:
     def mean(self):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            value = float(np.ravel(np.asarray(self._model.mean(self._Z), dtype=float))[0])
+            value = float(np.ravel(np.asarray(mean_at(self._model, self._Z), dtype=float))[0])
         # An additive-hazards row whose reliability never reaches 0 has no
         # finite mean, whatever number the integral stopped at.
         if any("has not fallen to 0" in str(w.message) for w in caught):

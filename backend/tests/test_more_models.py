@@ -126,8 +126,10 @@ def test_semi_parametric_coefficients_match_surpyval(key, fitter):
     direct = fitter.fit_from_df(DF, x_col="t", Z_cols=["z", "temp"], c_col="c")
     assert r["kind"] == "regression" and r["semi_parametric"]
     assert [c["value"] for c in r["coefficients"]] == pytest.approx(list(direct.beta), rel=1e-6)
-    table = direct.summary().reset_index()
-    assert [row["value"] for row in r["coef_table"]] == pytest.approx(list(table["coef"]), rel=1e-9)
+    # The table: SurPyval's summary() where it gives one, else (additive
+    # hazards, Buckley-James in SurPyval 0.23) the model's own estimates.
+    assert [row["value"] for row in r["coef_table"]] == pytest.approx(list(direct.beta), rel=1e-9)
+    assert [row["name"] for row in r["coef_table"]] == ["z", "temp"]
     # The calculator's curves at the covariate means are SurPyval's.
     Z = pd.DataFrame({"z": [DF["z"].mean()], "temp": [DF["temp"].mean()]})
     x = np.asarray(r["functions"]["curves"]["x"])
@@ -187,8 +189,8 @@ def test_frailty_matches_surpyval(key, fitter):
     assert [c["value"] for c in r["coefficients"]] == pytest.approx(list(direct.beta), rel=1e-6)
     f = r["frailty"]
     assert f["theta"] == pytest.approx(direct.theta, rel=1e-6)
-    method = "wald" if key == "cox_frailty" else "lr"
-    assert f["theta_ci"] == pytest.approx(list(direct.param_cb("theta", method=method)), rel=1e-6)
+    kw = {} if key == "cox_frailty" else {"method": "lr"}  # a Cox frailty's is Wald only
+    assert f["theta_ci"] == pytest.approx(list(direct.param_cb("theta", **kw)), rel=1e-6)
     assert f["kendall_tau"] == pytest.approx(direct.kendall_tau, rel=1e-6)
     assert f["group_column"] == "site" and f["n_groups"] == 30
     assert {g["label"]: g["frailty"] for g in f["groups"]} == pytest.approx(dict(direct.frailties))

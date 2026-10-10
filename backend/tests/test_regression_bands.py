@@ -133,7 +133,10 @@ def test_life_is_surpyvals_qf_quantile_cb_and_mean():
     assert np.allclose([b["value"] for b in out["b_lives"]], m.qf(probs, Z))
     lower = [float(np.ravel(m.quantile_cb(np.array([p]), Z, alpha_ci=0.1, bound="lower"))[0]) for p in probs]
     assert np.allclose([b["lower"] for b in out["b_lives"]], lower)
-    assert out["mttf"]["value"] == pytest.approx(float(m.mean(Z)))
+    # SurPyval 0.23's mean life at a constant row: the path integral.
+    from surpyval.univariate.regression.tvc_schedule import StepSchedule
+
+    assert out["mttf"]["value"] == pytest.approx(float(m.mean_tvc(StepSchedule.constant(Z.to_numpy(dtype=float)[0]))))
     assert out["mttf"]["lower"] is None  # SurPyval has no mean_cb for a regression model
     assert out["covariates"] == {"fin": 1.0, "age": 30.0, "prio": 2.0}
 
