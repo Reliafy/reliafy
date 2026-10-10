@@ -43,9 +43,9 @@ GRID_POINTS = 120
 _LINK = "link~"
 
 #: What every block-diagram analysis says of a network (they don't apply).
-NETWORK_ONLY = ("This diagram is a network (undirected links between two terminals): its result is the "
-                "terminals' connection reliability, on the Calculator tab (analyze_rbd for agents). Block-diagram "
-                "analyses don't apply to it.")
+NETWORK_ONLY = ("This diagram is a network (undirected links between two terminals): its result is the chance "
+                "its two terminals stay connected, which the builder's Calculator tab and analyze_rbd give. "
+                "Block-diagram analyses don't apply to it.")
 
 
 class NetworkError(ValueError):
@@ -110,8 +110,6 @@ def apply_set(graph: dict, op: dict) -> list[str]:
         return ["back to a block diagram (no longer a network)"]
     if graph.get("repairable"):
         raise GraphError("a network is analysed for reliability: set repairable false too.")
-    if graph.get("phases"):
-        raise GraphError("a network has no phases: set phases [] too.")
     try:
         spec = parse_network(raw)
     except NetworkError as exc:
@@ -121,7 +119,8 @@ def apply_set(graph: dict, op: dict) -> list[str]:
         if spec[key] not in ids:
             raise GraphError(f"the network's terminal '{spec[key]}' isn't a node of the diagram.")
     graph["network"] = spec
-    return [f"read as an undirected network between {spec['source']} and {spec['target']}"]
+    kept = " (its phases are kept but don't apply to a network)" if graph.get("phases") else ""
+    return [f"read as an undirected network between {spec['source']} and {spec['target']}{kept}"]
 
 
 def summary(graph: dict) -> str:
