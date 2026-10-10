@@ -81,6 +81,7 @@ from starlette.responses import JSONResponse
 from backend import alt as alt_fit
 from backend import config
 from backend import fitting
+from backend import life_bounds
 from backend import recurrent as recurrent_fit
 from backend import storage
 from backend.fitting import FitError
@@ -754,6 +755,21 @@ def _live_metrics(cache_id: str | None) -> dict | None:
         return None
 
 
+def _saved_life(db, m, results: dict, owners) -> dict | None:
+    """A saved life distribution's B-lives and MTTF with their 90% lower
+    bounds (#288): as stored with the fit, or for one saved before, from the
+    live model. None for another kind or a fit that didn't converge."""
+    if m.kind != "distribution" or results.get("no_finite_maximum") or results.get("fit_warning"):
+        return None
+    if results.get("life"):
+        return results["life"]
+    try:
+        entry = fitting._MODEL_STORE.get(models_service._live_cache_id(db, m.id, owners)) or {}
+    except Exception:  # noqa: BLE001 - B-lives are a convenience
+        return None
+    return life_bounds.life_for(entry.get("model"))
+
+
 def _fit_lead(summary: dict) -> dict:
     """The keys of a fit summary that must come first in the response."""
     lead = ["fit_ok", "warning", "warnings"]
@@ -806,6 +822,9 @@ def _fit_summary(result: dict) -> dict:
     }
     if result.get("maximum") and "maximum" not in out:
         out["maximum"] = result["maximum"]
+    if result.get("life") and not failed:
+        # #288: B1/B5/B10/B50 and MTTF with 90% one-sided lower bounds.
+        out["life"] = result["life"]
     if no_max:
         out["metrics_omitted"] = "The fit has no finite maximum, so no life metrics are given."
     elif failed:
@@ -859,7 +878,9 @@ def get_model(
     model_id: Annotated[str, Field(description="A model id from list_models.")],
 ) -> dict[str, Any]:
     """Read one saved model in full: fitted parameters with 95% confidence intervals, goodness of fit
-    (log-likelihood, AIC, BIC), life metrics (median, MTTF, B10), regression coefficients for
+    (log-likelihood, AIC, BIC), life metrics (median, MTTF, B10), for a life distribution `life`: B1, B5,
+    B10, B50 and MTTF each with its one-sided 90% lower bound (the time you can be 90% sure it is at
+    least), regression coefficients for
     proportional-hazards models, and the time unit. Works for life and recurrent models.
     Recurrent (repairable-system) models report the growth verdict and its basis (β's 95% interval
     excluding 1 or not), the ROCOF and MTBF at the end of observation with 95% bounds, the demonstrated
@@ -883,6 +904,9 @@ def get_model(
                 metrics = None
         out = {**_life_brief(m), "params": r.get("params", []), "gof": {g["id"]: g["value"] for g in r.get("gof") or []},
                "metrics": metrics}
+        life = _saved_life(db, m, r, owners)
+        if life:
+            out["life"] = life
         for key in ("coefficients", "extra_params", "randomness", "options", "warnings"):
             if r.get(key):
                 out[key] = r[key]

@@ -1,7 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "./Modal.jsx";
 import GoodnessOfFit from "./GoodnessOfFit.jsx";
+import Select from "./Select.jsx";
+import Chip from "./ui/Chip.jsx";
+import { openGuide } from "./HelpButton.jsx";
+import { lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
+import { bestFitSentence, boundWords, compareRows, criterionLabel, timeAtValue } from "../lifeResults.js";
 import { unitInText } from "./unitText.js";
 
 // The side panel beside a fitted life distribution's plot (#311): its
@@ -55,19 +60,9 @@ export function paramView(result, p) {
 
 // The time by which a fraction ``q`` of units have failed, read off the fitted
 // reliability curve (null when the curve doesn't reach it).
-function lifeAt(result, q) {
+function lifeFromCurve(result, q) {
   const c = result.functions?.curves;
-  if (!c?.x || !c?.sf) return null;
-  const target = 1 - q;
-  for (let i = 1; i < c.x.length; i++) {
-    const a = c.sf[i - 1], b = c.sf[i];
-    if (a == null || b == null) continue;
-    if (a >= target && b <= target) {
-      const f = a === b ? 0 : (a - target) / (a - b);
-      return c.x[i - 1] + f * (c.x[i] - c.x[i - 1]);
-    }
-  }
-  return null;
+  return timeAtValue(c?.x, c?.sf, 1 - q);
 }
 
 // A Weibull shape and its interval keep three figures ("1.00", not "1"): the
@@ -103,7 +98,16 @@ function verdict(result) {
       text: <>A constant failure rate: mean life <b>{formatNumber(1 / byName.failure_rate.value)}{unit}</b>.</>,
     };
   }
-  const median = lifeAt(result, 0.5);
+  // B50 from the fit when it carries its B-lives (#288); else off the curve.
+  const median = result.life?.b_lives?.find((b) => b.label === "B50")?.value ?? lifeFromCurve(result, 0.5);
+  if (median != null && id === "lognormal") {
+    // μ and σ are on log time (#292): say what they mean in time.
+    return {
+      title: "Median life",
+      text: <><b>{formatNumber(median)}{unit}</b> (e<sup>μ</sup>): half have failed by then. μ and σ are the
+        mean and spread of log(time), not of time.</>,
+    };
+  }
   if (median != null) {
     return { title: "Median life", text: <><b>{formatNumber(median)}{unit}</b>: half have failed by then.</> };
   }
@@ -122,9 +126,196 @@ function dataText(result, split) {
   return result.n != null ? `${result.n.toLocaleString()} observations` : null;
 }
 
+// B-lives and MTTF at a confidence the viewer picks (#288). The fit carries
+// them at 90%; another level is fetched from the model's life path and kept
+// here, so going back to a level (or tab) doesn't ask again.
+const lifeCache = new Map();
+export const LIFE_LEVELS = [80, 90, 95, 99];
+
+function useLife(result, level) {
+  const path = result.functions?.life_path;
+  const stored = result.life;
+  const storedFits = stored && Math.abs(stored.confidence * 100 - level) < 1e-6;
+  const key = path ? `${path}|${level}` : null;
+  const [fetched, setFetched] = useState(() => (key && lifeCache.has(key) ? { key, data: lifeCache.get(key) } : null));
+  useEffect(() => {
+    if (!key || storedFits || !(level > 0 && level < 100)) return undefined;
+    if (lifeCache.has(key)) {
+      setFetched({ key, data: lifeCache.get(key) });
+      return undefined;
+    }
+    let live = true;
+    const id = setTimeout(() => {
+      lifeAt(path, { confidence: level / 100 })
+        .then((data) => {
+          lifeCache.set(key, data);
+          if (live) setFetched({ key, data });
+        })
+        .catch(() => live && setFetched({ key, data: null }));
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(id);
+    };
+  }, [key, storedFits, level, path]);
+  if (storedFits) return { life: stored, pending: false };
+  if (fetched?.key === key && fetched.data) return { life: fetched.data, pending: false };
+  if (stored) {
+    // While another level loads, the estimates stand; their bounds wait.
+    return { life: { ...stored, b_lives: stored.b_lives.map((b) => ({ ...b, lower: null })),
+                     mttf: { ...stored.mttf, lower: null } }, pending: !!key };
+  }
+  if (path && fetched?.key !== key) return { life: null, pending: true };
+  // A model saved without them and no live path: the estimates off the curve.
+  const fromCurve = [[0.01, "B1"], [0.05, "B5"], [0.1, "B10"], [0.5, "B50"]].map(([p, label]) => ({
+    p, label, value: lifeFromCurve(result, p), lower: null,
+  }));
+  if (fromCurve.every((b) => b.value == null)) return { life: null, pending: false };
+  return { life: { b_lives: fromCurve, mttf: { value: null, lower: null }, bounds_note: null }, pending: false };
+}
+
+const LIFE_NAMES = { B50: "B50 (median)" };
+
+function LifeCard({ result, level, onLevel }) {
+  const { life, pending } = useLife(result, level);
+  if (!life) return null;
+  const unit = result.unit ? unitInText(result.unit) : "";
+  const canPick = !!result.functions?.life_path && !!onLevel;
+  const levels = LIFE_LEVELS.includes(level) ? LIFE_LEVELS : [...LIFE_LEVELS, level].sort((a, b) => a - b);
+  const rows = [
+    ...life.b_lives.map((b) => ({
+      key: b.label, label: LIFE_NAMES[b.label] || b.label, value: b.value, lower: b.lower,
+      what: `${b.label}: ${Math.round(b.p * 100)}% have failed by then`,
+    })),
+    { key: "MTTF", label: "MTTF (mean)", value: life.mttf?.value, lower: life.mttf?.lower,
+      what: life.mttf?.value == null && result.extras?.p != null
+        ? "MTTF: none — some units never fail"
+        : "MTTF: the mean time to failure" },
+  ];
+  const hasBounds = rows.some((r) => r.lower != null);
+  return (
+    <div className="gof-card life-card">
+      <div className="gofh life-card-head">
+        <span>Life{unit ? <span className="gof-sub">{unit}</span> : null}</span>
+        {canPick ? (
+          <Select
+            value={level}
+            onChange={(v) => onLevel(Number(v))}
+            className="life-conf"
+            title="The confidence of the lower bounds (one-sided)"
+            options={levels.map((l) => ({ value: l, label: `${l}% lower bound` }))}
+          />
+        ) : (
+          hasBounds && <span className="gof-sub">{Math.round((life.confidence ?? 0.9) * 100)}% lower bound</span>
+        )}
+      </div>
+      {rows.map((r) => (
+        <div
+          className="gofr life-row"
+          key={r.key}
+          title={r.lower != null
+            ? `${r.what}. ${boundWords(level, "lower", r.lower, null, (v) => `${formatNumber(v)}${unit ? ` ${unit}` : ""}`)}.`
+            : `${r.what}.`}
+        >
+          <span className="gk">{r.label}</span>
+          <span className="gv">{formatNumber(r.value)}</span>
+          <span className="life-lo">{r.lower != null ? `≥ ${formatNumber(r.lower)}` : pending ? "…" : ""}</span>
+        </div>
+      ))}
+      {life.bounds_note && <p className="param-ci-note">{life.bounds_note}</p>}
+    </div>
+  );
+}
+
+// Every distribution on the same data, best first (#293): ΔAIC and a verdict
+// in words. A Best fit carries the ranking; any other fit can run it
+// (``compare``: () => Promise<selection>). ``onPick(id)`` (a fit not yet
+// saved) refits with the chosen distribution.
+function CompareDistributions({ result, compare, onPick }) {
+  const own = (result.selection?.candidates?.length || 0) > 1 ? result.selection : null;
+  const [ran, setRan] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const selection = own || ran;
+  const run = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setRan(await compare());
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!selection) {
+    if (!compare) return null;
+    return (
+      <div className="compare-dists">
+        <div className="gofh">Compare distributions</div>
+        <p className="muted-line">Fit every distribution to the same data and rank them by AIC.</p>
+        <button type="button" className="secondary" onClick={run} disabled={busy}>
+          {busy ? "Comparing…" : "Compare with other distributions"}
+        </button>
+        {error && <p className="error" style={{ marginTop: 8 }}>{error}</p>}
+      </div>
+    );
+  }
+  const key = selection.criterion || "aic";
+  const label = criterionLabel(key);
+  const current = result.distribution_id === "mixture" ? null : result.distribution_id;
+  const rows = compareRows(selection.candidates, key, current);
+  return (
+    <div className="compare-dists">
+      <div className="gofh">Compare distributions</div>
+      <p className="compare-sentence">{bestFitSentence(rows)}</p>
+      {selection.summary && <p className="muted-line">{selection.summary}</p>}
+      <div className="rs-table-wrap">
+        <table className="mini-table compare-table">
+          <thead>
+            <tr><th>Distribution</th><th>{label}</th><th>Δ{label}</th><th>Verdict</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const pick = onPick && !r.current && !String(r.id).includes(":");
+              return (
+                <tr key={r.id} className={r.current ? "current" : undefined}>
+                  <td>
+                    {pick ? (
+                      <button type="button" className="link" onClick={() => onPick(r.id)}
+                              title={`Fit ${r.name} to these data instead`}>{r.name}</button>
+                    ) : r.name}
+                    {r.current && <span className="gof-sub"> · this fit</span>}
+                  </td>
+                  <td>{formatNumber(r.value, { sig: 5 })}</td>
+                  <td>{r.delta === 0 ? "—" : `+${r.delta.toFixed(1)}`}</td>
+                  <td>
+                    {r.verdict === "best" ? <Chip tone="success">Best</Chip>
+                      : <span className={r.verdict === "about" ? "" : "compare-worse"}>{r.verdictLabel}</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted-line">
+        Lower {label} is better. Under 2 apart, the data can't tell two distributions apart.
+        {onPick ? " Pick a name to fit that one instead." : ""}
+      </p>
+      {selection.failed?.length > 0 && (
+        <p className="muted-line">Couldn't fit: {selection.failed.map((f) => f.name).join(", ")}.</p>
+      )}
+    </div>
+  );
+}
+
 // ``split`` ({ failed, running, other }) when the caller can count the data.
 // ``children`` (the plot) goes on the left; the panel sits on the right.
-export default function LifeAside({ result, split = null, bestFit = false }) {
+// ``level`` / ``onLevel``: the confidence (%) of the life card's lower bounds,
+// shared with the calculator. ``compare`` / ``onPick``: see CompareDistributions.
+export default function LifeAside({ result, split = null, bestFit = false, level = 90, onLevel = null,
+                                   compare = null, onPick = null }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const aic = (result.gof || []).find((g) => g.id === "aic") || (result.gof || [])[0];
   const id = distId(result);
@@ -135,12 +326,20 @@ export default function LifeAside({ result, split = null, bestFit = false }) {
   );
   const data = dataText(result, split);
   const reading = verdict(result);
-  const method = result.options?.how && result.options.how !== "MLE" ? result.options.how : "Maximum likelihood";
+  // Maximum likelihood goes without saying; another method is named.
+  const method = result.options?.how && result.options.how !== "MLE" ? result.options.how : null;
   const caveat = result.fit_warning && !result.no_finite_maximum;
+  const showLife = result.kind === "distribution" && !result.no_finite_maximum;
   return (
     <div className="aside">
       <div className="gof-card">
-        <div className="gofh">Parameters</div>
+        <div className="gofh life-card-head">
+          <span>Parameters</span>
+          {/* #292: the guide to reading a fit, in the help drawer. */}
+          <button type="button" className="link life-help" onClick={() => openGuide("fit-your-first-model")}>
+            What do these mean?
+          </button>
+        </div>
         {params.map((p) => {
           const v = paramView(result, p);
           return (
@@ -172,6 +371,7 @@ export default function LifeAside({ result, split = null, bestFit = false }) {
           </button>
         )}
       </div>
+      {showLife && <LifeCard result={result} level={level} onLevel={onLevel} />}
       {caveat && <div className="life-reading caveat">{result.fit_warning}</div>}
       {reading && (
         <div className="life-reading">
@@ -179,15 +379,16 @@ export default function LifeAside({ result, split = null, bestFit = false }) {
           <div>{reading.text}</div>
         </div>
       )}
-      <p className="life-method">
-        {method} fit. The line is the model, the points the data
-        {result.plot?.bounds ? ", the band and intervals 95%" : ""}.
-      </p>
+      {method && <p className="life-method">{method} fit.</p>}
       {statsOpen && (
         <Modal title="Fit statistics" onClose={() => setStatsOpen(false)}
                footer={<div className="row" style={{ margin: 0, marginLeft: "auto" }}>
                  <button onClick={() => setStatsOpen(false)}>Done</button></div>}>
-          <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} bestFit={bestFit} />
+          <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} bestFit={bestFit || !!compare} />
+          {result.kind === "distribution" && (
+            <CompareDistributions result={result} compare={compare}
+                                  onPick={onPick && ((id) => { setStatsOpen(false); onPick(id); })} />
+          )}
         </Modal>
       )}
     </div>

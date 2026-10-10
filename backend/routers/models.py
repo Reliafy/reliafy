@@ -638,3 +638,47 @@ def confidence_model(
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@router.post("/models/{model_id}/life")
+def life_model(
+    model_id: str,
+    body: dict = Body(default={}),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """A saved model's B-lives and MTTF with one-sided lower bounds at
+    ``confidence`` — or, with ``reliability`` [R, ...], the time at each
+    reliability with its ``bound`` (#288)."""
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        return JSONResponse(
+            content=models_service.life(session, model_id, body, [*ctx.read_owners, model.owner_id])
+        )
+    except models_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid life request."})
+
+
+@router.post("/models/{model_id}/compare")
+def compare_model(
+    model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> JSONResponse:
+    """Best fit's ranking of every plain distribution on a saved life model's
+    own data (#293), best first. Saves nothing."""
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    if model.kind != "distribution":
+        return JSONResponse(status_code=422, content={
+            "detail": "Only a fitted life distribution can be compared with the others."})
+    try:
+        return JSONResponse(content=models_service.compare(session, model))
+    except models_service.ModelNotFound:
+        return JSONResponse(status_code=422, content={
+            "detail": "This model's dataset is gone, so there's nothing to compare on."})
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})

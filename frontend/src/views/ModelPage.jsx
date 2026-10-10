@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import { getModel, deleteModel } from "../api.js";
+import { compareModel, getModel, deleteModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
@@ -62,7 +62,12 @@ export default function ModelPage() {
       {error && <div className="card error">{error}</div>}
       {model && (
         <div className="card">
-          <ResultView result={model.results} modelId={model.id} name={model.name} />
+          <ResultView
+            result={model.results}
+            modelId={model.id}
+            name={model.name}
+            compare={model.kind === "distribution" && model.dataset_id ? () => compareModel(model.id) : null}
+          />
         </div>
       )}
       {editing && model && (

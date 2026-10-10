@@ -83,7 +83,7 @@ from surpyval import (
 from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
-from backend import param_intervals
+from backend import life_bounds, param_intervals
 from backend.units import canonical_unit, unit_in_text
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
@@ -1292,6 +1292,12 @@ def fit(
     if result.get("mixture_summary") and result["unit"]:
         result["mixture_summary"] = (mixture_summary(result, unit_in_text(result["unit"]))
                                      or result["mixture_summary"])
+    if result.get("kind") == "distribution":
+        # B-lives and MTTF with their 90% lower bounds (#288).
+        entry = _MODEL_STORE.get((result.get("functions") or {}).get("model_id"))
+        life = life_bounds.life_for(entry and entry.get("model"), bool(result.get("no_finite_maximum")))
+        if life:
+            result["life"] = life
     if c_invert:
         # Persist alongside the other fit options so a saved model's spec
         # re-fits the data the same way round (see models_service._refit).
@@ -1461,6 +1467,9 @@ def result_from_params(
     randomness = _randomness_verdict(distribution_id, result["params"])
     if randomness is not None:
         result["randomness"] = randomness
+    life = life_bounds.life_for(model)  # values only: no data, no covariance
+    if life:
+        result["life"] = life
     return _json_safe(result)
 
 
@@ -2810,8 +2819,9 @@ def confidence_bounds(
         raise FitError("This model type doesn't provide confidence bounds.")
 
     try:
-        with np.errstate(all="ignore"):
-            cb = np.asarray(model.cb(grid, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            cb = _cb_off_pinned_points(model, grid, on, alpha_ci, bound)
     except Exception as exc:
         raise FitError(str(exc) or f"{type(exc).__name__}") from exc
 
@@ -2833,6 +2843,27 @@ def confidence_bounds(
         "lower": lower,
         "upper": upper,
     }
+
+
+def _cb_off_pinned_points(model, grid, on, alpha_ci, bound) -> np.ndarray:
+    """``model.cb`` over ``grid``, leaving out the points where a parametric
+    model's reliability is pinned at 1 or 0 (before a lifetime's support
+    starts, at t = 0): its value there is certain, so the bound is the value
+    itself. Asked there, SurPyval 0.23's Wald bound has a zero variance it
+    calls undefined, and returns nan at every point of the call — a lognormal's
+    calculator lost its whole band to the grid's t = 0."""
+    if not hasattr(model, "dist"):
+        return np.asarray(model.cb(grid, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+    sf = np.asarray(model.sf(grid), dtype=float)
+    free = np.isfinite(sf) & (sf > 0) & (sf < 1)
+    if free.all() or not free.any():
+        return np.asarray(model.cb(grid, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+    inner = np.asarray(model.cb(grid[free], on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
+    value = np.asarray(getattr(model, on)(grid[~free]), dtype=float)
+    out = np.empty((grid.size, 2) if inner.ndim == 2 else grid.size, dtype=float)
+    out[free] = inner
+    out[~free] = value[:, None] if inner.ndim == 2 else value
+    return out
 
 
 # The reliability functions exposed in the calculator tab, with display labels.
