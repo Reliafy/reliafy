@@ -276,7 +276,8 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
               <SurvivalPlot estimate={result.estimate} unit={result.unit}
                             download={`${name || result.distribution} — survival curve`} />
             </div>
-            <LifeAside result={result} split={split} level={level} onLevel={setLevel} />
+            <LifeAside result={result} split={split} level={level} onLevel={setLevel}
+                       modelId={modelId} name={name} />
           </div>
         )}
         {tab === "plot" && (
