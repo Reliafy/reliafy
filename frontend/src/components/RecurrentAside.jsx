@@ -33,7 +33,9 @@ export default function RecurrentAside({ r }) {
   let reading = null;
   if (fam === "renewal" && r.repair_test) {
     // The interval is beside the value above: the reading keeps to words.
-    reading = { title: repairTitle(r.repair_test.verdict), text: <>{rest?.short || rest?.sentence} {r.repair_test.sentence}</> };
+    // "Partial repair" is the title, so the verdict's own lead-in goes.
+    const verdict = r.repair_test.sentence.replace(/^Repairs are partial: b/, "B");
+    reading = { title: repairTitle(r.repair_test.verdict), text: <>{rest?.short || rest?.sentence} {verdict}</> };
   } else if (fam === "renewal" && rest) {
     reading = { title: "Repair effectiveness", text: rest.sentence };
   } else {
