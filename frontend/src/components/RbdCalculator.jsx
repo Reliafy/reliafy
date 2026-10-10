@@ -11,6 +11,7 @@ import { BandControls, BandInterval, BandNote, bandTraces, hasBand } from "./Rbd
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
 import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
 import AvailabilityPolicies, { SafetyNotes } from "./AvailabilityPolicies.jsx";
+import RbdSafetyShares from "./RbdSafetyShares.jsx";
 import { pctAt, pctDigits, precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
 import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
@@ -199,7 +200,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
           <span>to</span>
           <span className="drop">{(result.ccf.reliability_with * 100).toFixed(1)}%</span>
           <span className="muted-line" style={{ margin: 0 }}>
-            ({result.ccf.groups.map((g) => `${g.members.join(" & ")} β=${g.beta}`).join("; ")}, at t={fmt(result.ccf.time)}{unit ? ` ${unitInText(unit)}` : ""})
+            ({result.ccf.groups.map((g) => `${g.members.join(" & ")} β ${formatPercent(g.beta)}`).join("; ")}, at t={fmt(result.ccf.time)}{unit ? ` ${unitInText(unit)}` : ""})
           </span>
         </div>
       )}
@@ -1008,6 +1009,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           </p>
         )}
         {safety && <SafetyNotes safety={safety} />}
+        {safety?.shares && <RbdSafetyShares shares={safety.shares} />}
 
         {blocks.length > 0 && impCols.length > 0 && (
           <div className="rbd-avail-imp">
