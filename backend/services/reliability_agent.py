@@ -144,6 +144,7 @@ def _dist_ids() -> str:
         f"plain: {ids(fitting.DISTRIBUTIONS)}; "
         f"discrete: {ids(fitting.DISCRETE)}; "
         f"non-parametric: {ids(fitting.NONPARAMETRIC)}; "
+        f"flexible spline: {ids(fitting.FLEXIBLE)}; "
         f"regression (need covariates or a formula): {ids(reg)}; "
         "or 'best' to auto-select the plain distribution by AIC"
     )

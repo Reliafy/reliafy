@@ -759,7 +759,8 @@ def _saved_life(db, m, results: dict, owners) -> dict | None:
     """A saved life distribution's B-lives and MTTF with their 90% lower
     bounds (#288): as stored with the fit, or for one saved before, from the
     live model. None for another kind or a fit that didn't converge."""
-    if m.kind != "distribution" or results.get("no_finite_maximum") or results.get("fit_warning"):
+    if m.kind not in ("distribution", fitting.more_models.FLEXIBLE_KIND) or results.get("no_finite_maximum") \
+            or results.get("fit_warning"):
         return None
     if results.get("life"):
         return results["life"]
@@ -789,6 +790,12 @@ def _fit_failure_warning(fit_warning: str | None) -> str:
     return ("The fit did NOT converge — the parameters and metrics below are not a valid result; don't quote "
             "them." + (f" Optimiser: {reason}" if reason else "") + " Try rescaling the times (e.g. a "
             "larger unit), checking for extreme or mistyped values, or another distribution.")
+
+
+# What the models of #179 / #63 add (more_models): the full coefficient
+# table, the coefficient intervals' method where it isn't Wald, the shared
+# frailty and the Royston-Parmar spline.
+_MORE_MODEL_KEYS = ("coef_table", "ci_method", "frailty", "semi_parametric", "spline")
 
 
 def _fit_summary(result: dict) -> dict:
@@ -831,7 +838,7 @@ def _fit_summary(result: dict) -> dict:
         # #215: a median of 7.7e19 from a fit that didn't converge isn't a result.
         out["metrics_omitted"] = "The fit didn't converge, so no life metrics are given."
     for key in ("extra_params", "coefficients", "randomness", "options", "validation", "gof_note",
-                "mixture_summary"):
+                "mixture_summary", *_MORE_MODEL_KEYS):
         if result.get(key):
             out[key] = result[key]
     # #265: how the parameter intervals are taken; why a regression model has
@@ -897,7 +904,7 @@ def get_model(
     if m is not None:
         r = models_service.public_results(m)
         metrics = r.get("metrics")
-        if not metrics and m.kind == "distribution":
+        if not metrics and m.kind in ("distribution", fitting.more_models.FLEXIBLE_KIND):
             try:
                 metrics = _live_metrics(models_service._live_cache_id(db, m.id, owners))
             except Exception:  # noqa: BLE001 - metrics are a convenience
@@ -907,7 +914,7 @@ def get_model(
         life = _saved_life(db, m, r, owners)
         if life:
             out["life"] = life
-        for key in ("coefficients", "extra_params", "randomness", "options", "warnings"):
+        for key in ("coefficients", "extra_params", "randomness", "options", "warnings", *_MORE_MODEL_KEYS):
             if r.get(key):
                 out[key] = r[key]
         if (r.get("functions") or {}).get("covariates"):
@@ -952,8 +959,13 @@ def get_model(
 
 _FitDistribution = Annotated[str, Field(
     description="A distribution id — weibull, exponential, normal, lognormal, gamma, loglogistic, "
-                "expo_weibull, gumbel, logistic, … — or 'best' to fit every plain distribution and keep "
-                "the lowest-AIC one. Regression ids (e.g. weibull_ph) need covariates and a dataset.")]
+                "expo_weibull, gumbel, logistic, … — or 'best' to fit every plain (unbounded) distribution and "
+                "keep the lowest-AIC one. Bounded: beta (data in 0–1), beta4, uniform. Counts to failure (1, 2, "
+                "…): discrete_weibull, geometric, …, discretized_lognormal, discretized_gamma, "
+                "discretized_loglogistic. Flexible spline: royston_parmar. Regression ids need covariates and a "
+                "dataset: weibull_ph, weibull_aft, …, cox_ph, and the semi-parametric additive_hazards "
+                "(Lin-Ying), proportional_odds and buckley_james; shared frailty (weibull_frailty, "
+                "exponential_frailty, lognormal_frailty, gamma_frailty, cox_frailty) also needs group_column.")]
 _FitData = Annotated[Optional[list[float]], Field(
     description="Inline failure/suspension times, one per unit (the interval's lower bound when data_right is "
                 "given). Give this OR dataset_id.")]
@@ -1007,6 +1019,11 @@ _FitCovariateUnits = Annotated[Optional[dict[str, str]], Field(
     description="Optional: the unit of each covariate, e.g. {\"temp_C\": \"°C\", \"load\": \"kN\"} — regression "
                 "fits only. Shown with the coefficients (per unit of the covariate) and the covariate inputs, and "
                 "kept with a saved model.")]
+_FitGroupColumn = Annotated[Optional[str], Field(
+    description="Shared-frailty models only (…_frailty), with dataset_id: the column naming each row's group — "
+                "the site, batch or unit whose units share a frailty. The fit reports frailty.theta (the "
+                "spread between groups, with a 95% interval: one reaching 0 means the groups may not differ) "
+                "and each group's frailty (above 1 = fails sooner than average).")]
 _FitIncludeMixtures = Annotated[bool, Field(
     description="With distribution='best' only: let two-component Weibull and LogNormal mixtures compete "
                 "with the single distributions (two failure modes in one dataset, an S-curve on probability "
@@ -1127,7 +1144,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
               censor_column, count_column, covariates, unit, data_right, trunc_left, trunc_right,
               time_right_column, trunc_left_column, trunc_right_column, method,
               save: bool, name: str | None, include_mixtures: bool = False,
-              covariate_units: dict | None = None) -> dict[str, Any]:
+              covariate_units: dict | None = None, group_column: str | None = None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     if covariate_units:
@@ -1138,7 +1155,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                             f"{'is' if len(unknown) == 1 else 'are'} not in covariates "
                             f"({', '.join(covariates or []) or 'none given'}).")
     known = {fitting.BEST_ID, fitting.MIXTURE_ID, *fitting.DISTRIBUTIONS, *fitting.DISCRETE,
-             *fitting.NONPARAMETRIC, *fitting.REGRESSION_MODELS}
+             *fitting.NONPARAMETRIC, *fitting.REGRESSION_MODELS, *fitting.FLEXIBLE}
     dist = (distribution or "weibull").strip()
     if dist not in known:
         dist = fitting.resolve_distribution_id(dist)  # FitError -> tool error listing the options
@@ -1150,7 +1167,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
     stray = ([k for k, v in (("time_column", time_column), ("censor_column", censor_column),
                              ("count_column", count_column), ("time_right_column", time_right_column),
                              ("trunc_left_column", trunc_left_column),
-                             ("trunc_right_column", trunc_right_column)) if v] if data is not None
+                             ("trunc_right_column", trunc_right_column), ("group_column", group_column)) if v]
+             if data is not None
              else [k for k, v in (("censored", censored), ("counts", counts), ("data_right", data_right),
                                   ("trunc_left", trunc_left), ("trunc_right", trunc_right)) if v is not None])
     if stray:
@@ -1183,7 +1201,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             raise ToolError(f"Say which column holds the times (time_column). Columns: {', '.join(names)}.")
         times = {"xl": time_column, "xr": time_right_column} if time_right_column else {"x": time_column}
         mapping = {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
-                   "tr": trunc_right_column}
+                   "tr": trunc_right_column, "group": group_column}
         mapping = {k: v for k, v in mapping.items() if v}
         for col in [*mapping.values(), *(covariates or [])]:
             if col not in names:
@@ -1274,6 +1292,7 @@ def fit_distribution(
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
     covariate_units: _FitCovariateUnits = None,
+    group_column: _FitGroupColumn = None,
 ) -> dict[str, Any]:
     """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
     goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Saves nothing — use
@@ -1291,7 +1310,8 @@ def fit_distribution(
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=False, name=None, covariate_units=covariate_units)
+                include_mixtures=include_mixtures, save=False, name=None, covariate_units=covariate_units,
+                group_column=group_column)
 
 
 @_tool("fit_and_save_model", _WRITE, "Fit and save a model")
@@ -1318,6 +1338,7 @@ def fit_and_save_model(
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
     covariate_units: _FitCovariateUnits = None,
+    group_column: _FitGroupColumn = None,
     demand_batches: Annotated[Optional[list[DemandBatch]], Field(
         min_length=1, description=(
             "Save a per-demand (one-shot) model instead of a life distribution: one {demands, failures, "
@@ -1340,7 +1361,7 @@ def fit_and_save_model(
                                 ("time_right_column", time_right_column), ("censor_column", censor_column),
                                 ("count_column", count_column), ("trunc_left_column", trunc_left_column),
                                 ("trunc_right_column", trunc_right_column), ("covariates", covariates),
-                                ("method", method)) if v is not None]
+                                ("method", method), ("group_column", group_column)) if v is not None]
         if stray:
             raise ToolError(f"{', '.join(stray)} don't apply to a per-demand model — drop them.")
         return _save_per_demand(ctx, name, demand_batches, demand_confidence)
@@ -1349,7 +1370,8 @@ def fit_and_save_model(
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=True, name=name, covariate_units=covariate_units)
+                include_mixtures=include_mixtures, save=True, name=name, covariate_units=covariate_units,
+                group_column=group_column)
 
 
 def _per_demand_summary(result: dict) -> dict:
@@ -1553,7 +1575,8 @@ def _reliability_bounds(db, m, ts: list[float], owners, ev: dict, confidence: fl
         return None, None, (f"No {level} bounds: this model was saved from parameters alone, without the data "
                             "they were fitted to, so there's no covariance matrix to base them on. Save it "
                             "with its data (or fit it in Reliafy) for bounds.")
-    if m.kind not in ("distribution", "discrete", "regression") or ev["method"] != "exact":
+    if m.kind not in ("distribution", "discrete", "regression", fitting.more_models.FLEXIBLE_KIND) \
+            or ev["method"] != "exact":
         return None, None, f"No {level} bounds: confidence bounds aren't available for this {m.kind} model."
     try:
         entry = fitting._MODEL_STORE.get(models_service._live_cache_id(db, m.id, owners))
