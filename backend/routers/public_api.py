@@ -306,6 +306,9 @@ def api_demonstration_test(
     constant-failure-rate (chi-squared) test instead (``design_mtbf``).
     ``producer_risk`` with the good design's ``design_reliability`` (or
     ``design_mtbf``) plans the smallest test that keeps both risks, choosing
-    the failures allowed. Every plan has its ``oc_curve``.
+    the failures allowed. Every plan has its ``oc_curve``. ``b_life`` (10 for
+    B10) with ``mission_time`` states the target as "B10 ≥ mission_time"
+    instead of ``reliability``; ``shape_interval`` [lower, upper] (β's
+    interval) adds ``shape_sensitivity``, warning when β is poorly known.
     """
     return _strategy("demonstration_test", body, user["uid"])
