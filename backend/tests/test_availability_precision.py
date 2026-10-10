@@ -161,7 +161,8 @@ def test_faster_repair_is_more_available_with_a_tight_interval():
     is more available; the simulated difference has the exact difference's
     sign and its interval excludes zero."""
     slow, fast = _pumps(3.0), _pumps(1.0)
-    res = rbd_compare.compare_availability(slow, fast)
+    # exact=False: since #321 the difference is exact where it can be.
+    res = rbd_compare.compare_availability(slow, fast, exact=False)
     d = res["differences"]["availability"]
     assert res["common_random_numbers"] is True and res["shared_blocks"] == 3
     assert d["exact"] > 0
@@ -170,7 +171,7 @@ def test_faster_repair_is_more_available_with_a_tight_interval():
     assert d["lower"] <= d["estimate"] <= d["upper"]
     assert res["designs"]["b"]["steady_state_availability"] > res["designs"]["a"]["steady_state_availability"]
     # Swapped, the sign flips.
-    back = rbd_compare.compare_availability(fast, slow)["differences"]["availability"]
+    back = rbd_compare.compare_availability(fast, slow, exact=False)["differences"]["availability"]
     assert back["verdict"] == "a_higher" and back["upper"] < 0
     json.dumps(res)
 
