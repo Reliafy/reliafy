@@ -95,14 +95,16 @@ def test_sample_seeds_and_is_read_only(monkeypatch):
     assert r["n_systems"] == 4 and r["growth"] == "deteriorating" and r["beta"] > 1
 
     # Re-seeding is idempotent.
+    seeded = db.recurrent_models.count_documents({})
+    assert seeded == len(samples.SAMPLE_RECURRENT_MODELS)
     samples.seed_samples(db)
-    assert db.recurrent_models.count_documents({}) == 1
+    assert db.recurrent_models.count_documents({}) == seeded
 
     # It surfaces to a normal user's list (read-only sample).
     from backend.services import recurrent as svc
 
     models = svc.list_models(db, ["someone", config.SAMPLE_OWNER])
-    assert [m.id for m in models] == ["sample-rec-compressors"]
+    assert "sample-rec-compressors" in [m.id for m in models]
 
 
 def _client(monkeypatch, test_db):

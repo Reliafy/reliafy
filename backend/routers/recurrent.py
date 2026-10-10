@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException, Body, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
 from backend import recurrent as recurrent_fit
+from backend import recurrent_models
 from backend.db import get_session
 from backend.http_limits import read_upload
 from backend.fitting import FitError
@@ -24,14 +26,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
-def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=None, mode=None) -> dict:
+def _spec_from_form(i, x, model, unit, *, c=None, n=None, tl=None, tr=None, t=None, mode=None,
+                    z=None, ws=None, we=None, windows=None, baseline=None, m=None) -> dict:
     mapping = {"i": i, "x": x}
     # Optional modifiers (c/n/tl/tr); ``t`` is the legacy alias for ``tr``.
-    # ``mode`` is each failure's mode, for a growth projection (#232).
-    for key, val in (("c", c), ("n", n), ("tl", tl), ("tr", tr or t), ("mode", mode)):
+    # ``mode`` is each failure's mode (or cause): a growth projection's modes
+    # (#232) and the MCF by cause (#65). ``ws``/``we`` are observation-window
+    # columns and ``z`` the covariate columns (#65).
+    for key, val in (("c", c), ("n", n), ("tl", tl), ("tr", tr or t), ("mode", mode), ("ws", ws), ("we", we)):
         if val:
             mapping[key] = val
-    return {"mapping": mapping, "model_id": (model or "crow_amsaa"), "unit": canonical_unit(unit)}
+    cols = [col for item in (z or []) for col in str(item).split(",") if col.strip()]
+    if cols:
+        mapping["z"] = [col.strip() for col in cols]
+    spec = {"mapping": mapping, "model_id": (model or "crow_amsaa"), "unit": canonical_unit(unit)}
+    options = {k: v for k, v in (("baseline", baseline), ("m", m)) if v not in (None, "")}
+    if options:
+        spec["options"] = options
+    if windows:
+        try:
+            parsed = json.loads(windows) if windows.strip().startswith("{") else windows
+        except ValueError:
+            raise FitError("Windows must be JSON ({system: [[start, end], ...]}) or one 'system, start, end' "
+                           "a line.")
+        spec["windows"] = recurrent_models.parse_windows(parsed)
+    return spec
 
 
 def _model_summary(doc, ctx: AccessCtx) -> dict:
@@ -70,7 +89,11 @@ def _resolve_dataset(session, ctx: AccessCtx, dataset_id, file):
 
 @router.get("/recurrent/options")
 def recurrent_options(ctx: AccessCtx = Depends(get_access)) -> dict:
-    return {"models": [{"id": k, "name": v["name"]} for k, v in recurrent_fit.MODELS.items()]}
+    """The models, by family (#65): ``nhpp`` (minimal repair), ``regression``
+    (covariates) and ``renewal`` (imperfect repair), with the baselines the
+    regression and ARI models take."""
+    return {"models": recurrent_fit.all_models(),
+            "baselines": [{"id": k, "name": v} for k, v in recurrent_models.BASELINE_NAMES.items()]}
 
 
 @router.post("/recurrent/fit")
@@ -85,6 +108,12 @@ def fit_preview(
     tr: str | None = Form(default=None),
     t: str | None = Form(default=None),
     mode: str | None = Form(default=None),
+    z: list[str] | None = Form(default=None),
+    ws: str | None = Form(default=None),
+    we: str | None = Form(default=None),
+    windows: str | None = Form(default=None),
+    baseline: str | None = Form(default=None),
+    m: str | None = Form(default=None),
     model: str = Form(default="crow_amsaa"),
     unit: str | None = Form(default=None),
     session=Depends(get_session),
@@ -93,9 +122,10 @@ def fit_preview(
     """Fit a recurrent model for preview (only the uploaded dataset is stored)."""
     try:
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
-        spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode)
+        spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode, z=z, ws=ws, we=we,
+                               windows=windows, baseline=baseline, m=m)
         df = datasets_service.load_dataframe(dataset)
-        payload, _ = recurrent_fit.fit(df, spec["mapping"], spec["model_id"], spec["unit"])
+        payload, _ = recurrent_fit.fit_spec(df, spec)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except HTTPException:
@@ -119,6 +149,12 @@ def save_model(
     tr: str | None = Form(default=None),
     t: str | None = Form(default=None),
     mode: str | None = Form(default=None),
+    z: list[str] | None = Form(default=None),
+    ws: str | None = Form(default=None),
+    we: str | None = Form(default=None),
+    windows: str | None = Form(default=None),
+    baseline: str | None = Form(default=None),
+    m: str | None = Form(default=None),
     model: str = Form(default="crow_amsaa"),
     unit: str | None = Form(default=None),
     session=Depends(get_session),
@@ -130,7 +166,8 @@ def save_model(
         return JSONResponse(status_code=status, content=payload)
     try:
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
-        spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode)
+        spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode, z=z, ws=ws, we=we,
+                               windows=windows, baseline=baseline, m=m)
         doc = recurrent_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
     except FitError as exc:
