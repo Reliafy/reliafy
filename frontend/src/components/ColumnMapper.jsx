@@ -3,6 +3,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { guessUnit } from "../datasetGuess.js";
 import { guessStatus, setStatusMeaning, statusMeaning, statusValues } from "../lifeData.js";
+import { TVC_STATUS, TvcTimeFields } from "./TvcColumns.jsx";
 
 // Column mapping in plain words (#291). Encodes SurPyval's input rules:
 //   - the time column (x) is mutually exclusive with the interval pair xl/xr,
@@ -12,6 +13,9 @@ import { guessStatus, setStatusMeaning, statusMeaning, statusValues } from "../l
 //     sent as they are or flipped (``c_invert``), words as a map (``c_map``)
 // Interval and truncation fields sit under Advanced. ``facts`` (see
 // lifeData.columnFacts) gives each column's few values, for the status map.
+// ``timeVarying`` ("intervals" | "timeline", #60): covariates change over
+// time, so an item column and each row's times take the time column's place,
+// with no count or truncation.
 const COMMON_UNITS = [
   "Hours", "Days", "Weeks", "Months", "Years",
   "Cycles", "Kilometres", "Miles", "Operations", "Rounds",
@@ -30,7 +34,7 @@ const MEANINGS = [
 ];
 const FIXED = { "-1": "Found failed (left-censored)", 2: "Interval" };
 
-export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitChange, facts = {} }) {
+export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitChange, facts = {}, timeVarying = null }) {
   const usingInterval = !!mapping.xl || !!mapping.xr;
   const options = (none) => [{ value: "", label: none }, ...columns];
 
@@ -62,34 +66,40 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
     </label>
   );
 
+  const unitField = onUnitChange && (
+    <label className="ds-field ds-unit">
+      <span className="ds-label">Unit</span>
+      <input
+        className="units-input"
+        type="text"
+        list="x-units"
+        value={unit || ""}
+        placeholder="e.g. Hours"
+        onChange={(e) => onUnitChange(e.target.value)}
+      />
+      <datalist id="x-units">
+        {COMMON_UNITS.map((u) => (
+          <option value={u} key={u} />
+        ))}
+      </datalist>
+    </label>
+  );
+
   return (
     <div className="ds-mapper">
+      {timeVarying ? (
+        <TvcTimeFields layout={timeVarying} field={field} unit={unitField} />
+      ) : (
       <div className="ds-row">
         {field("x", "Time to failure or removal", usingInterval ? "— using earliest / latest times —" : "— pick a column —")}
-        {onUnitChange && (
-          <label className="ds-field ds-unit">
-            <span className="ds-label">Unit</span>
-            <input
-              className="units-input"
-              type="text"
-              list="x-units"
-              value={unit || ""}
-              placeholder="e.g. Hours"
-              onChange={(e) => onUnitChange(e.target.value)}
-            />
-            <datalist id="x-units">
-              {COMMON_UNITS.map((u) => (
-                <option value={u} key={u} />
-              ))}
-            </datalist>
-          </label>
-        )}
+        {unitField}
       </div>
+      )}
 
       <div className="ds-row">
         {/* The status column, with what each of its values means beneath it. */}
         <div className="ds-field">
-          {field("c", "Failed or still running?", "— none: every row failed —")}
+          {field("c", TVC_STATUS[timeVarying] || "Failed or still running?", "— none: every row failed —")}
           {values.length > 0 && (
             <div className="ds-status" role="group" aria-label={`What each value in ${mapping.c} means`}>
               {values.map((v) => {
@@ -117,14 +127,16 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
             </div>
           )}
         </div>
-        {field("n", "Count (optional)", "— none: one unit per row —")}
+        {!timeVarying && field("n", "Count (optional)", "— none: one unit per row —")}
       </div>
 
+      {!timeVarying && (
       <ResultDetails summary="Advanced: interval and truncated data" open={usingInterval || !!mapping.tl || !!mapping.tr}>
         <div className="ds-row ds-row-4">
           {ADVANCED.map((a) => field(a.field, a.label, "— none —", a.hint))}
         </div>
       </ResultDetails>
+      )}
     </div>
   );
 }
