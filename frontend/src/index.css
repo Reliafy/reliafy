@@ -8281,6 +8281,7 @@ input.rbd-rename {
 .sif-card-cta:hover { text-decoration: underline; }
 @media (max-width: 640px) {
   .sif-card { flex-wrap: wrap; align-items: flex-start; }
+  .sif-card-body { flex-basis: calc(100% - 56px); }
   .sif-card-cta { min-height: 44px; display: inline-flex; align-items: center; margin-left: 56px; }
 }
 /* "Where the PFDavg comes from" (#298): a quiet bar under each share. */
@@ -8291,10 +8292,12 @@ input.rbd-rename {
   display: inline-block; vertical-align: middle; width: 48px; height: 6px; margin-right: 8px; border-radius: 3px;
   background: linear-gradient(90deg, var(--acc) calc(var(--share) * 100%), var(--line2) 0);
 }
+.rbd-avail-imp-scroll .calc-table.rbd-sif-shares-table { min-width: 0; }
 .rbd-avail-imp-scroll .rbd-sif-shares-table .calc-row-label { white-space: normal; }
 @media (max-width: 640px) {
   .rbd-sif-bar { display: none; }
   .rbd-avail-imp-scroll .rbd-sif-shares-table th { white-space: normal; }
+  .rbd-sif-shares-table th, .rbd-sif-shares-table td { padding: 0.4rem 0.3rem; }
   /* "+ Add block" says "+ Add" so the toolbar keeps one row. */
   .rbd-add-word { display: none; }
 }
