@@ -104,3 +104,29 @@ def test_agents_get_the_shares_from_analyze_rbd(env):
     shares = out["safety"]["shares"]
     assert {r["id"] for r in shares["elements"]} == set(RATES)
     assert shares["common_cause"][0]["failure_share"] > 0
+
+
+def test_a_named_2oo3_vote_exports_and_runs(tmp_path):
+    """What the builder now writes — a named MooN voting node, every block
+    repaired instantly, models from a mean — still makes a "Download as
+    Python" script that runs and gives the app's PFDavg."""
+    from datetime import datetime, timezone
+
+    from backend.services import rbd_block_inputs, rbd_export
+    from backend.tests.test_rbd_export import _run
+
+    rate = rbd_block_inputs.from_mean("exponential", 1 / 3e-7)["params"]
+    tx = [_node(f"t{i}", model={"source": "params", "distribution": "Exponential", "distribution_id": "exponential",
+                                "params": rate}, instant_repair=True, inspection={"interval": 8760})
+          for i in (1, 2, 3)]
+    vote = {"id": "v", "type": "knode", "position": {"x": 0, "y": 0}, "data": {"label": "Transmitter vote", "n": 2, "k": 3}}
+    valve = _node("valve", model=_exp(1e-6), instant_repair=True, inspection={"interval": 8760})
+    edges = [("input", "t1"), ("input", "t2"), ("input", "t3"), ("t1", "v"), ("t2", "v"), ("t3", "v"),
+             ("v", "valve"), ("valve", "output")]
+    g = {"repairable": True, "unit": "hours", "nodes": [*_io(), *tx, vote, valve],
+         "edges": [{"source": a, "target": b} for a, b in edges], "safety_function": True, "target_sil": 2}
+    app = ra.analyze_availability(g, simulate=False)
+    assert {r["id"] for r in app["safety"]["shares"]["elements"]} == {"t1", "t2", "t3", "valve"}
+    code = rbd_export.to_python(g, "SIF 2oo3", exported_at=datetime(2026, 10, 10, tzinfo=timezone.utc))
+    res, _ = _run(code, tmp_path, n_sims="60")
+    assert res["safety"]["pfd_avg"] == pytest.approx(app["safety"]["pfd_avg"], rel=1e-12)
