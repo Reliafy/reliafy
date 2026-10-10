@@ -40,6 +40,8 @@
 .rbd-mission-chart { margin-top: 12px; }
 .rbd-mission-error { color: var(--danger); font-size: var(--fs-13); margin: 0 0 8px; }
 .rbd-mission-table td, .rbd-mission-table th { white-space: nowrap; }
+.rbd-mission-table thead th:first-child { text-align: left; }
+.rbd-mission-table .calc-row-label { flex-direction: column; align-items: flex-start; gap: 2px; }
 .rbd-mission-needs { display: block; color: var(--muted); font-size: var(--fs-12); font-weight: 400; white-space: normal; }
 
 /* --- The network panel ---------------------------------------------------- */
