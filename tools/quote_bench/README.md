@@ -65,3 +65,22 @@ The pilot's 60 s cap could not interrupt the engine's compiled loops (81 runs
 finished later than 60 s; only 4 were stopped). The data is still sound, as
 the late runs are observed times. In production, the time budget stops runs
 between batches, and those runs are the censored ones.
+
+## The quote engine's coefficients
+
+The web app quotes from the minimal-feature log-normal AFT
+(`backend/services/runtime_quote.json`, read by
+`backend/services/runtime_quote.py`). `coefficients.py` refits it from timed
+runs and prints (or, with `--write`, saves) that JSON:
+
+```
+python -m tools.quote_bench.coefficients tools/quote_bench/data/pilot-dev-laptop.jsonl
+```
+
+It censors only the runs the alarm stopped (4 in the pilot), and keeps the
+runs that finished after the cap as the observed times they are. That gives
+ln T = −6.934 + 0.580 ln n + 0.571 ln(1 + e) + 0.245 ln b, σ = 0.678 (n
+replications, e expected block failures per replication, b blocks; T in
+seconds). `analyse.py` censors those late runs at the cap as well, so its
+report's numbers differ slightly. Each machine the app simulates on has a
+factor on top, refitted from production runs (`backend/scripts/refit_runtime_factor.py`).
