@@ -155,10 +155,11 @@ function NowCard({ r, unit }) {
   );
 }
 
-// Imperfect repair: the systems due soonest, by the median time to their
-// next failure from where their history leaves them.
+// Imperfect repair: the two systems due soonest (the rest on the Next failure
+// tab), by the median time to their next failure from where their history
+// leaves them.
 function NextCard({ nf, unit }) {
-  const rows = nf.units.slice(0, 3);
+  const rows = nf.units.slice(0, 2);
   return (
     <div className="gof-card life-card">
       <div className="gofh life-card-head" title={unit ? `In ${unit} from now` : undefined}>
