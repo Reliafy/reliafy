@@ -37,7 +37,7 @@ READ_TOOLS = {
     "upgrade_link", "system_history", "list_share_links", "get_account", "get_dataset", "inspect_upload",
     "compare_groups", "cheapest_design", "fit_per_demand", "rbd_sensitivity", "rbd_fault_tree",
     "optimise_maintenance_intervals", "growth_projection", "next_failure", "alt_use_level",
-    "check_life_requirement",
+    "check_life_requirement", "list_rbd_runs", "get_rbd_run", "quote_rbd_simulation",
 }
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
