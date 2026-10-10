@@ -13,6 +13,7 @@ import ColumnMapper from "./ColumnMapper.jsx";
 import Covariates from "./Covariates.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
+import CompetingRisksStep, { CR_OPTIONS } from "./CompetingRisksStep.jsx";
 import ResultView from "./ResultView.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import {
@@ -142,10 +143,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // Whether the data implies a proportional-hazards model.
   const hasCovariates = advanced ? formula.trim() !== "" : covariates.length > 0;
 
-  // Model options filtered by the data that was entered.
+  // Model options filtered by the data that was entered. A failure-mode
+  // column (#177) fits the modes as competing risks.
+  const byMode = !!mapping.e;
   const options = useMemo(
-    () => distributions.filter((d) => !!d.covariates === hasCovariates),
-    [distributions, hasCovariates]
+    () => (byMode ? CR_OPTIONS : distributions).filter((d) => !!d.covariates === hasCovariates),
+    [distributions, hasCovariates, byMode]
   );
 
   // Keep the selected model valid for the current filtered list.
@@ -158,7 +161,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const distName =
     distribution === "best"
       ? "best model"
-      : distributions.find((d) => d.id === distribution)?.name || "model";
+      : mapping.e
+      ? "by failure mode"
+      : [...distributions, ...CR_OPTIONS].find((d) => d.id === distribution)?.name || "model";
 
   // New columns in: guess the mapping and unit, clear covariates. Returns
   // them (the guided first run fits straight away).
@@ -323,7 +328,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         unit,
         ...(datasetId ? { datasetId } : {}),
         ...(hasCovariates ? (advanced ? { formula } : { covariates, covariateUnits: covUnits }) : {}),
-        ...(hasCovariates ? {} : { fitOptions: fitOpts }),
+        ...(hasCovariates || byMode ? {} : { fitOptions: fitOpts }),
       };
       const res = await fitModel(distribution, file, mapping, opts);
       setSplit(await dataSplit(file, mapping).catch(() => null));
@@ -375,7 +380,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         datasetId: datasetId || undefined,
         ...(hasCovariates
           ? (advanced ? { formula } : { covariates, covariateUnits: covUnits })
-          : { fitOptions: fitOpts }),
+          : byMode ? {} : { fitOptions: fitOpts }),
       });
       onSaved?.(saved);
     } catch (err) {
@@ -619,6 +624,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 unit={unit}
                 onUnitChange={setUnit}
                 facts={facts}
+                failureMode
               />
               <ResultDetails
                 summary="Advanced (regression): covariates"
@@ -657,7 +663,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               })}
               {!mapping.c && (
                 <span className="ds-summary-note">
-                  {simple ? " · every value is a time to failure" : " · no status column, so every row is a failure"}
+                  {simple ? " · every value is a time to failure"
+                    : mapping.e ? " · a blank failure mode is a unit still running"
+                    : " · no status column, so every row is a failure"}
                 </span>
               )}
             </p>
@@ -673,10 +681,24 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       {step === 3 && (
         <div className="fit-step">
           <p className="muted-line">
-            {hasCovariates
+            {byMode
+              ? hasCovariates
+                ? `Failure modes from “${mapping.e}”, with covariates — choose a regression by mode.`
+                : `Failure modes from “${mapping.e}” — they are fitted as competing risks.`
+              : hasCovariates
               ? "Covariates detected — choose a regression model (proportional-hazards or accelerated-failure-time)."
               : "Choose a parametric distribution or a non-parametric estimator."}
           </p>
+          {byMode ? (
+            <CompetingRisksStep
+              options={options}
+              value={distribution}
+              onChange={setDistribution}
+              columns={csv?.columns || []}
+              mapping={mapping}
+              onMapping={setMapping}
+            />
+          ) : (
           <DistributionStep
             options={options}
             value={distribution}
@@ -689,6 +711,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             fitMethods={fitMethods}
             mapping={mapping}
           />
+          )}
         </div>
       )}
 

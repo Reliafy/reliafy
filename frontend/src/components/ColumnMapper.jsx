@@ -30,7 +30,9 @@ const MEANINGS = [
 ];
 const FIXED = { "-1": "Found failed (left-censored)", 2: "Interval" };
 
-export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitChange, facts = {} }) {
+// ``failureMode`` offers the failure-mode column (#177: the fit wizard only).
+export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitChange, facts = {},
+                                      failureMode = false }) {
   const usingInterval = !!mapping.xl || !!mapping.xr;
   const options = (none) => [{ value: "", label: none }, ...columns];
 
@@ -118,6 +120,9 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
           )}
         </div>
         {field("n", "Count (optional)", "— none: one unit per row —")}
+        {/* #177: a failure-mode column fits the modes as competing risks. */}
+        {failureMode && field("e", "Failure mode (optional)", "— none: all modes together —",
+                              mapping.e ? "A blank mode is a unit still running." : null)}
       </div>
 
       <ResultDetails summary="Advanced: interval and truncated data" open={usingInterval || !!mapping.tl || !!mapping.tr}>

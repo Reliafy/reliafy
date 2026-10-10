@@ -3,7 +3,11 @@
 // with a mapping, in plain words. Pure, so `node --test src/` covers it.
 import { guessLifeColumns, guessStatusMeaning, isNumeric } from "./datasetGuess.js";
 
-export const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", c_invert: false, c_map: null };
+// ``e`` names each failure's mode and ``g`` the groups to compare (#177):
+// competing risks only.
+export const EMPTY_MAPPING = {
+  x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", e: "", g: "", c_invert: false, c_map: null,
+};
 
 // Column facts from /api/columns or a dataset's detail: name → { dtype,
 // blanks, values ({value: rows} when there are few, else null), nUnique }.
@@ -108,6 +112,11 @@ export function isSimplePaste(columns) {
 export function statusSummary(mapping, facts, nRows) {
   if (!mapping.x || mapping.xl || mapping.xr || mapping.n) return null;
   const rows = nRows - (facts[mapping.x]?.blanks || 0);
+  if (!mapping.c && mapping.e) {
+    // No status column beside a failure-mode one: a blank mode is still running.
+    const running = facts[mapping.e]?.blanks || 0;
+    return { failed: rows - running, running, left: 0, interval: 0 };
+  }
   if (!mapping.c) return { failed: rows, running: 0, left: 0, interval: 0 };
   const values = statusValues(facts[mapping.c]?.values);
   if (!facts[mapping.c]?.values) return null;
@@ -167,6 +176,9 @@ export function dataStepProblems(mapping, facts, nRows) {
         out.push(`Say whether ${names}${unknown.length > 3 ? " and the rest" : ""} ${unknown.length === 1 ? "means" : "mean"} failed or still running.`);
       }
     }
+  }
+  if (mapping.e && (mapping.xl || mapping.xr || mapping.tl || mapping.tr)) {
+    out.push("Failure modes take one time per unit: clear the interval and truncation columns, or the failure mode.");
   }
   numericCol(mapping.n, "counts");
   numericCol(mapping.tl, "times");
