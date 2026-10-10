@@ -83,7 +83,7 @@ from surpyval import (
 from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
-from backend import life_bounds, param_intervals
+from backend import life_bounds, np_life, param_intervals
 from backend.units import canonical_unit, unit_in_text
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
@@ -1292,8 +1292,9 @@ def fit(
     if result.get("mixture_summary") and result["unit"]:
         result["mixture_summary"] = (mixture_summary(result, unit_in_text(result["unit"]))
                                      or result["mixture_summary"])
-    if result.get("kind") == "distribution":
-        # B-lives and MTTF with their 90% lower bounds (#288).
+    if result.get("kind") in ("distribution", "nonparametric"):
+        # B-lives and MTTF with their 90% lower bounds (#288); a
+        # non-parametric estimate's mean life is restricted (#85).
         entry = _MODEL_STORE.get((result.get("functions") or {}).get("model_id"))
         life = life_bounds.life_for(entry and entry.get("model"), bool(result.get("no_finite_maximum")))
         if life:
@@ -2344,6 +2345,8 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
             "R": [float(v) for v in R[finite]],
             "cb_lower": [None if not np.isfinite(v) else float(v) for v in lower[finite]],
             "cb_upper": [None if not np.isfinite(v) else float(v) for v in upper[finite]],
+            # #85: simultaneous 95% bands, for the plot's whole-curve toggle.
+            "bands": np_life.bands(model),
         },
         "functions": {"meta": FUNCTIONS, "curves": curves, "model_id": cache_id},
         "gof": [],
