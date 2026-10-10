@@ -194,3 +194,69 @@ A logistic baseline — symmetric like Normal but heavier in the tails. Covariat
 ## gumbel_ah
 
 A smallest-extreme-value baseline — the weakest-link case, and the log-scale relative of the Weibull. Covariates act by adding to the hazard — see **additive hazards** above for how to read the coefficients (additive effect).
+
+## additive_hazards
+
+**Semi-parametric additive hazards** (Lin and Ying): covariates add to an
+unspecified baseline hazard, `h(t | z) = h₀(t) + β·z`, the additive analogue of
+`cox_ph`.
+
+Each coefficient is the excess failure rate per unit of its covariate, with a
+95% interval and p-value. There is no likelihood, so no AIC — judge it by how
+well it ranks the units (Validation). Right-censored data only. **Watch out:**
+nothing keeps the total hazard positive; Reliafy warns when the reliability
+would rise above 1.
+
+## proportional_odds
+
+**Semi-parametric proportional odds:** covariates multiply the odds of failure
+over an unspecified baseline, the odds analogue of `cox_ph`. `exp(β)` is an
+**odds ratio**, with intervals from the profile likelihood.
+
+Use it when a covariate's effect fades with age. Right-censored data, with
+delayed entry allowed.
+
+## buckley_james
+
+**Semi-parametric AFT** (Buckley and James): covariates scale log time, with
+the error distribution left unspecified — the time-scale analogue of `cox_ph`.
+`exp(β)` is a **time ratio**.
+
+It has no standard errors in closed form, so the 95% intervals come from 200
+bootstrap resamples (with a fixed seed, so they never change). No likelihood, so
+no AIC; no hazard or density either, only the survival curve. Right-censored
+data only.
+
+## weibull_frailty
+
+**Weibull PH with a shared frailty:** every unit of a group — a site, a batch, a
+customer — shares a random multiplier on its hazard, for what makes some groups
+fail sooner that the covariates don't record. Choose the group column as
+**Group by**.
+
+Alongside the coefficients (hazard ratios, conditional on the frailty) you get
+`θ`, the spread between groups, with a 95% profile-likelihood interval: one
+that reaches 0 means the groups may not differ at all. Each group's frailty is
+listed too — above 1 fails sooner than average. Right-censored data only.
+
+## exponential_frailty
+
+An exponential baseline with a shared frailty over the Group by column — see
+`weibull_frailty` for how to read `θ` and each group's frailty.
+
+## lognormal_frailty
+
+A lognormal baseline with a shared frailty over the Group by column — see
+`weibull_frailty` for how to read `θ` and each group's frailty.
+
+## gamma_frailty
+
+A gamma baseline (shape and rate) with a shared gamma frailty over the Group by
+column — see `weibull_frailty` for how to read `θ` and each group's frailty.
+
+## cox_frailty
+
+**Cox PH with a shared frailty:** the semi-parametric version, with no baseline
+shape assumed. `θ`'s 95% interval here is a Wald interval. As for `cox_ph`, it
+gives covariate effects and the spread between groups rather than absolute
+lives.

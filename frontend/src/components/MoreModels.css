@@ -1,0 +1,14 @@
+/* Result panels for the models of #179 / #63 (MoreModelPanels.jsx). */
+
+/* The coefficient table fills the left, beside the group effect. */
+.mm-coef-panel { align-items: flex-start; }
+.mm-coef-main { flex: 1; min-width: 0; }
+.mm-table-card .rs-table-wrap { padding: 2px 16px 6px; max-width: none; }
+.mm-table-card th { white-space: nowrap; }
+.detail-panel .mm-note { margin: 8px 0 0; }
+.mm-part { color: var(--muted); }
+/* Stacked (as .detail-panel stacks at 760 px): full width, so the table
+   scrolls inside its card rather than widening the page. */
+@media (max-width: 760px) {
+  .mm-coef-panel { align-items: stretch; }
+}

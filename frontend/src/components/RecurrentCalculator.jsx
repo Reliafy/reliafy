@@ -40,7 +40,11 @@ export default function RecurrentCalculator({ r, name = null }) {
   const byName = Object.fromEntries((r.params || []).map((p) => [p.name, p.value]));
   const alpha = byName.alpha;
   const beta = byName.beta ?? r.beta;
-  const analytic = alpha > 0 && beta != null; // power-law: N(t) = (t/α)^β
+  // Crow-AMSAA's power law, N(t) = (t/α)^β, in closed form; every other
+  // model (Duane's own parameters, covariates, imperfect repair) off its
+  // fitted MCF curve.
+  const analytic = (r.model?.id || "crow_amsaa") === "crow_amsaa" && (r.family || "nhpp") === "nhpp" &&
+    alpha > 0 && beta != null;
 
   const gridMax = (fitted.x?.length ? fitted.x[fitted.x.length - 1] : 0) || 1;
   const [t, setT] = useState(Number((gridMax / 2).toPrecision(4)) || 0);
@@ -133,7 +137,8 @@ export default function RecurrentCalculator({ r, name = null }) {
               </label>
               {!analytic && (
                 <p className="rs-note">
-                  Interpolated from the fitted MCF — accurate within the fitted range.
+                  Interpolated from the fitted MCF{r.family === "regression" ? " of the fleet's average system"
+                    : r.mcf?.fitted?.simulated ? " (simulated)" : ""}: accurate within the fitted range.
                 </p>
               )}
             </div>

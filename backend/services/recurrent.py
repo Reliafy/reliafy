@@ -44,12 +44,7 @@ def _list_query(owner_id, shared=frozenset()):
 def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> RecurrentModelDoc:
     """Fit and persist a recurrent model. Raises ``FitError`` on a bad fit."""
     df = datasets_service.load_dataframe(dataset)
-    payload, cache_id = recurrent_fit.fit(
-        df,
-        spec.get("mapping", {}),
-        model_id=spec.get("model_id", "crow_amsaa"),
-        unit=spec.get("unit", ""),
-    )
+    payload, cache_id = recurrent_fit.fit_spec(df, spec)
     doc = RecurrentModelDoc(
         id=uuid.uuid4().hex,
         name=name,
@@ -207,18 +202,18 @@ def ensure_diagnostics(db, doc: RecurrentModelDoc) -> RecurrentModelDoc:
     tests and the goodness-of-fit test, and store them with the model. Saved
     results the fit doesn't produce (a growth projection) are kept. The doc
     comes back unchanged for a model built from parameters, one already
-    current, or one whose dataset is gone."""
+    current, or one whose dataset is gone. A model with a cause column saved
+    before #65 is re-fitted once the same way, to add the MCF of each cause."""
     spec = doc.spec or {}
     results = doc.results or {}
-    if spec.get("params_only") or "trend_tests" in results or not doc.dataset_id:
+    stale_marks = bool((spec.get("mapping") or {}).get("mode")) and "by_cause" not in results
+    if spec.get("params_only") or ("trend_tests" in results and not stale_marks) or not doc.dataset_id:
         return doc
     try:
         dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
         if dataset is None:
             return doc
-        payload, cache_id = recurrent_fit.fit(
-            datasets_service.load_dataframe(dataset), spec.get("mapping", {}),
-            model_id=spec.get("model_id", "crow_amsaa"), unit=spec.get("unit", ""))
+        payload, cache_id = recurrent_fit.fit_spec(datasets_service.load_dataframe(dataset), spec)
     except Exception:  # noqa: BLE001 - the data no longer fits: leave the model as saved
         return doc
     fresh = {**results, **payload}
@@ -267,7 +262,7 @@ def projection_view(db, doc: RecurrentModelDoc, mode_column: str | None = None) 
     except FitError as exc:
         return {**out, "reason": str(exc)}
     mapping = _projection_mapping(doc, mode_column)
-    used = {mapping.get(k) for k in ("i", "x", "c", "n", "tl", "tr", "t")}
+    used = {mapping.get(k) for k in ("i", "x", "c", "n", "tl", "tr", "t", "ws", "we")} | set(mapping.get("z") or [])
     out["columns"] = [str(c) for c in df.columns if c not in used]
     if not mapping.get("mode"):
         return {**out, "available": True, "reason": "Choose the column that holds each failure's mode."}
@@ -322,12 +317,7 @@ def _refit(db, doc: RecurrentModelDoc):
     if dataset is None:
         raise ModelNotFound(doc.id)
     df = datasets_service.load_dataframe(dataset)
-    spec = doc.spec or {}
-    _, cache_id = recurrent_fit.fit(
-        df, spec.get("mapping", {}),
-        model_id=spec.get("model_id", "crow_amsaa"),
-        unit=spec.get("unit", ""),
-        gof_test=False,  # only the live model is wanted
-    )
+    # Only the live model is wanted: no goodness-of-fit bootstrap.
+    _, cache_id = recurrent_fit.fit_spec(df, doc.spec or {}, gof_test=False)
     _remember_live(doc.id, cache_id)
     return recurrent_fit.get_live(cache_id)

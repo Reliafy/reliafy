@@ -4,6 +4,8 @@ import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatWithUnit } from "../format.js";
 import { unitInText } from "./unitText.js";
 import { ACCENT, COLORWAY, DANGER, INK, SUCCESS, SURFACE, fitLine, optimumMarker, sentence } from "../plotTheme.js";
+import { bLabel } from "../requirement.js";
+import "./Requirement.css";
 
 // Series colours by allowed failures: the theme's order, never cycled (there
 // are at most five columns).
@@ -118,6 +120,8 @@ function planNote(result, unit) {
   const conf = pctIn(result.confidence);
   const target = result.method === "mtbf"
     ? `MTBF ≥ ${formatWithUnit(result.mtbf, unit)}`
+    : result.b_life != null
+    ? `${bLabel(result.b_life)} ≥ ${formatWithUnit(result.mission_time, unit)}`
     : result.mission_time != null
     ? `≥ ${pctIn(result.reliability)} reliability over ${formatWithUnit(result.mission_time, unit)}`
     : `≥ ${pctIn(result.reliability)} mission reliability`;
@@ -132,8 +136,14 @@ function planNote(result, unit) {
     }
     risks += ".";
   }
+  // #295: where β came from, and which end of its interval.
+  const from = result.shape_model
+    ? result.shape_sensitivity?.uses === "lower"
+      ? ` (the lower bound of β from ${result.shape_model})`
+      : ` (from ${result.shape_model})`
+    : "";
   const shape = result.method !== "mtbf" && result.test_multiple !== 1 && result.shape != null
-    ? `, assuming a Weibull shape of ${formatNumber(result.shape)}`
+    ? `, assuming a Weibull shape of ${formatNumber(result.shape)}${from}`
     : "";
   return `Shows ${target} at ${conf} confidence${shape}.${risks}`;
 }
@@ -229,8 +239,10 @@ export default function DemoTestResult({ result, actions = null }) {
     { label: "Failures allowed", value: String(result.failures) },
   ].filter(Boolean);
 
-  // The risks are in the note line; the assumptions keep the rest.
-  const assumptions = (result.assumptions || []).filter((a) => !/the (consumer|producer)['’]s risk[,)]/.test(a));
+  // The risks (and β's warning) are in the note line; the assumptions keep the rest.
+  const shapeWarning = result.shape_sensitivity?.warning || null;
+  const assumptions = (result.assumptions || []).filter(
+    (a) => !/the (consumer|producer)['’]s risk[,)]/.test(a) && a !== shapeWarning);
   const details = [
     !isMtbf && { label: "Reliability shown", value: pct(result.demonstrated_reliability, 2) },
     result.units && result.total_test_time != null && {
@@ -241,8 +253,9 @@ export default function DemoTestResult({ result, actions = null }) {
 
   return (
     <>
-      <ResultSummary tone="neutral" sentence={planSentence(result, unit)} stats={stats}>
+      <ResultSummary tone={shapeWarning ? "caveat" : "neutral"} sentence={planSentence(result, unit)} stats={stats}>
         {planNote(result, unit)}
+        {shapeWarning && <span className="demo-shape-warn">{shapeWarning}</span>}
       </ResultSummary>
       {actions && <div className="rs-actions">{actions}</div>}
 

@@ -467,7 +467,10 @@ def test_what_reliafy_cant_hold_is_listed_and_left_without_a_model():
     [d] = _import(rbd.to_json())
     notes = " ".join(d.warnings)
     assert "capacities" in notes and "MGL" in notes
-    assert "“c” was imported without a life model — its life model is a Uniform distribution" in notes
+    # A Uniform is a Reliafy distribution since #72: it comes across as one.
+    assert "“c” was imported without" not in notes
+    c = next(n for n in d.graph["nodes"] if n["id"] == "c" or n["data"].get("label") == "c")
+    assert c["data"]["model"]["distribution_id"] == "uniform"
     assert "“deg” was imported without a life model — its model is a degrading" in notes
     assert "“two” was imported without a life model — its standby group runs more than one unit" in notes
     # k on the output: a vote node in front of it.

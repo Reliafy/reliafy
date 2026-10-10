@@ -10,9 +10,10 @@ import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
 
-// A saved recurrent-event model — mirrors the life-data model page: title and
-// saved meta, then its MCF / Crow-AMSAA result view, which leads with the
-// growth verdict.
+// A saved recurrent-event model, laid out like the life model page (#65): title
+// and saved meta, then one card of tabs: the MCF plot with its panel, the
+// calculator, the model's own views, the overhaul interval and the growth
+// projection.
 export default function RecurrentModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -31,6 +32,18 @@ export default function RecurrentModelPage() {
   };
 
   const r = model?.results || {};
+  // The saved model's own tools, as tabs after its results (#65): the overhaul
+  // interval needs a minimal-repair model; a growth projection needs data.
+  const tools = model ? [
+    (r.family || "nhpp") === "nhpp" && {
+      id: "overhaul", label: "Overhaul",
+      render: () => <RecurrentOverhaul modelId={model.id} unit={r.unit} name={model.name} />,
+    },
+    !model.spec?.params_only && {
+      id: "projection", label: "Growth projection",
+      render: () => <RecurrentProjection modelId={model.id} unit={r.unit} />,
+    },
+  ].filter(Boolean) : [];
 
   return (
     <div className="app model-page">
@@ -59,17 +72,7 @@ export default function RecurrentModelPage() {
       {error && <div className="card error">{error}</div>}
       {model && (
         <div className="card">
-          <RecurrentResultView results={model.results} name={model.name} />
-        </div>
-      )}
-      {model && (
-        <div className="card">
-          <RecurrentOverhaul modelId={model.id} unit={r.unit} name={model.name} />
-        </div>
-      )}
-      {model && !model.spec?.params_only && (
-        <div className="card">
-          <RecurrentProjection modelId={model.id} unit={r.unit} />
+          <RecurrentResultView results={model.results} name={model.name} extraTabs={tools} />
         </div>
       )}
     </div>

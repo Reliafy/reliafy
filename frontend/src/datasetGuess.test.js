@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   censorInverted, guessSplit, guessCompareColumns, dtypeLabel, nameSaysDistribution, parsePreview, fileStem,
+  guessLifeColumns, guessStatusMeaning, guessUnit,
 } from "./datasetGuess.js";
 
 const PUMP = [
@@ -95,4 +96,65 @@ test("the preview reads a header, or names the columns when there is none", () =
   assert.equal(n.nRows, 2);
   assert.deepEqual(n.preview[0], ["1240", "1"]);
   assert.equal(parsePreview("hours"), null);
+});
+
+// ---- Life data (#291) ------------------------------------------------------
+
+test("the time is the numeric column named like hours, never a text id", () => {
+  const cols = [
+    { name: "Pump ID", dtype: "str", values: null },
+    { name: "Operating Hours", dtype: "int64", values: null },
+    { name: "Status", dtype: "str", values: { Failed: 15, Running: 6 } },
+  ];
+  assert.deepEqual(guessLifeColumns(cols), { x: "Operating Hours", c: "Status", n: "", unit: "Hours" });
+  // A numeric id is skipped; with no time-like name the first other number wins.
+  const ids = [
+    { name: "asset_no", dtype: "int64", values: null },
+    { name: "reading", dtype: "float64", values: null },
+  ];
+  assert.equal(guessLifeColumns(ids).x, "reading");
+  for (const name of ["age_days", "Cycles to failure", "km", "TTF", "OperatingHours", "time"]) {
+    const g = guessLifeColumns([{ name: "x1", dtype: "float64", values: null }, { name, dtype: "int64", values: null }]);
+    assert.equal(g.x, name, name);
+  }
+  // No numeric column: nothing guessed (the Data step asks).
+  assert.equal(guessLifeColumns([{ name: "a", dtype: "str", values: null }]).x, "");
+});
+
+test("the status column is named like one and its values read as failed / running", () => {
+  const base = [{ name: "hours", dtype: "int64", values: null }];
+  const pick = (col) => guessLifeColumns([...base, col]).c;
+  assert.equal(pick({ name: "suspended", dtype: "int64", values: { 0: 3, 1: 2 } }), "suspended");
+  assert.equal(pick({ name: "Event", dtype: "int64", values: { 0: 3, 1: 2 } }), "Event");
+  assert.equal(pick({ name: "Failed?", dtype: "str", values: { yes: 3, no: 2 } }), "Failed?");
+  assert.equal(pick({ name: "c", dtype: "int64", values: { 0: 3, 1: 2 } }), "c");
+  // A failure mode isn't a status, nor a status-named column of other numbers.
+  assert.equal(pick({ name: "failure_mode", dtype: "str", values: { bearing: 3, seal: 2 } }), "");
+  assert.equal(pick({ name: "status", dtype: "int64", values: { 3: 1, 7: 1 } }), "");
+  assert.equal(pick({ name: "status", dtype: "str", values: null }), "");
+  // A count column.
+  assert.equal(guessLifeColumns([...base, { name: "Qty", dtype: "int64", values: null }]).n, "Qty");
+});
+
+test("status words: Failed / Running, F / S, yes / no by the column's name", () => {
+  for (const v of ["Failed", "failure", "F", "broken", "U/S"]) assert.equal(guessStatusMeaning(v, "Status"), 0, v);
+  for (const v of ["Running", "S", "suspended", "Censored", "in service", "OK"]) assert.equal(guessStatusMeaning(v, "Status"), 1, v);
+  assert.equal(guessStatusMeaning("yes", "Failed"), 0);
+  assert.equal(guessStatusMeaning("no", "Failed"), 1);
+  assert.equal(guessStatusMeaning("Yes", "Still running"), 1);
+  assert.equal(guessStatusMeaning("TRUE", "censored"), 1);
+  assert.equal(guessStatusMeaning("Pending", "Status"), null);
+  // 0/1 codes follow censorInverted; left / interval codes stay.
+  assert.equal(guessStatusMeaning("1", "failed"), 0);
+  assert.equal(guessStatusMeaning(1, "censored"), 1);
+  assert.equal(guessStatusMeaning("-1", "censored"), -1);
+});
+
+test("a unit from the time column's name", () => {
+  assert.equal(guessUnit("Operating Hours"), "Hours");
+  assert.equal(guessUnit("hrs"), "Hours");
+  assert.equal(guessUnit("age_days"), "Days");
+  assert.equal(guessUnit("Odometer km"), "Kilometres");
+  assert.equal(guessUnit("cycles"), "Cycles");
+  assert.equal(guessUnit("reading"), "");
 });

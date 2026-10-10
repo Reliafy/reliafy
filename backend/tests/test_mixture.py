@@ -148,7 +148,8 @@ def test_the_picker_offers_every_mixable_distribution():
 
     entry = next(d for d in distributions_endpoint()["distributions"] if d.get("mixture"))
     assert entry["id"] == fitting.MIXTURE_ID
-    assert {d["id"] for d in entry["mixture_distributions"]} == set(fitting.DISTRIBUTIONS)
+    # Every plain distribution but the bounded ones (#72), which can't mix.
+    assert {d["id"] for d in entry["mixture_distributions"]} == set(fitting.best_candidates())
 
 
 @pytest.mark.parametrize("dist", ["weibull", "lognormal", "normal", "gamma"])
