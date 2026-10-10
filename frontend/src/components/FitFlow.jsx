@@ -14,20 +14,25 @@ import Covariates from "./Covariates.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import ResultView from "./ResultView.jsx";
+import { ResultDetails } from "./ui/ResultSummary.jsx";
+import {
+  EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
+  dataStepProblems, dataSplit,
+} from "../lifeData.js";
 
-const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", c_invert: false };
 const STEPS = ["Source", "Data", "Model", "Result"];
+const PASTED = "pasted-values.csv";
 
-// Prefill the column mapping: the first column is the observed value, and a
-// column literally named like a censoring flag (``censored``, ``c``) is mapped
-// to ``c``. Anything else (``failed``, ``status``…) is left for the user — its
-// convention can't be assumed.
-const CENSOR_NAMES = /^(c|cens|censor|censored|censoring)$/i;
-function guessMapping(columns) {
-  const x = columns[0] || "";
-  const c = columns.find((col) => col !== x && CENSOR_NAMES.test(String(col).trim())) || "";
-  return { ...EMPTY_MAPPING, x, c };
-}
+// A saved dataset's detail in the shape /api/columns gives.
+const datasetColumns = (full) => ({
+  columns: full.preview_columns || [],
+  preview: full.preview || [],
+  n_rows: full.n_rows,
+  n_unique: full.n_unique,
+  dtypes: full.dtypes,
+  blanks: full.blanks,
+  values: full.values,
+});
 
 // Turn pasted values into CSV text. Accepts one value per line, or values
 // separated by commas / spaces / tabs / semicolons on any number of lines. When
@@ -82,36 +87,6 @@ export function parsePastedValues(text) {
   return { csv: `time\n${out.join("\n")}\n`, rows: out.length, cols: 1 };
 }
 
-// Failures and units still running in an uploaded or pasted file, counted
-// from its censoring (and count) columns, for the result's Data tile (#311).
-// Null when the file isn't plain comma-separated text with a header the
-// mapping names, or holds inspection (interval) data — the tile then shows the
-// observation count. The result checks the total against the fit's n.
-export async function dataSplit(file, mapping) {
-  if (!file || !mapping.x || mapping.xl || mapping.xr) return null;
-  const text = await file.text();
-  if (text.includes('"')) return null;
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return null;
-  const header = lines[0].split(",").map((h) => h.trim());
-  const col = (name) => (name ? header.indexOf(name) : -1);
-  const xi = col(mapping.x), ci = col(mapping.c), ni = col(mapping.n);
-  if (xi < 0 || (mapping.c && ci < 0) || (mapping.n && ni < 0)) return null;
-  const out = { failed: 0, running: 0, other: 0 };
-  for (const line of lines.slice(1)) {
-    const cells = line.split(",");
-    if (!(cells[xi] || "").trim()) continue;
-    const n = ni >= 0 ? Number(cells[ni]) : 1;
-    let c = ci >= 0 ? Number(cells[ci]) : 0;
-    if (!Number.isFinite(n) || !Number.isFinite(c)) return null;
-    if (mapping.c_invert && (c === 0 || c === 1)) c = 1 - c;
-    if (c === 0) out.failed += n;
-    else if (c === 1) out.running += n;
-    else out.other += n;
-  }
-  return out;
-}
-
 // Fit flow rendered as a page panel: (1) pick a data source, (2) map columns
 // (+ unit, covariates), (3) pick a model and fit, (4) review the fit, then
 // name it beside Save and save — with Back to change anything and re-fit before saving. Calls
@@ -125,9 +100,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [file, setFile] = useState(null);
   const [datasetId, setDatasetId] = useState(null);
   const [sourceName, setSourceName] = useState("");
-  const [csv, setCsv] = useState(null); // { columns, preview, n_rows }
+  const [csv, setCsv] = useState(null); // { columns, preview, n_rows, dtypes, blanks, values }
   const [mapping, setMapping] = useState(EMPTY_MAPPING);
   const [unit, setUnit] = useState("");
+  // A paste of one or two plain columns skips the mapping: only the unit is
+  // asked for, with "Change columns" to see the full mapping (#291).
+  const [simple, setSimple] = useState(false);
   const [covariates, setCovariates] = useState([]);
   const [covUnits, setCovUnits] = useState({}); // optional unit per covariate (#265)
   const [advanced, setAdvanced] = useState(false);
@@ -182,6 +160,23 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       ? "best model"
       : distributions.find((d) => d.id === distribution)?.name || "model";
 
+  // New columns in: guess the mapping and unit, clear covariates. Returns
+  // them (the guided first run fits straight away).
+  const loadColumns = (cols, simplePaste = false) => {
+    const facts = columnFacts(cols);
+    const g = guessMapping(cols.columns, facts);
+    const map = simplePaste
+      // A pasted flag column is 0 = failed, 1 = still running, as the paste box says.
+      ? { ...EMPTY_MAPPING, x: "time", c: cols.columns.includes("censored") ? "censored" : "" }
+      : g.mapping;
+    setCsv(cols);
+    setMapping(map);
+    setUnit(simplePaste ? "" : g.unit);
+    setSimple(simplePaste);
+    setCovariates([]);
+    return { mapping: map, unit: simplePaste ? "" : g.unit };
+  };
+
   const pickFile = async (picked) => {
     if (!picked) return;
     const f = await toCsv(picked);
@@ -198,9 +193,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setLoading(true);
     try {
       const cols = await getColumns(f);
-      setCsv(cols);
-      setMapping(guessMapping(cols.columns));
-      setCovariates([]);
+      loadColumns(cols, isSimplePaste(cols.columns) && f.name === PASTED);
       setStep(2);
     } catch (err) {
       setError(err.message);
@@ -218,10 +211,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setLoading(true);
     try {
       const full = await getDataset(d.id);
-      const columns = full.preview_columns || [];
-      setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows });
-      setMapping(guessMapping(columns));
-      setCovariates([]);
+      loadColumns(datasetColumns(full));
       setStep(2);
     } catch (err) {
       setError(err.message);
@@ -243,16 +233,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       setError(null);
       try {
         const full = await getDataset(initialDatasetId);
-        const columns = full.preview_columns || [];
-        const map = guessMapping(columns);
         setFile(null);
         setDatasetId(initialDatasetId);
         setSourceName(full.name || "dataset");
-        setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows });
-        setMapping(map);
-        setCovariates([]);
+        const { mapping: map, unit: guessedUnit } = loadColumns(datasetColumns(full));
         if (autoFit && map.x) {
-          const res = await fitModel("weibull", null, map, { datasetId: initialDatasetId });
+          const res = await fitModel("weibull", null, map, { datasetId: initialDatasetId, unit: guessedUnit });
           setSplit(null);
           setResult(res);
           setName(`${res.distribution} — ${(full.name || "dataset").replace(/\s*\(sample\)\s*$/i, "")}`);
@@ -287,7 +273,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       setError(err.message);
       return;
     }
-    pickFile(new File([parsed.csv], "pasted-values.csv", { type: "text/csv" }));
+    pickFile(new File([parsed.csv], PASTED, { type: "text/csv" }));
   };
 
   const toggleCovariate = (col) =>
@@ -307,10 +293,26 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     );
   }, [mappedColumns]);
 
-  // Use 'x' alone, or both interval bounds 'xl'/'xr' — never together.
-  const mappingValid = mapping.x
-    ? !mapping.xl && !mapping.xr
-    : !!mapping.xl && !!mapping.xr;
+  // What the mapping reads as, and what stops it fitting, before the fit.
+  const facts = useMemo(() => (csv ? columnFacts(csv) : {}), [csv]);
+  const problems = useMemo(
+    () => (csv ? dataStepProblems(mapping, facts, csv.n_rows) : []),
+    [csv, mapping, facts]
+  );
+  const mappingValid = problems.length === 0;
+  // With a count column the value counts aren't units: read the file instead.
+  const [fileSplit, setFileSplit] = useState(null);
+  useEffect(() => {
+    let live = true;
+    setFileSplit(null);
+    if (file && mapping.n) {
+      dataSplit(file, mapping)
+        .then((s) => live && s && setFileSplit({ failed: s.failed, running: s.running, left: 0, interval: s.other }))
+        .catch(() => {});
+    }
+    return () => { live = false; };
+  }, [file, mapping]);
+  const summary = csv ? statusSummary(mapping, facts, csv.n_rows) || fileSplit : null;
 
   const onFit = async () => {
     if (!file && !datasetId) return;
@@ -557,33 +559,86 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       {step === 2 && csv && (
         <div className="fit-step">
           <p className="muted-line">
-            {sourceName} · {csv.n_rows} rows · {csv.columns.length} columns
+            {sourceName === PASTED ? "Pasted values" : sourceName} · {csv.n_rows} rows
+            {!simple && ` · ${csv.columns.length} columns`}
           </p>
-          <PreviewTable columns={csv.columns} rows={csv.preview} />
-          <ColumnMapper
-            columns={csv.columns}
-            mapping={mapping}
-            onChange={setMapping}
-            unit={unit}
-            onUnitChange={setUnit}
-          />
-          <Covariates
-            columns={csv.columns}
-            selected={covariates}
-            onToggle={toggleCovariate}
-            advanced={advanced}
-            onSetAdvanced={setAdvanced}
-            formula={formula}
-            onSetFormula={setFormula}
-            disabledColumns={mappedColumns}
-            units={covUnits}
-            onSetUnit={(col, u) => setCovUnits((prev) => ({ ...prev, [col]: u }))}
-          />
-          {!mappingValid && (
-            <p className="hint">
-              Map a column to <code>x</code>, or to both <code>xl</code> and{" "}
-              <code>xr</code>.
+          {simple ? (
+            <div className="ds-row">
+              <label className="ds-field ds-unit">
+                <span className="ds-label">Unit of these times</span>
+                <input
+                  className="units-input"
+                  type="text"
+                  list="paste-units"
+                  value={unit}
+                  autoFocus
+                  placeholder="e.g. Hours"
+                  onChange={(e) => setUnit(e.target.value)}
+                />
+                <datalist id="paste-units">
+                  {["Hours", "Days", "Weeks", "Months", "Years", "Cycles", "Kilometres", "Miles"].map((u) => (
+                    <option value={u} key={u} />
+                  ))}
+                </datalist>
+              </label>
+            </div>
+          ) : (
+            <>
+              <PreviewTable columns={csv.columns} rows={csv.preview} />
+              <ColumnMapper
+                columns={csv.columns}
+                mapping={mapping}
+                onChange={setMapping}
+                unit={unit}
+                onUnitChange={setUnit}
+                facts={facts}
+              />
+              <ResultDetails
+                summary="Advanced (regression): covariates"
+                open={covariates.length > 0 || advanced}
+              >
+                <Covariates
+                  columns={csv.columns}
+                  selected={covariates}
+                  onToggle={toggleCovariate}
+                  advanced={advanced}
+                  onSetAdvanced={setAdvanced}
+                  formula={formula}
+                  onSetFormula={setFormula}
+                  disabledColumns={mappedColumns}
+                  units={covUnits}
+                  onSetUnit={(col, u) => setCovUnits((prev) => ({ ...prev, [col]: u }))}
+                  folded
+                />
+              </ResultDetails>
+            </>
+          )}
+          {problems.length > 0 ? (
+            <ul className="ds-problems" role="status">
+              {problems.map((p) => <li key={p}>{p}</li>)}
+            </ul>
+          ) : summary ? (
+            <p className="ds-summary" role="status">
+              {summaryParts(summary).map((part, i) => {
+                const [num, ...rest] = part.split(" ");
+                return (
+                  <span key={part}>
+                    {i > 0 && ", "}
+                    <b>{num}</b> {rest.join(" ")}
+                  </span>
+                );
+              })}
+              {!mapping.c && (
+                <span className="ds-summary-note">
+                  {simple ? " · every value is a time to failure" : " · no status column, so every row is a failure"}
+                </span>
+              )}
             </p>
+          ) : null}
+          {simple && (
+            <button type="button" className="link ds-change" onClick={() => setSimple(false)}>
+              Change columns
+            </button>
           )}
         </div>
       )}

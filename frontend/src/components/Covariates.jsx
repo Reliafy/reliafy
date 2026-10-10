@@ -1,7 +1,8 @@
 // Covariate selection for proportional-hazards models. Two modes:
 //   - simple: tick CSV columns to use as covariates (Z)
 //   - advanced: write a formulaic formula (e.g. "age + sex + age:sex")
-// The two are mutually exclusive. ``units``/``onSetUnit`` (optional, #265)
+// The two are mutually exclusive. ``folded``: inside a disclosure that already
+// names them, so no heading or rule of its own. ``units``/``onSetUnit`` (optional, #265)
 // give each ticked covariate a unit ("°C", "kN"), shown with its calculator
 // input and coefficient.
 export default function Covariates({
@@ -15,12 +16,13 @@ export default function Covariates({
   disabledColumns,
   units,
   onSetUnit,
+  folded = false,
 }) {
   const isMapped = (col) => !!disabledColumns && disabledColumns.has(col);
   return (
-    <div className="cov">
+    <div className={"cov" + (folded ? " cov-folded" : "")}>
       <div className="cov-head">
-        <span className="map-group-title-text">Covariates (optional)</span>
+        {!folded && <span className="map-group-title-text">Covariates (optional)</span>}
         <label className="cov-adv-toggle">
           <input
             type="checkbox"
@@ -59,28 +61,17 @@ export default function Covariates({
         </div>
       ) : (
         <div className="cov-chips">
-          {columns.map((col) => {
-            const mapped = isMapped(col);
-            return (
-              <label
-                key={col}
-                className={
-                  "cov-chip" +
-                  (selected.includes(col) ? " on" : "") +
-                  (mapped ? " disabled" : "")
-                }
-                title={mapped ? "Already mapped to a survival column (x, c, n, t…)" : undefined}
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.includes(col)}
-                  disabled={mapped}
-                  onChange={() => onToggle(col)}
-                />
-                {col}
-              </label>
-            );
-          })}
+          {/* The time, status and count columns are never covariates (#291). */}
+          {columns.filter((col) => !isMapped(col)).map((col) => (
+            <label key={col} className={"cov-chip" + (selected.includes(col) ? " on" : "")}>
+              <input
+                type="checkbox"
+                checked={selected.includes(col)}
+                onChange={() => onToggle(col)}
+              />
+              {col}
+            </label>
+          ))}
         </div>
       )}
       {!advanced && onSetUnit && selected.length > 0 && (

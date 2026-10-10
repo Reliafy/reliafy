@@ -5,8 +5,7 @@ import Covariates from "./Covariates.jsx";
 import Units from "./Units.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import { getDataset, getDistributions, updateModelFit } from "../api.js";
-
-const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", c_invert: false };
+import { EMPTY_MAPPING, columnFacts, dataStepProblems } from "../lifeData.js";
 
 // Edit a saved model's fit spec and refit in place: same dataset, same id.
 // Prefilled from the stored spec; anything referencing the model (RCM
@@ -14,12 +13,15 @@ const EMPTY_MAPPING = { x: "", c: "", n: "", xl: "", xr: "", tl: "", tr: "", c_i
 export default function EditFitModal({ model, onClose, onUpdated }) {
   const spec = model.spec || {};
   const [columns, setColumns] = useState(null);
-  // The censor inversion is stored with the fit options (spec.options) but
-  // edited alongside the column it applies to, so it rides on the mapping here.
-  const { c_invert: savedInvert, ...savedOptions } = spec.options || {};
+  // The censor inversion and status-word map are stored with the fit options
+  // (spec.options) but edited alongside the column they apply to, so they
+  // ride on the mapping here.
+  const { c_invert: savedInvert, c_map: savedMap, ...savedOptions } = spec.options || {};
   const [mapping, setMapping] = useState({
-    ...EMPTY_MAPPING, ...(spec.mapping || {}), c_invert: !!savedInvert,
+    ...EMPTY_MAPPING, ...(spec.mapping || {}), c_invert: !!savedInvert, c_map: savedMap || null,
   });
+  const [facts, setFacts] = useState({});
+  const [nRows, setNRows] = useState(0);
   const [unit, setUnit] = useState(spec.unit || "");
   const [covariates, setCovariates] = useState(spec.covariates || []);
   const [covUnits, setCovUnits] = useState(spec.covariate_units || {}); // #265
@@ -34,13 +36,22 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
   useEffect(() => {
     getDistributions().then((d) => setDistributions(d.distributions)).catch(() => {});
     getDataset(model.dataset_id)
-      .then((d) => setColumns(d.preview_columns || []))
+      .then((d) => {
+        setColumns(d.preview_columns || []);
+        setNRows(d.n_rows || 0);
+        setFacts(columnFacts({
+          columns: d.preview_columns || [], preview: d.preview || [], n_unique: d.n_unique,
+          dtypes: d.dtypes, blanks: d.blanks, values: d.values,
+        }));
+      })
       .catch(() => setError("Couldn't load the model's dataset — it may have been deleted."));
   }, [model.dataset_id]);
 
   const hasCovariates = advanced ? !!formula.trim() : covariates.length > 0;
   const options = distributions.filter((d) => !!d.covariates === hasCovariates);
-  const mappingValid = mapping.x ? !mapping.xl && !mapping.xr : !!mapping.xl && !!mapping.xr;
+  // The Data step's checks, in plain words (#291).
+  const problems = columns ? dataStepProblems(mapping, facts, nRows) : [];
+  const mappingValid = problems.length === 0;
 
   // Keep the selection valid when toggling between plain/covariate modes.
   useEffect(() => {
@@ -105,7 +116,12 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
       {columns === null && !error && <p className="muted-line">Loading dataset…</p>}
       {columns && (
         <>
-          <ColumnMapper columns={columns} mapping={mapping} onChange={setMapping} />
+          <ColumnMapper columns={columns} mapping={mapping} onChange={setMapping} facts={facts} />
+          {problems.length > 0 && (
+            <ul className="ds-problems" role="status">
+              {problems.map((p) => <li key={p}>{p}</li>)}
+            </ul>
+          )}
           <Units value={unit} onChange={setUnit} />
           <Covariates
             columns={columns}
