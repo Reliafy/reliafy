@@ -169,6 +169,10 @@ AGENT_MAX_OUTAGE_LOGS = _int("AGENT_MAX_OUTAGE_LOGS", 10)
 # quota, only the per-user rate limit every request gets.
 MCP_FREE_MONTHLY_CALLS = _int("MCP_FREE_MONTHLY_CALLS", 20)
 MCP_AGENT_DAILY_CALLS = _int("MCP_AGENT_DAILY_CALLS", 2000)
+# Longest an MCP request may run before the server ends it. Tool calls answer
+# in seconds (long simulations run as compute jobs), and a request left open
+# keeps the web instance billed until the platform's own timeout.
+MCP_REQUEST_TIMEOUT_S = _int("MCP_REQUEST_TIMEOUT_S", 60)
 
 # One-time prepaid credit packs (Stripe Checkout, mode=payment). `grant_cents`
 # is the credit added on success (>= price_cents builds in the bonus).
