@@ -1,0 +1,37 @@
+/* Regression models: the life card at a covariate row (#54) and the checks
+   of the model's assumption (#61). */
+
+/* The life card in the calculator's rail, rows as the life model page's. */
+.rl-card .rl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rl-card .rl-head .combo-dot { display: inline-block; margin: 0 6px 0 0; vertical-align: -1px; }
+.rl-card .gofr.rl-row {
+  display: grid; grid-template-columns: 1fr auto minmax(4.4em, auto); gap: 10px;
+  padding-top: 5px; padding-bottom: 5px;
+}
+.rl-card .rl-row .gv { text-align: right; }
+.rl-card .rl-lo { text-align: right; font-size: var(--fs-12); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Why there's no band (Cox PH), in the inputs card. */
+.calc-note { margin: 0; font-size: var(--fs-12); line-height: 1.45; color: var(--muted); }
+
+/* The Validation tab: "How good is this model?" and "Does it hold?" side by side. */
+.validation-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.validation-grid > .validation-card { flex: 1 1 380px; min-width: 0; max-width: 600px; }
+
+.checks-verdict { display: flex; flex-direction: column; gap: 4px; }
+.checks-verdict .vread { margin: 0; font-size: var(--fs-13); line-height: 1.5; color: var(--muted); }
+.checks-section .checks-verdict { margin-bottom: 10px; }
+.checks-verdict .checks-title { font-size: var(--fs-14); font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.checks-actions { padding: 12px 16px 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* The residuals dialog. */
+.resid-tabs { margin-bottom: 12px; }
+.resid-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.resid-grid .resid-panel { min-width: 0; }
+.resid-panel .resid-name { font-size: var(--fs-13); font-weight: 600; color: var(--ink); margin: 0 0 2px; }
+.resid-panel .resid-p { font-size: var(--fs-12); color: var(--muted); margin: 0; font-variant-numeric: tabular-nums; }
+.checks-table td.flag { color: var(--warn); font-weight: 600; }
+.checks-table tr.global td { font-weight: 600; border-top: 1px solid var(--line); }
+.checks-section + .checks-section { margin-top: 20px; }
+.checks-section h3 { font-size: var(--fs-14); font-weight: 600; margin: 0 0 6px; color: var(--ink); }
+.checks-section .muted-line { margin: 6px 0 0; }
