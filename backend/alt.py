@@ -1073,6 +1073,10 @@ def positive_coefficient_intervals(results: dict) -> dict:
             fixed.append(c)
             continue
         new = bounded_wald_interval(value, (hi - lo) / (2.0 * _Z95), lower, upper, 0.95)
+        # A coefficient tiny next to its standard error overflows on the log
+        # scale: that end is unbounded, sent as null (JSON has no infinity).
+        if new is not None:
+            new = [v if v is not None and math.isfinite(v) else None for v in new]
         fixed.append({**c, "ci": new})
         changed = True
     return {**results, "coefficients": fixed} if changed else results

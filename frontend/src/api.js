@@ -140,9 +140,10 @@ export function getColumns(file) {
 // Advanced fit options shared by fit + save: offset (3-parameter), zero
 // inflation, limited failure population, fixed parameter values, and a mixture
 // component count (mutually exclusive with the rest — see normalize_options),
-// the fit method, and Best fit's "consider two-mode mixtures" (#236).
+// the fit method, Best fit's "consider two-mode mixtures" (#236) and Cox PH's
+// tie method, strata and cluster columns (#61).
 function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distribution, how,
-                                  include_mixtures } = {}) {
+                                  include_mixtures, cox } = {}) {
   if (offset) form.append("offset", "true");
   if (zi) form.append("zi", "true");
   if (lfp) form.append("lfp", "true");
@@ -151,17 +152,22 @@ function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distr
   if (mixture_distribution) form.append("mixture_distribution", mixture_distribution);
   if (how) form.append("how", how);
   if (include_mixtures) form.append("include_mixtures", "true");
+  const coxSet = cox && Object.fromEntries(Object.entries(cox).filter(([, v]) => v));
+  if (coxSet && Object.keys(coxSet).length) form.append("cox", JSON.stringify(coxSet));
 }
 
 // Column mapping -> form fields. ``mapping`` is { x, c, n, xl, xr, tl, tr }
 // -> column name or "", plus the boolean ``c_invert`` (the c column uses
-// 1 = failed and must be flipped), sent as "1"/"0" whenever c is mapped.
+// 1 = failed and must be flipped), sent as "1"/"0" whenever c is mapped, and
+// ``c_map`` ({"Failed": 0, "Running": 1}: a status column of words), sent as
+// JSON when it has entries (#291).
 function appendMapping(form, mapping) {
-  const { c_invert, ...columns } = mapping || {};
+  const { c_invert, c_map, ...columns } = mapping || {};
   for (const [field, column] of Object.entries(columns)) {
     if (column) form.append(field, column);
   }
   if (columns.c) form.append("c_invert", c_invert ? "1" : "0");
+  if (columns.c && c_map && Object.keys(c_map).length) form.append("c_map", JSON.stringify(c_map));
 }
 
 // Fit a model: distribution id, a data source (an uploaded `file` or a saved
@@ -252,7 +258,23 @@ export function confidenceAt(path, params, range) {
   });
 }
 
+// B-lives and MTTF with one-sided lower bounds (#288). ``path`` comes from the
+// result payload (functions.life_path); ``body`` is { confidence } or, for the
+// time at a reliability, { reliability: [R], confidence, bound }.
+export function lifeAt(path, body) {
+  return request(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // ---- Saved models ----------------------------------------------------------
+
+// Best fit's ranking of every distribution on a saved model's data (#293).
+export function compareModel(id) {
+  return request(`/api/models/${id}/compare`, { method: "POST" });
+}
 
 export function listModels() {
   return request("/api/models");
@@ -266,6 +288,19 @@ export function getModel(id) {
 // time; for a model saved before that, computed (and cached) on request.
 export function getModelValidation(id) {
   return request(`/api/models/${id}/validation`);
+}
+
+// A regression model's checks (#61): the proportional-hazards test, robust
+// standard errors, ties and strata. Stored at fit time; for a model saved
+// before them, computed (and cached) on request.
+export function getModelDiagnostics(id) {
+  return request(`/api/models/${id}/diagnostics`);
+}
+
+// The residuals behind the proportional-hazards test, for plotting. ``path``
+// comes from the result payload (functions.residuals_path).
+export function getResiduals(path) {
+  return request(path);
 }
 
 // Persist a fit. Same form fields as fitModel, plus a name.
@@ -329,7 +364,7 @@ export function createModelFromParams(name, distribution, params, { unit, extras
 // Refit a saved model in place with an edited spec (same dataset, same id --
 // everything referencing the model sees the updated fit).
 export function updateModelFit(id, { distribution, mapping, covariates, covariateUnits, formula, unit, fitOptions } = {}) {
-  const { c_invert, ...columns } = mapping || {};
+  const { c_invert, c_map, ...columns } = mapping || {};
   // Covariate units (#265): omitted keeps the model's own.
   const units = covariateUnits === undefined ? undefined : Object.fromEntries(
     (covariates || []).map((c) => [c, String(covariateUnits[c] || "").trim()]).filter(([, u]) => u)
@@ -341,6 +376,7 @@ export function updateModelFit(id, { distribution, mapping, covariates, covariat
       distribution,
       mapping: columns,
       c_invert: !!(columns.c && c_invert),
+      c_map: columns.c && c_map && Object.keys(c_map).length ? c_map : null,
       covariates: covariates || [],
       formula: formula || null,
       unit: unit || null,
@@ -352,6 +388,7 @@ export function updateModelFit(id, { distribution, mapping, covariates, covariat
       fixed: fitOptions?.fixed && Object.keys(fitOptions.fixed).length ? fitOptions.fixed : null,
       how: fitOptions?.how || null,
       include_mixtures: !!fitOptions?.include_mixtures,
+      cox: fitOptions?.cox && Object.values(fitOptions.cox).some(Boolean) ? fitOptions.cox : null,
       ...(units !== undefined ? { covariate_units: units } : {}),
     }),
   });
@@ -899,7 +936,7 @@ export function getRecurrentOptions() {
   return request("/api/recurrent/options");
 }
 
-function recurrentForm(file, { datasetId, mapping, model, unit, name } = {}) {
+function recurrentForm(file, { datasetId, mapping, model, unit, name, options, windows } = {}) {
   const form = new FormData();
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
@@ -907,8 +944,14 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name } = {}) {
   form.append("i", mapping.i);
   form.append("x", mapping.x);
   // Optional modifiers, matching the life-data column surface.
-  // ``mode`` is each failure's mode, for a growth projection (#232).
-  ["c", "n", "tl", "tr", "t", "mode"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
+  // ``mode`` is each failure's mode (or cause): a growth projection (#232)
+  // and the MCF by cause (#65); ``ws``/``we`` observation-window columns.
+  ["c", "n", "tl", "tr", "t", "mode", "ws", "we"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
+  // #65: covariate columns, a model's options, windows entered by hand.
+  (mapping.z || []).forEach((col) => form.append("z", col));
+  if (options?.baseline) form.append("baseline", options.baseline);
+  if (options?.m != null && options.m !== "") form.append("m", String(options.m));
+  if (windows && String(windows).trim()) form.append("windows", windows);
   if (model) form.append("model", model);
   if (unit) form.append("unit", unit);
   return form;
@@ -1112,6 +1155,17 @@ export function getDegradationModel(id) {
 // chosen confidence level. Refits the live model on demand.
 export function degradationReliability(id, confidence) {
   return request(`/api/degradation/models/${id}/reliability?confidence=${confidence}`);
+}
+
+// The failure-time distribution the path model induces (Lu-Meeker, #63):
+// its curve, mean and median; ``body`` may ask { times: [t] } for the
+// reliability at each and { reliability: [R] } for the time each is reached.
+export function degradationInducedLife(id, body = {}) {
+  return request(`/api/degradation/models/${id}/induced-life`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 export function renameDegradationModel(id, name) {

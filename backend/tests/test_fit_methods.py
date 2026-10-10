@@ -28,6 +28,8 @@ def clean():
 def _fits(dist_id, how, **kw):
     """True if SurPyval will actually produce finite parameters this way."""
     x = np.abs(sp.Weibull.random(150, 800, 1.9, random_state=2))
+    if dist_id == "beta":
+        x = x / (x.max() * 1.01)  # the Beta lives on (0, 1)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         try:
@@ -50,10 +52,11 @@ def test_advertised_methods_match_what_actually_fits(dist_id):
 def test_only_expected_distributions_lack_probability_plotting():
     """Pins the distribution-level exclusions, so a change is visible. Gamma
     joined in SurPyval 0.20.0 ("Stop Gamma offering a probability plot it
-    cannot draw" — it sets supports_mpp = False)."""
+    cannot draw" — it sets supports_mpp = False). Beta and Beta4 (#72) have no
+    probability-plot fit either."""
     without = {d for d in fitting.DISTRIBUTIONS
                if "MPP" not in distribution_capabilities(d)["methods"]}
-    assert without == {"expo_weibull", "gamma"}
+    assert without == {"expo_weibull", "gamma", "beta", "beta4"}
 
 
 def test_zero_inflation_needs_support_starting_at_zero():

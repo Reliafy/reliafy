@@ -3,15 +3,18 @@ import ProbabilityPlot from "./ProbabilityPlot.jsx";
 import SurvivalPlot from "./SurvivalPlot.jsx";
 import Calculator, { initCalcState } from "./Calculator.jsx";
 import GoodnessOfFit from "./GoodnessOfFit.jsx";
-import Coefficients from "./Coefficients.jsx";
 import ModelValidation from "./ModelValidation.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import CiNote from "./CiNote.jsx";
+import CompetingRisksResult from "./CompetingRisksResult.jsx";
 import LifeAside, { paramView } from "./LifeSummary.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { distColor } from "../instrument.js";
 import { formatNumber } from "../format.js";
+import { bestFitSentence, compareRows } from "../lifeResults.js";
 import Chip from "./ui/Chip.jsx";
+import { TvcCalculator, TvcCoefficients, initTvcState } from "./TvcResult.jsx";
+import { FlexibleSurvival, RegressionCoefficients } from "./MoreModelPanels.jsx";
 
 // The fit statistics open from the panel beside the plot.
 const DISTRIBUTION_TABS = [
@@ -22,6 +25,11 @@ const NONPARAMETRIC_TABS = [
   { id: "survival", label: "Survival curve" },
   { id: "calc", label: "Calculator" },
 ];
+// Royston-Parmar (#179): its curve over the data's Kaplan-Meier curve.
+const FLEXIBLE_TABS = [
+  { id: "survival", label: "Survival curve" },
+  { id: "calc", label: "Calculator" },
+];
 // Discrete distributions have no probability paper, so no probability plot.
 const DISCRETE_TABS = [
   { id: "calc", label: "Calculator" },
@@ -29,6 +37,12 @@ const DISCRETE_TABS = [
 ];
 
 const pct = (v) => `${(v * 100).toFixed(v < 0.1 ? 2 : 1)}%`;
+
+// A regression result read as its baseline distribution ("weibull_ph" →
+// "weibull"), so its parameters get their plain names ("Scale α (hours)").
+const baselineOf = (result) => ({
+  ...result, distribution_id: String(result.distribution_id || "").replace(/_(ph|aft|po|ah)$/, ""),
+});
 
 // Per-demand (Binomial) reliability: a probability, not a curve over time.
 // Models saved before #233 carry a Wilson 95% interval and no confidence /
@@ -128,18 +142,28 @@ const REGRESSION_TABS = [
 // ``modelId`` (a saved model) lets a regression model saved before its
 // validation scores existed fetch them. ``split`` ({ failed, running, other })
 // is the data's failure / still-running count when the caller has the data.
-export default function ResultView({ result, modelId = null, name = null, split = null }) {
-  if (result.kind === "per_demand") return <PerDemandPanel result={result} />;
+// ``compare`` (() => Promise<selection>) runs Best fit's comparison on the
+// same data; ``onPick(distributionId)`` refits with another distribution
+// (#293) — both optional.
+export default function ResultView(props) {
+  if (props.result.kind === "per_demand") return <PerDemandPanel result={props.result} />;
+  // Life data by failure mode (#177) has its own tabs and panel; a separate
+  // component, so a change of kind remounts rather than reorders hooks.
+  if (props.result.kind === "competing_risks") return <CompetingRisksResult result={props.result} name={props.name} />;
+  return <LifeResult {...props} />;
+}
 
+function LifeResult({ result, modelId = null, name = null, split = null, compare = null, onPick = null }) {
   const isRegression = result.kind === "regression";
   const isNonparametric = result.kind === "nonparametric";
   const isDiscrete = result.kind === "discrete";
+  const isFlexible = result.kind === "flexible";
   // Params-only models (created from parameters, no data) have no probability
   // plot or goodness-of-fit — just the functions.
   const hasPlot = !!result.plot;
   const defaultTab = isRegression
     ? (result.functions ? "calc" : "coef")
-    : isNonparametric
+    : isNonparametric || isFlexible
     ? "survival"
     : isDiscrete
     ? "calc"
@@ -153,15 +177,23 @@ export default function ResultView({ result, modelId = null, name = null, split 
   // fitting another model in the workspace) reset them for the new model.
   const [calc, setCalc] = useState(() => initCalcState(result.functions));
   const calcNextId = useRef(1);
+  // One confidence for the life card's bounds and the calculator's (#288).
+  const level = Number(calc.ci.level);
+  const setLevel = (v) => setCalc((st) => ({ ...st, ci: { ...st.ci, level: v } }));
+  // Covariates that change over time (#60): the schedule calculator's inputs.
+  const [tvcCalc, setTvcCalc] = useState(() => (result.tvc ? initTvcState(result) : null));
   const [prevResult, setPrevResult] = useState(result);
   if (result !== prevResult) {
     setPrevResult(result);
+    setTvcCalc(result.tvc ? initTvcState(result) : null);
     setCalc(initCalcState(result.functions));
     calcNextId.current = 1;
     setTab(defaultTab);
   }
 
-  let tabs = isNonparametric
+  let tabs = isFlexible
+    ? FLEXIBLE_TABS
+    : isNonparametric
     ? NONPARAMETRIC_TABS
     : isRegression
     ? REGRESSION_TABS
@@ -169,7 +201,9 @@ export default function ResultView({ result, modelId = null, name = null, split 
     ? DISCRETE_TABS
     : DISTRIBUTION_TABS;
   if (!result.functions) tabs = tabs.filter((t) => t.id !== "calc");
-  if (!isNonparametric && !isDiscrete && !hasPlot)
+  // Units' covariates follow paths, so the fixed-covariate scores don't apply.
+  if (result.tvc) tabs = tabs.filter((t) => t.id !== "check");
+  if (!isNonparametric && !isDiscrete && !isFlexible && !hasPlot)
     tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
 
   // PH models show their baseline parameters in the calculator's side rail;
@@ -189,16 +223,10 @@ export default function ResultView({ result, modelId = null, name = null, split 
     : [];
   let selectionNote = null;
   if (bestFit) {
-    const key = result.selection.criterion || "aic";
-    const label = key === "bic" ? "BIC" : key === "aic_c" ? "AICc" : "AIC";
-    const [first, second] = result.selection.candidates;
-    // Mixtures on (#236): the summary says which criterion decided — BIC
-    // between the best mixture and the best single, AIC among the singles.
-    selectionNote = result.selection.summary || (
-      `Selected by lowest ${label} over ${result.selection.candidates.length} candidates` +
-      `${result.selection.include_mixtures ? ", two-mode mixtures included" : ""} — next best: ` +
-      `${second.name} (Δ${label} +${(second[key] - first[key]).toFixed(1)})`
-    );
+    // In words (#293): the best, the ones the data can't tell from it, the
+    // rest. Mixtures on (#236): the summary says which criterion decided.
+    selectionNote = result.selection.summary ||
+      bestFitSentence(compareRows(result.selection.candidates, result.selection.criterion || "aic"));
   }
 
   // Everything the answer card leaves out, folded under Details: parameters
@@ -208,7 +236,7 @@ export default function ResultView({ result, modelId = null, name = null, split 
   const extra = result.extra_params || [];
   const moreParams = !isRegression && !hasPlot && !isNonparametric && (params.length > 2 || extra.length > 0);
   const details = !isRegression && (
-    moreParams || optionWords.length > 0 || selectionNote || isNonparametric || isDiscrete ||
+    moreParams || optionWords.length > 0 || selectionNote || isNonparametric || isDiscrete || isFlexible ||
     result.params_only || result.mixture > 1
   );
 
@@ -250,25 +278,36 @@ export default function ResultView({ result, modelId = null, name = null, split 
       </div>
 
       <div className="tab-panel">
-        {tab === "survival" && (
-          <div className="detail-panel">
+        {tab === "survival" && isFlexible && (
+          <FlexibleSurvival result={result} split={split} level={level} onLevel={setLevel} name={name}
+                            modelId={modelId} />
+        )}
+        {tab === "survival" && !isFlexible && (
+          <div className="detail-panel life-panel">
             <div className="plotwrap">
               <SurvivalPlot estimate={result.estimate} unit={result.unit}
                             download={`${name || result.distribution} — survival curve`} />
             </div>
-            <LifeAside result={result} split={split} />
+            <LifeAside result={result} split={split} level={level} onLevel={setLevel}
+                       modelId={modelId} name={name} />
           </div>
         )}
         {tab === "plot" && (
-          <div className="detail-panel">
+          <div className="detail-panel life-panel">
             <div className="plotwrap">
               <ProbabilityPlot plot={result.plot} unit={result.unit}
                                download={`${name || result.distribution} — probability plot`} />
             </div>
-            {!isRegression && <LifeAside result={result} split={split} bestFit={bestFit} />}
+            {!isRegression && (
+              <LifeAside result={result} split={split} bestFit={bestFit} level={level} onLevel={setLevel}
+                         compare={compare} onPick={onPick} modelId={modelId} name={name} />
+            )}
           </div>
         )}
-        {tab === "calc" && (
+        {tab === "calc" && result.tvc && (
+          <TvcCalculator result={result} state={tvcCalc} setState={setTvcCalc} name={name || result.distribution} />
+        )}
+        {tab === "calc" && !result.tvc && (
           <Calculator
             functions={result.functions}
             unit={result.unit}
@@ -277,14 +316,18 @@ export default function ResultView({ result, modelId = null, name = null, split 
             setState={setCalc}
             nextIdRef={calcNextId}
             name={name || result.distribution}
+            paramLabel={isRegression ? (p) => paramView(baselineOf(result), p).label : null}
           />
         )}
-        {tab === "coef" && <Coefficients coefficients={result.coefficients} ratioLabel={result.ratio_label} />}
+        {tab === "coef" && (result.tvc ? <TvcCoefficients result={result} />
+          : <RegressionCoefficients result={result} />)}
         {tab === "gof" && (
           <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} bestFit={bestFit} />
         )}
         {tab === "check" && (
-          <ModelValidation validation={result.validation} modelId={modelId} unit={result.unit} />
+          <ModelValidation validation={result.validation} diagnostics={result.diagnostics}
+                           residualsPath={result.functions?.residuals_path} modelId={modelId}
+                           unit={result.unit} />
         )}
       </div>
 
@@ -318,6 +361,13 @@ export default function ResultView({ result, modelId = null, name = null, split 
             <p className="rs-note">
               Non-parametric empirical estimate — no distribution assumed, so no fitted parameters
               or goodness-of-fit.
+            </p>
+          )}
+          {isFlexible && (
+            <p className="rs-note">
+              Royston-Parmar spline with {result.spline?.n_terms ?? 3} terms on the log cumulative hazard. Its
+              coefficients have no physical meaning on their own: read the curve, drawn over the data's own
+              Kaplan-Meier curve. Its AIC compares with the plain distributions' on the same data.
             </p>
           )}
           {isDiscrete && (

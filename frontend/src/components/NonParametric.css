@@ -1,0 +1,34 @@
+/* Non-parametric results (#85, #177): the option row under a chart (the band, stacked or not) and
+   the mean life's horizon, typed in the life card. */
+.plot-option-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px 6px;
+}
+.plot-option-row .seg-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.plot-option-row .seg-label {
+  font-size: var(--fs-12);
+}
+
+.detail-panel .life-row .life-tau {
+  width: 4.6em;
+  margin-left: 6px;
+  padding: 2px 6px;
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  color: var(--ink);
+}
+
+@media (max-width: 640px) {
+  .plot-option-row { justify-content: flex-start; }
+  .plot-option-row .seg-field { flex-direction: column; align-items: flex-start; }
+  .plot-option-row .seg-btn { min-height: 44px; }
+  .detail-panel .life-row .life-tau { min-height: 36px; width: 5.2em; }
+}

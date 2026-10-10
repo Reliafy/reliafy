@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 import surpyval
 
-from backend import fitting
+from backend import fitting, regression_bands
 from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.schema import Model
@@ -355,9 +355,16 @@ def public_results(model: Model) -> dict:
         functions = dict(functions)
         functions["model_id"] = model.id
         functions["evaluate_path"] = f"/api/models/{model.id}/evaluate"
-        # Confidence bounds aren't available for regression models.
-        if model.kind in ("distribution", "discrete", "nonparametric"):
+        # A parametric regression model has bands at its covariates (#54);
+        # Cox PH has none, and says why.
+        if model.kind in ("distribution", "discrete", "nonparametric", fitting.more_models.FLEXIBLE_KIND) or \
+                regression_bands.result_has_bands(results):
             functions["confidence_path"] = f"/api/models/{model.id}/confidence"
+            functions["life_path"] = f"/api/models/{model.id}/life"
+        else:
+            functions.update(regression_bands.notes(results))
+        if model.kind == "regression":  # the residual plots (#61)
+            functions["residuals_path"] = f"/api/models/{model.id}/residuals"
         results["functions"] = functions
     return results
 
@@ -462,6 +469,12 @@ def evaluate_at(db, model: Model, times, owner_id, covariates: dict | None = Non
         live = entry["model"]
         row, used = _covariate_row(entry.get("fields") or [], covariates)
         Z = pd.DataFrame(row) if row else None
+    elif model.kind == fitting.more_models.FLEXIBLE_KIND:
+        # Royston-Parmar (#179): no from_params, so the live (rehydrated) fit.
+        entry = get_live_model(db, model.id, owner_id)
+        if entry is None:
+            raise ModelNotFound(model.id)
+        live = entry["model"]
     elif model.kind in ("distribution", "discrete") and results.get("params") and (
         dist_id in fitting.DISTRIBUTIONS or dist_id in fitting.DISCRETE
     ):
@@ -511,7 +524,44 @@ def confidence(db, model_id: str, params: dict, owner_id: str, x_min=None, x_max
         bound=params.get("bound", "two-sided"),
         x_min=x_min,
         x_max=x_max,
+        values=params.get("values"),
     )
+
+
+def life(db, model_id: str, body: dict, owner_id) -> dict:
+    """B-lives and MTTF with one-sided lower bounds, or the time at given
+    reliabilities (#288), of a saved model — see
+    :func:`backend.life_bounds.answer`. Re-fits on demand like
+    :func:`confidence`; a fit with no finite maximum gets values only."""
+    from backend import life_bounds
+
+    model = get_model(db, model_id, owner_id)
+    if model is None:
+        raise ModelNotFound(model_id)
+    entry = fitting._MODEL_STORE.get(_live_cache_id(db, model_id, owner_id)) or {}
+    no_max = bool((model.results or {}).get("no_finite_maximum"))
+    if regression_bands.is_regression(entry):  # at the body's covariates (#54)
+        return regression_bands.life_answer(entry.get("model"), entry["fields"], body, no_finite_maximum=no_max)
+    return life_bounds.answer(entry.get("model"), body, no_finite_maximum=no_max)
+
+
+def compare(db, model: Model) -> dict:
+    """Best fit's comparison of every plain distribution on a saved model's
+    own data and fit options (#293): ``{"criterion", "candidates", "failed"?}``
+    ranked best first, as a Best fit's ``selection``. Raises ``ModelNotFound``
+    when the dataset is gone, ``fitting.FitError`` when nothing fits."""
+    dataset = datasets_service.get_dataset(db, model.dataset_id, owner_id=model.owner_id) \
+        if model.dataset_id else None
+    if dataset is None:
+        raise ModelNotFound(model.id)
+    spec = _spec(model)
+    # Only the options Best fit applies to every candidate (and the censor flip).
+    options = {k: v for k, v in (spec.get("options") or {}).items()
+               if k in ("offset", "zi", "lfp", fitting.CENSOR_INVERT_KEY)}
+    result = fitting.fit(fitting.BEST_ID, datasets_service.load_dataframe(dataset),
+                         spec.get("mapping", {}), unit=spec.get("unit"), options=options)
+    selection = result.get("selection") or {}
+    return {k: selection[k] for k in ("criterion", "candidates", "failed") if k in selection}
 
 
 def get_live_model(db, model_id: str, owner_id: str | list[str]) -> dict | None:
@@ -581,6 +631,17 @@ def _refit_result(model: Model, dataset) -> dict:
         covariate_units=spec.get("covariate_units"),
     )
     return result
+
+
+def keep_live(model_id: str, cache_id: str | None, replace: bool = False) -> None:
+    """Keep a refit's live model as the saved model's (for the calculator),
+    unless it already has one and ``replace`` is false."""
+    if not cache_id or (model_id in _LIVE and not replace):
+        return
+    _LIVE[model_id] = cache_id
+    _LIVE.move_to_end(model_id)
+    while len(_LIVE) > _LIVE_MAX:
+        _LIVE.popitem(last=False)
 
 
 def ensure_validation(db, model: Model) -> dict | None:

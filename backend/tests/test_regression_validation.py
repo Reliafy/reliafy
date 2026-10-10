@@ -90,8 +90,12 @@ def test_every_regression_family_is_scored(dist_id):
 def test_registry_regression_ids_all_score():
     """Every registered regression family gets the block (available or with a reason)."""
     df = _rossi()
+    grouped = df.assign(site=[f"S{i % 12}" for i in range(len(df))])
     for dist_id in REGRESSION_MODELS:
-        v = fit(dist_id, df, MAPPING, covariates=["fin", "age", "prio"])["validation"]
+        if REGRESSION_MODELS[dist_id].get("frailty"):  # needs its Group by column (#179)
+            v = fit(dist_id, grouped, {**MAPPING, "group": "site"}, covariates=["fin", "age", "prio"])["validation"]
+        else:
+            v = fit(dist_id, df, MAPPING, covariates=["fin", "age", "prio"])["validation"]
         assert "available" in v, dist_id
         assert v["available"] or v["reason"], dist_id
 

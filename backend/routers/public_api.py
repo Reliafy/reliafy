@@ -25,6 +25,7 @@ from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import metrics as metrics_service
 from backend.services import models as models_service
+from backend.services import regression_diagnostics as checks_service
 from backend.services import strategy_store
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,7 @@ def api_get_model(model_id: str, session=Depends(get_session), user: dict = Depe
     }
     if m.kind == "regression":
         out["validation"] = models_service.ensure_validation(session, m)
+        out["diagnostics"] = checks_service.ensure_diagnostics(session, m)  # #61
     return JSONResponse(content=out)
 
 
@@ -306,6 +308,9 @@ def api_demonstration_test(
     constant-failure-rate (chi-squared) test instead (``design_mtbf``).
     ``producer_risk`` with the good design's ``design_reliability`` (or
     ``design_mtbf``) plans the smallest test that keeps both risks, choosing
-    the failures allowed. Every plan has its ``oc_curve``.
+    the failures allowed. Every plan has its ``oc_curve``. ``b_life`` (10 for
+    B10) with ``mission_time`` states the target as "B10 ≥ mission_time"
+    instead of ``reliability``; ``shape_interval`` [lower, upper] (β's
+    interval) adds ``shape_sensitivity``, warning when β is poorly known.
     """
     return _strategy("demonstration_test", body, user["uid"])

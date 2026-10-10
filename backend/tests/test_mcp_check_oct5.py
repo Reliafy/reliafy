@@ -267,3 +267,26 @@ def test_fault_tree_cut_set_share_alone_and_the_overlap_note(env):
     assert "don't add up to 1" in cuts["note"] and "probability_sum" in cuts["note"]
     tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
     assert "share_alone" in tools["rbd_fault_tree"].description
+
+
+def test_rebuilt_interval_that_overflows_is_null_not_inf():
+    """A coefficient tiny next to its standard error (the insulating-fluid
+    sample's inverse-power ``a``, about 5e-26) can overflow on the log scale:
+    the end is sent as null, so the model page's JSON stays valid."""
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from backend.auth import get_current_user
+    from backend.main import app
+
+    app.dependency_overrides[get_current_user] = lambda: {"uid": "u-alt-inf", "email": "a@example.org", "name": "A"}
+    try:
+        with TestClient(app) as c:
+            r = c.get("/api/alt/models/sample-alt-fluid")
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+    assert r.status_code == 200, r.text
+    json.loads(r.text)  # strict JSON: no Infinity
+    for co in r.json()["results"]["coefficients"]:
+        assert all(v is None or isinstance(v, (int, float)) for v in (co.get("ci") or []))

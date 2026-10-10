@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
 import { getModelValidation } from "../api.js";
 import { unitInText } from "./unitText.js";
+import RegressionChecks from "./RegressionChecks.jsx";
 
 // "How good is this model?" for regression models (#176): Harrell's C, the
 // integrated Brier score against one Kaplan-Meier curve for every unit, and
 // the time-dependent AUC. The scores (and their plain readings) come from
 // the backend: stored with the fit, or — for a model saved before them —
-// computed on request when ``modelId`` is given.
+// computed on request when ``modelId`` is given. Beside it, "Does the model
+// hold?" (#61): the proportional-hazards test, robust standard errors, ties
+// and strata (``diagnostics``), with the residuals behind them in a dialog
+// (``residualsPath``).
 const num = (v, digits = 3) => Number(v).toFixed(digits);
 const time = (t) => Number(t).toLocaleString(undefined, { maximumSignificantDigits: 3 });
 
-export default function ModelValidation({ validation, modelId, unit }) {
+export default function ModelValidation({ validation, diagnostics = null, residualsPath = null, modelId, unit }) {
   const [fetched, setFetched] = useState(null);
   const [error, setError] = useState(null);
   const needsFetch = !validation && !!modelId;
@@ -97,9 +101,12 @@ export default function ModelValidation({ validation, modelId, unit }) {
   }
 
   return (
-    <div className="gof-metrics-card validation-card">
-      <div className="gofh">How good is this model?</div>
-      {body}
+    <div className="validation-grid">
+      <div className="gof-metrics-card validation-card">
+        <div className="gofh">How good is this model?</div>
+        {body}
+      </div>
+      <RegressionChecks diagnostics={diagnostics} modelId={modelId} residualsPath={residualsPath} unit={unit} />
     </div>
   );
 }
