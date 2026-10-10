@@ -57,6 +57,10 @@ SIM_CONFIDENCE = 0.95
 
 STRESS_NOTE = ("Each block keeps one life model through the whole mission: a stress level per phase isn't "
                "modelled.")
+#: With covariate schedules (#52): those blocks follow their schedule through
+#: the phases (it is a function of mission time); the others keep one model.
+SCHEDULE_NOTE = ("Blocks with a covariate schedule follow it through the mission, so their stress changes "
+                 "with time as the schedule says; the other blocks keep one life model throughout.")
 
 
 class PhaseError(ValueError):
@@ -228,7 +232,8 @@ def build_mission(
     resolve_model=None,
     covariates: Optional[dict] = None,
 ):
-    """``(PhasedMission, phases, labels)`` for a diagram with phases. Raises
+    """``(PhasedMission, phases, labels, notes)`` for a diagram with phases;
+    ``notes`` are the covariate schedules' warnings (#52). Raises
     :class:`AnalysisError` in plain words for what a phased mission can't
     take."""
     from repyability import PhasedMission
@@ -256,6 +261,9 @@ def build_mission(
 
     rbd, labels, node_types, reliabilities, working, broken, _ = ra._build_rbd(
         graph, resolve_subsystem, None, resolve_model, covariates)
+    from backend.services import rbd_tvc
+
+    notes = rbd_tvc.notes_of(reliabilities)
     nodes = graph.get("nodes") or []
     edges = [(e["source"], e["target"]) for e in graph.get("edges") or [] if e.get("source") and e.get("target")]
     feeding: dict = {}
@@ -312,7 +320,7 @@ def build_mission(
         mission = PhasedMission(built)
     except ValueError as exc:
         raise AnalysisError(f"The mission can't be built: {exc}") from None
-    return mission, phases, labels
+    return mission, phases, labels, notes
 
 
 def _plain_unit(graph: dict) -> str:
@@ -329,7 +337,7 @@ def analyze_phases(
     mission fails, the reliability at the end of each phase, and the riskiest
     phase. Exact where the decision diagram fits; otherwise simulated (with
     an interval), and the result says which."""
-    mission, phases, labels = build_mission(graph, resolve_subsystem, resolve_model, covariates)
+    mission, phases, labels, schedule_notes = build_mission(graph, resolve_subsystem, resolve_model, covariates)
     interval = None
     reason = None
     try:
@@ -393,7 +401,9 @@ def analyze_phases(
         "phases": rows,
         "riskiest": ({"name": riskiest["name"], "failure_probability": riskiest["failure_probability"],
                       "share": riskiest["share"]} if riskiest else None),
-        "notes": [STRESS_NOTE],
+        "notes": ([SCHEDULE_NOTE, *schedule_notes] if any((n.get("data") or {}).get("covariate_schedules")
+                                                          for n in graph.get("nodes") or [])
+                  else [STRESS_NOTE]),
     }
     if interval is not None:
         out["interval"] = interval
