@@ -173,6 +173,21 @@ MCP_AGENT_DAILY_CALLS = _int("MCP_AGENT_DAILY_CALLS", 2000)
 # in seconds (long simulations run as compute jobs), and a request left open
 # keeps the web instance billed until the platform's own timeout.
 MCP_REQUEST_TIMEOUT_S = _int("MCP_REQUEST_TIMEOUT_S", 60)
+# The MCP connector's on/off switch (backend/services/mcp_switch.py) is kept
+# in the database and set from the Admin page. MCP_ENABLED overrides it:
+# true forces MCP on, false forces it off; unset (or anything else) leaves
+# it to the stored switch, whose default is off on the cloud and on for a
+# self-hosted install (billing off).
+def _tristate(value: str | None) -> bool | None:
+    value = (value or "").strip().lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("0", "false", "no", "off"):
+        return False
+    return None
+
+
+MCP_ENABLED = _tristate(os.environ.get("MCP_ENABLED"))
 
 # One-time prepaid credit packs (Stripe Checkout, mode=payment). `grant_cents`
 # is the credit added on success (>= price_cents builds in the bonus).

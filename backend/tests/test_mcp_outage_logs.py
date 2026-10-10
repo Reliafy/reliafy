@@ -13,6 +13,10 @@ from backend.tests.test_outage_logs import GRAPH, LOG
 A, B = "user-a", "user-b"
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 @pytest.fixture()
 def mcp_env(monkeypatch):
     from backend import config, db

@@ -41,6 +41,10 @@ U = "oauth-user"
 OTHER = "other-user"
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 @pytest.fixture()
 def env(monkeypatch):
     from backend import config, db

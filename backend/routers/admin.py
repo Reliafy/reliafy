@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse
 
 from backend.auth import get_current_user
@@ -12,6 +12,7 @@ from backend.config import SAMPLE_OWNER
 from backend.db import get_session
 from backend.services import billing as billing_service
 from backend.services import email_campaigns as email_campaigns_service
+from backend.services import mcp_switch
 from backend.services import metrics as metrics_service
 from backend.services import usage as usage_service
 
@@ -133,3 +134,27 @@ def usage(
         return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
     days = days if days in (7, 30, 90, 365) else 30
     return JSONResponse(content=usage_service.report(session, days=days, include_admin=include_admin))
+
+
+@router.get("/mcp")
+def mcp_state(session=Depends(get_session), user: dict = Depends(get_current_user)) -> JSONResponse:
+    """The MCP connector's switch: on or off, who or what last changed it and
+    when, and whether the MCP_ENABLED override is in force."""
+    if not billing_service.is_admin_user(user):
+        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
+    return JSONResponse(content=mcp_switch.state(session))
+
+
+@router.post("/mcp")
+def set_mcp(
+    enabled: bool = Body(..., embed=True),
+    reason: str = Body("", embed=True),
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """Turn the MCP connector on or off by hand."""
+    if not billing_service.is_admin_user(user):
+        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
+    by = user.get("email") or user["uid"]
+    reason = (reason or "").strip()[:200] or "set on the Admin page"
+    return JSONResponse(content=mcp_switch.set_enabled(session, enabled, by, reason))

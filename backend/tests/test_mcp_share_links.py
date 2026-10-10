@@ -10,9 +10,14 @@ matplotlib.use("Agg")
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.tests.test_mcp import A, B, GRAPH, _call, _err, _ok, env  # noqa: F401 - env is a fixture
+
+
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
 
 
 def _viewer():

@@ -24,6 +24,10 @@ from backend.tests.test_mcp_plans import AGENT, FREE, PRO, WEIBULL, _call, _post
 FIT = {"data": [120, 340, 510, 700, 980]}
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 def _events(db, **query):
     return list(db.usage_events.find({"channel": "mcp", **query}, {"_id": 0}))
 

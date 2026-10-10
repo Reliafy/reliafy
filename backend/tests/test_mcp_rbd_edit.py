@@ -12,6 +12,10 @@ import pytest
 from backend.tests.test_mcp import A, B, GRAPH, _call, _err, _ok, env  # noqa: F401 - env is a fixture
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 def _w(alpha=1000, beta=2.0):
     return {"distribution_id": "weibull", "params": [{"name": "alpha", "value": alpha}, {"name": "beta", "value": beta}]}
 

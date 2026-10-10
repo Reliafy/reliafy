@@ -50,6 +50,9 @@ included — is one usage event with the tool, its outcome (ok / error / limit
 / pro_only), the plan, the OAuth client's name and the duration;
 ``initialize`` and ``tools/list`` are logged as connections, and a non-Pro
 API token refused at the transport as ``connect`` / ``locked``.
+
+Switch (:mod:`backend.services.mcp_switch`): while the MCP connector is
+switched off, ``/mcp`` answers 503 at once, before authentication.
 """
 
 import contextvars
@@ -98,6 +101,7 @@ from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
 from backend.services import import_guard
+from backend.services import mcp_switch
 from backend.services import oauth as oauth_service
 from backend.services import rbd_network, rbd_phases
 from backend.services import outage_logs as outage_logs_service
@@ -7108,7 +7112,8 @@ def upgrade_link(
 class McpHttpApp:
     """The ``/mcp`` ASGI endpoint.
 
-    Authenticates every request (401 / 403 / 429 before the MCP layer sees
+    Refuses every request while MCP is switched off (503, before anything
+    else), authenticates the rest (401 / 403 / 429 before the MCP layer sees
     it), attaches the user to the request scope for the tools, and hands the
     request to the SDK's session manager, whose task group must be running —
     :meth:`lifespan` is entered from the FastAPI app's lifespan. A fresh
@@ -7140,6 +7145,13 @@ class McpHttpApp:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":  # pragma: no cover - mounted on an HTTP route
+            return
+        if not await mcp_switch.is_on():
+            # Switched off: answered before authentication, so no client
+            # starts an OAuth sign-in or holds a request open.
+            mcp_switch.log_refusal(scope["method"], scope["path"])
+            await JSONResponse({"detail": mcp_switch.OFF_MESSAGE}, status_code=503,
+                               headers={"Cache-Control": "no-store"})(scope, receive, send)
             return
         status, user, message = await anyio.to_thread.run_sync(
             _authenticate_request, Headers(scope=scope).get("authorization"))

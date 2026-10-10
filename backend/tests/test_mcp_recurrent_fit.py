@@ -13,6 +13,10 @@ from backend import recurrent as rec
 from backend.tests.test_mcp import A, _call, _err, _ok, env  # noqa: F401 - env is a fixture
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 def _compressors() -> pd.DataFrame:
     from backend.services.samples import _COMPRESSOR_EVENTS_CSV
 

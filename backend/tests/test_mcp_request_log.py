@@ -18,6 +18,10 @@ USER = {"uid": "u1", "email": "a@example.com", "email_verified": True}
 AUTH = {"Authorization": "Bearer x", "Accept": "application/json, text/event-stream"}
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 class _Manager:
     """Stands in for the SDK's session manager: answers, hangs, or answers
     and then never finishes the response."""

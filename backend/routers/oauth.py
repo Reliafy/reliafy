@@ -16,6 +16,10 @@ Settings:
   GET    /api/me/oauth-grants       connected apps
   DELETE /api/me/oauth-grants/{id}  disconnect one
 
+While the MCP connector is switched off (:mod:`backend.services.mcp_switch`)
+registration, authorization, consent and token requests are refused at once
+(:class:`McpSwitchMiddleware`); discovery and revocation keep working.
+
 The protocol logic lives in :mod:`backend.services.oauth`.
 """
 
@@ -33,6 +37,7 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.auth import get_current_user, upsert_user
 from backend.db import get_session
+from backend.services import mcp_switch
 from backend.services import oauth as oauth_service
 from backend.services.oauth import OAuthError
 
@@ -105,15 +110,16 @@ async def register(request: Request, db=Depends(get_session)) -> JSONResponse:
 
 # ---- Authorization -------------------------------------------------------------------
 
-def _error_page(message: str, status: int = 400) -> HTMLResponse:
+def _error_page(message: str, status: int = 400, *, retry: bool = True) -> HTMLResponse:
+    advice = ("""<p>Go back to the app you were connecting and try again. If it keeps happening, email
+<code>hello@reliafy.com</code>.</p>""" if retry else "")
     body = f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="robots" content="noindex"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Can't connect — Reliafy</title>
 <style>body{{font:15px/1.5 system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;color:#1f2937}}
 h1{{font-size:1.3rem}}code{{background:#f3f4f6;padding:0 .25rem;border-radius:4px}}</style></head>
 <body><h1>This connection request can't be completed</h1><p>{html.escape(message)}</p>
-<p>Go back to the app you were connecting and try again. If it keeps happening, email
-<code>hello@reliafy.com</code>.</p><p><a href="/">Reliafy</a></p></body></html>"""
+{advice}<p><a href="/">Reliafy</a></p></body></html>"""
     return HTMLResponse(body, status_code=status,
                         headers={**_NO_STORE, "X-Robots-Tag": "noindex", "X-Frame-Options": "DENY"})
 
@@ -289,3 +295,47 @@ class OAuthCorsMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_with_cors)
+
+
+# ---- The MCP switch ---------------------------------------------------------------------
+
+# The endpoints only a connector's sign-in uses. Discovery and revocation stay
+# up: a client can still learn where to go, and give back what it holds.
+_SWITCHED_PATHS = frozenset((
+    "/oauth/register",
+    "/oauth/authorize",
+    "/oauth/authorize/request",
+    "/oauth/authorize/decision",
+    "/oauth/token",
+))
+
+
+def _switched_off_response(path: str):
+    """The refusal for ``path`` while MCP is off, in the shape its caller
+    reads: an OAuth error for the machine endpoints, a page for the browser's
+    /oauth/authorize, ``detail`` for the consent page. A 403, which clients
+    don't retry."""
+    msg = mcp_switch.OFF_MESSAGE
+    if path == "/oauth/authorize":
+        return _error_page(msg, 403, retry=False)
+    if path in ("/oauth/register", "/oauth/token"):
+        return JSONResponse({"error": "access_denied", "error_description": msg},
+                            status_code=403, headers=_NO_STORE)
+    return JSONResponse({"detail": msg}, status_code=403, headers=_NO_STORE)
+
+
+class McpSwitchMiddleware:
+    """While the MCP connector is switched off, refuse the connector-only
+    OAuth endpoints before routing — no body read, no authentication — so a
+    client stops at once instead of retrying a half-finished sign-in."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (scope["type"] != "http" or scope["path"] not in _SWITCHED_PATHS
+                or scope["method"] == "OPTIONS" or await mcp_switch.is_on()):
+            await self.app(scope, receive, send)
+            return
+        mcp_switch.log_refusal(scope["method"], scope["path"])
+        await _switched_off_response(scope["path"])(scope, receive, send)

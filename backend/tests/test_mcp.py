@@ -48,6 +48,10 @@ WRITE_TOOLS = {"fit_and_save_model", "save_model", "upload_dataset", "create_rbd
                "create_upload", "import_rbd", "import_excel", "fit_alt_model", "fit_recurrent_model"}
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 def _weibull(alpha, beta, placeholder=False):
     m = {"distribution_id": "weibull", "params": [{"name": "alpha", "value": alpha}, {"name": "beta", "value": beta}]}
     if placeholder:
