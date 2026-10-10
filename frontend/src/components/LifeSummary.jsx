@@ -8,6 +8,7 @@ import { lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
 import { bestFitSentence, boundWords, compareRows, criterionLabel, timeAtValue } from "../lifeResults.js";
 import { unitInText } from "./unitText.js";
+import { MORE_PARAMS } from "../moreModels.js";
 
 // The side panel beside a fitted life distribution's plot (#311): its
 // parameters by their plain names with their intervals, the data, and a quiet
@@ -28,6 +29,7 @@ const PARAMS = {
   gumbel_lev: { mu: ["Location μ", "time"], sigma: ["Scale σ", "time"] },
   logistic: { mu: ["Location μ", "time"], sigma: ["Scale σ", "time"] },
   rayleigh: { sigma: ["Scale σ", "time"] },
+  ...MORE_PARAMS, // #179 / #72 / #63
 };
 
 // "Hours" → "hour" for "per hour"; any other unit as written.
@@ -329,7 +331,7 @@ export default function LifeAside({ result, split = null, bestFit = false, level
   // Maximum likelihood goes without saying; another method is named.
   const method = result.options?.how && result.options.how !== "MLE" ? result.options.how : null;
   const caveat = result.fit_warning && !result.no_finite_maximum;
-  const showLife = result.kind === "distribution" && !result.no_finite_maximum;
+  const showLife = (result.kind === "distribution" || result.kind === "flexible") && !result.no_finite_maximum;
   return (
     <div className="aside">
       <div className="gof-card">
