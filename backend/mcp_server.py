@@ -99,6 +99,7 @@ from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
 from backend.services import import_guard
 from backend.services import oauth as oauth_service
+from backend.services import rbd_network, rbd_phases
 from backend.services import outage_logs as outage_logs_service
 from backend.services import models as models_service
 from backend.services import regression_diagnostics as checks_service
@@ -2656,6 +2657,24 @@ class RbdEdge(BaseModel):
     target: str
 
 
+class MissionPhase(BaseModel):
+    """One phase of a phased mission (#160), in order."""
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, description="The phase's name, e.g. 'Take-off' (distinct).")
+    duration: float = Field(ge=0, description="How long it lasts (diagram unit).")
+    not_needed: Optional[list[str]] = Field(None, description=(
+        "Block ids this phase doesn't need (they still age and can fail, and stay failed for later phases)."))
+    votes: Optional[dict[str, int]] = Field(None, description=(
+        "knode id -> working inputs it needs in this phase (instead of its n), e.g. both engines at take-off."))
+
+
+class NetworkTerminals(BaseModel):
+    """An undirected network's two terminals (#160)."""
+    model_config = ConfigDict(extra="forbid")
+    source: str = Field("input", description="First terminal: a node id (default the input node).")
+    target: str = Field("output", description="Second terminal: a node id (default the output node).")
+
+
 class StageComponent(BaseModel):
     label: str
     distribution: Optional[str] = Field(None, description="Inline distribution id (see params). Give this OR model_id.")
@@ -2756,6 +2775,15 @@ def create_rbd(
         "is down), horizon (how long it is owned) and discount_rate (% a year). Blocks carry their own costs "
         "(repair, replace, downtime, acquisition). cheapest_design needs block acquisition prices, a horizon "
         "and a downtime_rate; edit_rbd's set costs changes these later."))] = None,
+    phases: Annotated[Optional[list[MissionPhase]], Field(max_length=50, description=(
+        "Non-repairable only: a phased mission — the phases in order, each with a duration, the blocks it doesn't "
+        "need and per-phase knode counts. analyze_rbd then adds phased_mission (mission reliability, each "
+        "phase's failure probability, the riskiest phase)."))] = None,
+    network: Annotated[Optional[NetworkTerminals], Field(description=(
+        "Graph form, non-repairable: read the diagram as an UNDIRECTED network — blocks are nodes that fail, "
+        "edges are links that work both ways and never fail; analyze_rbd gives the two terminals' connection "
+        "reliability (exact) and each block's Birnbaum importance. No knodes, repeats or common-cause groups."
+    ))] = None,
 ) -> dict[str, Any]:
     """Build, validate and save a reliability block diagram to the user's workspace. Layout is automatic.
 
@@ -2801,15 +2829,17 @@ def create_rbd(
     settings = _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil, costs)
     if settings and not repairable:
         raise ToolError(f"{', '.join(settings)} apply to repairable diagrams only — set repairable=true.")
+    mission = _mission_settings(phases, network, repairable, stages is not None)
     if stages is not None:
         graph = _stage_graph(db, uid, stages, repairable)
         graph["unit"] = unit
         graph.update(settings)
+        rbd_graph._carry_mission(mission, graph)
     else:
         graph = rbd_graph.normalize_graph(
             {"nodes": [n.model_dump(exclude_none=True) for n in nodes],
              "edges": [e.model_dump() for e in edges or []],
-             "unit": unit, "repairable": repairable, **settings},
+             "unit": unit, "repairable": repairable, **settings, **mission},
             resolve_saved_model=lambda mid: models_service.get_model(db, mid, owners),
         )
     check = rbds_service.validate_graph(db, graph, owners)
@@ -2819,6 +2849,22 @@ def create_rbd(
     _cap(db, user, "rbds", "RBDs")
     rbd = rbds_service.save_rbd(db, name.strip(), graph, uid)
     return {**_rbd_brief(rbd), "analytic": check.get("analytic", True), **_rbd_outline(graph, check, include_graph)}
+
+
+def _mission_settings(phases, network, repairable: bool, stages: bool) -> dict:
+    """create_rbd's phased mission and network settings (#160) as graph keys."""
+    out: dict[str, Any] = {}
+    if (phases or network) and repairable:
+        raise ToolError("phases and network apply to non-repairable diagrams — drop repairable=true.")
+    if phases and network:
+        raise ToolError("A diagram is either a phased mission or a network, not both.")
+    if network is not None:
+        if stages:
+            raise ToolError("A network is drawn with nodes + edges (the graph form), not stages.")
+        out["network"] = network.model_dump()
+    if phases:
+        out["phases"] = [p.model_dump(exclude_none=True) for p in phases]
+    return out
 
 
 def _diagram_settings(repair_crews, maintenance_groups, safety_function, target_sil, costs=None) -> dict:
@@ -2847,6 +2893,11 @@ def _structure_summary(graph: dict) -> str:
     """The diagram in one line (#265), e.g. "PLC → (Pump A ∥ Pump B)", so a
     wrong structure shows at once — as the import preview gives it (#195).
     A bridge (or other wiring that isn't series-parallel) says so instead."""
+    if rbd_network.is_network(graph):  # #160: undirected, so no series-parallel line
+        try:
+            return rbd_network.summary(graph)
+        except rbd_network.NetworkError:
+            pass
     try:
         line = rbd_structure.structure_line(graph)
     except Exception:  # noqa: BLE001 - a summary never fails the write
@@ -2962,6 +3013,11 @@ class SetOp(_Op):
     costs: Optional[DiagramCosts] = Field(None, description=(
         "Repairable: the diagram's own costs — downtime_rate, horizon, discount_rate; fields left out are kept, "
         "0 clears one. A block's costs (repair, replace, downtime, acquisition) are update_node costs."))
+    phases: Optional[list[MissionPhase]] = Field(None, max_length=50, description=(
+        "Non-repairable: replaces the phased mission's phases ([] clears them)."))
+    network: Optional[Union[bool, NetworkTerminals]] = Field(None, description=(
+        "true or {source, target}: read the diagram as an undirected network between those terminals (default "
+        "input and output); false: back to a block diagram."))
 
 
 class AddCcfOp(_Op):
@@ -2997,6 +3053,8 @@ def _op_dict(op: BaseModel) -> dict:
         elif isinstance(value, dict):
             value = {k: v.model_dump(exclude_none=True) if isinstance(v, BaseModel) else v
                      for k, v in value.items()}
+        elif isinstance(value, list):  # set's phases (#160)
+            value = [v.model_dump(exclude_none=True) if isinstance(v, BaseModel) else v for v in value]
         out[key] = value
     return out
 
@@ -3358,7 +3416,9 @@ _SUMMARY_KEYS = (
     "available", "kind", "unit",
     # Non-repairable.
     "mttf", "b_life", "reliability_at", "conditional_age", "from", "reliability_now", "mean_residual_life",
-    "design_life",
+    "design_life", "phased_mission",
+    # Network (#160).
+    "terminals", "time", "reliability", "mean_time_to_disconnect",
     # Repairable.
     "availability", "steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
     "failure_frequency", "has_simulation", "cached", "needs_simulation", "code", "reason",
@@ -3544,7 +3604,12 @@ def analyze_rbd(
     'simulation_only', e.g. limited repair crews for wear-out lives) returns available=false without entitlement; asked
     with simulate=false (and no saved result matching the diagram as it is now) it returns available=false,
     needs_simulation=true, code 'needs_simulation' and a reason naming what needs the simulation, with no
-    figure fields — call again with simulate=true (Pro or credits) or offer export_rbd_python."""
+    figure fields — call again with simulate=true (Pro or credits) or offer export_rbd_python.
+    A network diagram (create_rbd network) returns kind 'network': the terminals' connection reliability at
+    `time` (where it is about 90%; `times` adds reliability_at), mean_time_to_disconnect and each block's
+    Birnbaum importance — exact, or simulated when too large (method says which). A non-repairable diagram
+    with phases adds phased_mission: mission_reliability (exact or simulated), each phase's
+    failure_probability and reliability_at_end, and riskiest_phase."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -3585,6 +3650,16 @@ def analyze_rbd(
     if design:
         head["warnings"] = design
 
+    if rbd_network.is_network(graph):  # #160: two-terminal reliability of an undirected network
+        if conditional_age is not None or current_state or target_reliability is not None or confidence is not None:
+            raise ToolError("conditional_age, current_state, target_reliability and confidence apply to block "
+                            "diagrams; this one is a network (its terminals' connection reliability). Drop them.")
+        result = rbd_network.analyze_for_owner(db, graph, owners, t_max=t_max, at_times=times)
+        out = {**head, "available": True, **rbd_network.agent_summary(result)}
+        if summary_only:
+            out.pop("curve", None)
+            out["importance"] = out["importance"][:_TOP_BLOCKS]
+        return out
     try:
         if graph.get("repairable"):
             actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
@@ -3667,6 +3742,11 @@ def analyze_rbd(
         if result.get("warnings"):
             # RePyability's common-cause warnings, and why the MTTF is missing (#210).
             out["warnings"] = list(dict.fromkeys([*(head.get("warnings") or []), *result["warnings"]]))
+        if rbd_phases.has_phases(graph):  # #160: the phased mission, alongside
+            try:
+                out["phased_mission"] = rbd_phases.agent_summary(rbd_phases.analyze_for_owner(db, graph, owners))
+            except AnalysisError as exc:
+                out["phased_mission"] = {"available": False, "message": str(exc)}
         return _summary_only(out) if summary_only else out
     except (ToolError, *_USER_ERRORS, models_service.ModelNotFound, fitting.ModelNotFound,
             rbds_service.RbdNotFound):
