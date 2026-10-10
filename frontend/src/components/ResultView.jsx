@@ -269,7 +269,7 @@ export default function ResultView({ result, modelId = null, name = null, split 
             </div>
             {!isRegression && (
               <LifeAside result={result} split={split} bestFit={bestFit} level={level} onLevel={setLevel}
-                         compare={compare} onPick={onPick} />
+                         compare={compare} onPick={onPick} modelId={modelId} name={name} />
             )}
           </div>
         )}
