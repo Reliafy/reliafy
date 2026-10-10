@@ -123,3 +123,13 @@ test("the file split reads words through the map, weighted by a count", async ()
   assert.deepEqual(await dataSplit(codes, { ...EMPTY_MAPPING, x: "t", c: "c", c_invert: true }), { failed: 1, running: 1, other: 1 });
   assert.equal(await dataSplit(file, { ...m, c_map: { Failed: 0 } }), null);
 });
+
+test("a failure-mode column without a status one: a blank mode is still running (#177)", () => {
+  const f = columnFacts({ ...PUMPS, columns: [...PUMPS.columns, "Mode"], blanks: [0, 0, 0, 0, 6],
+                          dtypes: [...PUMPS.dtypes, "str"], n_unique: [...PUMPS.n_unique, 3],
+                          values: [...PUMPS.values, { seal: 9, bearing: 6 }] });
+  const m = { ...EMPTY_MAPPING, x: "Operating Hours", e: "Mode" };
+  assert.deepEqual(statusSummary(m, f, 21), { failed: 15, running: 6, left: 0, interval: 0 });
+  assert.deepEqual(dataStepProblems(m, f, 21), []);
+  assert.match(dataStepProblems({ ...m, tl: "Operating Hours" }, f, 21)[0], /one time per unit/);
+});

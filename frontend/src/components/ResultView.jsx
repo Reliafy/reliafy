@@ -7,6 +7,7 @@ import Coefficients from "./Coefficients.jsx";
 import ModelValidation from "./ModelValidation.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import CiNote from "./CiNote.jsx";
+import CompetingRisksResult from "./CompetingRisksResult.jsx";
 import LifeAside, { paramView } from "./LifeSummary.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { distColor } from "../instrument.js";
@@ -139,10 +140,15 @@ const REGRESSION_TABS = [
 // ``compare`` (() => Promise<selection>) runs Best fit's comparison on the
 // same data; ``onPick(distributionId)`` refits with another distribution
 // (#293) — both optional.
-export default function ResultView({ result, modelId = null, name = null, split = null, compare = null,
-                                    onPick = null }) {
-  if (result.kind === "per_demand") return <PerDemandPanel result={result} />;
+export default function ResultView(props) {
+  if (props.result.kind === "per_demand") return <PerDemandPanel result={props.result} />;
+  // Life data by failure mode (#177) has its own tabs and panel; a separate
+  // component, so a change of kind remounts rather than reorders hooks.
+  if (props.result.kind === "competing_risks") return <CompetingRisksResult result={props.result} name={props.name} />;
+  return <LifeResult {...props} />;
+}
 
+function LifeResult({ result, modelId = null, name = null, split = null, compare = null, onPick = null }) {
   const isRegression = result.kind === "regression";
   const isNonparametric = result.kind === "nonparametric";
   const isDiscrete = result.kind === "discrete";
@@ -270,7 +276,7 @@ export default function ResultView({ result, modelId = null, name = null, split 
               <SurvivalPlot estimate={result.estimate} unit={result.unit}
                             download={`${name || result.distribution} — survival curve`} />
             </div>
-            <LifeAside result={result} split={split} />
+            <LifeAside result={result} split={split} level={level} onLevel={setLevel} />
           </div>
         )}
         {tab === "plot" && (

@@ -34,7 +34,10 @@ const MEANINGS = [
 ];
 const FIXED = { "-1": "Found failed (left-censored)", 2: "Interval" };
 
-export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitChange, facts = {}, timeVarying = null }) {
+// ``failureMode`` offers the failure-mode column (#177: the fit wizard only);
+// ``timeVarying`` (#60) is the layout of an item's rows when covariates change over time.
+export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitChange, facts = {},
+                                      timeVarying = null, failureMode = false }) {
   const usingInterval = !!mapping.xl || !!mapping.xr;
   const options = (none) => [{ value: "", label: none }, ...columns];
 
@@ -128,6 +131,10 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
           )}
         </div>
         {!timeVarying && field("n", "Count (optional)", "— none: one unit per row —")}
+        {/* #177: a failure-mode column fits the modes as competing risks. Shown with
+            covariates over time too, so a mode mapped before can be cleared. */}
+        {failureMode && field("e", "Failure mode (optional)", "— none: all modes together —",
+                              mapping.e ? "A blank mode is a unit still running." : null)}
       </div>
 
       {!timeVarying && (

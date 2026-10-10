@@ -32,7 +32,8 @@ export default function ModelPage() {
     navigate("/modelling/life");
   };
 
-  const canEdit = model && !model.read_only && model.dataset_id;
+  // A competing-risks fit (#177) is refitted from the wizard, not edited here.
+  const canEdit = model && !model.read_only && model.dataset_id && model.kind !== "competing_risks";
 
   return (
     <div className="app model-page">

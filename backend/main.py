@@ -368,6 +368,8 @@ def fit_endpoint(
     tl: str | None = Form(default=None),
     tr: str | None = Form(default=None),
     i: str | None = Form(default=None),
+    e: str | None = Form(default=None),
+    g: str | None = Form(default=None),
     z: list[str] = Form(default=[]),
     formula: str | None = Form(default=None),
     unit: str | None = Form(default=None),
@@ -398,7 +400,11 @@ def fit_endpoint(
     never holds up other requests.
     """
     # ``i`` (#60): an item column, for covariates that change over time.
-    mapping = {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr, "i": i}
+    # e / g: the failure-mode and group columns of a competing-risks fit (#177).
+    mapping = {
+        "x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr,
+        "i": i, "e": e, "g": g,
+    }
     try:
         if dataset_id:
             dataset = datasets_service.get_dataset(session, dataset_id, owner_id=user["uid"])

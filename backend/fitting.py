@@ -83,7 +83,7 @@ from surpyval import (
 from surpyval import GumbelPH, LogisticPH
 from surpyval.univariate.regression import CoxPH
 
-from backend import life_bounds, param_intervals
+from backend import life_bounds, np_life, param_intervals
 from backend.units import canonical_unit, unit_in_text
 from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
@@ -1257,6 +1257,11 @@ def fit(
     of words the same way, in place of ``c_invert``. Any SurPyval
     error is wrapped in :class:`FitError`.
     """
+    from backend import competing_risks  # local: it imports services that import this module
+
+    if not competing_risks.is_competing_risks(distribution):
+        # The failure-mode and group columns (#177) are read by competing risks only.
+        mapping = competing_risks.plain_mapping(mapping)
     options = dict(options or {})
     c_invert = bool(options.pop(CENSOR_INVERT_KEY, False)) and bool(mapping.get("c"))
     c_map = options.pop(CENSOR_MAP_KEY, None) if mapping.get("c") else None
@@ -1293,10 +1298,21 @@ def fit(
                               options.get("mixture") or MIXTURE_DEFAULT_COMPONENTS)
     elif distribution in DISTRIBUTIONS:
         result = _fit_distribution(distribution, df, mapping, options)
+    elif competing_risks.is_competing_risks(distribution):
+        # Life data by failure mode (#177).
+        if formula:
+            raise FitError("A regression by failure mode takes covariate columns, not a formula.")
+        if options:
+            raise FitError("Fit options apply to a single distribution, not to failure modes.")
+        try:
+            result = competing_risks.fit(distribution, df, mapping, covariates, unit)
+        except competing_risks.CompetingRisksError as exc:
+            raise FitError(str(exc)) from exc
     else:
         raise FitError(
             f"Unknown model '{distribution}'. Available: "
-            f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS])}."
+            f"{', '.join([BEST_ID, *DISTRIBUTIONS, MIXTURE_ID, *DISCRETE, *NONPARAMETRIC, *REGRESSION_MODELS,
+                          *competing_risks.CR_MODELS])}."
         )
     result["unit"] = canonical_unit(unit)  # #265: "hours", "hrs" → "Hours"
     if result.get("kind") in ("distribution", "discrete", "regression") and param_intervals.note_for(
@@ -1305,8 +1321,9 @@ def fit(
     if result.get("mixture_summary") and result["unit"]:
         result["mixture_summary"] = (mixture_summary(result, unit_in_text(result["unit"]))
                                      or result["mixture_summary"])
-    if result.get("kind") == "distribution":
-        # B-lives and MTTF with their 90% lower bounds (#288).
+    if result.get("kind") in ("distribution", "nonparametric"):
+        # B-lives and MTTF with their 90% lower bounds (#288); a
+        # non-parametric estimate's mean life is restricted (#85).
         entry = _MODEL_STORE.get((result.get("functions") or {}).get("model_id"))
         life = life_bounds.life_for(entry and entry.get("model"), bool(result.get("no_finite_maximum")))
         if life:
@@ -2357,6 +2374,8 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
             "R": [float(v) for v in R[finite]],
             "cb_lower": [None if not np.isfinite(v) else float(v) for v in lower[finite]],
             "cb_upper": [None if not np.isfinite(v) else float(v) for v in upper[finite]],
+            # #85: simultaneous 95% bands, for the plot's whole-curve toggle.
+            "bands": np_life.bands(model),
         },
         "functions": {"meta": FUNCTIONS, "curves": curves, "model_id": cache_id},
         "gof": [],

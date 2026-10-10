@@ -156,7 +156,13 @@ def time_at_reliability(model, reliability, confidence: float = DEFAULT_CONFIDEN
     return {"confidence": confidence, "bound": bound, "points": points, "bounds_note": note}
 
 
-def _mttf(model, alpha: float, with_bounds: bool) -> dict:
+def _mttf(model, alpha: float, with_bounds: bool, tau=None) -> dict:
+    if _is_nonparametric(model):
+        # #85: the area under an empirical curve, restricted to a horizon
+        # unless the curve reaches zero, with mean_cb's bounds.
+        from backend import np_life
+
+        return np_life.mean_life(model, alpha, tau)
     out = {"value": None, "lower": None}
     try:
         with np.errstate(all="ignore"):
@@ -175,14 +181,16 @@ def _mttf(model, alpha: float, with_bounds: bool) -> dict:
     return out
 
 
-def life_summary(model, confidence: float = DEFAULT_CONFIDENCE, with_bounds: bool = True) -> dict:
+def life_summary(model, confidence: float = DEFAULT_CONFIDENCE, with_bounds: bool = True, tau=None) -> dict:
     """B1, B5, B10 and B50 and the MTTF, each with a one-sided lower bound at
     ``confidence`` (the time we can be that sure it is at least).
 
     ``{"confidence", "bound": "lower", "b_lives": [{"p", "label", "value",
     "lower"}], "mttf": {"value", "lower"}, "bounds_note"}``. ``with_bounds``
     false (a fit with no finite maximum) gives the values alone. An MTTF that
-    is infinite (a limited failure population: some never fail) is null."""
+    is infinite (a limited failure population: some never fail) is null. A non-parametric estimate's ``mttf`` is its
+    mean life to ``tau`` (default: its last observation), with ``tau``,
+    ``upper`` and ``restricted`` (#85)."""
     confidence = check_confidence(confidence)
     probs = np.array([p for p, _ in B_LIVES])
     at = time_at_reliability(model, 1.0 - probs, confidence, "lower", with_bounds=with_bounds)
@@ -192,7 +200,7 @@ def life_summary(model, confidence: float = DEFAULT_CONFIDENCE, with_bounds: boo
         "confidence": confidence,
         "bound": "lower",
         "b_lives": b_lives,
-        "mttf": _mttf(model, 1.0 - confidence, with_bounds and at["bounds_note"] is None),
+        "mttf": _mttf(model, 1.0 - confidence, with_bounds and at["bounds_note"] is None, tau),
         "bounds_note": at["bounds_note"],
     }
 
@@ -218,7 +226,8 @@ MAX_POINTS = 50
 def answer(model, body: Optional[dict], no_finite_maximum: bool = False) -> dict:
     """The app's life request on a live model: ``{"confidence"}`` gives the
     :func:`life_summary`; with ``"reliability": [R, ...]`` (and ``"bound"``,
-    lower by default) the :func:`time_at_reliability` instead. Raises
+    lower by default) the :func:`time_at_reliability` instead. ``"tau"``
+    sets a non-parametric estimate's mean-life horizon (#85). Raises
     ValueError on a bad request."""
     body = body or {}
     confidence = body.get("confidence", DEFAULT_CONFIDENCE)
@@ -231,4 +240,4 @@ def answer(model, body: Optional[dict], no_finite_maximum: bool = False) -> dict
             raise ValueError(f"At most {MAX_POINTS} reliabilities at a time.")
         return time_at_reliability(model, rel, confidence, body.get("bound") or "lower",
                                    with_bounds=not no_finite_maximum)
-    return life_summary(model, confidence, with_bounds=not no_finite_maximum)
+    return life_summary(model, confidence, with_bounds=not no_finite_maximum, tau=body.get("tau"))

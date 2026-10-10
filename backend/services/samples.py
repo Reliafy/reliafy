@@ -159,6 +159,39 @@ _INSULATING_FLUID_CSV = (
     "3.67,36\n3.99,36\n5.35,36\n13.77,36\n25.5,36\n"
 ).encode()
 
+# Life data by failure mode (#177): 72 pumps at two sites, each run until it
+# failed or the records stopped. A failed pump names its mode; a blank mode
+# is a pump still running. Bearing wear is the wear-out mode, faster at a
+# higher duty; seal leaks come early and are commoner at site B; impeller
+# damage is rare and random. The competing-risks demo: seal leaks lead early,
+# bearing wear overtakes them, and Gray's test finds the sites differ in
+# seal leaks only.
+_PUMP_MODES_CSV = (
+    "pump,hours,failure_mode,site,duty_pct\n"
+    "P-01,4810,bearing wear,A,90\nP-02,3430,bearing wear,B,90\nP-03,920,impeller damage,A,90\n"
+    "P-04,2810,bearing wear,B,90\nP-05,4720,,A,60\nP-06,1930,bearing wear,B,90\n"
+    "P-07,3730,bearing wear,A,90\nP-08,1960,seal leak,B,60\nP-09,4180,,A,60\nP-10,4550,,B,60\n"
+    "P-11,4180,bearing wear,A,90\nP-12,3050,bearing wear,B,90\nP-13,5240,,A,75\n"
+    "P-14,2750,seal leak,B,75\nP-15,5360,bearing wear,A,90\nP-16,3980,,B,60\n"
+    "P-17,2790,bearing wear,A,90\nP-18,3870,,B,90\nP-19,5540,,A,60\nP-20,2640,bearing wear,B,90\n"
+    "P-21,4850,bearing wear,A,90\nP-22,5290,seal leak,B,60\nP-23,1470,bearing wear,A,75\n"
+    "P-24,2360,bearing wear,B,90\nP-25,2600,bearing wear,A,90\nP-26,420,seal leak,B,60\n"
+    "P-27,1400,seal leak,A,75\nP-28,4250,bearing wear,B,75\nP-29,4340,bearing wear,A,75\n"
+    "P-30,2600,bearing wear,B,90\nP-31,3980,,A,90\nP-32,4820,bearing wear,B,75\n"
+    "P-33,2860,bearing wear,A,90\nP-34,4290,seal leak,B,75\nP-35,4170,bearing wear,A,90\n"
+    "P-36,340,seal leak,B,60\nP-37,3020,bearing wear,A,90\nP-38,1080,bearing wear,B,90\n"
+    "P-39,6600,,A,75\nP-40,3070,seal leak,B,75\nP-41,4020,,A,60\nP-42,4350,,B,60\nP-43,6280,,A,60\n"
+    "P-44,410,seal leak,B,90\nP-45,4510,seal leak,A,75\nP-46,2260,impeller damage,B,90\n"
+    "P-47,4290,bearing wear,A,75\nP-48,500,seal leak,B,75\nP-49,5410,,A,75\n"
+    "P-50,2450,impeller damage,B,90\nP-51,7210,,A,75\nP-52,220,seal leak,B,90\nP-53,6150,,A,75\n"
+    "P-54,3920,,B,60\nP-55,3960,bearing wear,A,90\nP-56,3550,seal leak,B,75\nP-57,4520,,A,90\n"
+    "P-58,3820,bearing wear,B,90\nP-59,7010,,A,60\nP-60,820,impeller damage,B,60\n"
+    "P-61,3770,bearing wear,A,90\nP-62,4280,impeller damage,B,60\nP-63,3520,,A,60\n"
+    "P-64,4260,seal leak,B,75\nP-65,5730,bearing wear,A,75\nP-66,2990,bearing wear,B,90\n"
+    "P-67,5940,bearing wear,A,90\nP-68,1490,impeller damage,B,75\nP-69,6750,,A,60\nP-70,6960,,B,75\n"
+    "P-71,4210,,A,60\nP-72,50,seal leak,B,60\n"
+).encode()
+
 SAMPLE_DATASETS = [
     {
         "id": "sample-ds-bearings",
@@ -194,6 +227,11 @@ SAMPLE_DATASETS = [
         "id": "sample-ds-pump-load",
         "name": "Pump bearings under changing load (sample)",
         "csv": _PUMP_LOAD_CSV,
+    },
+    {
+        "id": "sample-ds-pump-modes",
+        "name": "Pump failures by mode (sample)",
+        "csv": _PUMP_MODES_CSV,
     },
 ]
 
@@ -331,6 +369,14 @@ SAMPLE_MODELS = [
         "mapping": {"i": "pump", "xl": "start_h", "xr": "stop_h", "c": "censored"},
         "covariates": ["load_pct"],
         "covariate_units": {"load_pct": "%"},
+        "unit": "hours",
+    },
+    {
+        "id": "sample-model-pump-modes",
+        "name": "Pump failures by mode — competing risks (sample)",
+        "dataset_id": "sample-ds-pump-modes",
+        "distribution": "competing_risks",
+        "mapping": {"x": "hours", "e": "failure_mode", "g": "site"},
         "unit": "hours",
     },
 ]

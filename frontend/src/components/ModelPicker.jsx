@@ -34,7 +34,9 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false }
     // as plain parameters, but a node can reference a saved one and supply
     // covariate values on the calculator.
     listModels()
-      .then((d) => setSaved(rbdBlock ? d.models.filter((m) => m.kind !== "nonparametric") : d.models))
+      // Fits by failure mode (#177) have no single life distribution to pick.
+      .then((d) => setSaved(d.models.filter((m) => m.kind !== "competing_risks"
+        && !(rbdBlock && m.kind === "nonparametric"))))
       .catch(() => {});
   }, [rbdBlock]);
 
