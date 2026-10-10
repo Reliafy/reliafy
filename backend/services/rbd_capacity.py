@@ -306,11 +306,11 @@ def document_capacity(graph: dict) -> Optional[list]:
     return out
 
 
-def from_document(entries) -> dict:
-    """``{node name: capacity as the builder stores it}`` from a RePyability
-    document's ``capacity`` list; entries it can't read are skipped (an
-    unlimited capacity is no capacity)."""
-    out = {}
+def from_document(entries) -> list:
+    """``[(node name as the file gives it, capacity as the builder stores
+    it)]`` from a RePyability document's ``capacity`` list; entries it can't
+    read are skipped (an unlimited capacity is no capacity)."""
+    out = []
     for entry in entries or []:
         if not isinstance(entry, dict) or "node" not in entry:
             continue
@@ -323,7 +323,7 @@ def from_document(entries) -> dict:
         except (CapacityError, TypeError, ValueError):
             continue
         if value is not None:
-            out[str(entry["node"])] = value
+            out.append((entry["node"], value))
     return out
 
 
@@ -351,8 +351,6 @@ def export_lines(graph: dict) -> list[str]:
         out.append(f"PERIOD = {settings.get('period')!r}  # the time the capacity is read at")
     return out
 
-
-EXPORT_MAIN_CALL = 'if __name__ == "__main__":\n    main()\n'
 
 _PRODUCTION_REPAIRABLE = '''
 def production():
@@ -410,4 +408,4 @@ def export_main(graph: dict) -> Optional[str]:
     if not graph_capacities(graph or {}):
         return None
     fn = _PRODUCTION_REPAIRABLE if graph.get("repairable") else _PRODUCTION_NONREPAIRABLE
-    return fn.strip("\n") + '\n\n\nif __name__ == "__main__":\n    main()\n    production()\n'
+    return fn.strip("\n") + '\n\n\nif __name__ == "__main__":\n    main()\n    production()'
