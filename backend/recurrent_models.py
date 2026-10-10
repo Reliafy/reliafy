@@ -362,14 +362,48 @@ def _first(values) -> float | None:
     return v if np.isfinite(v) else None
 
 
+def _estimates(model) -> np.ndarray:
+    """Every parameter's estimate in ``parameter_names`` order: a
+    proportional-intensity model keeps its baseline in ``params`` and its
+    covariate coefficients in ``coeffs`` (SurPyval 0.23)."""
+    params = np.ravel(np.asarray(model.params, dtype=float))
+    coeffs = getattr(model, "coeffs", None)
+    if coeffs is not None and params.size < len(model.parameter_names):
+        params = np.concatenate([params, np.ravel(np.asarray(coeffs, dtype=float))])
+    return params
+
+
+def _param_cb_rows(model) -> dict:
+    """``{name: (estimate, lower, upper)}`` from SurPyval's ``param_cb`` on
+    each parameter, for a model whose ``summary()`` SurPyval doesn't have
+    (0.23's proportional-intensity model); estimates only where it has no
+    interval either."""
+    out = {}
+    for name, value in zip(model.parameter_names, _estimates(model)):
+        lo = hi = None
+        try:
+            with warnings.catch_warnings(), np.errstate(all="ignore"):
+                warnings.simplefilter("ignore")
+                cb = np.asarray(model.param_cb(name, alpha_ci=1 - CI_LEVEL), dtype=float).ravel()
+            if cb.size == 2 and np.all(np.isfinite(cb)):
+                lo, hi = float(cb[0]), float(cb[1])
+        except Exception:  # noqa: BLE001 - no likelihood: the estimate alone
+            pass
+        out[str(name)] = (float(value), lo, hi)
+    return out
+
+
 def _summary_rows(model) -> dict:
-    """``{name: (estimate, lower, upper)}`` from SurPyval's ``summary()``."""
+    """``{name: (estimate, lower, upper)}`` from SurPyval's ``summary()``, or
+    its ``param_cb`` where the model has no ``summary()``."""
+    if not callable(getattr(model, "summary", None)):
+        return _param_cb_rows(model)
     try:
         with warnings.catch_warnings(), np.errstate(all="ignore"):
             warnings.simplefilter("ignore")
             table = model.summary(alpha_ci=1 - CI_LEVEL)
     except Exception:  # noqa: BLE001 - no likelihood: estimates only
-        return {n: (float(v), None, None) for n, v in zip(model.parameter_names, np.ravel(model.params))}
+        return {n: (float(v), None, None) for n, v in zip(model.parameter_names, _estimates(model))}
     lo_col = next(c for c in table.columns if str(c).startswith("lower"))
     hi_col = next(c for c in table.columns if str(c).startswith("upper"))
     out = {}
@@ -469,7 +503,10 @@ def by_cause(inputs: dict, causes: np.ndarray, unit: str = "") -> dict | None:
                           "beta_ci": cis.get("beta"), "growth": growth, "growth_basis": basis}
         rows.append(row)
     try:
-        aic = float(para.aic())
+        # The causes' likelihoods are separate, so the joint AIC is the sum
+        # of each cause's (what CauseSpecificNHPP.aic() gives where it has one).
+        aic = float(para.aic()) if callable(getattr(para, "aic", None)) else float(
+            sum(m.aic() for m in para.models.values()))
     except Exception:  # noqa: BLE001
         aic = None
     return {"causes": rows, "n_causes": int(len(counts)), "failures": total, "aic": aic,
@@ -522,7 +559,8 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str, unit: str = "", gof_test
 def _fit_regression(inputs: dict, Z: np.ndarray, names: list, opts: dict):
     frame = pd.DataFrame(Z, columns=names)
     kw = {k: inputs[k] for k in ("i", "c", "n", "tl", "tr") if inputs.get(k) is not None}
-    return ProportionalIntensityNHPP.fit(inputs["x"], frame, baseline=BASELINES[opts["baseline"]], **kw)
+    # SurPyval 0.23 names the baseline process ``dist``.
+    return ProportionalIntensityNHPP.fit(inputs["x"], frame, dist=BASELINES[opts["baseline"]], **kw)
 
 
 def _fit_renewal(model_id: str, inputs: dict, opts: dict):

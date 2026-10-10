@@ -59,15 +59,19 @@ def test_proportional_intensity_matches_surpyval_and_reads_each_covariate():
     # most pumps have (five each: alphabetical, Coastal).
     Z = pd.DataFrame({"site: Inland": (df.site == "Inland").astype(float), "duty_pct": df.duty_pct.astype(float)})
     direct = _quiet(ProportionalIntensityNHPP.fit, df.hours.to_numpy(float), Z, i=df.pump.to_numpy(),
-                    tr=df.observed_to.to_numpy(float), baseline=CrowAMSAA)
-    table = direct.summary()
+                    tr=df.observed_to.to_numpy(float), dist=CrowAMSAA)
+    # Each estimate and SurPyval's param_cb (SurPyval 0.23 has no summary()
+    # on this model): the baseline in params, the coefficients in coeffs.
+    estimate = dict(zip(direct.parameter_names, [*direct.params, *direct.coeffs]))
     by_name = {c["name"]: c for c in payload["coefficients"]}
     for name in ("site: Inland", "duty_pct"):
-        assert by_name[name]["coef"] == pytest.approx(table.loc[name, "estimate"], rel=1e-6)
-        assert by_name[name]["ratio_ci"][0] == pytest.approx(np.exp(table.loc[name, "lower 95%"]), rel=1e-6)
+        assert by_name[name]["coef"] == pytest.approx(estimate[name], rel=1e-6)
+        lo = float(np.ravel(direct.param_cb(name, alpha_ci=0.05))[0])
+        assert by_name[name]["ratio_ci"][0] == pytest.approx(np.exp(lo), rel=1e-6)
     params = {p["name"]: p for p in payload["params"]}
-    assert params["beta"]["value"] == pytest.approx(table.loc["beta", "estimate"], rel=1e-6)
-    assert params["beta"]["ci"][0] == pytest.approx(table.loc["beta", "lower 95%"], rel=1e-6)
+    assert params["beta"]["value"] == pytest.approx(estimate["beta"], rel=1e-6)
+    assert params["beta"]["ci"][0] == pytest.approx(float(np.ravel(direct.param_cb("beta", alpha_ci=0.05))[0]),
+                                                    rel=1e-6)
 
     # Plain readings: inland pumps fail more often, and higher duty too.
     site = by_name["site: Inland"]
@@ -206,7 +210,8 @@ def test_by_cause_matches_cause_specific_mcf_and_nhpp():
     assert valve["mcf"]["upper"] == pytest.approx(list(np.max(cb, axis=1)))
     assert valve["fit"]["beta"] == pytest.approx(float(para.models["valve"].params[1]), rel=1e-6)
     assert valve["fit"]["growth"] == "deteriorating"
-    assert bc["aic"] == pytest.approx(para.aic(), rel=1e-6)
+    # The causes' likelihoods are separate: the joint AIC is the sum.
+    assert bc["aic"] == pytest.approx(sum(m.aic() for m in para.models.values()), rel=1e-6)
 
     # A blank cause on a failure is counted as such, not dropped.
     blank = df.copy()
