@@ -1731,6 +1731,10 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         rbdId={savedRbdId}
         name={savedRbdName}
         onBuild={toBuilder}
+        onNodeData={(updates) =>
+          // #52: covariate schedules set in the calculator, put on their blocks (unsaved).
+          setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: { ...n.data, ...updates[n.id] } } : n)))
+        }
       />
     </div>
     <div
