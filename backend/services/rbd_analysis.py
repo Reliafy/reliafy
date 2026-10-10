@@ -510,6 +510,10 @@ def _build_rbd(
     input/output), and the last two are the ids pinned working/failed.
     """
     visited = visited or set()
+    if isinstance(graph.get("network"), dict):  # #160: an undirected network has its own analysis
+        from backend.services.rbd_network import NETWORK_ONLY
+
+        raise AnalysisError(NETWORK_ONLY)
     _check_limits(graph)
     require_blocks(graph)
     nodes = graph.get("nodes") or []
