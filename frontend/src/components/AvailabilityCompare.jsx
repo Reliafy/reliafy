@@ -13,9 +13,13 @@ import { unitInText } from "./unitText.js";
 // simulated with common random numbers, so blocks with the same id share their
 // failures and repairs and the interval reflects the design change, not chance.
 //
+// Since #321 the difference is exact (``method: "exact"``, no interval) where
+// both designs have exact values over the window, and simulated only where
+// they don't.
+//
 // Each compared quantity is one entry of QUANTITIES, read from
 // ``result.differences[key]``: availability, and cost (#99) when both designs
-// are priced. ``digits`` sizes the rounding to the interval, ``value`` formats
+// are priced — what owning each for the window costs, purchases included. ``digits`` sizes the rounding to the interval, ``value`` formats
 // a design's figure, ``diff`` a signed difference, ``amount`` the verdict's.
 const signed = (v, f) => (v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${f(Math.abs(v))}`);
 const QUANTITIES = [
@@ -41,11 +45,11 @@ const QUANTITIES = [
   {
     key: "cost",
     label: "Cost",
-    more: "costs more to run",
-    less: "costs less to run",
-    unit: " over the window",
+    more: "costs more to own",
+    less: "costs less to own",
+    unit: " over the window, purchases included",
     longRun: "Running cost per unit time",
-    window: "Cost of the window",
+    window: "Owning it for the window",
     diffLabel: "Difference (B − A)",
     designValue: (d) => d.cost_rate,
     windowValue: (d) => d.window_cost,
@@ -65,12 +69,15 @@ const THIS = "This diagram";
 
 // The plain-language verdict for one quantity's difference (B − A).
 function verdict(q, diff, nameA, nameB) {
+  const exact = diff.method === "exact";
   if (diff.estimate === 0 && diff.standard_error === 0) {
-    return <>No difference: {nameA} and <b>{nameB}</b> behaved identically in every simulated history.</>;
+    return exact
+      ? <>No difference: {nameA} and <b>{nameB}</b> have the same expected {q.label.toLowerCase()} over the window.</>
+      : <>No difference: {nameA} and <b>{nameB}</b> behaved identically in every simulated history.</>;
   }
   const conf = Math.round((diff.confidence || 0.95) * 100);
   const d = q.digits(diff.half_width || diff.tolerance || diff.estimate);
-  const ci = (lo, hi) => `${conf}% CI ${q.diff(lo, d)} to ${q.diff(hi, d)}`;
+  const ci = (lo, hi) => (exact ? "exact" : `${conf}% CI ${q.diff(lo, d)} to ${q.diff(hi, d)}`);
   const is = q.key === "availability" ? "is " : "";
   if (diff.verdict === "b_higher") {
     return <><b>{nameB}</b> {is}{q.more} than {nameA} by <b>{q.amount(diff.estimate, d)}</b>{q.unit} ({ci(diff.lower, diff.upper)}).</>;
@@ -150,8 +157,8 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
       {!c && !error && !needsPro && (
         <p className="hint" style={{ margin: 0 }}>
           Save a copy of this diagram with one change (a faster repair, a spare) and compare the two.
-          Blocks with the same id are simulated with the same random numbers, so the interval
-          measures the change itself, not simulation noise.
+          The difference is exact where both designs allow it; otherwise blocks with the same id are
+          simulated with the same random numbers, so the interval measures the change itself.
         </p>
       )}
       {needsPro && (
@@ -179,7 +186,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
                   <tr>
                     <th>Design</th>
                     <th title="Exact long-run (steady-state) value">{q.longRun}</th>
-                    <th title={`Simulated mean over the ${fmtT(c.t_simulation)}${u} window`}>{q.window}</th>
+                    <th title={`${diff.method === "exact" ? "Exact" : "Simulated"} mean over the ${fmtT(c.t_simulation)}${u} window from new`}>{q.window}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -197,8 +204,10 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
                     <td className="calc-row-label">{q.diffLabel}</td>
                     <td>{q.exactDiff(diff.exact, d)}</td>
                     <td>
-                      {q.diff(diff.estimate, d)}{" "}
-                      <span className="muted">({q.diff(diff.lower, d)} to {q.diff(diff.upper, d)})</span>
+                      {q.diff(diff.estimate, d)}
+                      {diff.method !== "exact" && (
+                        <> <span className="muted">({q.diff(diff.lower, d)} to {q.diff(diff.upper, d)})</span></>
+                      )}
                     </td>
                   </tr>
                 </tbody>
@@ -206,9 +215,19 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
             </div>
             {q.key === "cost" ? (
               <p className="muted-line" style={{ margin: 0 }}>
-                The cost of the window comes from the same paired simulations as the availability
-                {c.common_random_numbers ? " (common random numbers)" : ""}; the running cost per unit time is
-                exact where RePyability has it. Costs aren't discounted.
+                Owning each design for {fmtT(c.t_simulation)}{u} from new: its purchase prices
+                {diff.acquisition ? ` (${signed(diff.acquisition, fmtMoney)} for ${nameB})` : ""} plus its running
+                costs{diff.method === "exact"
+                  ? ", exact"
+                  : `, from the same paired simulations as the availability${c.common_random_numbers ? " (common random numbers)" : ""}`}.
+                The running cost per unit time is the long-run rate, exact where RePyability has it. Costs aren&rsquo;t
+                discounted.
+              </p>
+            ) : diff.method === "exact" ? (
+              <p className="muted-line" style={{ margin: 0 }}>
+                Exact: RePyability works out both designs&rsquo; expected availability over a window of{" "}
+                {fmtT(c.t_simulation)}{u} from new, so the difference has no simulation noise and nothing is simulated.
+                The long-run values are exact too.
               </p>
             ) : (
             <p className="muted-line" style={{ margin: 0 }}>
