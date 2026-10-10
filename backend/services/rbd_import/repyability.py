@@ -80,12 +80,17 @@ def parse(data: bytes, filename: str) -> list[ImportedDiagram]:
         raise RbdImportError("The JSON file is nested too deeply.") from None
     except ValueError as exc:
         raise RbdImportError(f"The file isn't valid JSON ({exc}).") from None
-    if not isinstance(doc, dict) or doc.get("type") not in _TYPES:
+    network = isinstance(doc, dict) and doc.get("type") == "Network"  # #160: Reliafy's network files
+    if not isinstance(doc, dict) or (doc.get("type") not in _TYPES and not network):
         raise RbdImportError(
             "This JSON isn't a RePyability diagram: its “type” must be NonRepairableRBD or RepairableRBD "
             "(save one with rbd.to_json()).")
     base = (filename or "").rsplit("/", 1)[-1]
     stem = (base.split(".", 1)[0] if "." in base else base) or "Imported diagram"
+    if network:
+        from backend.services import rbd_network
+
+        return rbd_network.import_document(doc, stem)
 
     from backend.services import rbd_json
 
