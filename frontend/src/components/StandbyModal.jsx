@@ -4,7 +4,7 @@ import ModelPicker from "./ModelPicker.jsx";
 import { BlockCostSection } from "./RbdBlockCosts.jsx";
 import { RbdUnitContext } from "./RbdNodes.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { MeanEcho } from "./LifeModelModal.jsx";
+import { BlockNameField, MeanEcho } from "./LifeModelModal.jsx";
 
 // In a repairable diagram (#156) the block is a standby group of identical
 // units: the duty unit and its spares each fail by the life model and are
@@ -28,8 +28,15 @@ function initialKind(initial) {
   const d = initial?.dormancy ?? (initial?.cold ? 0 : 1);
   return d <= 0 ? "cold" : d >= 1 ? "hot" : "warm";
 }
+// A spare's chance of starting when switched in, as first offered on a cold
+// standby (#299): a switch-over that works 99 times in 100, not a perfect one.
+// Anything set before is kept.
+export const COLD_START_DEFAULT = 0.99;
+
 export default function StandbyModal({ initial, onClose, onSubmit, repairable = false, crews = false }) {
   const unit = useContext(RbdUnitContext) || "";
+  // "Standby" is the new block's own name: the field starts empty.
+  const [name, setName] = useState(initial?.label && initial.label !== "Standby" ? initial.label : "");
   const [model, setModel] = useState(initial?.model ?? null);
   const [repair, setRepair] = useState(initial?.repair ?? null);
   const [oneAtATime, setOneAtATime] = useState(!!initial?.repair_one_at_a_time);
@@ -40,7 +47,8 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
     initial?.dormancy > 0 && initial?.dormancy < 1 ? initial.dormancy : 0.2
   );
   const cold = kind === "cold";
-  const [startProb, setStartProb] = useState(initial?.startProb ?? 1);
+  const wasCold = initialKind(initial) === "cold";
+  const [startProb, setStartProb] = useState(wasCold ? initial?.startProb ?? 1 : COLD_START_DEFAULT);
   const [standbyModel, setStandbyModel] = useState(initial?.standbyModel ?? null);
 
   const sparesNum = Number(spares);
@@ -54,6 +62,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
   const submit = () => {
     if (!valid) return;
     const config = {
+      label: name.trim() || initial?.label || "Standby",
       model,
       spares: sparesNum,
       cold,
@@ -86,6 +95,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
 
   return (
     <Modal title={initial?.label && initial.label !== "Standby" ? initial.label : "Standby redundancy"} onClose={onClose} footer={footer}>
+      <BlockNameField value={name} onChange={setName} placeholder="e.g. Cooling pumps (duty/standby)" />
       <section className="rbd-dlg-sec">
         <h3>Failure</h3>
         <ModelPicker
@@ -93,6 +103,8 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
           value={model}
           onChange={setModel}
           rbdBlock
+          unit={unit}
+          meanEntry="Mean life, MTBF"
         />
         <MeanEcho model={model} unit={unit} label="Mean life" />
       </section>
@@ -123,8 +135,8 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             </label>
           )}
           {cold && (
-            <label className="param-field" title="The chance a spare starts when it's switched in.">
-              <span>Start success probability</span>
+            <label className="param-field" title="The chance a spare starts when it's switched in: 0.99 is one failed start in 100 demands, 1 a perfect switch-over.">
+              <span>Chance a spare starts</span>
               <input
                 type="number"
                 step="any"
@@ -165,6 +177,8 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             value={initial?.repair}
             onChange={setRepair}
             rbdBlock
+            unit={unit}
+            meanEntry="Mean repair time, MTTR"
           />
           <MeanEcho model={repair} unit={unit} label="MTTR" />
           <label className="rbd-instant-repair"

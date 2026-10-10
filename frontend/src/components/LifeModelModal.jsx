@@ -6,21 +6,38 @@ import {
   CostFields, ExtrasErrors, MaintenanceFields, PriorityField, costsSummary, maintenanceSummary, useBlockExtras,
 } from "./RbdBlockCosts.jsx";
 import { RbdUnitContext } from "./RbdNodes.jsx";
-import { modelMean, modelMedian, unitAbbr } from "./rbdModelText.js";
+import { unitAbbr } from "./rbdModelText.js";
+import useModelSummary from "./useModelSummary.js";
 import { formatNumber } from "../format.js";
 
 // "Mean 13.6 h · median 12 h" under a model's inputs, so what the parameters
-// mean is visible as they're typed (#299).
+// mean is visible as they're typed (#299): SurPyval's mean and median.
 export function MeanEcho({ model, unit, label = "Mean" }) {
-  const mean = modelMean(model);
-  if (mean == null) return null;
+  const summary = useModelSummary(model);
+  if (summary?.mean == null) return null;
   const u = unitAbbr(unit) ? ` ${unitAbbr(unit)}` : "";
-  const median = modelMedian(model);
   return (
     <p className="rbd-dlg-echo">
-      {label} {formatNumber(mean)}{u}
-      {median != null && <> · median {formatNumber(median)}{u}</>}
+      {label} {formatNumber(summary.mean)}{u}
+      {summary.median != null && <> · median {formatNumber(summary.median)}{u}</>}
     </p>
+  );
+}
+
+// The block's name, at the top of each block dialog (#289): what every result
+// calls it. Blank keeps the name it had.
+export function BlockNameField({ value, onChange, placeholder = "e.g. Feed pump A" }) {
+  return (
+    <label className="rbd-dlg-name">
+      <span>Name</span>
+      <input
+        value={value}
+        placeholder={placeholder}
+        maxLength={80}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="Block name"
+      />
+    </label>
   );
 }
 
@@ -43,6 +60,7 @@ function Fold({ title, summary, open: initialOpen, children }) {
 // costs stay folded. Pre-filled with the node's current models.
 export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false, crews = false, groups = [],
                                          safety = false }) {
+  const [name, setName] = useState(initial?.label ?? "");
   const [model, setModel] = useState(initial?.model ?? null);
   const [repair, setRepair] = useState(initial?.repair ?? null);
   const [instant, setInstant] = useState(!!initial?.instant_repair);
@@ -53,8 +71,10 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
 
   const submit = () => {
     if (!valid) return;
-    if (!repairable) return onSubmit({ model, repair: undefined });
+    const label = name.trim() || initial?.label;
+    if (!repairable) return onSubmit({ model, repair: undefined, label });
     onSubmit({
+      label,
       model,
       repair: instant ? repair ?? undefined : repair,
       extras: { ...(extras.extras || {}), instant_repair: instant || null },
@@ -94,10 +114,13 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
 
   return (
     <Modal title={initial?.label || "Block"} onClose={onClose} footer={footer}>
+      {/* A block on the canvas has a name; a design alternative's model doesn't. */}
+      {initial?.label != null && <BlockNameField value={name} onChange={setName} />}
       <section className="rbd-dlg-sec">
         <h3>Failure</h3>
         <ModelPicker label={safety ? "Life model (dangerous undetected failures, λDU)" : "Life model (time to failure)"}
-                     value={initial?.model} onChange={setModel} rbdBlock />
+                     value={initial?.model} onChange={setModel} rbdBlock unit={unit}
+                     meanEntry={safety ? "Mean time to a dangerous failure" : "Mean life, MTBF"} />
         <MeanEcho model={model} unit={unit} label="Mean life" />
       </section>
       {repairable && safety && maintenance}
@@ -115,6 +138,8 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
                 value={initial?.repair}
                 onChange={setRepair}
                 rbdBlock
+                unit={unit}
+                meanEntry="Mean repair time, MTTR"
               />
               <MeanEcho model={repair} unit={unit} label="MTTR" />
             </>
