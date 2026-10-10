@@ -33,7 +33,8 @@ def test_config_is_public_and_reports_capabilities(client, monkeypatch):
 
     r = client.get("/api/config")  # no Authorization header
     assert r.status_code == 200
-    assert r.json() == {"auth": True, "ai": True, "billing": True, "reliability_agent": False}
+    assert r.json() == {"auth": True, "ai": True, "billing": True, "reliability_agent": False,
+                        "mcp": False}  # the MCP connector: off by default on the cloud
 
 
 def test_config_single_user_self_host(client, monkeypatch):
@@ -53,6 +54,7 @@ def test_config_single_user_self_host(client, monkeypatch):
         "ai": False,
         "billing": False,
         "reliability_agent": False,
+        "mcp": True,  # on by default self-hosted
     }
 
 
@@ -72,4 +74,5 @@ def test_config_byo_key_self_host_enables_ai_only(client, monkeypatch):
         "ai": True,
         "billing": False,
         "reliability_agent": False,
+        "mcp": True,  # on by default self-hosted
     }

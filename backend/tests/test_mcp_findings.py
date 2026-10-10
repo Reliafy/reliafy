@@ -20,6 +20,10 @@ SEAL_PH = "sample-model-seal-weibull-ph"
 PUMPS = "sample-model-pumps-weibull"
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 @pytest.fixture()
 def samples(env):
     from backend.services import samples as samples_service

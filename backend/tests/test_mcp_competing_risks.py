@@ -16,6 +16,10 @@ MODES = ["seal", "seal", "seal", "seal", "impeller", "seal", "seal", "bearing", 
 SITES = ["A", "B"] * 7
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 def test_inline_fit_by_failure_mode(env):  # noqa: F811 - the fixture
     out = _ok(_call(env.token[A], "fit_distribution", {
         "distribution": "competing_risks", "data": X, "causes": MODES, "groups": SITES, "unit": "hours"}))

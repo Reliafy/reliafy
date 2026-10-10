@@ -20,3 +20,9 @@ test("a failed config fetch still settles, with the safe defaults", () => {
   assert.equal(cfg.billing, false);
   assert.equal(unmatchedRoute(cfg), "redirect");
 });
+
+test("the MCP connector counts as on until the server says it's off", () => {
+  assert.equal(DEFAULT_CONFIG.mcp, true);
+  assert.equal(settledConfig(null).mcp, true);
+  assert.equal(settledConfig({ mcp: false }).mcp, false);
+});

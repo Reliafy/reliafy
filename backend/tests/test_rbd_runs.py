@@ -26,6 +26,10 @@ from backend.tests.test_availability_paid import (  # noqa: F401 - fixtures
 from backend.tests.test_compute_service import _graph, _job_id, _poll, queue  # noqa: F401 - fixtures
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 def _runs(client, **params):
     r = client.get("/api/rbd-runs", params=params)
     assert r.status_code == 200, r.text

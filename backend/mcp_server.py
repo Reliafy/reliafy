@@ -50,6 +50,9 @@ included — is one usage event with the tool, its outcome (ok / error / limit
 / pro_only), the plan, the OAuth client's name and the duration;
 ``initialize`` and ``tools/list`` are logged as connections, and a non-Pro
 API token refused at the transport as ``connect`` / ``locked``.
+
+Switch (:mod:`backend.services.mcp_switch`): while the MCP connector is
+switched off, ``/mcp`` answers 503 at once, before authentication.
 """
 
 import contextvars
@@ -98,6 +101,7 @@ from backend.services import datasets as datasets_service
 from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
 from backend.services import import_guard
+from backend.services import mcp_switch
 from backend.services import oauth as oauth_service
 from backend.services import rbd_network, rbd_phases
 from backend.services import outage_logs as outage_logs_service
@@ -7108,7 +7112,8 @@ def upgrade_link(
 class McpHttpApp:
     """The ``/mcp`` ASGI endpoint.
 
-    Authenticates every request (401 / 403 / 429 before the MCP layer sees
+    Refuses every request while MCP is switched off (503, before anything
+    else), authenticates the rest (401 / 403 / 429 before the MCP layer sees
     it), attaches the user to the request scope for the tools, and hands the
     request to the SDK's session manager, whose task group must be running —
     :meth:`lifespan` is entered from the FastAPI app's lifespan. A fresh
@@ -7141,6 +7146,13 @@ class McpHttpApp:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":  # pragma: no cover - mounted on an HTTP route
             return
+        if not await mcp_switch.is_on():
+            # Switched off: answered before authentication, so no client
+            # starts an OAuth sign-in or holds a request open.
+            mcp_switch.log_refusal(scope["method"], scope["path"])
+            await JSONResponse({"detail": mcp_switch.OFF_MESSAGE}, status_code=503,
+                               headers={"Cache-Control": "no-store"})(scope, receive, send)
+            return
         status, user, message = await anyio.to_thread.run_sync(
             _authenticate_request, Headers(scope=scope).get("authorization"))
         if user is None:
@@ -7170,13 +7182,12 @@ class McpHttpApp:
                                status_code=503)(scope, receive, send)
             return
         scope = {**scope, "state": {**(scope.get("state") or {}), "reliafy_user": user}}
-        if not usage_service.enabled():
-            await self._manager.handle_request(scope, receive, send)
-            return
-        # Note initialize / tools/list (connections — tool calls are logged by
-        # the tools themselves): keep the first few KB of the body as it
-        # streams past, and read the JSON-RPC method once it's answered.
-        body, done, status = bytearray(), [False], [0]
+        # Keep the first few KB of the body as it streams past, to read the
+        # JSON-RPC method(s): for the request log below, and to note
+        # initialize / tools/list in usage (tool calls log themselves).
+        body, done = bytearray(), [False]
+        response = {"status": 0, "type": "", "started": None, "finished": False}
+        started = time.monotonic()
 
         async def receive_tap():
             message = await receive()
@@ -7187,17 +7198,73 @@ class McpHttpApp:
 
         async def send_tap(message):
             if message["type"] == "http.response.start":
-                status[0] = message["status"]
+                response["status"] = message["status"]
+                response["started"] = time.monotonic() - started
+                response["type"] = Headers(raw=message.get("headers") or []).get("content-type", "")
+            elif message["type"] == "http.response.body" and not message.get("more_body", False):
+                response["finished"] = True
             await send(message)
 
-        await self._manager.handle_request(scope, receive_tap, send_tap)
-        if done[0] and len(body) <= _SNIFF_BYTES:
+        # A request that outlives the cap is ended here: one left open holds
+        # the instance (and its bill) until the platform's own timeout.
+        with anyio.move_on_after(config.MCP_REQUEST_TIMEOUT_S) as cap:
+            try:
+                await self._manager.handle_request(scope, receive_tap, send_tap)
+            finally:
+                _log_request(bytes(body) if done[0] else None, response,
+                             time.monotonic() - started, user)
+        if cap.cancelled_caught and response["started"] is None:
+            await JSONResponse({"detail": "The request took too long and was stopped."},
+                               status_code=504)(scope, receive, send)
+            return
+        if usage_service.enabled() and done[0] and len(body) <= _SNIFF_BYTES:
             methods = _protocol_methods(bytes(body))
             if methods:
-                await anyio.to_thread.run_sync(_log_protocol, user, methods, status[0])
+                await anyio.to_thread.run_sync(_log_protocol, user, methods, response["status"])
 
 
 _SNIFF_BYTES = 8192
+
+
+def _rpc_summary(raw: bytes | None) -> str:
+    """What a JSON-RPC body (or batch) carries, for the request log: each
+    message's method, or ``response`` for a client's reply. Never the
+    params or results."""
+    import json
+
+    if raw is None:
+        return "(body not read)"
+    if len(raw) > _SNIFF_BYTES:
+        return "(large body)"
+    try:
+        msg = json.loads(raw or b"null")
+    except ValueError:
+        return "(not JSON)"
+    items = msg if isinstance(msg, list) else [msg]
+    parts = []
+    for m in items:
+        if not isinstance(m, dict):
+            parts.append("?")
+        elif "method" in m:
+            name = m["method"]
+            if name == "tools/call":
+                name += ":" + str((m.get("params") or {}).get("name", "?"))
+            parts.append(name)
+        else:
+            parts.append("response")
+    return ",".join(parts) or "(empty)"
+
+
+def _log_request(raw: bytes | None, response: dict, seconds: float, user: dict) -> None:
+    """One line per MCP request: its method(s), how it was answered and how
+    long the request stayed open, slow ones (over 10 s) as a warning."""
+    started = response["started"]
+    line = ("MCP request %s: status %s, %s, response %s, open %.2f s, client %s" % (
+        _rpc_summary(raw), response["status"] or "-", response["type"] or "no type",
+        ("started after %.2f s, %s" % (started, "complete" if response["finished"] else "NOT complete"))
+        if started is not None else "not started",
+        seconds, usage_service.client_of(user)))
+    logger.log(logging.WARNING if seconds > 10 else logging.INFO, line)
 
 
 def _protocol_methods(raw: bytes) -> list[str]:

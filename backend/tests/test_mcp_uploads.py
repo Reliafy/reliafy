@@ -38,6 +38,10 @@ toplevel "Sys";
 """
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 def _ft(name: str, a: str, b: str) -> str:
     return f"""<define-fault-tree name="{name}">
     <define-gate name="{name}Top"><and><basic-event name="{a}"/><basic-event name="{b}"/></and></define-gate>

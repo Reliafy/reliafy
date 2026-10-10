@@ -5,12 +5,17 @@ projecting from inline data fits in Reliafy, so it is Pro, like fitting."""
 import io
 
 import pandas as pd
+import pytest
 
 from backend.tests.test_mcp_plans import FREE, FREE_PRO_ONLY, PRO, _call, _err, _ok, env  # noqa: F401 - a fixture
 
 X = [15, 42, 60, 98, 130, 171, 205, 260, 310, 345, 390]
 MODES = ["b1", "a1", "b2", "b1", "b3", "a2", "b2", "b4", "b1", "a1", "b3"]
 FEF = {"b1": 0.8, "b2": 0.7, "b3": 0.75, "b4": 0.6}
+
+
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
 
 
 def _model(env, owner):

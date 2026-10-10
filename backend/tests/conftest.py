@@ -127,3 +127,25 @@ def _fresh_email_verification_cache():
     email_trust.clear_cache()
     yield
     email_trust.clear_cache()
+
+
+@pytest.fixture(autouse=True)
+def _mcp_switch_fresh(monkeypatch):
+    """The MCP switch's per-process cache starts empty in every test (each has
+    its own database), and no MCP_ENABLED from the environment leaks in."""
+    from backend import config as app_config
+    from backend.services import mcp_switch
+
+    monkeypatch.setattr(app_config, "MCP_ENABLED", None)
+    mcp_switch.clear_cache()
+    yield
+    mcp_switch.clear_cache()
+
+
+@pytest.fixture()
+def mcp_on(monkeypatch):
+    """MCP switched on, for tests of what it does once on (on the cloud,
+    with billing enabled, it is off by default)."""
+    from backend import config as app_config
+
+    monkeypatch.setattr(app_config, "MCP_ENABLED", True)

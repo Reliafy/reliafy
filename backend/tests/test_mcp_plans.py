@@ -41,6 +41,10 @@ WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
 N_TOOLS = 59
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 @pytest.fixture()
 def env(monkeypatch):
     from backend import config, db
