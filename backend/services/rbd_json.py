@@ -44,7 +44,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Optional
 
-from backend.services import import_guard, rbd_export, rbd_repeats
+from backend.services import import_guard, rbd_capacity, rbd_export, rbd_repeats
 from backend.services import rbd_analysis as ra
 
 #: The top-level key of Reliafy's own part of the document.
@@ -286,7 +286,8 @@ class _Exporter:
         try:
             # As the analysis builds it: the common-cause groups wherever it
             # takes them in (#226).
-            rbd, *_ = ra._build_repairable_rbd(spec_graph, resolve_model=None)
+            rbd, *_ = ra._build_repairable_rbd(spec_graph, resolve_model=None,
+                                               capacity=rbd_capacity.graph_capacities(graph))
         except ra.AnalysisError as exc:
             raise ExportError(f"This diagram can't be written as RePyability JSON yet: {exc}") from None
         self.common_cause = ra.common_cause_status(rbd)
@@ -334,9 +335,13 @@ def _core(graph: dict, resolve_model, resolve_subsystem) -> tuple[dict, dict, "_
             doc = ex.repairable(graph)
         else:
             doc = ex.nonrepairable(graph)
+            # Block capacities (#122), as rbd_to_dict writes them.
+            doc["capacity"] = rbd_capacity.document_capacity(graph)
     except ExportError:
         raise
     except ra.AnalysisError as exc:
+        raise ExportError(str(exc)) from None
+    except rbd_capacity.CapacityError as exc:
         raise ExportError(str(exc)) from None
     except (TypeError, ValueError, KeyError) as exc:
         raise ExportError(f"This diagram has a block setting RePyability can't read ({exc}).") from None

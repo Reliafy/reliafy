@@ -625,9 +625,9 @@ class _Converter:
             if k is None or k < 1:
                 raise RbdImportError("Each k must be a whole number, 1 or more.")
             k_req[_key(entry["node"])] = k
-        if _list(d.get("capacity"), "capacity"):
-            self.note("Node capacities (for RePyability's flow analysis) aren't imported: Reliafy's blocks "
-                      "work or fail.")
+        if depth > 0 and _list(d.get("capacity"), "capacity"):
+            self.note("A nested diagram's node capacities aren't imported: Reliafy reads capacities on the "
+                      "top-level diagram's blocks.")
 
         has_pred = {t for _, t in edges}
         has_succ = {s for s, _ in edges}
@@ -694,9 +694,31 @@ class _Converter:
         for s, t in edges:
             self.connect(ends[s][1], ends[t][0])
         self.ccf_groups(d.get("ccf_groups"), ends)
+        if depth == 0:
+            self.capacities(d.get("capacity"), ends)
         if repairable and depth == 0:
             self.repairable_settings(d)
         return entry_id, exit_id
+
+    def capacities(self, entries, ends: dict) -> None:
+        """Block capacities (#122) onto the blocks drawn for them; a capacity
+        on anything else (a junction, a block drawn as several) is noted."""
+        from backend.services import rbd_capacity
+
+        skipped = []
+        for name, value in rbd_capacity.from_document(_list(entries, "capacity")):
+            try:
+                end = ends.get(_key(name))
+            except RbdImportError:
+                end = None
+            node = self.nodes.get(end[0]) if end and end[0] == end[1] else None
+            if node is None or node["type"] not in rbd_capacity.CAPACITY_TYPES:
+                skipped.append(_label(name))
+                continue
+            node["data"]["capacity"] = value
+        if skipped:
+            self.note(f"The capacities of {_names(skipped)} aren't imported: only single components and standby "
+                      "groups carry one in Reliafy.")
 
     def _end(self, given, candidates: list, which: str, raw_names: dict) -> str:
         if given is not None:
