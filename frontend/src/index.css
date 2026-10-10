@@ -793,6 +793,11 @@ h6 {
 }
 /* A canvas sized to its diagram: the card is only as tall as it needs. */
 .card.rbd-wrap:has(.rbd-canvas.is-sized) { flex: 0 1 auto; }
+/* ...and lets + Add block's menu run past a short canvas (#282); the canvas
+   rounds its own bottom corners instead. */
+.card.rbd-wrap:has(.rbd-builder:not([style*="none"]) .rbd-canvas.is-sized) { overflow: visible; }
+.rbd-builder .rbd-canvas.is-sized,
+.rbd-builder .rbd-canvas.is-sized .react-flow { border-radius: 0 0 var(--r) var(--r); }
 
 .rbd-canvas {
   position: relative;
@@ -8424,7 +8429,8 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
   .rbd-hint {
     white-space: normal;
     width: max-content;
-    max-width: calc(100% - 28px);
+    /* Clear of the zoom controls at the bottom left (#282). */
+    max-width: calc(100% - 120px);
     text-align: center;
   }
   .rbd-hint:not(:has(.rbd-hint-flash)) {
