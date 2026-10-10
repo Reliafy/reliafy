@@ -2410,13 +2410,6 @@ h1 .chip,
   padding: 8px 8px 4px;
 }
 
-.detail-panel .plottitle {
-  font-size: var(--fs-14);
-  color: var(--ink);
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-
 .detail-panel .aside {
   width: 248px;
   flex: 0 0 auto;
@@ -2430,12 +2423,6 @@ h1 .chip,
   border: 1px solid var(--line);
   border-radius: var(--r);
   overflow: hidden;
-}
-
-/* Recurrent "Trend & fit" cards wrap side by side (#81). */
-.detail-panel .gof-card.rec-detail-card {
-  flex: 1 1 260px;
-  min-width: 0;
 }
 
 .detail-panel .gof-card .gofh {
@@ -2509,6 +2496,48 @@ h1 .chip,
 .detail-panel.life-panel .aside { gap: 12px; }
 .detail-panel .life-row .gv { text-align: right; }
 .detail-panel .life-row .life-lo { text-align: right; font-size: var(--fs-12); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* A recurrent model's panels (#65): cause rows that pick a band, covariate
+   effects in words, the next-failure table, and the fit-statistics dialog. */
+.detail-panel .gofr.rec-cause-row { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line2);
+  border-radius: 0; text-align: left; color: inherit; font: inherit; font-size: var(--fs-13); cursor: pointer; }
+.detail-panel .gofr.rec-cause-row:last-child { border-bottom: none; }
+.detail-panel .gofr.rec-cause-row:hover { background: var(--acc-hover); }
+.detail-panel .gofr.rec-cause-row:focus-visible { outline: none; box-shadow: inset var(--focus); }
+.detail-panel .gofr.rec-cause-row.on { background: var(--acc-t); }
+.detail-panel .gofr.rec-cause-row.on .gk { color: var(--ink); font-weight: 500; }
+.rec-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; margin-right: 8px; vertical-align: 1px; }
+.detail-panel .rec-aside-wide { width: 300px; }
+.rec-effect { padding: 11px 16px; border-bottom: 1px solid var(--line2); font-size: var(--fs-13); }
+.rec-effect:last-child { border-bottom: none; }
+.rec-effect-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink);
+  font-weight: 500; }
+.rec-effect p { margin: 4px 0 0; color: var(--muted); line-height: 1.45; }
+.rec-nf-scroll { max-height: 360px; overflow-y: auto; }
+.gof-card .rec-nf-table th:first-child, .gof-card .rec-nf-table td:first-child { padding-left: 16px; }
+.gof-card .rec-nf-table th:last-child, .gof-card .rec-nf-table td:last-child { padding-right: 16px; }
+.rec-nf-table th:not(:first-child), .rec-nf-table td:not(:first-child),
+.rec-stats-table th:not(:first-child), .rec-stats-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.rec-stats section + section { margin-top: 20px; }
+.rec-stats-h { font-size: var(--fs-14); font-weight: 600; color: var(--ink); margin: 0 0 8px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--line2); }
+.rec-stats-dl { margin: 0; display: grid; gap: 6px; font-size: var(--fs-13); }
+.rec-stats-dl > div { display: flex; justify-content: space-between; gap: 16px; }
+.rec-stats-dl dt { color: var(--muted); }
+.rec-stats-dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.rec-stats-scroll { max-height: 260px; overflow-y: auto; }
+.rec-stats .rs-note { margin: 8px 0 0; }
+/* The recurrent Data step's optional cause, covariates and windows (#65). */
+.rec-map-row { margin-bottom: var(--sp-3); }
+.rec-map-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rec-map-cov { margin-bottom: var(--sp-3); }
+.rec-map-windows textarea { width: 100%; font: inherit; font-size: var(--fs-13); padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: var(--r-sm); resize: vertical; box-sizing: border-box; }
+.mapper button.link.rec-map-link { font-size: var(--fs-13); padding: 0; align-self: flex-start; min-height: 0; }
+.rec-map-note { margin: var(--sp-2) 0 0; font-size: var(--fs-12); }
+@media (max-width: 760px) {
+  .detail-panel .rec-aside-wide { width: auto; }
+  .detail-panel .gofr.rec-cause-row { min-height: 44px; }
+}
 /* Every distribution on the same data, in the fit-statistics dialog (#293). */
 .compare-dists { margin-top: 20px; }
 .compare-dists .gofh { font-size: var(--fs-14); font-weight: 600; color: var(--ink); padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--line2); }
@@ -8131,11 +8160,6 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
      then the plot. */
   .detail-panel.life-panel .aside { order: -1; }
   .detail-panel.life-panel .life-reading { order: -1; }
-  /* Recurrent "Trend & fit" cards: stacked, each as tall as its content
-     (a 260px basis would be its height in a column). */
-  .detail-panel .gof-card.rec-detail-card {
-    flex: 0 0 auto;
-  }
   /* RBD builder: a tighter frame, and a compact toolbar so the diagram keeps
      most of the canvas. */
   .rbd-app {
