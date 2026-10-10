@@ -206,7 +206,8 @@ export default function CompetingRisksResult({ result, name = null }) {
                   showLabel
                   options={[
                     { value: true, label: "Stacked", title: "The modes stacked: the top is the chance of failing from any mode" },
-                    { value: false, label: "Each mode", title: "Each mode on its own, with its 95% band" },
+                    { value: false, label: "Each mode",
+                      title: result.mode_bounds === false ? "Each mode on its own" : "Each mode on its own, with its 95% band" },
                   ]}
                   value={stacked}
                   onChange={setStacked}
@@ -220,8 +221,13 @@ export default function CompetingRisksResult({ result, name = null }) {
       </div>
       <ResultDetails>
         <p className="rs-note">
-          Non-parametric cumulative incidence (Aalen-Johansen), with Aalen's 95% pointwise bounds: no
-          distribution is assumed. A mode's curve is the chance of failing from it by each time while
+          {result.mode_bounds === false
+            ? "Non-parametric cumulative incidence (Aalen-Johansen): no distribution is assumed. The chance "
+              + "of failing from any mode has Kaplan-Meier 95% pointwise bounds; each mode's own curve is "
+              + "shown without a band."
+            : "Non-parametric cumulative incidence (Aalen-Johansen), with Aalen's 95% pointwise bounds: no "
+              + "distribution is assumed."}{" "}
+          A mode's curve is the chance of failing from it by each time while
           the other modes still act, so the curves add up to the chance of failing from any mode.
           {result.cause_column && ` Failure modes from “${result.cause_column}”; a blank mode is a unit still running.`}
         </p>

@@ -11,7 +11,7 @@ import mongomock
 import numpy as np
 import pandas as pd
 import pytest
-from surpyval import CompetingRisks, CompetingRisksProportionalHazards, gray_test
+from surpyval import CompetingRisks, CompetingRisksProportionalHazards, CoxPH, FineGray, KaplanMeier, gray_test
 
 from backend import competing_risks as cr
 from backend import fitting
@@ -43,11 +43,18 @@ def test_incidence_bounds_and_horizon_are_surpyvals():
     grid = np.asarray(r["curves"]["x"])
     for k in model.event_idx_map:
         assert r["curves"]["cif"][k] == pytest.approx(model.cif(grid, k).tolist())
-        cb = np.asarray(model.cb(grid, k, on="cif", alpha_ci=0.05))
-        got = np.array([np.nan if v is None else v for v in r["curves"]["lower"][k]])
-        ok = np.isfinite(cb[:, 0])
-        assert got[ok] == pytest.approx(cb[ok, 0])
+    # SurPyval 0.23 has no variance for one mode's incidence: no band per
+    # mode, and the payload says so.
+    assert r["mode_bounds"] is False and r["curves"]["lower"] == {} == r["curves"]["upper"]
     assert r["curves"]["all"] == pytest.approx(model.ff(grid).tolist())
+    # The all-cause curve is the Kaplan-Meier one, with its Greenwood bounds.
+    km = KaplanMeier.fit(x, c=c)
+    assert r["curves"]["all"] == pytest.approx(km.ff(grid).tolist())
+    cb = np.asarray(km.cb(grid, on="ff", alpha_ci=0.05))
+    ok = np.isfinite(cb).all(axis=1)
+    assert np.asarray(r["curves"]["all_lower"])[ok] == pytest.approx(cb[ok, 0])
+    assert np.asarray(r["curves"]["all_upper"])[ok] == pytest.approx(cb[ok, 1])
+    assert all(r["curves"]["all_lower"][i] == 0 == r["curves"]["all_upper"][i] for i in np.flatnonzero(~ok))
     # The incidences add up to the all-cause (Kaplan-Meier) failure probability.
     stacked = np.sum([r["curves"]["cif"][k] for k in model.event_idx_map], axis=0)
     assert stacked == pytest.approx(r["curves"]["all"])
@@ -57,8 +64,7 @@ def test_incidence_bounds_and_horizon_are_surpyvals():
     assert [k["failures"] for k in r["causes"]] == [29, 15, 6]
     top = r["causes"][0]
     assert top["at"]["cif"] == pytest.approx(float(model.cif([5000], "bearing wear")[0]))
-    lo, hi = np.asarray(model.cb([5000], "bearing wear", on="cif", alpha_ci=0.05))[0]
-    assert (top["at"]["lower"], top["at"]["upper"]) == (pytest.approx(lo), pytest.approx(hi))
+    assert top["at"]["lower"] is None and top["at"]["upper"] is None
     assert top["share"] == pytest.approx(top["at"]["cif"] / float(model.ff([5000])[0]))
     assert sum(k["share"] for k in r["causes"]) == pytest.approx(1.0)
     assert (r["failed"], r["running"], r["n"]) == (50, 22, 72)
@@ -67,7 +73,7 @@ def test_incidence_bounds_and_horizon_are_surpyvals():
 def test_the_reading_and_who_leads_when():
     r = fitting.fit("competing_risks", _sample(), MAPPING, unit="hours")
     assert r["reading"].startswith("Bearing wear causes 58% of failures by 5,000 hours: 40% of units fail")
-    assert "we're 95% sure it's between 28% and 52%" in r["reading"]
+    assert "we're 95% sure" not in r["reading"]  # no band on one mode's incidence
     assert [ld["cause"] for ld in r["leads"]] == ["seal leak", "bearing wear"]
     assert "Seal leak leads early; bearing wear overtakes it at about 2,810 hours." in r["reading"]
 
@@ -104,10 +110,24 @@ def test_regression_by_mode_is_surpyvals(dist_id, kind):
     frame = pd.DataFrame({"x": x, "e": e, "c": c, "duty_pct": df["duty_pct"].astype(float)})
     model = CompetingRisksProportionalHazards.fit_from_df(frame, x_col="x", e_col="e", Z_cols=["duty_pct"],
                                                           c_col="c", model=kind)
-    table = model.summary()
-    assert [f"{k['cause']}: {k['covariate']}" for k in reg["coefficients"]] == list(table.index)
-    assert [k["ratio"] for k in reg["coefficients"]] == pytest.approx(table["exp(coef)"].tolist())
-    assert [k["p_value"] for k in reg["coefficients"]] == pytest.approx(table["p"].tolist())
+    causes = sorted(model.event_idx_map, key=model.event_idx_map.get)
+    assert [k["cause"] for k in reg["coefficients"]] == causes
+    assert [k["ratio"] for k in reg["coefficients"]] == pytest.approx(np.exp(model.betas.ravel()).tolist())
+    # Each mode's standard error and p-value from SurPyval's one-mode fit of
+    # the same model, which has the same coefficient.
+    for k in reg["coefficients"]:
+        if kind == "Cox":
+            own = CoxPH.fit_from_df(frame.assign(c=np.where(frame["e"] == k["cause"], 0, 1)), x_col="x", c_col="c",
+                                    Z_cols=["duty_pct"])
+        else:
+            own = FineGray.fit_from_df(frame, x_col="x", e_col="e", Z_cols=["duty_pct"], c_col="c",
+                                       event=k["cause"])
+        # A method on one model, an array on the other.
+        se, p = (cr._values(own, name, 1)[0] for name in ("standard_errors", "p_values"))
+        assert float(np.ravel(own.params if kind == "Cox" else own.beta)[0]) == pytest.approx(k["coef"], rel=1e-6)
+        assert (k["se"], k["p_value"]) == (pytest.approx(se), pytest.approx(p))
+        lo, hi = np.exp(k["coef"] - 1.959963984540054 * se), np.exp(k["coef"] + 1.959963984540054 * se)
+        assert k["ratio_ci"] == pytest.approx([lo, hi])
     bearing = next(k for k in reg["coefficients"] if k["cause"] == "bearing wear")
     assert bearing["ratio"] > 1 and bearing["p_value"] < 0.01  # duty wears bearings out sooner
     assert ("aic" in reg) == (kind == "Cox")

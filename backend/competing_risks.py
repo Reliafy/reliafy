@@ -9,13 +9,18 @@ failure probability (one minus the Kaplan-Meier survival).
 
 Everything here is SurPyval's:
 
-* ``CompetingRisks`` (Aalen-Johansen) gives each mode's cumulative incidence,
-  ``cb`` its pointwise bounds (Aalen's variance) and, fitted with
-  ``how="Kaplan-Meier"``, the all-cause failure probability and its bounds;
+* ``CompetingRisks`` (Aalen-Johansen) gives each mode's cumulative incidence
+  and, fitted with ``how="Kaplan-Meier"``, the all-cause failure probability;
+  ``KaplanMeier``'s ``cb`` bounds the all-cause curve (Greenwood). SurPyval
+  0.23 has no variance for a single mode's incidence, so each mode's curve
+  comes without a band (``mode_bounds`` false, and the app says so);
 * ``gray_test`` compares one mode's incidence across groups of units (sites,
   suppliers) when a group column is given;
 * ``CompetingRisksProportionalHazards`` (the advanced choice, with covariates)
-  fits a cause-specific Cox model or a Fine-Gray model per mode.
+  fits a cause-specific Cox model or a Fine-Gray model per mode; each mode's
+  standard errors and p-values come from SurPyval's own one-mode fit of the
+  same model (``CoxPH`` with the other modes' failures as still running, or
+  ``FineGray`` for that mode), which gives the same coefficients.
 
 The data: a time per unit, a failure-mode column that is blank for a unit
 still running, and optionally the usual status and count columns. This
@@ -31,7 +36,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from surpyval import CompetingRisks, CompetingRisksProportionalHazards, gray_test
+from surpyval import CompetingRisks, CompetingRisksProportionalHazards, CoxPH, FineGray, KaplanMeier, gray_test
 
 from backend.services.compare_groups import _label, _named, _p_text
 from backend.services.strategy import fmt_num
@@ -201,10 +206,29 @@ def _incidence(model, cause, t) -> np.ndarray:
         return np.asarray(model.cif(t, cause), dtype=float).ravel()
 
 
-def _cif_bounds(model, cause, t) -> np.ndarray:
+def _cif_bounds(model, cause, t) -> Optional[np.ndarray]:
+    """A mode's pointwise 95% bounds, where SurPyval gives them (its
+    ``CompetingRisks`` in 0.23 has no ``cb``): None otherwise."""
+    cb = getattr(model, "cb", None)
+    if not callable(cb):
+        return None
     with np.errstate(all="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        return np.asarray(model.cb(t, cause, on="cif", alpha_ci=ALPHA), dtype=float).reshape(-1, 2)
+        return np.asarray(cb(t, cause, on="cif", alpha_ci=ALPHA), dtype=float).reshape(-1, 2)
+
+
+def _all_cause_bounds(prep: dict, grid: np.ndarray, everything: np.ndarray) -> np.ndarray:
+    """The all-cause failure probability's pointwise 95% bounds: SurPyval's
+    Kaplan-Meier ``cb`` on the same data (the all-cause curve *is* the
+    Kaplan-Meier one). Before the first failure the curve is 0 for certain,
+    so the bound there is 0."""
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        km = KaplanMeier.fit(prep["x"], c=prep["c"], n=prep["n"])
+        cb = np.asarray(km.cb(grid, on="ff", alpha_ci=ALPHA), dtype=float).reshape(-1, 2)
+    certain = (everything == 0) & ~np.isfinite(cb).all(axis=1)
+    cb[certain] = 0.0
+    return cb
 
 
 def _leads(grid: np.ndarray, cifs: dict) -> list[dict]:
@@ -339,9 +363,42 @@ def _gray(prep: dict, horizon: float, group_column: str, us: str) -> dict:
             "horizon": horizon, "sentence": text}
 
 
+def _one_mode(kind: str, frame: pd.DataFrame, cause, covariates: list):
+    """SurPyval's own one-mode fit behind ``CompetingRisksProportionalHazards``:
+    a cause-specific Cox model is ``CoxPH`` with the other modes' failures
+    as still running; Fine-Gray is ``FineGray`` for that mode."""
+    if kind == "Cox":
+        own = frame.assign(c=np.where(frame["e"].to_numpy(dtype=object) == cause, 0, 1))
+        return CoxPH.fit_from_df(own, x_col="x", c_col="c", n_col="n", Z_cols=list(covariates))
+    return FineGray.fit_from_df(frame, x_col="x", e_col="e", Z_cols=list(covariates), c_col="c", n_col="n",
+                                event=cause)
+
+
+def _exp(v: Optional[float]) -> Optional[float]:
+    """exp(v), None for None or an overflow (a fit with no finite maximum)."""
+    if v is None:
+        return None
+    with np.errstate(over="ignore"):
+        return _num(np.exp(v))
+
+
+def _values(model, name: str, k: int) -> list:
+    """``model.<name>`` (a method or an array, by model) as ``k`` floats or
+    Nones."""
+    v = getattr(model, name, None)
+    try:
+        v = v() if callable(v) else v
+        arr = np.asarray(v, dtype=float).ravel()
+    except Exception:  # noqa: BLE001 - not available: shown as a dash
+        return [None] * k
+    return [_num(a) for a in arr] if arr.size == k else [None] * k
+
+
 def _regression(kind: str, prep: dict, df: pd.DataFrame, covariates: list) -> dict:
     """Cause-specific Cox or Fine-Gray coefficients per failure mode, with
-    their ratios, 95% intervals and p-values, from SurPyval's summary."""
+    their ratios, 95% intervals and p-values: the coefficients from
+    ``CompetingRisksProportionalHazards``, the standard errors and p-values
+    from SurPyval's one-mode fit of the same model (:func:`_one_mode`)."""
     if not covariates:
         raise CompetingRisksError(
             "A regression by failure mode needs covariates: tick them under Advanced on the Data step.")
@@ -359,25 +416,33 @@ def _regression(kind: str, prep: dict, df: pd.DataFrame, covariates: list) -> di
         try:
             model = CompetingRisksProportionalHazards.fit_from_df(
                 frame, x_col="x", e_col="e", Z_cols=list(covariates), c_col="c", n_col="n", model=kind)
-            table = model.summary()
         except Exception as exc:  # noqa: BLE001 - SurPyval's reason, as the fit's error
             raise CompetingRisksError(str(exc) or type(exc).__name__) from exc
+        causes_sorted = sorted(getattr(model, "event_idx_map", {}), key=lambda c: model.event_idx_map[c])
+        k = len(covariates)
+        betas = np.asarray(model.betas, dtype=float).reshape(len(causes_sorted), k)
+        ses, ps = {}, {}
+        for cause in causes_sorted:
+            try:
+                own = _one_mode(kind, frame, cause, covariates)
+                ses[cause], ps[cause] = _values(own, "standard_errors", k), _values(own, "p_values", k)
+            except Exception:  # noqa: BLE001 - the coefficients stand without their intervals
+                ses[cause] = ps[cause] = [None] * k
     from backend.fitting import reissue_deprecations  # local: fitting imports this module
+    from backend.param_intervals import wald_interval
 
     reissue_deprecations(caught)
-    causes_sorted = sorted(getattr(model, "event_idx_map", {}), key=lambda k: model.event_idx_map[k])
-    k = len(covariates)
-    rows = table.to_dict("records")
     coefficients = []
-    for i, row in enumerate(rows):
-        cause = causes_sorted[i // k] if causes_sorted else None
-        coefficients.append({
-            "cause": cause, "covariate": covariates[i % k],
-            "coef": _num(row.get("coef")), "se": _num(row.get("se(coef)")),
-            "ratio": _num(row.get("exp(coef)")),
-            "ratio_ci": [_num(row.get("exp(coef) lower 95%")), _num(row.get("exp(coef) upper 95%"))],
-            "p_value": _num(row.get("p")),
-        })
+    for row, cause in enumerate(causes_sorted):
+        for j, covariate in enumerate(covariates):
+            coef, se = _num(betas[row, j]), ses[cause][j]
+            ci = wald_interval(coef, se) if coef is not None and se is not None else None
+            coefficients.append({
+                "cause": cause, "covariate": covariate, "coef": coef, "se": se,
+                "ratio": _exp(coef),
+                "ratio_ci": [_exp(v) for v in ci] if ci else [None, None],
+                "p_value": ps[cause][j],
+            })
     out = {"model": kind, "ratio_label": RATIO_LABELS[kind], "covariates": list(covariates),
            "coefficients": coefficients, "maximum": getattr(model, "maximum", None)}
     if kind == "Cox":
@@ -413,10 +478,11 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates: Optional
     causes = prep["causes"]
     cifs = {k: _incidence(model, k, grid) for k in causes}
     bounds = {k: _cif_bounds(model, k, grid) for k in causes}
+    mode_bounds = all(b is not None for b in bounds.values())
     with np.errstate(all="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         everything = np.asarray(model.ff(grid), dtype=float).ravel()
-        all_cb = np.asarray(model.cb(grid, on="ff", alpha_ci=ALPHA), dtype=float).reshape(-1, 2)
+    all_cb = _all_cause_bounds(prep, grid, everything)
 
     last_failure = float(x[c == 0].max())
     horizon = nice_time(last_failure)
@@ -424,7 +490,8 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates: Optional
     rows = []
     for k in causes:
         v = float(_incidence(model, k, [horizon])[0])
-        lo, hi = _cif_bounds(model, k, [horizon])[0]
+        at = _cif_bounds(model, k, [horizon])
+        lo, hi = at[0] if at is not None else (None, None)
         rows.append({
             "name": k, "failures": prep["failures"][k],
             "share": _num(v / total) if total > 0 else None,
@@ -448,12 +515,13 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates: Optional
         "curves": {
             "x": _nums(grid),
             "cif": {k: _nums(cifs[k]) for k in causes},
-            "lower": {k: _nums(bounds[k][:, 0]) for k in causes},
-            "upper": {k: _nums(bounds[k][:, 1]) for k in causes},
+            "lower": {k: _nums(bounds[k][:, 0]) for k in causes} if mode_bounds else {},
+            "upper": {k: _nums(bounds[k][:, 1]) for k in causes} if mode_bounds else {},
             "all": _nums(everything),
             "all_lower": _nums(all_cb[:, 0]),
             "all_upper": _nums(all_cb[:, 1]),
         },
+        "mode_bounds": mode_bounds,
         "reading": _reading(rows, horizon, leads, us),
         "cause_column": mapping.get(CAUSE_KEY),
     }

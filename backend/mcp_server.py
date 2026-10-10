@@ -876,7 +876,9 @@ def _cr_summary(result: dict) -> dict:
     """A fit by failure mode (#177) for an agent: each mode's share of the
     failures and of the units by the horizon (with its 95% interval), which
     mode leads when, the reading, Gray's test and any regression — without
-    the plotting curves."""
+    the plotting curves. Without a per-mode band (SurPyval gives none for
+    one mode's incidence) ``ci_95`` is left out and ``how`` says so."""
+    bounded = result.get("mode_bounds", True)
     out = {
         "distribution": result.get("distribution"),
         "distribution_id": result.get("distribution_id"),
@@ -889,13 +891,16 @@ def _cr_summary(result: dict) -> dict:
         "failure_modes": [{
             "mode": k["name"], "failures": k["failures"], "share_of_failures_by_horizon": k.get("share"),
             "units_failed_from_it_by_horizon": (k.get("at") or {}).get("cif"),
-            "ci_95": [(k.get("at") or {}).get("lower"), (k.get("at") or {}).get("upper")],
+            **({"ci_95": [(k.get("at") or {}).get("lower"), (k.get("at") or {}).get("upper")]} if bounded else {}),
         } for k in result.get("causes") or []],
         "leads": result.get("leads"),
         "reading": result.get("reading"),
-        "how": ("Non-parametric cumulative incidence (Aalen-Johansen) with Aalen's 95% pointwise bounds: the "
-                "chance of failing from each mode by the horizon while the other modes still act. The modes "
-                "add up to the all-cause failure probability."),
+        "how": ("Non-parametric cumulative incidence (Aalen-Johansen)"
+                + (" with Aalen's 95% pointwise bounds" if bounded else "")
+                + ": the chance of failing from each mode by the horizon while the other modes still act. The "
+                "modes add up to the all-cause failure probability"
+                + ("." if bounded else ", which has Kaplan-Meier 95% bounds; a single mode's incidence comes "
+                   "without an interval.")),
     }
     for key in ("gray", "regression"):
         if result.get(key):
