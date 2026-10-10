@@ -6,21 +6,41 @@ import {
   CostFields, ExtrasErrors, MaintenanceFields, PriorityField, costsSummary, maintenanceSummary, useBlockExtras,
 } from "./RbdBlockCosts.jsx";
 import { RbdUnitContext } from "./RbdNodes.jsx";
-import { modelMean, modelMedian, unitAbbr } from "./rbdModelText.js";
+import { unitAbbr } from "./rbdModelText.js";
+import useModelSummary from "./useModelSummary.js";
 import { formatNumber } from "../format.js";
+import RbdMixtureBuilder, { isMixture } from "./RbdMixtureBuilder.jsx";
+import RbdRepairQuality from "./RbdRepairQuality.jsx";
+import RbdCapacityFold from "./RbdCapacityFields.jsx";
 
 // "Mean 13.6 h · median 12 h" under a model's inputs, so what the parameters
-// mean is visible as they're typed (#299).
+// mean is visible as they're typed (#299): SurPyval's mean and median.
 export function MeanEcho({ model, unit, label = "Mean" }) {
-  const mean = modelMean(model);
-  if (mean == null) return null;
+  const summary = useModelSummary(model);
+  if (summary?.mean == null) return null;
   const u = unitAbbr(unit) ? ` ${unitAbbr(unit)}` : "";
-  const median = modelMedian(model);
   return (
     <p className="rbd-dlg-echo">
-      {label} {formatNumber(mean)}{u}
-      {median != null && <> · median {formatNumber(median)}{u}</>}
+      {label} {formatNumber(summary.mean)}{u}
+      {summary.median != null && <> · median {formatNumber(summary.median)}{u}</>}
     </p>
+  );
+}
+
+// The block's name, at the top of each block dialog (#289): what every result
+// calls it. Blank keeps the name it had.
+export function BlockNameField({ value, onChange, placeholder = "e.g. Feed pump A" }) {
+  return (
+    <label className="rbd-dlg-name">
+      <span>Name</span>
+      <input
+        value={value}
+        placeholder={placeholder}
+        maxLength={80}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="Block name"
+      />
+    </label>
   );
 }
 
@@ -42,22 +62,33 @@ function Fold({ title, summary, open: initialOpen, children }) {
 // safety function the proof test comes straight after Failure, open, and the
 // costs stay folded. Pre-filled with the node's current models.
 export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false, crews = false, groups = [],
-                                         safety = false }) {
+                                         safety = false, capacity = false }) {
+  const [name, setName] = useState(initial?.label ?? "");
   const [model, setModel] = useState(initial?.model ?? null);
   const [repair, setRepair] = useState(initial?.repair ?? null);
   const [instant, setInstant] = useState(!!initial?.instant_repair);
   const [extras, setExtras] = useState({ extras: null, valid: true });
   const ctl = useBlockExtras(initial, setExtras);
   const unit = useContext(RbdUnitContext) || "";
-  const valid = model && (!repairable || repair || instant) && extras.valid;
+  // Two failure modes built here (#318); a saved mixture comes from the picker.
+  const [mixture, setMixture] = useState(isMixture(initial?.model) && initial?.model?.source !== "saved");
+  // Imperfect repair / replacement at the N-th failure (#68).
+  const [quality, setQuality] = useState({ value: initial?.repair_quality ?? null, valid: true });
+  // Throughput while it works (#122): its own section, for component blocks.
+  const [cap, setCap] = useState({ value: initial?.capacity ?? null, valid: true });
+  const valid = model && (!repairable || repair || instant) && extras.valid && quality.valid && cap.valid;
+  const capExtras = capacity ? { capacity: cap.value } : {};
 
   const submit = () => {
     if (!valid) return;
-    if (!repairable) return onSubmit({ model, repair: undefined });
+    const label = name.trim() || initial?.label;
+    if (!repairable) return onSubmit({ model, repair: undefined, label, extras: capacity ? capExtras : undefined });
     onSubmit({
+      label,
       model,
       repair: instant ? repair ?? undefined : repair,
-      extras: { ...(extras.extras || {}), instant_repair: instant || null },
+      extras: { ...(extras.extras || {}), instant_repair: instant || null, repair_quality: quality.value,
+                ...capExtras },
     });
   };
 
@@ -69,7 +100,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
             How do I model availability?
           </button>
         ) : (
-          "Pick a saved model or enter parameters."
+          "Enter a mean or parameters, or pick a saved model."
         )}
       </span>
       <div className="row" style={{ margin: 0 }}>
@@ -94,11 +125,23 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
 
   return (
     <Modal title={initial?.label || "Block"} onClose={onClose} footer={footer}>
+      {/* A block on the canvas has a name; a design alternative's model doesn't. */}
+      {initial?.label != null && <BlockNameField value={name} onChange={setName} />}
       <section className="rbd-dlg-sec">
         <h3>Failure</h3>
-        <ModelPicker label={safety ? "Life model (dangerous undetected failures, λDU)" : "Life model (time to failure)"}
-                     value={initial?.model} onChange={setModel} rbdBlock />
-        <MeanEcho model={model} unit={unit} label="Mean life" />
+        {!mixture && (
+          <>
+            <ModelPicker label={safety ? "Life model (dangerous undetected failures, λDU)" : "Life model (time to failure)"}
+                         value={initial?.model} onChange={setModel} rbdBlock unit={unit}
+                         meanEntry={safety ? "Mean time to a dangerous failure" : "Mean life, MTBF"} />
+            <MeanEcho model={model} unit={unit} label="Mean life" />
+          </>
+        )}
+        <RbdMixtureBuilder on={mixture} initial={initial?.model} unit={unit} onChange={setModel}
+                           onToggle={(on) => {
+                             setMixture(on);
+                             if (!on) setModel(isMixture(initial?.model) ? null : initial?.model ?? null);
+                           }} />
       </section>
       {repairable && safety && maintenance}
       {repairable && (
@@ -115,6 +158,8 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
                 value={initial?.repair}
                 onChange={setRepair}
                 rbdBlock
+                unit={unit}
+                meanEntry="Mean repair time, MTTR"
               />
               <MeanEcho model={repair} unit={unit} label="MTTR" />
             </>
@@ -122,12 +167,14 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
           {crews && <PriorityField ctl={ctl} />}
         </section>
       )}
+      {repairable && <RbdRepairQuality initial={initial?.repair_quality} onChange={setQuality} />}
       {repairable && !safety && maintenance}
       {repairable && (
         <Fold title="Costs" summary={costsSummary(ctl)} open={hasCosts && !safety}>
           <CostFields ctl={ctl} unit={unit} />
         </Fold>
       )}
+      {capacity && !safety && <RbdCapacityFold initial={initial?.capacity} onChange={setCap} />}
       {repairable && <ExtrasErrors ctl={ctl} />}
     </Modal>
   );

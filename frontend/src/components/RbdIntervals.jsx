@@ -4,6 +4,8 @@ import { analyzeRbd, getRbdJob, optimiseIntervals } from "../api.js";
 import { graphSignature } from "./RbdValidation.jsx";
 import { fmtMoney } from "./AvailabilityCosts.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import Chip from "./ui/Chip.jsx";
+import "./RbdIntervals.css";
 
 // Maintenance and proof-test intervals chosen together (#172, #228), on the
 // Design tab of a repairable diagram: RePyability's
@@ -15,7 +17,10 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 // "Simulate with your crews" runs the availability simulation (Pro, or a free
 // quick estimate) of the diagram with the plan on it, to show what the
 // waiting costs. "Apply to diagram" writes the intervals on the blocks,
-// unsaved, as the cheapest design does.
+// unsaved, as the cheapest design does. Chips pick which blocks' intervals
+// are chosen (#257; the rest are kept as drawn), and a block whose tests miss
+// some failures (coverage below 1, #323) is chosen among the intervals that
+// divide its full test's, with what its untested fraction costs said.
 
 const POLL_FIRST_MS = 1500;
 const POLL_MAX_MS = 6000;
@@ -60,18 +65,24 @@ export function applyIntervals(graph, rows) {
   return { ...graph, nodes };
 }
 
-// The blocks with age replacement and with (full-coverage) proof tests.
+// The blocks with age replacement and with proof tests (tests that miss some
+// failures included, #323).
 export function maintainedBlocks(graph) {
   const out = { replacement: [], proof_test: [] };
   for (const n of graph.nodes || []) {
     if (n.type !== "component") continue;
     const d = n.data || {};
     if (d.preventive && (d.preventive.policy || "age") === "age") out.replacement.push(n);
-    else if (d.inspection && !(d.inspection.coverage !== undefined && d.inspection.coverage !== "" && Number(d.inspection.coverage) < 1))
-      out.proof_test.push(n);
+    else if (d.inspection) out.proof_test.push(n);
   }
   return out;
 }
+
+// A test coverage below 1, or null.
+const partialCoverage = (n) => {
+  const c = n.data?.inspection?.coverage;
+  return c !== undefined && c !== null && c !== "" && Number(c) < 1 ? Number(c) : null;
+};
 
 async function poll(jobId, live, ticket) {
   let delay = POLL_FIRST_MS;
@@ -118,11 +129,19 @@ export default function RbdIntervals({ graph, onApply, onView }) {
   const [run, setRun] = useState(null); // {result, sig}
   const [crewSim, setCrewSim] = useState(null); // {state, result?, message?, quick?}
   const [applied, setApplied] = useState(null); // {prev, sig}
+  const [unticked, setUnticked] = useState(() => new Set()); // blocks kept as drawn (#257)
   const live = useRef(0);
   const sig = graphSignature(graph);
   const unit = graph.unit || "";
   const cal = calendar(unit);
-  const tested = found.proof_test.length;
+  const candidates = kind ? found[kind] : [];
+  const picked = candidates.filter((n) => !unticked.has(n.id));
+  const tested = kind === "proof_test" ? picked.length : found.proof_test.length;
+  const toggle = (id) => setUnticked((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   if (!kinds.length) {
     return (
@@ -159,6 +178,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
       let res = await optimiseIntervals({
         graph,
         schedule: kind,
+        blocks: picked.length < candidates.length ? picked.map((n) => n.id) : null,
         ...targetBody(),
         allowed: kind === "proof_test" ? allowed : null,
         stagger: kind === "proof_test" && stagger && tested > 1,
@@ -183,6 +203,8 @@ export default function RbdIntervals({ graph, onApply, onView }) {
   };
 
   const result = run?.result;
+  const fixedRows = result?.fixed || [];
+  const untested = result?.untested || [];
   const appliedCurrent = applied && applied.sig === sig;
   const stale = run != null && run.sig !== sig && !appliedCurrent;
   const rows = result?.blocks || [];
@@ -274,6 +296,24 @@ export default function RbdIntervals({ graph, onApply, onView }) {
         />
       )}
 
+      {candidates.length > 1 && (
+        <div className="rbd-intervals-blocks">
+          <span className="rbd-intervals-blocks-label" id="rbd-intervals-blocks">Blocks to choose for</span>
+          <div className="chip-row" role="group" aria-labelledby="rbd-intervals-blocks">
+            {candidates.map((n) => {
+              const on = !unticked.has(n.id);
+              const cov = partialCoverage(n);
+              return (
+                <Chip key={n.id} tone={on ? "accent" : "neutral"} onClick={() => toggle(n.id)} aria-pressed={on}
+                      title={on ? "Chosen: click to keep its interval as drawn" : "Kept as drawn: click to choose it"}>
+                  {on ? "✓ " : ""}{n.data?.label || n.id}{cov != null ? ` · finds ${Math.round(cov * 100)}%` : ""}
+                </Chip>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="param-fields rbd-cheapest-inputs">
         <label className="param-field rbd-cost-field">
           <span>Choose for</span>
@@ -323,11 +363,15 @@ export default function RbdIntervals({ graph, onApply, onView }) {
       )}
       <div className="rbd-calc-actions">
         <button type="button" onClick={choose}
-                disabled={phase === "working" || (target !== "cost" && value === "") || (kind === "proof_test" && !cal && !allowedText.trim() && tested > 1)}>
+                disabled={phase === "working" || picked.length === 0 || (target !== "cost" && value === "") || (kind === "proof_test" && !cal && !allowedText.trim() && tested > 1)}>
           {phase === "working" ? "Choosing…" : "Choose intervals"}
         </button>
         <span className="hint">
-          {found[kind].length} block{found[kind].length === 1 ? "" : "s"} ({found[kind].map((n) => n.data?.label || n.id).join(", ")})
+          {picked.length === 0
+            ? "Tick at least one block."
+            : candidates.length > 1
+            ? `${picked.length} of ${candidates.length} blocks${picked.length < candidates.length ? "; the rest keep their intervals" : ""}`
+            : `${candidates[0].data?.label || candidates[0].id}`}
         </span>
       </div>
       {job && (
@@ -363,6 +407,14 @@ export default function RbdIntervals({ graph, onApply, onView }) {
                 than the best plan with every test at once ({fmtMoney(together.cost_rate)}{per(unit)}).</>
             )}
             {showTogether && !together.met && <> Tested at once, no intervals to choose from meet the target: staggering does.</>}
+            {untested.map((u) => (
+              <span key={u.id}>
+                {" "}The {Math.round((1 - u.coverage) * 100)}% of {u.label}'s failures its tests miss{" "}
+                {safety
+                  ? <>add <b>{sci(u.pfd_cost)}</b> to the PFDavg{result.plan.pfd_avg ? ` (${Number(((u.pfd_cost / result.plan.pfd_avg) * 100).toPrecision(2))}% of it)` : ""}.</>
+                  : <>cost <b>{(u.availability_cost * 100).toPrecision(2)}</b> points of availability.</>}
+              </span>
+            ))}
           </p>
           <div className="rbd-avail-imp-scroll">
             <table className="calc-table rbd-costs-table">
@@ -379,13 +431,24 @@ export default function RbdIntervals({ graph, onApply, onView }) {
                   const t = showTogether && together.met ? together.blocks.find((b) => b.id === r.id) : null;
                   return (
                     <tr key={r.id} className={r.changed ? "changed" : ""}>
-                      <td className="calc-row-label">{r.label}</td>
+                      <td className="calc-row-label">
+                        {r.label}
+                        {r.coverage != null && <div className="muted">tests find {Math.round(r.coverage * 100)}%</div>}
+                      </td>
                       <td><Interval row={{ interval: r.interval_now, offset: r.offset_now }} unit={unit} schedule={kind} /></td>
                       {showTogether && <td>{t ? <Interval row={t} unit={unit} schedule={kind} /> : "—"}</td>}
                       <td><Interval row={r} unit={unit} schedule={kind} /></td>
                     </tr>
                   );
                 })}
+                {fixedRows.map((r) => (
+                  <tr key={r.id} className="is-fixed">
+                    <td className="calc-row-label">{r.label}<div className="muted">kept as drawn</div></td>
+                    <td><Interval row={r} unit={unit} schedule={kind} /></td>
+                    {showTogether && <td className="muted">kept</td>}
+                    <td className="muted">kept</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

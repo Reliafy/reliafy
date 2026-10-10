@@ -34,10 +34,11 @@ the RePyability part:
 
 What Reliafy can't hold is listed in the import notes, and the block is
 imported without a model (to set before analysing) rather than guessed:
-capacities, MGL common-cause models, degrading, regression,
-load-sharing and non-parametric models, distributions Reliafy doesn't offer,
-standby with more than one unit operating or mixed spares, imperfect repair,
-replace-after-n-repairs, other nested repairable diagrams. The importer never
+capacities, degrading, regression, load-sharing and non-parametric models,
+distributions Reliafy doesn't offer, standby with mixed spares (or running
+units), other nested repairable diagrams. Mixture lives (#318), imperfect
+repair and replacement at the N-th failure (#68), standby with several units
+running and MGL common-cause groups (#84) come in. The importer never
 calls RePyability's or SurPyval's own loaders on the file: it reads the
 document as data, within the import limits.
 """
@@ -80,12 +81,17 @@ def parse(data: bytes, filename: str) -> list[ImportedDiagram]:
         raise RbdImportError("The JSON file is nested too deeply.") from None
     except ValueError as exc:
         raise RbdImportError(f"The file isn't valid JSON ({exc}).") from None
-    if not isinstance(doc, dict) or doc.get("type") not in _TYPES:
+    network = isinstance(doc, dict) and doc.get("type") == "Network"  # #160: Reliafy's network files
+    if not isinstance(doc, dict) or (doc.get("type") not in _TYPES and not network):
         raise RbdImportError(
             "This JSON isn't a RePyability diagram: its “type” must be NonRepairableRBD or RepairableRBD "
             "(save one with rbd.to_json()).")
     base = (filename or "").rsplit("/", 1)[-1]
     stem = (base.split(".", 1)[0] if "." in base else base) or "Imported diagram"
+    if network:
+        from backend.services import rbd_network
+
+        return rbd_network.import_document(doc, stem)
 
     from backend.services import rbd_json
 
@@ -499,6 +505,14 @@ class _Converter:
             m = d.get("model")
             if not isinstance(m, dict):
                 return None, f"its {what} model isn't a model"
+            if m.get("model") == "MixtureModel":
+                # Two failure modes (#318): a mixture life.
+                from backend.services import rbd_mixture
+
+                mixture = rbd_mixture.from_document(m)
+                if mixture is None:
+                    return None, f"its {what} model is a mixture Reliafy can't hold"
+                return mixture, None
             if m.get("parameterization") != "parametric":
                 return None, f"its {what} model is non-parametric ({str(m.get('model') or '')[:40]})"
             dist, names, values = m.get("distribution"), m.get("param_names"), m.get("params")
@@ -625,9 +639,9 @@ class _Converter:
             if k is None or k < 1:
                 raise RbdImportError("Each k must be a whole number, 1 or more.")
             k_req[_key(entry["node"])] = k
-        if _list(d.get("capacity"), "capacity"):
-            self.note("Node capacities (for RePyability's flow analysis) aren't imported: Reliafy's blocks "
-                      "work or fail.")
+        if depth > 0 and _list(d.get("capacity"), "capacity"):
+            self.note("A nested diagram's node capacities aren't imported: Reliafy reads capacities on the "
+                      "top-level diagram's blocks.")
 
         has_pred = {t for _, t in edges}
         has_succ = {s for s, _ in edges}
@@ -694,9 +708,31 @@ class _Converter:
         for s, t in edges:
             self.connect(ends[s][1], ends[t][0])
         self.ccf_groups(d.get("ccf_groups"), ends)
+        if depth == 0:
+            self.capacities(d.get("capacity"), ends)
         if repairable and depth == 0:
             self.repairable_settings(d)
         return entry_id, exit_id
+
+    def capacities(self, entries, ends: dict) -> None:
+        """Block capacities (#122) onto the blocks drawn for them; a capacity
+        on anything else (a junction, a block drawn as several) is noted."""
+        from backend.services import rbd_capacity
+
+        skipped = []
+        for name, value in rbd_capacity.from_document(_list(entries, "capacity")):
+            try:
+                end = ends.get(_key(name))
+            except RbdImportError:
+                end = None
+            node = self.nodes.get(end[0]) if end and end[0] == end[1] else None
+            if node is None or node["type"] not in rbd_capacity.CAPACITY_TYPES:
+                skipped.append(_label(name))
+                continue
+            node["data"]["capacity"] = value
+        if skipped:
+            self.note(f"The capacities of {_names(skipped)} aren't imported: only single components and standby "
+                      "groups carry one in Reliafy.")
 
     def _end(self, given, candidates: list, which: str, raw_names: dict) -> str:
         if given is not None:
@@ -766,27 +802,35 @@ class _Converter:
         return n, n
 
     def standby(self, value: dict, nid: str, label: str, repair: Optional[dict] = None) -> str:
+        from backend.services.rbd_standby import from_document as standby_k
+
         units = value.get("reliabilities")
-        k = _whole(value.get("k", 1))
+        count = len(units) if isinstance(units, list) else 0
+        k = standby_k(value.get("k", 1), count)  # k-of-n standby (#84)
         dormancy = _finite(value.get("dormancy_factor", 0.0))
         switch = _finite(value.get("switching_probability", 1.0))
-        if not isinstance(units, list) or not 2 <= len(units) <= 1001 or k != 1:
-            return self.without_model(nid, label, "its standby group runs more than one unit at a time, or has "
-                                                  "no spare" if k != 1 else "its standby group can't be read")
+        if not isinstance(units, list) or not 2 <= count <= 1001 or k is None:
+            return self.without_model(nid, label, "its standby group has no spare, or runs every unit"
+                                      if isinstance(units, list) else "its standby group can't be read")
         models = [self.life(u, label) for u in units]
         bad = next((why for m, why in models if m is None), None)
         if bad:
             return self.without_model(nid, label, bad)
-        duty, spare = models[0][0], models[1][0]
-        if any(m != spare for m, _ in models[2:]):
+        duty, spare = models[0][0], models[k][0]
+        if any(m != duty for m, _ in models[1:k]):
+            return self.without_model(nid, label, "its running units aren't identical, which Reliafy's standby "
+                                                  "block needs")
+        if any(m != spare for m, _ in models[k + 1:]):
             return self.without_model(nid, label, "its spares aren't identical, which Reliafy's standby block needs")
         if dormancy is None or not 0 <= dormancy <= 1 or switch is None or not 0 <= switch <= 1:
             return self.without_model(nid, label, "its dormancy factor or switching probability isn't a probability")
         if dormancy > 0 and switch < 1:
             self.note(f"“{label}”: its switching probability ({switch:g}) applies only to cold standby in Reliafy, "
                       "so this warm or hot standby switches perfectly.")
-        data: dict[str, Any] = {"label": label, "model": duty, "spares": len(units) - 1,
+        data: dict[str, Any] = {"label": label, "model": duty, "spares": len(units) - k,
                                 "dormancy": dormancy, "cold": dormancy == 0}
+        if k > 1:
+            data["k"] = k
         if spare != duty:
             data["standbyModel"] = spare
         if dormancy == 0 and switch < 1:
@@ -863,11 +907,16 @@ class _Converter:
                 schedule = self.schedule(spec[key], label, key)
                 if schedule:
                     data[key] = schedule
-        if spec.get("repair") is not None:
-            self.note(f"“{label}”: its imperfect repair (restoration factor) isn't imported — Reliafy repairs to "
-                      "as good as new.")
-        if spec.get("replace_after") is not None:
-            self.note(f"“{label}”: replacement after a number of repairs isn't imported.")
+        if spec.get("repair") is not None or spec.get("replace_after") is not None:
+            # Imperfect repair and replacement at the N-th failure (#68).
+            from backend.services import rbd_repair_quality
+
+            quality = rbd_repair_quality.from_document(spec)
+            if quality is not None:
+                data["repair_quality"] = quality
+            if quality is None or (spec.get("replace_after") is not None and "replace_after" not in quality):
+                self.note(f"“{label}”: its imperfect repair or replacement after a number of failures couldn't be "
+                          "read, so it was left out — set its repair quality before analysing.")
         standby = spec.get("standby")
         if isinstance(standby, dict):
             return self.standby_group(standby, data, nid, label)
@@ -905,15 +954,18 @@ class _Converter:
         return out
 
     def standby_group(self, standby: dict, data: dict, nid: str, label: str) -> str:
+        from backend.services.rbd_standby import from_document as standby_k
+
         units = _whole(standby.get("units"))
-        k = _whole(standby.get("k", 1))
+        k = standby_k(standby.get("k", 1), units or 0)  # k-of-n standby (#84)
         dormancy = _finite(standby.get("dormancy_factor", 0.0))
         switch = _finite(standby.get("switching_probability", 1.0))
-        if units is None or units < 2 or k != 1 or dormancy is None or not 0 <= dormancy <= 1 \
+        if units is None or units < 2 or k is None or dormancy is None or not 0 <= dormancy <= 1 \
                 or switch is None or not 0 <= switch <= 1:
-            return self.without_model(nid, label, "its standby group runs more than one unit at a time, or can't "
-                                                  "be read")
-        data.update({"spares": units - 1, "dormancy": dormancy, "cold": dormancy == 0})
+            return self.without_model(nid, label, "its standby group can't be read")
+        data.update({"spares": units - k, "dormancy": dormancy, "cold": dormancy == 0})
+        if k > 1:
+            data["k"] = k
         if dormancy == 0 and switch < 1:
             data["startProb"] = switch
         return self.add(nid, "standby", data)
@@ -966,17 +1018,26 @@ class _Converter:
                 node = self.nodes.get(end[1]) if end else None
                 if node is not None and node["type"] == "component":
                     members.append(node["id"])
-            beta = _finite(model.get("beta"))
+            from backend.services import rbd_ccf_models
+
+            # The beta factor or the multiple Greek letter model (#84).
+            letters = rbd_ccf_models.from_document(model)
             # RePyability's default basis is the probability (a file leaves it out).
             basis = model.get("basis", "probability")
-            if (model.get("kind") != "beta_factor" or basis not in ("probability", "rate")
-                    or beta is None or not 0 < beta < 1):
-                self.note("A common-cause group that isn't a beta-factor model (MGL, say) isn't imported.")
+            if letters is None or basis not in ("probability", "rate"):
+                self.note("A common-cause group that isn't a beta-factor or MGL model isn't imported.")
                 continue
+            if letters.get("mgl") and len(letters["mgl"]) != len(set(members)) - 2:
+                self.note("A multiple Greek letter common-cause group whose members aren't all plain blocks "
+                          "isn't imported.")
+                continue
+            beta = letters["beta"]
             if len(set(members)) < 2:
                 self.note("A common-cause group whose members aren't plain blocks isn't imported.")
                 continue
             group = {"id": f"ccf-{len(self.ccf) + 1}", "members": list(dict.fromkeys(members)), "beta": beta}
+            if letters.get("mgl"):
+                group["mgl"] = letters["mgl"]
             # Reliafy's default (#210) is the rate for lifetime analysis and the
             # probability in a repairable diagram: the basis is kept only
             # where it differs, so a file Reliafy wrote reads back unchanged.

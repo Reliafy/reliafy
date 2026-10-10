@@ -15,14 +15,20 @@ a current state — it refuses, with the reason.
 
 Reliafy's rule: a repairable diagram's common cause is in **every** figure or
 in **none**. :func:`common_cause_refusal` asks RePyability whether its long
-run, its values over time from new (and their failure frequencies) and its
-simulation all take the groups; when one doesn't, the diagram is analysed
-without them (as before #226) and the reason is said beside the figures, so
-the exact figures, the simulation and the costs never mix a with-common-cause
-value with one without. A safety function's PFDavg needs only the long run
-(:func:`long_run_refusal`), so it keeps its groups wherever the long-run
-chain covers them (#136): proof tests that take time, say, whose failure
-frequency RePyability 0.13 doesn't work out with the groups yet.
+run, its values over time from new and its simulation all take the groups;
+when one doesn't, the diagram is analysed without them (as before #226) and
+the reason is said beside the figures, so the exact figures, the simulation
+and the costs never mix a with-common-cause value with one without. A safety
+function's PFDavg needs only the long run (:func:`long_run_refusal`), so it
+keeps its groups wherever the long-run chain covers them (#136).
+
+One figure is the exception (#328): RePyability 0.13 doesn't work out the
+exact long-run failure frequency (nor the mean up and down times built on
+it) with groups whose members' proof tests — or other blocks' block
+replacements — take time. Every other figure takes the groups there, so they
+stay in, and only that figure is left out, with its reason
+(:func:`frequency_refusal`); the simulation's estimate of it, which takes the
+groups, still stands.
 
 With limited repair crews RePyability 0.13 refuses the groups itself, in
 every exact figure (#251 there; 0.12's crew chain dropped them), and the
@@ -53,14 +59,13 @@ def long_run_refusal(rbd, working_nodes=(), broken_nodes=()):
 def common_cause_refusal(rbd, working_nodes=(), broken_nodes=(), state=None):
     """None when RePyability takes ``rbd``'s common-cause groups into every
     figure of a repairable diagram — the long run, the values over time and
-    their failure frequencies, and the simulation, from ``state`` (node ->
-    NodeState; None: every block new) with these blocks pinned — else the
-    reason it doesn't."""
+    the simulation, from ``state`` (node -> NodeState; None: every block new)
+    with these blocks pinned — else the reason it doesn't. The exact
+    long-run failure frequency is :func:`frequency_refusal`'s (#328)."""
     reason = long_run_refusal(rbd, working_nodes, broken_nodes)
     if reason is not None or not getattr(rbd, "ccf_groups", None):
         return reason
     try:
-        rbd._require_ccf_frequencies()
         rbd._require_groups_over_time(dict(state or {}))
         rbd._require_groups_simulated(state or None)
     except NotImplementedError as exc:
@@ -68,7 +73,21 @@ def common_cause_refusal(rbd, working_nodes=(), broken_nodes=(), state=None):
     return None
 
 
-_EXPORTED = (long_run_refusal, common_cause_refusal)
+def frequency_refusal(rbd):
+    """None when RePyability works out ``rbd``'s exact long-run failure
+    frequency (and so its mean up and down times) with its common-cause
+    groups, else its reason: planned outages at tests or block replacements
+    that take time aren't worked out with the groups yet (#328)."""
+    if not getattr(rbd, "ccf_groups", None):
+        return None
+    try:
+        rbd._require_ccf_frequencies()
+    except NotImplementedError as exc:
+        return str(exc)
+    return None
+
+
+_EXPORTED = (long_run_refusal, common_cause_refusal, frequency_refusal)
 
 
 def export_source() -> str:

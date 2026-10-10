@@ -31,6 +31,14 @@ Right-click the canvas to add a component, then drag from one block's handle to
 another to connect them. Series is a straight chain; parallel is two blocks that
 both branch from the same predecessor and both feed the same successor.
 
+**+ Add block** can do the wiring for you. Select a block first and it offers
+**Add after (in series)**, which puts the new block between that block and
+whatever it fed, and **Add alongside (in parallel)**, which gives the new block
+the same connections and merges the pair through a junction. Select a line of
+blocks joined one after another and **Add alongside the selection** bypasses the
+whole line. Select a connection and **Insert on this line** splits it. A
+connection never fails, so there's nothing to put alongside one.
+
 Dragging every link gets tedious once a diagram grows, so there's a shortcut:
 **select two or more blocks and press `C`**. Blocks are grouped into columns by
 position and consecutive columns are wired together — so a block and the two
@@ -73,8 +81,9 @@ has block types for the common cases:
 - **k-out-of-n voting** — the system needs at least *k* of the *n* branches
   feeding the gate. Three sensors where any two must agree is a 2-of-3.
 - **Standby** — spares that sit dormant (cold) or lightly loaded (hot) until
-  switched in. The risk here is the *switching*, which you can set a probability
-  for.
+  switched in. The risk here is the *switching*: a cold spare's chance of
+  starting is 1 (a perfect switch-over) until you set it, and 0.95–0.99 is
+  typical for generators and pumps.
 - **Series / parallel blocks** — a shorthand for *n* identical units, so you
   don't draw twenty identical blocks by hand.
 - **Sub-system** — embeds another saved RBD as a single block, so you can build

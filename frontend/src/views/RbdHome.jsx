@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listRbds, deleteRbd, renameRbd, importRbdFile, downloadRbdTemplate } from "../api.js";
+import { listRbds, deleteRbd, duplicateRbd, renameRbd, importRbdFile, downloadRbdTemplate } from "../api.js";
 import ShareDialog from "../components/ShareDialog.jsx";
 import RbdExcelImportModal from "../components/RbdExcelImportModal.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
@@ -10,6 +10,7 @@ import { FirstRunStrip } from "../components/FirstRun.jsx";
 import { useFirstRun } from "../firstRun.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 
 const PencilIcon = () => (
@@ -21,6 +22,11 @@ const ShareIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="6" cy="12" r="2.6" /><circle cx="17" cy="5.5" r="2.6" /><circle cx="17" cy="18.5" r="2.6" />
     <path d="m8.4 10.8 6.2-4M8.4 13.2l6.2 4" />
+  </svg>
+);
+const CopyIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="8" y="8" width="13" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
   </svg>
 );
 const ImportIcon = () => (
@@ -92,6 +98,22 @@ export default function RbdHome() {
     }
   };
 
+  // Duplicate (#290): a copy of the diagram, saved as "<name> (copy)" — a
+  // sample's copy is the user's own to edit.
+  const [duplicating, setDuplicating] = useState(null);
+  const onDuplicate = async (r) => {
+    setError(null);
+    setDuplicating(r.id);
+    try {
+      await duplicateRbd(r.id, `${itemName(r)} (copy)`);
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDuplicating(null);
+    }
+  };
+
   const open = (id) => navigate(`/rbds/b/${id}`);
   const loading = rbds === null;
   const visible = (rbds || []).filter((r) => matches(query, r.name, r.id));
@@ -131,6 +153,8 @@ export default function RbdHome() {
       />
 
       <FirstRunStrip info={firstRun} />
+
+      <SafetyStarterCard />
 
       {error && <div className="card error">{error}</div>}
 
@@ -213,6 +237,10 @@ export default function RbdHome() {
                     <td className="lib-n lib-opt">{(r.n_edges ?? 0).toLocaleString()}</td>
                     <td className="lib-date lib-opt">{relativeTime(r.updated_at || r.created_at)}</td>
                     <RowActions item={r} onOpen={() => open(r.id)} onDelete={() => onDelete(r)}>
+                      <button className="act" title="Duplicate" aria-label="Duplicate" disabled={duplicating === r.id}
+                              onClick={(e) => { e.stopPropagation(); onDuplicate(r); }}>
+                        <CopyIcon />
+                      </button>
                       {!r.read_only && (
                         <button className="act" title="Rename" aria-label="Rename" onClick={async (e) => {
                           e.stopPropagation();

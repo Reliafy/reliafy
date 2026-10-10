@@ -34,14 +34,14 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
-from backend.services import rbd_repeats
+from backend.services import rbd_repeats, rbd_unavailability
 from backend.services.method_labels import generic_engine_fields, hide_engine_names, route_reason
 from backend.units import normalize_unit, unit_in_text
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 from repyability.rbd.repairable_rbd import RepairableRBD
 from repyability.rbd.ccf import CCFGroup
-from repyability import BetaFactor, LoadSharingModel
+from repyability import LoadSharingModel
 from repyability.non_repairable import NonRepairable
 from repyability.rbd.standby_node import StandbyModel
 from repyability.utils.wrappers import conditional_survival
@@ -154,6 +154,10 @@ def _ph_reliability(model: dict, where: str, resolve_model, cov_values):
         raise AnalysisError(
             f"{where}: saved model not found — re-fit it or pick another."
         )
+    if getattr(cov_values, "schedules", None):  # #52: along its covariate schedule
+        from backend.services import rbd_tvc
+
+        return rbd_tvc.node(entry, cov_values, where)
     fitted = entry["model"]
     fields = entry.get("fields") or []
     row: dict = {}
@@ -215,6 +219,15 @@ def _build_distribution(
     # re-fitted empirical estimator (sf/ff) via the same refit-on-demand path.
     if model.get("kind") == "nonparametric":
         return _nonparametric_reliability(model, where, resolve_model)
+    from backend.services import rbd_mixture
+
+    if rbd_mixture.is_mixture(model):
+        # Two failure modes in one population (#318): a surpyval mixture,
+        # which RePyability 0.13 takes wherever a parametric life goes.
+        try:
+            return rbd_mixture.build(model, where)
+        except rbd_mixture.MixtureError as exc:
+            raise AnalysisError(str(exc)) from None
     dist_id = model.get("distribution_id")
     entry = DISTRIBUTIONS.get(dist_id)
     if entry is None:
@@ -294,6 +307,15 @@ def _standby_model(data: dict, label: str, resolve_model=None, cov_values=None):
     units = [primary] + [spare for _ in range(max(spares, 0))]
 
     dormancy = _standby_dormancy(data, label)
+    from backend.services import rbd_standby
+
+    if rbd_standby.operating(data, label) > 1:
+        # k-of-n standby (#84): k units running, the spares idle.
+        try:
+            switch = float(data.get("startProb", 1.0)) if dormancy == 0.0 else 1.0
+        except (TypeError, ValueError):
+            switch = 1.0
+        return rbd_standby.nonrepairable_model(data, label, primary, spare, spares, dormancy, switch)
     if dormancy == 0.0:
         # Cold standby: spares are dormant until switched in (k=1 operating).
         try:
@@ -345,6 +367,10 @@ def _node_reliability(
     data = node.get("data") or {}
     label = data.get("label") or node.get("id")
     cov_values = (covariates or {}).get(node.get("id"))
+    if data.get("covariate_schedules"):  # #52: covariates that follow a schedule
+        from backend.services import rbd_tvc
+
+        cov_values = rbd_tvc.attach(data, ntype, label, cov_values)
 
     if ntype == "component":
         model = _build_distribution(data.get("model"), label, resolve_model, cov_values)
@@ -501,6 +527,7 @@ def _build_rbd(
     visited: Optional[set] = None,
     resolve_model=None,
     covariates: Optional[dict] = None,
+    capacity: Optional[dict] = None,
 ):
     """Translate a builder graph into a NonRepairableRBD.
 
@@ -508,8 +535,14 @@ def _build_rbd(
     broken_nodes)`` where ``labels`` and ``node_types`` map node id -> display
     label / builder type for the participating nodes (everything but
     input/output), and the last two are the ids pinned working/failed.
+    ``capacity`` (``{node id: capacity}``, see :mod:`.rbd_capacity`) is
+    passed on for the production analysis (#122).
     """
     visited = visited or set()
+    if isinstance(graph.get("network"), dict):  # #160: an undirected network has its own analysis
+        from backend.services.rbd_network import NETWORK_ONLY
+
+        raise AnalysisError(NETWORK_ONLY)
     _check_limits(graph)
     require_blocks(graph)
     nodes = graph.get("nodes") or []
@@ -597,6 +630,7 @@ def _build_rbd(
                 output_node=output_node,
                 on_infeasible_rbd="raise",
                 ccf_groups=ccf_groups if (with_ccf and ccf_groups) else None,
+                capacity=capacity or None,
             )
         except ValueError as exc:
             raise AnalysisError(
@@ -654,8 +688,12 @@ def _ccf_groups(graph: dict, reliabilities: dict, repairable: bool = False) -> l
             continue
         if not (0.0 < beta < 1.0):
             continue
-        model = BetaFactor(beta, basis=ccf_basis(g, repairable))
-        out.append(CCFGroup(members=list(dict.fromkeys(members)), model=model))
+        members = list(dict.fromkeys(members))
+        # The beta factor, or the multiple Greek letter model for 3+ (#84).
+        from backend.services import rbd_ccf_models
+
+        model = rbd_ccf_models.group_model(g, len(members), ccf_basis(g, repairable))
+        out.append(CCFGroup(members=members, model=model))
     return out
 
 
@@ -817,11 +855,16 @@ def validate_graph(
             if k_required is not None:
                 k[nid] = k_required
         except AnalysisError as exc:
-            if not pinned:
+            # A repairable diagram's standby group is no StandbyModel: the
+            # non-repairable arrangement's limits (#84) don't apply to it.
+            if not pinned and not (graph.get("repairable") and getattr(exc, "nonrepairable_only", False)):
                 errors.append(str(exc))
             reliabilities[nid] = PerfectReliability  # structural placeholder
 
     errors.extend(_io_errors(graph))
+    from backend.services import rbd_ccf_models
+
+    errors.extend(rbd_ccf_models.errors(graph, labels))  # MGL letters (#84)
     koon_errors, koon_warnings = _koon_checks(nodes, edges, labels)
     errors.extend(koon_errors)
     warnings.extend(koon_warnings)
@@ -864,6 +907,9 @@ def validate_graph(
             errors.append(f"The diagram could not be analysed: {exc}")
 
     warnings.extend(design_warnings(graph, labels))
+    from backend.services import rbd_standby
+
+    warnings.extend(rbd_standby.warnings(graph))  # switching on warm/hot spares (#84)
 
     repairable = bool(graph.get("repairable"))
     if repairable:
@@ -901,6 +947,9 @@ def validate_graph(
 
         errors.extend(rbd_maintenance.validation_errors(graph))
         errors.extend(rbd_policies.validation_errors(graph))
+        from backend.services import rbd_sim_guard
+
+        errors.extend(rbd_sim_guard.errors(graph))
         warnings.extend(rbd_policies.validation_warnings(graph))
         # A repairable diagram's groups take either basis (its chain splits
         # the rate whatever it is): only a malformed one is an error.
@@ -979,6 +1028,9 @@ _UNIT_SUFFIX = re.compile(
     r"^(?P<stem>.*?[a-z0-9])(?:[\s\-_#/.]+(?P<tok>[a-h]|\d+|i{1,3}|iv|left|right|port|starboard|north|"
     r"south|east|west|primary|secondary|upper|lower)|(?P<num>\d+))$")
 _BLOCK_TYPES = ("component", "series", "parallel", "standby", "subsystem", "loadshare")
+#: The builder's own names for a new block ("Component 3"): not a user's
+#: naming, so no sign of a redundant pair (#289).
+_AUTO_LABEL = re.compile(r"^\s*component\s+\d+\s*$", re.I)
 #: Blocks that are themselves redundancy: a "duty/standby" in their label
 #: describes their own units, not a partner wired next to them (#183).
 _REDUNDANT_TYPES = ("parallel", "standby", "loadshare")
@@ -1024,8 +1076,9 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
             continue
         seen.add((s, t))
         la, lb = label(s), label(t)
+        auto = bool(_AUTO_LABEL.match(la) or _AUTO_LABEL.match(lb))
         (stem_a, tok_a), (stem_b, tok_b) = _label_stem(la), _label_stem(lb)
-        if stem_a and stem_a == stem_b and tok_a != tok_b:
+        if not auto and stem_a and stem_a == stem_b and tok_a != tok_b:
             why = "the same item with a different unit suffix"
         elif any(_REDUNDANCY_WORDS.search(lab) and nodes[nid].get("type") not in _REDUNDANT_TYPES
                  for nid, lab in ((s, la), (t, lb))):
@@ -1698,6 +1751,9 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
     rbd, labels, node_types, reliabilities, working_nodes, broken_nodes, baseline = _build_rbd(
         graph, resolve_subsystem, None, resolve_model, covariates
     )
+    from backend.services import rbd_tvc  # #52: where a schedule leaves the fitted range
+
+    notes.extend(rbd_tvc.notes_of(reliabilities))
     # RePyability's native what-if override for the system-level calls.
     overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
     sets = _structure_sets(rbd)
@@ -1807,6 +1863,12 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
                 measures["fussell_vesely"] = _fussell_vesely(node_probs, sets["cuts"], q_sys)
                 if not sets["cuts_complete"]:
                     fv_basis = f"cut sets of up to {_LOW_ORDER_CUT_MAX} blocks"
+        try:
+            # Structural importance (#68): from the diagram's structure alone,
+            # the share of the other blocks' states in which this one decides.
+            measures["structural"] = rbd.structural_importance(working_nodes or None, broken_nodes or None)
+        except Exception:  # noqa: BLE001 - a repeated block, say: left out
+            pass
         importance = {"time": t_rep, **{k: _imp(v) for k, v in measures.items()}}
         if fv_basis:
             importance["fussell_vesely_basis"] = fv_basis
@@ -1917,11 +1979,23 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
     if band is not None:
         from backend.services import rbd_uncertainty
 
+        fractions, band_times = rbd_uncertainty.parse_targets(band)
         result["band"] = rbd_uncertainty.system_band(
             graph, rbd, grid, s, working_nodes, broken_nodes,
             resolve_subsystem=resolve_subsystem, resolve_model=resolve_model,
             covariates=covariates, level=(band or {}).get("level"), target=target, ages=ages,
+            fractions=fractions, times=band_times,
         )
+        if result["band"].get("targets"):
+            # The point values beside the intervals (#325): each B-life as the
+            # design life is found, the reliability exactly at each time.
+            targets = result["band"]["targets"]
+            for row in targets["b_lives"]:
+                row["value"] = _design_life(rbd, system, 1.0 - row["fraction"], s, overrides, bool(state))["time"]
+            if targets["reliability"]:
+                at_t = np.asarray([r["t"] for r in targets["reliability"]], dtype=float)
+                for row, v in zip(targets["reliability"], _clean(_conditional_sf(system, at_t, s, **overrides))):
+                    row["value"] = v
     return result, labels, notes
 
 
@@ -2014,7 +2088,8 @@ def _repair_distribution(data: dict, label: str, resolve_model=None):
     return _build_distribution(spec, f"{label} (repair)", resolve_model, None)
 
 
-def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state: Optional[dict] = None):
+def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state: Optional[dict] = None,
+                          capacity: Optional[dict] = None):
     """Translate a builder graph into a RepairableRBD (availability).
 
     Supports component nodes (each a life model + repair, with costs and
@@ -2036,13 +2111,23 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
     (``PerfectReliability``, #224), anywhere in the diagram: ``gate_ids``
     names them, and they are never in ``working_nodes`` (RePyability refuses
     a junction there). Returns
-    ``(rbd, labels, gate_ids, working_nodes, broken_nodes)``.
+    ``(rbd, labels, gate_ids, working_nodes, broken_nodes)``. ``capacity``
+    (``{node id: capacity}``, see :mod:`.rbd_capacity`) is passed on for the
+    production analysis (#122).
     """
     from backend.services import rbd_maintenance, rbd_policies
 
     current_state = state  # the blocks' states now (the loop below reads each block's pin as ``state``)
+    if isinstance(graph.get("network"), dict):  # #160: a network is never an availability diagram
+        from backend.services.rbd_network import NETWORK_ONLY
+
+        raise AnalysisError(NETWORK_ONLY)
     _check_limits(graph)
     require_blocks(graph)
+    # A mixture life repaired imperfectly can't be simulated in good time yet.
+    from backend.services import rbd_sim_guard
+
+    rbd_sim_guard.check(graph)
     nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
     edges = [
@@ -2110,6 +2195,10 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             # The override fixes its state; the stand-in is never consulted.
             components[nid] = _always_up()
             continue
+        if data.get("covariate_schedules"):  # #52: a schedule can't follow repairs
+            from backend.services import rbd_tvc
+
+            rbd_tvc.refuse_repairable(data, label)
         reliability = _build_distribution(data.get("model"), label, resolve_model, None)
         if ntype == "standby":
             # A duty unit plus spares, each repaired on its own (#156).
@@ -2140,7 +2229,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             return RepairableRBD(
                 edges, components, k=k, input_node=input_node, output_node=output_node,
                 downtime_cost_rate=rbd_maintenance.downtime_cost_rate(graph), ccf_groups=ccf_groups or None,
-                **extra,
+                capacity=capacity or None, **extra,
             )
         except ValueError as exc:
             text = str(exc)
@@ -2168,8 +2257,12 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
         if reason is not None and with_ccf:
             rbd = build(None)
             reason = _with_labels(reason, labels)
+        # In every figure but the exact failure frequency (#328): planned
+        # outages that take time aren't worked out with the groups yet.
+        frequency = rbd_ccf.frequency_refusal(rbd) if reason is None and with_ccf else None
         _CCF_STATUS[rbd] = {"groups": len(groups), "included": reason is None, "reason": reason,
-                            "mode": "long_run" if with_ccf == "long_run" else "all"}
+                            "mode": "long_run" if with_ccf == "long_run" else "all",
+                            "frequency_reason": _with_labels(frequency, labels) if frequency else None}
     return rbd, labels, gate_ids, working_nodes, broken_nodes
 
 
@@ -2205,7 +2298,38 @@ def common_cause_summary(rbd, overrides: Optional[dict] = None, graph: Optional[
         out["basis"] = bases.pop() if len(bases) == 1 else ("mixed" if bases else "rate")
     if status["included"]:
         out["availability_without_common_cause"] = _without_groups_availability(rbd, overrides or {})
+    if status.get("frequency_reason"):
+        # The one figure left out (#328), and why.
+        out["frequency_left_out"] = FREQUENCY_LEFT_OUT
+        out["frequency_reason"] = plain_reason(status["frequency_reason"])
     return out
+
+
+_IMPORTANCE_NAMES = {"birnbaum": "Birnbaum", "unavailability_criticality": "share of downtime",
+                     "risk_achievement_worth": "risk achievement worth",
+                     "risk_reduction_worth": "risk reduction worth",
+                     "improvement_potential": "improvement potential", "fussell_vesely": "Fussell-Vesely"}
+
+
+def _importance_gaps(common_cause: dict, importance: dict) -> None:
+    """Say which importance measures the engine gives no value for with
+    common-cause groups whose tests take time (#328), rather than show a
+    blank column without a reason."""
+    rows = [r for r in (importance or {}).values() if isinstance(r, dict) and not r.get("pinned")]
+    missing = [name for key, name in _IMPORTANCE_NAMES.items()
+               if rows and all(r.get(key) is None for r in rows)]
+    if missing:
+        common_cause["importance_left_out"] = (
+            f"{', '.join(missing).capitalize()} {'is' if len(missing) == 1 else 'are'} left out: "
+            "not worked out yet with common-cause groups when proof tests or replacements take time.")
+
+
+#: Why the exact failure frequency (and mean up and down times) is left out
+#: of a diagram whose common-cause groups are in every other figure (#328).
+FREQUENCY_LEFT_OUT = (
+    "The exact failure frequency, and the mean up and down times built on it, are left out: they aren't worked "
+    "out yet with common-cause groups when proof tests or replacements take time. Every other figure includes "
+    "the groups; a simulation estimates these three, groups included.")
 
 
 def _without_groups_availability(rbd, overrides: dict) -> Optional[float]:
@@ -2356,6 +2480,12 @@ def _steady_importance(rbd, labels, gate_ids, overrides, steady, cut_sets) -> di
             measures["fussell_vesely"] = {}
     working = overrides.get("working_nodes") or set()
     broken = overrides.get("broken_nodes") or set()
+    try:
+        # Structural importance (#68): the structure alone, so it stands where
+        # the exact long run doesn't (a simulation-only diagram).
+        measures["structural"] = rbd.structural_importance(working or None, broken or None)
+    except Exception:  # noqa: BLE001
+        measures["structural"] = {}
     sys_unavail = (1.0 - steady) if steady is not None and np.isfinite(steady) else None
 
     out: dict[str, dict] = {}
@@ -2852,6 +2982,8 @@ def analyze_availability(
         importance = _steady_importance(rbd, labels, gate_ids, overrides, steady, sets["cuts"])
     except Exception:  # noqa: BLE001
         importance = {}
+    if common_cause and common_cause.get("frequency_left_out"):
+        _importance_gaps(common_cause, importance)
 
     # Cost of ownership (#99) and the failures/maintenance downtime split
     # (#100) — only for diagrams that price or maintain something.
@@ -2943,13 +3075,22 @@ def _f(v) -> Optional[float]:
         return None
 
 
+def _frozen_spec(spec):
+    """The plain distribution of an inline/saved spec by its parameters in
+    order, or a mixture life's surpyval mixture (#318)."""
+    from backend.services import rbd_mixture
+
+    if rbd_mixture.is_mixture(spec):
+        return rbd_mixture.build(spec, "the block")
+    entry = DISTRIBUTIONS[spec["distribution_id"]]
+    return entry["dist"].from_params([float(p["value"]) for p in spec.get("params") or []])
+
+
 def _spec_mean(spec) -> Optional[float]:
     """Mean of an inline/saved life or repair spec (``distribution_id`` +
     ``params``), or None when it can't be built without more context."""
     try:
-        entry = DISTRIBUTIONS[spec["distribution_id"]]
-        values = [float(p["value"]) for p in spec.get("params") or []]
-        mean = float(entry["dist"].from_params(values).mean())
+        mean = float(np.ravel(_frozen_spec(spec).mean())[0])
     except Exception:  # noqa: BLE001 - covariate models, odd specs: skip
         return None
     return mean if np.isfinite(mean) and mean > 0 else None
@@ -2964,8 +3105,7 @@ def _residual_mean(spec, t: float) -> Optional[float]:
     try:
         from scipy.integrate import quad
 
-        entry = DISTRIBUTIONS[spec["distribution_id"]]
-        dist = entry["dist"].from_params([float(p["value"]) for p in spec.get("params") or []])
+        dist = _frozen_spec(spec)
 
         def sf(u):
             return float(np.asarray(dist.sf(u), dtype=float).reshape(-1)[0])
@@ -3348,6 +3488,9 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
         with warnings.catch_warnings(), np.errstate(all="ignore"):
             warnings.simplefilter("ignore", RuntimeWarning)
             curve = np.asarray(rbd.point_availability(grid, **overrides, **state_kw), dtype=float)
+            # A safety function's PFD(t) from the library's unavailability (#322).
+            pfd = (rbd_unavailability.over_time(rbd, grid, window, overrides, state_kw)
+                   if graph.get("safety_function") else None)
             events = rbd.expected_events(window, **overrides, **state_kw)
             if rbd.has_costs:
                 if (summary.get("expected_cost") or {}).get("route") in _OVER_TIME_OK:
@@ -3400,7 +3543,9 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
         **base,
         "status": "ok",
         "message": None,
-        "curve": {"t": _clean(grid), "availability": _clean(curve)},
+        "curve": {"t": _clean(grid), "availability": _clean(curve),
+                  **({"unavailability": pfd["unavailability"]} if pfd else {})},
+        **({"mission_unavailability": pfd["mission_unavailability"]} if pfd else {}),
         "availability_start": _f(curve[0]),
         "availability_end": _f(curve[-1]),
         "availability_min": None if i_min is None else _f(curve[i_min]),

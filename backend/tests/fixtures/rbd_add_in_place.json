@@ -1,0 +1,626 @@
+{
+  "after": {
+    "unit": "hours",
+    "nodes": [
+      {
+        "id": "a",
+        "type": "component",
+        "data": {
+          "label": "a",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "input",
+        "type": "input",
+        "data": {
+          "label": "Input"
+        }
+      },
+      {
+        "id": "n",
+        "type": "component",
+        "data": {
+          "label": "New",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "output",
+        "type": "output",
+        "data": {
+          "label": "Output"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-a-n",
+        "source": "a",
+        "target": "n"
+      },
+      {
+        "id": "e-n-output",
+        "source": "n",
+        "target": "output"
+      },
+      {
+        "id": "input-a",
+        "source": "input",
+        "target": "a"
+      }
+    ]
+  },
+  "split": {
+    "unit": "hours",
+    "nodes": [
+      {
+        "id": "a",
+        "type": "component",
+        "data": {
+          "label": "a",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "input",
+        "type": "input",
+        "data": {
+          "label": "Input"
+        }
+      },
+      {
+        "id": "n",
+        "type": "component",
+        "data": {
+          "label": "New",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "output",
+        "type": "output",
+        "data": {
+          "label": "Output"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-a-n",
+        "source": "a",
+        "target": "n"
+      },
+      {
+        "id": "e-n-output",
+        "source": "n",
+        "target": "output"
+      },
+      {
+        "id": "input-a",
+        "source": "input",
+        "target": "a"
+      }
+    ]
+  },
+  "alongside": {
+    "unit": "hours",
+    "nodes": [
+      {
+        "id": "a",
+        "type": "component",
+        "data": {
+          "label": "a",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "input",
+        "type": "input",
+        "data": {
+          "label": "Input"
+        }
+      },
+      {
+        "id": "k9",
+        "type": "knode",
+        "data": {
+          "n": 1,
+          "k": 2
+        }
+      },
+      {
+        "id": "n",
+        "type": "component",
+        "data": {
+          "label": "New",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "output",
+        "type": "output",
+        "data": {
+          "label": "Output"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-a-k9",
+        "source": "a",
+        "target": "k9"
+      },
+      {
+        "id": "e-input-n",
+        "source": "input",
+        "target": "n"
+      },
+      {
+        "id": "e-k9-output",
+        "source": "k9",
+        "target": "output"
+      },
+      {
+        "id": "e-n-k9",
+        "source": "n",
+        "target": "k9"
+      },
+      {
+        "id": "input-a",
+        "source": "input",
+        "target": "a"
+      }
+    ]
+  },
+  "alongside_joined": {
+    "unit": "hours",
+    "nodes": [
+      {
+        "id": "a",
+        "type": "component",
+        "data": {
+          "label": "a",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "b",
+        "type": "component",
+        "data": {
+          "label": "b",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "input",
+        "type": "input",
+        "data": {
+          "label": "Input"
+        }
+      },
+      {
+        "id": "j",
+        "type": "knode",
+        "data": {
+          "n": 1,
+          "k": 3
+        }
+      },
+      {
+        "id": "n",
+        "type": "component",
+        "data": {
+          "label": "New",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "output",
+        "type": "output",
+        "data": {
+          "label": "Output"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "a-j",
+        "source": "a",
+        "target": "j"
+      },
+      {
+        "id": "b-j",
+        "source": "b",
+        "target": "j"
+      },
+      {
+        "id": "e-input-n",
+        "source": "input",
+        "target": "n"
+      },
+      {
+        "id": "e-n-j",
+        "source": "n",
+        "target": "j"
+      },
+      {
+        "id": "input-a",
+        "source": "input",
+        "target": "a"
+      },
+      {
+        "id": "input-b",
+        "source": "input",
+        "target": "b"
+      },
+      {
+        "id": "j-output",
+        "source": "j",
+        "target": "output"
+      }
+    ]
+  },
+  "alongside_vote": {
+    "unit": "hours",
+    "nodes": [
+      {
+        "id": "a",
+        "type": "component",
+        "data": {
+          "label": "a",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "b",
+        "type": "component",
+        "data": {
+          "label": "b",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "c",
+        "type": "component",
+        "data": {
+          "label": "c",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "input",
+        "type": "input",
+        "data": {
+          "label": "Input"
+        }
+      },
+      {
+        "id": "k9",
+        "type": "knode",
+        "data": {
+          "n": 1,
+          "k": 2
+        }
+      },
+      {
+        "id": "n",
+        "type": "component",
+        "data": {
+          "label": "New",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "output",
+        "type": "output",
+        "data": {
+          "label": "Output"
+        }
+      },
+      {
+        "id": "vote",
+        "type": "knode",
+        "data": {
+          "n": 2,
+          "k": 3
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "b-vote",
+        "source": "b",
+        "target": "vote"
+      },
+      {
+        "id": "c-vote",
+        "source": "c",
+        "target": "vote"
+      },
+      {
+        "id": "e-a-k9",
+        "source": "a",
+        "target": "k9"
+      },
+      {
+        "id": "e-input-n",
+        "source": "input",
+        "target": "n"
+      },
+      {
+        "id": "e-k9-vote",
+        "source": "k9",
+        "target": "vote"
+      },
+      {
+        "id": "e-n-k9",
+        "source": "n",
+        "target": "k9"
+      },
+      {
+        "id": "input-a",
+        "source": "input",
+        "target": "a"
+      },
+      {
+        "id": "input-b",
+        "source": "input",
+        "target": "b"
+      },
+      {
+        "id": "input-c",
+        "source": "input",
+        "target": "c"
+      },
+      {
+        "id": "vote-output",
+        "source": "vote",
+        "target": "output"
+      }
+    ]
+  },
+  "bypass": {
+    "unit": "hours",
+    "nodes": [
+      {
+        "id": "a",
+        "type": "component",
+        "data": {
+          "label": "a",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "b",
+        "type": "component",
+        "data": {
+          "label": "b",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "input",
+        "type": "input",
+        "data": {
+          "label": "Input"
+        }
+      },
+      {
+        "id": "k9",
+        "type": "knode",
+        "data": {
+          "n": 1,
+          "k": 2
+        }
+      },
+      {
+        "id": "n",
+        "type": "component",
+        "data": {
+          "label": "New",
+          "model": {
+            "source": "params",
+            "distribution": "Exponential",
+            "distribution_id": "exponential",
+            "params": [
+              {
+                "name": "failure_rate",
+                "value": 0.001
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "output",
+        "type": "output",
+        "data": {
+          "label": "Output"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "a-b",
+        "source": "a",
+        "target": "b"
+      },
+      {
+        "id": "e-b-k9",
+        "source": "b",
+        "target": "k9"
+      },
+      {
+        "id": "e-input-n",
+        "source": "input",
+        "target": "n"
+      },
+      {
+        "id": "e-k9-output",
+        "source": "k9",
+        "target": "output"
+      },
+      {
+        "id": "e-n-k9",
+        "source": "n",
+        "target": "k9"
+      },
+      {
+        "id": "input-a",
+        "source": "input",
+        "target": "a"
+      }
+    ]
+  }
+}

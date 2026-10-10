@@ -22,7 +22,11 @@ Compact node (what an assistant writes and reads)::
      "n": 2, "k": 3, "spares": 1, "cold": true,
      "standbyModel": {...}, "startProb": 0.98,  # cold standby: spare's own model, switch reliability
      "dormancy": 0.3,                         # standby: 0 cold, 1 hot, between = warm
-     "subsystem_rbd_id": "<saved rbd id>"}
+     "subsystem_rbd_id": "<saved rbd id>",
+     "covariate_schedules": {"load_pct": {"expression": "90 if t % 24 < 8 else 30"}}}  # #52
+
+A block on a saved regression model may set ``covariate_schedules``: each
+covariate's path over time (see :mod:`backend.services.rbd_tvc`).
 
 A repeated block — the same physical component drawn again elsewhere — is a
 component node with ``"repeat_of": "<id of the component it repeats>"`` and
@@ -53,9 +57,12 @@ NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "st
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
 #: Repairable block fields beyond the models (#99/#100), carried as given.
 MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection", "rcm_source",
-                    "maintenance_group", "crew_priority", "repair_one_at_a_time")
+                    "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality")
 #: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
 DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil")
+#: A block's capacity and the diagram's demand (#122, :mod:`.rbd_capacity`).
+CAPACITY_KEYS = ("capacity",)
+PRODUCTION_KEYS = ("production",)
 
 
 class GraphError(ValueError):
@@ -73,7 +80,8 @@ MAX_UNITS = 1000                # identical units / spares in one block
 _COUNT_FIELDS = {
     "series": (("n", "the number of identical units (n)", MAX_UNITS),),
     "parallel": (("n", "the number of identical units (n)", MAX_UNITS),),
-    "standby": (("spares", "the number of spares", MAX_UNITS),),
+    "standby": (("spares", "the number of spares", MAX_UNITS),
+                ("k", "the number of units running (k)", MAX_UNITS)),
     "loadshare": (("units", "the number of units", MAX_UNITS),
                   ("k", "the number of units required (k)", MAX_UNITS)),
     "knode": (("n", "the number of working inputs required (n)", MAX_BLOCKS),
@@ -259,8 +267,15 @@ def _params(raw, where: str) -> list[dict]:
 def _inline_model(model: dict, where: str) -> dict:
     """Flesh out an inline ``{distribution_id, params}`` model."""
     from backend import fitting
+    from backend.services import rbd_mixture
 
     dist = str(model.get("distribution_id") or model.get("distribution") or "").strip()
+    if dist == rbd_mixture.MIXTURE_ID:
+        # Two failure modes (#318): base_distribution_id + numbered params.
+        try:
+            return rbd_mixture.normalize(model, where)
+        except rbd_mixture.MixtureError as exc:
+            raise GraphError(str(exc)) from None
     if not dist:
         raise GraphError(f"{where}: the model needs a distribution_id (or a saved_model_id).")
     try:
@@ -270,6 +285,8 @@ def _inline_model(model: dict, where: str) -> dict:
             f"{where}: unsupported distribution '{dist}' — use one of {', '.join(fitting.DISTRIBUTIONS)}."
         ) from None
     params = _params(model.get("params"), where)
+    if not params and model.get("mean") is not None:
+        params = _params_from_mean(dist_id, model, where)
     if not params:
         raise GraphError(f"{where}: the model needs params, e.g. [{{\"name\": \"alpha\", \"value\": 900}}].")
     try:
@@ -288,6 +305,20 @@ def _inline_model(model: dict, where: str) -> dict:
     if model.get("placeholder"):
         out["placeholder"] = True
     return out
+
+
+def _params_from_mean(dist_id: str, model: dict, where: str) -> list[dict]:
+    """A model given as its ``mean`` (an MTBF or MTTR) and the shape or spread
+    in ``given`` (#299): SurPyval's parameters with that mean."""
+    from backend.services import rbd_block_inputs
+
+    given = model.get("given") or {}
+    if not isinstance(given, dict):
+        raise GraphError(f"{where}: given must be an object, e.g. {{\"beta\": 1.6}}.")
+    try:
+        return rbd_block_inputs.from_mean(dist_id, model.get("mean"), given)["params"]
+    except rbd_block_inputs.BlockInputError as exc:
+        raise GraphError(f"{where}: {exc}") from None
 
 
 def _extras(raw, where: str) -> dict:
@@ -359,6 +390,9 @@ def _saved_model(model_id: str, where: str, resolve_saved_model) -> dict:
         "extras": r.get("extras"),
         "covariates": (r.get("functions") or {}).get("covariates") or [],
         "unit": r.get("unit") or "",
+        # A mixture fit's modes (#318): the distribution each follows.
+        **({"base_distribution_id": r.get("base_distribution_id") or "weibull", "mixture": r.get("mixture")}
+           if r.get("distribution_id") == "mixture" else {}),
     }
 
 
@@ -388,7 +422,10 @@ def _inline_disagrees(model: dict, saved: dict) -> bool:
     from backend import fitting
 
     dist = model.get("distribution_id") or model.get("distribution")
-    if dist:
+    if dist == "mixture" or saved.get("distribution_id") == "mixture":
+        if dist and dist != saved.get("distribution_id"):
+            return True
+    elif dist:
         try:
             if fitting.resolve_distribution_id(str(dist)) != saved.get("distribution_id"):
                 return True
@@ -434,7 +471,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
 
     data = dict(raw.get("data") or {})
     for key in ("label", "model", "repair", "n", "k", "spares", "cold", "dormancy",
-                "standbyModel", "startProb", "repeat_of") + MAINTENANCE_KEYS:
+                "standbyModel", "startProb", "repeat_of") + MAINTENANCE_KEYS + CAPACITY_KEYS:
         if raw.get(key) is not None and key not in data:
             data[key] = raw[key]
     if raw.get("subsystem_rbd_id") and "rbd" not in data:
@@ -446,9 +483,23 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
         data["standbyModel"] = normalize_model(data["standbyModel"], f"{where} spare", resolve_saved_model)
     if data.get("repair") is not None:
         data["repair"] = normalize_repair(data["repair"], where)
-    for key in ("costs", "preventive", "inspection", "rcm_source"):
+    if raw.get("covariate_schedules") is not None and "covariate_schedules" not in data:
+        data["covariate_schedules"] = raw["covariate_schedules"]
+    if data.get("covariate_schedules") is not None:  # #52
+        from backend.services import rbd_tvc
+
+        try:
+            data["covariate_schedules"] = rbd_tvc.on_node(data, ntype)
+        except rbd_tvc.ScheduleError as exc:
+            raise GraphError(f"{where}: {exc}") from None
+        if data["covariate_schedules"] is None:
+            del data["covariate_schedules"]
+    for key in ("costs", "preventive", "inspection", "rcm_source", "repair_quality"):
         if data.get(key) is not None and not isinstance(data[key], dict):
             raise GraphError(f"{where}: {key} must be an object.")
+    if isinstance(data.get("repair_quality"), dict) and data["repair_quality"].get("model", "perfect") == "perfect" \
+            and data["repair_quality"].get("replace_after") is None:
+        data.pop("repair_quality")  # perfect repair is the default (#68)
     if data.get("maintenance_group") is not None and not isinstance(data["maintenance_group"], str):
         raise GraphError(f"{where}: maintenance_group must be a group name.")
     for key in ("preventive", "inspection"):
@@ -456,6 +507,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
         if spec and isinstance(spec.get("duration"), dict):
             data[key] = {**spec, "duration": _inline_model(spec["duration"], f"{where} {key} duration")}
     check_counts(ntype, data, where)
+    _check_capacity(ntype, data, where)
     if not data.get("label"):
         data["label"] = "Input" if ntype == "input" else "Output" if ntype == "output" else nid
 
@@ -465,6 +517,22 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
     elif ntype == "output":
         node.update(targetPosition="left", deletable=False, className="rbd-node rbd-io")
     return node
+
+
+def _check_capacity(ntype: str, data: dict, where: str) -> None:
+    """A block's capacity, checked and stored as :mod:`.rbd_capacity` reads
+    it (#122)."""
+    from backend.services import rbd_capacity
+
+    if data.get("capacity") in (None, "", []):
+        data.pop("capacity", None)
+        return
+    if ntype not in rbd_capacity.CAPACITY_TYPES:
+        raise GraphError(f"{where}: only component and standby blocks take a capacity.")
+    try:
+        data["capacity"] = rbd_capacity.parse_capacity(data["capacity"], where)
+    except rbd_capacity.CapacityError as exc:
+        raise GraphError(str(exc)) from None
 
 
 def make_edge(source: str, target: str, edge_id: str) -> dict:
@@ -520,7 +588,25 @@ def normalize_graph(
     for key in DIAGRAM_KEYS:
         if graph.get(key):
             out[key] = graph[key]
+    if graph.get("production"):
+        from backend.services import rbd_capacity
+
+        try:
+            production = rbd_capacity.parse_production(graph["production"])
+        except rbd_capacity.CapacityError as exc:
+            raise GraphError(str(exc)) from None
+        if production:
+            out["production"] = production
+    _carry_mission(graph, out)
     return out
+
+
+def _carry_mission(graph: dict, out: dict) -> None:
+    """A phased mission's phases and a network's terminals (#160), cleaned."""
+    from backend.services import rbd_network, rbd_phases
+
+    rbd_phases.carry(graph, out)
+    rbd_network.carry(graph, out)
 
 
 def compact_graph(graph: dict) -> dict:
@@ -535,6 +621,8 @@ def compact_graph(graph: dict) -> dict:
             m = d.get(key)
             if isinstance(m, dict):
                 cm = {"distribution_id": m.get("distribution_id"), "params": m.get("params")}
+                if m.get("base_distribution_id"):
+                    cm["base_distribution_id"] = m["base_distribution_id"]  # a mixture's modes (#318)
                 if m.get("modelId"):
                     cm["saved_model_id"] = m["modelId"]
                 if m.get("placeholder"):
@@ -542,11 +630,14 @@ def compact_graph(graph: dict) -> dict:
                 if m.get("extras") and not m.get("modelId"):
                     cm["extras"] = m["extras"]
                 node[key] = cm
-        for key in ("n", "k", "spares", "cold", "dormancy", "startProb", "repeat_of") + MAINTENANCE_KEYS:
+        for key in ("n", "k", "spares", "cold", "dormancy", "startProb", "repeat_of") + MAINTENANCE_KEYS \
+                + CAPACITY_KEYS:
             if d.get(key) is not None:
                 node[key] = d[key]
         if isinstance(d.get("rbd"), dict) and d["rbd"].get("id"):
             node["subsystem_rbd_id"] = d["rbd"]["id"]
+        if d.get("covariate_schedules"):  # #52
+            node["covariate_schedules"] = d["covariate_schedules"]
         nodes.append(node)
     edges = [{"source": e.get("source"), "target": e.get("target")} for e in graph.get("edges") or []]
     out = {"nodes": nodes, "edges": edges, "unit": graph.get("unit") or ""}
@@ -554,9 +645,13 @@ def compact_graph(graph: dict) -> dict:
         out["repairable"] = True
     if graph.get("ccf_groups"):
         out["ccf_groups"] = graph["ccf_groups"]
-    for key in DIAGRAM_KEYS:
+    for key in DIAGRAM_KEYS + PRODUCTION_KEYS:
         if graph.get(key):
             out[key] = graph[key]
+    try:
+        _carry_mission(graph, out)
+    except GraphError:
+        pass  # a malformed saved setting: left out of the compact view
     return out
 
 
