@@ -1271,7 +1271,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         Validate, Save ▾ and ⋯ on the right. On a phone the settings move into ⋯. */}
     <div className="rbd-toolbar">
       {/* Add a block without right-clicking (#299); on a phone the only way. */}
-      <ToolbarMenu label={<>+ Add<span className="rbd-add-word"> block</span></>} title="Add a block to the middle of the canvas"
+      <ToolbarMenu label={<span>+ Add<span className="rbd-add-word"> block</span></span>} title="Add a block to the middle of the canvas"
                    aria="Add block" className="rbd-add-menu">
         <button className="ovm-item" onClick={() => addComponent(centrePos())}>Component</button>
         <button className="ovm-item" onClick={() => addKNode(centrePos(), 1, 2)}
