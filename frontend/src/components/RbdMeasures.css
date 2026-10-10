@@ -1,0 +1,27 @@
+/* What to improve's tabs and measures (#225): a wrapping row of text tabs, the
+   tab's question, then the answer, one chart in a tight card, Details. */
+.rbd-improve-tabs { display: flex; flex-wrap: wrap; gap: 0 var(--sp-4); border-bottom: 1px solid var(--line); }
+.rbd-improve-tab {
+  appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  margin: 0 0 -1px; padding: var(--sp-2) 0; min-height: 36px; font: inherit; font-size: var(--fs-14);
+  color: var(--muted); cursor: pointer; box-shadow: none;
+}
+.rbd-improve-tabs .rbd-improve-tab:hover:not(:disabled) { color: var(--ink); background: none; }
+.rbd-improve-tabs .rbd-improve-tab.active { color: var(--acc); border-bottom-color: var(--acc); font-weight: 500; }
+.rbd-improve-tab:focus-visible { outline: none; box-shadow: var(--focus, 0 0 0 3px rgba(47, 109, 246, .09)); }
+.rbd-improve-q { margin: var(--sp-2) 0 0; font-size: var(--fs-16); font-weight: 600; color: var(--ink); }
+.rbd-measure { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.rbd-measure .result-summary { margin: 0; }
+.rbd-measure-chart { border: 1px solid var(--line); border-radius: 12px; padding: var(--sp-2); min-width: 0; }
+.rbd-measure-adv > summary { cursor: pointer; color: var(--muted); font-size: var(--fs-13); padding: var(--sp-2) 0; }
+.rbd-measure-adv-body { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); align-items: flex-end; }
+.rbd-improve-limit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px;
+  font-size: var(--fs-12); color: var(--muted); }
+.rbd-improve-limit input { width: 6.5em; }
+@media (max-width: 640px) {
+  .rbd-improve-tabs { gap: 0 var(--sp-3); }
+  .rbd-improve-tab { min-height: 44px; }
+}
+.rbd-measure-table td, .rbd-measure-table th { font-variant-numeric: tabular-nums; vertical-align: top; }
+.rbd-measure-table th:first-child, .rbd-measure-table td:first-child { text-align: left; white-space: normal; }
+.rbd-measure-table td:first-child .muted { font-size: var(--fs-12); color: var(--muted); }
