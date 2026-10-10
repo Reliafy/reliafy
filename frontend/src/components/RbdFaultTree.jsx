@@ -11,7 +11,7 @@ import { rbdFaultTree } from "../api.js";
 import ValidationPanel, { graphSignature } from "./RbdValidation.jsx";
 import RbdEmptyState from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
-import { formatNumber } from "../format.js";
+import { formatNumber, formatPercent } from "../format.js";
 import "./RbdFaultTree.css";
 
 // The RBD builder's "Fault tree" tab (#101): a read-only view of the diagram's
@@ -144,7 +144,7 @@ function gateText(gate, events, gates, name) {
   }
   if (gate.role === "subsystem") return { title: `${gate.label} fails`, sub: "Sub-system" };
   if (gate.role === "ccf_member") {
-    return { title: `${gate.label} fails`, sub: `Independently or by common cause (β = ${gate.beta})` };
+    return { title: `${gate.label} fails`, sub: `Independently or by common cause (β = ${formatPercent(gate.beta)})` };
   }
   const names = gate.inputs.map((i) => (i.kind === "event" ? events[i.id]?.label : null));
   if (n === 2 && names.every(Boolean)) {
@@ -485,7 +485,7 @@ function CommonCause({ result }) {
             <span>
               <b>{g.members.join(", ")}</b>
               {g.path?.length ? <span className="muted"> (in {g.path.join(" › ")})</span> : null} fail together by
-              their shared cause with P = {fmtP(g.probability)} (β = {g.beta}, {g.basis} basis). Cut sets holding it
+              their shared cause with P = {fmtP(g.probability)} (β = {formatPercent(g.beta)}, {g.basis} basis). Cut sets holding it
               carry <b>{fmtPct(g.share)}</b> of the top event.
             </span>
           </li>

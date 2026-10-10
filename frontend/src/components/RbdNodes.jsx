@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef } from "react";
 import { Handle, Position, useStore } from "reactflow";
 import { maintenanceChips } from "./RbdBlockCosts.jsx";
 import { unitInText } from "./unitText.js";
@@ -27,6 +27,51 @@ export const RbdUnitContext = createContext("");
 export const RbdRepairableContext = createContext(false);
 // Map of component id -> common-cause beta, so grouped blocks show a CC badge.
 export const RbdCcfContext = createContext({});
+// Inline rename (#289), provided by the builder only (the read-only view has
+// none): { renaming: node id | null, start(id), commit(id, label), cancel() }.
+export const RbdRenameContext = createContext(null);
+
+// "2oo3": a vote of M out of N branches, as IEC 61508 / 61511 write it (#298).
+export const moonText = (m, n) => `${m || "M"}oo${n || "N"}`;
+
+// A block's name: double-click it (or select the block and press F2) to
+// rename it in place. Enter or leaving the field keeps the new name; Escape
+// keeps the old one.
+function NodeTitle({ nodeId, label, className, children }) {
+  const ctx = useContext(RbdRenameContext);
+  const ref = useRef(null);
+  const editing = !!ctx && ctx.renaming === nodeId;
+  useEffect(() => {
+    if (editing) ref.current?.select();
+  }, [editing]);
+  if (editing) {
+    return (
+      <input
+        ref={ref}
+        className="rbd-rename nodrag nopan"
+        defaultValue={label || ""}
+        aria-label="Block name"
+        maxLength={80}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter") ctx.commit(nodeId, e.currentTarget.value);
+          else if (e.key === "Escape") ctx.cancel();
+        }}
+        onBlur={(e) => ctx.commit(nodeId, e.currentTarget.value)}
+        onDoubleClick={(e) => e.stopPropagation()}
+      />
+    );
+  }
+  return (
+    <div
+      className={className}
+      onDoubleClick={ctx ? (e) => { e.stopPropagation(); ctx.start(nodeId); } : undefined}
+      title={ctx ? "Double-click to rename" : undefined}
+    >
+      {children}
+    </div>
+  );
+}
 
 // Warn only when a model has an explicit unit that differs from the RBD unit.
 // A unitless model (e.g. entered as parameters) assumes the RBD unit — good.
@@ -99,14 +144,14 @@ export function ComponentNode(props) {
 // A linked copy reads the original's data live from the canvas, so editing
 // the original (its label, model, repair time or pinned state) shows on every
 // copy at once.
-function RepeatedNode({ data }) {
+function RepeatedNode({ id, data }) {
   const source = data.repeat_of;
   const original = useStore(useCallback((s) => s.nodeInternals.get(source)?.data, [source]));
   const shown = original || { label: data.label };
-  return <ComponentCard id={source} data={shown} repeat missing={!original} />;
+  return <ComponentCard id={source} nodeId={id} data={shown} repeat missing={!original} />;
 }
 
-function ComponentCard({ id, data, repeat = false, missing = false }) {
+function ComponentCard({ id, nodeId = id, data, repeat = false, missing = false }) {
   const rbdUnit = useContext(RbdUnitContext);
   const repairable = useContext(RbdRepairableContext);
   const ccf = useContext(RbdCcfContext);
@@ -151,10 +196,10 @@ function ComponentCard({ id, data, repeat = false, missing = false }) {
       <StatusBadge state={data.state} />
       {warn && <UnitWarn title={warn} />}
       {placeholder && <PlaceholderBadge />}
-      <div className="rbd-comp-title">
+      <NodeTitle nodeId={nodeId} label={data.label} className="rbd-comp-title">
         {repeat && <span className="rbd-repeat-mark" aria-label="Repeated block">↺ </span>}
         {data.label}
-      </div>
+      </NodeTitle>
       {body}
       <BlockChips data={data} unit={rbdUnit} beta={beta} maintenance={repairable} />
       <Handle type="source" position={Position.Right} />
@@ -168,7 +213,7 @@ function ComponentCard({ id, data, repeat = false, missing = false }) {
 function BlockChips({ data, unit, beta, maintenance }) {
   const chips = maintenance ? maintenanceChips(data, unit) : [];
   if (beta != null) {
-    chips.push({ key: "ccf", text: `⚭ β ${formatPercent(beta)}`, title: `Common-cause group — β = ${beta}` });
+    chips.push({ key: "ccf", text: `⚭ β ${formatPercent(beta)}`, title: `Common-cause group — β = ${formatPercent(beta)}` });
   }
   if (!chips.length) return null;
   return (
@@ -184,7 +229,7 @@ function BlockChips({ data, unit, beta, maintenance }) {
 // the k branches connected to its output work. n and k are edited in a modal
 // (right-click the node); the single output handle can fan out to multiple
 // downstream nodes.
-export function KNode({ data }) {
+export function KNode({ id, data }) {
   const valid =
     Number(data.n) >= 1 && Number(data.k) >= 1 && Number(data.n) <= Number(data.k);
   // n = 1 is a junction: any one branch is enough. Same node and same maths (a
@@ -195,7 +240,7 @@ export function KNode({ data }) {
   if (isJunction) {
     return (
       <div className={"rbd-junction" + stateClass(data.state)}
-           title="Junction — merges branches back into one path">
+           title={(data.label ? `${data.label}\n` : "") + "Junction — merges branches back into one path"}>
         <Handle type="target" position={Position.Left} />
         <StatusBadge state={data.state} />
         <Handle type="source" position={Position.Right} />
@@ -206,10 +251,10 @@ export function KNode({ data }) {
     <div className={"rbd-knode" + (valid ? "" : " invalid") + stateClass(data.state)}>
       <Handle type="target" position={Position.Left} />
       <StatusBadge state={data.state} />
-      <div className="rbd-knode-title">
-        {(data.n || "n") + "-out-of-" + (data.k || "k")}
-      </div>
-      <div className="rbd-knode-sub">voting · right-click to edit</div>
+      <NodeTitle nodeId={id} label={data.label} className="rbd-knode-title">
+        {data.label || moonText(data.n, data.k)}
+      </NodeTitle>
+      <div className="rbd-knode-sub">{data.label ? `${moonText(data.n, data.k)} voting` : "voting · double-click to edit"}</div>
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -228,7 +273,7 @@ export const BLOCK_TYPES = {
 
 export const BLOCK_HAS_MODEL = (kind) => kind === "series" || kind === "parallel";
 
-export function StructureNode({ data: nodeData, type }) {
+export function StructureNode({ id, data: nodeData, type }) {
   // `kind` is set by the builder; graphs built elsewhere (import, the MCP
   // server, the assistant) carry only the node's type, which is the same thing.
   const data = nodeData.kind ? nodeData : { ...nodeData, kind: type };
@@ -302,10 +347,10 @@ export function StructureNode({ data: nodeData, type }) {
       <StatusBadge state={data.state} />
       {warn && <UnitWarn title={warn} />}
       {placeholder && <PlaceholderBadge />}
-      <div className="rbd-block-title">
+      <NodeTitle nodeId={id} label={data.label} className="rbd-block-title">
         {data.label}
         {count ? <span className="rbd-block-count">×{count}</span> : null}
-      </div>
+      </NodeTitle>
       {body}
       <Handle type="source" position={Position.Right} />
     </div>

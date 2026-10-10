@@ -255,6 +255,7 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
     groups = [g for g in graph.get("ccf_groups") or [] if len(g.get("members") or []) >= 2]
     out: dict[str, Any] = {"target_sil": target_sil(graph), "common_cause": None}
     pfd = basis = reason = None
+    source = None  # the diagram the PFDavg came from, for its shares (#298)
     if groups:
         labels = {n.get("id"): (n.get("data") or {}).get("label") or n.get("id")
                   for n in graph.get("nodes") or []}
@@ -270,6 +271,7 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
                 with np.errstate(all="ignore"):
                     pfd = float(twin.mean_unavailability(**overrides))
                 basis, reason = _route_basis(twin)
+                source = twin
         except (NotImplementedError, ValueError, AnalysisError) as exc:
             pfd = None
             note = _named(str(exc), labels)
@@ -279,6 +281,7 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
             with np.errstate(all="ignore"):
                 pfd = float(rbd.mean_unavailability(**overrides))
             basis, reason = _route_basis(rbd)
+            source = rbd
         except (NotImplementedError, ValueError):
             pfd = None
     if pfd is None and res is not None and getattr(res, "n_simulations", 0) and t_sim:
@@ -298,6 +301,16 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
     )
     if out["target_sil"] is not None:
         out["meets_target"] = out["sil"] is not None and out["sil"] >= out["target_sil"]
+    if source is not None and pfd is not None:
+        # Each element's share of the PFDavg and of the dangerous failures (#298).
+        from backend.services import rbd_safety_shares
+
+        try:
+            shares = rbd_safety_shares.pfd_shares(source, graph, overrides)
+        except Exception:  # noqa: BLE001 - never lose the PFDavg
+            shares = None
+        if shares:
+            out["shares"] = shares
     return out
 
 

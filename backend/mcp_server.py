@@ -2542,6 +2542,13 @@ class BlockModel(BaseModel):
     params: Optional[list[Param]] = Field(None, description=(
         "By SurPyval name: weibull [alpha (scale), beta (shape)], exponential [failure_rate], "
         "normal/lognormal [mu, sigma], gamma [alpha, beta]."))
+    mean: Optional[float] = Field(None, gt=0, description=(
+        "Instead of params: the model's mean in the diagram's unit — an MTBF for a life, an MTTR for a repair — "
+        "with `given` for the shape or spread it leaves open. Turned into SurPyval params (stored as params) "
+        "from SurPyval's own mean. exponential, weibull, lognormal, normal, gamma and loglogistic only."))
+    given: Optional[dict[str, float]] = Field(None, description=(
+        "With mean: weibull {beta}, lognormal {sigma} (the log-spread), normal {sigma}, gamma {alpha}, "
+        "loglogistic {beta} (above 1); exponential needs none."))
     saved_model_id: Optional[str] = Field(None, description=(
         "A saved life model id (list_models) instead of inline params: a parametric (or proportional-hazards) "
         "model — a saved mixture fit included — not a non-parametric one (Kaplan-Meier etc.), which RBD blocks "
@@ -3563,7 +3570,9 @@ def analyze_rbd(
     the long-run values were found (long_run_method: exact / numerical / simulated, e.g. the repair crews'
     Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety: whether common
     cause is in it, common_cause_included; with no proof-tested block, a warning that the PFDavg and SIL are
-    optimistic), common-cause groups in every figure where RePyability follows them over time (the headline
+    optimistic; safety.shares: each element's share of the PFDavg (pfd_share, Fussell–Vesely: a common cause
+    sits in its members' shares) and of the dangerous failures (failure_share, adding up to 1 with each
+    common-cause group's on a row of its own)), common-cause groups in every figure where RePyability follows them over time (the headline
     `availability` says common_cause_included, with the long run without_common_cause alongside; where they're
     refused, common_cause.note says why and every figure leaves them out — a safety function's PFDavg may still
     include them, and then leads the headline), proof_test_note when A(t) saw-tooths with proof tests, and (in

@@ -550,6 +550,36 @@ export function deleteRbd(id) {
   return request(`/api/rbds/${id}`, { method: "DELETE" });
 }
 
+// A copy of a saved diagram (#290), saved under ``name``: the list row's
+// Duplicate. Plan limits apply as for any save.
+export async function duplicateRbd(id, name) {
+  const full = await getRbd(id);
+  return saveRbd(name, full.graph, null, null);
+}
+
+// A block's model from its mean (#299): ``{distribution_id, mean, given}``
+// (given: the shape or spread, by SurPyval name) or ``{distribution_id,
+// params}``; returns {params, mean, median} — SurPyval's.
+export function rbdBlockModel(body) {
+  return request("/api/rbd-blocks/model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// Which distributions take a mean, and what else each needs (cached).
+let meanForms = null;
+export function rbdMeanForms() {
+  if (!meanForms) {
+    meanForms = request("/api/rbd-blocks/mean-forms").then((d) => d.forms).catch((e) => {
+      meanForms = null;
+      throw e;
+    });
+  }
+  return meanForms;
+}
+
 // ---- Billing & AI credits --------------------------------------------------
 
 // Plan/credit status + caps/usage + available packs.

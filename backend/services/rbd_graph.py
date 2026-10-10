@@ -278,6 +278,8 @@ def _inline_model(model: dict, where: str) -> dict:
             f"{where}: unsupported distribution '{dist}' — use one of {', '.join(fitting.DISTRIBUTIONS)}."
         ) from None
     params = _params(model.get("params"), where)
+    if not params and model.get("mean") is not None:
+        params = _params_from_mean(dist_id, model, where)
     if not params:
         raise GraphError(f"{where}: the model needs params, e.g. [{{\"name\": \"alpha\", \"value\": 900}}].")
     try:
@@ -296,6 +298,20 @@ def _inline_model(model: dict, where: str) -> dict:
     if model.get("placeholder"):
         out["placeholder"] = True
     return out
+
+
+def _params_from_mean(dist_id: str, model: dict, where: str) -> list[dict]:
+    """A model given as its ``mean`` (an MTBF or MTTR) and the shape or spread
+    in ``given`` (#299): SurPyval's parameters with that mean."""
+    from backend.services import rbd_block_inputs
+
+    given = model.get("given") or {}
+    if not isinstance(given, dict):
+        raise GraphError(f"{where}: given must be an object, e.g. {{\"beta\": 1.6}}.")
+    try:
+        return rbd_block_inputs.from_mean(dist_id, model.get("mean"), given)["params"]
+    except rbd_block_inputs.BlockInputError as exc:
+        raise GraphError(f"{where}: {exc}") from None
 
 
 def _extras(raw, where: str) -> dict:

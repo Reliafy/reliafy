@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import Select from "./Select.jsx";
-import { compareRbds, listRbds } from "../api.js";
+import { compareRbds, listRbds, saveRbd } from "../api.js";
 import { pctAt, pctDigits, pointsAt } from "./availabilityPrecision.js";
 import { fmtMoney } from "./AvailabilityCosts.jsx";
 import { unitInText } from "./unitText.js";
@@ -83,7 +83,12 @@ function verdict(q, diff, nameA, nameB) {
 
 export default function AvailabilityCompare({ graph, rbdId, result: availability }) {
   const [rbds, setRbds] = useState(null); // saved repairable diagrams
-  const [otherId, setOtherId] = useState("");
+  // A copy made by "Duplicate and change one thing" (#290) opens with the
+  // diagram it was copied from ready to compare.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [otherId, setOtherId] = useState(location.state?.compareWith || "");
+  const [copying, setCopying] = useState(false);
   const [phase, setPhase] = useState("idle"); // idle | running
   const [comparison, setComparison] = useState(null);
   const [error, setError] = useState(null);
@@ -126,6 +131,22 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
     setPhase("idle");
   };
 
+  // Save this diagram as it is now under "<name> (copy)" and open the copy,
+  // to change one thing in it and compare it with this one.
+  const duplicate = async () => {
+    if (!rbdId || copying) return;
+    setCopying(true);
+    setError(null);
+    try {
+      const name = (rbds || []).find((d) => d.id === rbdId)?.name || "Diagram";
+      const saved = await saveRbd(`${name.replace(/\s*\(sample\)\s*$/i, "")} (copy)`, graph, null, null);
+      navigate(`/rbds/b/${saved.id}`, { state: { compareWith: rbdId } });
+    } catch (err) {
+      setError(err.message);
+      setCopying(false);
+    }
+  };
+
   const u = graph.unit ? ` ${unitInText(graph.unit)}` : "";
   const c = comparison;
   const nameA = c?.designs?.a?.name || THIS;
@@ -149,9 +170,18 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
       </div>
       {!c && !error && !needsPro && (
         <p className="hint" style={{ margin: 0 }}>
-          Save a copy of this diagram with one change (a faster repair, a spare) and compare the two.
+          Compare this diagram with a copy that has one change — a faster repair, a spare.
           Blocks with the same id are simulated with the same random numbers, so the interval
-          measures the change itself, not simulation noise.
+          measures the change itself, not simulation noise.{" "}
+          <button
+            type="button"
+            className="link"
+            onClick={duplicate}
+            disabled={!rbdId || copying}
+            title={rbdId ? "Save a copy of this diagram as it is now and open it" : "Save this diagram first"}
+          >
+            {copying ? "Duplicating…" : "Duplicate and change one thing →"}
+          </button>
         </p>
       )}
       {needsPro && (

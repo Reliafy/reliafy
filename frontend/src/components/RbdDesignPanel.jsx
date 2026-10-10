@@ -12,6 +12,7 @@ import { modelSummary } from "./RbdNodes.jsx";
 import { graphSignature } from "./RbdValidation.jsx";
 import "./RbdDesignPanel.css";
 import { unitInText } from "./unitText.js";
+import { formatPercent } from "../format.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 
 // "Design for a target" (redundancy allocation, #98): how many copies of each
@@ -576,7 +577,7 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
       </div>
       {(result.common_cause || []).map((g) => (
         <p className="hint" key={g.id}>
-          Common-cause group {g.members.join(" · ")} (β = {g.beta}{g.basis === "probability" ? ", probability basis" : ""}) is included
+          Common-cause group {g.members.join(" · ")} (β = {formatPercent(g.beta)}{g.basis === "probability" ? ", probability basis" : ""}) is included
           {g.designed.length
             ? ": extra copies share the group, so redundancy pays off less than with independent failures."
             : " in every design's reliability."}
