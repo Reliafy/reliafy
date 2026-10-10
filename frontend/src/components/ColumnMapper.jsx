@@ -50,6 +50,8 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
     } else if ((field === "xl" || field === "xr") && value) {
       next.x = "";
     }
+    // The group column (#177) compares failure modes: no modes, no groups.
+    if (field === "e" && !value) next.g = "";
     // A new status column starts from guessed meanings for its values.
     if (field === "c") Object.assign(next, guessStatus(value, facts));
     // A unit guessed from the old time column follows the new one.

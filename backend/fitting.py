@@ -1259,6 +1259,17 @@ def fit(
     """
     from backend import competing_risks  # local: it imports services that import this module
 
+    # Failure modes (#177) don't combine with covariates that change over time
+    # (#60) or with Cox PH's own options (#61): refuse rather than drop one.
+    by_mode = competing_risks.is_competing_risks(distribution) or any(
+        (mapping or {}).get(k) for k in competing_risks.EXTRA_KEYS)
+    if by_mode and (mapping or {}).get("i"):
+        raise FitError("Failure modes (competing risks) can't be fitted with covariates that change over time. "
+                       "Drop the item column to fit by failure mode, or drop the failure-mode and group "
+                       "columns to fit the covariates over time.")
+    if by_mode and (options or {}).get(regression_diagnostics.COX_KEY):
+        raise FitError("Tie methods, strata and clusters apply to a single Cox PH fit, not to failure modes. "
+                       "Drop them to fit by failure mode, or drop the failure-mode and group columns.")
     if not competing_risks.is_competing_risks(distribution):
         # The failure-mode and group columns (#177) are read by competing risks only.
         mapping = competing_risks.plain_mapping(mapping)

@@ -56,3 +56,13 @@ def test_kaplan_meier_life_with_its_restricted_mean(env):  # noqa: F811
     assert mttf["lower"] == pytest.approx(float(km.mean_cb(max(TIMES), alpha_ci=0.2)[0]))
     detail = _ok(_call(env.token[A], "get_model", {"model_id": out["model_id"]}))
     assert detail["life"]["b_lives"][3]["value"] == pytest.approx(float(fitting._life_metrics(km)["median"]))
+
+
+def test_failure_modes_with_an_item_column_or_cox_options_are_refused(env):  # noqa: F811
+    csv = next(d for d in samples.SAMPLE_DATASETS if d["id"] == "sample-ds-pump-modes")["csv"]
+    ds = datasets_service.create_dataset(env.db, "Pumps by mode", csv, A)
+    base = {"dataset_id": ds.id, "time_column": "hours", "cause_column": "failure_mode", "covariates": ["duty_pct"]}
+    assert "covariates that change over time" in _err(_call(env.token[A], "fit_distribution", {
+        **base, "distribution": "competing_risks_cox", "id_column": "pump"}))
+    assert "not to failure modes" in _err(_call(env.token[A], "fit_distribution", {
+        **base, "distribution": "competing_risks_cox", "cox_options": {"strata_column": "site"}}))

@@ -83,6 +83,11 @@ export function tvcProblems(mapping, facts, layout, nCovariates) {
     }
   }
   if (!nCovariates) out.push("Tick the covariates that change over time below.");
+  // #177: failure modes are fitted as competing risks, which take one row per unit.
+  if (mapping.e) {
+    out.push("A failure-mode column can't be fitted with covariates that change over time. "
+      + "Set Failure mode to none, or turn covariates over time off.");
+  }
   return out;
 }
 

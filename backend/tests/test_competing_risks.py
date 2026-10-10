@@ -221,3 +221,20 @@ def test_the_sample_is_seeded(client, monkeypatch):
     doc = client.db.models.find_one({"_id": "sample-model-pump-modes"})
     assert doc["kind"] == "competing_risks"
     assert doc["results"]["gray"]["available"] and doc["results"]["causes"][0]["name"] == "bearing wear"
+
+
+def test_failure_modes_refuse_covariates_over_time_and_cox_options():
+    """Competing risks don't combine with an item column (#60) or Cox PH's
+    options (#61): a clear refusal, never one side silently dropped."""
+    df = _sample()
+    for dist in ("competing_risks", "weibull_ph"):
+        with pytest.raises(fitting.FitError, match="covariates that change over time"):
+            fitting.fit(dist, df, {**MAPPING, "i": "pump"}, covariates=["duty_pct"])
+    cox = {"cox": {"tie_method": "breslow", "strata": "site"}}
+    for dist in ("competing_risks_cox", "cox_ph"):
+        with pytest.raises(fitting.FitError, match="not to failure modes"):
+            fitting.fit(dist, df, {"x": "hours", "e": "failure_mode"}, covariates=["duty_pct"], options=cox)
+    # Empty Cox options are no options: the fit by failure mode goes ahead.
+    r = fitting.fit("competing_risks_cox", df, {"x": "hours", "e": "failure_mode"}, covariates=["duty_pct"],
+                    options={"cox": {}})
+    assert r["kind"] == "competing_risks"

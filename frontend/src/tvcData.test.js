@@ -54,6 +54,9 @@ test("problems in plain words", () => {
   assert.deepEqual(tvcProblems({ ...EMPTY, i: "pump", x: "start_h", c: "censored" }, FACTS, "timeline", 1), []);
   const words = { ...FACTS, state: { dtype: "object", values: { failed: 3, odd: 2 } } };
   assert.match(tvcProblems({ ...ok, c: "state", c_map: { failed: 0 } }, words, "intervals", 1)[0], /“odd” means/);
+  // Failure modes and covariates over time don't fit together (#177 / #60).
+  assert.deepEqual(tvcProblems({ ...ok, e: "mode" }, FACTS, "intervals", 1).length, 1);
+  assert.match(tvcProblems({ ...ok, e: "mode" }, FACTS, "intervals", 1)[0], /failure-mode column can't/);
 });
 
 test("summary counts items, rows and (interval rows) failures", () => {
