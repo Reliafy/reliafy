@@ -42,7 +42,7 @@ def test_an_in_process_run_is_in_the_history_with_what_it_ran_on(client):
     assert r.status_code == 200 and r.json()["has_simulation"] is True
 
     out = _runs(client)
-    assert out["kept_days"] == 7 and out["more"] is False
+    assert out["kept_days"] == 90 and out["more"] is False  # Pro (#282)
     [row] = out["runs"]
     assert row["rbd_id"] == rbd_id and row["rbd_name"] == "Cooling loop" and row["status"] == "done"
     assert row["by"] == {"you": True, "name": None} and row["via"]["label"] == "App"
@@ -72,24 +72,25 @@ def test_an_in_process_run_is_in_the_history_with_what_it_ran_on(client):
     [log] = client.db.rbd_runtime_log.find({})
     assert log["machine"] == "web" and log["replications"] == 20 and log["actual_s"] == row["runtime_s"]
 
-    # Kept for the run TTL from when it finished.
+    # Kept for the Pro period from when it finished (#282).
     job = client.db.rbd_jobs.find_one({"_id": row["run_id"]})
     finished = job["finished_at"].replace(tzinfo=timezone.utc)
     expires = job["expires_at"].replace(tzinfo=timezone.utc)
-    assert timedelta(days=6.9) < expires - finished < timedelta(days=7.1)
+    assert job["kept_days"] == 90
+    assert timedelta(days=89.9) < expires - finished < timedelta(days=90.1)
 
 
 def test_run_ttl_is_configurable(client, monkeypatch):
     from backend import config
 
-    monkeypatch.setattr(config, "RBD_RUN_TTL_DAYS", 90)
+    monkeypatch.setattr(config, "RBD_RUN_PRO_TTL_DAYS", 30)
     client.act_as(PRO)
     graph = _graph()
     _analyze(client, graph, _save(client, graph))
     job = client.db.rbd_jobs.find_one({})
     left = job["expires_at"].replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)
-    assert timedelta(days=89) < left <= timedelta(days=90)
-    assert _runs(client)["kept_days"] == 90
+    assert timedelta(days=29) < left <= timedelta(days=30)
+    assert _runs(client)["kept_days"] == 30
 
 
 def test_a_queued_run_carries_its_quote_runtime_and_engines(client, queue):
@@ -309,6 +310,8 @@ def test_mcp_quote_list_and_get_runs(env):
     [row] = runs["runs"]
     assert row["ran_by"] == "you" and row["via"] == "Claude (MCP)" and row["status"] == "done"
     assert row["method"] == "Full" and row["availability"]["value"] > 0.9 and row["quoted"]
+    # How long runs are kept, in words (#282).
+    assert runs["kept_days"] == 90 and runs["retention"] == "Runs are kept for 90 days."
 
     run = _ok(_call(token, "get_rbd_run", {"run_id": row["run_id"], "include_curve": True}))
     assert run["result"]["n_simulations"] == 20 and run["result"]["precision"]
@@ -317,7 +320,9 @@ def test_mcp_quote_list_and_get_runs(env):
     assert run["url"].endswith(f"/rbds/runs/{row['run_id']}")
     # Someone else's run doesn't exist for them.
     assert "Run not found" in _err(_call(env.oauth[AGENT], "get_rbd_run", {"run_id": row["run_id"]}))
-    assert _ok(_call(env.oauth[AGENT], "list_rbd_runs", {}))["runs"] == []
+    other = _ok(_call(env.oauth[AGENT], "list_rbd_runs", {}))
+    assert other["runs"] == [] and other["kept_days"] == 7
+    assert other["retention"] == "Runs are kept for 7 days on the free plan. Pro keeps them for 90 days."
 
 
 def test_mcp_pending_job_carries_the_estimate(env, monkeypatch):

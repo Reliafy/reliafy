@@ -4031,12 +4031,15 @@ def list_rbd_runs(
     connector: who ran it and from where (via), status (queued, running, done, failed), method (full, quick
     estimate, fixed replications; "from now" with a current state), the calculation's runtime in seconds, when,
     the replications and window, and for a finished run the simulated window availability with its confidence
-    interval. Runs are kept for a limited time (kept_days). Read one in full with get_rbd_run."""
+    interval. Runs are kept for 7 days after they finish on the free plan and 90 days on Pro or a team's
+    diagram, each run for the period its owner's plan gave it when it started; `kept_days` and `retention`
+    say which applies to this user now. Read one in full with get_rbd_run."""
     user, db = _caller(ctx), _db()
     if rbd_id:
         _get_rbd(db, user["uid"], rbd_id)
     out = rbd_runs_service.list_runs(db, _reader(user), rbd_id, limit)
-    return {"runs": [_run_brief(r) for r in out["runs"]], "more": out["more"], "kept_days": out["kept_days"]}
+    return {"runs": [_run_brief(r) for r in out["runs"]], "more": out["more"], "kept_days": out["kept_days"],
+            "retention": out["retention"]["text"]}
 
 
 @_tool("get_rbd_run", _READ, "Read a simulation run")
