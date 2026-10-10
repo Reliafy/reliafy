@@ -501,6 +501,7 @@ def _build_rbd(
     visited: Optional[set] = None,
     resolve_model=None,
     covariates: Optional[dict] = None,
+    capacity: Optional[dict] = None,
 ):
     """Translate a builder graph into a NonRepairableRBD.
 
@@ -508,6 +509,8 @@ def _build_rbd(
     broken_nodes)`` where ``labels`` and ``node_types`` map node id -> display
     label / builder type for the participating nodes (everything but
     input/output), and the last two are the ids pinned working/failed.
+    ``capacity`` (``{node id: capacity}``, see :mod:`.rbd_capacity`) is
+    passed on for the production analysis (#122).
     """
     visited = visited or set()
     _check_limits(graph)
@@ -597,6 +600,7 @@ def _build_rbd(
                 output_node=output_node,
                 on_infeasible_rbd="raise",
                 ccf_groups=ccf_groups if (with_ccf and ccf_groups) else None,
+                capacity=capacity or None,
             )
         except ValueError as exc:
             raise AnalysisError(
@@ -2014,7 +2018,8 @@ def _repair_distribution(data: dict, label: str, resolve_model=None):
     return _build_distribution(spec, f"{label} (repair)", resolve_model, None)
 
 
-def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state: Optional[dict] = None):
+def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state: Optional[dict] = None,
+                          capacity: Optional[dict] = None):
     """Translate a builder graph into a RepairableRBD (availability).
 
     Supports component nodes (each a life model + repair, with costs and
@@ -2036,7 +2041,9 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
     (``PerfectReliability``, #224), anywhere in the diagram: ``gate_ids``
     names them, and they are never in ``working_nodes`` (RePyability refuses
     a junction there). Returns
-    ``(rbd, labels, gate_ids, working_nodes, broken_nodes)``.
+    ``(rbd, labels, gate_ids, working_nodes, broken_nodes)``. ``capacity``
+    (``{node id: capacity}``, see :mod:`.rbd_capacity`) is passed on for the
+    production analysis (#122).
     """
     from backend.services import rbd_maintenance, rbd_policies
 
@@ -2140,7 +2147,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             return RepairableRBD(
                 edges, components, k=k, input_node=input_node, output_node=output_node,
                 downtime_cost_rate=rbd_maintenance.downtime_cost_rate(graph), ccf_groups=ccf_groups or None,
-                **extra,
+                capacity=capacity or None, **extra,
             )
         except ValueError as exc:
             text = str(exc)
