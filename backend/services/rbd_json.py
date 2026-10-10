@@ -345,9 +345,13 @@ def core(graph: dict, resolve_model: Optional[Callable] = None,
 
 def _core(graph: dict, resolve_model, resolve_subsystem) -> tuple[dict, dict, "_Exporter"]:
     ex = _Exporter(resolve_model, resolve_subsystem)
+    from backend.services import rbd_network
+
     try:
         if graph.get("repairable"):
             doc = ex.repairable(graph)
+        elif rbd_network.is_network(graph):  # #160: a network's own document
+            doc = rbd_network.json_core(ex, graph)
         else:
             doc = ex.nonrepairable(graph)
             # Block capacities (#122), as rbd_to_dict writes them.

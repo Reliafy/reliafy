@@ -582,7 +582,16 @@ def normalize_graph(
             raise GraphError(str(exc)) from None
         if production:
             out["production"] = production
+    _carry_mission(graph, out)
     return out
+
+
+def _carry_mission(graph: dict, out: dict) -> None:
+    """A phased mission's phases and a network's terminals (#160), cleaned."""
+    from backend.services import rbd_network, rbd_phases
+
+    rbd_phases.carry(graph, out)
+    rbd_network.carry(graph, out)
 
 
 def compact_graph(graph: dict) -> dict:
@@ -622,6 +631,10 @@ def compact_graph(graph: dict) -> dict:
     for key in DIAGRAM_KEYS + PRODUCTION_KEYS:
         if graph.get(key):
             out[key] = graph[key]
+    try:
+        _carry_mission(graph, out)
+    except GraphError:
+        pass  # a malformed saved setting: left out of the compact view
     return out
 
 

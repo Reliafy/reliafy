@@ -14,7 +14,7 @@ Ops (plain dicts, already shape-checked by the MCP layer's pydantic models)::
     {"op": "update_node", "id": ... | "ids": [...], "label"?, "model"?, ...}
     {"op": "add_edge", "source": ..., "target": ...}
     {"op": "remove_edge", "source": ..., "target": ...}
-    {"op": "set", "name"?, "unit"?, "repairable"?, "repair_crews"?, "maintenance_groups"?,
+    {"op": "set", "name"?, "unit"?, "repairable"?, "phases"?, "network"?, "repair_crews"?, "maintenance_groups"?,
      "safety_function"?, "target_sil"?, "costs"?: {"downtime_rate"?, "horizon"?, "discount_rate"?},
      "production"?: {"demand"?, "unit"?, "period"?}}
     {"op": "add_ccf", "members": [...], "beta": ..., "basis"?, "mgl"?: [gamma, ...], "id"?}
@@ -371,9 +371,10 @@ class _Editor:
         parts += self._set_repairable_settings(op)
         if op.get("production") is not None:
             parts.append(self._set_production(op["production"]))
+        parts += self._set_mission(op)
         if not parts:
             raise EditError("nothing to set — give name, unit, repairable, repair_crews, maintenance_groups, "
-                            "safety_function, target_sil, costs and/or production.")
+                            "safety_function, target_sil, costs, production, phases and/or network.")
         return "; ".join(parts)
 
     def _set_production(self, raw: dict) -> str:
@@ -397,6 +398,12 @@ class _Editor:
         else:
             self.graph.pop("production", None)
         return "production set" if production else "production cleared"
+
+    def _set_mission(self, op: dict) -> list[str]:
+        """``set``'s phased mission and network (#160)."""
+        from backend.services import rbd_network, rbd_phases
+
+        return rbd_phases.apply_set(self.graph, op) + rbd_network.apply_set(self.graph, op)
 
     def _set_costs(self, costs: dict) -> list[str]:
         """``set``'s diagram costs (#99, #219): each field given replaces the

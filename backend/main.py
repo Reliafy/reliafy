@@ -58,6 +58,7 @@ from backend.routers import rbd_sensitivity as rbd_sensitivity_router
 from backend.routers import rbd_intervals as rbd_intervals_router
 from backend.routers import rbd_block_inputs as rbd_block_inputs_router
 from backend.routers import rbd_measures as rbd_measures_router
+from backend.routers import rbd_missions as rbd_missions_router
 from backend.routers import strategy as strategy_router
 from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
@@ -214,6 +215,7 @@ app.include_router(rbd_intervals_router.router)
 # A block's model entered as its mean, and its mean and median (#299).
 app.include_router(rbd_block_inputs_router.router)
 app.include_router(rbd_measures_router.router)
+app.include_router(rbd_missions_router.router)
 app.include_router(strategy_router.router)
 app.include_router(compare_groups_router.router)
 app.include_router(regression_diagnostics_router.router)
