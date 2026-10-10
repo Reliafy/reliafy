@@ -8263,6 +8263,8 @@ input.rbd-rename {
 /* The toolbar's Safety function switch (#298) and "+ Add block" (#299). */
 .rbd-safety-switch { font-size: var(--fs-13); white-space: nowrap; }
 .rbd-add-menu .rbd-tb-trigger { font-weight: 600; }
+/* It sits at the toolbar's left: its menu opens rightwards. */
+.rbd-add-menu .ovm-menu { left: 0; right: auto; }
 /* "Verify a safety function" (#298): one slim card on the home, RBD and Strategy pages. */
 .sif-card {
   display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3) var(--sp-4); margin: var(--sp-4) 0;
