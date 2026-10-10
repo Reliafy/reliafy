@@ -55,7 +55,9 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import Switch from "../components/ui/Switch.jsx";
 import { formatPercent } from "../format.js";
-import { allInstant, chainPairs, setInstantRepair, trackSelection } from "../rbdBuilderOps.js";
+import {
+  allInstant, chainPairs, inPlaceItems, insertAfter, insertAlongside, insertOnEdge, setInstantRepair, trackSelection,
+} from "../rbdBuilderOps.js";
 import { safetyStarter } from "../rbdSafetyStarter.js";
 // Phased missions and undirected networks (#160).
 import RbdPhasesModal from "../components/RbdPhasesModal.jsx";
@@ -1200,6 +1202,41 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     return { x: p.x - 80 + step, y: p.y - 30 + step };
   }, [screenToFlowPosition]);
 
+  // "+ Add block" in place (#282): with a block, a line of blocks or a
+  // connection selected, the new component is wired in — after the block or
+  // on the connection (in series), or alongside the block or line (in
+  // parallel, merged through a junction; a network shares the connections).
+  // It becomes the selection.
+  const inPlace = useMemo(() => inPlaceItems(nodes, edges), [nodes, edges]);
+  const addInPlace = useCallback((key) => {
+    const choice = inPlaceItems(nodes, edges);
+    const item = choice?.items.find((i) => i.key === key);
+    if (!item || item.reason) return;
+    const n = idRef.current++;
+    const block = {
+      id: `c${n}`,
+      type: "component",
+      data: { label: `Component ${n}`, model: null, ...(repairable && allInstant(nodes) ? { instant_repair: true } : {}) },
+      position: { x: 0, y: 0 },
+      ...HORIZONTAL,
+    };
+    const graph = { nodes, edges };
+    const out = key === "after" ? insertAfter(graph, choice.ids[0], block)
+      : key === "split" ? insertOnEdge(graph, choice.edge, block)
+      : insertAlongside(graph, choice.ids, block, { junctionId: newId("knode"), junctions: !network });
+    setNodes(out.nodes);
+    setEdges(out.edges.map((e) => (e.type ? e : { ...EDGE_OPTIONS, ...e })));
+    // The canvas is as tall as the diagram: fit it again with the new block in.
+    fitWhenMeasured([block]);
+    const name = (id) => nodes.find((x) => x.id === id)?.data?.label || "the block";
+    setConnectHint(
+      key === "after" ? `Added ${block.data.label} after ${name(choice.ids[0])}, in series.`
+        : key === "split" ? `Added ${block.data.label} on the line, in series.`
+        : key === "alongside" ? `Added ${block.data.label} alongside ${name(choice.ids[0])}, in parallel.`
+        : `Added ${block.data.label} alongside the ${choice.ids.length} selected blocks, in parallel.`
+    );
+  }, [nodes, edges, repairable, network, newId, setNodes, setEdges, fitWhenMeasured]);
+
   // The toolbar's Safety function switch (#298): on, the diagram is a
   // repairable safety function (its results lead with PFDavg and the SIL);
   // off, it isn't, and its target SIL goes with it.
@@ -1318,8 +1355,20 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         Validate, Save ▾ and ⋯ on the right. On a phone the settings move into ⋯. */}
     <div className="rbd-toolbar">
       {/* Add a block without right-clicking (#299); on a phone the only way. */}
-      <ToolbarMenu label={<span>+ Add<span className="rbd-add-word"> block</span></span>} title="Add a block to the middle of the canvas"
+      <ToolbarMenu label={<span>+ Add<span className="rbd-add-word"> block</span></span>} title="Add a block: wired in after or alongside what's selected, or in the middle of the canvas"
                    aria="Add block" className="rbd-add-menu">
+        {/* In place first, when something is selected (#282); then anywhere. */}
+        {inPlace && (
+          <>
+            {inPlace.items.map((i) => (
+              <button key={i.key} className="ovm-item" disabled={!!i.reason} title={i.reason || undefined}
+                      onClick={() => addInPlace(i.key)}>
+                {i.label}
+              </button>
+            ))}
+            <div className="rbd-menu-sep" role="separator" />
+          </>
+        )}
         <button className="ovm-item" onClick={() => addComponent(centrePos())}>Component</button>
         <button className="ovm-item" onClick={() => addKNode(centrePos(), 1, 2)}
                 title="Merge parallel branches back into one — any branch is enough">
@@ -1813,7 +1862,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           {connectHint ? (
             <span className="rbd-hint-flash">{connectHint}</span>
           ) : (
-            "Add blocks with + Add block or a right-click · drag to connect · double-click to edit"
+            "Add blocks with + Add block or a right-click · select a block or a line first to wire it in · drag to connect · double-click to edit"
           )}
         </div>
       )}
