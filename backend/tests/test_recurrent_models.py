@@ -352,7 +352,8 @@ def test_samples_seed_the_new_models(monkeypatch):
     assert site["effect"] == "higher" and pump["growth"] == "deteriorating"
     assert [c["label"] for c in pump["by_cause"]["causes"]][0] == "seal"
     grp = db.recurrent_models.find_one({"_id": "sample-rec-compressors-grp"})["results"]
-    assert grp["repair_test"]["verdict"] == "partial" and 0.2 < grp["restoration"]["effectiveness"] < 0.5
+    assert grp["repair_test"]["verdict"] == "partial" and 0.7 < grp["restoration"]["effectiveness"] < 0.9
+    assert grp["gof_test"]["adequate"] is True
 
 
 def test_fleet_refuses_a_covariate_or_imperfect_repair_model():

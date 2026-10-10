@@ -256,13 +256,14 @@ SAMPLE_RECURRENT_MODELS = [
         },
     },
     {
-        # #65: imperfect repair (Kijima II) on the compressor history.
+        # #65: imperfect repair (Kijima I) on the compressor history: each
+        # repair takes away about 79% of the age gained since the last one.
         "id": "sample-rec-compressors-grp",
         "name": "Compressor fleet — imperfect repair (sample)",
         "dataset_id": "sample-ds-compressor-events",
         "spec": {
             "mapping": {"i": "compressor", "x": "hours", "t": "test_end", "mode": "failure_mode"},
-            "model_id": "grp_ii",
+            "model_id": "grp_i",
             "unit": "hours",
         },
     },
