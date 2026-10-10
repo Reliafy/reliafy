@@ -1,0 +1,34 @@
+/* A B-life requirement (#295): the check on a life model (RequirementCheck.jsx),
+   β from a saved model (DemoShapeSource.jsx) and the plan's β warning
+   (DemoTestResult.jsx). */
+/* The row sits with the B-lives, as compact as they are; the panel's other
+   rows and gaps give up a little so the page still fits 1360×900. */
+.detail-panel .gofr.gofr-link.req-row { border-top: 1px solid var(--line2); padding-top: 5px; padding-bottom: 5px; }
+.detail-panel.life-panel .aside { gap: 8px; }
+.detail-panel.life-panel .gof-card .gofr:not(.life-row):not(.req-row) { padding-top: 8px; padding-bottom: 8px; }
+.detail-panel .gofr.gofr-link .gv.req-good { color: var(--ok); }
+.detail-panel .gofr.gofr-link .gv.req-bad { color: var(--danger); }
+.detail-panel .gofr.gofr-link .gv.req-caveat { color: var(--warn); }
+.req-modal .req-intro { margin: 0 0 12px; }
+.req-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.req-form .calc-t input { width: 130px; }
+.req-form .sel-trigger { min-width: 96px; }
+.req-error { margin: 10px 0 0; }
+.req-modal .req-verdict { margin: 16px 0 0; }
+.req-modal .req-verdict .rs-sentence { font-size: var(--fs-14); }
+@media (max-width: 720px) {
+  .req-form > * { flex: 1 1 100%; }
+  .req-form .calc-t input { width: 100%; min-height: 44px; }
+  .req-form button[type="submit"] { min-height: 44px; }
+}
+/* The demonstration test's β from a saved model (DemoShapeSource.jsx). */
+.demo-beta { margin-top: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.demo-beta-line { margin: 0; font-size: var(--fs-14); color: var(--muted); }
+.demo-beta-line b { color: var(--ink); font-weight: 600; }
+.demo-beta-clear { margin-left: 10px; font-size: var(--fs-13); }
+.demo-beta-pick { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.demo-beta-pick .sel-trigger { min-width: 240px; max-width: 100%; }
+.demo-beta .seg { max-width: 100%; }
+.demo-beta .seg-btn { white-space: normal; }
+/* The plan's warning when β is poorly known (DemoTestResult.jsx). */
+.demo-shape-warn { display: block; margin-top: 6px; color: var(--warn); }
