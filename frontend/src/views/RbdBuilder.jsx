@@ -1110,21 +1110,23 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     setModal("ccf");
   };
   // A group keeps a basis only when it isn't the rate (the default, #210).
-  const withBasis = (g, beta, basis) => {
-    const { basis: _old, ...rest } = g;
-    return basis === "probability" ? { ...rest, beta, basis } : { ...rest, beta };
+  const withBasis = (g, beta, basis, mgl) => {
+    const { basis: _old, mgl: _letters, ...rest } = g;
+    // The multiple Greek letter model's letters after β, when chosen (#84).
+    const out = basis === "probability" ? { ...rest, beta, basis } : { ...rest, beta };
+    return mgl?.length ? { ...out, mgl } : out;
   };
-  const submitCcf = ({ beta, basis }) => {
+  const submitCcf = ({ beta, basis, mgl }) => {
     setCcfGroups((prev) => {
-      if (ccfCtx?.groupId) return prev.map((g) => (g.id === ccfCtx.groupId ? withBasis(g, beta, basis) : g));
+      if (ccfCtx?.groupId) return prev.map((g) => (g.id === ccfCtx.groupId ? withBasis(g, beta, basis, mgl) : g));
       const id = `ccf-${Date.now().toString(36)}-${Math.round(Math.random() * 1e4)}`;
-      return [...prev, withBasis({ id, members: ccfCtx.members }, beta, basis)];
+      return [...prev, withBasis({ id, members: ccfCtx.members }, beta, basis, mgl)];
     });
     setModal(null);
     setCcfCtx(null);
   };
   const editCcf = (g) => {
-    setCcfCtx({ members: g.members, beta: g.beta, basis: g.basis, groupId: g.id });
+    setCcfCtx({ members: g.members, beta: g.beta, basis: g.basis, mgl: g.mgl, groupId: g.id });
     setModal("ccf");
   };
   const removeCcf = (gid) => setCcfGroups((prev) => prev.filter((g) => g.id !== gid));
@@ -1215,7 +1217,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
                     <span className="rbd-ccf-row-members" title={(g.members || []).map(labelFor).join(", ")}>
                       {(g.members || []).map(labelFor).join(" · ")}
                     </span>
-                    <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β {formatPercent(g.beta)}{g.basis === "probability" ? " (prob.)" : ""}</button>
+                    <button className="rbd-ccf-row-beta" onClick={() => editCcf(g)} title="Edit β">β {formatPercent(g.beta)}{g.mgl?.length ? " · MGL" : ""}{g.basis === "probability" ? " (prob.)" : ""}</button>
                     <button className="rbd-ccf-row-x" onClick={() => removeCcf(g.id)} title="Ungroup" aria-label="Ungroup">×</button>
                   </div>
                 ))}
