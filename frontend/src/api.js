@@ -898,6 +898,26 @@ export function rbdFaultTree(graph, t = null, tMax = null) {
   });
 }
 
+// A phased mission (#160): the (unsaved) graph's phases worked out — mission
+// reliability, each phase's failure probability, the riskiest phase.
+export function rbdPhases(graph) {
+  return request("/api/rbds/phases", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph }),
+  });
+}
+
+// A network's two-terminal reliability (#160) at ``t`` (null = where it's
+// about 90%), with ``tMax`` the curve's end (null = automatic).
+export function rbdNetwork(graph, t = null, tMax = null) {
+  return request("/api/rbds/network", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t: t ?? null, t_max: tMax ?? null }),
+  });
+}
+
 // Redundancy design (non-repairable graphs): how many copies of each block.
 // ``blocks`` = [{id, cost, weight?, volume?, max_copies, required, strategy,
 // switching, name, types: [{name, model, cost, ...}]}]; give ``budget``
