@@ -490,7 +490,9 @@ def availability_payload(
     if sim is not None and sim.get("free_sims"):
         out["free_sims"] = sim["free_sims"]
     if job is not None:
-        out["job"] = {k: job.get(k) for k in ("job_id", "status", "queue_position", "quick")}
+        # With the runtime quote and the wait from the jobs ahead (#286).
+        out["job"] = {k: job.get(k) for k in ("job_id", "status", "queue_position", "quick", "quote", "wait_s",
+                                              "wait_text")}
         if job.get("free_sims"):
             out["free_sims"] = job["free_sims"]
         return 202, out
