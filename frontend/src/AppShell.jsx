@@ -21,6 +21,10 @@ const AltNewPage = lazy(() => import("./views/AltNewPage.jsx"));
 const AltModelPage = lazy(() => import("./views/AltModelPage.jsx"));
 const RbdHome = lazy(() => import("./views/RbdHome.jsx"));
 const RbdBuilder = lazy(() => import("./views/RbdBuilder.jsx"));
+// Simulation run history (#112).
+const RbdRuns = lazy(() => import("./views/RbdRuns.jsx"));
+const RbdRunsDetail = lazy(() => import("./views/RbdRunsDetail.jsx"));
+const RbdRunsCompare = lazy(() => import("./views/RbdRunsCompare.jsx"));
 const DatasetsHome = lazy(() => import("./views/DatasetsHome.jsx"));
 const DatasetPage = lazy(() => import("./views/DatasetPage.jsx"));
 const StrategyReplacement = lazy(() => import("./views/StrategyReplacement.jsx"));
@@ -164,6 +168,9 @@ export default function AppShell() {
             <Route path="/rbds/list" element={<Navigate to="/rbds" replace />} />
             <Route path="/rbds/b" element={<RbdBuilder />} />
             <Route path="/rbds/b/:id" element={<RbdBuilder />} />
+            <Route path="/rbds/runs" element={<RbdRuns />} />
+            <Route path="/rbds/runs/compare" element={<RbdRunsCompare />} />
+            <Route path="/rbds/runs/:runId" element={<RbdRunsDetail />} />
             <Route path="/datasets" element={<DatasetsHome />} />
             <Route path="/datasets/list" element={<Navigate to="/datasets" replace />} />
             <Route path="/datasets/d/:id" element={<DatasetPage />} />
