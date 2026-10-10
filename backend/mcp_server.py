@@ -3210,6 +3210,8 @@ def _as_of_now_summary(result: dict, labels: dict) -> dict:
             "level": band.get("level"), "n_draws": band.get("n_draws"),
             "mttf": band.get("mttf"), "b_life": band.get("blife"),
             **({"design_life": band["design_life"]} if "design_life" in band else {}),
+            # Several targets from the same draws (#325): B-lives and reliability at times.
+            **({"targets": band["targets"]} if band.get("targets") else {}),
             "uncertain_blocks": [b.get("label") for b in band.get("uncertain") or []],
             "fixed_blocks": [{"label": b.get("label"), "reason": b.get("reason")}
                              for b in band.get("fixed") or []],
@@ -3503,7 +3505,12 @@ def analyze_rbd(
         "falls to it (from now with current_state)."))] = None,
     confidence: Annotated[Optional[float], Field(ge=0.5, lt=1, description=(
         "Non-repairable: also give confidence intervals at this level (e.g. 0.9) on the MTTF, B-lives and "
-        "design life, from the parameter uncertainty of blocks that use saved fitted models."))] = None,
+        "design life, from the parameter uncertainty of blocks that use saved fitted models; with `times` "
+        "(up to 8) also on the reliability at each, and with b_lives on each of those B-lives — all from one "
+        "run of draws (confidence.targets)."))] = None,
+    b_lives: Annotated[Optional[list[float]], Field(max_length=8, description=(
+        "Non-repairable, with confidence: the B-lives to give intervals on, as percent failed (e.g. [1, 10, "
+        "50] for B1, B10, B50), each with its point value."))] = None,
     include_curves: Annotated[bool, Field(description=(
         "Non-repairable with common-cause groups: also return ccf.curve_without, the system reliability without "
         "the groups at the times of `curve`. Off by default to keep the answer small."))] = False,
@@ -3662,7 +3669,9 @@ def analyze_rbd(
         result = rbds_service.analyze_graph(db, graph, owners, t_max=t_max, conditional_age=conditional_age,
                                             at_times=times, current_state=state,
                                             target_reliability=target_reliability,
-                                            band={"level": confidence} if confidence is not None else None)
+                                            band=({"level": confidence, "b_lives": b_lives,
+                                                   "times": [t for t in times or [] if t > 0][:8] or None}
+                                                  if confidence is not None else None))
         out = {**head, "available": True, **_reliability_summary(result, graph, times, include_curves)}
         if result.get("warnings"):
             # RePyability's common-cause warnings, and why the MTTF is missing (#210).
@@ -4016,7 +4025,7 @@ def rbd_fault_tree(
 # What a lever row carries in rbd_sensitivity's answer (the app's row has more).
 _SENSITIVITY_ROW_KEYS = ("rank", "id", "block", "name", "lever", "change", "value", "shown_value", "shown_to",
                          "effect_basis", "cost_to_change", "benefit_per_cost", "per_unit_cost", "plain",
-                         "interval", "distinguishable", "unranked")
+                         "interval", "distinguishable", "unranked", "limit", "limited")
 
 
 def _sensitivity_summary(payload: dict, limit: int) -> dict:
@@ -4050,6 +4059,71 @@ def _sensitivity_summary(payload: dict, limit: int) -> dict:
     return out
 
 
+def _thin(values: list, every: int) -> list:
+    return values[::every] if isinstance(values, list) else values
+
+
+def _measure_summary(payload: dict) -> dict:
+    """A measure's answer for an agent: the plain answer first, its figures
+    (curves thinned to about 11 points), the basis and notes."""
+    status = payload.get("status")
+    keep = {k: payload.get(k) for k in ("measure", "question", "unit", "basis", "basis_reason") if k in payload}
+    if status != "ok":
+        return {**keep, "available": False, "code": status, "message": payload.get("message"),
+                **({"fixed_blocks": payload["fixed"]} if payload.get("fixed") else {})}
+    out: dict[str, Any] = {**keep, "available": True, "answer": payload.get("answer")}
+    measure = payload.get("measure")
+    every = 6
+    if measure in ("over_time", "rate"):
+        out["time"] = _thin(payload.get("time") or [], every)
+        out["series"] = [{**{k: v for k, v in s.items() if k != "values"},
+                          "values": _thin(s.get("values") or [], every)} for s in payload.get("series") or []]
+        out["series_note"] = ("over_time: each block's Birnbaum importance (the probability the system works only "
+                              "while it does) at each time; rate: each block's part in the availability's rate of "
+                              "change per unit time (negative pulls it down).")
+    for key in ("leaders", "group_by", "shares", "levers", "pairs", "rate", "jumps", "causes", "causes_window",
+                "causes_basis", "causes_note", "fastest_fall", "pulling_down", "horizon", "level", "method",
+                "availability", "at_times", "inputs", "fixed", "variance", "n_draws", "n_draws_sobol",
+                "n_draws_over_time", "window", "pinned", "notes", "repyability_version"):
+        if payload.get(key) not in (None, [], {}):
+            out[key] = payload[key]
+    if measure == "rate" and "rate" in out:
+        out["rate"] = _thin(out["rate"], every)
+    if measure == "uncertainty":
+        out["shares_note"] = ("Each uncertain input's share of the long-run availability's variance: first_order "
+                              "(the delta method's part, or Sobol's first-order index) and total (Sobol's, counting "
+                              "interactions). Inputs are the blocks whose saved fitted model is drawn; blocks "
+                              "sharing a saved model are one input. fixed lists the blocks kept fixed and why.")
+    return out
+
+
+def _measure_answer(db, user: dict, actx, graph: dict, rbd, owners: list, **raw) -> dict:
+    """rbd_sensitivity's other measures (#225): computed (or queued and
+    awaited) as the app's What to improve tabs."""
+    from backend.routers.rbd_measures import measures_payload
+
+    try:
+        status, payload = measures_payload(db, actx, graph, rbd, owners, **raw)
+    except AnalysisError as exc:
+        raise ToolError(str(exc)) from None
+    if status == 503:
+        raise ToolError(payload.get("detail") or rbd_jobs_service.QUEUE_UNAVAILABLE)
+    if status == 202:
+        job = _await_job(db, payload["job"]["job_id"], config.MCP_JOB_WAIT_S)
+        if job is None:
+            raise ToolError("The calculation was lost. Run rbd_sensitivity again.")
+        if job.get("status") == "failed":
+            raise ToolError(job.get("error") or rbd_jobs_service.FAILED_ERROR)
+        if job.get("status") != "done":
+            return {"available": False, "measure": raw.get("measure"), **_job_pending(db, job),
+                    "note": "The measure is running on Reliafy's calculation service. Call get_job with this "
+                            "job_id in a few seconds for it."}
+        payload = job.get("result") or {}
+    if payload.get("status") == "pro_required" and user.get("mcp_plan", "pro") != "pro":
+        _soft_refusal("pro_only")
+    return _measure_summary(payload)
+
+
 @_tool("rbd_sensitivity", _READ, "What to improve in a repairable RBD")
 def rbd_sensitivity(
     ctx: Context,
@@ -4074,6 +4148,30 @@ def rbd_sensitivity(
         "Where RePyability has no exact route (e.g. limited repair crews for wear-out lives), simulate the "
         "effects (Pro or credits; a minute or two). False: say so instead."))] = True,
     limit: Annotated[int, Field(ge=1, le=200, description="How many ranked levers to return.")] = 15,
+    lever_limits: Annotated[Optional[dict[str, dict[str, float]]], Field(description=(
+        "measure='levers': how far each lever may go, by lever id (from levers[].id), as {min, max} in the "
+        "values shown (shown_value: a mean repair time in the diagram's unit, a coverage as a fraction), e.g. "
+        "{\"motor|repairability.mu\": {\"min\": 4}} = the motor's mean repair time can't go below 4. A step "
+        "stops at the limit (limited: 'yours'), as it stops at a lever's own range (limited: 'range', e.g. a "
+        "coverage of 1)."))] = None,
+    measure: Annotated[Literal["levers", "over_time", "shares", "joint", "rate", "uncertainty"], Field(
+        description=(
+            "levers (default): the ranked steps. over_time: which blocks matter most, and when (each block's "
+            "Birnbaum importance from new over `window`, or the analysis horizon). shares: where an all-round "
+            "improvement pays off (each group's share of the gain from improving every lever by the same "
+            "fraction; group_by). joint: which pairs are complements (improve together) or substitutes. rate: "
+            "what's moving availability now (each block's part in dA/dt over time) and who causes the system's "
+            "failures (Barlow-Proschan shares). uncertainty: whose parameter uncertainty widens the answer — "
+            "the long-run availability's interval over draws of the blocks' saved fitted models and each "
+            "input's share of its variance."))] = "levers",
+    group_by: Annotated[Literal["block", "kind"], Field(description=(
+        "measure='shares': by block, or by kind of lever (lives, repair times, proof tests, ...)."))] = "block",
+    uncertainty_method: Annotated[Literal["delta", "sobol"], Field(description=(
+        "measure='uncertainty': delta (default; free, quick: the delta method) or sobol (first-order and total "
+        "Sobol indices from draws; Pro or credits, a compute job)."))] = "delta",
+    times: Annotated[Optional[list[float]], Field(max_length=6, description=(
+        "measure='uncertainty': also the availability at these times from new, and the mean availability over "
+        "[0, t] for each, with their intervals, all from one run (Pro or credits, a compute job)."))] = None,
 ) -> dict[str, Any]:
     """What to improve first in a repairable diagram: every lever RePyability exposes — each block's mean life
     and mean repair time (and its other model parameters), its scheduled-replacement and proof-test intervals,
@@ -4088,7 +4186,11 @@ def rbd_sensitivity(
     interval; say when an interval spans zero). Common-cause groups are in it as in analyze_rbd's availability:
     each group's beta is then a lever ('Common-cause β': a lower beta, fewer shared failures) and its members'
     life and repair move together; where they're refused, notes say why. A long calculation may come back as a
-    job_id: call get_job with it until done."""
+    job_id: call get_job with it until done. lever_limits stops a lever's step at the user's limit (e.g. a
+    repair time that can't go below 4 hours). Other measures (measure=...) each answer one question with a
+    plain `answer` to quote first, then their figures: over_time, shares, joint, rate, uncertainty (see
+    measure); `question` is the question it answers. A measure RePyability refuses for the diagram comes back
+    with available=false and its reason."""
     from backend.routers.rbd_sensitivity import sensitivity_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -4104,9 +4206,12 @@ def rbd_sensitivity(
     owners = [*_owners(uid), rbd.owner_id]
     actx = AccessCtx(user=user, uid=uid, workspace=PERSONAL, write_owner=uid, read_owners=_owners(uid),
                      list_owners=uid, share_fallback=False)
+    if measure != "levers":
+        return {**head, **_measure_answer(db, user, actx, graph, rbd, owners, measure=measure, window=window,
+                                          group_by=group_by, method=uncertainty_method, times=times)}
     status, payload = sensitivity_payload(db, actx, graph, rbd, owners, window=window, step=step,
                                           rank_by=rank_by, costs=costs_to_change, order=order,
-                                          simulate=simulate)
+                                          simulate=simulate, limits=lever_limits)
     if status == 503:
         raise ToolError(payload.get("detail") or rbd_jobs_service.QUEUE_UNAVAILABLE)
     if status == 202:
@@ -4170,7 +4275,7 @@ def _intervals_summary(payload: dict, graph: Optional[dict] = None) -> dict:
                 "crews": payload.get("crews"), "message": payload.get("message")
                 + " Call again with assume_unlimited_crews=true (and simulate_with_crews=true to see the effect)."}
     rows = [{k: r.get(k) for k in ("id", "label", "interval_now", "interval", "never", "offset_now", "offset",
-                                   "changed") if k in r} for r in payload.get("blocks") or []]
+                                   "changed", "coverage", "full_test") if k in r} for r in payload.get("blocks") or []]
     out: dict[str, Any] = {
         "available": True,
         **{k: payload.get(k) for k in ("schedule", "unit", "safety_function", "target", "basis", "stagger",
@@ -4189,6 +4294,15 @@ def _intervals_summary(payload: dict, graph: Optional[dict] = None) -> dict:
             if together.get("met") else {"met": False, "message": together.get("message")})
     if payload.get("allowed"):
         out["allowed"] = payload["allowed"]
+    if payload.get("fixed"):
+        # The blocks with this schedule left out of `blocks` (#257): kept as drawn.
+        out["fixed_blocks"] = payload["fixed"]
+    if payload.get("untested"):
+        # What each partly-covering block's untested fraction costs in the plan (#323).
+        out["untested"] = [{**{k: u.get(k) for k in ("id", "label", "coverage", "full_test", "pfd_cost",
+                                                      "availability_cost", "cost_rate_change") if k in u},
+                            "with_full_coverage": _interval_figures(u.get("with_full_coverage"))}
+                           for u in payload["untested"]]
     for key in ("crews", "common_cause"):
         if payload.get(key):
             out[key] = payload[key]
@@ -4288,7 +4402,11 @@ def optimise_maintenance_intervals(
     Free (exact); a large proof-test search runs as a job (call get_job). Nothing is saved: apply the plan with
     edit_rbd using edit_rbd_ops. It needs blocks with proof tests (inspection) or age replacement (preventive)
     and something priced to weigh (their costs, or the system downtime_rate); a refusal gives the exact
-    edit_rbd ops that add what's missing."""
+    edit_rbd ops that add what's missing. Blocks left out of `blocks` keep their intervals (fixed_blocks). A
+    block whose proof tests miss some failures (coverage below 1, with a full_test) keeps its full test, and
+    its interval is chosen among those that divide it; `untested` says what its untested fraction costs in the
+    plan: pfd_cost (safety function) or availability_cost, the plan's figures with that block's tests finding
+    every failure beside the plan's."""
     from backend.routers.rbd_intervals import intervals_payload
     from backend.services import rbd_intervals
     from backend.services.access import PERSONAL, AccessCtx
