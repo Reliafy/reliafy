@@ -8,10 +8,15 @@ matplotlib.use("Agg")
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 import surpyval as sp  # noqa: E402
+import pytest
 
 from backend.services import datasets as datasets_service  # noqa: E402
 from backend.tests.test_mcp import A, _call, _err, _ok, env  # noqa: E402,F401
 from backend.tests.test_more_models import DF  # noqa: E402
+
+
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
 
 
 def _dataset(env):

@@ -384,7 +384,8 @@ def grant_monthly_pro_credits(
 def set_plan(
     db, uid: str, plan: str, until=None, customer_id: str | None = None,
     subscription_id: str | None = None,
-) -> None:
+) -> str:
+    """Set the user's plan; returns the plan that was active before."""
     fields = {"plan": plan, "plan_until": until}
     if customer_id:
         fields["stripe_customer_id"] = customer_id
@@ -396,7 +397,9 @@ def set_plan(
     # wall, the one the agent-plan question turns on).
     from backend.services import usage as usage_service
 
-    usage_service.on_plan_change(db, uid, active_plan(before), active_plan(fields))
+    was = active_plan(before)
+    usage_service.on_plan_change(db, uid, was, active_plan(fields))
+    return was
 
 
 def set_customer(db, uid: str, customer_id: str) -> None:

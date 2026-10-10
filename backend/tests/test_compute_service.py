@@ -51,6 +51,10 @@ COMPUTE_SA = "reliafy-compute@reliafy-test.iam.gserviceaccount.com"
 REPO = Path(__file__).resolve().parents[2]
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 def _graph():
     return _rbd_graph(repairable=True)
 

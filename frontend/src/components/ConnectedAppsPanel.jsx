@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { listOAuthGrants, revokeOAuthGrant } from "../api.js";
 import { relativeTime } from "../instrument.js";
+import { useAppConfig } from "../ConfigProvider.jsx";
+import McpOnRequest from "./McpOnRequest.jsx";
 import { useCopyId } from "./CopyId.jsx";
 import Button from "./ui/Button.jsx";
 import Card, { CardHeader } from "./ui/Card.jsx";
@@ -34,6 +36,7 @@ export default function ConnectedAppsPanel() {
   const [grants, setGrants] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState("");
+  const { mcp } = useAppConfig();
 
   const refresh = useCallback(() => {
     listOAuthGrants()
@@ -66,10 +69,11 @@ export default function ConnectedAppsPanel() {
       <Card>
         <CardHeader title="Connected apps" />
         {error && <div className="error" style={{ marginTop: 0 }}>{error}</div>}
+        {!mcp && grants?.length > 0 && <McpOnRequest />}
         {grants === null ? (
           <p className="muted-line">Loading…</p>
         ) : grants.length === 0 ? (
-          <ConnectClaude />
+          mcp ? <ConnectClaude /> : <McpOnRequest />
         ) : (
           <div className="usage-table-wrap">
             <table className="lib-table">

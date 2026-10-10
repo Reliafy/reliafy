@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import Logo from "../components/Logo.jsx";
 import { useAuth } from "../AuthProvider.jsx";
+import { useAppConfig } from "../ConfigProvider.jsx";
 import { decideOAuthRequest, getOAuthRequest } from "../api.js";
+import { MCP_CONTACT } from "../appConfig.js";
 
 // OAuth consent: an app (Claude on the web/desktop/mobile, Claude Code, or
 // another MCP client) asks to use Reliafy on the user's behalf. The backend
@@ -16,7 +18,9 @@ export default function OAuthConsent() {
   const { user, loading, signOut } = useAuth();
 
   const [info, setInfo] = useState(null);
-  const [state, setState] = useState(handle ? "loading" : "invalid"); // loading | ready | invalid | leaving
+  const { mcp: mcpOn } = useAppConfig();
+  // loading | ready | invalid | off (the MCP connector is switched off) | leaving
+  const [state, setState] = useState(handle ? "loading" : "invalid");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -42,7 +46,7 @@ export default function OAuthConsent() {
         setInfo(d);
         setState("ready");
       })
-      .catch(() => alive && setState("invalid"));
+      .catch((e) => alive && setState(e.status === 403 ? "off" : "invalid"));
     return () => {
       alive = false;
     };
@@ -68,6 +72,22 @@ export default function OAuthConsent() {
       <span className="brand-name">Reliafy</span>
     </div>
   );
+
+  if (state === "off" || !mcpOn) {
+    return (
+      <div className="login-wrap">
+        <div className="login-card">
+          {brand}
+          <h1 className="login-h1">Reliafy's MCP connector isn't switched on</h1>
+          <p className="login-sub">
+            The MCP connector is available on request: email{" "}
+            <a href={`mailto:${MCP_CONTACT}`}>{MCP_CONTACT}</a>.
+          </p>
+          <Link to="/">Go to Reliafy</Link>
+        </div>
+      </div>
+    );
+  }
 
   if (state === "invalid") {
     return (

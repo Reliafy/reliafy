@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useAppConfig } from "../ConfigProvider.jsx";
+import McpOnRequest from "./McpOnRequest.jsx";
 
 // A copyable code block (monospace, with a copy button).
 function Code({ children }) {
@@ -572,16 +574,19 @@ const MCP_TOOLS = [
   ["upgrade_link", "A Stripe checkout link for Reliafy Pro, for you to open and pay yourself — nothing is charged until you complete it. Works before you have Pro."],
 ];
 
-// "Use Reliafy from Claude (MCP)": what the MCP server is and how to connect.
+// "Use Reliafy from Claude (MCP)": what the MCP server is and how to connect
+// (headed, while the connector is switched off, by how to ask for it).
 // Rendered as its own section (not a tab) so the prerendered public page
 // carries it in the static HTML. ``tokenNote`` says where tokens come from.
 export function McpDocs({ tokenNote }) {
+  const { mcp: mcpOn } = useAppConfig();
   const base = (typeof window !== "undefined" && window.location.origin) || "https://reliafy.com";
   const url = `${base}/mcp`;
   return (
     <div className="card api-ref">
       <div className="api-section">
         <h2 id="mcp">Use Reliafy from Claude (MCP)</h2>
+        {!mcpOn && <McpOnRequest className="api-mcp-off" />}
         <p className="muted-line">
           Reliafy runs a remote <b>Model Context Protocol</b> server, so Claude — on the web, the
           desktop and mobile apps, or Claude Code — can work in your Reliafy account for you: fit
@@ -664,7 +669,7 @@ export function McpDocs({ tokenNote }) {
         <ul className="api-list">
           <li>Censoring follows Reliafy’s convention: <b>0 = failed</b>, <b>1 = still running</b>. Data coded the other way round can be fitted with the inverted-flags option.</li>
           <li>Reading and calculating tools are marked read-only; tools that save to your workspace are marked as writes, so Claude asks before running them. No tool deletes anything.</li>
-          <li>Errors: <code>401</code> (not signed in, or a missing, expired or revoked token), <code>403</code> (an API token whose owner isn’t on Pro — tokens are Pro-only; a signed-in Claude connection without Pro connects, and each tool says it needs Pro), <code>429</code> (over 120 requests/minute).</li>
+          <li>Errors: <code>401</code> (not signed in, or a missing, expired or revoked token), <code>403</code> (an API token whose owner isn’t on Pro — tokens are Pro-only; a signed-in Claude connection without Pro connects, and each tool says it needs Pro), <code>429</code> (over 120 requests/minute), <code>503</code> (the MCP connector isn’t switched on — it’s available on request).</li>
         </ul>
       </div>
     </div>

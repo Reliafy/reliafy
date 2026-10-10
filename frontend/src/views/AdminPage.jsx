@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import {
   getAdminEmailCampaigns,
+  getAdminMcp,
   getAdminSignups,
   getAdminStats,
   getAdminTraffic,
   getAdminUsage,
+  setAdminMcp,
 } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Select from "../components/Select.jsx";
@@ -13,6 +15,7 @@ import Card, { CardHeader } from "../components/ui/Card.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
+import Switch from "../components/ui/Switch.jsx";
 
 const LABELS = {
   datasets: "Datasets",
@@ -139,6 +142,67 @@ function RecentSignups({ state }) {
   );
 }
 
+// The MCP connector's switch. Off, /mcp and the connector sign-in refuse at
+// once; it turns itself on for a new Pro subscriber, and MCP_ENABLED on the
+// server overrides it both ways.
+function McpSwitchCard() {
+  const [state, setState] = useState(null);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getAdminMcp()
+      .then((d) => alive && setState(d))
+      .catch((e) => alive && setError(e.message));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const toggle = (next) => {
+    setSaving(true);
+    setError(null);
+    setAdminMcp(next)
+      .then(setState)
+      .catch((e) => setError(e.message))
+      .finally(() => setSaving(false));
+  };
+
+  const forced = state?.override;
+  return (
+    <Card className="admin-mcp">
+      <div className="admin-mcp-row">
+        <Switch
+          checked={!!state?.enabled}
+          onChange={toggle}
+          disabled={!state || saving || forced != null}
+          label="MCP connector"
+          title={forced != null ? "Set by MCP_ENABLED on the server" : undefined}
+        />
+        {state && <Chip tone={state.enabled ? "accent" : undefined}>{state.enabled ? "On" : "Off"}</Chip>}
+      </div>
+      {error ? (
+        <p className="muted-line warn">{error}</p>
+      ) : !state ? (
+        <p className="muted-line">Loading…</p>
+      ) : (
+        <p className="muted-line">
+          {state.changed_at ? (
+            <>
+              Turned {state.stored ? "on" : "off"} {relativeTime(state.changed_at)} by {state.changed_by}
+              {state.reason ? <> ({state.reason})</> : null}.
+            </>
+          ) : (
+            <>Never changed: {state.default ? "on" : "off"} by default here.</>
+          )}
+          {forced != null && <> MCP_ENABLED={forced ? "true" : "false"} on the server overrides it.</>}
+        </p>
+      )}
+    </Card>
+  );
+}
+
 // What each email brought in (#269): one row per update / lifecycle email.
 // Visitors are visitor-days (daily-hashed), pages are those reached in a
 // tagged visit, and "Active" counts recipients using the app within a few
@@ -239,6 +303,8 @@ export default function AdminPage() {
         {traffic && <> · {n(traffic.pageviews)} pageviews · {n(traffic.visitors_daily_sum)} visitor-days</>}
         {errors && <> · {n(errors.app)} failed app calls{errors.api > 0 && <> · {n(errors.api)} failed API calls</>}</>}
       </p>
+
+      <McpSwitchCard />
 
       <RecentSignups state={signups} />
 

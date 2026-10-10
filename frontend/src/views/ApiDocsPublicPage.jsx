@@ -2,11 +2,13 @@ import { Link } from "react-router-dom";
 import PublicNav from "../components/PublicNav.jsx";
 import PublicFooter from "../components/PublicFooter.jsx";
 import ApiReference, { McpDocs } from "../components/ApiReference.jsx";
+import { useAppConfig } from "../ConfigProvider.jsx";
 
 // Public, crawlable API reference for the Reliafy read/ingestion API. Prerendered
 // to static HTML for search engines (see prerender-entry.jsx) and reachable
 // without an account. Token management stays in-app under Settings › API access.
 export default function ApiDocsPublicPage() {
+  const { mcp: mcpOn } = useAppConfig();
   return (
     <div className="landing">
       <PublicNav />
@@ -18,8 +20,15 @@ export default function ApiDocsPublicPage() {
             forecasts, run strategy calculators, and push operational data — through
             the <b>reliafy-client</b> Python package or the raw <b>HTTP API</b>.{" "}
             <Link to="/login">Create a free account</Link>, then generate a token under
-            Settings › API access. Claude (claude.ai, desktop, mobile, Claude Code) can
-            connect to your account by signing in, no token needed —
+            Settings › API access.{" "}
+            {mcpOn ? (
+              <>
+                Claude (claude.ai, desktop, mobile, Claude Code) can connect to your account
+                by signing in, no token needed —{" "}
+              </>
+            ) : (
+              <>Claude can also connect over MCP, available on request — </>
+            )}
             see <a href="#mcp">Use Reliafy from Claude (MCP)</a>.
           </p>
         </header>

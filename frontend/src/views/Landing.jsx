@@ -4,6 +4,7 @@ import PublicNav from "../components/PublicNav.jsx";
 import PublicFooter from "../components/PublicFooter.jsx";
 import HeroPlot from "../components/HeroPlot.jsx";
 import { useAuth } from "../AuthProvider.jsx";
+import { useAppConfig } from "../ConfigProvider.jsx";
 import { PRO_PRICE } from "../pricing.js";
 
 const CheckIcon = () => (
@@ -110,8 +111,9 @@ const FEATURES = [
 
 // Pricing copy. Keep the numbers in sync with backend/config.py
 // (FREE_MAX_*, FREE_GRANT_CENTS, CREDIT_PACKS, PRO_MONTHLY_CREDIT_CENTS) and
-// the live Stripe prices.
-const TIERS = (primaryHref) => [
+// the live Stripe prices. ``mcpOn`` is the MCP connector's switch: while
+// it's off, the MCP lines say it's on request.
+const TIERS = (primaryHref, mcpOn = true) => [
   {
     name: "Open source",
     price: "Free",
@@ -138,7 +140,9 @@ const TIERS = (primaryHref) => [
       "Join team workspaces free (view-only)",
       "Sample data and worked examples included",
       "25 AI credits to try the assistant",
-      "Try Reliafy from your AI agent: 20 tool calls a month",
+      mcpOn
+        ? "Try Reliafy from your AI agent: 20 tool calls a month"
+        : "Try Reliafy from your AI agent: 20 tool calls a month (MCP connector, on request)",
       "Secure sign-in, private to your account",
     ],
     cta: { label: "Get started", href: primaryHref, ghost: true },
@@ -155,7 +159,9 @@ const TIERS = (primaryHref) => [
       "Unlimited fleet monitoring (degradation & RUL)",
       "Unlimited evidence-linked RCM studies",
       "Fleet failure forecasting — spares demand from your models",
-      "Unlimited use from AI agents (MCP) — Claude or any MCP client",
+      mcpOn
+        ? "Unlimited use from AI agents (MCP) — Claude or any MCP client"
+        : "Unlimited use from AI agents (MCP connector, on request) — Claude or any MCP client",
       "API access — push meter data & measurements from your scripts",
       "Team workspaces: create teams and edit together",
       "AI assistant: fits models and builds RBDs for you",
@@ -167,6 +173,7 @@ const TIERS = (primaryHref) => [
 
 export default function Landing() {
   const { user } = useAuth();
+  const { mcp: mcpOn } = useAppConfig();
   const location = useLocation();
   const primaryHref = user ? "/modelling" : "/login?signup";
   const primaryLabel = user ? "Open the app" : "Get started";
@@ -288,7 +295,7 @@ export default function Landing() {
           <p>The core is open source and always will be. The cloud adds accounts, the AI assistant, and zero setup.</p>
         </div>
         <div className="price-grid">
-          {TIERS(primaryHref).map((t) => (
+          {TIERS(primaryHref, mcpOn).map((t) => (
             <div key={t.name} className={"price-card" + (t.featured ? " featured" : "")}>
               {t.featured && <span className="price-flag">Most popular</span>}
               <h3>{t.name}</h3>

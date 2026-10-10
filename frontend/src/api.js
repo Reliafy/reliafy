@@ -1782,6 +1782,20 @@ export function getAdminUsage(days = 30, includeAdmin = false) {
   return request(`/api/admin/usage?days=${days}${includeAdmin ? "&include_admin=true" : ""}`);
 }
 
+// Operator-only: the MCP connector's switch — on/off, who or what last
+// changed it and when, and whether MCP_ENABLED overrides it.
+export function getAdminMcp() {
+  return request("/api/admin/mcp");
+}
+
+export function setAdminMcp(enabled, reason = "") {
+  return request("/api/admin/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled, reason }),
+  });
+}
+
 // Un-hide all dismissed sample artifacts.
 export function restoreSamples() {
   return request("/api/samples/restore", { method: "POST" });

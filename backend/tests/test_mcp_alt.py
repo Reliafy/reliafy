@@ -15,6 +15,10 @@ from backend.tests.test_alt_bounds_interval import USE, _alt_df, _inspected, _re
 from backend.tests.test_mcp import A, B, _call, _err, _ok, env  # noqa: F401 - env is a fixture
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 def _csv(df: pd.DataFrame) -> str:
     return df.to_csv(index=False)
 

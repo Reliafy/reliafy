@@ -153,6 +153,10 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Workspace-Id"],
     max_age=3600,
 )
+# While the MCP connector is switched off, refuse the connector-only OAuth
+# endpoints before routing (inside the open CORS below, so browser clients can
+# read the refusal).
+app.add_middleware(oauth_router.McpSwitchMiddleware)
 # Open CORS on the OAuth discovery/token/registration endpoints only (outermost,
 # so it answers their preflights before the app-wide policy above).
 app.add_middleware(oauth_router.OAuthCorsMiddleware)
@@ -280,15 +284,19 @@ def app_config() -> dict:
     The frontend uses this to hide affordances that can't work here: the AI
     assistant (needs an operator provider key) and billing (needs Stripe /
     BILLING_ENABLED). ``auth`` is false in single-user (self-hosted) mode.
+    ``mcp`` is the MCP connector's switch (offered to users only when on).
     """
     from backend import config
+    from backend.db import get_db
     from backend.services import assistant as assistant_service
+    from backend.services import mcp_switch
 
     return {
         "auth": not config.AUTH_DISABLED,
         "ai": assistant_service.enabled(),
         "billing": bool(config.BILLING_ENABLED or config.STRIPE_API_KEY),
         "reliability_agent": bool(config.RELIABILITY_AGENT_ENABLED),
+        "mcp": mcp_switch.enabled(get_db()),
     }
 
 

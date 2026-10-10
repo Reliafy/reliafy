@@ -18,6 +18,7 @@ matplotlib.use("Agg")
 
 import pandas as pd  # noqa: E402
 import pytest  # noqa: E402
+import pytest
 
 from backend.services import method_labels  # noqa: E402
 from backend.services import rbd_analysis as ra  # noqa: E402
@@ -32,6 +33,10 @@ SOLVER = "custom-solver (X)"
 ENGINE = "custom"
 TIMES = [120, 340, 510, 700, 980, 1200, 1500, 1800, 2100, 2600]
 FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]
+
+
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
 
 
 def _text(value) -> str:

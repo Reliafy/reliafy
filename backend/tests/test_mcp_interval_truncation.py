@@ -21,6 +21,10 @@ IFLAGS = [2, 2, 2, 2, 0, 0, 2, 1, 0, 1]
 ENTRY = [0, 0, 500, 0, 300, 0, 0, 800, 0, 0]
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 def _direct(cols: dict, mapping: dict, **options):
     from backend import fitting
 

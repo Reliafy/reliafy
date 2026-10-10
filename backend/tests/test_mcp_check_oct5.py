@@ -15,6 +15,10 @@ LOGNORMAL_REPAIR = {"distribution_id": "lognormal",
                     "params": [{"name": "mu", "value": 1.0}, {"name": "sigma", "value": 0.3}]}
 
 
+# MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
+pytestmark = pytest.mark.usefixtures("mcp_on")
+
+
 def _weibull(alpha, beta):
     return {"distribution_id": "weibull", "params": [{"name": "alpha", "value": alpha},
                                                      {"name": "beta", "value": beta}]}

@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { getBilling, buyCredits, subscribePro, billingPortal } from "../api.js";
 import { PRO_PRICE } from "../pricing.js";
 import { useAppConfig } from "../ConfigProvider.jsx";
+import McpOnRequest from "../components/McpOnRequest.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
@@ -26,7 +27,7 @@ const ARTIFACTS = [
 
 export default function BillingPage() {
   const location = useLocation();
-  const { ai, reliability_agent: agentEnabled } = useAppConfig();
+  const { ai, reliability_agent: agentEnabled, mcp: mcpOn } = useAppConfig();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [working, setWorking] = useState("");
@@ -105,7 +106,7 @@ export default function BillingPage() {
       pro: "Included",
     },
     {
-      label: "Use Reliafy from AI agents (MCP)",
+      label: mcpOn ? "Use Reliafy from AI agents (MCP)" : "Use Reliafy from AI agents (MCP connector, on request)",
       free: data.mcp_free_monthly_calls > 0
         ? `${num(data.mcp_free_monthly_calls)} tool calls a month to try it (no fitting or fleets)`
         : "—",
@@ -242,17 +243,23 @@ export default function BillingPage() {
         {data.billing_enabled && !isAdmin && plan === "free" && mcp.period === "month" && (
           <div className="card bill-card">
             <CardHeader title="Your AI agent (MCP)" />
-            <ul className="bill-usage">
-              <li>
-                <span>Tool calls this month</span>
-                <span className="bill-usage-n">{num(mcp.calls_used)} / {num(mcp.quota)}</span>
-              </li>
-            </ul>
-            <p className="muted-line">
-              Free includes {num(mcp.quota)} tool calls a month to try Reliafy from your AI agent
-              (everything except fitting, fleets and availability simulation); they reset on the 1st
-              (UTC). Pro removes the limit.
-            </p>
+            {mcpOn ? (
+              <>
+                <ul className="bill-usage">
+                  <li>
+                    <span>Tool calls this month</span>
+                    <span className="bill-usage-n">{num(mcp.calls_used)} / {num(mcp.quota)}</span>
+                  </li>
+                </ul>
+                <p className="muted-line">
+                  Free includes {num(mcp.quota)} tool calls a month to try Reliafy from your AI agent
+                  (everything except fitting, fleets and availability simulation); they reset on the 1st
+                  (UTC). Pro removes the limit.
+                </p>
+              </>
+            ) : (
+              <McpOnRequest />
+            )}
           </div>
         )}
         {data.billing_enabled && isAgent && !isAdmin && mcp.daily_quota != null && (
@@ -273,9 +280,11 @@ export default function BillingPage() {
               </li>
             </ul>
             <p className="muted-line">
-              The daily limit resets at 00:00 UTC. Connect Claude or another MCP client from
-              the <a href="/api-docs#mcp">API docs</a>. Pro removes the daily limit and fits in Reliafy.
+              The daily limit resets at 00:00 UTC.{" "}
+              {mcpOn && <>Connect Claude or another MCP client from the <a href="/api-docs#mcp">API docs</a>. </>}
+              Pro removes the daily limit and fits in Reliafy.
             </p>
+            {!mcpOn && <McpOnRequest />}
           </div>
         )}
 

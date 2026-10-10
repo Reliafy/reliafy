@@ -20,6 +20,7 @@ from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import assistant as assistant_service
 from backend.services import billing as billing_service
+from backend.services import mcp_switch
 from backend.services import stripe_prices
 
 logger = logging.getLogger(__name__)
@@ -244,7 +245,8 @@ def _switch_plan(stripe, session, user, acct, plan: str, price: str, base: str) 
         return JSONResponse(status_code=502, content={"detail": _PAYMENT_ERROR})
     # The customer.subscription.updated webhook confirms this; set it now so
     # the page the user returns to already shows the new plan.
-    billing_service.set_plan(session, user["uid"], plan, until=None, subscription_id=sub_id)
+    was = billing_service.set_plan(session, user["uid"], plan, until=None, subscription_id=sub_id)
+    _on_paid_plan(session, user["uid"], was, plan)
     return JSONResponse(content={"url": f"{base}billing?status=success", "switched": True})
 
 
@@ -331,8 +333,9 @@ def _handle_event(session, event) -> None:
         elif meta.get("kind") in _PLAN_NAMES:
             # kind=agent still lands: an Agent checkout opened before the plan
             # was retired can complete for up to 24 h, and that user paid.
-            billing_service.set_plan(session, uid, meta["kind"], until=None, customer_id=obj.get("customer"),
-                                     subscription_id=obj.get("subscription"))
+            was = billing_service.set_plan(session, uid, meta["kind"], until=None, customer_id=obj.get("customer"),
+                                           subscription_id=obj.get("subscription"))
+            _on_paid_plan(session, uid, was, meta["kind"])
 
     elif etype == "invoice.paid":
         # A paid Pro invoice (first and each renewal) grants the Pro plan's
@@ -353,7 +356,20 @@ def _handle_event(session, event) -> None:
             plan = _plan_for_prices(_price_ids(obj.get("items")))
             doc = _subscriber(session, obj.get("customer"), obj.get("id"))
             if plan and doc:
-                billing_service.set_plan(session, doc["_id"], plan, until=None, subscription_id=obj.get("id"))
+                was = billing_service.set_plan(session, doc["_id"], plan, until=None, subscription_id=obj.get("id"))
+                _on_paid_plan(session, doc["_id"], was, plan)
+
+
+def _on_paid_plan(session, uid: str, was: str, plan: str) -> None:
+    """A user who has just become Pro (not a renewal, a replay or a plan
+    already held) turns the MCP connector on if it's off — MCP is part of
+    Pro. Never fails the webhook."""
+    if plan != "pro" or was == "pro":
+        return
+    try:
+        mcp_switch.turn_on_for_first_pro(session, uid)
+    except Exception:  # noqa: BLE001
+        logger.exception("Couldn't turn the MCP connector on for a new Pro subscriber")
 
 
 def _subscriber(session, customer_id, subscription_id):
