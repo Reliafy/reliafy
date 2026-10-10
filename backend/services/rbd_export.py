@@ -810,13 +810,22 @@ def to_python(
     unit = _one_line(graph.get("unit") or "")
     repairable = bool(graph.get("repairable"))
     script = _Script(unit, resolve_model, resolve_subsystem)
+    # #160: a network has its own body; a phased mission adds to the diagram's.
+    from backend.services import rbd_network, rbd_phases
+
+    network = not repairable and rbd_network.is_network(graph)
     if repairable:
         body = _repairable_body(script, graph)
+    elif network:
+        body = rbd_network.python_body(script, graph, resolve_model,
+                                       resolve_subsystem)
     else:
         body = _nonrepairable_body(script, graph, resolve_model,
                                    resolve_subsystem)
+        body = rbd_phases.python_section(body, graph, script)
     header = _header(name, unit, repairable, versions, exported_at,
-                     script.placeholders, filename(name), lfp=script.uses_lfp)
+                     script.placeholders, filename(name), lfp=script.uses_lfp,
+                     what=rbd_network.PYTHON_WHAT if network else None)
     imports = _imports(script, repairable)
     helpers = _helpers(script)
     parts = [helpers] if helpers else []
@@ -842,7 +851,7 @@ def _command_lines(commands: list[str]) -> list[str]:
 
 
 def _header(name, unit, repairable, versions, exported_at, placeholders,
-            file_name, lfp=False):
+            file_name, lfp=False, what=None):
     title = _one_line(name or "Untitled RBD").replace("\\", "/")
     title = title.replace('"""', "'''")
     sp, rp = versions["surpyval"], versions["repyability"]
@@ -856,7 +865,7 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
         "the same reliability calculation as Reliafy: the system reliability "
         "R(t), the MTTF, the B10/B50 lives and the component importance "
         "measures."
-    )
+    ) if what is None else what
     lines = [
         f'"""{title}',
         "",
