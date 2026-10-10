@@ -83,6 +83,7 @@ from backend import config
 from backend import fitting
 from backend import life_bounds
 from backend import recurrent as recurrent_fit
+from backend import recurrent_models
 from backend import storage
 from backend.fitting import FitError
 from backend.services import access as access_service
@@ -318,7 +319,9 @@ slower for large files). If that fails too (no network), follow create_upload's 
 - Maintenance strategy: optimal_replacement, failure_finding_interval, optimal_overhaul (recurrent models), \
 and fleet_forecast (list_fleets first); list_fleet_alerts / create_fleet_alert manage email alerts on a \
 fleet's expected failures.
-- Repairable systems (recurrent models): next_failure gives a system's chance of failing within a time and \
+- Repairable systems (recurrent models): fit_recurrent_model fits and saves one from event histories \
+(Crow-AMSAA and the other minimal-repair models, covariates on the repair rate, imperfect repair, observation \
+gaps, failures by cause); next_failure gives a system's chance of failing within a time and \
 the time to its next failure; growth_projection projects a growth test's MTBF once its fixes are in. \
 get_model on a recurrent model gives the growth verdict with β's 95% interval, the ROCOF and MTBF with bounds, \
 the demonstrated MTBF's 90% lower bound, Laplace and MIL-HDBK-189C trend tests and a goodness-of-fit test.
@@ -408,7 +411,7 @@ _USER_ERRORS = (
 # Fitting runs server-side CPU those plans don't pay for (agents fit
 # locally with SurPyval, then save_model); fleets depend on usage arriving
 # through the Pro API.
-_FIT_TOOLS = {"fit_distribution", "fit_and_save_model", "fit_alt_model"}
+_FIT_TOOLS = {"fit_distribution", "fit_and_save_model", "fit_alt_model", "fit_recurrent_model"}
 _FLEET_TOOLS = {"list_fleets", "fleet_forecast", "list_fleet_alerts", "create_fleet_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
 # Never gated or counted: the way to Pro, and seeing where the allowance
@@ -678,6 +681,7 @@ def _recurrent_brief(doc) -> dict:
         "name": doc.name,
         "kind": "recurrent",
         "model": (r.get("model") or {}).get("name"),
+        "family": r.get("family", "nhpp"),
         "beta": r.get("beta"),
         "growth": r.get("growth"),
         "n_systems": r.get("n_systems"),
@@ -741,6 +745,64 @@ def _recurrent_evidence(r: dict) -> dict:
         out["systems_vs_model"] = [
             {"system": row["system"], "failures": _sig(row["failures"]), "expected": _sig(row["expected"])}
             for row in rows[:_RESIDUAL_SYSTEMS]]
+    out.update(_recurrent_extras(r))
+    return out
+
+
+_CAUSES_LISTED = 12
+_UNITS_LISTED = 10
+
+
+def _recurrent_extras(r: dict) -> dict:
+    """#65: what a covariate, imperfect-repair, gapped or cause-marked fit
+    adds — each covariate's rate ratio in words, the repair effectiveness
+    and the repair test's verdict, each system's next failure, the
+    observation gaps and the growth of each cause."""
+    out: dict[str, Any] = {}
+    if r.get("fit_warning"):
+        out["fit_warning"] = r["fit_warning"]
+    if r.get("rates_at"):
+        out["rates_at"] = r["rates_at"]
+    if r.get("baseline"):
+        out["baseline"] = r["baseline"].get("name")
+    if r.get("coefficients"):
+        out["covariate_effects"] = [
+            {"covariate": c["name"], "rate_ratio": _sig(c.get("ratio")),
+             "rate_ratio_ci_95": [_sig(v) for v in c["ratio_ci"]] if c.get("ratio_ci") else None,
+             "effect": c.get("effect"), "reading": c.get("reading")}
+            for c in r["coefficients"]]
+        out["covariates"] = r.get("covariates")
+    rest = r.get("restoration")
+    if rest:
+        out["repair_effectiveness"] = {
+            "parameter": rest.get("parameter"), "value": _sig(rest.get("value")),
+            "effectiveness": _sig(rest.get("effectiveness")),
+            "effectiveness_ci_95": [_sig(v) for v in rest["effectiveness_ci"]] if rest.get("effectiveness_ci") else None,
+            "reading": rest.get("sentence"), "scale": rest.get("scale")}
+    rt = r.get("repair_test")
+    if rt:
+        out["repair_test"] = {"verdict": rt["verdict"], "reading": rt["sentence"],
+                              **{k: {"p_value": _sig(rt[k]["p_value"]), "rejected": rt[k]["rejected"]}
+                                 for k in ("perfect", "minimal") if rt.get(k)}}
+    nf = r.get("next_failure")
+    if nf and nf.get("units"):
+        out["next_failure_by_system"] = [
+            {"system": u["system"], "failures": u["failures"], "age": _sig(u["age"]),
+             "median_time_to_next": _sig(u.get("median")), "time_to_10pct_chance": _sig(u.get("b10"))}
+            for u in nf["units"][:_UNITS_LISTED]]
+    if r.get("windows"):
+        out["observation_gaps"] = r["windows"]
+    bc = r.get("by_cause")
+    if bc:
+        if bc.get("causes"):
+            out["by_cause"] = [
+                {"cause": c["label"], "failures": c["failures"], "share": _sig(c["share"]),
+                 **({"beta": _sig(c["fit"]["beta"]),
+                     "beta_ci_95": [_sig(v) for v in c["fit"]["beta_ci"]] if c["fit"].get("beta_ci") else None,
+                     "growth": c["fit"].get("growth")} if c.get("fit") else {})}
+                for c in bc["causes"][:_CAUSES_LISTED]]
+        elif bc.get("reason"):
+            out["by_cause_note"] = bc["reason"]
     return out
 
 
@@ -886,7 +948,9 @@ def get_model(
     excluding 1 or not), the ROCOF and MTBF at the end of observation with 95% bounds, the demonstrated
     MTBF's 90% lower bound (Crow's exact bound for a time-terminated test), the Laplace and MIL-HDBK-189C
     trend tests, AIC/BIC with a Cramér-von Mises goodness-of-fit test, and the systems failing most above
-    the model (systems_vs_model).
+    the model (systems_vs_model). A covariate model adds covariate_effects (each rate ratio in words); an
+    imperfect-repair model repair_effectiveness, repair_test and next_failure_by_system; data with a
+    cause column by_cause (each cause's growth shape).
     Regression models also report `validation` (how good is this model?): Harrell's C with a plain
     reading (0.5 = coin toss, 1 = perfect ranking), the integrated Brier score against one
     Kaplan-Meier curve for every unit (lower is better), and the time-dependent AUC at the failure-time
@@ -4258,7 +4322,7 @@ def optimal_overhaul(
     include_curve: _INCLUDE_CURVE = False,
 ) -> dict[str, Any]:
     """Optimal overhaul interval for a repairable system (minimal repair between overhauls) from a saved
-    recurrent-event model. Only a deteriorating system (growth shape beta > 1) has a finite optimum. For a
+    minimal-repair recurrent-event model (Crow-AMSAA, Duane, HPP or Cox-Lewis). Only a deteriorating system (growth shape beta > 1) has a finite optimum. For a
     Crow-AMSAA model fitted to data, shape_uncertainty gives the answer at each end of beta's 95% interval;
     relay uncertainty_note when present — the recommendation is then less firm than it reads."""
     user, db = _caller(ctx), _db()
@@ -4455,6 +4519,148 @@ def growth_projection(
     return _projection_out(payload)
 
 
+_RECURRENT_MODEL_IDS = tuple(recurrent_fit.MODELS) + ("pi_nhpp", "grp_i", "grp_ii", "ara", "ari", "g1")
+
+
+@_tool("fit_recurrent_model", _WRITE, "Fit a recurrent-event model")
+def fit_recurrent_model(
+    ctx: Context,
+    model: Annotated[Literal[_RECURRENT_MODEL_IDS], Field(description=(
+        "Minimal repair (each repair leaves the system as bad as old): crow_amsaa (power law, the "
+        "reliability-growth model), duane, hpp (constant rate), cox_lewis (log-linear). Covariates on the repair "
+        "rate: pi_nhpp (proportional intensity; needs covariates). Imperfect repair (each repair restores part "
+        "of the age; Weibull time to failure): grp_i / grp_ii (generalized renewal, Kijima I / II), ara, ari, "
+        "g1."))] = "crow_amsaa",
+    name: Annotated[Optional[str], Field(description="Name for the saved model (required unless save=false).")] = None,
+    save: Annotated[bool, Field(description="Save the model (default). false: fit and report only, nothing "
+                                            "stored.")] = True,
+    times: Annotated[Optional[list[float]], Field(max_length=20000, description=(
+        "Inline: event times, one row per failure (or end-of-observation row), each in its system's own "
+        "time from new (or from the start of its records)."))] = None,
+    systems: Annotated[Optional[list[str]], Field(max_length=20000, description=(
+        "Inline: the system each row belongs to (one system if omitted)."))] = None,
+    censored: Annotated[Optional[list[int]], Field(max_length=20000, description=(
+        "Inline: 0 = a failure at that time, 1 = the system's end of observation (still running then). Omit "
+        "when every row is a failure; then give observed_to."))] = None,
+    observed_to: Annotated[Optional[Union[float, list[float]]], Field(description=(
+        "Inline: each system's end of observation, one number for all or one per row. Without it (or c = 1 "
+        "rows) a system is taken as watched only to its last failure."))] = None,
+    causes: Annotated[Optional[list[Optional[str]]], Field(max_length=20000, description=(
+        "Inline: each failure's cause or failure mode (null on end-of-observation rows): adds the MCF and a "
+        "Crow-AMSAA fit per cause."))] = None,
+    covariates: Annotated[Optional[dict[str, list[Union[float, str]]]], Field(description=(
+        "Inline, for pi_nhpp: {name: one value per row}, constant within a system — numbers, or text levels "
+        "(e.g. site), compared with the level most systems have."))] = None,
+    windows: Annotated[Optional[dict[str, list[list[float]]]], Field(description=(
+        "Observation gaps (minimal-repair models only): {system: [[start, end], ...]}, the periods each system "
+        "was watched; a system not listed is watched from 0 to its end of observation. Rows are then failures "
+        "only, each inside one of its system's windows."))] = None,
+    dataset_id: _FitDataset = None,
+    system_column: Annotated[Optional[str], Field(description="With dataset_id: the system id column.")] = None,
+    time_column: _FitTimeCol = None,
+    censor_column: Annotated[Optional[str], Field(description=(
+        "With dataset_id: 0 = failure, 1 = end of observation."))] = None,
+    observed_to_column: Annotated[Optional[str], Field(description=(
+        "With dataset_id: each system's end of observation."))] = None,
+    cause_column: Annotated[Optional[str], Field(description="With dataset_id: each failure's cause.")] = None,
+    covariate_columns: Annotated[Optional[list[str]], Field(description=(
+        "With dataset_id, for pi_nhpp: covariate columns (numbers or text levels)."))] = None,
+    window_start_column: Annotated[Optional[str], Field(description=(
+        "With dataset_id: each row's observation-window start (with window_end_column; a row with a window and "
+        "no time is a window with no failures)."))] = None,
+    window_end_column: Annotated[Optional[str], Field(description="With dataset_id: each row's window end.")] = None,
+    baseline: Annotated[Optional[Literal["crow_amsaa", "duane", "cox_lewis"]], Field(description=(
+        "pi_nhpp and ari: the baseline failure-rate model (default crow_amsaa)."))] = None,
+    memory: Annotated[Optional[Union[int, Literal["all"]]], Field(description=(
+        "ara and ari: how many past repairs each repair acts on (default 2 for ara, 1 for ari), or 'all'."))] = None,
+    unit: _FitUnit = None,
+) -> dict[str, Any]:
+    """Fit a recurrent-event (repairable-system) model to failure histories — many failures per system — and
+    save it (or, with save=false, just report it). Minimal-repair models report the growth verdict from the
+    growth shape's 95% interval, the ROCOF and MTBF at the end of the data with bounds and the demonstrated
+    MTBF; pi_nhpp each covariate's effect on the repair rate in words; the imperfect-repair models the repair
+    effectiveness in words ("each repair takes away about 36% of the system's age"), the repair test's verdict
+    (as good as new, as bad as old, or partial) and each system's next failure. A cause column adds each
+    cause's growth. The saved model works with optimal_overhaul (minimal repair), next_failure and
+    growth_projection, and opens in the app. Data inline (times + systems) or from a saved dataset."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    if save and not (name or "").strip():
+        raise ToolError("Give the model a name, or pass save=false to fit without saving.")
+    if (times is None) == (dataset_id is None):
+        raise ToolError("Give either inline `times` (with `systems`) or a `dataset_id` — exactly one.")
+    if dataset_id is not None:
+        dataset = datasets_service.get_dataset(db, dataset_id, uid)
+        if dataset is None:
+            raise ToolError("Dataset not found.")
+        names = [c["name"] for c in dataset.columns]
+        if not system_column or not time_column:
+            raise ToolError(f"Say which columns hold the system and the time (system_column, time_column). "
+                            f"Columns: {', '.join(names)}.")
+        mapping = {k: v for k, v in {"i": system_column, "x": time_column, "c": censor_column,
+                                     "tr": observed_to_column, "mode": cause_column, "ws": window_start_column,
+                                     "we": window_end_column}.items() if v}
+        for col in [*mapping.values(), *(covariate_columns or [])]:
+            if col not in names:
+                raise ToolError(f"Column '{col}' isn't in the dataset. Columns: {', '.join(names)}.")
+        if covariate_columns:
+            mapping["z"] = list(covariate_columns)
+        df = datasets_service.load_dataframe(dataset)
+    else:
+        n = len(times)
+        if not n:
+            raise ToolError("`times` is empty.")
+        cols: dict[str, list] = {"system": _per_row(systems, n, "systems") if systems is not None else ["1"] * n,
+                                 "time": list(times)}
+        mapping = {"i": "system", "x": "time"}
+        if censored is not None:
+            cols["c"] = _per_row(censored, n, "censored")
+            mapping["c"] = "c"
+        if observed_to is not None:
+            cols["observed_to"] = (_per_row(observed_to, n, "observed_to") if isinstance(observed_to, list)
+                                   else [float(observed_to)] * n)
+            mapping["tr"] = "observed_to"
+        if causes is not None:
+            cols["cause"] = _per_row(causes, n, "causes")
+            mapping["mode"] = "cause"
+        for cov, values in (covariates or {}).items():
+            if cov in cols:
+                raise ToolError(f"Covariate name '{cov}' clashes with a data column; rename it.")
+            cols[cov] = _per_row(values, n, f"covariates['{cov}']")
+        if covariates:
+            mapping["z"] = list(covariates)
+        df = pd.DataFrame(cols)
+        dataset = None
+    options = {k: v for k, v in (("baseline", baseline), ("m", memory)) if v is not None}
+    spec = {"mapping": mapping, "model_id": model, "unit": (unit or "").strip(), **({"options": options} if options else {}),
+            **({"windows": recurrent_models.parse_windows(windows)} if windows else {})}
+    if not save:
+        payload, _ = recurrent_fit.fit_spec(df, spec)
+        out = {"saved": False, "model": payload.get("model"), "family": payload.get("family"),
+               "unit": payload.get("unit"), "n_systems": payload.get("n_systems"),
+               "n_events": payload.get("n_events"), "params": payload.get("params"),
+               "growth": payload.get("growth"), **_recurrent_evidence(payload)}
+        return out
+    created = None
+    try:
+        recurrent_fit.fit_spec(df, spec, gof_test=False)  # checked before anything is stored
+        if dataset is None:
+            csv_bytes = df.to_csv(index=False).encode()
+            reused = db.datasets.find_one({"checksum": storage.checksum(csv_bytes), "owner_id": uid})
+            if reused is None:
+                _cap(db, user, "datasets", "datasets")
+            dataset = datasets_service.create_dataset(db, f"{name.strip()} (data)", csv_bytes, uid)
+            created = None if reused is not None else dataset
+        doc = recurrent_service.save_model(db, name.strip(), dataset, spec, uid)
+    except FitError:
+        if created is not None:
+            datasets_service.delete_dataset(db, created.id, uid)
+        raise
+    r = doc.results or {}
+    return {"saved": True, "model_id": doc.id, "dataset_id": dataset.id, **_recurrent_brief(doc),
+            "params": r.get("params"), **_recurrent_evidence(r)}
+
+
 @_tool("next_failure", _READ, "Next failure of a repairable system")
 def next_failure(
     ctx: Context,
@@ -4470,7 +4676,10 @@ def next_failure(
     """A repairable system's next failure from a saved recurrent-event model (Crow-AMSAA, Duane, HPP or Cox-Lewis;
     minimal repair, so its failures are the model's Poisson process): the current failure intensity (ROCOF)
     and instantaneous MTBF at its age, the mean and quantiles of the time to its next failure, and the chance
-    of at least one failure (and the expected number) within each time ahead. Exact, closed form."""
+    of at least one failure (and the expected number) within each time ahead. Exact, closed form. An
+    imperfect-repair model (generalized renewal, ARA, ARI, G1) answers for a system that has run `age` since
+    new without a failure; for the fitted systems' own next failures, get_model's next_failure_by_system.
+    A covariate model can't answer without covariates."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     doc = recurrent_service.get_model(db, model_id, owners)
