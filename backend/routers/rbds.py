@@ -456,7 +456,9 @@ def availability_payload(
             state=state,
             context={"exact": free.get("exact")},
             # Who ran it, from the app or which connector (#112).
-            run_info=rbd_runs_service.run_info(ctx, surface),
+            # How long it's kept, from their plan now (#282).
+            run_info=rbd_runs_service.run_info(ctx, surface, db=session,
+                                               rbd_owner=rbd.owner_id if rbd is not None else ctx.write_owner),
         )
         if code == 200:
             sim = res
