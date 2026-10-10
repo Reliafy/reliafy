@@ -359,10 +359,15 @@ _PRODUCTION_REPAIRABLE = '''
 def production():
     """Production availability (Reliafy's Production section): the exact
     long-run distribution of what the system can deliver, and the expected
-    share of the demand it delivers."""
-    capacity = rbd.capacity_distribution(
-        working_nodes=WORKING_NODES or None, broken_nodes=BROKEN_NODES or None
-    )
+    share of the demand it delivers. Exact only: a block repaired imperfectly
+    (Kijima) has no exact long-run values, so there is none then."""
+    try:
+        capacity = rbd.capacity_distribution(
+            working_nodes=WORKING_NODES or None, broken_nodes=BROKEN_NODES or None
+        )
+    except NotImplementedError as exc:
+        print(f"\\nNo production availability: {exc}")
+        return None
     print("\\nCapacity in the long run")
     for level, p in zip(capacity.levels, capacity.probabilities):
         if p > 0:

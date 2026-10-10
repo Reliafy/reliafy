@@ -145,3 +145,39 @@ def test_the_quote_counts_a_k_of_n_standby_groups_running_units():
 @pytest.mark.parametrize("extra", [KIJIMA, {"model": {**MIX, "source": "params"}}, {"capacity": 5.0}])
 def test_the_new_block_options_are_quoted(extra):
     assert runtime_quote.quote_runtime(_three(a=extra), {})["available"] is True
+
+
+# ---- Download as Python with the options together -----------------------------------
+
+def test_the_export_runs_with_kijima_mgl_capacity_and_a_demand(tmp_path):
+    from backend.services import rbd_export
+    from backend.tests.test_rbd_export import _run
+
+    graph = _three(ccf={**MGL, "members": ["a", "b", "c"]}, a={**KIJIMA, "capacity": 50.0},
+                   b={"capacity": 50.0}, c={"capacity": 50.0})
+    graph["nodes"][2]["data"].pop("repair_quality")  # a common-cause member is repaired as good as new
+    graph["nodes"].append({"id": "d", "type": "component",
+                           "data": {"label": "D", "model": _exp(0.0005), "repair": _exp(0.2), **KIJIMA}})
+    graph["edges"] = [e for e in graph["edges"] if e["target"] != "output"] + [
+        {"source": i, "target": "d"} for i in "abc"] + [{"source": "d", "target": "output"}]
+    graph["production"] = {"demand": 100.0, "unit": "m3/h"}
+    graph = rbd_graph.normalize_graph(graph)
+    res, proc = _run(rbd_export.to_python(graph, "Combined"), tmp_path, n_sims="30")
+    # The simulation runs; the exact-only production availability says why it's missing.
+    assert res and "No production availability: Component 'd' is repaired imperfectly" in proc.stdout
+
+
+def test_the_export_runs_a_phased_mission_with_a_mixture_and_k_of_n_standby(tmp_path):
+    from backend.services import rbd_export
+    from backend.tests.test_rbd_export import _run
+
+    graph = _three(False, a={"model": {**MIX, "source": "params"}})
+    graph["nodes"].append({"id": "s", "type": "standby", "data": {
+        "label": "S", "model": _exp(0.001), "spares": 1, "k": 2, "cold": True, "dormancy": 0, "startProb": 1}})
+    graph["edges"] = [e for e in graph["edges"] if e["target"] != "output"] + [
+        {"source": i, "target": "s"} for i in "abc"] + [{"source": "s", "target": "output"}]
+    graph["phases"] = [{"name": "Start", "duration": 50}, {"name": "Run", "duration": 200, "not_needed": ["b"]}]
+    graph = rbd_graph.normalize_graph(graph)
+    want = rbd_phases.analyze_phases(graph)["reliability"]
+    _, proc = _run(rbd_export.to_python(graph, "Mission"), tmp_path)
+    assert f"Phased mission (exact): reliability {want:.6f}" in proc.stdout
