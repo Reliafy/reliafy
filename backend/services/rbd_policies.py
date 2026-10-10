@@ -50,7 +50,7 @@ MAX_CREWS = 1000
 #: (SIL, lowest PFDavg, highest PFDavg), the band including its lower end.
 SIL_BANDS = ((4, 1e-5, 1e-4), (3, 1e-4, 1e-3), (2, 1e-3, 1e-2), (1, 1e-2, 1e-1))
 GROUP_KEYS = ("setup_cost", "system_down")
-_STANDBY_EXTRAS = ("preventive", "inspection", "maintenance_group")
+_STANDBY_EXTRAS = ("preventive", "inspection", "maintenance_group", "repair_quality")
 
 
 def _whole(value) -> Optional[int]:
@@ -152,7 +152,7 @@ def standby_errors(data: dict, label: str) -> list[str]:
     for key in _STANDBY_EXTRAS:
         if data.get(key) not in (None, "", {}):
             what = {"preventive": "scheduled replacement", "inspection": "proof tests",
-                    "maintenance_group": "a maintenance group"}[key]
+                    "maintenance_group": "a maintenance group", "repair_quality": "imperfect repair"}[key]
             errors.append(f"“{label}”: a standby group takes no {what} (as in RePyability).")
     if data.get("repair_one_at_a_time") and (data.get("costs") or {}):
         errors.append(
@@ -174,12 +174,15 @@ def standby_spec(data: dict, label: str, reliability, repair) -> dict:
     switching = 1.0
     if dormancy == 0.0 and data.get("startProb") not in (None, ""):
         switching = rm._probability(data.get("startProb"), "switch-in probability", label)
+    from backend.services.rbd_standby import operating
+
+    k = operating(data, label)  # k-of-n standby (#84): k units running
     spec: dict[str, Any] = {
         "reliability": reliability,
         "repairability": repair,
         "standby": {
-            "units": 1 + _whole(data.get("spares") if data.get("spares") is not None else 1),
-            "k": 1,
+            "units": k + _whole(data.get("spares") if data.get("spares") is not None else 1),
+            "k": k,
             "dormancy_factor": dormancy,
             "switching_probability": switching,
         },
@@ -389,7 +392,8 @@ def common_cause_note(graph: dict, result: dict) -> Optional[dict]:
     if isinstance(common, dict) and "reason" in common:
         out: dict[str, Any] = {k: v for k, v in common.items() if k not in ("note", "availability_with_common_cause")}
         if out.get("included"):
-            out["note"] = None
+            # In every figure, or every one but the exact failure frequency (#328).
+            out["note"] = out.get("frequency_left_out")
             return out
         note = ra.common_cause_left_out(n, out.get("reason"), bool(safety and ccf.get("included")))
         if ccf.get("included") and pfd is not None:

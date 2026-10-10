@@ -83,6 +83,8 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false }
         // calculator prompts for these values.
         covariates: (r.functions && r.functions.covariates) || [],
         unit: r.unit || "",
+        // A mixture fit's modes follow this distribution (#318).
+        ...(r.distribution_id === "mixture" ? { base_distribution_id: r.base_distribution_id || "weibull" } : {}),
       });
     } catch {
       onChange(null);

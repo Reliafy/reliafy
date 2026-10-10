@@ -1,0 +1,26 @@
+/* What a block can model (#318, #68, #84, #326): the mixture life, repair
+   quality, k-of-n standby limits and "Check by simulation" in the block
+   dialogs. Tokens only; the dialog's own sections and folds frame them. */
+.rbd-mix { display: flex; flex-direction: column; gap: 8px; }
+.rbd-mix .rbd-instant-repair { margin: 0; }
+.rbd-mix-mode {
+  margin: 0;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  min-width: 0;
+}
+.rbd-mix-mode > legend { padding: 0 4px; font-size: var(--fs-13); font-weight: 600; color: var(--ink); }
+.rbd-mix-rest output {
+  display: block;
+  padding: 8px 0;
+  font-size: var(--fs-14);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.rbd-mean-check { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.rbd-mean-check b { font-weight: 600; color: var(--ink); }
+.rbd-mean-check-off { color: var(--warn); }
+.rbd-limit { color: var(--warn); }
+.ccf-model { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
+.rbd-rq .seg, .ccf-model .seg, .ccf-model .seg-field { align-self: flex-start; }

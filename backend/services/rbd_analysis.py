@@ -41,7 +41,7 @@ from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 from repyability.rbd.repairable_rbd import RepairableRBD
 from repyability.rbd.ccf import CCFGroup
-from repyability import BetaFactor, LoadSharingModel
+from repyability import LoadSharingModel
 from repyability.non_repairable import NonRepairable
 from repyability.rbd.standby_node import StandbyModel
 from repyability.utils.wrappers import conditional_survival
@@ -215,6 +215,15 @@ def _build_distribution(
     # re-fitted empirical estimator (sf/ff) via the same refit-on-demand path.
     if model.get("kind") == "nonparametric":
         return _nonparametric_reliability(model, where, resolve_model)
+    from backend.services import rbd_mixture
+
+    if rbd_mixture.is_mixture(model):
+        # Two failure modes in one population (#318): a surpyval mixture,
+        # which RePyability 0.13 takes wherever a parametric life goes.
+        try:
+            return rbd_mixture.build(model, where)
+        except rbd_mixture.MixtureError as exc:
+            raise AnalysisError(str(exc)) from None
     dist_id = model.get("distribution_id")
     entry = DISTRIBUTIONS.get(dist_id)
     if entry is None:
@@ -294,6 +303,15 @@ def _standby_model(data: dict, label: str, resolve_model=None, cov_values=None):
     units = [primary] + [spare for _ in range(max(spares, 0))]
 
     dormancy = _standby_dormancy(data, label)
+    from backend.services import rbd_standby
+
+    if rbd_standby.operating(data, label) > 1:
+        # k-of-n standby (#84): k units running, the spares idle.
+        try:
+            switch = float(data.get("startProb", 1.0)) if dormancy == 0.0 else 1.0
+        except (TypeError, ValueError):
+            switch = 1.0
+        return rbd_standby.nonrepairable_model(data, label, primary, spare, spares, dormancy, switch)
     if dormancy == 0.0:
         # Cold standby: spares are dormant until switched in (k=1 operating).
         try:
@@ -654,8 +672,12 @@ def _ccf_groups(graph: dict, reliabilities: dict, repairable: bool = False) -> l
             continue
         if not (0.0 < beta < 1.0):
             continue
-        model = BetaFactor(beta, basis=ccf_basis(g, repairable))
-        out.append(CCFGroup(members=list(dict.fromkeys(members)), model=model))
+        members = list(dict.fromkeys(members))
+        # The beta factor, or the multiple Greek letter model for 3+ (#84).
+        from backend.services import rbd_ccf_models
+
+        model = rbd_ccf_models.group_model(g, len(members), ccf_basis(g, repairable))
+        out.append(CCFGroup(members=members, model=model))
     return out
 
 
@@ -817,11 +839,16 @@ def validate_graph(
             if k_required is not None:
                 k[nid] = k_required
         except AnalysisError as exc:
-            if not pinned:
+            # A repairable diagram's standby group is no StandbyModel: the
+            # non-repairable arrangement's limits (#84) don't apply to it.
+            if not pinned and not (graph.get("repairable") and getattr(exc, "nonrepairable_only", False)):
                 errors.append(str(exc))
             reliabilities[nid] = PerfectReliability  # structural placeholder
 
     errors.extend(_io_errors(graph))
+    from backend.services import rbd_ccf_models
+
+    errors.extend(rbd_ccf_models.errors(graph, labels))  # MGL letters (#84)
     koon_errors, koon_warnings = _koon_checks(nodes, edges, labels)
     errors.extend(koon_errors)
     warnings.extend(koon_warnings)
@@ -864,6 +891,9 @@ def validate_graph(
             errors.append(f"The diagram could not be analysed: {exc}")
 
     warnings.extend(design_warnings(graph, labels))
+    from backend.services import rbd_standby
+
+    warnings.extend(rbd_standby.warnings(graph))  # switching on warm/hot spares (#84)
 
     repairable = bool(graph.get("repairable"))
     if repairable:
@@ -1807,6 +1837,12 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
                 measures["fussell_vesely"] = _fussell_vesely(node_probs, sets["cuts"], q_sys)
                 if not sets["cuts_complete"]:
                     fv_basis = f"cut sets of up to {_LOW_ORDER_CUT_MAX} blocks"
+        try:
+            # Structural importance (#68): from the diagram's structure alone,
+            # the share of the other blocks' states in which this one decides.
+            measures["structural"] = rbd.structural_importance(working_nodes or None, broken_nodes or None)
+        except Exception:  # noqa: BLE001 - a repeated block, say: left out
+            pass
         importance = {"time": t_rep, **{k: _imp(v) for k, v in measures.items()}}
         if fv_basis:
             importance["fussell_vesely_basis"] = fv_basis
@@ -2168,8 +2204,12 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
         if reason is not None and with_ccf:
             rbd = build(None)
             reason = _with_labels(reason, labels)
+        # In every figure but the exact failure frequency (#328): planned
+        # outages that take time aren't worked out with the groups yet.
+        frequency = rbd_ccf.frequency_refusal(rbd) if reason is None and with_ccf else None
         _CCF_STATUS[rbd] = {"groups": len(groups), "included": reason is None, "reason": reason,
-                            "mode": "long_run" if with_ccf == "long_run" else "all"}
+                            "mode": "long_run" if with_ccf == "long_run" else "all",
+                            "frequency_reason": _with_labels(frequency, labels) if frequency else None}
     return rbd, labels, gate_ids, working_nodes, broken_nodes
 
 
@@ -2205,7 +2245,38 @@ def common_cause_summary(rbd, overrides: Optional[dict] = None, graph: Optional[
         out["basis"] = bases.pop() if len(bases) == 1 else ("mixed" if bases else "rate")
     if status["included"]:
         out["availability_without_common_cause"] = _without_groups_availability(rbd, overrides or {})
+    if status.get("frequency_reason"):
+        # The one figure left out (#328), and why.
+        out["frequency_left_out"] = FREQUENCY_LEFT_OUT
+        out["frequency_reason"] = plain_reason(status["frequency_reason"])
     return out
+
+
+_IMPORTANCE_NAMES = {"birnbaum": "Birnbaum", "unavailability_criticality": "share of downtime",
+                     "risk_achievement_worth": "risk achievement worth",
+                     "risk_reduction_worth": "risk reduction worth",
+                     "improvement_potential": "improvement potential", "fussell_vesely": "Fussell-Vesely"}
+
+
+def _importance_gaps(common_cause: dict, importance: dict) -> None:
+    """Say which importance measures the engine gives no value for with
+    common-cause groups whose tests take time (#328), rather than show a
+    blank column without a reason."""
+    rows = [r for r in (importance or {}).values() if isinstance(r, dict) and not r.get("pinned")]
+    missing = [name for key, name in _IMPORTANCE_NAMES.items()
+               if rows and all(r.get(key) is None for r in rows)]
+    if missing:
+        common_cause["importance_left_out"] = (
+            f"{', '.join(missing).capitalize()} {'is' if len(missing) == 1 else 'are'} left out: "
+            "not worked out yet with common-cause groups when proof tests or replacements take time.")
+
+
+#: Why the exact failure frequency (and mean up and down times) is left out
+#: of a diagram whose common-cause groups are in every other figure (#328).
+FREQUENCY_LEFT_OUT = (
+    "The exact failure frequency, and the mean up and down times built on it, are left out: they aren't worked "
+    "out yet with common-cause groups when proof tests or replacements take time. Every other figure includes "
+    "the groups; a simulation estimates these three, groups included.")
 
 
 def _without_groups_availability(rbd, overrides: dict) -> Optional[float]:
@@ -2356,6 +2427,12 @@ def _steady_importance(rbd, labels, gate_ids, overrides, steady, cut_sets) -> di
             measures["fussell_vesely"] = {}
     working = overrides.get("working_nodes") or set()
     broken = overrides.get("broken_nodes") or set()
+    try:
+        # Structural importance (#68): the structure alone, so it stands where
+        # the exact long run doesn't (a simulation-only diagram).
+        measures["structural"] = rbd.structural_importance(working or None, broken or None)
+    except Exception:  # noqa: BLE001
+        measures["structural"] = {}
     sys_unavail = (1.0 - steady) if steady is not None and np.isfinite(steady) else None
 
     out: dict[str, dict] = {}
@@ -2852,6 +2929,8 @@ def analyze_availability(
         importance = _steady_importance(rbd, labels, gate_ids, overrides, steady, sets["cuts"])
     except Exception:  # noqa: BLE001
         importance = {}
+    if common_cause and common_cause.get("frequency_left_out"):
+        _importance_gaps(common_cause, importance)
 
     # Cost of ownership (#99) and the failures/maintenance downtime split
     # (#100) — only for diagrams that price or maintain something.
@@ -2943,13 +3022,22 @@ def _f(v) -> Optional[float]:
         return None
 
 
+def _frozen_spec(spec):
+    """The plain distribution of an inline/saved spec by its parameters in
+    order, or a mixture life's surpyval mixture (#318)."""
+    from backend.services import rbd_mixture
+
+    if rbd_mixture.is_mixture(spec):
+        return rbd_mixture.build(spec, "the block")
+    entry = DISTRIBUTIONS[spec["distribution_id"]]
+    return entry["dist"].from_params([float(p["value"]) for p in spec.get("params") or []])
+
+
 def _spec_mean(spec) -> Optional[float]:
     """Mean of an inline/saved life or repair spec (``distribution_id`` +
     ``params``), or None when it can't be built without more context."""
     try:
-        entry = DISTRIBUTIONS[spec["distribution_id"]]
-        values = [float(p["value"]) for p in spec.get("params") or []]
-        mean = float(entry["dist"].from_params(values).mean())
+        mean = float(np.ravel(_frozen_spec(spec).mean())[0])
     except Exception:  # noqa: BLE001 - covariate models, odd specs: skip
         return None
     return mean if np.isfinite(mean) and mean > 0 else None
@@ -2964,8 +3052,7 @@ def _residual_mean(spec, t: float) -> Optional[float]:
     try:
         from scipy.integrate import quad
 
-        entry = DISTRIBUTIONS[spec["distribution_id"]]
-        dist = entry["dist"].from_params([float(p["value"]) for p in spec.get("params") or []])
+        dist = _frozen_spec(spec)
 
         def sf(u):
             return float(np.asarray(dist.sf(u), dtype=float).reshape(-1)[0])

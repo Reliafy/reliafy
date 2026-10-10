@@ -197,16 +197,22 @@ def test_a_mean_repair_time_keeps_the_group_in_every_figure():
 def test_proof_tests_that_take_time_keep_the_group_in_the_pfdavg():
     """Tests that take time are followed by the group's long-run chain
     (#220), but RePyability 0.13 doesn't work out their failure frequency
-    with the groups: the figures leave the group out, with that reason, and
-    the PFDavg takes it in."""
+    with the groups: every figure but that one keeps the group (#328), the
+    exact failure frequency (and MUT/MDT) is left out with its reason, and
+    the PFDavg takes the group in."""
     g = _tested_pair(repair=_exp(1 / 8), test_duration=_exp(0.5))
     out = ra.analyze_availability(g, simulate=False)
-    assert out["common_cause"]["included"] is False and "tests that take time" in out["common_cause"]["reason"]
+    cc = out["common_cause"]
+    assert cc["included"] is True and cc["reason"] is None
+    assert "tests that take time" in cc["frequency_reason"] and "failure frequency" in cc["frequency_left_out"]
+    assert out["failure_frequency"] is None and out["mean_up_time"] is None and out["mean_down_time"] is None
     assert out["safety"]["common_cause"]["included"] is True
     direct = _tested_direct(E([1 / 8]), {"duration": E([0.5])})
     assert out["safety"]["pfd_avg"] == pytest.approx(direct.mean_unavailability(), rel=1e-9)
     note = rbd_policies.common_cause_note(g, out)
-    assert note["availability_with_common_cause"] == pytest.approx(1 - out["safety"]["pfd_avg"], rel=1e-12)
+    assert note["included"] is True and note["note"] == cc["frequency_left_out"]
+    # The long-run availability takes the group, as the PFDavg does.
+    assert out["steady_state_availability"] == pytest.approx(1 - out["safety"]["pfd_avg"], rel=1e-9)
 
 
 # ---- Where RePyability refuses them: left out of every figure, and why ---------------------

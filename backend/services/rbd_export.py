@@ -266,7 +266,7 @@ def _effective_spec(model: Optional[dict], resolve_model) -> Optional[dict]:
         if not merged.get(key) and saved.get(key):
             merged[key] = saved[key]
     if not has_params:
-        for key in ("distribution_id", "distribution", "params", "extras"):
+        for key in ("distribution_id", "distribution", "params", "extras", "base_distribution_id"):
             if saved.get(key) is not None:
                 merged[key] = saved[key]
     return merged
@@ -307,6 +307,14 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
             "its parameters here, e.g. surv.Weibull.from_params([alpha, beta])."
         )
     dist_id = model.get("distribution_id")
+    from backend.services import rbd_mixture
+
+    if rbd_mixture.is_mixture(model):
+        # Two failure modes in one population (#318): surpyval's mixture.
+        try:
+            return rbd_mixture.script_expr(model, label), f"mixture: {rbd_mixture.describe(model)}"
+        except rbd_mixture.MixtureError as exc:
+            raise _Missing(f"{exc} Set its modes here.") from None
     entry = DISTRIBUTIONS.get(dist_id)
     attr = _surpyval_attr(dist_id) if entry else None
     if entry is None or attr is None:
@@ -510,6 +518,30 @@ class _Script:
                               self.names.make(f"{var}_spare"))
         n_units = 1 + spares
         dormancy = rbd_analysis._standby_dormancy(data, label)
+        from backend.services import rbd_standby
+
+        k = rbd_standby.operating(data, label)
+        if k > 1:
+            # k-of-n standby (#84): k units running, the spares idle.
+            reason = rbd_standby.limit_message(label, k, dormancy, not same)
+            if reason:
+                return self.missing(var, reason, label)
+            self.imports.add("StandbyModel")
+            kind = "cold" if dormancy == 0.0 else "hot" if dormancy >= 1.0 else "warm"
+            try:
+                switch = float(data.get("startProb", 1.0)) if dormancy == 0.0 else 1.0
+            except (TypeError, ValueError):
+                switch = 1.0
+            option = (f"switching_probability={_num(switch)}" if dormancy == 0.0
+                      else f"dormancy_factor={_num(dormancy)}")
+            self.comment(f"{label}: {kind} standby - {k} units running and {spares} idle "
+                         f"spare{'s' if spares != 1 else ''}; it fails when fewer than {k} can run.")
+            self.lines.append(f"{var} = StandbyModel(")
+            self.lines.append(f"    [{', '.join([duty] * k + [spare] * spares)}],")
+            self.lines.append(f"    k={k},")
+            self.lines.append(f"    {option},")
+            self.lines.append(")")
+            return var
         if 0.0 < dormancy < 1.0:
             self.imports.add("StandbyModel")
             self.comment(
@@ -677,8 +709,9 @@ class _Script:
             except (TypeError, ValueError):
                 continue
             if 0.0 < beta < 1.0:
-                # As the app builds it (#210): the rate basis by default.
-                ccf.append((members, beta, rbd_analysis.ccf_basis(g)))
+                # As the app builds it (#210): the rate basis by default; the
+                # beta factor or the multiple Greek letter model (#84).
+                ccf.append((members, {"beta": beta, "mgl": g.get("mgl")}, rbd_analysis.ccf_basis(g)))
         return {
             "edges": edges,
             "rel": rel,
@@ -713,7 +746,7 @@ class _Script:
         if s["output"]:
             L.append(f"    output_node={_lit(s['output'])},")
         if with_ccf and s["ccf"]:
-            self.imports.update({"CCFGroup", "BetaFactor"})
+            self.imports.update(_ccf_imports(s["ccf"]))
             L.append("    ccf_groups=[")
             for members, beta, basis in s["ccf"]:
                 L.append(f"        CCFGroup(members={_lit(members)}, "
@@ -1016,7 +1049,7 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
         io.append(f"output_node={_lit(s['output'])}")
     io_args = "".join(f"    {a},\n" for a in io)
     if s["ccf"]:
-        script.imports.update({"CCFGroup", "BetaFactor"})
+        script.imports.update(_ccf_imports(s["ccf"]))
         out.append("# Common-cause failure: a beta-factor share of each "
                    "member's failures takes")
         out.append("# the whole group out together. basis=\"rate\" splits "
@@ -1421,7 +1454,7 @@ def _repairable_body(script: _Script, graph) -> str:
     if ccf:
         # Common-cause groups (#226): followed over time, in every figure, or
         # left out of every figure where RePyability refuses them (main()).
-        script.imports.update({"CCFGroup", "BetaFactor"})
+        script.imports.update(_ccf_imports(ccf))
         out.append("# Common-cause groups (beta factor): each splits its members' failure rate")
         out.append("# between their own causes and a shared one that fails them together. As in")
         out.append("# Reliafy they are in every figure, or - where RePyability refuses them (a")
@@ -1549,9 +1582,22 @@ def report_next_failure(overrides):
 '''
 
 
-def _beta_factor(beta: float, basis: str) -> str:
+def _ccf_imports(ccf) -> set:
+    """The names a script's common-cause groups need (#84: MGL as well)."""
+    from backend.services import rbd_ccf_models
+
+    return {"CCFGroup"} | {"MGL" if isinstance(g, dict) and rbd_ccf_models.is_mgl(g) else "BetaFactor"
+                           for _, g, _ in ccf}
+
+
+def _beta_factor(beta, basis: str) -> str:
     """The ``BetaFactor`` call for a group (its basis only when it isn't
-    RePyability's default, the probability)."""
+    RePyability's default, the probability); a group given as its dict, an
+    ``MGL`` call where it has the letters after beta (#84)."""
+    if isinstance(beta, dict):
+        from backend.services import rbd_ccf_models
+
+        return rbd_ccf_models.script_expr(beta, basis)
     if basis == "probability":
         return f"BetaFactor({_num(beta)})"
     return f"BetaFactor({_num(beta)}, basis={basis!r})"
@@ -1596,7 +1642,7 @@ def _repairable_ccf(graph: dict, nodes: set) -> list:
         except (TypeError, ValueError):
             continue
         if len(members) >= 2 and 0.0 < beta < 1.0:
-            out.append((members, beta, rbd_analysis.ccf_basis(g, repairable=True)))
+            out.append((members, {"beta": beta, "mgl": g.get("mgl")}, rbd_analysis.ccf_basis(g, repairable=True)))
     return out
 
 

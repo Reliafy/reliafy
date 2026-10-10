@@ -283,6 +283,9 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
                 <th title="Risk Reduction Worth — how much better the system gets if this component were perfect">RRW</th>
                 <th title="Criticality importance (failure-oriented) — the share of system failures this component accounts for">Crit.</th>
                 <th title="Improvement potential — gain available from perfecting this component">Improv.</th>
+                {importance.structural && (
+                  <th title="Structural importance — from the diagram's structure alone, the share of the other components' working/failed states in which this one decides whether the system works. Needs no failure data.">Structural</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -295,6 +298,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null }) {
                   <td>{fmt(importance.risk_reduction_worth?.[id])}</td>
                   <td>{fmt(importance.criticality?.[id])}</td>
                   <td>{fmt(importance.improvement_potential?.[id])}</td>
+                  {importance.structural && <td>{fmt(importance.structural[id])}</td>}
                 </tr>
               ))}
             </tbody>
@@ -360,6 +364,8 @@ const IMP_COLS = [
     help: "Long-run share of system downtime caused by this block (failure-oriented criticality: Birnbaum × block unavailability ÷ system unavailability). Exact, at the long-run availabilities." },
   { key: "risk_achievement_worth", label: "RAW", fmt: fmt3,
     help: "Risk achievement worth: how many times worse system unavailability gets while this block is down." },
+  { key: "structural", label: "Structural", fmt: fmt3,
+    help: "From the diagram's structure alone: the share of the other blocks' up/down states in which this block decides whether the system is up. Needs no failure or repair data." },
   { key: "failure_criticality", label: "Drives trips", fmt: fmtPct,
     help: "Share of simulated system failures this block's failure triggered." },
   { key: "restoration_criticality", label: "Drives restoration", fmt: fmtPct,
@@ -385,6 +391,7 @@ function importanceRows(result) {
       // this column's name it would show 100% for every series block.
       crit: i.unavailability_criticality,
       risk_achievement_worth: i.risk_achievement_worth,
+      structural: i.structural,
       // No simulation entry means the block never tripped/restored the system.
       failure_criticality: crit[id] ? c.failure_criticality : null,
       restoration_criticality: crit[id] ? c.restoration_criticality : null,
@@ -995,10 +1002,18 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           <p className="rbd-details-p">
             Includes the diagram's {result.common_cause.groups} common-cause
             group{result.common_cause.groups === 1 ? "" : "s"} in every figure
+            {result.common_cause.frequency_left_out ? " but the exact failure frequency" : ""}
             {result.common_cause.availability_without_common_cause != null && (
               <> — without {result.common_cause.groups === 1 ? "it" : "them"} the long-run availability would
                 be {pctOf(result.common_cause.availability_without_common_cause)}</>
             )}.
+          </p>
+        )}
+        {/* #328: with proof tests that take time, only the exact failure frequency (and MUT/MDT) is left out. */}
+        {result.common_cause?.included && result.common_cause.frequency_left_out && (
+          <p className="rbd-details-p">
+            {result.common_cause.frequency_left_out}
+            {result.common_cause.importance_left_out ? ` ${result.common_cause.importance_left_out}` : ""}
           </p>
         )}
         {safety && !result.common_cause?.included && result.common_cause?.availability_with_common_cause != null && (

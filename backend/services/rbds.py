@@ -254,6 +254,7 @@ def _export_resolvers(db, owner_id):
             "params": results.get("params") or [],
             "extras": results.get("extras"),
             "unit": results.get("unit"),
+            "base_distribution_id": results.get("base_distribution_id"),
         }
 
     return resolve_model, resolve_subsystem

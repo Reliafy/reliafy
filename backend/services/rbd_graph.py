@@ -53,7 +53,7 @@ NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "st
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
 #: Repairable block fields beyond the models (#99/#100), carried as given.
 MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection", "rcm_source",
-                    "maintenance_group", "crew_priority", "repair_one_at_a_time")
+                    "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality")
 #: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
 DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil")
 
@@ -73,7 +73,8 @@ MAX_UNITS = 1000                # identical units / spares in one block
 _COUNT_FIELDS = {
     "series": (("n", "the number of identical units (n)", MAX_UNITS),),
     "parallel": (("n", "the number of identical units (n)", MAX_UNITS),),
-    "standby": (("spares", "the number of spares", MAX_UNITS),),
+    "standby": (("spares", "the number of spares", MAX_UNITS),
+                ("k", "the number of units running (k)", MAX_UNITS)),
     "loadshare": (("units", "the number of units", MAX_UNITS),
                   ("k", "the number of units required (k)", MAX_UNITS)),
     "knode": (("n", "the number of working inputs required (n)", MAX_BLOCKS),
@@ -259,8 +260,15 @@ def _params(raw, where: str) -> list[dict]:
 def _inline_model(model: dict, where: str) -> dict:
     """Flesh out an inline ``{distribution_id, params}`` model."""
     from backend import fitting
+    from backend.services import rbd_mixture
 
     dist = str(model.get("distribution_id") or model.get("distribution") or "").strip()
+    if dist == rbd_mixture.MIXTURE_ID:
+        # Two failure modes (#318): base_distribution_id + numbered params.
+        try:
+            return rbd_mixture.normalize(model, where)
+        except rbd_mixture.MixtureError as exc:
+            raise GraphError(str(exc)) from None
     if not dist:
         raise GraphError(f"{where}: the model needs a distribution_id (or a saved_model_id).")
     try:
@@ -359,6 +367,9 @@ def _saved_model(model_id: str, where: str, resolve_saved_model) -> dict:
         "extras": r.get("extras"),
         "covariates": (r.get("functions") or {}).get("covariates") or [],
         "unit": r.get("unit") or "",
+        # A mixture fit's modes (#318): the distribution each follows.
+        **({"base_distribution_id": r.get("base_distribution_id") or "weibull", "mixture": r.get("mixture")}
+           if r.get("distribution_id") == "mixture" else {}),
     }
 
 
@@ -388,7 +399,10 @@ def _inline_disagrees(model: dict, saved: dict) -> bool:
     from backend import fitting
 
     dist = model.get("distribution_id") or model.get("distribution")
-    if dist:
+    if dist == "mixture" or saved.get("distribution_id") == "mixture":
+        if dist and dist != saved.get("distribution_id"):
+            return True
+    elif dist:
         try:
             if fitting.resolve_distribution_id(str(dist)) != saved.get("distribution_id"):
                 return True
@@ -446,9 +460,12 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
         data["standbyModel"] = normalize_model(data["standbyModel"], f"{where} spare", resolve_saved_model)
     if data.get("repair") is not None:
         data["repair"] = normalize_repair(data["repair"], where)
-    for key in ("costs", "preventive", "inspection", "rcm_source"):
+    for key in ("costs", "preventive", "inspection", "rcm_source", "repair_quality"):
         if data.get(key) is not None and not isinstance(data[key], dict):
             raise GraphError(f"{where}: {key} must be an object.")
+    if isinstance(data.get("repair_quality"), dict) and data["repair_quality"].get("model", "perfect") == "perfect" \
+            and data["repair_quality"].get("replace_after") is None:
+        data.pop("repair_quality")  # perfect repair is the default (#68)
     if data.get("maintenance_group") is not None and not isinstance(data["maintenance_group"], str):
         raise GraphError(f"{where}: maintenance_group must be a group name.")
     for key in ("preventive", "inspection"):
@@ -535,6 +552,8 @@ def compact_graph(graph: dict) -> dict:
             m = d.get(key)
             if isinstance(m, dict):
                 cm = {"distribution_id": m.get("distribution_id"), "params": m.get("params")}
+                if m.get("base_distribution_id"):
+                    cm["base_distribution_id"] = m["base_distribution_id"]  # a mixture's modes (#318)
                 if m.get("modelId"):
                     cm["saved_model_id"] = m["modelId"]
                 if m.get("placeholder"):

@@ -466,20 +466,24 @@ def test_what_reliafy_cant_hold_is_listed_and_left_without_a_model():
     )
     [d] = _import(rbd.to_json())
     notes = " ".join(d.warnings)
-    assert "capacities" in notes and "MGL" in notes
+    assert "capacities" in notes
+    # MGL on a pair is the beta factor (#84): it comes across as a group.
+    assert [g["beta"] for g in d.graph["ccf_groups"]] == [0.1]
     # A Uniform is a Reliafy distribution since #72: it comes across as one.
     assert "“c” was imported without" not in notes
     c = next(n for n in d.graph["nodes"] if n["id"] == "c" or n["data"].get("label") == "c")
     assert c["data"]["model"]["distribution_id"] == "uniform"
     assert "“deg” was imported without a life model — its model is a degrading" in notes
-    assert "“two” was imported without a life model — its standby group runs more than one unit" in notes
+    # Two of three running (#84): a standby block with k = 2 and one spare.
+    two = next(n for n in d.graph["nodes"] if n["data"].get("label") == "two")
+    assert two["type"] == "standby" and two["data"]["k"] == 2 and two["data"]["spares"] == 1
     # k on the output: a vote node in front of it.
     vote = next(n for n in d.graph["nodes"] if n["type"] == "knode")
     assert vote["data"]["n"] == 2 and {"source": vote["id"], "target": "output"} in d.graph["edges"]
     rbd_graph.normalize_graph(d.graph)
 
 
-def test_repairable_library_file_notes_imperfect_repair():
+def test_repairable_library_file_imports_imperfect_repair():
     import surpyval as sp
     from repyability import RepairableRBD
 
@@ -490,7 +494,10 @@ def test_repairable_library_file_notes_imperfect_repair():
         input_node="in", output_node="out")
     [d] = _import(rbd.to_json())
     assert d.graph["repairable"] is True
-    assert any("imperfect repair" in w for w in d.warnings)
+    # Kijima's virtual age (#68) comes across as the block's repair quality.
+    a = next(n for n in d.graph["nodes"] if n["type"] == "component")
+    assert a["data"]["repair_quality"] == {"model": "kijima1", "q": 0.5}
+    assert not any("imperfect repair" in w for w in d.warnings)
     rbd_graph.normalize_graph(d.graph)
 
 

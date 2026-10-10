@@ -2533,13 +2533,19 @@ def get_rbd(
 class BlockModel(BaseModel):
     distribution_id: Optional[str] = Field(None, description=(
         "Inline distribution: weibull, exponential, normal, lognormal, gamma, loglogistic, expo_weibull, "
-        "gumbel, logistic. Pair with params. Give this OR saved_model_id."))
+        "gumbel, logistic. Pair with params. Give this OR saved_model_id. 'mixture' = two (or more) failure "
+        "modes in one population, e.g. infant mortality plus wear-out: give base_distribution_id and params "
+        "numbered by mode, each mode's weight its share (the weights add to 1), e.g. weibull [alpha1, beta1, "
+        "weight1, alpha2, beta2, weight2]."))
+    base_distribution_id: Optional[str] = Field(None, description=(
+        "distribution_id 'mixture' only: the distribution every mode follows (weibull, lognormal, …)."))
     params: Optional[list[Param]] = Field(None, description=(
         "By SurPyval name: weibull [alpha (scale), beta (shape)], exponential [failure_rate], "
         "normal/lognormal [mu, sigma], gamma [alpha, beta]."))
     saved_model_id: Optional[str] = Field(None, description=(
         "A saved life model id (list_models) instead of inline params: a parametric (or proportional-hazards) "
-        "model, not a non-parametric one (Kaplan-Meier etc.), which RBD blocks don't take."))
+        "model — a saved mixture fit included — not a non-parametric one (Kaplan-Meier etc.), which RBD blocks "
+        "don't take."))
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
 
 
@@ -2612,6 +2618,19 @@ class DiagramCosts(BaseModel):
         "calendar time unit (hours … years)."))
 
 
+class RepairQuality(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: Literal["perfect", "kijima1", "kijima2"] = Field(description=(
+        "perfect = every repair leaves it as good as new (the default); kijima1 / kijima2 = imperfect repair by "
+        "Kijima's virtual age: a repair takes the age a unit gained since its last repair (I) or its whole age "
+        "(II) down to q times it."))
+    q: Optional[float] = Field(None, ge=0, le=1, description=(
+        "kijima1/kijima2: the restoration factor, 0 as good as new to 1 as bad as old (minimal repair)."))
+    replace_after: Optional[int] = Field(None, ge=1, le=1000, description=(
+        "kijima1/kijima2 with q > 0: replace the unit, as new, at its N-th failure since it was renewed (its "
+        "repair cost is charged at every failure, its replacement cost at the replacement)."))
+
+
 class RbdNode(BaseModel):
     id: str = Field(description="Unique node id. The diagram needs exactly one 'input' and one 'output' node.")
     type: Literal["input", "output", "component", "series", "parallel", "knode", "standby", "subsystem"] = Field(
@@ -2625,7 +2644,10 @@ class RbdNode(BaseModel):
     repair: Optional[BlockModel] = Field(None, description="Repairable diagrams only: time-to-repair distribution "
                                                            "(component, standby).")
     n: Optional[int] = Field(None, description="series/parallel: number of identical units; knode: number REQUIRED to work.")
-    k: Optional[int] = Field(None, description="knode: number of branches feeding the gate.")
+    k: Optional[int] = Field(None, description=(
+        "knode: number of branches feeding the gate. standby: number of units RUNNING (default 1), e.g. k=2 with "
+        "spares=1 for a 2-of-3 duty/standby train; warm spares need k=1 (no exact figures otherwise), and a "
+        "spare's own model works with k up to 2."))
     spares: Optional[int] = Field(None, description="standby: number of spares.")
     cold: Optional[bool] = Field(None, description="standby: true = cold (spares don't age while idle).")
     dormancy: Optional[float] = Field(None, ge=0, le=1, description=(
@@ -2649,6 +2671,10 @@ class RbdNode(BaseModel):
     repair_one_at_a_time: Optional[bool] = Field(None, description=(
         "Repairable standby group: one repairer of its own, so its failed units are repaired one at a time "
         "(otherwise each failed unit is a job for the diagram's repair crews). No costs on such a group."))
+    repair_quality: Optional[RepairQuality] = Field(None, description=(
+        "Repairable component: how good each repair is — imperfect repair (Kijima I/II with q) and replacement "
+        "at the N-th failure. Such a block has no exact long-run figures: analyze_rbd simulates them (and says "
+        "why). Not on standby groups, blocks replaced on condition or common-cause members' exact figures."))
 
 
 class RbdEdge(BaseModel):
@@ -2779,14 +2805,18 @@ def create_rbd(
     (stages form), e.g. a lognormal time to repair. Blocks may carry costs, preventive (age/block/condition-
     based replacement), inspection (hidden failures with proof tests: staggered via offset, imperfect via
     coverage + full_test), maintenance_group and crew_priority (graph form; a stage component takes costs,
-    preventive and inspection too, the rest are added with edit_rbd update_node); the diagram repair_crews,
+    preventive and inspection too, the rest are added with edit_rbd update_node), and repair_quality (imperfect
+    repair by Kijima I/II with q, replacement at the N-th failure: simulated figures); the diagram repair_crews,
     maintenance_groups, safety_function, target_sil and costs. A safety function needs its proof tests
     (inspection) — without them its PFDavg treats every failure as revealed at once. Common-cause groups
     (common_cause_beta on a stage, or edit_rbd add_ccf) are followed over time in repairable diagrams: in every
     figure where RePyability's chains take them (members with exponential lives, revealed failures with
     exponential repairs or proof tests whose repairs take no, fixed or exponential time, no scheduled
     maintenance, crews for every repair), otherwise left out with the reason (the validation warnings say so);
-    a safety function's PFDavg keeps them wherever the long run can (proof tests that take time, say).
+    with proof tests that take time they stay in every figure but the exact failure frequency (and mean up/down
+    time), which is left out with the reason (common_cause.frequency_left_out). Groups of 3+ may use the multiple
+    Greek letter model (edit_rbd add_ccf mgl). A life may be a mixture of failure modes (distribution_id
+    'mixture', or a saved mixture fit), and a standby node may run k units (k-of-n standby).
     Returns the node ids (the stages form generates them) and structure_summary, the diagram in one line
     (e.g. "PLC → (Pump A ∥ Pump B)"; 2-of-3(…) for voting) — check it matches what the user described; change
     the diagram later with edit_rbd."""
@@ -2937,8 +2967,9 @@ class UpdateNodeOp(_Op):
     maintenance_group: Optional[str] = None
     crew_priority: Optional[float] = None
     repair_one_at_a_time: Optional[bool] = None
+    repair_quality: Optional[RepairQuality] = Field(None, description="Replaces the block's repair quality.")
     clear: Optional[list[Literal["costs", "preventive", "inspection", "maintenance_group", "crew_priority",
-                                 "instant_repair", "repair_one_at_a_time"]]] = Field(
+                                 "instant_repair", "repair_one_at_a_time", "repair_quality"]]] = Field(
         None, description="Remove these block settings.")
 
 
@@ -2972,6 +3003,10 @@ class AddCcfOp(_Op):
         "What beta is a fraction of: 'rate' (default) splits each member's failure rate and holds over the whole "
         "life; 'probability' is the PRA basic-event split, for small failure probabilities only (a short mission "
         "or proof-test interval) — over a lifetime it overstates the group's reliability and gives no MTTF."))
+    mgl: Optional[list[float]] = Field(None, description=(
+        "Groups of 3+: the multiple Greek letter model's letters after beta — [gamma] for 3 members, [gamma, "
+        "delta] for 4, … — each 0 to 1 (gamma = the chance a shared failure takes at least three). Omit for the "
+        "beta factor (a shared cause takes the whole group)."))
     id: Optional[str] = Field(None, description="Group id (default ccf-1, ccf-2, …).")
 
 
@@ -3059,15 +3094,18 @@ def edit_rbd(
       blocks adds no bypass. Every edge added is reported. Input/output can't be removed.
     - update_node {id | ids, label?, model?, repair?, n?, k?, spares?, cold?, subsystem_rbd_id?,
       instant_repair?, costs?, preventive?, inspection?, maintenance_group?, crew_priority?,
-      repair_one_at_a_time?, clear?: [field…]} — merges only the fields given (ids: same change to many
-      nodes); clear removes block settings. A node's type can't change: remove and re-add.
+      repair_one_at_a_time?, repair_quality?, clear?: [field…]} — merges only the fields given (ids: same change
+      to many nodes); clear removes block settings. A standby's k is its units running. A node's type can't
+      change: remove and re-add.
     - add_edge / remove_edge {source, target}
     - set {name?, unit?, repairable?, repair_crews? (0 = as many as needed), maintenance_groups?,
       safety_function?, target_sil? (0 clears), costs? {downtime_rate?, horizon?, discount_rate? (% a year); 0
       clears}}
-    - add_ccf {members, beta, basis?, id?} / remove_ccf {id} — common-cause (beta-factor) groups (basis 'rate',
-      the default, for lifetime analysis); a repairable diagram follows them over time in every figure where
-      RePyability's chains take them (else they're left out, and the warnings say why).
+    - add_ccf {members, beta, basis?, mgl?, id?} / remove_ccf {id} — common-cause groups (basis 'rate', the
+      default, for lifetime analysis): the beta factor, or with mgl (3+ members) the multiple Greek letter
+      model; a repairable diagram follows them over time in every figure where RePyability's chains take them
+      (else they're left out, and the warnings say why; with proof tests that take time only the exact failure
+      frequency is left out). Removing a member of an MGL group drops its last letter.
     Removing a node drops it from its common-cause group (and the group if under 2 members remain).
     Changing connections re-lays out the diagram automatically. Returns one line per op, structure_summary
     (the diagram after the edit in one line, e.g. "PLC → (Pump A ∥ Pump B)"), the validation
