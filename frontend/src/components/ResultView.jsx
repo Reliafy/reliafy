@@ -7,7 +7,7 @@ import Coefficients from "./Coefficients.jsx";
 import ModelValidation from "./ModelValidation.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import CiNote from "./CiNote.jsx";
-import LifeAside from "./LifeSummary.jsx";
+import LifeAside, { paramView } from "./LifeSummary.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { distColor } from "../instrument.js";
 import { formatNumber } from "../format.js";
