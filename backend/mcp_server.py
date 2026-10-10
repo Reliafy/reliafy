@@ -1983,9 +1983,9 @@ def check_life_requirement(
     if m is None:
         raise ToolError("Model not found.")
     results = m.results or {}
-    if m.kind not in ("distribution", "nonparametric"):
+    if m.kind not in ("distribution", "nonparametric", fitting.more_models.FLEXIBLE_KIND):
         raise ToolError(f"“{m.name}” is a {m.kind} model — a B-life requirement needs a life distribution "
-                        "(or a non-parametric estimate).")
+                        "(or a non-parametric estimate or a Royston-Parmar spline).")
     unit = results.get("unit") or ""
     try:
         out = models_service.life(db, m.id, {"requirement": {"b": b_life, "life": life},

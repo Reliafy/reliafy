@@ -258,3 +258,15 @@ def test_mcp_plans_a_b_life_test_with_beta_from_a_saved_model(env):  # noqa: F81
     assert safe["units"] > out["units"]
 
     assert "not both" in _err(_call(env.token[MCP_USER], "plan_demonstration_test", {**args, "shape": 2}))
+
+
+def test_mcp_checks_a_requirement_on_kaplan_meier_and_royston_parmar(env):  # noqa: F811 - the fixture
+    """The life card of a non-parametric (#85) or Royston-Parmar (#63) fit
+    carries the requirement check, so the tool takes those models too."""
+    t, c = _model()
+    for dist, verdicts in (("kaplan_meier", {"meets", "does_not_meet"}), ("royston_parmar", {"unknown"})):
+        saved = _ok(_call(env.token[MCP_USER], "fit_and_save_model", {
+            "distribution": dist, "data": t.tolist(), "censored": c.tolist(), "unit": "cycles", "name": dist}))
+        out = _ok(_call(env.token[MCP_USER], "check_life_requirement", {
+            "model_id": saved["model_id"], "b_life": 10, "life": 1.0}))
+        assert out["verdict"] in verdicts and out["estimate"] > 0

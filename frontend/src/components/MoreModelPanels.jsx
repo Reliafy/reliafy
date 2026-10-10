@@ -152,7 +152,8 @@ export function RegressionCoefficients({ result }) {
 
 // Royston-Parmar: the fitted curve over the data's own Kaplan-Meier curve,
 // beside the life model's usual panel.
-export function FlexibleSurvival({ result, split = null, level = 90, onLevel = null, name = null }) {
+export function FlexibleSurvival({ result, split = null, level = 90, onLevel = null, name = null,
+                                  modelId = null }) {
   const c = result.functions?.curves || {};
   const est = result.estimate;
   const traces = [];
@@ -183,7 +184,7 @@ export function FlexibleSurvival({ result, split = null, level = 90, onLevel = n
           Details): the panel gives its size, the data, the fit and the life. */}
       <LifeAside
         result={{ ...result, params: [], extra_params: [{ name: "Spline terms", value: result.spline?.n_terms ?? 3 }] }}
-        split={split} level={level} onLevel={onLevel}
+        split={split} level={level} onLevel={onLevel} modelId={modelId} name={name}
       />
     </div>
   );

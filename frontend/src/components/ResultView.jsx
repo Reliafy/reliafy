@@ -279,7 +279,8 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
 
       <div className="tab-panel">
         {tab === "survival" && isFlexible && (
-          <FlexibleSurvival result={result} split={split} level={level} onLevel={setLevel} name={name} />
+          <FlexibleSurvival result={result} split={split} level={level} onLevel={setLevel} name={name}
+                            modelId={modelId} />
         )}
         {tab === "survival" && !isFlexible && (
           <div className="detail-panel life-panel">
