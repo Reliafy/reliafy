@@ -936,7 +936,7 @@ export function getRecurrentOptions() {
   return request("/api/recurrent/options");
 }
 
-function recurrentForm(file, { datasetId, mapping, model, unit, name } = {}) {
+function recurrentForm(file, { datasetId, mapping, model, unit, name, options, windows } = {}) {
   const form = new FormData();
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
@@ -944,8 +944,14 @@ function recurrentForm(file, { datasetId, mapping, model, unit, name } = {}) {
   form.append("i", mapping.i);
   form.append("x", mapping.x);
   // Optional modifiers, matching the life-data column surface.
-  // ``mode`` is each failure's mode, for a growth projection (#232).
-  ["c", "n", "tl", "tr", "t", "mode"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
+  // ``mode`` is each failure's mode (or cause): a growth projection (#232)
+  // and the MCF by cause (#65); ``ws``/``we`` observation-window columns.
+  ["c", "n", "tl", "tr", "t", "mode", "ws", "we"].forEach((k) => { if (mapping[k]) form.append(k, mapping[k]); });
+  // #65: covariate columns, a model's options, windows entered by hand.
+  (mapping.z || []).forEach((col) => form.append("z", col));
+  if (options?.baseline) form.append("baseline", options.baseline);
+  if (options?.m != null && options.m !== "") form.append("m", String(options.m));
+  if (windows && String(windows).trim()) form.append("windows", windows);
   if (model) form.append("model", model);
   if (unit) form.append("unit", unit);
   return form;

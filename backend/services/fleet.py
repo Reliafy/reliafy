@@ -268,8 +268,12 @@ def create_fleet(db, name: str, model_id: str, owner_id: str, model_kind: str | 
             f"Unknown model kind '{model_kind}' (life, regression, alt or recurrent).")
     settings = _clean_settings(None)
     if model_kind == "recurrent":
-        if recurrent_service.get_model(db, model_id, owner_id) is None:
+        doc = recurrent_service.get_model(db, model_id, owner_id)
+        if doc is None:
             raise FleetValidationError("Recurrent model not found.")
+        if (doc.results or {}).get("family", "nhpp") != "nhpp":
+            # #65: covariate and imperfect-repair models have no fleet forecast yet.
+            raise FleetValidationError(REPAIRABLE_FAMILIES)
     elif model_kind == "alt":
         if alt_service.get_model(db, model_id, owner_id) is None:
             raise FleetValidationError("ALT model not found.")
@@ -826,6 +830,11 @@ REPAIRABLE_NOTE = (
     "Λ(a + u) − Λ(a) failures over u more use; the fleet's count is Poisson.")
 
 
+REPAIRABLE_FAMILIES = (
+    "A fleet forecast needs a minimal-repair recurrent model (Crow-AMSAA, Duane, HPP or Cox-Lewis); "
+    "covariate and imperfect-repair models aren't supported yet.")
+
+
 def _compute_recurrent(db, fleet: Fleet, owners) -> dict:
     """The live forecast of a fleet running on a recurrent-event model."""
     doc = recurrent_service.get_model(db, fleet.model_id, owners)
@@ -838,6 +847,8 @@ def _compute_recurrent(db, fleet: Fleet, owners) -> dict:
                 "reason": "The linked recurrent model can't be evaluated (its dataset may have been deleted)."}
     if live is None:
         return {"status": "stale", "reason": "The linked recurrent model can't be evaluated."}
+    if (doc.results or {}).get("family", "nhpp") != "nhpp":
+        return {"status": "stale", "reason": REPAIRABLE_FAMILIES}
 
     settings = fleet.settings or {}
     periods = int(settings.get("periods", 12))

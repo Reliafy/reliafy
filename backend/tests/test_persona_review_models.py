@@ -478,7 +478,8 @@ def test_a_dataset_behind_any_model_kind_cant_be_deleted(env, monkeypatch):
     owners = [A, config.SAMPLE_OWNER]
     rec = datasets_service.dependents_for_dataset(env.db, "sample-ds-compressor-events", owners)
     deg = datasets_service.dependents_for_dataset(env.db, "sample-ds-brake-wear", owners)
-    assert [d["kind"] for d in rec] == ["recurrent model"] and [d["kind"] for d in deg] == ["degradation model"]
+    # (Two sample recurrent models use the compressor history, #65.)
+    assert {d["kind"] for d in rec} == {"recurrent model"} and [d["kind"] for d in deg] == ["degradation model"]
 
 
 def test_an_alt_model_whose_dataset_is_gone_still_gives_wald_bounds(env):

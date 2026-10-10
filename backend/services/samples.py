@@ -135,6 +135,54 @@ _COMPRESSOR_EVENTS_CSV = (
     "CMP-4,4050,5000,valve\nCMP-4,4500,5000,valve\nCMP-4,4850,5000,bearing\n"
 ).encode()
 
+# Long-format repair history of ten slurry pumps at two sites (#65), for
+# intensity regression and failures by cause: each repair's time, the pump's
+# site and duty (% of rated load, fixed per pump), the repair's cause, and
+# each pump's end of observation (observed_to). Simulated from a Crow-AMSAA
+# power law (β = 1.5) whose rate is about 2.2× as high inland as on the coast
+# and rises about 3% per point of duty, so the proportional-intensity fit
+# separates the two; seals fail most, then bearings and impellers.
+_PUMP_REPAIRS_CSV = (
+    "pump,hours,site,duty_pct,cause,observed_to\n"
+    "P-01,3470,Coastal,60,impeller,8760\nP-01,5410,Coastal,60,impeller,8760\n"
+    "P-01,7150,Coastal,60,impeller,8760\nP-01,8030,Coastal,60,seal,8760\n"
+    "P-02,3000,Coastal,70,bearing,8000\nP-02,7380,Coastal,70,bearing,8000\n"
+    "P-03,1350,Coastal,80,bearing,8760\nP-03,2730,Coastal,80,seal,8760\nP-03,2960,Coastal,80,seal,8760\n"
+    "P-03,4080,Coastal,80,bearing,8760\nP-03,4100,Coastal,80,impeller,8760\n"
+    "P-03,4120,Coastal,80,seal,8760\nP-03,5540,Coastal,80,seal,8760\nP-03,7170,Coastal,80,seal,8760\n"
+    "P-03,7450,Coastal,80,bearing,8760\nP-03,8180,Coastal,80,seal,8760\n"
+    "P-04,400,Coastal,90,impeller,7200\nP-04,1400,Coastal,90,bearing,7200\n"
+    "P-04,4900,Coastal,90,bearing,7200\nP-04,6240,Coastal,90,bearing,7200\n"
+    "P-04,6630,Coastal,90,seal,7200\nP-04,6640,Coastal,90,impeller,7200\nP-04,7030,Coastal,90,seal,7200\n"
+    "P-05,780,Coastal,75,impeller,8760\nP-05,2980,Coastal,75,impeller,8760\n"
+    "P-05,6150,Coastal,75,seal,8760\nP-05,7960,Coastal,75,seal,8760\n"
+    "P-06,670,Inland,65,bearing,8760\nP-06,3010,Inland,65,bearing,8760\nP-06,3090,Inland,65,seal,8760\n"
+    "P-06,5840,Inland,65,impeller,8760\nP-06,6000,Inland,65,impeller,8760\n"
+    "P-06,6480,Inland,65,seal,8760\nP-06,6510,Inland,65,impeller,8760\nP-06,6720,Inland,65,seal,8760\n"
+    "P-06,6740,Inland,65,seal,8760\nP-06,7030,Inland,65,seal,8760\nP-06,7810,Inland,65,seal,8760\n"
+    "P-06,8540,Inland,65,seal,8760\nP-06,8620,Inland,65,seal,8760\n"
+    "P-07,1720,Inland,75,bearing,8400\nP-07,5730,Inland,75,bearing,8400\nP-07,5740,Inland,75,seal,8400\n"
+    "P-07,5950,Inland,75,bearing,8400\nP-07,6250,Inland,75,impeller,8400\n"
+    "P-07,7920,Inland,75,impeller,8400\nP-07,8310,Inland,75,bearing,8400\nP-07,8380,Inland,75,seal,8400\n"
+    "P-08,2000,Inland,85,seal,8760\nP-08,2270,Inland,85,seal,8760\nP-08,2450,Inland,85,seal,8760\n"
+    "P-08,2710,Inland,85,bearing,8760\nP-08,2990,Inland,85,impeller,8760\nP-08,3680,Inland,85,seal,8760\n"
+    "P-08,4840,Inland,85,impeller,8760\nP-08,5280,Inland,85,bearing,8760\nP-08,5350,Inland,85,seal,8760\n"
+    "P-08,5650,Inland,85,seal,8760\nP-08,5940,Inland,85,bearing,8760\nP-08,5980,Inland,85,seal,8760\n"
+    "P-08,6050,Inland,85,seal,8760\nP-08,6310,Inland,85,seal,8760\nP-08,6410,Inland,85,impeller,8760\n"
+    "P-08,7760,Inland,85,impeller,8760\nP-08,7910,Inland,85,impeller,8760\n"
+    "P-08,7980,Inland,85,bearing,8760\nP-08,8520,Inland,85,seal,8760\n"
+    "P-09,550,Inland,95,seal,6800\nP-09,950,Inland,95,seal,6800\nP-09,1170,Inland,95,seal,6800\n"
+    "P-09,1180,Inland,95,seal,6800\nP-09,1870,Inland,95,seal,6800\nP-09,2100,Inland,95,seal,6800\n"
+    "P-09,2320,Inland,95,seal,6800\nP-09,3180,Inland,95,bearing,6800\nP-09,3440,Inland,95,seal,6800\n"
+    "P-09,3450,Inland,95,seal,6800\nP-09,3840,Inland,95,seal,6800\nP-09,4320,Inland,95,seal,6800\n"
+    "P-09,4910,Inland,95,impeller,6800\nP-09,4920,Inland,95,seal,6800\nP-09,6300,Inland,95,seal,6800\n"
+    "P-09,6320,Inland,95,seal,6800\nP-09,6590,Inland,95,seal,6800\n"
+    "P-10,2470,Inland,80,seal,8760\nP-10,2610,Inland,80,impeller,8760\nP-10,4010,Inland,80,seal,8760\n"
+    "P-10,4960,Inland,80,seal,8760\nP-10,5230,Inland,80,impeller,8760\nP-10,5320,Inland,80,seal,8760\n"
+    "P-10,7050,Inland,80,impeller,8760\nP-10,7770,Inland,80,bearing,8760\nP-10,7800,Inland,80,seal,8760\n"
+    "P-10,8020,Inland,80,seal,8760\nP-10,8510,Inland,80,seal,8760\n"
+).encode()
+
 # The sample's default growth-projection settings (#265): valve and seal are
 # BD modes (fixed after the test), bearing and electrical A modes; the test
 # end comes from the data's test_end column.
@@ -209,6 +257,11 @@ SAMPLE_DATASETS = [
         "csv": _COMPRESSOR_EVENTS_CSV,
     },
     {
+        "id": "sample-ds-pump-repairs",
+        "name": "Slurry pumps — repairs by site and duty (sample)",
+        "csv": _PUMP_REPAIRS_CSV,
+    },
+    {
         "id": "sample-ds-seal-alt",
         "name": "Valve seal life vs. temperature & load (sample)",
         "csv": _SEAL_ALT_CSV,
@@ -262,6 +315,30 @@ SAMPLE_RECURRENT_MODELS = [
             "model_id": "crow_amsaa",
             "unit": "hours",
             "projection": _COMPRESSOR_PROJECTION,
+        },
+    },
+    {
+        # #65: covariates on the repair rate (site, duty) and failures by cause.
+        "id": "sample-rec-pumps-pi",
+        "name": "Slurry pumps — repair rate by site and duty (sample)",
+        "dataset_id": "sample-ds-pump-repairs",
+        "spec": {
+            "mapping": {"i": "pump", "x": "hours", "tr": "observed_to", "mode": "cause",
+                        "z": ["site", "duty_pct"]},
+            "model_id": "pi_nhpp",
+            "unit": "hours",
+        },
+    },
+    {
+        # #65: imperfect repair (Kijima I) on the compressor history: each
+        # repair takes away about 79% of the age gained since the last one.
+        "id": "sample-rec-compressors-grp",
+        "name": "Compressor fleet — imperfect repair (sample)",
+        "dataset_id": "sample-ds-compressor-events",
+        "spec": {
+            "mapping": {"i": "compressor", "x": "hours", "t": "test_end", "mode": "failure_mode"},
+            "model_id": "grp_i",
+            "unit": "hours",
         },
     },
 ]
@@ -1001,7 +1078,7 @@ def seed_samples(db) -> None:
             dataset = from_doc(Dataset, ds_doc)
             df = fitting.read_dataframe(bytes(dataset.data))
             s = spec["spec"]
-            payload, _ = recurrent_fit.fit(df, s["mapping"], s["model_id"], s["unit"])
+            payload, _ = recurrent_fit.fit_spec(df, s)
             settings = s.get("projection")
             if settings:
                 # #265: ship the sample's growth projection with it.

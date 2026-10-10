@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
+import SegmentedControl from "../components/ui/SegmentedControl.jsx";
+import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import RecurrentColumnMapper from "../components/RecurrentColumnMapper.jsx";
@@ -16,6 +18,25 @@ import {
   SPREADSHEET_ACCEPT,
 } from "../api.js";
 import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
+
+// The model families (#65): minimal repair (Poisson processes), covariates on
+// the repair rate, and imperfect repair.
+const FAMILIES = [
+  { value: "nhpp", label: "Minimal repair" },
+  { value: "regression", label: "Covariates" },
+  { value: "renewal", label: "Imperfect repair" },
+];
+const FAMILY_DESC = {
+  nhpp: "Each repair puts the system back as it was just before the failure (as bad as old): the trend is in the failure rate over time.",
+  regression: "The failure rate differs between systems by their covariates (site, duty, operating condition).",
+  renewal: "Each repair restores part of the system's age (between as good as new and as bad as old): how much is estimated.",
+};
+const MEMORY = [
+  { value: "1", label: "The last repair" },
+  { value: "2", label: "The last 2 repairs" },
+  { value: "3", label: "The last 3 repairs" },
+  { value: "all", label: "Every repair" },
+];
 
 // Short blurbs under the model dropdown (keyed by recurrent model id).
 const MODEL_DESC = {
@@ -50,6 +71,9 @@ export default function RecurrentNewPage() {
   const [csv, setCsv] = useState(null); // { columns, preview, n_rows }
   const [map, setMap] = useState({ i: "", x: "", c: "", n: "", tl: "", tr: "" });
   const [model, setModel] = useState("crow_amsaa");
+  const [baselines, setBaselines] = useState([]);
+  const [options, setOptions] = useState({});
+  const [windows, setWindows] = useState("");
   const [unit, setUnit] = useState("");
 
   const [error, setError] = useState(null);
@@ -62,11 +86,28 @@ export default function RecurrentNewPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    getRecurrentOptions().then((o) => setModelOpts(o.models || [])).catch(() => {});
+    getRecurrentOptions().then((o) => {
+      setModelOpts(o.models || []);
+      setBaselines(o.baselines || []);
+    }).catch(() => {});
     listDatasets().then((d) => setDatasets(d.datasets)).catch(() => setDatasets([]));
   }, []);
 
-  const modelName = modelOpts.find((m) => m.id === model)?.name || "model";
+  const modelEntry = modelOpts.find((m) => m.id === model);
+  const modelName = modelEntry?.name || "model";
+  const family = modelEntry?.family || "nhpp";
+  const pickFamily = (fam) => {
+    const first = modelOpts.find((m) => (m.family || "nhpp") === fam);
+    if (first) setModel(first.id);
+    setOptions({});
+  };
+  // Proportional intensity needs covariates; gaps only the Poisson processes.
+  const hasWindows = !!(map.ws && map.we) || !!windows.trim();
+  const modelBlock = family === "regression" && !(map.z || []).length
+    ? "Choose at least one covariate column on the Data step (Back)."
+    : family !== "nhpp" && hasWindows
+    ? "Observation windows work with the minimal-repair models only: clear them on the Data step, or pick one of those."
+    : null;
 
   const pickFile = async (picked) => {
     if (!picked) return;
@@ -86,6 +127,7 @@ export default function RecurrentNewPage() {
       const cols = await getColumns(f);
       setCsv(cols);
       setMap({ i: cols.columns[0] || "", x: cols.columns[1] || "", c: "", n: "", tl: "", tr: "", mode: guessModeColumn(cols.columns) });
+      setWindows("");
       setStep(2);
     } catch (err) {
       setError(err.message);
@@ -107,6 +149,7 @@ export default function RecurrentNewPage() {
       if (!d.name) setSourceName(full.name || "dataset");
       setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows });
       setMap({ i: columns[0] || "", x: columns[1] || "", c: "", n: "", tl: "", tr: "", mode: guessModeColumn(columns) });
+      setWindows("");
       setStep(2);
     } catch (err) {
       setError(err.message);
@@ -142,7 +185,7 @@ export default function RecurrentNewPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fitRecurrent(datasetId ? null : file, { datasetId, mapping: map, model, unit });
+      const res = await fitRecurrent(datasetId ? null : file, { datasetId, mapping: map, model, unit, options, windows });
       setResult(res);
       const src = (file?.name || sourceName || "dataset").replace(/\.csv$/i, "");
       setName(`${res.results?.model?.name || modelName} — ${src}`);
@@ -160,7 +203,7 @@ export default function RecurrentNewPage() {
     setError(null);
     try {
       const saved = await saveRecurrentModel(name.trim(), null, {
-        datasetId: result.dataset_id, mapping: map, model, unit,
+        datasetId: result.dataset_id, mapping: map, model, unit, options, windows,
       });
       navigate(`/modelling/recurrent/${saved.id}`);
     } catch (err) {
@@ -212,7 +255,7 @@ export default function RecurrentNewPage() {
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-        <button onClick={onFit} disabled={loading}>{loading ? "Fitting…" : `Fit ${modelName}`}</button>
+        <button onClick={onFit} disabled={loading || !!modelBlock}>{loading ? "Fitting…" : `Fit ${modelEntry?.short || modelName}`}</button>
       </>
     );
   } else {
@@ -334,6 +377,8 @@ export default function RecurrentNewPage() {
               onChange={setMap}
               unit={unit}
               onUnitChange={setUnit}
+              windows={windows}
+              onWindowsChange={setWindows}
             />
             <p className="muted-line" style={{ margin: 0 }}>
               Long format — one row per failure/repair: a system id and event time, plus optional
@@ -347,18 +392,44 @@ export default function RecurrentNewPage() {
 
         {step === 3 && (
           <div className="fit-step">
-            <p className="muted-line">Choose a recurrent-event growth model to fit to the fleet's event history.</p>
-            <div className="dist-field" style={{ width: 280 }}>
+            <p className="muted-line">Choose how repairs work, then the model to fit to the fleet's event history.</p>
+            <SegmentedControl options={FAMILIES} value={family} onChange={pickFamily} label="Kind of model"
+                              style={{ alignSelf: "flex-start", maxWidth: "100%" }} />
+            <p className="muted-line" style={{ margin: 0 }}>{FAMILY_DESC[family]}</p>
+            <div className="dist-field" style={{ width: 320, maxWidth: "100%" }}>
               <span className="dist-label">Model</span>
-              <Select value={model} onChange={setModel}
-                      options={modelOpts.map((m) => ({ value: m.id, label: m.name }))} />
+              <Select value={model} onChange={(v) => { setModel(v); setOptions({}); }}
+                      options={modelOpts.filter((m) => (m.family || "nhpp") === family)
+                        .map((m) => ({ value: m.id, label: m.name }))} />
             </div>
-            {MODEL_DESC[model] && (
+            {(MODEL_DESC[model] || modelEntry?.desc) && (
               <p className="muted-line" style={{ margin: 0 }}>
-                {MODEL_DESC[model]}
-                <RefLink entryId={model} label="What is this growth model?" />
+                {MODEL_DESC[model] || modelEntry.desc}
+                {MODEL_DESC[model] && <RefLink entryId={model} label="What is this growth model?" />}
               </p>
             )}
+            {(model === "pi_nhpp" || model === "ari" || model === "ara") && (
+              <ResultDetails summary="Advanced">
+                <div className="row" style={{ gap: 12, flexWrap: "wrap", margin: 0 }}>
+                  {(model === "pi_nhpp" || model === "ari") && (
+                    <div className="dist-field" style={{ width: 220 }}>
+                      <span className="dist-label">Baseline failure rate</span>
+                      <Select value={options.baseline || "crow_amsaa"}
+                              onChange={(v) => setOptions((o) => ({ ...o, baseline: v }))}
+                              options={baselines.map((b) => ({ value: b.id, label: b.name }))} />
+                    </div>
+                  )}
+                  {(model === "ara" || model === "ari") && (
+                    <div className="dist-field" style={{ width: 220 }}>
+                      <span className="dist-label">Each repair acts on</span>
+                      <Select value={String(options.m ?? (model === "ara" ? "2" : "1"))}
+                              onChange={(v) => setOptions((o) => ({ ...o, m: v }))} options={MEMORY} />
+                    </div>
+                  )}
+                </div>
+              </ResultDetails>
+            )}
+            {modelBlock && <p className="hint" style={{ margin: 0 }}>{modelBlock}</p>}
           </div>
         )}
 
