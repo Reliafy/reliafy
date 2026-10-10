@@ -4,15 +4,18 @@ import { openGuide } from "./HelpButton.jsx";
 
 // Set the beta-factor for a common-cause group: the fraction of each member's
 // failures that are shared-cause (and take out the whole group at once).
+// β is entered as a percentage (#298) and stored as a fraction.
+const toPct = (b) => String(Number((Number(b) * 100).toPrecision(6)));
+
 export default function CcfModal({ initial, memberLabels, repairable, onClose, onSubmit }) {
-  const [beta, setBeta] = useState(initial?.beta ?? 0.1);
+  const [pctText, setPctText] = useState(toPct(initial?.beta ?? 0.1));
   // What β is a fraction of (#210): each member's failure rate (holds over
   // the whole life, the default) or its failure probability (PRA basic
   // events: only while that probability is small).
   const [basis, setBasis] = useState(initial?.basis === "probability" ? "probability" : "rate");
-  const b = Number(beta);
-  const valid = Number.isFinite(b) && b > 0 && b < 1;
-  const pct = Math.round((valid ? b : 0) * 100);
+  const b = Number(pctText) / 100;
+  const valid = pctText !== "" && Number.isFinite(b) && b > 0 && b < 1;
+  const pct = valid ? Number((b * 100).toPrecision(3)) : 0;
   const n = memberLabels.length;
 
   const footer = (
@@ -35,12 +38,15 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
         the fraction of each one's failures that are common-cause.
       </p>
       <label className="login-field">
-        <span>β-factor</span>
+        <span>β-factor (%)</span>
         <div className="ccf-slider-row">
-          <input type="range" min="0.01" max="0.5" step="0.01" value={beta}
-                 onChange={(e) => setBeta(e.target.value)} />
-          <input type="number" min="0.001" max="0.999" step="0.01" value={beta}
-                 onChange={(e) => setBeta(e.target.value)} className="ccf-beta-num" />
+          <input type="range" min="1" max="50" step="1" value={valid ? Math.min(50, Math.max(1, b * 100)) : 10}
+                 onChange={(e) => setPctText(e.target.value)} aria-label="β-factor, percent" />
+          <span className="ccf-beta-pct">
+            <input type="number" min="0.1" max="99.9" step="0.5" value={pctText}
+                   onChange={(e) => setPctText(e.target.value)} className="ccf-beta-num" aria-label="β-factor in percent" />
+            %
+          </span>
         </div>
       </label>
       {!repairable && (
@@ -70,7 +76,7 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
       )}
       <p className="hint">
         {pct}% of each component's failures are shared-cause — they take out all{" "}
-        {n} at once; the remaining {100 - pct}% are independent. Higher β erodes
+        {n} at once; the remaining {Number((100 - pct).toPrecision(3))}% are independent. Higher β erodes
         the benefit of the redundancy.{" "}
         <button type="button" className="link" onClick={() => openGuide("common-cause-group")}>
           How do I use this?
