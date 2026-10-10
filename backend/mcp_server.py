@@ -103,6 +103,7 @@ from backend.services import outage_logs as outage_logs_service
 from backend.services import models as models_service
 from backend.services import regression_diagnostics as checks_service
 from backend.services import public_links as links_service
+from backend.services import rbd_capacity
 from backend.services import rbd_edit
 from backend.services import rbd_graph
 from backend.services import rbd_import
@@ -2592,6 +2593,34 @@ class ProofTest(BaseModel):
         "With coverage < 1: the interval of the full test that finds every failure (a whole multiple of interval)."))
 
 
+class CapacityLevel(BaseModel):
+    """One level a block works at (#122)."""
+    model_config = ConfigDict(extra="forbid")
+    value: float = Field(gt=0, description="The throughput at this level, in the diagram's capacity unit.")
+    probability: float = Field(gt=0, le=1, description="The share of its working time at this level.")
+
+
+#: A block's capacity: one throughput, or levels with probabilities (#122).
+_CAPACITY_DESCRIPTION = (
+    "Component or standby block: its throughput while it works (e.g. 250 for a 250 kW inverter), for the "
+    "production availability analyze_rbd reports; or, for a block that works at several levels, a list of "
+    "{value, probability} adding up to 1 (e.g. a pump at full rate 80% of its up time and half rate 20%). A "
+    "series chain carries the least of its blocks' capacities, a parallel group their sum; a block without one "
+    "limits nothing. Set the demand with create_rbd production (or edit_rbd set production).")
+
+
+class Production(BaseModel):
+    """The diagram's demand for the production availability (#122)."""
+    model_config = ConfigDict(extra="forbid")
+    demand: Optional[float] = Field(None, ge=0, description=(
+        "What the system is asked to deliver, in the blocks' capacity unit; 0 clears it."))
+    unit: Optional[str] = Field(None, max_length=20, description="The capacity unit, e.g. 'kW' or 'm3/h'.")
+    period: Optional[float] = Field(None, ge=0, description=(
+        "Repairable: the time (diagram unit) production is counted over from new, e.g. 8760 h for a year — "
+        "analyze_rbd then gives the output lost over it. Non-repairable: the time the capacity is read at. 0 "
+        "clears it."))
+
+
 class MaintenanceGroup(BaseModel):
     model_config = ConfigDict(extra="forbid")
     setup_cost: Optional[float] = Field(None, ge=0, description="Charged once per group stop (shared mobilisation).")
@@ -2649,6 +2678,7 @@ class RbdNode(BaseModel):
     repair_one_at_a_time: Optional[bool] = Field(None, description=(
         "Repairable standby group: one repairer of its own, so its failed units are repaired one at a time "
         "(otherwise each failed unit is a job for the diagram's repair crews). No costs on such a group."))
+    capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description=_CAPACITY_DESCRIPTION)
 
 
 class RbdEdge(BaseModel):
@@ -2756,6 +2786,10 @@ def create_rbd(
         "is down), horizon (how long it is owned) and discount_rate (% a year). Blocks carry their own costs "
         "(repair, replace, downtime, acquisition). cheapest_design needs block acquisition prices, a horizon "
         "and a downtime_rate; edit_rbd's set costs changes these later."))] = None,
+    production: Annotated[Optional[Production], Field(description=(
+        "The demand the blocks' capacities serve (graph-form nodes' capacity), its unit and a period: "
+        "analyze_rbd then reports the production availability — the share of the demand delivered — and the "
+        "output lost over the period."))] = None,
 ) -> dict[str, Any]:
     """Build, validate and save a reliability block diagram to the user's workspace. Layout is automatic.
 
@@ -2812,6 +2846,10 @@ def create_rbd(
              "unit": unit, "repairable": repairable, **settings},
             resolve_saved_model=lambda mid: models_service.get_model(db, mid, owners),
         )
+    if production is not None:
+        demand = rbd_capacity.parse_production(production.model_dump(exclude_none=True))
+        if demand:
+            graph["production"] = demand
     check = rbds_service.validate_graph(db, graph, owners)
     if not check.get("valid", False):
         raise ToolError("Invalid RBD structure: " + "; ".join(check.get("errors") or ["unknown problem"]))
@@ -2937,8 +2975,9 @@ class UpdateNodeOp(_Op):
     maintenance_group: Optional[str] = None
     crew_priority: Optional[float] = None
     repair_one_at_a_time: Optional[bool] = None
+    capacity: Optional[Union[float, list[CapacityLevel]]] = Field(None, description="Replaces the capacity.")
     clear: Optional[list[Literal["costs", "preventive", "inspection", "maintenance_group", "crew_priority",
-                                 "instant_repair", "repair_one_at_a_time"]]] = Field(
+                                 "instant_repair", "repair_one_at_a_time", "capacity"]]] = Field(
         None, description="Remove these block settings.")
 
 
@@ -2962,6 +3001,9 @@ class SetOp(_Op):
     costs: Optional[DiagramCosts] = Field(None, description=(
         "Repairable: the diagram's own costs — downtime_rate, horizon, discount_rate; fields left out are kept, "
         "0 clears one. A block's costs (repair, replace, downtime, acquisition) are update_node costs."))
+    production: Optional[Production] = Field(None, description=(
+        "The demand, capacity unit and period for the production availability; fields left out are kept, 0 or "
+        "\"\" clears one. Blocks' capacities are update_node capacity."))
 
 
 class AddCcfOp(_Op):
@@ -2997,6 +3039,8 @@ def _op_dict(op: BaseModel) -> dict:
         elif isinstance(value, dict):
             value = {k: v.model_dump(exclude_none=True) if isinstance(v, BaseModel) else v
                      for k, v in value.items()}
+        elif isinstance(value, list):
+            value = [v.model_dump(exclude_none=True) if isinstance(v, BaseModel) else v for v in value]
         out[key] = value
     return out
 
@@ -3400,6 +3444,31 @@ def _top_importance(out: dict) -> Optional[dict]:
     return {**head, "blocks": [{"label": label, "value": v} for label, v in rows[:_TOP_BLOCKS]]}
 
 
+def _production_answer(db, graph: dict, owners: list, t: Optional[float]) -> Optional[dict]:
+    """analyze_rbd's production availability (#122) for a diagram whose
+    blocks carry capacities, or None; a figure the engine can't give comes
+    back as ``{"available": false, "reason"}``."""
+    if not rbd_capacity.has_capacity(graph):
+        return None
+    try:
+        res = rbd_capacity.production_for_owner(db, graph, owners, t=t)
+    except (rbd_capacity.CapacityError, AnalysisError) as exc:
+        return {"available": False, "reason": str(exc)}
+    if res is None:
+        return None
+    keep = ("basis", "t", "demand", "capacity_unit", "production_availability", "meets_demand", "availability",
+            "mean_capacity", "shortfall_rate", "unlimited", "period", "uncapped")
+    out = {"available": True, **{k: res[k] for k in keep if res.get(k) is not None}}
+    out["levels"] = res["levels"][:30]
+    if res.get("notes"):
+        out["notes"] = res["notes"]
+    out["note"] = (
+        "production_availability is the expected share of the demand delivered (capacity-weighted, unlike the "
+        "plain up/down availability); meets_demand the share of time the full demand is met; shortfall_rate the "
+        "average output lost per unit time; period.lost the output lost over the period from new.")
+    return out
+
+
 def _summary_only(out: dict) -> dict:
     """analyze_rbd's summary_only answer (#265): the headline figures without
     the curves, full importance tables and route details."""
@@ -3422,6 +3491,8 @@ def _summary_only(out: dict) -> dict:
     if isinstance(out.get("simulation"), dict):
         lean["simulation"] = {k: v for k, v in out["simulation"].items() if k in ("available", "state", "code",
                                                                                  "job_id")}
+    if isinstance(out.get("production"), dict):
+        lean["production"] = {k: v for k, v in out["production"].items() if k != "levels"}
     top = _top_importance(out)
     if top:
         lean["top_importance"] = top
@@ -3544,7 +3615,12 @@ def analyze_rbd(
     'simulation_only', e.g. limited repair crews for wear-out lives) returns available=false without entitlement; asked
     with simulate=false (and no saved result matching the diagram as it is now) it returns available=false,
     needs_simulation=true, code 'needs_simulation' and a reason naming what needs the simulation, with no
-    figure fields — call again with simulate=true (Pro or credits) or offer export_rbd_python."""
+    figure fields — call again with simulate=true (Pro or credits) or offer export_rbd_python.
+    Blocks with a capacity (create_rbd / edit_rbd capacity, and production's demand) add `production`, exact and
+    free: the capacity distribution (levels), production_availability (the share of the demand delivered —
+    report it beside the plain availability: it weighs partial outages), meets_demand, mean_capacity and, for a
+    repairable diagram, the long run plus the output lost over production.period (else t_max) from new; a
+    non-repairable diagram reads it at the last of `times` (else production.period)."""
     from backend.routers.rbds import availability_payload
     from backend.services.access import PERSONAL, AccessCtx
 
@@ -3654,6 +3730,9 @@ def analyze_rbd(
                 }
             else:
                 out["simulation"] = {"available": bool(payload.get("has_simulation")), "state": sim_state}
+            produced = None if current_state else _production_answer(db, graph, owners, t_max)
+            if produced is not None:
+                out["production"] = produced
             done = availability_answer.finish(out, payload)
             return _summary_only(done) if summary_only else done
 
@@ -3664,6 +3743,9 @@ def analyze_rbd(
                                             target_reliability=target_reliability,
                                             band={"level": confidence} if confidence is not None else None)
         out = {**head, "available": True, **_reliability_summary(result, graph, times, include_curves)}
+        produced = None if current_state else _production_answer(db, graph, owners, times[-1] if times else None)
+        if produced is not None:
+            out["production"] = produced
         if result.get("warnings"):
             # RePyability's common-cause warnings, and why the MTTF is missing (#210).
             out["warnings"] = list(dict.fromkeys([*(head.get("warnings") or []), *result["warnings"]]))
@@ -4047,6 +4129,95 @@ def _sensitivity_summary(payload: dict, limit: int) -> dict:
                          "the change in running cost per unit of the diagram's time unit; derivative is "
                          "RePyability's, per unit of the raw parameter `lever` (for a mean lever, the "
                          "distribution's scale parameter).")
+    return out
+
+
+@_tool("allocate_targets", _READ, "Allocate a system target to an RBD's blocks")
+def allocate_targets(
+    ctx: Context,
+    rbd_id: Annotated[str, Field(description="An RBD id from list_rbds.")],
+    target: Annotated[float, Field(gt=0, lt=1, description=(
+        "The system target: a reliability at t for a non-repairable diagram (e.g. 0.95), a long-run availability "
+        "for a repairable one (e.g. 0.995)."))],
+    method: Annotated[Optional[Literal["equal", "simple", "minimum_effort", "improvement", "cost_based",
+                                       "availability", "mttf_mttr"]], Field(description=(
+        "Non-repairable: equal (every block the same reliability; a first cut), simple (the smallest change from "
+        "50/50 by the diagram's structure alone, weighted; no component data), minimum_effort (series systems "
+        "only: raise the weakest blocks to one common level, the least total effort), improvement (cut every free "
+        "block's unreliability by one factor, keeping their ratios; with fixed blocks) or cost_based (the cheapest "
+        "way by Mettas's cost function, from each block's max and feasibility; any structure — the default). "
+        "Repairable: availability (each block's availability, and the MTTF or MTTR that gives it; the default) or "
+        "mttf_mttr (the cheapest MTTF and MTTR pair per block)."))] = None,
+    t: Annotated[Optional[float], Field(gt=0, description=(
+        "Non-repairable: the mission time (diagram unit) the target reliability is for. Required there."))] = None,
+    availability_method: Annotated[Optional[Literal["cost_based", "improvement", "minimum_effort", "equal"]],
+                                   Field(description=(
+        "method=availability: how to apportion it (default cost_based)."))] = None,
+    levers: Annotated[Optional[Literal["both", "mttf", "mttr"]], Field(description=(
+        "method=mttf_mttr: change both (default), only the MTTFs (reliability) or only the MTTRs "
+        "(maintainability)."))] = None,
+    fixed: Annotated[Optional[list[str]], Field(description=(
+        "Block ids that keep what they have now (improvement, cost_based, availability, mttf_mttr)."))] = None,
+    weights: Annotated[Optional[dict[str, float]], Field(description=(
+        "simple or improvement (and availability with improvement): a weight per block id, default 1; a larger "
+        "weight changes a block more, 0 leaves it."))] = None,
+    maximum: Annotated[Optional[dict[str, float]], Field(description=(
+        "cost_based (and availability with cost_based): the most each block's reliability (or availability) can "
+        "reach, per block id; default approaching 1."))] = None,
+    feasibility: Annotated[Optional[dict[str, float]], Field(description=(
+        "cost_based: how easily each block improves, in [0, 1), default 0.5; higher is easier (cheaper)."))] = None,
+    max_mttf: Annotated[Optional[dict[str, float]], Field(description=(
+        "mttf_mttr: the longest MTTF each block can reach (diagram unit)."))] = None,
+    min_mttr: Annotated[Optional[dict[str, float]], Field(description=(
+        "mttf_mttr: the shortest MTTR each block can reach (diagram unit)."))] = None,
+    mttf_feasibility: Annotated[Optional[dict[str, float]], Field(description=(
+        "mttf_mttr: how easily each block's MTTF rises, in [0, 1), default 0.5."))] = None,
+    mttr_feasibility: Annotated[Optional[dict[str, float]], Field(description=(
+        "mttf_mttr: how easily each block's MTTR falls, in [0, 1), default 0.5."))] = None,
+) -> dict[str, Any]:
+    """Design to a system target (the app's Targets tab): what each block needs — its reliability at t, or for a
+    repairable diagram its availability and the MTTF/MTTR that give it — for the system to meet the target,
+    against what it has now. Methods differ in what they assume: equal and simple use only the structure;
+    minimum_effort needs a series system; improvement and cost_based start from the blocks' current values (with
+    fixed blocks, maxima and feasibilities). The blocks are treated as independent, so a non-repairable diagram
+    with common-cause groups is refused. Returns system.current and system.allocated (the target, or more when
+    already met) and blocks[] {label, current, required, fixed, (repairable) current_mttf/current_mttr and
+    mttf/mttr}. An unreachable target returns reached=false with reachable {low, high}: the range the system can
+    reach with those settings. Exact, free on every plan; nothing is saved."""
+    from backend.services import rbd_allocation
+
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    rbd = _get_rbd(db, uid, rbd_id)
+    graph = rbd.graph or {}
+    owners = [*_owners(uid), rbd.owner_id]
+    repairable = bool(graph.get("repairable"))
+    chosen = method or ("availability" if repairable else "cost_based")
+    if repairable and chosen not in rbd_allocation.REPAIRABLE_METHODS:
+        raise ToolError(f"This diagram is repairable: use method availability or mttf_mttr, not {chosen}.")
+    if not repairable and chosen not in rbd_allocation.NONREPAIRABLE_METHODS:
+        raise ToolError(f"This diagram is non-repairable: {chosen} applies to repairable diagrams. Use equal, "
+                        "simple, minimum_effort, improvement or cost_based.")
+    options = {k: v for k, v in {
+        "fixed": fixed, "weights": weights, "max": maximum, "feasibility": feasibility,
+        "availability_method": availability_method, "levers": levers, "max_mttf": max_mttf,
+        "min_mttr": min_mttr, "mttf_feasibility": mttf_feasibility, "mttr_feasibility": mttr_feasibility,
+    }.items() if v is not None}
+    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}"), "method": chosen,
+            "target": target}
+    try:
+        res = rbd_allocation.allocate_for_owner(db, graph, owners, target, chosen, t=t, options=options)
+    except rbd_allocation.AllocationError as exc:
+        if exc.reachable is not None:
+            return {**head, "reached": False, "message": str(exc), "reachable": exc.reachable}
+        raise ToolError(str(exc)) from None
+    out = {**head, "reached": True, "kind": res["kind"], "unit": res.get("unit") or None,
+           "system": res["system"], "blocks": res["blocks"]}
+    for key in ("t", "availability_method", "levers"):
+        if res.get(key) is not None:
+            out[key] = res[key]
+    if res.get("notes"):
+        out["notes"] = res["notes"]
     return out
 
 
