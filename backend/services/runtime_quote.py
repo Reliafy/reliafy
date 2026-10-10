@@ -116,6 +116,12 @@ def features(graph: dict, options: Optional[dict] = None) -> dict:
         from backend.services.rbd_network import NETWORK_ONLY
 
         return {"available": False, "reason": NETWORK_ONLY}
+    # A mixture life repaired imperfectly is too slow to simulate (and is refused).
+    from backend.services import rbd_sim_guard
+
+    slow = rbd_sim_guard.refusal(graph or {})
+    if slow:
+        return {"available": False, "reason": slow}
     nodes = [n for n in (graph or {}).get("nodes") or [] if isinstance(n, dict)]
     if any(n.get("type") in _OPAQUE_TYPES for n in nodes):
         return {"available": False, "reason": UNAVAILABLE_OPAQUE}
