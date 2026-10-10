@@ -416,14 +416,32 @@ def test_mcp_analyze_rbd_gives_pfd_over_time(env):
 
 def test_a_slow_or_refused_horizon_leaves_the_set_one():
     """A block replaced on condition, slow to follow from new (and refused
-    over 20 years): the set horizon keeps its cost from new, the others are
-    left out and say why."""
+    over 20 years): a set horizon of a few checks keeps its cost from new, the
+    others are left out and say why."""
     from backend.tests.test_rbd_crews_maintenance import _export_graph
 
     g = _export_graph()
+    g["costs"] = {**(g.get("costs") or {}), "horizon": 200.0}  # 20 checks of the pump
     table = ra.analyze_availability(g, simulate=False)["costs"]["by_horizon"]
     news = [r["from_new"] for r in table["rows"]]
     assert table["rows"][0]["set"] and news[0] is not None and news[-1] is None
     assert table["from_new_note"]
     lib = _lib(g)
     assert news[0] == pytest.approx(lib.expected_cost(table["rows"][0]["horizon"]).total, rel=1e-12)
+
+
+def test_calculate_skips_a_cost_from_new_over_many_condition_checks():
+    """Over 100 checks of a block replaced on condition the cost from new
+    takes seconds to follow, so Calculate leaves it out, saying why and
+    where to get it, and stays quick."""
+    import time
+
+    from backend.tests.test_rbd_crews_maintenance import _export_graph
+
+    g = _export_graph()  # the window: 1,000 hours, the pump checked every 10
+    started = time.perf_counter()
+    table = ra.analyze_availability(g, simulate=False)["costs"]["by_horizon"]
+    assert time.perf_counter() - started < 3.0
+    assert all(r["from_new"] is None for r in table["rows"])
+    assert "“Pump” is replaced on condition" in table["from_new_note"]
+    assert "Download as Python" in table["from_new_note"]

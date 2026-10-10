@@ -43,6 +43,12 @@ MAX_HORIZONS = 6
 #: Seconds the set horizon's cost from new may take for the other horizons'
 #: to be worked out too.
 FROM_NEW_BUDGET_S = 1.5
+#: The most condition checks (a horizon over the shortest check interval of a
+#: block replaced on condition) the cost from new follows in an analysis:
+#: each takes the library about 50 ms to follow, so more would hold up
+#: Calculate. Past it the figure is left out with a note; the exported
+#: script still works it out.
+MAX_CONDITION_CHECKS = 25
 
 NO_PRESENT_VALUE = (
     "No present value: this diagram has no exact long-run cost rate (the simulated one stands in), "
@@ -142,6 +148,28 @@ def long_run(rbd, overrides: dict, rows: list[dict], rate: Optional[float], basi
     return [ra._f(v) for v in totals], undiscounted, None
 
 
+def _condition_checks(graph: dict) -> Optional[tuple[str, float]]:
+    """``(label, interval)`` of the block replaced on condition checked most
+    often, or None when there is none."""
+    best = None
+    for node in graph.get("nodes") or []:
+        data = node.get("data") or {}
+        pm = data.get("preventive") or {}
+        if node.get("type") != "component" or pm.get("policy") != "condition":
+            continue
+        try:
+            interval = float(pm.get("interval"))
+        except (TypeError, ValueError):
+            continue
+        if interval > 0 and (best is None or interval < best[1]):
+            best = (data.get("label") or node.get("id"), interval)
+    return best
+
+
+def _too_slow(checks: Optional[tuple[str, float]], t: float) -> bool:
+    return checks is not None and t / checks[1] > MAX_CONDITION_CHECKS
+
+
 def from_new(rbd, graph: dict, overrides: dict, rows: list[dict],
              disc: Optional[dict]) -> tuple[list[Optional[float]], Optional[str], Optional[str]]:
     """``(totals, basis, note)``: the expected cost of owning the system from
@@ -174,6 +202,19 @@ def from_new(rbd, graph: dict, overrides: dict, rows: list[dict],
     # condition, say, whose curves are long to follow).
     first = next((i for i, row in enumerate(rows) if row["set"]), None)
     rest = [i for i in range(n) if finite[i] and i != first]
+    # A block replaced on condition is slow to follow from new over many
+    # checks: those horizons are left out here (Download as Python has them).
+    checks = _condition_checks(graph)
+    slow = [i for i in range(n) if finite[i] and _too_slow(checks, float(times[i]))]
+    if slow:
+        rest = [i for i in rest if i not in slow]
+        if first in slow:
+            first = None
+        if first is None and not rest:
+            unit = (graph.get("unit") or "").strip().lower() or "time units"
+            return none, None, (f"The costs from new are left out: “{checks[0]}” is replaced on condition, checked "
+                                f"every {checks[1]:,.4g} {unit}, which takes too long to follow here over these "
+                                "horizons. Download as Python works them out.")
     started = time.perf_counter()
     try:
         if first is not None:
@@ -182,6 +223,8 @@ def from_new(rbd, graph: dict, overrides: dict, rows: list[dict],
         return none, None, f"{NO_FROM_NEW}: {ra.plain_reason(str(exc))}"
     if rest and time.perf_counter() - started > FROM_NEW_BUDGET_S:
         return out, route, "The costs from new over the other horizons take too long to work out here."
+    slow_note = ("The costs from new over the longer horizons take too long to work out here (a block replaced on "
+                 "condition); Download as Python works them out." if slow else None)
     if rest:
         try:
             cost = _quiet(rbd.expected_cost, times[rest], discount_rate=r, **overrides)
@@ -190,7 +233,7 @@ def from_new(rbd, graph: dict, overrides: dict, rows: list[dict],
             return out, route, f"{NO_FROM_NEW} over the other horizons: {ra.plain_reason(str(exc))}"
         for i, v in zip(rest, np.atleast_1d(np.asarray(cost.total, dtype=float))):
             out[i] = ra._f(v)
-    return out, route, None
+    return out, route, slow_note
 
 
 def by_horizon(rbd, graph: dict, overrides: dict, chosen: float, rate: Optional[float],
