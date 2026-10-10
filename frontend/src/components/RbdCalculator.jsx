@@ -15,6 +15,8 @@ import { pctAt, pctDigits, precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
 import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
 import WhatToImprove from "./WhatToImprove.jsx";
+import RbdRunsQuote from "./RbdRunsQuote.jsx";
+import { jobStatusLine, runsPath } from "../rbdRuns.js";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
@@ -711,14 +713,9 @@ function methodLine(result, exactOk, hasSim) {
   return `Method: ${s}.${tail}`;
 }
 
-// "Queued — 2 ahead of you…" / "Running…" while a simulation job is in flight.
-function jobStatusText(job) {
-  if (!job) return "";
-  if (job.status === "running") return "Running the simulation…";
-  const ahead = job.queue_position;
-  if (ahead == null || ahead <= 0) return "Queued — you're next…";
-  return `Queued — ${ahead} ahead of you…`;
-}
+// "Queued — 2 ahead of you, starts in about 40 s. Then about 15 s, up to
+// 40 s." / "Running…" while a simulation job is in flight (#286's quote).
+const jobStatusText = jobStatusLine;
 
 // Poll intervals for a queued job: every 1.5 s, easing off to 6 s.
 const POLL_FIRST_MS = 1500;
@@ -732,7 +729,8 @@ const quickSeconds = (offer) => (offer ? Number(Number(offer.seconds).toPrecisio
 // running on the calculation service (#146), its place in the queue.
 // ``primary``: the simulation is this view's next step (no exact figures).
 function SimulationActions({ canSimulate, onSimulate, simulating, graph, quick = null, capMessage = null,
-                             onQuick = null, job = null, primary = false }) {
+                             onQuick = null, job = null, primary = false, tMax = null, currentState = null,
+                             rbdId = null }) {
   const [upgrade, setUpgrade] = useState(false);
   if (!onSimulate) return null;
   const canQuick = !canSimulate && !!onQuick && quick && quick.remaining_today > 0 && !capMessage;
@@ -762,6 +760,9 @@ function SimulationActions({ canSimulate, onSimulate, simulating, graph, quick =
           >
             {simulating && canSimulate ? "Simulating…" : canSimulate ? "Run simulation" : "Run full simulation (Pro)"}
           </button>
+          {canSimulate && !simulating && (
+            <RbdRunsQuote graph={graph} tMax={tMax} currentState={currentState} rbdId={rbdId} />
+          )}
           {canQuick && (
             <span className="muted">{quick.remaining_today} of {quick.per_day} free runs left today</span>
           )}
@@ -803,7 +804,7 @@ function windowWords(window, unit, label = null) {
 // Also used by the public read-only view.
 export function AvailabilityView({ result, unit, graph = null, onSimulate = null, onCompute = null, busy = null,
                                   onQuick = null, capMessage = null, job = null, windowLabel = null, top = null,
-                                  improve = null, more = null }) {
+                                  improve = null, more = null, tMax = null, currentState = null, rbdId = null }) {
   const u = unit ? ` ${unitInText(unit)}` : "";
   const hpu = hoursPerUnit(unit);
   // A result saved before #154 is a simulation result (no has_simulation flag).
@@ -840,6 +841,10 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
     capMessage,
     onQuick,
     job,
+    // The quote beside "Run simulation" and the run history (#286, #112).
+    tMax,
+    currentState,
+    rbdId,
   };
 
   // The headline availability and what it's over.
@@ -1092,6 +1097,9 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
               {precisionNote(result)}
               {result.horizon_shortened && " The window was shortened to keep the simulation quick; the long-run figures don't depend on it."}
             </p>
+            {rbdId && (
+              <p className="rbd-runs-history"><Link to={runsPath(rbdId)}>Run history</Link></p>
+            )}
           </div>
         ) : !needsSim && onSimulate ? (
           <div className="rbd-sim">
@@ -1860,6 +1868,7 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
               Re-run
             </button>
           )}
+          {rbdId && <Link to={runsPath(rbdId)}>Run history</Link>}
         </div>
       )}
 
@@ -1877,6 +1886,9 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
           windowLabel={sentWindowLabel}
           top={top}
           improve={<WhatToImprove graph={graph} rbdId={rbdId} result={result} onTop={setTop} />}
+          tMax={tSent}
+          currentState={statePayload()}
+          rbdId={rbdId}
           more={<AvailabilityCompare graph={graph} rbdId={rbdId} result={result} />}
         />
       )}
