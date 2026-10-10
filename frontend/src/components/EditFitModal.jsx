@@ -55,7 +55,8 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
   }, [model.dataset_id]);
 
   const hasCovariates = advanced ? !!formula.trim() : covariates.length > 0;
-  const options = distributions.filter((d) => !!d.covariates === hasCovariates);
+  // Covariates over time (#60) take the regressions that can fit them.
+  const options = distributions.filter((d) => !!d.covariates === hasCovariates && (!tvc || d.tvc !== false));
   // A shared-frailty model's Group by column (#179) is saved in the mapping.
   const selectedOpt = distributions.find((d) => d.id === distribution);
   const groupBlock = groupProblem(selectedOpt, mapping.group);

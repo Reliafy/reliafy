@@ -272,6 +272,11 @@ def fit(distribution: str, df: pd.DataFrame, mapping: dict, covariates=None, for
         raise fitting.FitError(
             "An item id column is for covariates that change over time, which need a regression model "
             "(e.g. Weibull PH or Cox PH). Clear the item id, or choose a regression model.")
+    if not hasattr(entry["fitter"], "fit_tvc_from_df"):
+        # #179's semi-parametric and shared-frailty regressions fit fixed covariates only.
+        raise fitting.FitError(
+            f"{entry['name']} can't fit covariates that change over time. Choose a parametric regression "
+            "(e.g. Weibull PH) or Cox PH, or clear the item id column.")
     mapping = {k: v for k, v in mapping.items() if v}
     for col in mapping.values():
         if col not in df.columns:

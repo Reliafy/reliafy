@@ -156,9 +156,11 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // Model options filtered by the data that was entered. A failure-mode
   // column (#177) fits the modes as competing risks.
   const byMode = !!mapping.e;
+  // Covariates over time (#60) take the regressions that can fit them.
   const options = useMemo(
-    () => (byMode ? CR_OPTIONS : distributions).filter((d) => !!d.covariates === hasCovariates),
-    [distributions, hasCovariates, byMode]
+    () => (byMode ? CR_OPTIONS : distributions)
+      .filter((d) => !!d.covariates === hasCovariates && (!tvc || d.tvc !== false)),
+    [distributions, hasCovariates, byMode, tvc]
   );
 
   // Keep the selected model valid for the current filtered list.

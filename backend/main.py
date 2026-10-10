@@ -353,7 +353,9 @@ def distributions_endpoint() -> dict:
     ]
     regression = [
         {"id": key, "name": entry["name"], "covariates": True, "params": [],
-         "effect": entry.get("effect"), **more_models.picker_flags(entry)}
+         "effect": entry.get("effect"), **more_models.picker_flags(entry),
+         # Covariates that change over time (#60): SurPyval's fit_tvc_from_df.
+         "tvc": hasattr(entry["fitter"], "fit_tvc_from_df")}
         for key, entry in REGRESSION_MODELS.items()
     ]
     return {"distributions": plain + discrete + nonparametric + more_models.flexible_listing() + regression,

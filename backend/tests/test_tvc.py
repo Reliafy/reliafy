@@ -376,3 +376,25 @@ def test_mcp_fit_and_reliability_along_a_schedule(env):  # noqa: F811 - env is a
 
 
 from backend.tests.test_mcp import env  # noqa: E402,F401 - the MCP fixture
+
+
+@pytest.mark.parametrize("dist", ["additive_hazards", "buckley_james", "weibull_frailty", "cox_frailty"])
+def test_models_without_covariates_over_time_say_so(dist):
+    """#179's semi-parametric and shared-frailty regressions fit fixed
+    covariates only: an item column gets a plain refusal, and the model list
+    flags them so the wizard leaves them out."""
+    df = _pumps()
+    df["site"] = df["pump"].str[-1]
+    mapping = {**INTERVALS, "group": "site"} if "frailty" in dist else INTERVALS
+    with pytest.raises(FitError, match="can't fit covariates that change over time"):
+        fit(dist, df, mapping, ["load_pct"])
+
+
+def test_the_model_list_flags_covariates_over_time():
+    from fastapi.testclient import TestClient
+
+    from backend.main import app
+
+    listed = {d["id"]: d for d in TestClient(app).get("/api/distributions").json()["distributions"]}
+    assert listed["weibull_ph"]["tvc"] and listed["cox_ph"]["tvc"]
+    assert not listed["weibull_frailty"]["tvc"] and not listed["buckley_james"]["tvc"]
