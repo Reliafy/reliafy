@@ -1105,6 +1105,7 @@ h6 {
 }
 .standby-kind .seg { align-self: flex-start; }
 .standby-kind .hint { margin: 0; font-size: var(--fs-13); }
+.standby-start-hint { margin: 0.4rem 0 0; font-size: var(--fs-13); }
 
 .standby-cold {
   margin-top: 0.9rem;

@@ -31,9 +31,10 @@ function initialKind(initial) {
   return d <= 0 ? "cold" : d >= 1 ? "hot" : "warm";
 }
 // A spare's chance of starting when switched in, as first offered on a cold
-// standby (#299): a switch-over that works 99 times in 100, not a perfect one.
-// Anything set before is kept.
-export const COLD_START_DEFAULT = 0.99;
+// standby: a perfect switch-over, with a hint at typical real values under
+// the field. Anything set before is kept.
+export const COLD_START_DEFAULT = 1;
+export const COLD_START_HINT = "Spares don't always start: 0.95–0.99 is typical for generators and pumps.";
 
 export default function StandbyModal({ initial, onClose, onSubmit, repairable = false, crews = false }) {
   const unit = useContext(RbdUnitContext) || "";
@@ -158,7 +159,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             </label>
           )}
           {cold && (
-            <label className="param-field" title="The chance a spare starts when it's switched in: 0.99 is one failed start in 100 demands, 1 a perfect switch-over.">
+            <label className="param-field" title="The chance a spare starts when it's switched in: 1 is a perfect switch-over, 0.99 one failed start in 100 demands.">
               <span>Chance a spare starts</span>
               <input
                 type="number"
@@ -171,6 +172,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             </label>
           )}
         </div>
+        {cold && <p className="hint standby-start-hint">{COLD_START_HINT}</p>}
         <div className="standby-kind">
           <SegmentedControl
             label="Standby type"
