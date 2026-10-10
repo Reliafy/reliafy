@@ -6,6 +6,7 @@ import Units from "./Units.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import { getDataset, getDistributions, updateModelFit } from "../api.js";
 import { EMPTY_MAPPING, columnFacts, dataStepProblems } from "../lifeData.js";
+import { groupProblem, withGroup } from "../moreModels.js";
 
 // Edit a saved model's fit spec and refit in place: same dataset, same id.
 // Prefilled from the stored spec; anything referencing the model (RCM
@@ -49,6 +50,9 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
 
   const hasCovariates = advanced ? !!formula.trim() : covariates.length > 0;
   const options = distributions.filter((d) => !!d.covariates === hasCovariates);
+  // A shared-frailty model's Group by column (#179) is saved in the mapping.
+  const selectedOpt = distributions.find((d) => d.id === distribution);
+  const groupBlock = groupProblem(selectedOpt, mapping.group);
   // The Data step's checks, in plain words (#291).
   const problems = columns ? dataStepProblems(mapping, facts, nRows) : [];
   const mappingValid = problems.length === 0;
@@ -80,7 +84,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
     try {
       const updated = await updateModelFit(model.id, {
         distribution,
-        mapping,
+        mapping: withGroup(mapping, selectedOpt, mapping.group),
         covariates: hasCovariates && !advanced ? covariates : [],
         covariateUnits: hasCovariates && !advanced ? covUnits : {},
         formula: hasCovariates && advanced ? formula : null,
@@ -103,7 +107,8 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
       footer={
         <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
           <button className="secondary" onClick={onClose} disabled={loading}>Cancel</button>
-          <button onClick={onRefit} disabled={loading || !mappingValid || !distribution}>
+          <button onClick={onRefit} disabled={loading || !mappingValid || !distribution || !!groupBlock}
+                  title={groupBlock || undefined}>
             {loading ? "Refitting…" : "Refit & update"}
           </button>
         </div>
@@ -145,6 +150,10 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
               }}
               fitOpts={fitOpts}
               onFitOpts={setFitOpts}
+              columns={columns}
+              usedColumns={new Set([...mappedColumns, ...covariates])}
+              group={mapping.group || ""}
+              onGroup={(g) => setMapping((m) => ({ ...m, group: g }))}
             />
           </div>
         </>
