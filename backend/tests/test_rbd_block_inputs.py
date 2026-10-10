@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from backend import config
 from backend.services import rbd_block_inputs as bi
+from backend.tests.test_mcp import env  # noqa: F401 - a fixture
 
 
 def _values(out):
@@ -104,3 +105,22 @@ def test_the_endpoints(client):
     assert r.json()["mean"] == pytest.approx(1000) and r.json()["median"] == pytest.approx(1000 * math.log(2))
     r = client.post("/api/rbd-blocks/model", json={"distribution_id": "rayleigh", "mean": 10})
     assert r.status_code == 422 and "parameters" in r.json()["detail"]
+
+
+# ---- Agents: a block model given as its mean (create_rbd, edit_rbd) ------------------------
+
+def test_agents_can_give_a_block_its_mean(env):  # noqa: F811 - env is a fixture
+    from backend.tests.test_mcp_rbd_edit import _chain, _create, _edit, _node
+    from backend.tests.test_mcp import _err, _ok
+
+    graph = _chain("p1", "p2", model={"distribution_id": "weibull", "mean": 12000, "given": {"beta": 1.6}})
+    rid = _create(env, graph)["id"]
+    model = _node(env, rid, "p1")["data"]["model"]
+    assert set(model) >= {"distribution_id", "params"} and "mean" not in model
+    assert float(sv.Weibull.from_params(_values(model)).mean()) == pytest.approx(12000, rel=1e-9)
+    # edit_rbd update_node takes the same: an exponential MTBF needs nothing else.
+    _ok(_edit(env, rid, {"op": "update_node", "id": "p2", "model": {"distribution_id": "exponential", "mean": 500}}))
+    assert _node(env, rid, "p2")["data"]["model"]["params"] == [{"name": "failure_rate", "value": pytest.approx(1 / 500)}]
+    # A mean SurPyval can't meet is refused in words.
+    bad = {"distribution_id": "weibull", "mean": 100}
+    assert "shape β" in _err(_edit(env, rid, {"op": "update_node", "id": "p2", "model": bad}))

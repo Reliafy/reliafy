@@ -2537,6 +2537,13 @@ class BlockModel(BaseModel):
     params: Optional[list[Param]] = Field(None, description=(
         "By SurPyval name: weibull [alpha (scale), beta (shape)], exponential [failure_rate], "
         "normal/lognormal [mu, sigma], gamma [alpha, beta]."))
+    mean: Optional[float] = Field(None, gt=0, description=(
+        "Instead of params: the model's mean in the diagram's unit — an MTBF for a life, an MTTR for a repair — "
+        "with `given` for the shape or spread it leaves open. Turned into SurPyval params (stored as params) "
+        "from SurPyval's own mean. exponential, weibull, lognormal, normal, gamma and loglogistic only."))
+    given: Optional[dict[str, float]] = Field(None, description=(
+        "With mean: weibull {beta}, lognormal {sigma} (the log-spread), normal {sigma}, gamma {alpha}, "
+        "loglogistic {beta} (above 1); exponential needs none."))
     saved_model_id: Optional[str] = Field(None, description=(
         "A saved life model id (list_models) instead of inline params: a parametric (or proportional-hazards) "
         "model, not a non-parametric one (Kaplan-Meier etc.), which RBD blocks don't take."))
