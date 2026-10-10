@@ -1957,11 +1957,23 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
     if band is not None:
         from backend.services import rbd_uncertainty
 
+        fractions, band_times = rbd_uncertainty.parse_targets(band)
         result["band"] = rbd_uncertainty.system_band(
             graph, rbd, grid, s, working_nodes, broken_nodes,
             resolve_subsystem=resolve_subsystem, resolve_model=resolve_model,
             covariates=covariates, level=(band or {}).get("level"), target=target, ages=ages,
+            fractions=fractions, times=band_times,
         )
+        if result["band"].get("targets"):
+            # The point values beside the intervals (#325): each B-life as the
+            # design life is found, the reliability exactly at each time.
+            targets = result["band"]["targets"]
+            for row in targets["b_lives"]:
+                row["value"] = _design_life(rbd, system, 1.0 - row["fraction"], s, overrides, bool(state))["time"]
+            if targets["reliability"]:
+                at_t = np.asarray([r["t"] for r in targets["reliability"]], dtype=float)
+                for row, v in zip(targets["reliability"], _clean(_conditional_sf(system, at_t, s, **overrides))):
+                    row["value"] = v
     return result, labels, notes
 
 

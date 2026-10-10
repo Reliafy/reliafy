@@ -53,8 +53,11 @@ KIND_INTERVALS = "intervals"
 # ALT bootstrap confidence bounds at a use stress (#231): hundreds of refits.
 # ``rbd_id`` holds the ALT model's id. Never stored on the model.
 KIND_ALT_BOUNDS = "alt_bounds"
+# What to improve's other measures (#225): a heavy uncertainty run (Sobol
+# indices, figures over time over draws; see rbd_measures). Never stored.
+KIND_MEASURES = "measures"
 # Kinds whose finished result is shown as it came back.
-_PLAIN_RESULT_KINDS = (KIND_SENSITIVITY, KIND_INTERVALS, KIND_ALT_BOUNDS)
+_PLAIN_RESULT_KINDS = (KIND_SENSITIVITY, KIND_INTERVALS, KIND_ALT_BOUNDS, KIND_MEASURES)
 ACTIVE = ("queued", "running")
 FINISHED = ("done", "failed")
 
@@ -478,6 +481,44 @@ def _intervals_accepted(db, job: dict) -> dict:
         "status": "pending",
         "job": {"job_id": job["_id"], "status": job["status"], "queue_position": queue_position(db, job),
                 "kind": KIND_INTERVALS},
+    }
+
+
+# ---- What to improve's other measures (#225) --------------------------------------
+
+def run_measures(db, *, uid: str, graph: dict, options: dict, fits: dict, fixed: list, cache_key: str,
+                 rbd_id: Optional[str], resolve_model, resolve_owners=None) -> tuple[int, dict]:
+    """Run (or queue) a heavy measures request (:func:`rbd_measures.heavy`)
+    the caller may run: as :func:`run_sensitivity`, ``fits`` and ``fixed``
+    the saved models' fits the compute service needs."""
+    from backend.services import rbd_measures
+
+    request = (compute_core.measures_request(graph, fits, fixed, **options)
+               if compute_queue.configured() else None)
+    if request is None:
+        return 200, rbd_measures.analyze_measure(graph, resolve_model, fits=fits, fixed=fixed, **options)
+    existing = find_reusable(db, uid, cache_key, False, include_done=True)
+    if existing is not None:
+        if existing["status"] == "done":
+            return 200, {**(existing.get("result") or {}), "job_id": existing["_id"]}
+        return 202, _measures_accepted(db, existing, options)
+    job = create(db, uid=uid, kind=KIND_MEASURES, request=request, cache_key=cache_key, rbd_id=rbd_id,
+                 quick=False, store=False, owners=resolve_owners)
+    try:
+        compute_queue.enqueue(job["_id"], KIND_MEASURES, request)
+    except compute_queue.QueueError as exc:
+        finish(db, job["_id"], "failed", error=str(exc) or QUEUE_UNAVAILABLE)
+        return 503, {"detail": QUEUE_UNAVAILABLE, "code": "compute_unavailable"}
+    return 202, _measures_accepted(db, job, options)
+
+
+def _measures_accepted(db, job: dict, options: dict) -> dict:
+    return {
+        "kind": "measure",
+        "measure": options.get("measure"),
+        "status": "pending",
+        "job": {"job_id": job["_id"], "status": job["status"], "queue_position": queue_position(db, job),
+                "kind": KIND_MEASURES},
     }
 
 

@@ -48,8 +48,8 @@ NEEDS_SIMULATION_MESSAGE = (
 
 
 def sensitivity_payload(session, ctx: AccessCtx, graph: dict, rbd: Optional[Rbd], resolve_owners, *,
-                        window=None, step=None, rank_by=None, costs=None, order=None, simulate: bool = False
-                        ) -> tuple[int, dict]:
+                        window=None, step=None, rank_by=None, costs=None, order=None, simulate: bool = False,
+                        limits=None) -> tuple[int, dict]:
     """What to improve, as ``(status, payload)``: 200 with the ranked levers
     (or a ``status`` saying why there are none yet: ``too_large``,
     ``pro_required``, ``needs_simulation``), 202 with a job to poll, 503 when
@@ -61,7 +61,8 @@ def sensitivity_payload(session, ctx: AccessCtx, graph: dict, rbd: Optional[Rbd]
     if not (graph or {}).get("repairable"):
         raise AnalysisError("What to improve is for repairable (availability) diagrams — give the blocks "
                             "repair times and mark the diagram repairable.")
-    options = rbd_sensitivity.options(window=window, step=step, rank_by=rank_by, costs=costs, order=order)
+    options = rbd_sensitivity.options(window=window, step=step, rank_by=rank_by, costs=costs, order=order,
+                                      limits=limits)
 
     def resolve_model(model_id: str):
         return models_service.get_live_model(session, model_id, resolve_owners)
@@ -105,6 +106,7 @@ def rbd_sensitivity_endpoint(
     costs: dict | None = Body(default=None),
     order: str | None = Body(default=None),
     simulate: bool = Body(default=False),
+    limits: dict | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -119,7 +121,10 @@ def rbd_sensitivity_endpoint(
     alone, costs or not, and "benefit_per_cost" puts the costed levers first
     by benefit per unit spent, then the rest by benefit. ``window`` takes the mean over
     ``[0, window)`` from new instead of the long run. ``simulate`` runs the
-    simulated route where the diagram needs it (Pro or credits)."""
+    simulated route where the diagram needs it (Pro or credits). ``limits``
+    ({lever id: {"min", "max"}}, in the values shown: a mean repair time in
+    the diagram's unit) stops each lever's step at the user's limit, as the
+    lever's own range stops it (#324)."""
     owners = ctx.read_owners
     rbd = None
     if rbd_id:
@@ -128,7 +133,8 @@ def rbd_sensitivity_endpoint(
             owners = [*ctx.read_owners, rbd.owner_id]
     try:
         status, payload = sensitivity_payload(session, ctx, graph, rbd, owners, window=window, step=step,
-                                              rank_by=rank_by, costs=costs, order=order, simulate=simulate)
+                                              rank_by=rank_by, costs=costs, order=order, simulate=simulate,
+                                              limits=limits)
     except AnalysisError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except Exception:  # pragma: no cover - defensive

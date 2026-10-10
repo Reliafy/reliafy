@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { getRbdJob, rbdSensitivity } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import RbdMeasure, { TABS } from "./RbdMeasures.jsx";
 
 // "What to improve" on a repairable diagram's availability results (#225):
 // every lever RePyability exposes (a block's mean life and repair time, its
@@ -10,6 +11,8 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 // cost to make each change, by gain per unit of cost. The backend says how
 // each answer was found (exact, numerical or simulated); a numerical, windowed
 // or simulated one runs on the calculation service and is polled here.
+// A lever's limit ("repair time can't go below 4 h", #324) stops its step
+// there. RePyability's other measures sit in tabs beside it (RbdMeasures.jsx).
 
 const STEPS = [0.1, 0.25, 0.5];
 const SHOWN = 8; // rows before "Show all"
@@ -75,6 +78,11 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
   const [error, setError] = useState(null);
   const [job, setJob] = useState(null);
   const [showAll, setShowAll] = useState(false);
+  const [tab, setTab] = useState("levers");
+  // Limits as typed ({lever id: {side, value}}) and as sent ({id: {min|max}}).
+  const [limits, setLimits] = useState({});
+  const [sentLimits, setSentLimits] = useState({});
+  const [editLimits, setEditLimits] = useState(false);
   // Once asked for, the simulated route stays on as the step or ranking changes.
   const [simWanted, setSimWanted] = useState(false);
   const live = useRef(0);
@@ -82,7 +90,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
   const unit = graph.unit || "";
   const windowLen = availability?.exact?.window ?? availability?.t_simulation ?? null;
 
-  const run = async ({ simulate = simWanted, withCosts = sentCosts } = {}) => {
+  const run = async ({ simulate = simWanted, withCosts = sentCosts, withLimits = sentLimits } = {}) => {
     const ticket = ++live.current;
     setPhase("running");
     setError(null);
@@ -102,6 +110,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
         window: over === "window" ? windowLen : null,
         costs: Object.keys(numeric).length ? numeric : null,
         simulate,
+        limits: Object.keys(withLimits).length ? withLimits : null,
       });
       if (ticket !== live.current) return;
       if (res.job) {
@@ -123,7 +132,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
   useEffect(() => {
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availability, step, rankBy, over, order, sentCosts]);
+  }, [availability, step, rankBy, over, order, sentCosts, sentLimits]);
 
   // Poll a queued job until it's done.
   const jobId = job?.job_id;
@@ -179,6 +188,16 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
     () => JSON.stringify(costs) !== JSON.stringify(sentCosts),
     [costs, sentCosts]
   );
+  // The typed limits as the backend takes them: {id: {min} | {max}}.
+  const limitsBody = useMemo(() => {
+    const out = {};
+    for (const [id, l] of Object.entries(limits)) {
+      const v = Number(l.value);
+      if (l.value !== "" && Number.isFinite(v)) out[id] = { [l.side]: v };
+    }
+    return out;
+  }, [limits]);
+  const limitsChanged = JSON.stringify(limitsBody) !== JSON.stringify(sentLimits);
   const positive = (m) => Object.values(m).some((v) => Number(v) > 0);
   const hasSentCosts = positive(sentCosts);
   const hasTypedCosts = positive(costs);
@@ -193,10 +212,25 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy, topLever, data]);
 
+  const question = TABS.find((t) => t.value === tab)?.question;
   return (
     <div className="rbd-improve">
       <div className="ds-section-h">What to improve</div>
-
+      <div className="rbd-improve-tabs" role="tablist" aria-label="What to improve">
+        {TABS.map((t) => (
+          <button key={t.value} type="button" role="tab" aria-selected={tab === t.value}
+                  className={"rbd-improve-tab" + (tab === t.value ? " active" : "")} title={t.question}
+                  onClick={() => setTab(t.value)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <h3 className="rbd-improve-q">{question}</h3>
+      {tab !== "levers" ? (
+        <RbdMeasure graph={graph} rbdId={rbdId} measure={tab} windowLen={windowLen} over={over}
+                    trigger={availability} />
+      ) : (
+      <>
       {/* Labelled controls; what a step and a lever are is said once, in the
           line under the table. */}
       <div className="rbd-improve-controls">
@@ -257,6 +291,12 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
         {rows.length > 0 && (
           <button type="button" className="secondary" onClick={() => setEditCosts((v) => !v)}>
             {editCosts ? "Hide costs to change" : "Add costs to change…"}
+          </button>
+        )}
+        {rows.length > 0 && (
+          <button type="button" className="secondary" onClick={() => setEditLimits((v) => !v)}
+                  title="Say how far a lever can go: a repair time that can't go below 4 hours, say">
+            {editLimits ? "Hide limits" : "Set limits…"}
           </button>
         )}
       </div>
@@ -337,6 +377,13 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
                         </div>
                       )}
                       {r.unranked && <div className="muted">{r.unranked}</div>}
+                      {editLimits && r.direction && <LimitInput row={r} unit={unit} limits={limits} setLimits={setLimits} />}
+                      {!editLimits && r.limit && (
+                        <div className="muted">
+                          {r.limit.min != null ? `Can't go below ${num(r.limit.min)}` : `Can't go above ${num(r.limit.max)}`}
+                          {r.kind === "mean" || r.kind === "time" ? (unit ? ` ${unit.toLowerCase()}` : "") : ""}
+                        </div>
+                      )}
                     </td>
                     <td title={dTitle}>
                       {a == null ? "—" : (
@@ -399,6 +446,17 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
         </div>
       )}
 
+      {editLimits && rows.length > 0 && (
+        <div className="rbd-improve-controls">
+          <button type="button" disabled={phase === "running" || !limitsChanged} onClick={() => setSentLimits(limitsBody)}>
+            Apply limits
+          </button>
+          <span className="hint">
+            A lever's step stops at its limit. Each lever already stops at its own range (a coverage can't pass 100%).
+          </span>
+        </div>
+      )}
+
       {rows.length > 0 && (rows.length > visible.length || showAll) && (
         <button type="button" className="secondary rbd-improve-more" onClick={() => setShowAll((v) => !v)}>
           {showAll ? "Show the top levers" : `Show all ${rows.length} levers`}
@@ -416,6 +474,25 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
           {data.pinned?.length ? ` Pinned blocks (${data.pinned.join(", ")}) are left out.` : ""}
         </p>
       )}
+      </>
+      )}
     </div>
+  );
+}
+
+// "Can't go below [ 4 ] hours": the limit on the side the step moves a lever.
+function LimitInput({ row, unit, limits, setLimits }) {
+  const side = row.direction === "decrease" ? "min" : "max";
+  const typed = limits[row.id];
+  const value = typed && typed.side === side ? typed.value : (row.limit?.[side] ?? "");
+  const timeLike = row.kind === "mean" || row.kind === "time";
+  return (
+    <label className="rbd-improve-limit">
+      <span>{side === "min" ? "Can't go below" : "Can't go above"}</span>
+      <input type="number" step="any" value={value} placeholder="—"
+             aria-label={`${side === "min" ? "Lowest" : "Highest"} ${row.name} for ${row.block}`}
+             onChange={(e) => setLimits((prev) => ({ ...prev, [row.id]: { side, value: e.target.value } }))} />
+      {timeLike && unit ? <span>{unit.toLowerCase()}</span> : null}
+    </label>
   );
 }
