@@ -82,6 +82,8 @@ from backend import alt as alt_fit
 from backend import config
 from backend import fitting
 from backend import life_bounds
+from backend import regression_bands
+from backend.regression_diagnostics import COX_KEY
 from backend import recurrent as recurrent_fit
 from backend import storage
 from backend.fitting import FitError
@@ -97,6 +99,7 @@ from backend.services import import_guard
 from backend.services import oauth as oauth_service
 from backend.services import outage_logs as outage_logs_service
 from backend.services import models as models_service
+from backend.services import regression_diagnostics as checks_service
 from backend.services import public_links as links_service
 from backend.services import rbd_edit
 from backend.services import rbd_graph
@@ -632,6 +635,17 @@ class Param(BaseModel):
     value: float
 
 
+class CoxOptions(BaseModel):
+    tie_method: Optional[Literal["efron", "breslow", "exact", "kalbfleisch-prentice"]] = Field(
+        default=None, description="How tied failure times are handled (default efron).")
+    strata_column: Optional[str] = Field(
+        default=None, description="A dataset column to stratify on: each of its levels gets its own baseline "
+                                  "hazard and no coefficient (site, batch). Not one of the covariates.")
+    cluster_column: Optional[str] = Field(
+        default=None, description="A dataset column grouping rows that aren't independent (a unit or site id): "
+                                  "diagnostics.robust then gives standard errors clustered by it.")
+
+
 class DemandBatch(BaseModel):
     demands: int = Field(ge=1, description="Demands (trials) in this batch: proof tests, starts, activations.")
     failures: int = Field(ge=0, description="Failures among those demands (0 to demands).")
@@ -830,8 +844,8 @@ def _fit_summary(result: dict) -> dict:
     elif failed:
         # #215: a median of 7.7e19 from a fit that didn't converge isn't a result.
         out["metrics_omitted"] = "The fit didn't converge, so no life metrics are given."
-    for key in ("extra_params", "coefficients", "randomness", "options", "validation", "gof_note",
-                "mixture_summary"):
+    for key in ("extra_params", "coefficients", "randomness", "options", "validation", "diagnostics",
+                "gof_note", "mixture_summary"):
         if result.get(key):
             out[key] = result[key]
     # #265: how the parameter intervals are taken; why a regression model has
@@ -890,7 +904,14 @@ def get_model(
     Regression models also report `validation` (how good is this model?): Harrell's C with a plain
     reading (0.5 = coin toss, 1 = perfect ranking), the integrated Brier score against one
     Kaplan-Meier curve for every unit (lower is better), and the time-dependent AUC at the failure-time
-    quartiles — or `available: false` with the reason."""
+    quartiles — or `available: false` with the reason. They also report `diagnostics` (does the model's
+    assumption hold?): `ph_test`, the Grambsch-Therneau proportional-hazards test — a plain `title` and
+    `reading` first (verdict holds / check / fails), then one row per covariate and the GLOBAL row (chi-square,
+    df, p; a small p says that covariate's effect changes over time). A parametric PH model is tested with a
+    Cox model on the same covariates; AFT, PO and AH models say it doesn't apply. Cox PH models add `robust`
+    (sandwich standard errors, clustered when the fit named a cluster column, with robust 95% hazard-ratio
+    intervals and a verdict), `ties` (the tie method) and, when stratified, `strata`. For the reliability band
+    and B-lives at chosen covariates use reliability_at."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
@@ -914,6 +935,8 @@ def get_model(
             out["covariates"] = r["functions"]["covariates"]
         if m.kind == "regression":
             out["validation"] = models_service.ensure_validation(db, m)
+            # #61: does the model's assumption hold?
+            out["diagnostics"] = checks_service.ensure_diagnostics(db, m)
         # #265: interval scale, regression life metrics and covariate units.
         for key in ("ci_note", "metrics_note", "covariate_units"):
             if r.get(key):
@@ -1007,6 +1030,9 @@ _FitCovariateUnits = Annotated[Optional[dict[str, str]], Field(
     description="Optional: the unit of each covariate, e.g. {\"temp_C\": \"°C\", \"load\": \"kN\"} — regression "
                 "fits only. Shown with the coefficients (per unit of the covariate) and the covariate inputs, and "
                 "kept with a saved model.")]
+_FitCoxOptions = Annotated[Optional[CoxOptions], Field(
+    description="cox_ph only, with a dataset: the tie method, a column to stratify on and a column to cluster the "
+                "robust standard errors by.")]
 _FitIncludeMixtures = Annotated[bool, Field(
     description="With distribution='best' only: let two-component Weibull and LogNormal mixtures compete "
                 "with the single distributions (two failure modes in one dataset, an S-curve on probability "
@@ -1127,7 +1153,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
               censor_column, count_column, covariates, unit, data_right, trunc_left, trunc_right,
               time_right_column, trunc_left_column, trunc_right_column, method,
               save: bool, name: str | None, include_mixtures: bool = False,
-              covariate_units: dict | None = None) -> dict[str, Any]:
+              covariate_units: dict | None = None, cox_options: CoxOptions | None = None) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     if covariate_units:
@@ -1205,6 +1231,13 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             raise ToolError("include_mixtures applies to distribution='best' only. To fit a mixture on "
                             "purpose, use distribution='mixture'.")
         options["include_mixtures"] = True
+    if cox_options is not None:
+        cox = {k: v for k, v in (("tie_method", cox_options.tie_method), ("strata", cox_options.strata_column),
+                                 ("cluster", cox_options.cluster_column)) if v}
+        if cox and dataset is None:
+            raise ToolError("cox_options need a dataset (their columns are dataset columns) — pass dataset_id.")
+        if cox:
+            options[COX_KEY] = cox
     options = options or None
 
     checks = _censor_checks(df, mapping, c_invert, censor_column)
@@ -1274,6 +1307,7 @@ def fit_distribution(
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
     covariate_units: _FitCovariateUnits = None,
+    cox_options: _FitCoxOptions = None,
 ) -> dict[str, Any]:
     """Fit a life distribution to failure data with SurPyval and report fitted parameters (with 95% CIs),
     goodness of fit (log-likelihood, AIC, BIC), and life metrics (median, MTTF, B10). Saves nothing — use
@@ -1285,13 +1319,16 @@ def fit_distribution(
     every (or all but one) row is censored almost always means the flags are inverted; censoring gives the failures
     and censored units the fit used — check them against what the user said. Weibull beta < 1 = infant
     mortality, ≈ 1 = random failures, > 1 = wear-out. Regression fits also report `validation`: how good
-    the model is (Harrell's C, Brier score against no covariates, time-dependent AUC; see get_model)."""
+    the model is (Harrell's C, Brier score against no covariates, time-dependent AUC; see get_model), and
+    `diagnostics`: whether its assumption holds (the proportional-hazards test with a verdict, robust standard
+    errors for Cox PH, ties and strata; see get_model)."""
     return _fit(ctx, distribution=distribution, data=data, data_right=data_right, censored=censored,
                 counts=counts, trunc_left=trunc_left, trunc_right=trunc_right, c_invert=c_invert,
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=False, name=None, covariate_units=covariate_units)
+                include_mixtures=include_mixtures, save=False, name=None, covariate_units=covariate_units,
+                cox_options=cox_options)
 
 
 @_tool("fit_and_save_model", _WRITE, "Fit and save a model")
@@ -1318,6 +1355,7 @@ def fit_and_save_model(
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
     covariate_units: _FitCovariateUnits = None,
+    cox_options: _FitCoxOptions = None,
     demand_batches: Annotated[Optional[list[DemandBatch]], Field(
         min_length=1, description=(
             "Save a per-demand (one-shot) model instead of a life distribution: one {demands, failures, "
@@ -1349,7 +1387,8 @@ def fit_and_save_model(
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=True, name=name, covariate_units=covariate_units)
+                include_mixtures=include_mixtures, save=True, name=name, covariate_units=covariate_units,
+                cox_options=cox_options)
 
 
 def _per_demand_summary(result: dict) -> dict:
@@ -1563,6 +1602,8 @@ def _reliability_bounds(db, m, ts: list[float], owners, ev: dict, confidence: fl
     if live is None:
         return None, None, (f"No {level} bounds: the data this model was fitted to is no longer available, "
                             "so its covariance can't be recovered.")
+    if m.kind == "regression" and not regression_bands.has_bands(live):
+        return None, None, f"No {level} bounds. {regression_bands.no_bands_note(results) or ''}".strip()
     if not hasattr(live, "cb"):
         return None, None, (f"No {level} bounds: this model type ({results.get('distribution') or dist_id}) "
                             "doesn't provide covariance-based confidence bounds.")
@@ -1582,8 +1623,8 @@ def _reliability_bounds(db, m, ts: list[float], owners, ev: dict, confidence: fl
             "confidence bounds from the fit's covariance — the same method as the app's confidence band — "
             "computed at exactly these times.")
     if m.kind == "regression":
-        note += (" For this proportional-hazards model they're at the covariate values used; the app's "
-                 "calculator doesn't draw a band for these models.")
+        note += (" For this regression model they're at the covariate values used, as the app's calculator "
+                 "draws its band.")
     return r, f, note
 
 
@@ -1612,8 +1653,10 @@ def reliability_at(
     interpolated on their stored curve (method=interpolated). Proportional-hazards models report the
     covariate values used (the fit's defaults for any not given). With `confidence` (e.g. 0.95), each
     time also gets two-sided confidence bounds on R(t) and F(t) — quote those alongside the point values;
-    models without a covariance (non-parametric, mixtures, parameters saved without data) get null bounds
-    and a bounds_note saying why."""
+    models without a covariance (non-parametric, mixtures, parameters saved without data, Cox PH) get null
+    bounds and a bounds_note saying why. Regression models also report `life` at those covariates: B1, B5,
+    B10, B50 and the MTTF, each B-life with its one-sided lower bound at `confidence` (90% if not given) — or,
+    for Cox PH, a note on why there are none."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
@@ -1707,7 +1750,34 @@ def reliability_at(
             p["failure_bounds"] = f_bounds[i] if f_bounds else None
         out["confidence"] = float(confidence)
         out["bounds_note"] = bounds_note
+    if m.kind == "regression" and not (m.results or {}).get("no_finite_maximum"):
+        life = _regression_life(db, m, owners, out.get("covariates_used"), confidence)
+        if life is not None:
+            out["life"] = life
     return out
+
+
+def _regression_life(db, m, owners, covariates: Optional[dict], confidence: Optional[float]) -> Optional[dict]:
+    """A regression model's B1, B5, B10, B50 and MTTF at the covariates used
+    (#54), each B-life with its one-sided lower bound at ``confidence`` (90%
+    when not given) — SurPyval's qf / quantile_cb / mean at that row. Cox PH
+    has none: ``{"note"}`` says why. None when it can't be had."""
+    try:
+        entry = models_service.get_live_model(db, m.id, owners)
+    except Exception:  # noqa: BLE001 - B-lives are a convenience here
+        return None
+    if not entry or entry.get("model") is None:
+        return None
+    if not regression_bands.has_bands(entry["model"]):
+        return {"note": regression_bands.SEMI_PARAMETRIC_LIFE_NOTE}
+    level = confidence if confidence is not None else life_bounds.DEFAULT_CONFIDENCE
+    try:
+        life = regression_bands.life_answer(entry["model"], entry.get("fields") or [],
+                                            {"covariates": covariates or {}, "confidence": level})
+    except (ValueError, TypeError):
+        return None
+    life.pop("covariates", None)  # the same as covariates_used
+    return life
 
 
 # ---------------------------------------------------------------------------
