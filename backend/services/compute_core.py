@@ -56,7 +56,7 @@ import json
 import math
 from typing import Any, Callable, Optional
 
-from backend.services import rbd_analysis, rbd_intervals, rbd_sensitivity
+from backend.services import rbd_analysis, rbd_intervals, rbd_measures, rbd_sensitivity
 
 # Node-data keys holding a life/repair model spec.
 _MODEL_KEYS = ("model", "repair", "standbyModel")
@@ -227,7 +227,7 @@ def sensitivity_request(graph: dict, **options) -> Optional[dict]:
     return {"graph": inline_graph(graph), "options": rbd_sensitivity.options(**options)}
 
 
-_SENSITIVITY_OPTIONS = frozenset({"window", "step", "rank_by", "order", "costs", "n_simulations", "seed"})
+_SENSITIVITY_OPTIONS = frozenset({"window", "step", "rank_by", "order", "costs", "n_simulations", "seed", "limits"})
 
 
 def run_sensitivity(request: dict) -> dict:
@@ -280,6 +280,34 @@ def run_intervals(request: dict) -> dict:
     if unknown:
         raise InvalidRequest(f"Unknown options: {', '.join(sorted(unknown))}.")
     return rbd_intervals.optimise(graph, resolve_model=_no_saved_models, **options)
+
+
+def measures_request(graph: dict, fits: dict, fixed: list, **options) -> Optional[dict]:
+    """A self-contained request for one of what to improve's other measures
+    (#225, #325): ``{"graph", "options", "fits", "fixed"}``, the saved
+    models' fits (their parameters and covariance) inlined, as there is no
+    database here; or None when the graph needs saved models re-fitted."""
+    if needs_saved_models(graph):
+        return None
+    return {"graph": inline_graph(graph), "options": rbd_measures.options(**options),
+            "fits": json.loads(json.dumps(fits or {}, default=float)), "fixed": list(fixed or [])}
+
+
+def run_measures(request: dict) -> dict:
+    """Run a self-contained measures request (#225): the uncertainty's Sobol
+    indices or its figures over time over draws, or another measure."""
+    if not isinstance(request, dict) or not isinstance(request.get("graph"), dict):
+        raise InvalidRequest("The request needs a graph.")
+    graph = request["graph"]
+    if not graph.get("repairable"):
+        raise InvalidRequest("Only repairable (availability) diagrams are computed here.")
+    options = request.get("options") or {}
+    fits = request.get("fits") or {}
+    if not isinstance(options, dict) or not isinstance(fits, dict):
+        raise InvalidRequest("options and fits must be objects.")
+    checked = rbd_measures.options(**options)
+    return rbd_measures.analyze_measure(graph, resolve_model=_no_saved_models, fits=fits,
+                                        fixed=request.get("fixed") or [], **checked)
 
 
 def _wire_array(values) -> list:
@@ -369,6 +397,8 @@ RUNNERS: dict[str, Callable[[dict], dict]] = {
     "availability": run_availability,
     "sensitivity": run_sensitivity,
     "intervals": run_intervals,
+    # What to improve's other measures (#225): heavy uncertainty runs.
+    "measures": run_measures,
     # ALT bootstrap confidence bounds at a use stress (#231).
     "alt_bounds": run_alt_bounds,
 }
