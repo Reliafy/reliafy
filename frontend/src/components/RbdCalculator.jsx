@@ -16,6 +16,7 @@ import RbdPfdChart from "./RbdPfdChart.jsx";
 import { pctAt, pctDigits, precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
 import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
+import RbdProduction from "./RbdProduction.jsx";
 import WhatToImprove from "./WhatToImprove.jsx";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
@@ -791,7 +792,7 @@ function windowWords(window, unit, label = null) {
 // Also used by the public read-only view.
 export function AvailabilityView({ result, unit, graph = null, onSimulate = null, onCompute = null, busy = null,
                                   onQuick = null, capMessage = null, job = null, windowLabel = null, top = null,
-                                  improve = null, more = null }) {
+                                  improve = null, more = null, production = null }) {
   const u = unit ? ` ${unitInText(unit)}` : "";
   const hpu = hoursPerUnit(unit);
   // A result saved before #154 is a simulation result (no has_simulation flag).
@@ -970,6 +971,9 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           )}
         </div>
       )}
+      {/* Production availability (#122), for a diagram with capacities: a
+          second answer, so it sits under the first. */}
+      {production}
       {chart}
       {!needsSim && improve}
 
@@ -1273,7 +1277,8 @@ const WINDOW_PRESETS = [
   { id: "5y", label: "5 years", hours: 43800 },
 ];
 
-export default function RbdCalculator({ graph, validation, stale, onValidate = null, rbdId = null, name = null, onBuild }) {
+export default function RbdCalculator({ graph, validation, stale, onValidate = null, rbdId = null, name = null, onBuild,
+                                        onProduction = null }) {
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | calculating | error
   const [error, setError] = useState(null);
@@ -1889,6 +1894,9 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
           top={top}
           improve={<WhatToImprove graph={graph} rbdId={rbdId} result={result} onTop={setTop} />}
           more={<AvailabilityCompare graph={graph} rbdId={rbdId} result={result} />}
+          production={
+            <RbdProduction graph={graph} t={result.exact?.window ?? result.t_simulation ?? null} onProduction={onProduction} />
+          }
         />
       )}
       {result && !stale && result.kind === "repairable" && result.quick && !result.can_recompute && (
@@ -1910,6 +1918,9 @@ export default function RbdCalculator({ graph, validation, stale, onValidate = n
           name={name}
           onBandTargets={band.on ? (targets) => { setBand((b) => ({ ...b, ...targets })); setBandRerun((n) => n + 1); } : null}
         />
+      )}
+      {result && !stale && result.kind !== "repairable" && (
+        <RbdProduction graph={graph} t={evalT === "" ? null : Number(evalT)} onProduction={onProduction} />
       )}
 
       {showCov && (

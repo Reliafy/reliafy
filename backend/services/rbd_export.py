@@ -853,12 +853,25 @@ def to_python(
     imports = _imports(script, repairable)
     helpers = _helpers(script)
     parts = [helpers] if helpers else []
+    production = _production_main(graph)
+    if production:
+        # Production availability (#122): after main(), on the same diagram.
+        body = body.replace(_MAIN_CALL, production)
     parts.append(body)
     # PEP 8: two blank lines around top-level definitions.
     text = (header + "\n\n" + imports + "\n\n\n"
             + "\n\n\n".join(p.strip("\n") for p in parts) + "\n")
     # Collapse runs of blank lines (PEP 8: at most two).
     return re.sub(r"\n{4,}", "\n\n\n", text)
+
+
+_MAIN_CALL = 'if __name__ == "__main__":\n    main()'
+
+
+def _production_main(graph: dict):
+    from backend.services import rbd_capacity
+
+    return rbd_capacity.export_main(graph)
 
 
 def _command_lines(commands: list[str]) -> list[str]:
@@ -1047,6 +1060,7 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
         io.append(f"input_node={_lit(s['input'])}")
     if s["output"]:
         io.append(f"output_node={_lit(s['output'])}")
+    io += _capacity_lines(graph, out)
     io_args = "".join(f"    {a},\n" for a in io)
     if s["ccf"]:
         script.imports.update(_ccf_imports(s["ccf"]))
@@ -1108,6 +1122,19 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
     out.append("")
     out.append(_NONREPAIRABLE_MAIN.replace("__IMP__", imp_rbd).strip("\n"))
     return "\n".join(out)
+
+
+def _capacity_lines(graph: dict, out: list[str]) -> list[str]:
+    """Block capacities and the demand (#122): their constants appended to
+    ``out``, and the constructor argument that passes them on."""
+    from backend.services import rbd_capacity
+
+    lines = rbd_capacity.export_lines(graph)
+    if not lines:
+        return []
+    out += lines
+    out.append("")
+    return ["capacity=CAPACITY"]
 
 
 def _pins(s: dict) -> list[str]:
@@ -1451,6 +1478,7 @@ def _repairable_body(script: _Script, graph) -> str:
     if "output" in node_ids:
         io.append("output_node='output'")
     io += rbd_export_costs.rbd_kwargs(graph)
+    io += _capacity_lines(graph, out)
     if ccf:
         # Common-cause groups (#226): followed over time, in every figure, or
         # left out of every figure where RePyability refuses them (main()).

@@ -11,6 +11,7 @@ import useModelSummary from "./useModelSummary.js";
 import { formatNumber } from "../format.js";
 import RbdMixtureBuilder, { isMixture } from "./RbdMixtureBuilder.jsx";
 import RbdRepairQuality from "./RbdRepairQuality.jsx";
+import RbdCapacityFold from "./RbdCapacityFields.jsx";
 
 // "Mean 13.6 h · median 12 h" under a model's inputs, so what the parameters
 // mean is visible as they're typed (#299): SurPyval's mean and median.
@@ -61,7 +62,7 @@ function Fold({ title, summary, open: initialOpen, children }) {
 // safety function the proof test comes straight after Failure, open, and the
 // costs stay folded. Pre-filled with the node's current models.
 export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false, crews = false, groups = [],
-                                         safety = false }) {
+                                         safety = false, capacity = false }) {
   const [name, setName] = useState(initial?.label ?? "");
   const [model, setModel] = useState(initial?.model ?? null);
   const [repair, setRepair] = useState(initial?.repair ?? null);
@@ -73,17 +74,21 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
   const [mixture, setMixture] = useState(isMixture(initial?.model) && initial?.model?.source !== "saved");
   // Imperfect repair / replacement at the N-th failure (#68).
   const [quality, setQuality] = useState({ value: initial?.repair_quality ?? null, valid: true });
-  const valid = model && (!repairable || repair || instant) && extras.valid && quality.valid;
+  // Throughput while it works (#122): its own section, for component blocks.
+  const [cap, setCap] = useState({ value: initial?.capacity ?? null, valid: true });
+  const valid = model && (!repairable || repair || instant) && extras.valid && quality.valid && cap.valid;
+  const capExtras = capacity ? { capacity: cap.value } : {};
 
   const submit = () => {
     if (!valid) return;
     const label = name.trim() || initial?.label;
-    if (!repairable) return onSubmit({ model, repair: undefined, label });
+    if (!repairable) return onSubmit({ model, repair: undefined, label, extras: capacity ? capExtras : undefined });
     onSubmit({
       label,
       model,
       repair: instant ? repair ?? undefined : repair,
-      extras: { ...(extras.extras || {}), instant_repair: instant || null, repair_quality: quality.value },
+      extras: { ...(extras.extras || {}), instant_repair: instant || null, repair_quality: quality.value,
+                ...capExtras },
     });
   };
 
@@ -169,6 +174,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
           <CostFields ctl={ctl} unit={unit} />
         </Fold>
       )}
+      {capacity && !safety && <RbdCapacityFold initial={initial?.capacity} onChange={setCap} />}
       {repairable && <ExtrasErrors ctl={ctl} />}
     </Modal>
   );

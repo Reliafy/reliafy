@@ -56,6 +56,9 @@ MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection", "rcm_
                     "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality")
 #: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
 DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil")
+#: A block's capacity and the diagram's demand (#122, :mod:`.rbd_capacity`).
+CAPACITY_KEYS = ("capacity",)
+PRODUCTION_KEYS = ("production",)
 
 
 class GraphError(ValueError):
@@ -464,7 +467,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
 
     data = dict(raw.get("data") or {})
     for key in ("label", "model", "repair", "n", "k", "spares", "cold", "dormancy",
-                "standbyModel", "startProb", "repeat_of") + MAINTENANCE_KEYS:
+                "standbyModel", "startProb", "repeat_of") + MAINTENANCE_KEYS + CAPACITY_KEYS:
         if raw.get(key) is not None and key not in data:
             data[key] = raw[key]
     if raw.get("subsystem_rbd_id") and "rbd" not in data:
@@ -489,6 +492,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
         if spec and isinstance(spec.get("duration"), dict):
             data[key] = {**spec, "duration": _inline_model(spec["duration"], f"{where} {key} duration")}
     check_counts(ntype, data, where)
+    _check_capacity(ntype, data, where)
     if not data.get("label"):
         data["label"] = "Input" if ntype == "input" else "Output" if ntype == "output" else nid
 
@@ -498,6 +502,22 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
     elif ntype == "output":
         node.update(targetPosition="left", deletable=False, className="rbd-node rbd-io")
     return node
+
+
+def _check_capacity(ntype: str, data: dict, where: str) -> None:
+    """A block's capacity, checked and stored as :mod:`.rbd_capacity` reads
+    it (#122)."""
+    from backend.services import rbd_capacity
+
+    if data.get("capacity") in (None, "", []):
+        data.pop("capacity", None)
+        return
+    if ntype not in rbd_capacity.CAPACITY_TYPES:
+        raise GraphError(f"{where}: only component and standby blocks take a capacity.")
+    try:
+        data["capacity"] = rbd_capacity.parse_capacity(data["capacity"], where)
+    except rbd_capacity.CapacityError as exc:
+        raise GraphError(str(exc)) from None
 
 
 def make_edge(source: str, target: str, edge_id: str) -> dict:
@@ -553,6 +573,15 @@ def normalize_graph(
     for key in DIAGRAM_KEYS:
         if graph.get(key):
             out[key] = graph[key]
+    if graph.get("production"):
+        from backend.services import rbd_capacity
+
+        try:
+            production = rbd_capacity.parse_production(graph["production"])
+        except rbd_capacity.CapacityError as exc:
+            raise GraphError(str(exc)) from None
+        if production:
+            out["production"] = production
     return out
 
 
@@ -577,7 +606,8 @@ def compact_graph(graph: dict) -> dict:
                 if m.get("extras") and not m.get("modelId"):
                     cm["extras"] = m["extras"]
                 node[key] = cm
-        for key in ("n", "k", "spares", "cold", "dormancy", "startProb", "repeat_of") + MAINTENANCE_KEYS:
+        for key in ("n", "k", "spares", "cold", "dormancy", "startProb", "repeat_of") + MAINTENANCE_KEYS \
+                + CAPACITY_KEYS:
             if d.get(key) is not None:
                 node[key] = d[key]
         if isinstance(d.get("rbd"), dict) and d["rbd"].get("id"):
@@ -589,7 +619,7 @@ def compact_graph(graph: dict) -> dict:
         out["repairable"] = True
     if graph.get("ccf_groups"):
         out["ccf_groups"] = graph["ccf_groups"]
-    for key in DIAGRAM_KEYS:
+    for key in DIAGRAM_KEYS + PRODUCTION_KEYS:
         if graph.get(key):
             out[key] = graph[key]
     return out

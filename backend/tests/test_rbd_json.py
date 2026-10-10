@@ -466,9 +466,12 @@ def test_what_reliafy_cant_hold_is_listed_and_left_without_a_model():
     )
     [d] = _import(rbd.to_json())
     notes = " ".join(d.warnings)
-    assert "capacities" in notes
+    assert "capacities" not in notes and "MGL" not in notes
     # MGL on a pair is the beta factor (#84): it comes across as a group.
     assert [g["beta"] for g in d.graph["ccf_groups"]] == [0.1]
+    # Capacities come onto the blocks drawn for them (#122).
+    caps = {n["data"].get("label"): n["data"].get("capacity") for n in d.graph["nodes"]}
+    assert caps["a"] == 1.0 and caps["b"] == 2.0
     # A Uniform is a Reliafy distribution since #72: it comes across as one.
     assert "“c” was imported without" not in notes
     c = next(n for n in d.graph["nodes"] if n["id"] == "c" or n["data"].get("label") == "c")

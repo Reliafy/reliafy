@@ -990,6 +990,27 @@ export function applyRbdDesign({ graph, blocks, design, t }) {
   });
 }
 
+// What each block needs for the system to meet a target (#53): a reliability
+// at ``t`` (non-repairable) or a long-run availability (repairable). A 422
+// for an unreachable target carries ``err.data.reachable``.
+export function allocateRbd({ graph, target, method, t = null, options = {} }) {
+  return request("/api/rbds/allocate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, target, method, t, options }),
+  });
+}
+
+// The production availability (#122): the capacity distribution and the
+// share of the demand delivered — ``{production: null}`` without capacities.
+export function rbdProduction(graph, t = null) {
+  return request("/api/rbds/production", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph, t }),
+  });
+}
+
 
 // ---- Degradation & RUL -------------------------------------------------------
 

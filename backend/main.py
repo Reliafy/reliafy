@@ -51,6 +51,8 @@ from backend.routers import rbd_block_check as rbd_block_check_router
 from backend.routers import rbd_compare as rbd_compare_router
 from backend.routers import rbd_fault_tree as rbd_fault_tree_router
 from backend.routers import rbd_design as rbd_design_router
+from backend.routers import rbd_allocation as rbd_allocation_router
+from backend.routers import rbd_capacity as rbd_capacity_router
 from backend.routers import rbd_costs as rbd_costs_router
 from backend.routers import rbd_sensitivity as rbd_sensitivity_router
 from backend.routers import rbd_intervals as rbd_intervals_router
@@ -204,6 +206,8 @@ app.include_router(rbd_compare_router.router)
 app.include_router(rbd_block_check_router.router)
 app.include_router(rbd_fault_tree_router.router)
 app.include_router(rbd_design_router.router)
+app.include_router(rbd_allocation_router.router)
+app.include_router(rbd_capacity_router.router)
 app.include_router(rbd_costs_router.router)
 app.include_router(rbd_sensitivity_router.router)
 app.include_router(rbd_intervals_router.router)
