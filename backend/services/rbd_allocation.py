@@ -174,6 +174,12 @@ def _engine_error(exc: Exception, labels: dict, measure: str, target: float) -> 
         return AllocationError(
             "Minimum effort works on a series system only (every block on the one path). This diagram has "
             "redundancy: use cost-based or improvement allocation instead.")
+    if "No component can be allocated an availability" in text:
+        # The engine keeps more blocks than its message names (#84, #282).
+        return AllocationError(
+            "No block can be allocated an availability: only blocks with corrective repair alone can, so not "
+            "those with scheduled maintenance or proof tests, standby groups, sub-systems, members of a "
+            "common-cause group or fixed blocks.")
     text = rbd_analysis._with_labels(text, labels)
     return AllocationError(text[:1].upper() + text[1:])
 
@@ -275,6 +281,11 @@ def _repairable(graph, target, method, options, resolve_model) -> dict:
         current = {nid: float(v) for nid, v in rbd.node_availability().items() if nid in blocks}
         system_now = float(rbd.mean_availability())
     except (ValueError, NotImplementedError) as exc:
+        from backend.services import rbd_repair_quality
+
+        imperfect = rbd_repair_quality.exact_only_message(graph, "target allocation")
+        if imperfect:
+            raise AllocationError(imperfect) from None
         raise _engine_error(exc, labels, "availability", target) from None
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")

@@ -233,7 +233,10 @@ def production(
         try:
             long_run = rbd.capacity_distribution(working_nodes=working or None, broken_nodes=broken or None)
         except (ValueError, NotImplementedError) as exc:
-            raise CapacityError(_message(exc, labels)) from None
+            from backend.services import rbd_repair_quality
+
+            raise CapacityError(rbd_repair_quality.exact_only_message(graph, "production availability")
+                                or _message(exc, labels)) from None
         out["basis"] = "long_run"
         out.update(_summary(long_run, demand))
         if demand is not None:

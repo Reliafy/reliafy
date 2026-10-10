@@ -157,6 +157,22 @@ def labels_with(graph: dict) -> list[str]:
             if n.get("type") == "component" and is_imperfect(n.get("data") or {})]
 
 
+def exact_only_message(graph: dict, what: str) -> Optional[str]:
+    """Why an exact-only figure (``what``: "production availability", "target
+    allocation") isn't given for a diagram with blocks repaired imperfectly:
+    such a block has no exact long-run values, and the figure has no
+    simulated route. None when no block is repaired imperfectly."""
+    names = labels_with(graph)
+    if not names:
+        return None
+    one = len(names) == 1
+    which = ", ".join(f"“{n}”" for n in names[:3]) + (" and others" if len(names) > 3 else "")
+    it = "it" if one else "them"
+    return (f"The {what} is worked out exactly, and {which} {'is' if one else 'are'} repaired imperfectly: a "
+            f"repair doesn't renew {it}, so there are no exact long-run values. Give {it} perfect repair to see "
+            f"the {what}.")
+
+
 def script_entries(data: dict, label: str) -> list[str]:
     """The spec entries "Download as Python" writes for it."""
     entries = spec_entries(data, label)
