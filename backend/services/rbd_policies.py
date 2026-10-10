@@ -295,6 +295,10 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
     )
     if out["target_sil"] is not None:
         out["meets_target"] = out["sil"] is not None and out["sil"] >= out["target_sil"]
+    # The PFDavg (the library's unavailability) against the band's limit (#322).
+    from backend.services import rbd_unavailability
+
+    out["margin"] = rbd_unavailability.margin(out["pfd_avg"], out["target_sil"], out["sil"])
     return out
 
 
