@@ -55,7 +55,8 @@ export function setInstantRepair(nodes, on) {
 // The steps the auto-layout uses between columns and rows.
 export const STEP_X = 280;
 export const STEP_Y = 150;
-const BLOCK = { w: 200, h: 95 };
+// A block's size before React Flow has measured it (a component's, as drawn).
+const BLOCK = { w: 171, h: 95 };
 const JUNCTION_W = 26;
 const PAD = 16;
 
@@ -271,7 +272,7 @@ export function insertAlongside({ nodes, edges }, order, block, { junctionId, ju
     const lastNode = byId.get(last);
     const jy = (lastNode.position.y + sizeOf(lastNode).h / 2 + placed.position.y + sz.h / 2) / 2 - BLOCK.h / 2;
     const junction = { id: junctionId, type: "knode", data: { n: 1, k: 2 }, position: { x: 0, y: 0 } };
-    const jx = lastNode.position.x + sizeOf(lastNode).w + (STEP_X - BLOCK.w) / 2;
+    const jx = lastNode.position.x + sizeOf(lastNode).w + (STEP_X - BLOCK.w - JUNCTION_W) / 2;
     const spot = place(nextNodes, junction, { x: jx, y: jy }, downstreamOf(edges, [last]));
     nextNodes = [...spot.nodes, { ...junction, position: spot.position }];
     nextEdges = [
