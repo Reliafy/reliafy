@@ -3525,7 +3525,9 @@ def analyze_rbd(
     the long-run values were found (long_run_method: exact / numerical / simulated, e.g. the repair crews'
     Markov chain), the repair crews, for a safety function its PFDavg and SIL band (safety: whether common
     cause is in it, common_cause_included; with no proof-tested block, a warning that the PFDavg and SIL are
-    optimistic), common-cause groups in every figure where RePyability follows them over time (the headline
+    optimistic; safety.shares: each element's share of the PFDavg (pfd_share, Fussell–Vesely: a common cause
+    sits in its members' shares) and of the dangerous failures (failure_share, adding up to 1 with each
+    common-cause group's on a row of its own)), common-cause groups in every figure where RePyability follows them over time (the headline
     `availability` says common_cause_included, with the long run without_common_cause alongside; where they're
     refused, common_cause.note says why and every figure leaves them out — a safety function's PFDavg may still
     include them, and then leads the headline), proof_test_note when A(t) saw-tooths with proof tests, and (in
