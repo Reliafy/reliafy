@@ -8,6 +8,7 @@ import {
 import { RbdUnitContext } from "./RbdNodes.jsx";
 import { modelMean, modelMedian, unitAbbr } from "./rbdModelText.js";
 import { formatNumber } from "../format.js";
+import RbdCapacityFold from "./RbdCapacityFields.jsx";
 
 // "Mean 13.6 h · median 12 h" under a model's inputs, so what the parameters
 // mean is visible as they're typed (#299).
@@ -42,22 +43,25 @@ function Fold({ title, summary, open: initialOpen, children }) {
 // safety function the proof test comes straight after Failure, open, and the
 // costs stay folded. Pre-filled with the node's current models.
 export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false, crews = false, groups = [],
-                                         safety = false }) {
+                                         safety = false, capacity = false }) {
   const [model, setModel] = useState(initial?.model ?? null);
   const [repair, setRepair] = useState(initial?.repair ?? null);
   const [instant, setInstant] = useState(!!initial?.instant_repair);
   const [extras, setExtras] = useState({ extras: null, valid: true });
   const ctl = useBlockExtras(initial, setExtras);
   const unit = useContext(RbdUnitContext) || "";
-  const valid = model && (!repairable || repair || instant) && extras.valid;
+  // Throughput while it works (#122): its own section, for component blocks.
+  const [cap, setCap] = useState({ value: initial?.capacity ?? null, valid: true });
+  const valid = model && (!repairable || repair || instant) && extras.valid && cap.valid;
+  const capExtras = capacity ? { capacity: cap.value } : {};
 
   const submit = () => {
     if (!valid) return;
-    if (!repairable) return onSubmit({ model, repair: undefined });
+    if (!repairable) return onSubmit({ model, repair: undefined, extras: capacity ? capExtras : undefined });
     onSubmit({
       model,
       repair: instant ? repair ?? undefined : repair,
-      extras: { ...(extras.extras || {}), instant_repair: instant || null },
+      extras: { ...(extras.extras || {}), instant_repair: instant || null, ...capExtras },
     });
   };
 
@@ -128,6 +132,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
           <CostFields ctl={ctl} unit={unit} />
         </Fold>
       )}
+      {capacity && !safety && <RbdCapacityFold initial={initial?.capacity} onChange={setCap} />}
       {repairable && <ExtrasErrors ctl={ctl} />}
     </Modal>
   );

@@ -1,5 +1,6 @@
 import { useContext, useState } from "react";
 import Modal from "./Modal.jsx";
+import RbdCapacityFold from "./RbdCapacityFields.jsx";
 import ModelPicker from "./ModelPicker.jsx";
 import { BlockCostSection } from "./RbdBlockCosts.jsx";
 import { RbdUnitContext } from "./RbdNodes.jsx";
@@ -49,7 +50,9 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
   const validProb = !cold || (probNum >= 0 && probNum <= 1);
   const dormNum = Number(dormancy);
   const validDorm = kind !== "warm" || (dormNum > 0 && dormNum < 1);
-  const valid = validSpares && validProb && validDorm && (!repairable || (repair && extras.valid));
+  // The running unit's throughput (#122): one unit runs at a time.
+  const [cap, setCap] = useState({ value: initial?.capacity ?? null, valid: true });
+  const valid = validSpares && validProb && validDorm && (!repairable || (repair && extras.valid)) && cap.valid;
 
   const submit = () => {
     if (!valid) return;
@@ -61,6 +64,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
       startProb: cold ? probNum : 1,
       // A repairable group's units are identical: no separate spare model.
       standbyModel: cold && !repairable ? standbyModel : null,
+      capacity: cap.value,
     };
     if (repairable) {
       Object.assign(config, { repair, repair_one_at_a_time: oneAtATime || null, ...(extras.extras || {}) });
@@ -178,6 +182,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
         <BlockCostSection initial={initial} onChange={setExtras} unit={unit} crews={crews && !oneAtATime}
                           mode="standby" />
       )}
+      <RbdCapacityFold initial={initial?.capacity} onChange={setCap} />
     </Modal>
   );
 }
