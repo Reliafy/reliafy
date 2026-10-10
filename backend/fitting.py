@@ -1267,7 +1267,12 @@ def fit(
     if c_invert:
         df = invert_censor_column(df, mapping["c"])
     options = normalize_options(distribution, options)
-    if distribution in REGRESSION_MODELS:
+    if mapping.get("i"):
+        # #60: an item column means covariates that change over time.
+        from backend import tvc
+
+        result = tvc.fit(distribution, df, mapping, covariates, formula, covariate_units)
+    elif distribution in REGRESSION_MODELS:
         result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units)
     elif distribution == BEST_ID:
         result = _fit_best(df, mapping, options)
