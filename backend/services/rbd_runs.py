@@ -6,8 +6,11 @@ calculation service ran, or (with no queue configured, or for a diagram whose
 saved models must be re-fitted) a run in the web app's own process, recorded
 done at once. A record keeps the self-contained request (the diagram and the
 run's options), the free exact figures it is shown with, the result (with its
-bands and precision) and its timings, for ``RBD_RUN_TTL_DAYS`` after it
-finishes (``RBD_JOB_TTL_DAYS`` unless set).
+bands and precision) and its timings, for ``kept_days`` after it finishes:
+set when the run starts from its owner's plan then — ``RBD_RUN_TTL_DAYS`` on
+the free plan (``RBD_JOB_TTL_DAYS`` unless set), ``RBD_RUN_PRO_TTL_DAYS`` on
+Pro or on a team's diagram. Records from before ``kept_days`` keep the
+free period. Other kinds of job keep ``RBD_JOB_TTL_DAYS``.
 
 Fields added by #112 / #286, on records from then on only (older ones lack
 them and read as "not recorded"):
@@ -61,21 +64,80 @@ def _iso(dt) -> Optional[str]:
 
 
 def ttl_days() -> int:
-    """How long finished runs are kept."""
+    """How long a free plan's finished runs are kept (and a run recorded
+    before plans set it)."""
     return int(getattr(config, "RBD_RUN_TTL_DAYS", None) or config.RBD_JOB_TTL_DAYS)
+
+
+def pro_ttl_days() -> int:
+    """How long a Pro or team plan's finished runs are kept."""
+    return int(getattr(config, "RBD_RUN_PRO_TTL_DAYS", None) or ttl_days())
+
+
+def long_history(db, user: dict, team_owner: Optional[str] = None) -> bool:
+    """Whether runs are kept for the Pro period: the user may edit as Pro
+    does (Pro, an operator, or billing off), or the runs are on a team whose
+    owner's Pro is in force. Never raises: a failed lookup is the free plan."""
+    from backend.services import access as access_service
+    from backend.services import billing as billing_service
+
+    try:
+        if user and user.get("uid") and access_service.member_can_edit(db, user, billing_service):
+            return True
+        if team_owner and access_service.is_team_owner(team_owner):
+            team = db.teams.find_one({"_id": team_owner.split(":", 1)[1]})
+            return team is not None and not access_service.team_frozen(db, team, billing_service)
+    except Exception:  # noqa: BLE001 - retention never stops a run
+        logger.warning("Couldn't read the plan for run retention", exc_info=True)
+    return False
+
+
+def kept_days_for(db, user: dict, team_owner: Optional[str] = None) -> int:
+    """How long a run started now by ``user`` (on ``team_owner``'s diagram,
+    if a team's) is kept after it finishes."""
+    return pro_ttl_days() if long_history(db, user, team_owner) else ttl_days()
+
+
+def retention(db, ctx) -> dict:
+    """What the runs list says about how long runs are kept, for the viewer
+    in their current workspace: ``{days, plan: free | pro, free_days,
+    pro_days}``."""
+    team = ctx.write_owner if not ctx.is_personal else None
+    pro = long_history(db, ctx.user, team)
+    out = {"days": pro_ttl_days() if pro else ttl_days(), "plan": "pro" if pro else "free",
+           "free_days": ttl_days(), "pro_days": pro_ttl_days()}
+    out["text"] = retention_text(out)
+    return out
+
+
+def _days(n: int) -> str:
+    return f"{n} day" if n == 1 else f"{n} days"
+
+
+def retention_text(kept: dict) -> str:
+    """The runs list's one line on how long runs are kept."""
+    if kept.get("plan") == "pro":
+        return f"Runs are kept for {_days(kept['days'])}."
+    return (f"Runs are kept for {_days(kept['free_days'])} on the free plan. "
+            f"Pro keeps them for {_days(kept['pro_days'])}.")
 
 
 # ---- What a new run records ------------------------------------------------------------
 
-def run_info(ctx, surface: str = "app") -> dict:
-    """Who is running a simulation, and from where: ``{run_by, trigger}``."""
+def run_info(ctx, surface: str = "app", db=None, rbd_owner: Optional[str] = None) -> dict:
+    """Who is running a simulation, and from where: ``{run_by, trigger}``;
+    with ``db``, also ``kept_days`` from their plan now (``rbd_owner``: the
+    diagram's owner, for a team's diagram)."""
     from backend.services import usage as usage_service
     from backend.services.access import editor_of
 
     trigger = {"surface": "mcp" if surface == "mcp" else "app"}
     if trigger["surface"] == "mcp":
         trigger["client"] = usage_service.client_of(ctx.user or {})
-    return {"run_by": editor_of(ctx), "trigger": trigger}
+    out = {"run_by": editor_of(ctx), "trigger": trigger}
+    if db is not None:
+        out["kept_days"] = kept_days_for(db, ctx.user, rbd_owner)
+    return out
 
 
 def _compact_quote(quote: Optional[dict]) -> Optional[dict]:
@@ -101,11 +163,21 @@ def quote_request(db, request: dict, in_process: bool) -> Optional[dict]:
 def new_fields(db, request: dict, info: Optional[dict], in_process: bool) -> dict:
     """The #112 / #286 fields of a new availability record."""
     machine = runtime_quote.machine_of(in_process)
+    days = int((info or {}).get("kept_days") or ttl_days())
     out = {"machine": machine, "quote": quote_request(db, request, in_process),
-           "expires_at": _now() + timedelta(days=ttl_days())}
+           "kept_days": days, "expires_at": _now() + timedelta(days=days)}
     if info:
         out.update({k: info[k] for k in ("run_by", "trigger") if k in info})
     return out
+
+
+def kept_days_of(job: dict) -> int:
+    """How long a finished run is kept: the period it was given when it
+    started (the free period for a record from before that was kept)."""
+    try:
+        return int(job.get("kept_days") or ttl_days())
+    except (TypeError, ValueError):
+        return ttl_days()
 
 
 def engines_here(result: Optional[dict] = None) -> dict:
@@ -132,7 +204,7 @@ def on_finished(db, job: dict, result: dict, timings: Optional[dict], engines: O
             engines["repyability"] = result["repyability_version"]
         db.rbd_jobs.update_one({"_id": job["_id"]}, {"$set": {
             "runtime_s": runtime, "engines": engines or {"repyability": result.get("repyability_version")},
-            "expires_at": _now() + timedelta(days=ttl_days()),
+            "expires_at": _now() + timedelta(days=kept_days_of(job)),
         }})
         if job.get("machine"):
             request = job.get("request") or {}
@@ -357,11 +429,13 @@ def list_runs(db, ctx, rbd_id: Optional[str] = None, limit: int = DEFAULT_LIMIT,
     more = len(jobs) > limit
     jobs = jobs[:limit]
     names = _names(db, [j.get("rbd_id") for j in jobs])
+    kept = retention(db, ctx)
     # The diagrams this list can be filtered by: the caller's runs' diagrams.
     return {
         "runs": [summary(j, ctx.uid, names) for j in jobs],
         "more": more,
-        "kept_days": ttl_days(),
+        "kept_days": kept["days"],
+        "retention": kept,
     }
 
 

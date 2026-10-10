@@ -369,9 +369,12 @@ RBD_JOB_STALE_S = _int("RBD_JOB_STALE_S", 40 * 60)
 # Finished jobs (and their results) are kept this long, then the TTL index
 # drops them.
 RBD_JOB_TTL_DAYS = _int("RBD_JOB_TTL_DAYS", 7)
-# Availability simulations are the run history (#112): kept this long after
-# they finish (RBD_JOB_TTL_DAYS when 0).
+# Availability simulations are the run history (#112): a free plan's runs are
+# kept this long after they finish (RBD_JOB_TTL_DAYS when 0) ...
 RBD_RUN_TTL_DAYS = _int("RBD_RUN_TTL_DAYS", 0)
+# ... and a Pro or team plan's this long. Each run keeps the period its
+# owner's plan gave it when it started.
+RBD_RUN_PRO_TTL_DAYS = _int("RBD_RUN_PRO_TTL_DAYS", 90)
 # The runtime quote (#286): the calculation service's machine type (each type
 # has its own calibration factor), and how many jobs it runs at once (its
 # max instances × concurrency; the queue's max concurrent dispatches).
