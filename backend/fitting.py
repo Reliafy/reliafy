@@ -2753,9 +2753,9 @@ def regression_metrics_at_defaults(model, fields: list) -> Optional[dict]:
     row the calculator opens on (each numeric covariate at its training-data
     mean, a categorical one at its most common level), labelled with that
     row; None for a model without a quantile function or when they can't be
-    computed. A Cox model is left out: SurPyval 0.24 gives it a ``qf`` (#662),
-    but its curve is a step function that often stops short of 0, so a B10
-    is an event time and the mean has no tail to integrate."""
+    computed. A Cox model is left out even where SurPyval gives it a ``qf``:
+    its curve is a step function that often stops short of 0, so a B10 would
+    be an event time and the mean has no tail to integrate."""
     qf = getattr(model, "qf", None)
     if not callable(qf) or _is_step_regression(model):
         return None
