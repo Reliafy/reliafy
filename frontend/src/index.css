@@ -8544,3 +8544,18 @@ input.rbd-rename {
   /* "+ Add block" says "+ Add" so the toolbar keeps one row. */
   .rbd-add-word { display: none; }
 }
+
+/* ---- "Use this model" (#294) ------------------------------------------- */
+/* Quiet next steps at the foot of a life model's panel: link rows, ink text. */
+.detail-panel .next-steps .gofh { font-size: var(--fs-13); color: var(--muted); font-weight: 500; }
+.detail-panel .gofr.next-step { color: var(--acc); font-weight: 500; }
+.detail-panel .gofr.next-step:disabled { cursor: progress; opacity: 0.7; }
+.detail-panel .next-steps-note { margin: 0; padding: 8px 16px 10px; font-size: var(--fs-12); line-height: 1.45; color: var(--muted); }
+.detail-panel .next-steps-note.error { color: var(--danger); }
+/* The replacement-interval action beside the wear-out reading. */
+.detail-panel .life-reading .life-reading-action { display: inline-block; margin-top: 6px; font-size: var(--fs-13); font-weight: 500; text-align: left; }
+.detail-panel .life-reading .life-reading-error { display: block; margin-top: 4px; font-size: var(--fs-12); }
+@media (max-width: 720px) {
+  .detail-panel .gofr.next-step { min-height: 44px; }
+  .detail-panel .life-reading .life-reading-action { min-height: 44px; }
+}

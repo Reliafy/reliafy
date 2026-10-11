@@ -2,10 +2,11 @@ import { useState } from "react";
 import Modal from "./Modal.jsx";
 
 // Name and save the current RBD — or (``asNew``) a copy of it under a new id.
-export default function RbdSaveModal({ initialName, onClose, onSubmit, asNew = false }) {
+// ``initialError``: why a straight save of a named diagram failed (#303).
+export default function RbdSaveModal({ initialName, onClose, onSubmit, asNew = false, initialError = null }) {
   const [name, setName] = useState(initialName || "");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(initialError);
 
   const submit = async () => {
     if (!name.trim()) return;

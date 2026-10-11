@@ -64,6 +64,7 @@ import RbdPhasesModal from "../components/RbdPhasesModal.jsx";
 import RbdPhasesResult from "../components/RbdPhasesResult.jsx";
 import RbdNetworkPanel, { NetworkOnlyNote } from "../components/RbdNetworkPanel.jsx";
 import { MISSION_KEYS, missionFields, undirectedEdges } from "../rbdMission.js";
+import { graphWithModel, plainName } from "../modelNext.js";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -343,7 +344,7 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
 // Shared samples are stored with a "(sample)" suffix; the header says so with a chip.
 const SAMPLE_SUFFIX = /\s*\(sample\)\s*$/i;
 
-function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab }) {
+function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab, addModel = null, onModelAdded }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
@@ -907,6 +908,27 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     [nodes, edges, rbdUnit, repairable, ccfGroups, costsField, savedRbdId, savedRbdUpdatedAt, onSaved]
   );
 
+  // Save (#303): a diagram the user has named and can write saves straight
+  // away; an unsaved one, or a shared sample (saved as a copy), asks for a
+  // name. A failed save opens the dialog with the reason.
+  const [saveError, setSaveError] = useState(null);
+  const quickSave = useCallback(async () => {
+    setSaveError(null);
+    if (!savedRbdId || savedRbdReadOnly || !savedRbdName.trim()) {
+      setTab("builder");
+      setModal("saverbd");
+      return;
+    }
+    try {
+      await onSaveRbd(savedRbdName);
+      setConnectHint("Saved.");
+    } catch (e) {
+      setSaveError(e.message);
+      setTab("builder");
+      setModal("saverbd");
+    }
+  }, [savedRbdId, savedRbdReadOnly, savedRbdName, onSaveRbd]);
+
   // Replace the canvas with a saved graph; bump the id counter past loaded ids.
   const loadGraph = useCallback(
     (graph, id, name, updatedAt = null, readOnly = false) => {
@@ -946,13 +968,16 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     [setNodes, setEdges, fitWhenMeasured]
   );
 
+  // ``model`` (a model's "Add to an RBD", #294): opened with its block added.
   const openRbd = useCallback(
-    async (id) => {
+    async (id, model = null) => {
       const full = await getRbd(id);
-      loadGraph(full.graph, full.id, full.name, full.updated_at || null, !!full.read_only);
+      const added = model ? graphWithModel(full.graph, model) : null;
+      loadGraph(added ? added.graph : full.graph, full.id, full.name, full.updated_at || null, !!full.read_only);
       setModal(null);
+      if (added) onModelAdded?.(plainName(model.name), added.wired);
     },
-    [loadGraph]
+    [loadGraph, onModelAdded]
   );
 
   const newRbd = useCallback(() => {
@@ -1022,12 +1047,16 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   useEffect(() => {
     if (rbdId && loadedRef.current !== rbdId) {
       loadedRef.current = rbdId;
-      openRbd(rbdId).catch(() => {});
+      openRbd(rbdId, addModel).catch(() => {});
     } else if (!rbdId && imported?.graph && loadedRef.current !== imported) {
       loadedRef.current = imported;
       loadGraph(imported.graph, null, imported.name || "");
+    } else if (!rbdId && addModel && loadedRef.current !== addModel) {
+      loadedRef.current = addModel;
+      loadGraph(graphWithModel(null, addModel).graph, null, "");
+      onModelAdded?.(plainName(addModel.name), true);
     }
-  }, [rbdId, imported, openRbd, loadGraph]);
+  }, [rbdId, imported, openRbd, loadGraph, addModel, onModelAdded]);
 
   // Assign a life model (saved or from parameters) to the node the modal targets.
   const setNodeModel = useCallback(
@@ -1467,7 +1496,9 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           onValidate={runValidate}
         />
         <ToolbarMenu label="Save" title="Save, or download the saved diagram">
-          <button className="ovm-item" onClick={() => setModal("saverbd")}>Save…</button>
+          <button className="ovm-item" onClick={quickSave}>
+            {savedRbdId && !savedRbdReadOnly && savedRbdName.trim() ? "Save" : "Save…"}
+          </button>
           {savedRbdId && (
             <button className="ovm-item" onClick={() => setModal("saveasnew")}>Save as new…</button>
           )}
@@ -1981,6 +2012,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       {modal === "saverbd" && (
         <RbdSaveModal
           initialName={savedRbdName}
+          initialError={saveError}
           onClose={() => setModal(null)}
           onSubmit={onSaveRbd}
         />
@@ -2083,7 +2115,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
             graph={{ nodes, edges, unit: rbdUnit }}
             readOnly={savedRbdReadOnly}
             onBuild={toBuilder}
-            onSave={() => saveFromTab("saverbd")}
+            onSave={quickSave}
             onSaveCopy={savedRbdId ? () => saveFromTab("saveasnew") : null}
             onApplyModels={(updates) =>
               // Models fitted from the log, put on their blocks (unsaved).
@@ -2113,6 +2145,14 @@ export default function RbdBuilder() {
     [starterKind, location.key]);
   const imported = id ? null : location.state?.imported || starter;
   const [notesHidden, setNotesHidden] = useState(false);
+  // A model's "Add to an RBD" (#294): its block, added once; the route's
+  // state is dropped so a reload doesn't add it again.
+  const addModel = location.state?.addModel || null;
+  const [added, setAdded] = useState(null); // { name, wired }
+  const onModelAdded = useCallback((name, wired) => {
+    setAdded({ name, wired });
+    navigate(location.pathname, { replace: true, state: null });
+  }, [navigate, location.pathname]);
   const [meta, setMeta] = useState({});
   const [tab, setTab] = useState("builder");
   return (
@@ -2153,6 +2193,17 @@ export default function RbdBuilder() {
           )}
         </div>
       )}
+      {added && (
+        <div className="card note rbd-import-note">
+          <p>
+            <b>“{added.name}” added as a block</b> — not saved yet.{" "}
+            {added.wired
+              ? "Calculate it as it is, or add the rest of the system, then Save."
+              : "It sits below the others: wire it in where it belongs, then Save."}
+            {" "}<button className="link" onClick={() => setAdded(null)}>Dismiss</button>
+          </p>
+        </div>
+      )}
       <div className="card rbd-wrap">
         <ReactFlowProvider>
           <Builder
@@ -2164,6 +2215,8 @@ export default function RbdBuilder() {
             onSaved={(savedId) => navigate(`/rbds/b/${savedId}`, { replace: true })}
             onMeta={setMeta}
             onTab={setTab}
+            addModel={addModel}
+            onModelAdded={onModelAdded}
           />
         </ReactFlowProvider>
       </div>

@@ -1364,6 +1364,13 @@ def fit(
         result["options"] = {**(result.get("options") or {}), CENSOR_INVERT_KEY: True}
     if c_map:
         result["options"] = {**(result.get("options") or {}), CENSOR_MAP_KEY: c_map}
+    # The data in words, "5 failed, 7 running" (#303), kept with a saved model.
+    from backend.services import model_split  # local: services import this module
+
+    if not mapping.get("i") and result.get("kind") in model_split.SPLIT_KINDS and "split" not in result:
+        split = model_split.data_split(df, mapping)
+        if split is not None:
+            result["split"] = split
     # Confidence bounds and probability-paper transforms can produce non-finite
     # values at the extremes (e.g. a Weibull bound that maps to ±inf/NaN). These
     # are not valid JSON, so coerce them to null — Plotly renders them as gaps.
