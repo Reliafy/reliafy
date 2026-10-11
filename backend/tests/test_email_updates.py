@@ -348,3 +348,15 @@ def test_tag_text_and_html(test_db):
     assert tag_html(html, medium="update", campaign="nov-2026") == (
         f'<a href="https://reliafy.com/a?b=1&amp;c=2&amp;{amp}#d">x</a> '
         '<a href="https://example.org/">y</a> <img src="https://reliafy.com/logo.png">')
+
+
+def test_frontmatter_block_scalar_matches_the_frontend_parser():
+    """``linkedin: |`` (#367) takes the indented lines below it; they never
+    become keys of their own (frontend/src/frontmatter.js does the same)."""
+    from backend.scripts.send_update import parse_frontmatter
+
+    meta, body = parse_frontmatter(
+        "---\ntitle: \"A: title\"\nlinkedin: |\n  First: line.\n\n  Second.\n    deeper\n"
+        "send: auto\n---\nBody\n")
+    assert meta == {"title": "A: title", "linkedin": "First: line.\n\nSecond.\n  deeper", "send": "auto"}
+    assert body == "Body\n"

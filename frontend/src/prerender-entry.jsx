@@ -26,6 +26,15 @@ import { updates, allUpdates } from "./updates.js";
 import { articles } from "./learn.js";
 import { guides } from "./guides.js";
 import { families as refFamilies, totalEntries } from "./reference.js";
+import { linkedinFeed, socialPost } from "./contentFeed.js";
+
+// Short LinkedIn posts (#367). Globbed here, in the build-time bundle only:
+// they're never part of the website's own bundle or pages.
+const socialFiles = import.meta.glob("./content/social/*.md", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
 
 const SITE = "https://reliafy.com";
 
@@ -185,9 +194,10 @@ export function render(path) {
 
 // RSS feed definitions. scripts/prerender.mjs writes them — INCLUDING
 // future-dated items — to dist/feeds.json; the backend (backend/routers/feeds.py)
-// serves /whats-new/feed.xml and /blog/feed.xml from it, filtering by the
-// current UTC date on every request. So a queued item enters its feed on its
-// date with no rebuild, and Zapier/Buffer auto-post it that day.
+// serves /whats-new/feed.xml, /blog/feed.xml and /social/feed.xml from it,
+// filtering by the current UTC date on every request. So a queued item enters
+// its feed on its date with no rebuild. /social/feed.xml is the one the
+// Zapier → LinkedIn Zap watches (contentFeed.js).
 export function feeds() {
   const item = (base) => (x) => ({
     title: x.title,
@@ -211,6 +221,12 @@ export function feeds() {
       description: "Reliability engineering, maintenance strategy and Reliafy in practice.",
       items: allPosts.map(item("/blog")),
     },
+    linkedinFeed({
+      posts: allPosts,
+      updates: allUpdates,
+      social: Object.entries(socialFiles).map(([path, raw]) => socialPost(path, raw, SITE)),
+      site: SITE,
+    }),
   ];
 }
 

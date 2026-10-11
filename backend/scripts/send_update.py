@@ -68,17 +68,31 @@ def slug_from_path(path: pathlib.Path) -> str:
 
 
 def parse_frontmatter(raw: str) -> tuple[dict, str]:
-    """The frontend's minimal ``--- key: value ---`` parser, in Python."""
+    """The frontend's minimal ``--- key: value ---`` parser, in Python
+    (``frontend/src/frontmatter.js``), including its one block form:
+    ``key: |`` takes the indented lines below it (e.g. ``linkedin:``)."""
     m = re.match(r"^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$", raw)
     if not m:
         return {}, raw
     meta = {}
-    for line in m.group(1).splitlines():
-        if ":" not in line:
+    lines = m.group(1).splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        if line[:1].isspace() or ":" not in line:
             continue
         key, value = line.split(":", 1)
-        key = key.strip()
-        value = re.sub(r"""^["']|["']$""", "", value.strip())
+        key, value = key.strip(), value.strip()
+        if re.fullmatch(r"\|[-+]?", value):
+            block = []
+            while i < len(lines) and (not lines[i].strip() or lines[i][:1].isspace()):
+                block.append(lines[i])
+                i += 1
+            cut = min((len(b) - len(b.lstrip()) for b in block if b.strip()), default=0)
+            value = "\n".join(b[cut:] for b in block).rstrip()
+        else:
+            value = re.sub(r"""^["']|["']$""", "", value)
         if key:
             meta[key] = value
     return meta, m.group(2)

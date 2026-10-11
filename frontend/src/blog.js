@@ -3,35 +3,18 @@
 // import.meta.glob, so there's no backend, database, or runtime fetch involved.
 // Adding a post = committing a .md file.
 import { marked } from "marked";
+// The frontmatter parser and slug rule live in frontmatter.js (pure, so the
+// build-time feeds and `node --test` share them); re-exported for the other
+// content layers.
+import { parseFrontmatter, slugFromPath } from "./frontmatter.js";
+
+export { parseFrontmatter, slugFromPath };
 
 const files = import.meta.glob("./content/blog/*.md", {
   query: "?raw",
   import: "default",
   eager: true,
 });
-
-// Minimal frontmatter parser: a leading `--- ... ---` block of `key: value`
-// lines (values may be quoted). Enough for our fixed set of fields; we control
-// the files, so we don't need a full YAML engine.
-export function parseFrontmatter(raw) {
-  const match = /^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$/.exec(raw);
-  if (!match) return { meta: {}, body: raw };
-  const meta = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const idx = line.indexOf(":");
-    if (idx === -1) continue;
-    const key = line.slice(0, idx).trim();
-    const value = line.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
-    if (key) meta[key] = value;
-  }
-  return { meta, body: match[2] };
-}
-
-// URL slug from the filename, dropping any leading YYYY-MM-DD- / YYYY-MM- date.
-export function slugFromPath(path) {
-  const name = path.split("/").pop().replace(/\.md$/, "");
-  return name.replace(/^\d{4}-\d{2}(-\d{2})?-/, "");
-}
 
 function readingTime(body) {
   const words = body.trim().split(/\s+/).filter(Boolean).length;
@@ -59,6 +42,9 @@ export const allPosts = Object.entries(files)
       // Optional per-post social card (og:image), e.g. /blog/my-post-card.png
       // under public/. Absent -> the site-wide /og-card.png.
       image: meta.image || "",
+      // Optional exact LinkedIn announcement text (a `linkedin: |` block); the
+      // LinkedIn feed falls back to title + summary. Never shown on the site.
+      linkedin: meta.linkedin || "",
       readingMinutes: readingTime(body),
       body,
     };
