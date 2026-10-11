@@ -20,8 +20,11 @@ the two costs, you can find it rather than argue about it.
 
 ## What you need
 
-Go to **Strategy → Optimal replacement**, choose **Saved model** and pick your
-fitted model (or type a distribution's parameters). Then supply two numbers:
+Go to **Strategy → Optimal replacement**, or press **Find a replacement
+interval** under **Use this model** on a saved model's page. It opens on **Saved
+model** with that model (or the one you used last) chosen and its time unit
+filled in; pick another, or choose **Parameters** to type a distribution's
+parameters. Then supply two numbers:
 
 - **Planned replacement cost** — what it costs to change the component out on
   your terms, during a planned window.
