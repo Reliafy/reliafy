@@ -211,19 +211,24 @@ export function render(path) {
 // its feed on its date with no rebuild. /social/feed.xml is the one the
 // Zapier → LinkedIn Zap watches (contentFeed.js).
 export function feeds() {
+  // Links in the RSS feeds carry utm_source=rss&utm_medium=feed&
+  // utm_campaign=<slug>, added by the server; the guid stays the bare URL.
   const item = (base) => (x) => ({
     title: x.title,
     link: `${SITE}${base}/${x.slug}`,
     guid: `${SITE}${base}/${x.slug}`,
     date: x.date,
     summary: x.summary,
+    campaign: x.slug,
   });
+  const rss = { source: "rss", medium: "feed" };
   return [
     {
       path: "/whats-new/feed.xml",
       title: "Reliafy — What's new",
       link: `${SITE}/whats-new`,
       description: "Product updates from Reliafy: new features, improvements and fixes.",
+      utm: rss,
       items: allUpdates.map(item("/whats-new")),
     },
     {
@@ -231,6 +236,7 @@ export function feeds() {
       title: "Reliafy blog",
       link: `${SITE}/blog`,
       description: "Reliability engineering, maintenance strategy and Reliafy in practice.",
+      utm: rss,
       items: allPosts.map(item("/blog")),
     },
     linkedinFeed({

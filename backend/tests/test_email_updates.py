@@ -360,3 +360,29 @@ def test_frontmatter_block_scalar_matches_the_frontend_parser():
         "send: auto\n---\nBody\n")
     assert meta == {"title": "A: title", "linkedin": "First: line.\n\nSecond.\n  deeper", "send": "auto"}
     assert body == "Body\n"
+
+
+def test_every_site_link_in_an_update_email_is_tagged_without_personal_data(test_db, outbox):
+    """UTM tags (#353): every link to the site carries utm_source=email and the
+    update's slug; only the unsubscribe links (a token, nothing to measure)
+    are left alone, and no tagged URL carries the recipient's address, id or
+    token."""
+    from backend.services import email_prefs
+
+    _seed_users(test_db)
+    assert _run("--send", "--yes", "--limit", "1") == 0
+    (msg,) = outbox
+    token = email_prefs.token_for(test_db, "u1")
+    html = msg.get_body(("html",)).get_content()
+    text = msg.get_body(("plain",)).get_content()
+    hrefs = [h.replace("&amp;", "&") for h in re.findall(r'href="([^"]+)"', html)]
+    urls = hrefs + re.findall(r"https?://\S+", text)
+    site = [u.rstrip(").,") for u in urls if u.startswith("https://reliafy.com")]
+    assert site
+    for url in site:
+        if "/unsubscribe" in url:
+            assert "utm_" not in url
+            continue
+        assert "utm_source=email" in url and "utm_campaign=test-update" in url, url
+        for personal in (token, "u1", "alice", "Alice"):
+            assert personal not in url, url

@@ -167,3 +167,28 @@ def test_social_feed_route(monkeypatch):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/rss+xml")
     assert len(_items(r.text)) == 3
+
+
+# ---- UTM tags on the RSS feeds (#353, #367) ----------------------------------
+
+def test_rss_links_are_tagged_and_guids_are_not():
+    feed = {**DATA["feeds"][0], "utm": {"source": "rss", "medium": "feed"},
+            "items": [{**it, "campaign": it["link"].rsplit("/", 1)[1]} for it in DATA["feeds"][0]["items"]]}
+    items = _items(feeds.render_feed(feed, DATA["site"], "2026-12-31"))
+    assert [i["link"] for i in items] == [
+        "https://reliafy.com/whats-new/future?utm_source=rss&utm_medium=feed&utm_campaign=future",
+        "https://reliafy.com/whats-new/past?utm_source=rss&utm_medium=feed&utm_campaign=past",
+    ]
+    assert [i["guid"] for i in items] == ["https://reliafy.com/whats-new/future",
+                                          "https://reliafy.com/whats-new/past"]
+    assert all(i["permalink"] == "true" for i in items)
+
+
+def test_untagged_feed_and_foreign_links_are_left_alone():
+    # A feed without utm (an older feeds.json) renders as before.
+    assert _items(feeds.render_feed(DATA["feeds"][0], DATA["site"], "2026-12-31"))[1]["link"] == \
+        "https://reliafy.com/whats-new/past"
+    feed = {"utm": {"source": "rss", "medium": "feed"}}
+    assert feeds.item_link(feed, {"link": "https://example.org/x", "campaign": "c"}) == "https://example.org/x"
+    assert feeds.item_link(feed, {"link": "https://reliafy.com/x?utm_source=a", "campaign": "c"}) == \
+        "https://reliafy.com/x?utm_source=a"
