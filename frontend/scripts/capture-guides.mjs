@@ -361,11 +361,11 @@ async function main() {
     { file: "degradation-01-model.png", url: `/modelling/degradation/${S.degradation}`, settle: 2500 },
     { file: "degradation-02-tracking.png", url: "/fleet/tracking", settle: 2000 },
     // --- Optimal replacement: the bearing model, 1,000 planned vs 8,000 failure ---
-    { file: "replacement-01-result.png", url: "/strategy/replacement", settle: 1800,
+    // The tool opens on "Saved model"; ?model= chooses the bearing fit, as a
+    // model page's "Use this model" does (#294).
+    { file: "replacement-01-result.png", url: `/strategy/replacement?model=${S.bearings}`, settle: 1800,
       async act(page) {
-        await press(page, /^Saved model$/); await wait(600);
-        await page.locator(".sel-trigger", { hasText: /choose/ }).click(); await wait(400);
-        await page.getByRole("option", { name: /Bearing life — Weibull/ }).first().click(); await wait(600);
+        await page.locator(".sel-trigger", { hasText: /Bearing life — Weibull/ }).waitFor(); await wait(400);
         await page.getByLabel(/Planned replacement cost/).fill("1000");
         await page.getByLabel(/Unplanned/).fill("8000");
         await page.getByRole("button", { name: /^Compute$/ }).click(); await wait(3000);
