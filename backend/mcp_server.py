@@ -402,6 +402,15 @@ mcp = MCPServer(
     website_url="https://reliafy.com",
 )
 
+# No `subscriptions/listen` (protocol 2026-07-28): Reliafy's tools, prompts
+# and resources never change while it runs, so there is nothing to stream.
+# Served, it made the SDK advertise listChanged / subscribe, and Claude then
+# held a listen stream open on every connection; on a stateless server billed
+# per open request that kept the web instance busy for nothing. Without the
+# handler the SDK advertises neither, and a listen request ends at once with
+# "method not found".
+mcp._lowlevel_server._request_handlers.pop("subscriptions/listen", None)
+
 # Every tool carries a human-readable title plus either readOnlyHint=true
 # (reads and calculations: Claude may run them without a per-call prompt) or
 # destructiveHint=true (anything that writes to the user's workspace — the
