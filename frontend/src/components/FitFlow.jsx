@@ -474,14 +474,14 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-        <button onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
+        <button data-wt="fit-next" onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
       </>
     );
   } else if (step === 3) {
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-        <button onClick={onFit} disabled={!distribution || loading || !!groupProblem(selectedOpt, group)}
+        <button data-wt="fit-run" onClick={onFit} disabled={!distribution || loading || !!groupProblem(selectedOpt, group)}
                 title={groupProblem(selectedOpt, group) || undefined}>
           {loading ? "Fitting…" : `Fit ${distName}`}
         </button>
@@ -634,8 +634,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         </>
       )}
 
+      {/* data-wt: the guided walkthrough's anchors (walkthroughs.js). */}
       {step === 2 && csv && (
-        <div className="fit-step">
+        <div className="fit-step" data-wt="fit-data">
           <p className="muted-line">
             {sourceName === PASTED ? "Pasted values" : sourceName} · {csv.n_rows} rows
             {!simple && ` · ${csv.columns.length} columns`}
@@ -781,7 +782,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       )}
 
       {step === 4 && result && (
-        <div className="fit-step">
+        <div className="fit-step" data-wt="fit-result">
           <ResultView
             result={result}
             split={split}

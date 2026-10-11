@@ -28,11 +28,12 @@ const GIVEN_LABEL = {
 // chosen: ``wanted`` (a link's ?model=), else the one used last, else the
 // newest; with no saved models it falls back to Parameters. ``autoPick``
 // false opens on "Saved model" with none chosen.
+// ``initialSavedId`` opens on that saved model and emits it (a link's preset).
 export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "",
-                                      preferSaved = false, wanted = null, autoPick = true }) {
+                                      preferSaved = false, wanted = null, autoPick = true, initialSavedId = "" }) {
   const hasParams = value?.source === "params" && (value.params || []).length > 0;
   const [source, setSource] = useState(
-    value?.source === "saved" || (preferSaved && !hasParams) ? "saved" : hasParams || !meanEntry ? "params" : "mean"
+    value?.source === "saved" || initialSavedId || (preferSaved && !hasParams) ? "saved" : hasParams || !meanEntry ? "params" : "mean"
   );
   const [dists, setDists] = useState([]);
   const [saved, setSaved] = useState([]);
@@ -47,7 +48,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
     )
   );
   const [savedId, setSavedId] = useState(
-    value?.source === "saved" ? value.modelId : ""
+    value?.source === "saved" ? value.modelId : initialSavedId || ""
   );
   // Mean entry: the mean, the given shape/spread, the parameters it made
   // (shown under the inputs) and the server's reason when it can't.
@@ -166,10 +167,11 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
   };
 
   // Strategy tools start on a saved model (#294): once the list is in, pick
-  // the preferred plain distribution, or fall back to Parameters.
+  // the preferred plain distribution, or fall back to Parameters. A preset
+  // (``initialSavedId``) is picked on mount instead.
   const autoRef = useRef(false);
   useEffect(() => {
-    if (!preferSaved || !savedLoaded || autoRef.current || value || source !== "saved") return;
+    if (!preferSaved || initialSavedId || !savedLoaded || autoRef.current || value || source !== "saved") return;
     autoRef.current = true;
     const plain = saved.filter((m) => m.kind === "distribution");
     const id = !autoPick ? null : wanted && saved.some((m) => m.id === wanted)
@@ -179,6 +181,12 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
     // onPickSaved is this render's; the pick runs once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preferSaved, savedLoaded, saved, wanted, value, source]);
+
+  useEffect(() => {
+    if (initialSavedId) onPickSaved(initialSavedId);
+    // Once, on mount: the preset is a starting point, not a binding.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const u = unit ? unitInText(unit) : "";
   const distSelect = (options, valueId, onPick) => (

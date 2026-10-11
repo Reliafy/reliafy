@@ -8,6 +8,7 @@ import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { ShowMeHow } from "../components/Walkthrough.jsx";
 import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 
 const ImportIcon = () => (
@@ -78,7 +79,7 @@ export default function RcmHome() {
     <div className="app">
       <PageHeader
         title="RCM studies"
-        meta="Every maintenance decision links to the analysis behind it, re-checked each time you open the study."
+        meta={<>Every maintenance decision links to the analysis behind it, re-checked each time you open the study. <ShowMeHow id="rcm" /></>}
         actions={
           <button className="secondary" onClick={() => setImportOpen(true)}
                   title="Create a study from an FMEA / RCM worksheet in Excel">
@@ -103,7 +104,7 @@ export default function RcmHome() {
       ) : studies.length === 0 ? (
         <div className="card empty">
           <h2>No RCM studies</h2>
-          <p>Create one and build the function → failure → mode worksheet.</p>
+          <p>Create one and build the function → failure → mode worksheet. <ShowMeHow id="rcm" /></p>
           <button style={{ marginTop: "1rem" }} onClick={() => setModalOpen(true)}>
             <PlusIcon /> New study
           </button>

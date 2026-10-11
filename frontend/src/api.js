@@ -1973,3 +1973,15 @@ export function getOutageHistory(rbdId, logId) {
 export function fitOutageModels(rbdId, logId, body) {
   return outageJson("POST", `/api/rbds/${rbdId}/outage-logs/${logId}/fit`, body);
 }
+
+// ---- Guided walkthroughs (#32) ----------------------------------------------
+
+// Claim a walkthrough's one automatic start for this user: { start: bool },
+// true only the first time (frontend/src/components/Walkthrough.jsx).
+export function claimWalkthroughAutoStart(id) {
+  return request("/api/me/walkthroughs/auto", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+}
