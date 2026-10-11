@@ -908,6 +908,27 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     [nodes, edges, rbdUnit, repairable, ccfGroups, costsField, savedRbdId, savedRbdUpdatedAt, onSaved]
   );
 
+  // Save (#303): a diagram the user has named and can write saves straight
+  // away; an unsaved one, or a shared sample (saved as a copy), asks for a
+  // name. A failed save opens the dialog with the reason.
+  const [saveError, setSaveError] = useState(null);
+  const quickSave = useCallback(async () => {
+    setSaveError(null);
+    if (!savedRbdId || savedRbdReadOnly || !savedRbdName.trim()) {
+      setTab("builder");
+      setModal("saverbd");
+      return;
+    }
+    try {
+      await onSaveRbd(savedRbdName);
+      setConnectHint("Saved.");
+    } catch (e) {
+      setSaveError(e.message);
+      setTab("builder");
+      setModal("saverbd");
+    }
+  }, [savedRbdId, savedRbdReadOnly, savedRbdName, onSaveRbd]);
+
   // Replace the canvas with a saved graph; bump the id counter past loaded ids.
   const loadGraph = useCallback(
     (graph, id, name, updatedAt = null, readOnly = false) => {
@@ -1475,7 +1496,9 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           onValidate={runValidate}
         />
         <ToolbarMenu label="Save" title="Save, or download the saved diagram">
-          <button className="ovm-item" onClick={() => setModal("saverbd")}>Save…</button>
+          <button className="ovm-item" onClick={quickSave}>
+            {savedRbdId && !savedRbdReadOnly && savedRbdName.trim() ? "Save" : "Save…"}
+          </button>
           {savedRbdId && (
             <button className="ovm-item" onClick={() => setModal("saveasnew")}>Save as new…</button>
           )}
@@ -1989,6 +2012,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       {modal === "saverbd" && (
         <RbdSaveModal
           initialName={savedRbdName}
+          initialError={saveError}
           onClose={() => setModal(null)}
           onSubmit={onSaveRbd}
         />
@@ -2091,7 +2115,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
             graph={{ nodes, edges, unit: rbdUnit }}
             readOnly={savedRbdReadOnly}
             onBuild={toBuilder}
-            onSave={() => saveFromTab("saverbd")}
+            onSave={quickSave}
             onSaveCopy={savedRbdId ? () => saveFromTab("saveasnew") : null}
             onApplyModels={(updates) =>
               // Models fitted from the log, put on their blocks (unsaved).
