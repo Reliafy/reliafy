@@ -44,6 +44,8 @@ const SettingsPage = lazy(() => import("./views/SettingsPage.jsx"));
 const ApiDocsPage = lazy(() => import("./views/ApiDocsPage.jsx"));
 const ReliabilityAgent = lazy(() => import("./views/ReliabilityAgent.jsx"));
 const AdminPage = lazy(() => import("./views/AdminPage.jsx"));
+// What changed in the workspace (#41).
+const ChangesPage = lazy(() => import("./views/ChangesPage.jsx"));
 import { useAppConfig } from "./ConfigProvider.jsx";
 import { unmatchedRoute } from "./appConfig.js";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
@@ -198,6 +200,7 @@ export default function AppShell() {
             {/* API tokens moved into Settings; keep old links working. */}
             <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/changes" element={<ChangesPage />} />
             {billing && <Route path="/billing" element={<BillingPage />} />}
             {/* Until the config loads, /billing and /agent aren't registered:
                 wait rather than redirect a direct load of them. */}
