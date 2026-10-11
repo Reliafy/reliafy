@@ -1,0 +1,123 @@
+/* Share pages (/p/:token): the content column, a report's header block and
+   sections (#30), and print. */
+
+.public-app {
+  margin: 0 auto;
+  max-width: 1080px;
+}
+
+/* ---- Report ------------------------------------------------------------- */
+
+.report-head {
+  display: block;
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--sp-5);
+}
+.report-head h1 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-28);
+  font-weight: 600;
+  line-height: 1.2;
+}
+.report-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+.report-text p {
+  margin: 0 0 var(--sp-3);
+  max-width: 75ch;
+  font-size: var(--fs-14);
+  line-height: 1.6;
+  white-space: pre-line;
+}
+.report-text p:last-child { margin-bottom: 0; }
+.report-intro { margin-bottom: var(--sp-6); }
+.report-section + .report-section { margin-top: var(--sp-7); }
+.report-section-head { margin-bottom: var(--sp-4); }
+.report-section-kind {
+  font-size: var(--fs-13);
+  color: var(--muted);
+  margin-bottom: var(--sp-1);
+}
+.report-section-head h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-20);
+  font-weight: 600;
+}
+
+/* ---- Print -------------------------------------------------------------- */
+/* Layout for paper. printFit.js turns this on just before printing (and
+   measures under it, to scale each chart to fit), and off afterwards. The
+   column is A4's printable width, which also fits Letter. */
+
+html.print-layout .public-page {
+  width: 186mm;
+  min-height: 0;
+  background: #fff;
+}
+html.print-layout .public-artifact { min-height: 0; padding: var(--sp-4) 0 0; }
+html.print-layout .public-app { max-width: none; margin: 0; padding: 0; }
+html.print-layout .public-page .card { box-shadow: none; }
+
+@media print {
+  @page { margin: 14mm 12mm; }
+
+  html,
+  body,
+  .public-page { background: #fff !important; }
+  .public-page {
+    min-height: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* The brand bar stays as the page's letterhead; nothing to click on paper. */
+  .public-page .share-bar {
+    position: static;
+    padding: 0 0 var(--sp-3);
+    background: none;
+  }
+  .public-page .share-bar .cta,
+  .public-page .plot-dl,
+  .public-page .modebar-container,
+  .public-page .react-flow__controls,
+  .public-page .public-rbd-download,
+  .public-page .share-gate { display: none !important; }
+
+  /* Controls that only make sense on screen: tab bars, chart toggles, help
+     links, closed "Details"; a chosen option prints as plain text. */
+  .public-page .tabs,
+  .public-page .seg,
+  .public-page .life-help,
+  .public-page .req-row,
+  .public-page details:not([open]) { display: none !important; }
+  .public-page .gofr-link,
+  .public-page .gofr-link * { color: inherit !important; }
+  .public-page .sel-trigger { border: 0; background: none; padding: 0; box-shadow: none; }
+  .public-page .sel-trigger svg { display: none; }
+
+  .public-page a { color: inherit; text-decoration: none; }
+  .public-page .card { box-shadow: none; }
+
+  /* Page breaks: headings stay with what follows; charts, diagrams, tiles
+     and table rows are never split across pages. */
+  .public-page h1,
+  .public-page h2,
+  .public-page h3,
+  .public-page .report-section-head,
+  .public-page .ds-section-h { break-after: avoid; page-break-after: avoid; }
+  .public-page .js-plotly-plot,
+  .public-page .plot-frame,
+  .public-page .public-rbd-canvas,
+  .public-page .stats,
+  .public-page .stat,
+  .public-page tr,
+  .public-page .report-head,
+  .public-page .report-section-head { break-inside: avoid; page-break-inside: avoid; }
+  .public-page thead { display: table-header-group; }
+  .public-page .report-text p { orphans: 3; widows: 3; }
+}

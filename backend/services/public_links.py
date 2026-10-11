@@ -54,6 +54,7 @@ PUBLIC_COLLECTIONS = {
     "fleets",
     "rbds",
     "recurrent_models",
+    "reports",  # several of the above on one page (services/reports.py)
 }
 
 # Fields stripped (recursively) from public payloads: identities and

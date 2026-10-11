@@ -77,6 +77,7 @@ from backend.routers import telemetry as telemetry_router
 from backend.routers import admin as admin_router
 from backend.routers import fleet as fleet_router
 from backend.routers import public as public_router
+from backend.routers import reports as reports_router
 from backend.routers import ingest as ingest_router
 from backend.routers import public_api as public_api_router
 from backend.routers import email_prefs as email_prefs_router
@@ -246,6 +247,7 @@ app.include_router(telemetry_router.router)
 app.include_router(admin_router.router)
 app.include_router(fleet_router.router)
 app.include_router(public_router.router)
+app.include_router(reports_router.router)
 app.include_router(ingest_router.router)
 app.include_router(public_api_router.router)
 app.include_router(email_prefs_router.router)

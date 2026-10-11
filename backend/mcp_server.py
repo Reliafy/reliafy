@@ -108,6 +108,7 @@ from backend.services import outage_logs as outage_logs_service
 from backend.services import models as models_service
 from backend.services import regression_diagnostics as checks_service
 from backend.services import public_links as links_service
+from backend.services import reports as reports_service
 from backend.services import rbd_capacity
 from backend.services import rbd_edit
 from backend.services import rbd_graph
@@ -354,8 +355,9 @@ the data or the fit; never shared samples).
 strategy analysis, RCM study, fleet) that anyone with the URL can open without a Reliafy account, optionally \
 password-protected (password=true: Reliafy generates a passphrase and returns it once — tell the user to send \
 the link and the passphrase to the recipient separately) and expiring (expires_in_days). An item can have \
-several links, each with a label; list_share_links shows them and revoke_share_link ends one at once. Share \
-only when the user asks to.
+several links, each with a label; list_share_links shows them and revoke_share_link ends one at once. \
+create_report puts several of the user's items on one such page, with a title, an author line and notes, \
+ready to print. Share only when the user asks to.
 - Plans: upgrade_link gives the user a Stripe payment link for Reliafy Pro, to open themselves.
 - Account: get_account shows the plan, on Free the tool calls used and left this month (and the date they \
 reset; Pro is unlimited), storage used against the limits and whether simulation is included; it's never \
@@ -6841,10 +6843,11 @@ _SHARE_KINDS = {
     "rcm_study": "rcm_studies",
     "fleet": "fleets",
     "recurrent_model": "recurrent_models",
+    "report": "reports",  # several of the above on one page (create_report)
 }
 _KIND_OF = {collection: kind for kind, collection in _SHARE_KINDS.items()}
 _ShareKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis", "rcm_study", "fleet",
-                     "recurrent_model"]
+                     "recurrent_model", "report"]
 
 
 def _share_brief(db, link: dict) -> dict:
@@ -6867,8 +6870,9 @@ def _share_brief(db, link: dict) -> dict:
 def share_link(
     ctx: Context,
     kind: Annotated[_ShareKind, Field(description="What to share: model (a fitted life model), dataset, rbd, "
-                                                  "degradation_model, strategy_analysis, rcm_study, fleet "
-                                                  "or recurrent_model (a repairable-system model).")],
+                                                  "degradation_model, strategy_analysis, rcm_study, fleet, "
+                                                  "recurrent_model (a repairable-system model) or report (made "
+                                                  "with create_report).")],
     id: Annotated[str, Field(description="The id of one of the user's own items of that kind (e.g. from "
                                          "list_models or list_rbds). Shared samples can't be shared.")],
     password: Annotated[bool, Field(description="Protect the link with a passphrase Reliafy generates. It is "
@@ -6943,6 +6947,82 @@ def revoke_share_link(
         raise ToolError("Share link not found among the user's links (list_share_links shows them).")
     return {"revoked": True, "token": token, **({"id": link["artifact_id"],
                                                   "kind": _KIND_OF.get(link["collection"])} if link else {})}
+
+
+# Reports (#30): several of the user's items on one share page, with a title,
+# an author line and notes. Stored as a report (backend/services/reports.py)
+# and published with an ordinary share link, so list_share_links (kind
+# "report") and revoke_share_link manage it like any other.
+
+_ReportItemKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis", "rcm_study",
+                          "fleet", "recurrent_model"]
+
+
+class ReportItem(BaseModel):
+    kind: _ReportItemKind = Field(description="The item's kind, as for share_link.")
+    id: str = Field(description="The id of one of the user's own items of that kind, or of a shared sample.")
+    note: Optional[str] = Field(default=None, max_length=reports_service.MAX_NOTE,
+                                description="A short note shown above this item's section (plain text).")
+
+
+@_tool("create_report", _WRITE, "Create a report")
+def create_report(
+    ctx: Context,
+    title: Annotated[str, Field(min_length=1, max_length=reports_service.MAX_TITLE,
+                                description="The report's title.")],
+    items: Annotated[list[ReportItem], Field(min_length=1, max_length=reports_service.MAX_SECTIONS,
+                                             description="The sections, in order: one item each, with an "
+                                                         "optional note.")],
+    author: Annotated[Optional[str], Field(max_length=reports_service.MAX_AUTHOR,
+                                           description="The author and/or organisation line under the "
+                                                       "title, e.g. 'Jane Doe, Acme Mining'.")] = None,
+    introduction: Annotated[Optional[str], Field(max_length=reports_service.MAX_INTRO,
+                                                 description="An introduction shown under the header (plain "
+                                                             "text).")] = None,
+    password: Annotated[bool, Field(description="Protect the link with a passphrase Reliafy generates, "
+                                                "returned once, as for share_link.")] = False,
+    expires_in_days: Annotated[Optional[int], Field(ge=1, le=365, description="Days until the link stops "
+                                                    "working (1–365). Omit for a link that lasts until revoked."
+                                                    )] = None,
+    label: Annotated[Optional[str], Field(max_length=80, description="Who or what the link is for. Shown only "
+                                                                     "to the user.")] = None,
+) -> dict[str, Any]:
+    """Compose several of the user's saved items (models, datasets, RBDs, strategy analyses, fleets, RCM
+    studies …) into one report and publish it as a read-only share page: a header with the title, the author
+    line and the date, the introduction, then each item as its own share page shows it, under its note. The
+    page is print-ready (A4 or Letter) and kept out of search engines; anyone with the URL can open it
+    without an account, and it shows the items as they are when opened. Same rules as share_link: owner-only
+    items (shared samples are allowed too), optional password (returned once) and expiry, and
+    revoke_share_link ends it. Write any notes from the items' results yourself, quoting their figures as
+    the tools returned them. Confirm with the user before publishing."""
+    user, db = _caller(ctx), _db()
+    sections = [{"collection": _SHARE_KINDS[it.kind], "artifact_id": it.id, "note": it.note or ""}
+                for it in items]
+    try:
+        report = reports_service.create(db, user["uid"], {
+            "title": title, "author": author or "", "introduction": introduction or "", "sections": sections})
+    except reports_service.ReportError as exc:
+        raise ToolError(str(exc)) from None
+    try:
+        link = links_service.create_link(db, "reports", report["_id"], user, label=label,
+                                         expires_in_days=expires_in_days, generate_password=password, via="mcp")
+    except links_service.PublicLinkError as exc:
+        reports_service.delete(db, user["uid"], report["_id"])
+        raise ToolError(str(exc)) from None
+    out = {
+        **_share_brief(db, link),
+        "report_id": report["_id"],
+        "sections": [{"kind": _KIND_OF.get(s["collection"]), "id": s["artifact_id"], "name": s["name"]}
+                     for s in reports_service.public(db, report)["sections"]],
+    }
+    if link.get("passphrase"):
+        out["passphrase"] = link["passphrase"]
+        out["note"] = ("Shown once: Reliafy keeps only a hash. Give the user the URL and the passphrase and tell "
+                       "them to send the two to the recipient separately.")
+    else:
+        out["note"] = "Anyone with this URL can view the report, without an account, until it's revoked" + (
+            " or expires." if link.get("expires_at") else ".")
+    return out
 
 
 # ---------------------------------------------------------------------------
