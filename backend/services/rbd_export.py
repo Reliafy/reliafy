@@ -53,7 +53,6 @@ from backend.units import unit_in_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_VERSIONS = {"surpyval": "0.23", "repyability": "0.13"}
-_SURPYVAL_GIT = "https://github.com/derrynknife/SurPyval.git"
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
 # Names the script itself uses at module level; block variables avoid them
@@ -108,14 +107,14 @@ def detect_versions() -> dict:
 
 def install_commands(versions: Optional[dict] = None) -> list[str]:
     """The shell commands that install what an exported script needs, pinned
-    to this deployment's versions: SurPyval from git, RePyability's two extra
+    to this deployment's versions: SurPyval from PyPI, RePyability's two extra
     dependencies, then RePyability from git with ``--no-deps`` (so pip can't
-    re-resolve SurPyval from PyPI, whose releases are older). The script
+    re-resolve SurPyval to a newer release than the one it was tested on). The script
     header and the MCP export's
     ``run`` field both come from here."""
     v = versions or detect_versions()
     return [
-        f'pip install "git+{_SURPYVAL_GIT}@v{v["surpyval"]}"',
+        f'pip install "surpyval=={v["surpyval"]}"',
         "pip install networkx tqdm",
         f'pip install --no-deps "git+{_REPYABILITY_GIT}@v{v["repyability"]}"',
     ]
