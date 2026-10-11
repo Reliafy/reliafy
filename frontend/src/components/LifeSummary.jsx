@@ -10,6 +10,7 @@ import { formatNumber } from "../format.js";
 import { bestFitSentence, boundWords, compareRows, criterionLabel, timeAtValue } from "../lifeResults.js";
 import { unitInText } from "./unitText.js";
 import { PARAMS, paramLabel } from "../paramLabels.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // The side panel beside a fitted life distribution's plot (#311): its
 // parameters by their plain names with their intervals, the data, and a quiet
@@ -297,7 +298,7 @@ function CompareDistributions({ result, compare, onPick }) {
       <div className="gofh">Compare distributions</div>
       <p className="compare-sentence">{bestFitSentence(rows)}</p>
       {selection.summary && <p className="muted-line">{selection.summary}</p>}
-      <div className="rs-table-wrap">
+      <ScrollCue className="rs-table-wrap">
         <table className="mini-table compare-table">
           <thead>
             <tr><th>Distribution</th><th>{label}</th><th>Δ{label}</th><th>Verdict</th></tr>
@@ -325,7 +326,7 @@ function CompareDistributions({ result, compare, onPick }) {
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
       <p className="muted-line">
         Lower {label} is better. Under 2 apart, the data can't tell two distributions apart.
         {onPick ? " Pick a name to fit that one instead." : ""}
