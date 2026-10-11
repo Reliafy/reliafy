@@ -1,4 +1,5 @@
 import Card, { CardHeader } from "./ui/Card.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 import { formatPercent } from "../format.js";
 import { getWalkthrough, stepFunnel } from "../walkthroughs.js";
 
@@ -14,7 +15,7 @@ export default function WalkthroughStats({ rows }) {
       {!any ? (
         <p className="muted-line">No walkthroughs started in this window.</p>
       ) : (
-        <div className="usage-table-wrap">
+        <ScrollCue className="usage-table-wrap">
           <table className="usage-table">
             <thead>
               <tr>
@@ -39,7 +40,7 @@ export default function WalkthroughStats({ rows }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       )}
     </Card>
   );
