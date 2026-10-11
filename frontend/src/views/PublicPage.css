@@ -119,5 +119,22 @@ html.print-layout .public-page .card { box-shadow: none; }
   .public-page .report-head,
   .public-page .report-section-head { break-inside: avoid; page-break-inside: avoid; }
   .public-page thead { display: table-header-group; }
+
+  /* Sideways-scrolling strips (#301) print whole: no fade, no arrows, no
+     scrolling; a wide table narrows its type to fit the page. */
+  .public-page .scroll-cue-arrow { display: none !important; }
+  .public-page .scroll-cue-body {
+    overflow: visible !important;
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+  }
+  .public-page .scroll-cue-body > table { min-width: 0 !important; width: 100%; }
+  .public-page .scroll-cue-body > table th,
+  .public-page .scroll-cue-body > table td {
+    font-size: 11px !important;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+    white-space: normal !important;
+  }
   .public-page .report-text p { orphans: 3; widows: 3; }
 }
