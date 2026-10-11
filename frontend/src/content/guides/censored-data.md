@@ -41,8 +41,15 @@ hours,censored
 2000,1
 ```
 
-Map that column to **c** when you fit. That's the whole change, and it will often
-move your fitted life substantially.
+When you fit, choose that column as **Failed or still running?** in the Data
+step. Reliafy lists each value it finds with its number of rows, and you mark
+each one **Failed** or **Still running** — so a file that uses `1` for a failure,
+or words like `failed` and `running`, works as it is. That's the whole change,
+and it will often move your fitted life substantially.
+
+The sample pump model is exactly this case: 25 pumps, 18 failed and 7 still
+running. Its Weibull fit puts the characteristic life at **32.7 months**, with
+the survivors counted properly.
 
 ![A right-censored Weibull fit — the survivors are counted properly](/guides/img/censored-01-model.png)
 
@@ -57,8 +64,10 @@ something already broken. You know it failed *between* the last two inspections,
 but not when.
 
 Recording the inspection date as the failure time systematically overstates
-life. Instead, give the bounds using **xl** (lower) and **xr** (upper) *instead
-of* x:
+life. Instead, give both bounds. Open **Advanced: interval and truncated data**
+in the Data step and choose the columns for the **Earliest possible failure
+time** and the **Latest possible failure time**; they're used *instead of* a
+single time:
 
 ```
 xl,xr
@@ -72,7 +81,8 @@ uncertainty rather than pretending the failure happened at the moment you looked
 ## Left censoring: already failed when first observed
 
 If a unit had already failed by the time you first checked, you know only that
-its life was *less than* that time. Flag it with `-1` in the `c` column.
+its life was *less than* that time. Flag it with `-1` in the censoring column:
+the Data step shows it as **Found failed (left-censored)**.
 
 ## Truncation: a different thing entirely
 
@@ -86,19 +96,25 @@ warranty expired never appear. Or you started recording in 2020, so anything tha
 failed before then is absent. Your sample isn't representative, and a model that
 doesn't know this will be biased.
 
-Map **tl** and **tr** for left and right truncation and the fit corrects for the
-observation window.
+Under the same **Advanced** section, choose the columns for **Observed from
+(left truncation)** and **Observed until (right truncation)** and the fit
+corrects for the observation window.
 
 ## Counts
 
 If one row stands for several identical units — "5 pumps, all failed at 1,000
-hours" — use **n** for the count rather than duplicating rows. Combining `c` and
-`n` is the compact way to express a big fleet: one row for the failures at each
-time, one row for the survivors.
+hours" — choose that column as the **Count** rather than duplicating rows.
+Combining the censoring column and a count is the compact way to express a big
+fleet: one row for the failures at each time, one row for the survivors.
 
 ## How to tell it's working
 
-Fit the same data with and without the censoring column mapped and compare. The
+The Data step sums it up under the columns (*18 failures, 7 still running* for
+the pump sample), so you can see at once whether the codes are the right way
+round: a fit where nearly every row is "still running" almost always means they
+aren't.
+
+Fit the same data with and without the censoring column chosen and compare. The
 censored fit will show a longer characteristic life — often dramatically so — and
 that difference is the reliability your equipment actually has and was previously
 being denied.
