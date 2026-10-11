@@ -24,8 +24,10 @@ function readingTime(body) {
 // Posts dated in the future are queued, not published: they're invisible in
 // the list and 404 by direct URL until their date arrives. Write a batch,
 // date them out, deploy once — the blog releases them on schedule. (UTC-date
-// comparison; prerender excludes them from static HTML and the sitemap too,
-// so SEO for a post starts at the first deploy after its date.)
+// comparison: 00:00 UTC is 10:00 in Brisbane.) The prerender renders queued
+// posts too, and the server holds each page — and its sitemap entry — back
+// until its date (backend/services/content_gate.py), so search engines can
+// read a post on its day with no rebuild.
 export const TODAY = new Date().toISOString().slice(0, 10);
 
 // Every item, including future-dated ones — the server's RSS route filters
@@ -54,8 +56,9 @@ export const allPosts = Object.entries(files)
 
 export const posts = allPosts.filter((p) => !p.date || p.date <= TODAY);
 
-export function getPost(slug) {
-  return posts.find((p) => p.slug === slug) || null;
+// `includeFuture` is for the build-time prerender only (see above).
+export function getPost(slug, { includeFuture = false } = {}) {
+  return (includeFuture ? allPosts : posts).find((p) => p.slug === slug) || null;
 }
 
 // Render a post body to HTML. Content is authored by us (trusted repo files),

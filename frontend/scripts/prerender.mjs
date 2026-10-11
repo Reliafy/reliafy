@@ -4,10 +4,16 @@
 //   vite build --config vite.ssr.config.js   -> dist-ssr/prerender-entry.js
 //   node scripts/prerender.mjs               -> dist/static/<route>/index.html
 //                                               dist/sitemap.xml, dist/robots.txt
+//                                               dist/feeds.json, dist/content.json
 //
 // The backend serves dist/static/<route>/index.html for those routes (full
 // content + per-page meta), while every other route still gets the SPA shell.
 // React re-renders into #root on load, so pages stay fully interactive.
+//
+// Future-dated blog posts and updates are rendered (and listed in the sitemap)
+// too. dist/content.json names them with their dates, and the backend holds
+// each page and sitemap entry back until its date (content_gate.py). It also
+// never serves feeds.json or content.json themselves: they hold queued items.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -16,7 +22,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 const entry = pathToFileURL(join(root, "dist-ssr", "prerender-entry.js")).href;
 
-const { render, routes, feeds, SITE } = await import(entry);
+const { render, routes, feeds, gatedPages, SITE } = await import(entry);
 
 const template = readFileSync(join(dist, "index.html"), "utf8");
 const escape = (s) =>
@@ -89,4 +95,7 @@ const feedData = feeds();
 writeFileSync(join(dist, "feeds.json"), JSON.stringify({ site: SITE, feeds: feedData }, null, 1));
 const feedCount = feedData.length;
 
-console.log(`prerendered ${count} pages + sitemap.xml + robots.txt + feeds.json (${feedCount} feeds)`);
+// Dated pages for the server's date gate (path -> YYYY-MM-DD, UTC).
+writeFileSync(join(dist, "content.json"), JSON.stringify({ pages: gatedPages() }, null, 1));
+
+console.log(`prerendered ${count} pages + sitemap.xml + robots.txt + feeds.json (${feedCount} feeds) + content.json`);

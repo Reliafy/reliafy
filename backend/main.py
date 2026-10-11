@@ -91,6 +91,7 @@ from backend.routers import compare_groups as compare_groups_router
 from backend.routers import regression_diagnostics as regression_diagnostics_router
 from backend.routers import tvc as tvc_router
 from backend.routers import workspace_changes as workspace_changes_router
+from backend.services import content_gate
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
@@ -672,13 +673,20 @@ def spa_response(full_path: str, dist: Path) -> Response:
     then a built file (``/llms.txt``, ``/robots.txt``, images…); then the SPA
     shell, for the app's own routes (:data:`SPA_ROOTS`) only. Anything else is
     a real 404 (#118). Never serves a file from outside ``dist``.
+
+    A blog post or update prerendered ahead of its date is held back until
+    that date (UTC): before then its path answers as an unknown one would
+    (#367, :mod:`backend.services.content_gate`). The build's private files
+    (``feeds.json``, ``content.json``) and ``/static/...`` are never served.
     """
     root = dist.resolve()
     prerendered = contained_path(dist / "static" / (full_path or ".") / "index.html", root)
-    if prerendered is not None and prerendered.is_file():
+    if (prerendered is not None and prerendered.is_file()
+            and not content_gate.held(full_path, dist)):
         return FileResponse(prerendered, headers=_NO_CACHE)
     candidate = contained_path(dist / full_path, root)
-    if full_path and candidate is not None and candidate.is_file():
+    if (full_path and candidate is not None and candidate.is_file()
+            and not content_gate.is_private(full_path)):
         headers = _NO_CACHE if candidate.suffix == ".html" else None
         return FileResponse(candidate, headers=headers)
     if is_spa_route(full_path):

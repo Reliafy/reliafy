@@ -29,11 +29,12 @@ from xml.sax.saxutils import escape
 from fastapi import APIRouter
 from fastapi.responses import Response
 
-from backend.services import email_links
+from backend.services import content_gate, email_links
 
 router = APIRouter()
 
-FEEDS_FILE = Path(__file__).resolve().parents[2] / "frontend" / "dist" / "feeds.json"
+DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+FEEDS_FILE = DIST / "feeds.json"
 
 # Short CDN/browser cache: Firebase Hosting fronts the service, and a feed
 # poller (Zapier ~15 min) should see a newly-dated item within minutes.
@@ -143,3 +144,16 @@ def blog_feed() -> Response:
 def social_feed() -> Response:
     """The LinkedIn feed: the only one the Zapier → LinkedIn Zap watches."""
     return _feed_response("/social/feed.xml")
+
+
+@router.get("/sitemap.xml", include_in_schema=False)
+def sitemap() -> Response:
+    """The build's sitemap without pages that aren't live yet (#367): a post
+    prerendered ahead of its date joins the sitemap on that date."""
+    try:
+        xml = (DIST / "sitemap.xml").read_text(encoding="utf-8")
+    except OSError:
+        return Response("Not found.", status_code=404, media_type="text/plain")
+    body = content_gate.filter_sitemap(xml, content_gate.pages(DIST), _today())
+    return Response(body, media_type="application/xml; charset=utf-8",
+                    headers={"Cache-Control": CACHE})
