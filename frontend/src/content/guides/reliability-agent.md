@@ -6,6 +6,8 @@ prerequisites: "A Pro plan or AI credits. Data is optional — the agent can res
 related_href: "/agent"
 related_label: "Open the Reliability Agent"
 order: 40
+# The Reliability Agent is switched off (RELIABILITY_AGENT_ENABLED); shown again when it returns.
+hidden: true
 ---
 
 The Reliability Agent is a different thing from the assistant in the corner of
