@@ -1,0 +1,78 @@
+# Reliafy's content calendar (#343, #344), machine-readable.
+#
+# Read by the monthly drafting job (.github/workflows/content-draft.yml, which
+# follows .github/content/draft-prompt.md): on the 15th it drafts every slot of
+# the next month, plus that month's short LinkedIn posts and evergreen pages.
+# backend/tests/test_content_calendar.py checks this file parses and stays in
+# shape.
+#
+# Every slot is a Monday. A post goes live at 10:00 Brisbane (00:00 UTC) on
+# its date: the site, the sitemap and the LinkedIn feed all gate on the date.
+# A whatsnew slot is the month's only email: its update is drafted with
+# `send: auto`, so merging it approves the send (test copy the Friday before,
+# the list at 10:00 Brisbane on the day).
+
+timezone: Australia/Brisbane
+publish_time: "10:00"
+
+# The monthly template (#343): week 1 What's new, week 2 technical, week 3
+# commentary, week 4 tutorial or case study.
+types:
+  whatsnew: "What's new: the month's post and its only email (retention)"
+  technical: "Technical deep-dive: methods, worked examples, the statistics (credibility and search)"
+  commentary: "Industry commentary: standards, incidents, RCM practice, AI in maintenance (voice)"
+  tutorial: "Tutorial or case study: how to do X in Reliafy (conversion)"
+
+# Besides the slots, every month.
+cadence:
+  short_posts_per_week: [2, 3]      # mostly cut from that week's long piece
+  evergreen_pages_per_month: [1, 2] # Learn / Reference pages
+
+# The week of 28 Dec 2026 has no slot.
+skipped_weeks:
+  - "2026-12-28"
+
+# "to be chosen": the drafting job proposes a topic in the PR.
+slots:
+  - date: "2026-10-12"
+    type: tutorial
+    title: "Import your RBDs from BlockSim, Open-PSA, Galileo and Excel"
+  - date: "2026-10-19"
+    type: commentary
+    title: "Spreadsheets: where reliability analysis quietly goes wrong"
+  - date: "2026-10-26"
+    type: tutorial
+    title: "Verify a safety function's PFDavg and SIL"
+  - date: "2026-11-02"
+    type: whatsnew
+    title: "What's new in Reliafy: November 2026"
+  - date: "2026-11-09"
+    type: technical
+    title: "How long will this take? Survival analysis on our own run times"
+  - date: "2026-11-16"
+    type: commentary
+    title: "AI agents will read your failure data next: what to check"
+  - date: "2026-11-23"
+    type: tutorial
+    title: "Design to a target: reliability allocation"
+  - date: "2026-12-07"
+    type: whatsnew
+    title: "What's new in Reliafy: December 2026"
+  - date: "2026-12-14"
+    type: technical
+    title: "Failure modes that compete"
+  - date: "2026-12-21"
+    type: commentary
+    title: "Run to failure is a decision, not a default"
+  - date: "2027-01-04"
+    type: whatsnew
+    title: "What's new in Reliafy: January 2027"
+  - date: "2027-01-11"
+    type: technical
+    title: "to be chosen"
+  - date: "2027-01-18"
+    type: commentary
+    title: "to be chosen"
+  - date: "2027-01-25"
+    type: tutorial
+    title: "Production availability: energy lost, not just downtime"
