@@ -1,27 +1,8 @@
 // Shared RBD validation feedback, used on both the Builder and Calculator tabs.
 import { NO_BLOCKS } from "../rbdReadiness.js";
 
-// A structural signature of the diagram (ignoring node positions) so callers
-// can tell when it has changed since the last validation.
-export function graphSignature(graph) {
-  return JSON.stringify({
-    nodes: (graph.nodes || []).map((n) => ({
-      id: n.id,
-      type: n.type,
-      data: n.data,
-    })),
-    edges: (graph.edges || []).map((e) => ({
-      source: e.source,
-      target: e.target,
-    })),
-    unit: graph.unit || "",
-    // Diagram-level costs (#99) change a repairable diagram's results.
-    ...(graph.costs ? { costs: graph.costs } : {}),
-    // A network is checked as one; phases add their own warnings (#160).
-    ...(graph.network ? { network: graph.network } : {}),
-    ...(graph.phases ? { phases: graph.phases } : {}),
-  });
-}
+// A structural signature of the diagram (ignoring node positions): rbdSignature.js.
+export { graphSignature } from "../rbdSignature.js";
 
 // Renders the outcome of a validate call: a green pass, an amber pass that
 // carries warnings (never green, #305), or a red panel that explains what
