@@ -144,7 +144,8 @@ const REGRESSION_TABS = [
 // is the data's failure / still-running count when the caller has the data.
 // ``compare`` (() => Promise<selection>) runs Best fit's comparison on the
 // same data; ``onPick(distributionId)`` refits with another distribution
-// (#293) — both optional.
+// (#293) — both optional. ``onUse`` (() => Promise<saved id>, a fit not
+// saved yet) lets "Use this model" save it first (#294).
 export default function ResultView(props) {
   if (props.result.kind === "per_demand") return <PerDemandPanel result={props.result} />;
   // Life data by failure mode (#177) has its own tabs and panel; a separate
@@ -153,7 +154,8 @@ export default function ResultView(props) {
   return <LifeResult {...props} />;
 }
 
-function LifeResult({ result, modelId = null, name = null, split = null, compare = null, onPick = null }) {
+function LifeResult({ result, modelId = null, name = null, split = null, compare = null, onPick = null,
+                     onUse = null }) {
   const isRegression = result.kind === "regression";
   const isNonparametric = result.kind === "nonparametric";
   const isDiscrete = result.kind === "discrete";
@@ -289,7 +291,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
                             download={`${name || result.distribution} — survival curve`} />
             </div>
             <LifeAside result={result} split={split} level={level} onLevel={setLevel}
-                       modelId={modelId} name={name} />
+                       modelId={modelId} name={name} onUse={onUse} />
           </div>
         )}
         {tab === "plot" && (
@@ -300,7 +302,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
             </div>
             {!isRegression && (
               <LifeAside result={result} split={split} bestFit={bestFit} level={level} onLevel={setLevel}
-                         compare={compare} onPick={onPick} modelId={modelId} name={name} />
+                         compare={compare} onPick={onPick} modelId={modelId} name={name} onUse={onUse} />
             )}
           </div>
         )}

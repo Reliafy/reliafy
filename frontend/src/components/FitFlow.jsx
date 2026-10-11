@@ -401,21 +401,35 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     }
   };
 
+  const persist = () =>
+    saveModel(name.trim(), distribution, file, fitMapping, {
+      unit,
+      datasetId: datasetId || undefined,
+      ...(hasCovariates
+        ? { ...(advanced ? { formula } : { covariates, covariateUnits: covUnits }), ...coxFit }
+        : byMode ? {} : { fitOptions: fitOpts }),
+    });
+
   const onSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
     setError(null);
     try {
-      const saved = await saveModel(name.trim(), distribution, file, fitMapping, {
-        unit,
-        datasetId: datasetId || undefined,
-        ...(hasCovariates
-          ? { ...(advanced ? { formula } : { covariates, covariateUnits: covUnits }), ...coxFit }
-          : byMode ? {} : { fitOptions: fitOpts }),
-      });
-      onSaved?.(saved);
+      onSaved?.(await persist());
     } catch (err) {
       setError(err.message);
+      setSaving(false);
+    }
+  };
+
+  // "Use this model" on a fit not saved yet (#294): save it under the name
+  // beside Save, then the tool opens with it (the caller navigates).
+  const saveForUse = async () => {
+    if (!name.trim()) throw new Error("Name the model beside Save first.");
+    setSaving(true);
+    try {
+      return (await persist()).id;
+    } finally {
       setSaving(false);
     }
   };
@@ -773,6 +787,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             split={split}
             compare={result.kind === "distribution" && !hasCovariates ? compareFit : null}
             onPick={ownOptions ? null : pickFit}
+            onUse={saveForUse}
           />
         </div>
       )}
