@@ -6,6 +6,7 @@ import { TYPE_LABEL, loadAllModels } from "../allModels.js";
 import { relativeTime } from "../instrument.js";
 import { trackEvent } from "../telemetry.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { ShowMeHow } from "../components/Walkthrough.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 
 const ACTIVATED_KEY = "reliafy_activated";
@@ -43,7 +44,10 @@ export default function ModellingDashboard() {
 
   return (
     <div className="app">
-      <PageHeader title="Modelling" meta="Fit life data, repairable systems, accelerated tests and degradation." />
+      <PageHeader
+        title="Modelling"
+        meta={<>Fit life data, repairable systems, accelerated tests and degradation. <ShowMeHow id="fit" /></>}
+      />
 
       <StartHere info={firstRun} sampleModelId={sampleModelId} />
 

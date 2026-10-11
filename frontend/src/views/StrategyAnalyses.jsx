@@ -5,6 +5,7 @@ import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { ShowMeHow } from "../components/Walkthrough.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 import { RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 import { CompareIcon, CostIcon, StrategyIcon, TestIcon } from "../components/icons.jsx";
@@ -59,7 +60,7 @@ export default function StrategyAnalyses() {
     <div className="app">
       <PageHeader
         title="Strategy"
-        meta="Turn fitted models into maintenance decisions. Saved analyses can be cited as evidence in RCM studies."
+        meta={<>Turn fitted models into maintenance decisions. Saved analyses can be cited as evidence in RCM studies. <ShowMeHow id="replacement" /></>}
       />
 
       <nav className="tool-strip" aria-label="Strategy tools">
@@ -81,6 +82,7 @@ export default function StrategyAnalyses() {
         <div className="card empty">
           <h2>No saved analyses</h2>
           <p>Run one of the tools above and save its result to see it here.</p>
+          <p><ShowMeHow id="replacement">Show me how, on a sample</ShowMeHow></p>
         </div>
       ) : (
         <>

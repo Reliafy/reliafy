@@ -7,6 +7,7 @@ import { listFleets, createFleet, deleteFleet, listModels, listAltModels, listRe
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { ShowMeHow } from "../components/Walkthrough.jsx";
 import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 import { formatNumber } from "../format.js";
 
@@ -118,7 +119,7 @@ export default function FleetForecasts() {
       <PageHeader
         crumbs={[{ label: "Fleet" }]}
         title="Failure forecasts"
-        meta="How many failures a fleet will see over a horizon, from your fitted models."
+        meta={<>How many failures a fleet will see over a horizon, from your fitted models. <ShowMeHow id="fleet" /></>}
         primary={<button onClick={openCreate}><PlusIcon /> New forecast</button>}
       />
 
@@ -137,7 +138,7 @@ export default function FleetForecasts() {
       ) : fleets.length === 0 ? (
         <div className="card empty">
           <h2>No fleet forecasts</h2>
-          <p>Create one from a saved life model and list the items you have in service.</p>
+          <p>Create one from a saved life model and list the items you have in service. <ShowMeHow id="fleet" /></p>
           <button style={{ marginTop: "1rem" }} onClick={openCreate}>
             <PlusIcon /> New forecast
           </button>
