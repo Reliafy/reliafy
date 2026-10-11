@@ -59,9 +59,10 @@ Double-click a block to open it, or double-click its name to rename it in place
   stagger redundant channels' tests) and the test's coverage (below 100% when
   a test can't find every dangerous failure).
 
-Redundant channels that belong to one common-cause group must be identical, so
-enter their λDU the same way: the starter's are entered as **Parameters**, and a
-rate typed as a Mean can differ from it in the last decimal place.
+Redundant channels that belong to one common-cause group must be identical:
+give them the same λDU, as a **Mean** or as **Parameters** (a mean of
+1,000,000 hours is λ = 1e-6 exactly). If a group's members differ, **Validate**
+says so before you calculate.
 
 Failures that are found at once by diagnostics aren't part of λDU. **Every
 block repaired instantly** in the toolbar's ⋯ menu repairs every element as
