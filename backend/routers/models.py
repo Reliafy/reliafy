@@ -17,6 +17,7 @@ from backend.services import billing as billing_service
 from backend.services import excel as excel_service
 from backend.services import datasets as datasets_service
 from backend.services import models as models_service
+from backend.services import model_split
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
 from backend.services import access as access_service
@@ -485,7 +486,12 @@ def get_model(
     model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if model is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
-    return JSONResponse(content=_model_detail(model, ctx))
+    detail = _model_detail(model, ctx)
+    # "5 failed, 7 running" (#303), for a model saved before fits recorded it.
+    split = model_split.split_for_model(session, model)
+    if split is not None:
+        detail["results"]["split"] = split
+    return JSONResponse(content=detail)
 
 
 @router.get("/models/{model_id}/validation")
