@@ -1,0 +1,113 @@
+name: Guide screenshots
+
+# Re-captures the screenshots the product guides embed (#74), so a guide can't
+# quietly keep showing a control that has since moved. It builds the app with
+# sign-in switched off, serves it with the in-memory database and the samples,
+# runs frontend/scripts/capture-guides.mjs, and when any image changed opens
+# (or updates) a pull request for a person to look over. A changed image never
+# fails the run; a capture step that breaks does, after the pull request.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1" # Mondays, 03:00 UTC
+
+# Pushing the branch and opening the pull request are all it writes.
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: guide-screenshots
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      BRANCH: chore/guide-screenshots
+    steps:
+      # Third-party actions are pinned to commit SHAs, as in ci.yml.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      # RePyability isn't in requirements.txt: like the Dockerfile and ci.yml,
+      # install the pinned tag --no-deps so it can't re-resolve surpyval.
+      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.13"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      # The served bundle must be the auth-disabled build: the harness refuses
+      # anything else rather than photographing the sign-in page.
+      - name: Build the app with sign-in switched off
+        run: npm run build
+        working-directory: frontend
+        env:
+          VITE_AUTH_DISABLED: "true"
+
+      # No MONGODB_URI: the backend uses its in-memory database, seeded with
+      # the samples the guides are written against.
+      - name: Start the app with the in-memory database and samples
+        env:
+          AUTH_DISABLED: "true"
+          SEED_SAMPLES: "true"
+          PUSH_ERROR_ALERTS: "false"
+        run: |
+          nohup python -m uvicorn backend.main:app --port 8000 > "$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 1 90); do
+            if curl -sf http://localhost:8000/api/health > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/server.log"
+          exit 1
+
+      - name: Capture the guide screenshots
+        id: capture
+        continue-on-error: true
+        run: npm run capture:guides
+        working-directory: frontend
+        env:
+          BASE_URL: http://localhost:8000
+
+      - name: Open or update a pull request when any image changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git add -A frontend/public/guides/img
+          if git diff --cached --quiet; then
+            echo "No screenshot changed."
+            exit 0
+          fi
+          changed=$(git diff --cached --name-only | sed 's#^frontend/public/guides/img/#- #')
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git commit -m "Guide screenshots: refresh from the scheduled capture"
+          git push --force origin "$BRANCH"
+          body=$(printf '%s\n\n%s\n\n%s\n' \
+            "The scheduled capture (frontend/scripts/capture-guides.mjs) produced screenshots that differ from the ones on ${GITHUB_REF_NAME}. Look them over against the guides in frontend/src/content/guides/: a change may be a real UI change the guide's text should follow, or only rendering noise." \
+            "Changed:" \
+            "$changed")
+          if [ "$(gh pr view "$BRANCH" --json state --jq .state 2>/dev/null)" = "OPEN" ]; then
+            gh pr edit "$BRANCH" --body "$body"
+            echo "Updated the open pull request."
+          else
+            gh pr create --base "$GITHUB_REF_NAME" --head "$BRANCH" \
+              --title "Guide screenshots: refresh" --body "$body"
+          fi
+
+      - name: Fail if a capture step broke
+        if: steps.capture.outcome == 'failure'
+        run: |
+          echo "The capture harness failed: a guide's steps no longer match the app, or the app didn't serve the auth-disabled build. See the 'Capture the guide screenshots' step."
+          exit 1
