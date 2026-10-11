@@ -49,6 +49,9 @@ def db(monkeypatch):
         {"_id": "u4", "email": "dev@example.com"},                                        # test domain
         {"_id": "u6", "email": "Skip.Me@four.example.org"},                               # excluded by config
     ])
+    # October's report counts as sent: these tests are about the update steps
+    # (the report has its own tests below).
+    d.content_jobs.insert_one({"_id": "report:2026-10", "status": "done"})
     return d
 
 
@@ -73,9 +76,13 @@ def pushes(monkeypatch):
     return got
 
 
-def _run(db, when, **kw):
+def _run(db, when, report=False, **kw):
+    """One run; its update steps only unless ``report``."""
     kw.setdefault("updates", UPDATES)
-    return content_jobs.run(db, now=when, sleep=lambda s: None, **kw)
+    out = content_jobs.run(db, now=when, sleep=lambda s: None, **kw)
+    if not report:
+        out["actions"] = [a for a in out["actions"] if a["step"] != "monthly report"]
+    return out
 
 
 def test_friday_before():
@@ -166,8 +173,7 @@ def test_a_run_out_of_time_stops_and_the_next_continues(db, outbox, monkeypatch)
 
     monkeypatch.setattr(config, "UPDATE_AUTO_SECONDS", 10)
     ticks = iter([0, 0, 11, 11, 11])  # deadline set at 0; out of time before the 2nd email
-    first = content_jobs.run(db, now=bne(2026, 11, 2, 10, 5), updates=UPDATES,
-                             sleep=lambda s: None, clock=lambda: next(ticks))["actions"][0]
+    first = _run(db, bne(2026, 11, 2, 10, 5), clock=lambda: next(ticks))["actions"][0]
     assert first["result"] == "partial" and first["sent"] == 1
     second = _run(db, bne(2026, 11, 2, 11, 5))["actions"][0]
     assert second["result"] == "sent" and second["sent"] == 1
@@ -205,7 +211,8 @@ def test_dry_run_reports_and_records_nothing(db, outbox):
     send = _run(db, bne(2026, 11, 2, 10, 5), dry_run=True)["actions"][0]
     assert send["result"] == "would send" and send["eligible"] == 2
     assert outbox == []
-    assert db.content_jobs.count_documents({}) == 0 and db.update_sends.count_documents({}) == 0
+    assert db.content_jobs.count_documents({"_id": {"$ne": "report:2026-10"}}) == 0
+    assert db.update_sends.count_documents({}) == 0
 
 
 def test_refuses_when_email_isnt_configured(db, monkeypatch):

@@ -11,6 +11,7 @@ from backend.auth import get_current_user
 from backend.config import SAMPLE_OWNER
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.services import content_report
 from backend.services import email_campaigns as email_campaigns_service
 from backend.services import mcp_switch
 from backend.services import metrics as metrics_service
@@ -118,6 +119,25 @@ def email_campaigns(
     if not billing_service.is_admin_user(user):
         return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
     return JSONResponse(content=email_campaigns_service.report(session, days=days))
+
+
+@router.get("/content-report")
+def content_report_view(
+    month: str = "",
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """The monthly content report (#353, #367) for ``month`` (YYYY-MM,
+    Brisbane; default last month): the same tables the 1st's email has."""
+    if not billing_service.is_admin_user(user):
+        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
+    if not month:
+        now = datetime.now(timezone.utc).astimezone(content_report.BRISBANE)
+        month = content_report.previous_month(now.date())
+    try:
+        return JSONResponse(content=content_report.build(session, month))
+    except ValueError:
+        return JSONResponse(status_code=422, content={"detail": "month must be YYYY-MM."})
 
 
 @router.get("/usage")

@@ -21,7 +21,8 @@ router = APIRouter()
 @router.post("/internal/content/run", include_in_schema=False)
 async def content_run(dry_run: bool = False, authorization: str | None = Header(default=None),
                       session=Depends(get_session)):
-    """Send what's due: an approved What's new's test copy or list send.
+    """Send what's due: an approved What's new's test copy or list send, and
+    the operators' monthly content report on the 1st.
 
     Accepted only with a Google-signed ID token of ``CONTENT_CRON_SA`` for
     ``CONTENT_CRON_AUDIENCE`` (Cloud Scheduler's OIDC token). Refuses (503)

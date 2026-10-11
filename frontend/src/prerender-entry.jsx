@@ -175,6 +175,15 @@ export function gatedPages() {
   return pages;
 }
 
+// Titles of the blog posts and updates, for the operators' monthly content
+// report (backend/services/content_report.py).
+export function pageTitles() {
+  const titles = {};
+  for (const p of allPosts) titles[`/blog/${p.slug}`] = p.title;
+  for (const u of allUpdates) titles[`/whats-new/${u.slug}`] = u.title;
+  return titles;
+}
+
 // Every What's new update as the email needs it. The runtime image has no
 // source files, so the scheduled send (backend/services/content_jobs.py)
 // reads updates — `send: auto` ones included — from dist/content.json.
