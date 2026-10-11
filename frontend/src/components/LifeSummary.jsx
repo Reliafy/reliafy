@@ -170,7 +170,7 @@ function TauInput({ tau, unit, onChange }) {
   return (
     <input
       className="life-tau"
-      type="number"
+      type="number" inputMode="decimal"
       min="0"
       step="any"
       value={text}
