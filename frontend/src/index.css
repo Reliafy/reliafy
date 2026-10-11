@@ -7697,6 +7697,20 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .guide-prose p { margin: 0 0 16px; }
 .guide-prose ul, .guide-prose ol { margin: 0 0 16px; padding-left: 22px; }
 .guide-prose li { margin: 4px 0; }
+/* Code, tables and quoted results (#302): each scrolls inside itself, never the drawer. */
+.guide-prose pre {
+  overflow-x: auto; margin: 0 0 16px; padding: 12px 14px;
+  background: var(--surf-2); border-radius: var(--r-sm); font-size: var(--fs-13); line-height: 1.5;
+}
+.guide-prose table {
+  display: block; overflow-x: auto; border-collapse: collapse; margin: 0 0 16px;
+  font-size: var(--fs-14); line-height: 1.5; font-variant-numeric: tabular-nums;
+}
+.guide-prose th, .guide-prose td { padding: 6px 16px 6px 0; border-bottom: 1px solid var(--line); text-align: left; }
+.guide-prose th { font-size: var(--fs-13); font-weight: 500; color: var(--muted); }
+.guide-prose blockquote { margin: 0 0 16px; padding: 2px 0 2px 16px; border-left: 3px solid var(--line); }
+.guide-prose blockquote p { margin: 0 0 8px; }
+.guide-prose blockquote p:last-child { margin-bottom: 0; }
 .guide-prose img {
   display: block; width: 100%; max-width: 660px; margin: 18px 0 22px;
   border: 1px solid var(--line); border-radius: var(--r);

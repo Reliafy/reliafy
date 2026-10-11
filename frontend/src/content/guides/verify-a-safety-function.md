@@ -35,6 +35,11 @@ finds it failed. The diagram is a **Safety function**, with a target of SIL 2:
 the switch on the builder's toolbar is on, and the chip beside it holds the
 target. Calculate it as it is to see the results, then make it yours.
 
+![The starter: two transmitters in a common-cause group, a logic solver and a shutdown valve](/guides/img/sif-01-starter.png)
+
+Each block's summary shows its λDU, *instant repair* and its proof-test interval
+(⏱ 8,760 h); the transmitters also carry their common-cause chip, ⚭ β 5%.
+
 To turn an existing diagram into a safety function instead, switch on
 **Safety function** in its toolbar. A safety function is a repairable diagram,
 so the switch makes it one.
@@ -53,6 +58,10 @@ Double-click a block to open it, or double-click its name to rename it in place
 - **Proof test** — how often the element is tested, when its first test is (to
   stagger redundant channels' tests) and the test's coverage (below 100% when
   a test can't find every dangerous failure).
+
+Redundant channels that belong to one common-cause group must be identical, so
+enter their λDU the same way: the starter's are entered as **Parameters**, and a
+rate typed as a Mean can differ from it in the last decimal place.
 
 Failures that are found at once by diagnostics aren't part of λDU. **Every
 block repaired instantly** in the toolbar's ⋯ menu repairs every element as
@@ -73,7 +82,8 @@ floor under a redundant pair's PFDavg.
 
 ## Read the results
 
-Open the **Calculator** and calculate. A safety function's results lead with:
+**Validate**, then open the **Calculator** and calculate. A safety function's
+results lead with:
 
 - the **PFDavg** and the **SIL** band it falls in (low demand: SIL 1 below 0.1,
   SIL 2 below 0.01, SIL 3 below 0.001, SIL 4 below 0.0001), and whether it
@@ -81,6 +91,12 @@ Open the **Calculator** and calculate. A safety function's results lead with:
 - the **risk reduction factor** (RRF = 1 / PFDavg);
 - **PFD(t)**, which climbs between proof tests as hidden failures build up and
   drops at each test. Its average is the PFDavg.
+
+For the starter that's a **PFDavg of 0.00448: SIL 2, met**, at 45% of the SIL 2
+limit of 0.01, a risk reduction factor of 223. The chart draws PFD(t) on a log
+scale over the SIL bands, with the PFDavg dashed and the SIL limit dotted.
+
+![The starter's results: PFDavg 0.00448, SIL 2 met, and PFD(t) over the SIL bands](/guides/img/sif-02-results.png)
 
 Under **Details**, **Where the PFDavg comes from** lists each element's share:
 
@@ -94,7 +110,35 @@ Under **Details**, **Where the PFDavg comes from** lists each element's share:
 
 The element at the top is where a shorter test interval, a better element or
 more redundancy does the most good. In the starter it is the single shutdown
-valve.
+valve: **98%** of the PFDavg.
+
+**What to improve**, between the chart and Details, says the same as a ranked
+list of changes, each moved 10% the way that helps. In the starter the top two
+are the valve's proof-test interval (8,760 → 7,880 hours) and its mean life; the
+transmitters' common-cause β comes a distant third.
+
+## Try a change: a second shutdown valve
+
+Suppose the function has to reach SIL 3. The valve dominates, so give it a
+partner:
+
+1. On the **Builder** tab, select **Shutdown valve** and choose **+ Add block →
+   Add alongside (in parallel)**. The new block is wired beside the valve, the
+   pair merged through a junction: either valve closing is enough, a 1oo2.
+2. Double-click the new block. Name it *Shutdown valve B*, choose
+   **Parameters**, Exponential, failure rate **1e-6**, and under **Proof test**
+   choose **Hidden failures, proof-tested**, every **8,760** hours. **Save
+   block**.
+3. **Validate** and calculate: the PFDavg falls to **1.37e-4, SIL 3**.
+
+That figure treats the two valves as independent, which two valves of one type
+on one line rarely are. Select both valves (shift-click), choose
+**Common-cause group** and give β = **10%**. Calculate again: the PFDavg rises to
+**5.7e-4**, still SIL 3, but four times the independent figure, and the valves'
+common cause is now 75% of the function's dangerous failures. That's why a
+redundant pair's β deserves as much care as its λDU.
+
+![Two shutdown valves voting 1oo2 in a common-cause group](/guides/img/sif-03-two-valves.png)
 
 ## What it doesn't check
 

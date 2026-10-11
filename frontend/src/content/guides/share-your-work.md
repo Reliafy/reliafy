@@ -14,9 +14,13 @@ situations.
 
 ## A public link — for people who don't have Reliafy
 
-Open any saved model, diagram, or analysis and use **Share → public link**. You
-get a URL that anyone can open, with no account and no sign-in, showing a
-read-only view of the result.
+Open any saved model, diagram, or analysis, open the **⋯** menu at the top right
+of the page and choose **Share**. Under **Public links**, give the link a label if
+you like ("for the client"), choose when it **Expires**, and press **Create public
+link**. You get a URL that anyone can open, with no account and no sign-in,
+showing a read-only view of the result, with the analyses it relies on.
+
+![The Share dialog: share with a colleague by email, or create a public link](/guides/img/share-01-dialog.png)
 
 This is the right choice for a contractor, a vendor, a regulator, or a manager
 who is never going to create an account. It's also the answer to "can you send me
@@ -25,12 +29,16 @@ someone's inbox: reopen it later and it reflects the current state of the
 analysis.
 
 Treat the URL as the access control. Anyone holding it can view, so share it as
-deliberately as you'd share the file itself.
+deliberately as you'd share the file itself. For something sensitive, tick **Require
+password** and type one, or leave it blank and Reliafy makes one and shows it
+once. Send the password separately from the link (the link by email, the
+password by message). Each link
+can be revoked on its own, and you can make several, one per audience.
 
 ## Sharing with a named person — for a specific colleague
 
-Also under **Share**, you can share an individual artifact with someone by email
-address. They see it, view-only, inside their own Reliafy account.
+In the same dialog, **Share with (email)** shares that one artifact with someone
+by email address. They see it, view-only, inside their own Reliafy account.
 
 This suits the one-off: a colleague who needs to review your bearing model, but
 who shouldn't be pulled into your whole workspace. If they don't have an account
@@ -56,12 +64,10 @@ as many reviewers as they like without everyone needing a plan.
 
 ## Copying an ID
 
-Every saved artifact shows a copyable **ID** chip under its title. That's what
-you use with the [API](/api-docs) or the Python client to fetch a specific model
-programmatically — useful when you're pulling results into a notebook, a report,
-or another system.
-
-![Saved models, each with a copyable ID and share options](/guides/img/share-01-models.png)
+Every saved artifact has an ID: **⋯ → Copy ID** on its page copies it. That's
+what you use with the [API](/api-docs) or the Python client to fetch a specific
+model programmatically — useful when you're pulling results into a notebook, a
+report, or another system.
 
 ## Which one to use
 

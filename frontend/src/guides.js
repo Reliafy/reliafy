@@ -5,7 +5,9 @@
 //
 // Frontmatter: title, task (one-line "how do I…"), category (index grouping),
 // minutes, prerequisites (optional), related_href/related_label (optional
-// deep link to the feature), order. Screenshots live in /guides/img/ and are
+// deep link to the feature), order, hidden (optional: "true" keeps a guide
+// out of the index, the drawer and the prerendered pages, e.g. while its
+// feature is switched off). Screenshots live in /guides/img/ and are
 // referenced from the markdown; they're produced by the capture harness
 // (scripts/capture-guides.mjs) so they stay in sync with the UI.
 import { marked } from "marked";
@@ -50,9 +52,11 @@ export const guides = Object.entries(files)
         ? { href: meta.related_href, label: meta.related_label || "Open in Reliafy" }
         : null,
       order: Number(meta.order) || 50,
+      hidden: meta.hidden === "true",
       body,
     };
   })
+  .filter((g) => !g.hidden)
   .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
 
 // Guides grouped by category, preserving order.
