@@ -1,4 +1,5 @@
 import { NO_BLOCKS } from "../rbdReadiness.js";
+import { ShowMeHow } from "./Walkthrough.jsx";
 
 // What a builder tab shows while the diagram has nothing to analyse (#271):
 // only Input and Output, or blocks not yet on a path between them. A next
@@ -22,7 +23,10 @@ export default function RbdEmptyState({ gap, goal, onBuild }) {
       </h3>
       <p>
         {empty ? (
-          <>Right-click the canvas to add a component, then drag from Input to it and from it to Output.</>
+          <>
+            Right-click the canvas to add a component, then drag from Input to it and from it to Output.{" "}
+            <ShowMeHow id="rbd">Show me how, on a sample</ShowMeHow>
+          </>
         ) : (
           <>
             Drag between the handles — Input to the first block, the last block to Output — or select the

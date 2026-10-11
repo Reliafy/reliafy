@@ -34,8 +34,9 @@ service and 18 had failed while 12 were still running fine when you stopped
 looking, those 12 are not "failures at the time I stopped looking" — they're
 units that survived *at least* that long. Throwing them away, or worse, treating
 them as failures, will make your equipment look considerably worse than it is.
-Reliafy handles them properly if you tell it which is which, conventionally with
-a `0` for a failure and `1` for a still-running unit:
+Reliafy handles them properly if you tell it which is which. Any two codes will
+do (you say which means what when you map the columns), but the convention is
+`0` for a failure and `1` for a still-running unit:
 
 ```
 hours,censored
@@ -50,37 +51,46 @@ censoring covers most real cases.
 
 ## Loading it in
 
-Go to **Modelling → New model** and choose **Fit to data**. You can drop a CSV
-straight onto the page, or pick a dataset you've already uploaded — datasets are
-reusable, so once a CSV is in Reliafy you can fit as many models to it as you
-like without re-uploading.
+Go to **Modelling → New model** and choose **Fit to data**. The fit runs in four
+steps, shown along the bottom: **Source**, **Data**, **Model** and **Result**.
+For the source, drop a CSV or Excel file straight onto the page, paste a column
+of values, or pick a dataset you've already uploaded — datasets are reusable, so
+once a file is in Reliafy you can fit as many models to it as you like without
+re-uploading.
 
 ![The new-model flow: drop a CSV or pick a saved dataset](/guides/img/fit-01-new.png)
 
-If your file has no header row, tick **No header row** when you upload it and
-Reliafy will name the columns `col 1`, `col 2`, … so the first row stays data
-rather than being eaten as titles.
+If your file has no header row, upload it under **Datasets → New dataset** and
+tick **No header row**: Reliafy names the columns `col 1`, `col 2`, … so the
+first row stays data rather than being eaten as titles.
 
 ## Mapping the columns
 
-Next you tell Reliafy what each column means. The mapping uses the standard
-survival-analysis letters, and you only need the ones your data has:
+The **Data** step shows the first rows and asks what each column means, in plain
+words. You only need the ones your data has:
 
-- **x** — the failure/censoring time. Required.
-- **c** — the censoring flag.
-- **n** — a count, if one row represents several identical units.
-- **xl / xr** — lower and upper bounds, for interval-censored data (use these
-  *instead of* x).
-- **tl / tr** — left and right truncation.
+- **Time to failure or removal** — the failure or censoring time. Required.
+- **Failed or still running?** — the censoring column. Reliafy lists the values
+  it finds, with how many rows have each, and you mark each one **Failed** or
+  **Still running**. For the sample *Pump field returns*, `0` is 18 failures and
+  `1` is 7 pumps still running.
+- **Count** — if one row represents several identical units.
+- **Failure mode** — to fit each mode separately and combine them.
+- Under **Advanced: interval and truncated data**, the earliest and latest
+  possible failure time (for failures found at an inspection, used *instead of*
+  a single time) and when each unit was observed from and until (truncation).
+- Under **Advanced (regression): covariates**, the columns a failure depends on,
+  such as load or temperature.
 
-Set the **unit** here too. It's optional, but it flows through to every chart
-and result afterwards, and it stops you comparing a model in hours against one
-in cycles later on.
+Set the **Unit** here too. It's guessed from the column name where it can be,
+and it flows through to every chart and result afterwards, so it stops you
+comparing a model in hours against one in cycles later on.
 
 ## Choosing a distribution
 
-Then pick the model. If you don't know which distribution you want — and often
-you genuinely don't — choose **best fit** and Reliafy will fit every candidate
+Then, in the **Model** step, pick the model. Weibull is the default. If you
+don't know which distribution you want — and often you genuinely don't — choose
+**Best fit (auto)** and Reliafy will fit every candidate
 and keep the one with the lowest AIC, showing you the full ranking so you can
 see how close the runners-up were.
 
@@ -94,10 +104,19 @@ regression models when failure depends on covariates like temperature or load.
 
 ## Reading the fit
 
-The result page gives you the fitted parameters with confidence intervals, a
-probability plot, goodness-of-fit statistics, and a calculator.
+The result has two tabs, **Probability plot** and **Calculator**, with a panel
+beside the plot:
 
-![A fitted Weibull model: parameters, probability plot and goodness of fit](/guides/img/fit-02-result.png)
+- **Parameters** — each fitted parameter with its 95% interval, the number of
+  observations, and **Fit statistics** (the AIC, which opens the log-likelihood,
+  AIC, AICc and BIC, and a comparison with every other distribution).
+- **Life** — the B1, B5, B10 and B50 lives and the mean life (MTTF), each with
+  its lower confidence bound, and a **Requirement** row to check a B-life
+  requirement against them.
+- A short **verdict** on what the fit means: for a Weibull, wear-out,
+  early-life failures or random failures, judged on β's interval.
+
+![A fitted Weibull model: probability plot, parameters, B-lives and the verdict](/guides/img/fit-02-result.png)
 
 The **probability plot** is the one to look at first. It puts your data on paper
 where a good fit is a straight line. If the points track the line, the
@@ -106,7 +125,9 @@ systematically, or fall into two distinct groups, that's telling you something
 real — often that you have two failure modes mixed together and would be better
 off splitting the data.
 
-For a Weibull fit, **β (beta) is the number worth understanding**:
+For the sample bearing model, 30 failures fit a Weibull with shape **β = 2.50**
+(95% 1.88–3.32) and scale **α = 1,440 hours**. For a Weibull fit, **β is the
+number worth understanding**:
 
 - **β < 1** — failures are *decreasing* over time. Infant mortality: bad
   installs, manufacturing defects, teething problems. Replacing on a schedule
@@ -117,20 +138,26 @@ For a Weibull fit, **β (beta) is the number worth understanding**:
   to make sense.
 
 That single parameter often changes the maintenance decision more than anything
-else on the page.
+else on the page, which is why the verdict card spells it out. The bearings'
+whole interval sits above 1, so the card reads *Wear-out: β is above 1 at 95%
+confidence*.
 
-The **calculator** lets you ask the model direct questions: reliability at a
-given time, the time by which a given fraction will have failed (B10, B50), and
-the mean life — all with confidence bounds.
+The **Calculator** tab lets you ask the model direct questions: reliability (or
+any other function) at a given time, or the time by which a given fraction will
+have failed — each with a confidence bound, stated in words. The
+[B-lives and confidence bounds](/guides/b-lives-and-confidence-bounds) guide
+reads them in detail.
 
 ![The model calculator, reading reliability off the fitted curve](/guides/img/fit-03-calculator.png)
 
 ## Where to go next
 
-Save the model and it becomes available everywhere else: as a block in a
+Press **Save model** and it becomes available everywhere else: as a block in a
 [reliability block diagram](/guides/build-an-rbd), as the input to an
-[optimal replacement interval](/guides/optimal-replacement-interval), and as a
-basis for fleet forecasting.
+[optimal replacement interval](/guides/optimal-replacement-interval), as the
+basis of a [fleet failure forecast](/guides/forecast-fleet-failures-and-spares),
+and as the evidence for a
+[requirement or a demonstration test](/guides/check-a-requirement-and-plan-a-test).
 
 For the theory behind the fit — how censoring is handled in the likelihood, what
 the parameters mean, and how to read the plots — see the Learn article on

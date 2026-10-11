@@ -4,6 +4,7 @@ import { getRecurrentProjection, runRecurrentProjection } from "../api.js";
 import { unitInText } from "./unitText.js";
 import { CardHeader } from "./ui/Card.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 const fmt = (v, d = 4) =>
   v == null || !Number.isFinite(v)
@@ -124,7 +125,7 @@ export default function RecurrentProjection({ modelId, unit }) {
               </label>
               <label className="calc-t">
                 <span>End of test, T{u ? ` (${unit})` : ""}</span>
-                <input type="number" min="0" step="any" value={testEnd} placeholder="from the data"
+                <input type="number" inputMode="decimal" min="0" step="any" value={testEnd} placeholder="from the data"
                        onChange={(e) => setTestEnd(e.target.value)} />
               </label>
             </div>
@@ -143,7 +144,7 @@ export default function RecurrentProjection({ modelId, unit }) {
           )}
 
           {rows.length > 0 && (
-            <div className="gp-table-wrap">
+            <ScrollCue className="gp-table-wrap">
               <table className="lib-table gp-table">
                 <thead>
                   <tr>
@@ -169,7 +170,7 @@ export default function RecurrentProjection({ modelId, unit }) {
                                   onChange={(v) => setRow(idx, "kind", v)} />
                         </td>
                         <td className="num">
-                          <input className="cell-input gp-fef" type="number" min="0" max="1" step="0.05"
+                          <input className="cell-input gp-fef" type="number" inputMode="decimal" min="0" max="1" step="0.05"
                                  value={r.kind === "BD" ? r.fef : ""} disabled={r.kind !== "BD"}
                                  placeholder={r.kind === "BD" ? "0.7" : "—"}
                                  onChange={(e) => setRow(idx, "fef", e.target.value)} />
@@ -185,7 +186,7 @@ export default function RecurrentProjection({ modelId, unit }) {
                   })}
                 </tbody>
               </table>
-            </div>
+            </ScrollCue>
           )}
 
           <div className="gp-actions">

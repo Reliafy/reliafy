@@ -59,7 +59,7 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
           <input type="range" min="1" max="50" step="1" value={validBeta ? Math.min(50, Math.max(1, b * 100)) : 10}
                  onChange={(e) => setPctText(e.target.value)} aria-label="β-factor, percent" />
           <span className="ccf-beta-pct">
-            <input type="number" min="0.1" max="99.9" step="0.5" value={pctText}
+            <input type="number" inputMode="decimal" min="0.1" max="99.9" step="0.5" value={pctText}
                    onChange={(e) => setPctText(e.target.value)} className="ccf-beta-num" aria-label="β-factor in percent" />
             %
           </span>
@@ -77,7 +77,7 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
                   <label className="param-field" key={LETTERS[i][0]}
                          title={`Of the shared failures that take ${LETTERS[i][1] - 1} or more, the share that take at least ${LETTERS[i][1]}.`}>
                     <span>{LETTERS[i][0]} — at least {LETTERS[i][1]} of {n}</span>
-                    <input type="number" step="any" min="0" max="1" value={v}
+                    <input type="number" inputMode="decimal" step="any" min="0" max="1" value={v}
                            onChange={(e) => setMgl((m) => m.map((x, j) => (j === i ? e.target.value : x)))} />
                   </label>
                 ))}

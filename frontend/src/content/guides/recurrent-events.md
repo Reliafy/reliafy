@@ -148,3 +148,7 @@ different questions and are complementary, not competing.
 If you're deciding whether to keep repairing or replace outright, a recurrent
 model built from parameters feeds that comparison directly, and the **Overhaul**
 tab finds the overhaul interval for a minimal-repair model.
+
+A saved recurrent model can also drive a
+[fleet failure forecast](/guides/forecast-fleet-failures-and-spares) for
+repairable equipment, counting every repeat failure across the fleet.

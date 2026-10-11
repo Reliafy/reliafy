@@ -20,8 +20,11 @@ the two costs, you can find it rather than argue about it.
 
 ## What you need
 
-Go to **Strategy → Optimal replacement** and pick a saved model. Then supply two
-numbers:
+Go to **Strategy → Optimal replacement**, or press **Find a replacement
+interval** under **Use this model** on a saved model's page. It opens on **Saved
+model** with that model (or the one you used last) chosen and its time unit
+filled in; pick another, or choose **Parameters** to type a distribution's
+parameters. Then supply two numbers:
 
 - **Planned replacement cost** — what it costs to change the component out on
   your terms, during a planned window.
@@ -37,13 +40,19 @@ the lost production, the collateral damage, the callout at 3am, the expedited
 freight, and the safety exposure. Most people undercount it dramatically, and
 that single number moves the answer more than anything else on the page.
 
-![The optimal replacement inputs: planned and unplanned cost](/guides/img/replacement-01-inputs.png)
-
 ## The result, and when there isn't one
 
 Reliafy computes the **long-run cost rate** across candidate intervals and finds
 the minimum — the interval at which the cost per unit time is lowest — and
 compares it against the cost of simply running the component to failure.
+
+For the sample bearing model (Weibull, β = 2.5), a planned replacement at 1,000
+and a failure at 8,000 give: **replace preventively at about 563 hours**, which
+lowers the long-run cost rate by **52%** against running to failure. The chart
+shows the cost rate at every replacement age, with the run-to-failure cost as a
+line to beat.
+
+![The answer for the bearing model: replace at about 563 hours, saving 52%](/guides/img/replacement-01-result.png)
 
 Sometimes the honest answer is **don't replace preventively at all**, and the
 tool will tell you so. That happens whenever the component isn't wearing out. If
@@ -66,7 +75,8 @@ looking for a hidden failure rather than pre-empting a visible one — the
 instead.
 
 If you want to know how many failures to *expect* across a fleet over the next
-year, rather than when to replace one item, that's fleet forecasting.
+year, rather than when to replace one item, that's
+[fleet forecasting](/guides/forecast-fleet-failures-and-spares).
 
 And if you're deciding among several candidate policies, save each analysis —
 Reliafy keeps them under Strategy → Saved analyses so you can compare and cite

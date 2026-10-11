@@ -28,11 +28,11 @@ pad-01,1050,1.96
 pad-02,500,1.15
 ```
 
-Three columns matter, and they map to:
+Three columns matter:
 
-- **i** — which item the reading belongs to.
-- **x** — when the measurement was taken.
-- **y** — the measured value.
+- **Item id** — which item the reading belongs to.
+- **Time** — when the measurement was taken.
+- **Measurement** — the measured value.
 
 You want several items, each measured several times. A single item's history
 tells you about that item; a population tells you about the spread, which is what
@@ -48,11 +48,12 @@ This is a judgement call, and it's yours to make. It's usually a standard, a
 manufacturer's limit, or the point past which secondary damage begins. It's worth
 being deliberate about, because everything downstream is expressed relative to it.
 
-Go to **Modelling → Degradation models**, pick your dataset, map the columns, and
-set the threshold along with the **measurement unit** and **time unit** so the
-outputs are labelled properly.
+Go to **Modelling → Degradation → New model**, pick your dataset, choose the
+item id, time and measurement columns, and set the **Failure threshold** along
+with the **Time unit** and **Measurement unit** so the outputs are labelled
+properly.
 
-You also choose a **path** — how degradation progresses. Linear is the common
+In the next step you choose a **path** — how degradation progresses. Linear is the common
 case and the right default; use others when the physics says wear accelerates or
 plateaus. What the model does is fit a path to each item, extrapolate each to the
 threshold, and then fit a life distribution to the resulting crossing times —
@@ -60,12 +61,16 @@ which is how a set of wear curves becomes a reliability model of the population.
 
 ![A fitted degradation model: wear paths extrapolated to the threshold](/guides/img/degradation-01-model.png)
 
+For the sample brake pads (six pads, an 8 mm wear limit, linear paths) the
+crossing times fit a Weibull with a mean life of **5,960 hours**, and a design
+life of **3,210 hours**: 90% of pads survive that long, at 90% confidence.
+
 ## From population to individual
 
 The population model is useful, but the real payoff is per-asset.
 
-Under **Fleet → Degradation tracking**, register the individual assets you care
-about — Truck 07's front-left pad, specifically — and record measurements against
+Under **Fleet → Degradation tracking** (or **Track items** on the model's page),
+register the individual assets you care about — Truck 07's front-left pad, specifically — and record measurements against
 them as you take them. Each new reading updates that asset's own projection: its
 current trajectory, when it's forecast to cross the threshold, and how much
 confidence to place in that.

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import McpOnRequest from "./McpOnRequest.jsx";
+import Tabs from "./ui/Tabs.jsx";
 
 // A copyable code block (monospace, with a copy button).
 function Code({ children }) {
@@ -570,6 +571,8 @@ const MCP_TOOLS = [
   ["delete_model / delete_dataset / delete_rbd", "Permanently delete your own models, datasets and diagrams (never shared samples; Claude asks first). A dataset still used by a model can’t be deleted, nor a model a fleet forecast runs on."],
   ["update_model / update_dataset", "Rename your own models and datasets, or set their notes — never the data or the fit, and never shared samples."],
   ["share_link / list_share_links / revoke_share_link", "Publish a read-only page of one of your own items — a model, dataset, diagram, strategy analysis, RCM study or fleet — that anyone with the link can open without an account. Optionally password-protected (Reliafy makes up a passphrase and shows it once, for you to send separately from the link) and expiring; an item can have several links, each revoked on its own."],
+  ["workspace_changes", "What changed in your workspace over a period — the last 30 days by default, a number of days, a date, or since your last visit — worked out from what Reliafy stores, never estimated: new and changed items; life-model refits whose B10 or MTTF moved by more than 10% (before and after); fleet forecasts whose expected failures moved and fleet alerts that fired (Pro); RCM decisions whose linked model was refitted, with the evidence status before and now; and availability simulations that moved. It opens with one sentence and says what it can’t compare because nothing earlier is kept — failures recorded against a forecast, for one."],
+  ["create_report", "Put several of your own items on one share page — a report with a title, an author or organisation line, the date, an introduction and a note per item, each item shown as its own share page shows it. Ready to print on A4 or Letter. Same password, expiry and revoke as share_link."],
   ["get_account", "Your plan; on Free, the tool calls used and left this month and the date they reset (Pro is unlimited); storage used against your plan’s limits, and whether simulation is included. Never counted against the allowance."],
   ["upgrade_link", "A Stripe checkout link for Reliafy Pro, for you to open and pay yourself — nothing is charged until you complete it. Works before you have Pro."],
 ];
@@ -676,6 +679,11 @@ export function McpDocs({ tokenNote }) {
   );
 }
 
+const API_TABS = [
+  { id: "client", label: "reliafy-client (Python)" },
+  { id: "http", label: "HTTP API" },
+];
+
 // In-app reference for the programmatic API + the reliafy-client package.
 // Examples use the live origin, so self-hosted instances show their own base URL.
 export default function ApiReference() {
@@ -684,14 +692,7 @@ export default function ApiReference() {
 
   return (
     <div className="card api-ref">
-      <div className="tabs">
-        <button className={"tab" + (tab === "client" ? " active" : "")} onClick={() => setTab("client")}>
-          reliafy-client (Python)
-        </button>
-        <button className={"tab" + (tab === "http" ? " active" : "")} onClick={() => setTab("http")}>
-          HTTP API
-        </button>
-      </div>
+      <Tabs tabs={API_TABS} value={tab} onChange={setTab} label="API reference" />
       {tab === "client" ? <ClientDocs /> : <HttpDocs base={base} />}
     </div>
   );

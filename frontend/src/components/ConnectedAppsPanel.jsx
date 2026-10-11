@@ -6,6 +6,7 @@ import McpOnRequest from "./McpOnRequest.jsx";
 import { useCopyId } from "./CopyId.jsx";
 import Button from "./ui/Button.jsx";
 import Card, { CardHeader } from "./ui/Card.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // No app yet: how to connect Claude, with the MCP address to copy.
 function ConnectClaude() {
@@ -75,7 +76,7 @@ export default function ConnectedAppsPanel() {
         ) : grants.length === 0 ? (
           mcp ? <ConnectClaude /> : <McpOnRequest />
         ) : (
-          <div className="usage-table-wrap">
+          <ScrollCue className="usage-table-wrap">
             <table className="lib-table">
               <thead>
                 <tr>
@@ -103,7 +104,7 @@ export default function ConnectedAppsPanel() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
         )}
       </Card>
     </div>

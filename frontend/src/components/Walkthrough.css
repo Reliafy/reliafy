@@ -1,0 +1,93 @@
+/* Guided walkthroughs (#32): the ring around the control a step points at,
+   and the callout beside it (a bottom sheet on a phone). */
+
+.wt-ring {
+  position: fixed;
+  z-index: 1000;
+  border-radius: var(--r-sm);
+  /* The ring, and a light dim over the rest of the page. Clicks pass
+     through: the page stays usable. */
+  box-shadow: 0 0 0 2px var(--acc), 0 0 0 9999px rgba(20, 23, 28, 0.12);
+  pointer-events: none;
+  transition: top 0.15s ease, left 0.15s ease, width 0.15s ease, height 0.15s ease;
+}
+
+.wt-callout {
+  position: fixed;
+  z-index: 1001;
+  box-sizing: border-box;
+  width: 320px;
+  max-width: calc(100vw - 2 * var(--sp-4));
+  padding: var(--sp-4);
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-overlay);
+  color: var(--ink);
+  font-size: var(--fs-14);
+}
+.wt-callout:focus {
+  outline: none;
+}
+.wt-callout:focus-visible {
+  box-shadow: var(--shadow-overlay), var(--focus);
+}
+
+.wt-head {
+  font-size: var(--fs-12);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.wt-text {
+  margin: var(--sp-2) 0 var(--sp-3);
+  line-height: 1.45;
+}
+.wt-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.wt-grow {
+  flex: 1;
+}
+.wt-actions .wt-skip {
+  color: var(--muted);
+}
+
+/* Phone: a sheet along the bottom, full width inside the gutter. */
+.wt-sheet {
+  left: var(--sp-4);
+  right: var(--sp-4);
+  bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
+  width: auto;
+  max-width: none;
+}
+.wt-sheet .wt-actions button {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-ring {
+    transition: none;
+  }
+}
+
+/* "Show me how": an inline link at the end of a page's meta line or an
+   empty state's sentence, wrapping with the text. */
+button.link.wt-launch {
+  display: inline;
+  text-align: left;
+}
+.first-run-more button.link.wt-launch {
+  text-decoration: none;
+}
+.first-run-more button.link.wt-launch:hover {
+  text-decoration: underline;
+}
+
+/* Room at the end of the page, so the last control can scroll up above the
+   bottom sheet. */
+.wt-spacer {
+  pointer-events: none;
+}

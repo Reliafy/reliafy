@@ -126,6 +126,7 @@ def init_db() -> None:
     # never touched). Unlock-attempt windows drop the same way.
     db.public_links.create_index([("expires_at", 1)], expireAfterSeconds=0)
     db.public_link_attempts.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    db.reports.create_index([("owner_id", 1), ("updated_at", -1)])  # #30
     # Fixed-window request limits (backend/services/rate_limit.py).
     db.rate_limits.create_index([("expires_at", 1)], expireAfterSeconds=0)
     db.api_tokens.create_index([("token_hash", 1)], unique=True)
@@ -192,6 +193,10 @@ def init_db() -> None:
     from backend.services import usage as usage_service
 
     usage_service.ensure_indexes(db)
+    # What changed (#41): the refit and forecast logs it compares against.
+    from backend.services import workspace_changes
+
+    workspace_changes.ensure_indexes(db)
 
 
 def get_session() -> Iterator:

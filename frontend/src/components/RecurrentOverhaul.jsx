@@ -63,11 +63,11 @@ export default function RecurrentOverhaul({ modelId, unit, name = null }) {
         <div className="strategy-costs">
           <label className="calc-t">
             <span>Repair cost (per failure)</span>
-            <input type="number" min="0" step="any" value={cr} onChange={(e) => setCr(e.target.value)} />
+            <input type="number" inputMode="decimal" min="0" step="any" value={cr} onChange={(e) => setCr(e.target.value)} />
           </label>
           <label className="calc-t">
             <span>Overhaul cost</span>
-            <input type="number" min="0" step="any" value={co} onChange={(e) => setCo(e.target.value)} />
+            <input type="number" inputMode="decimal" min="0" step="any" value={co} onChange={(e) => setCo(e.target.value)} />
           </label>
           <button onClick={run} disabled={!canRun || loading}>
             {loading ? "Calculating…" : "Calculate"}

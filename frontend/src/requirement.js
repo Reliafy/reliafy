@@ -102,12 +102,18 @@ const posNum = (s) => {
 
 // Read a demoLink back into the demonstration test's starting inputs, or
 // null when it carries no requirement. Values stay strings (the form's
-// inputs); anything malformed is left out rather than half-applied.
+// inputs); anything malformed is left out rather than half-applied. A model
+// alone ("Plan a test" from a model, #294) brings its β and unit only.
 export function parseDemoPrefill(search) {
   const q = new URLSearchParams(search || "");
   const b = posNum(q.get("b"));
   const life = posNum(q.get("life"));
-  if (b == null || b >= 100 || life == null) return null;
+  if (b == null || b >= 100 || life == null) {
+    const model = (q.get("model") || "").trim();
+    const unit = (q.get("unit") || "").trim();
+    return model && q.get("b") == null && q.get("life") == null
+      ? { modelId: model, ...(unit ? { unit: unit.slice(0, 40) } : {}) } : null;
+  }
   const out = { target: "b_life", bLife: String(b), missionTime: String(life) };
   const conf = posNum(q.get("conf"));
   if (conf != null && conf < 100) out.confidence = String(conf);

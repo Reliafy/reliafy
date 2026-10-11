@@ -194,7 +194,7 @@ export default function RcmStudyPage() {
           </>
         }
       >
-        {study.rollup && <div className="ph-chips"><RollupBadges rollup={study.rollup} /></div>}
+        {study.rollup && <div className="ph-chips" data-wt="rcm-checks"><RollupBadges rollup={study.rollup} /></div>}
       </PageHeader>
 
       {error && (

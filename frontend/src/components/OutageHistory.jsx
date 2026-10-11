@@ -22,6 +22,7 @@ import {
 import "./OutageHistory.css";
 import { unitInText } from "./unitText.js";
 import Chip from "./ui/Chip.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 const FIELDS = [
   { key: "asset", label: "Asset", help: "The block (its label or id) each outage belongs to", req: true },
@@ -395,7 +396,7 @@ function OutageTable({ history }) {
   return (
     <div className="rbd-avail-imp">
       <div className="ds-section-h">System outages</div>
-      <div className="rbd-avail-imp-scroll">
+      <ScrollCue className="rbd-avail-imp-scroll">
         <table className="calc-table outage-table">
           <thead>
             <tr>
@@ -422,7 +423,7 @@ function OutageTable({ history }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
       {history.outages.length > rows.length && (
         <button type="button" className="linkish" onClick={() => setAll(true)}>
           Show all {history.outages.length} outages
@@ -449,7 +450,7 @@ function Ranking({ history }) {
           </div>
         ))}
       </div>
-      <div className="rbd-avail-imp-scroll">
+      <ScrollCue className="rbd-avail-imp-scroll">
         <table className="calc-table">
           <thead>
             <tr>
@@ -476,7 +477,7 @@ function Ranking({ history }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
     </div>
   );
 }
@@ -535,7 +536,7 @@ function FitPanel({ rbdId, logId, readOnly, onApplyModels }) {
       {error && <div className="error">{error}</div>}
       {result && (
         <>
-          <div className="rbd-avail-imp-scroll">
+          <ScrollCue className="rbd-avail-imp-scroll">
             <table className="calc-table">
               <thead>
                 <tr>
@@ -569,7 +570,7 @@ function FitPanel({ rbdId, logId, readOnly, onApplyModels }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
           <p className="muted-line">{result.note}</p>
           {!readOnly && onApplyModels && (
             <div className="rbd-calc-actions">

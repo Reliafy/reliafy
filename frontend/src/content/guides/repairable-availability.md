@@ -20,24 +20,24 @@ guide walks through building one.
 ## Choose the system type first
 
 An RBD in Reliafy is either **non-repairable** (analysed for reliability over
-time) or **repairable** (analysed for availability). It's a single choice made
-up front, because it changes what each block needs and what the results mean —
-you can't mix the two in one diagram.
+time) or **repairable** (analysed for availability). It's a single choice for
+the whole diagram, because it changes what each block needs and what the results
+mean — you can't mix the two in one diagram.
 
-Open **RBDs → New diagram**, and set the **System** selector in the top-left to
+Open **RBDs → New diagram**, and set the menu beside **Unit** in the toolbar to
 *Repairable*. (Non-repairable diagrams give you reliability over time; repairable
-ones give you availability — hover the selector for the reminder.)
+ones give you availability — hover the menu for the reminder.)
 
 ![The System selector set to Repairable](/guides/img/availability-02-system.png)
 
-The moment you do, the diagram is in availability mode. You'll notice the
-right-click menu offers fewer block types than usual — availability supports
-plain component blocks and k-of-n voting gates, and nothing else. That's a
-deliberate constraint, not an omission: standby, load-sharing and sub-system
-blocks have no availability semantics, so Reliafy keeps them out of the way
-rather than letting you build something it can't solve.
+The moment you do, the diagram is in availability mode, and **+ Add block** (or a
+right-click on the canvas) offers the blocks a repairable diagram can solve:
+**components**, **junctions**, **voting nodes (MooN)** and **standby groups**,
+whose duty unit and spares are each repaired when they fail. Load-sharing,
+*n*-identical series or parallel blocks and sub-systems aren't offered, so you
+can't build something Reliafy can't solve.
 
-![The canvas right-click menu in repairable mode](/guides/img/availability-03-add.png)
+![The + Add block menu in repairable mode](/guides/img/availability-03-add.png)
 
 ## Every component needs two distributions
 
@@ -53,47 +53,70 @@ twenty minutes can be more available than one that fails yearly but takes a
 week to source parts for. A diagram with only life models can't tell you that,
 which is why Reliafy insists on both.
 
-Double-click a component to set them. Repair times are usually right-skewed —
-most repairs are quick, a few drag on — so a **lognormal** is the conventional
-choice for mean-time-to-repair.
+Double-click a component to set them, each as a **Mean**, **Parameters** or a
+**Saved model**. Repair times are usually right-skewed — most repairs are quick,
+a few drag on — so a **lognormal** is the conventional choice for
+mean-time-to-repair. The block's summary shows the result: *MTTR 10.8 h* for a
+lognormal with μ = 2.3 and σ = 0.4.
+
+When the repair time doesn't matter (or you have no data for it), tick
+**Repaired instantly**: the block still fails, and still costs, but is never
+down. **Every block repaired instantly** in the toolbar's **⋯** menu does the
+same for the whole diagram.
 
 ![The component dialog with a Weibull life model and a lognormal repair-time distribution](/guides/img/availability-04-models.png)
 
 Wire the diagram up as you normally would: drag from the input handle through
-your components to the output, with redundant units in parallel.
+your components to the output, with redundant units in parallel. Or select a
+block and use **+ Add block → Add alongside (in parallel)** to add its redundant
+partner already wired in.
 
 ![A controller in series with two redundant pumps](/guides/img/availability-05-wired.png)
 
 ## Validate, then calculate
 
-Hit **Validate** on the Builder tab. In availability mode this checks the thing
-that actually blocks the calculation — that every component has *both* a life
-model and a repair time — and it will name any block that's missing one. It also
-tells you that availability is **estimated by simulation** rather than solved in
-closed form, which is expected: the up/down history of a repairable system is
-simulated, not integrated.
+Hit **Validate** at the right of the toolbar. In availability mode this checks
+the thing that actually blocks the calculation — that every component has *both*
+a life model and a repair time — and it will name any block that's missing one.
+Once it passes, the button reads **✓ Valid**; click it to see how the figures
+will be found. For this diagram the long-run figures are exact and nothing needs
+simulating.
 
-![The validation panel confirming the diagram is valid](/guides/img/availability-06-validate.png)
+![The validation check: valid, with availability computed without simulation](/guides/img/availability-06-validate.png)
 
-Then switch to **Calculator** and press **Calculate**.
+Then switch to **Calculator**, choose the **Window** (a month, a year, five
+years or the long run) and press **Calculate**.
 
 ## Reading the results
 
-![Availability results: 99.4% uptime, mean up/down time, and per-component downtime bars](/guides/img/availability-07-results.png)
+![Availability results: 99.384% in the long run, the weakest link and the best improvement](/guides/img/availability-07-results.png)
 
-The headline is **steady-state availability** — the long-run fraction of time
-the system is up. Around it sit the numbers that make it actionable: mean up
-time, mean down time, and how often the system drops out.
+The headline is the **long-run availability** — the fraction of time the system
+is up — with the downtime it means in hours a year. For the example, a
+controller in series with two redundant pumps, that's **99.384%**, about
+**54 hours down a year**. The chart under it is availability over time, A(t),
+settling from 100% when everything is new to its long-run value.
 
-The part most people find useful, though, is **"what drives downtime"**. Each
-component gets a share of the total system downtime. In the example above the
-two redundant pumps dominate and the controller contributes far less — which
-tells you where effort pays. Shaving the repair time off the biggest
-contributor moves system availability; improving a minor one won't, however
-satisfying it feels. Redundancy has the same asymmetry: it lifts availability
-sharply for the stage it's applied to and does nothing anywhere else, so it's
-worth knowing which stage is actually costing you uptime before you spend money
-duplicating hardware.
+The next two lines are the ones most people act on. **Weakest link** names the
+block behind most of the downtime: here the **controller, with 97%**, because
+it sits alone in series while the pumps cover for each other. **Best
+improvement** names the single change that gains most: a 10% shorter mean repair
+time on the controller lifts availability to 99.444% and saves about 5 hours of
+downtime a year.
+
+**What to improve** below ranks every lever the same way: each block's mean
+life, its repair time, its proof-test interval, a common-cause β, one more repair
+crew. In the example the pumps' levers are worth about a thirtieth of the
+controller's. That's the asymmetry worth knowing before you spend money:
+redundancy and faster repairs pay where the downtime is, and do almost nothing
+elsewhere, however satisfying they feel.
+
+The figures behind the headline (mean up and down time, failure frequency,
+expected failures and downtime over the window, and each block's importance) are
+under **Details**. There, **Run simulation** adds the spread of outcomes: the
+chance of no outage, percentiles and a confidence band. Each run on a saved
+diagram is kept for 90 days under **Run history**, where you can compare two
+runs side by side.
 
 ## Where to go next
 

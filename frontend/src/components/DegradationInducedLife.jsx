@@ -92,7 +92,7 @@ export default function DegradationInducedLife({ modelId, unit, name = null }) {
             <label className="calc-t">
               <span>Time{unit ? ` (${unit.toLowerCase()})` : ""}</span>
               <input
-                type="number" min="0" step="any" value={t}
+                type="number" inputMode="decimal" min="0" step="any" value={t}
                 onChange={(e) => setT(e.target.value)}
                 onBlur={commit}
                 onKeyDown={(e) => { if (e.key === "Enter") commit(); }}
@@ -101,7 +101,7 @@ export default function DegradationInducedLife({ modelId, unit, name = null }) {
             <label className="calc-t">
               <span>Reliability %</span>
               <input
-                type="number" min="1" max="99" step="1" value={relPct}
+                type="number" inputMode="numeric" min="1" max="99" step="1" value={relPct}
                 onChange={(e) => setRelPct(Number(e.target.value))}
                 onBlur={commit}
                 onKeyDown={(e) => { if (e.key === "Enter") commit(); }}

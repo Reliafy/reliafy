@@ -4,6 +4,7 @@ import Plot from "./Plot.jsx";
 import { COLORWAY, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
 import { analyzeRbd, getActiveRbdJob, getRbdJob } from "../api.js";
 import ValidationPanel from "./RbdValidation.jsx";
+import { graphSignature, resultIsStale } from "../rbdSignature.js";
 import RbdEmptyState from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
 import CovariatesModal from "./CovariatesModal.jsx";
@@ -27,6 +28,7 @@ import Chip from "./ui/Chip.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent } from "../format.js";
 import { hoursPerUnit } from "./rbdModelText.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -277,7 +279,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
           </div>
           {/* Scrolls sideways on a phone rather than widening the page,
               as the availability table already does. */}
-          <div className="rbd-avail-imp-scroll">
+          <ScrollCue className="rbd-avail-imp-scroll">
           <table className="calc-table">
             <thead>
               <tr>
@@ -310,7 +312,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
               ))}
             </tbody>
           </table>
-          </div>
+          </ScrollCue>
         </div>
       )}
 
@@ -1024,7 +1026,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         {blocks.length > 0 && impCols.length > 0 && (
           <div className="rbd-avail-imp">
             <div className="ds-section-h">Block importance</div>
-            <div className="rbd-avail-imp-scroll">
+            <ScrollCue className="rbd-avail-imp-scroll">
               <table className="calc-table">
                 <thead>
                   <tr>
@@ -1048,7 +1050,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollCue>
             <ul className="rbd-avail-legend">
               {impCols.map((c) => (
                 <li key={c.key}><b>{c.label}</b> — {c.help}</li>
@@ -1226,7 +1228,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
           : "Mark blocks that have failed, or set how long they've been running. Results then run " +
             "from now: the remaining life. Blocks left as New start new."}
       </p>
-      <div className="rbd-avail-imp-scroll">
+      <ScrollCue className="rbd-avail-imp-scroll">
         <table className="calc-table rbd-asof-table">
           <thead>
             <tr>
@@ -1260,7 +1262,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
                       <span className="muted">—</span>
                     ) : (
                       <input
-                        type="number"
+                        type="number" inputMode="decimal"
                         min="0"
                         step="any"
                         value={st.value}
@@ -1275,7 +1277,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
     </div>
   );
 }
@@ -1288,10 +1290,16 @@ const WINDOW_PRESETS = [
 ];
 
 export default function RbdCalculator({
-  graph, validation, stale, onValidate = null, rbdId = null, name = null, onBuild, onProduction = null,
+  graph, validation, stale: checkStale, onValidate = null, rbdId = null, name = null, onBuild, onProduction = null,
   onNodeData = null,
 }) {
   const [result, setResult] = useState(null);
+  // The diagram the shown result is for. A result is never shown as current
+  // for a diagram that has changed since, even once the change passes the
+  // check: a Valid check doesn't mean the new diagram was calculated.
+  const graphSig = graphSignature(graph);
+  const [resultSig, setResultSig] = useState(null);
+  const stale = resultIsStale({ result, resultSig, graphSig, checkStale });
   const [phase, setPhase] = useState("idle"); // idle | calculating | error
   const [error, setError] = useState(null);
   const [needsPro, setNeedsPro] = useState(false); // 402 pro_required (availability)
@@ -1328,7 +1336,7 @@ export default function RbdCalculator({
   const unitLabel = graph.unit ? ` (${graph.unit})` : "";
   // Calculate validates first when the diagram hasn't been checked (#300), so
   // it's only held back by a check that failed.
-  const blocked = !!validation && !stale && !validation.can_calculate;
+  const blocked = !!validation && !checkStale && !validation.can_calculate;
   const hpu = hoursPerUnit(graph.unit);
 
   // Blocks whose life model is a guessed starting point (the assistant marks
@@ -1451,6 +1459,7 @@ export default function RbdCalculator({
     setNeedsPro(false);
     setCapMessage(null);
     setJob(null);
+    const sentSig = graphSig;
     try {
       const cov = covPayload();
       // As of now replaces the whole-system "given survived to" age.
@@ -1481,6 +1490,7 @@ export default function RbdCalculator({
         }
       );
       setResult(res);
+      setResultSig(sentSig);
       if (res.free_sims) setQuickOffer(res.free_sims);
       if (res.job) {
         // The exact figures now; the simulation is queued on the calculation
@@ -1526,6 +1536,9 @@ export default function RbdCalculator({
         return;
       }
       if (err.status === 503) setRetryable({ force, simulate, exact, quick });
+      // A result for another version of the diagram isn't this one's answer:
+      // the error stands alone, not above a result it contradicts.
+      if (resultSig !== sentSig) setResult(null);
       setError(err.message);
       setPhase("error");
     }
@@ -1541,7 +1554,7 @@ export default function RbdCalculator({
 
   const calculate = async (force = false, opts = {}) => {
     let v = validation;
-    if ((!v || stale) && onValidate) {
+    if ((!v || checkStale) && onValidate) {
       setChecking(true);
       try {
         v = await onValidate();
@@ -1642,6 +1655,7 @@ export default function RbdCalculator({
   const action = (
     <div className="rbd-calc-actions">
       <button
+        data-wt="rbd-calculate"
         // The next step until there's a current result; then the results'
         // own action (a simulation, say) is the primary one.
         className={result && !stale && !dirty ? "secondary" : ""}
@@ -1705,7 +1719,7 @@ export default function RbdCalculator({
           <label className="calc-t">
             <span>To{unitLabel} — x-axis limit</span>
             <input
-              type="number"
+              type="number" inputMode="decimal"
               min="0"
               step="any"
               placeholder="auto"
@@ -1719,7 +1733,7 @@ export default function RbdCalculator({
           <label className="calc-t">
             <span>Evaluate at t{unitLabel}</span>
             <input
-              type="number"
+              type="number" inputMode="decimal"
               min="0"
               max={tMax || undefined}
               step="any"
@@ -1734,7 +1748,7 @@ export default function RbdCalculator({
             <label className="calc-t">
               <span>Given survived to{unitLabel}</span>
               <input
-                type="number"
+                type="number" inputMode="decimal"
                 min="0"
                 step="any"
                 placeholder="0"
@@ -1746,7 +1760,7 @@ export default function RbdCalculator({
           <label className="calc-t" title="The design life: how long system reliability stays at or above this">
             <span>Design life at R (%)</span>
             <input
-              type="number"
+              type="number" inputMode="decimal"
               min="1"
               max="99.9"
               step="any"
@@ -1805,7 +1819,7 @@ export default function RbdCalculator({
             {windowPreset === "custom" && (
               <label className="rbd-window-custom">
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="0"
                   step="any"
                   aria-label={`Window${unitLabel}`}
@@ -1840,7 +1854,7 @@ export default function RbdCalculator({
 
       {/* The check shows here only when it has something to say (#313):
           problems, or warnings. */}
-      {validation && !stale && (!validation.can_calculate || validation.warnings?.length > 0) && (
+      {validation && !checkStale && (!validation.can_calculate || validation.warnings?.length > 0) && (
         <ValidationPanel validation={validation} stale={false} />
       )}
 

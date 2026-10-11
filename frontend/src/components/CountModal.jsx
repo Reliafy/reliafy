@@ -36,7 +36,7 @@ export default function CountModal({ initial, onClose, onSubmit }) {
         <label className="param-field">
           <span>n (count)</span>
           <input
-            type="number"
+            type="number" inputMode="decimal"
             min="1"
             value={n}
             onChange={(e) => setN(e.target.value)}

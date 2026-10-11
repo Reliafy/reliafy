@@ -291,6 +291,12 @@ def view_public(token: str, request: Request, session=Depends(get_session)) -> J
     if doc is None or doc.get("owner_id") != link.get("grantor_uid"):
         return JSONResponse(status_code=404, content={"detail": "The shared analysis no longer exists."})
 
+    if link["collection"] == "reports":
+        # A report (#30): each section is rendered as its own share page would be.
+        from backend.services import report_view
+
+        return _shared(session, link, report_view.build(session, doc, link["grantor_uid"]))
+
     ctx = links_service.guest_ctx(doc["owner_id"], link["grantor_uid"])
     response = _detail_handler(link["collection"])(link["artifact_id"], session, ctx)
     if getattr(response, "status_code", 200) != 200:
@@ -299,7 +305,11 @@ def view_public(token: str, request: Request, session=Depends(get_session)) -> J
     payload = json.loads(response.body)
     if link["collection"] == "rbds":
         payload = _with_rbd_analysis(session, payload, link["artifact_id"], doc["owner_id"], ctx)
-    payload = links_service.sanitize(payload)
+    return _shared(session, link, links_service.sanitize(payload))
+
+
+def _shared(session, link: dict, payload: dict) -> JSONResponse:
+    """The public answer for an unlocked link: its payload and who shared it."""
     grantor = session.users.find_one({"_id": link["grantor_uid"]}) or {}
     # A protected page mustn't linger in a shared cache once it's unlocked.
     headers = {"Cache-Control": "no-store"} if links_service.is_protected(link) else None

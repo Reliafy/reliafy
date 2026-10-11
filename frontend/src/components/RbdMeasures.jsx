@@ -8,6 +8,7 @@ import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
 import "./RbdMeasures.css";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // What to improve's other measures (#225, #325), one tab each beside the
 // ranked steps: RePyability's importance over time, shares of a change, joint
@@ -290,7 +291,7 @@ function Shares({ data }) {
           Counts such as one more crew take no part.{(data.notes || []).map((n) => ` ${n}`)}
         </p>
         {data.levers?.length > 0 && (
-          <div className="rbd-avail-imp-scroll">
+          <ScrollCue className="rbd-avail-imp-scroll">
             <table className="calc-table rbd-measure-table">
               <thead><tr><th>Lever</th><th>Share</th></tr></thead>
               <tbody>
@@ -302,7 +303,7 @@ function Shares({ data }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
         )}
       </ResultDetails>
     </>
@@ -326,7 +327,7 @@ function Joint({ data }) {
           together); negative, substitutes (one covers for the other). {data.window ? "Over the window" : "In the long run"},
           exact.
         </p>
-        <div className="rbd-avail-imp-scroll">
+        <ScrollCue className="rbd-avail-imp-scroll">
           <table className="calc-table rbd-measure-table">
             <thead><tr><th>Pair</th><th>Joint importance</th><th>They are</th></tr></thead>
             <tbody>
@@ -339,7 +340,7 @@ function Joint({ data }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       </ResultDetails>
     </>
   );
@@ -373,7 +374,7 @@ function Rate({ data, unit, colorOf }) {
           {data.causes_note ? ` Shares of failures: ${data.causes_note}` : ""}
         </p>
         {data.causes?.length > 0 && (
-          <div className="rbd-avail-imp-scroll">
+          <ScrollCue className="rbd-avail-imp-scroll">
             <table className="calc-table rbd-measure-table">
               <thead><tr><th>Block</th><th>Share of system failures, long run</th>
                 {data.causes_window?.length > 0 && <th>Over the window</th>}</tr></thead>
@@ -389,7 +390,7 @@ function Rate({ data, unit, colorOf }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
         )}
       </ResultDetails>
     </>
@@ -424,7 +425,7 @@ function Uncertainty({ data, unit }) {
       </div>
       <ResultDetails>
         {data.at_times?.length > 0 && (
-          <div className="rbd-avail-imp-scroll">
+          <ScrollCue className="rbd-avail-imp-scroll">
             <table className="calc-table rbd-measure-table">
               <thead>
                 <tr><th>Time{unitWord(unit)}</th><th>Availability then</th><th>Mean availability to then</th></tr>
@@ -443,10 +444,10 @@ function Uncertainty({ data, unit }) {
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
         )}
         {sobol && (
-          <div className="rbd-avail-imp-scroll">
+          <ScrollCue className="rbd-avail-imp-scroll">
             <table className="calc-table rbd-measure-table">
               <thead><tr><th>Input</th><th>First-order</th><th>Total</th></tr></thead>
               <tbody>
@@ -459,7 +460,7 @@ function Uncertainty({ data, unit }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
         )}
         <p className="muted-line">
           {(data.n_draws || 0).toLocaleString()} draws of the fitted models' parameters (each fit's covariance); blocks

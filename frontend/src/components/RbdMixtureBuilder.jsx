@@ -136,7 +136,7 @@ export default function RbdMixtureBuilder({ on, onToggle, initial, onChange, uni
                 {j === 1 ? (
                   <label className="param-field" title="The share of units that fail by this mode.">
                     <span>Share of units (%)</span>
-                    <input type="number" step="any" min="0" max="100" value={share} aria-label="Mode 1 share of units"
+                    <input type="number" inputMode="decimal" step="any" min="0" max="100" value={share} aria-label="Mode 1 share of units"
                            onChange={(e) => setShare(e.target.value)} />
                   </label>
                 ) : (

@@ -958,7 +958,13 @@ def validate_graph(
         # ``analytic`` describes the reliability curve and stays False here;
         # how each availability figure is computed (#154: exact, numerical or
         # only by simulation) comes from RePyability's analysis_routes().
-        routes, ccf_status = _availability_routes(graph, with_status=True) if valid else (None, None)
+        routes, ccf_status, refusal = _availability_routes(graph, with_status=True) if valid else (None, None, None)
+        if refusal:
+            # RePyability refuses the diagram as drawn (a common-cause group
+            # whose members aren't identical): Calculate would fail, so the
+            # check fails too, in the same words.
+            errors.append(refusal)
+            valid = False
         if ccf_status is not None and not ccf_status["included"]:
             warnings.append(common_cause_left_out(ccf_status["groups"], ccf_status["reason"],
                                                   bool(graph.get("safety_function"))))
@@ -2348,7 +2354,15 @@ def _component_message(text: str, labels: dict) -> str:
     """RePyability's message about a component, naming blocks by label."""
     for nid, label in labels.items():
         text = text.replace(f"'{nid}'", f"“{label}”")
+    # A common-cause group whose members differ, in plain words.
+    same = _CCF_NOT_IDENTICAL.match(text)
+    if same:
+        text = (f"The common-cause group [{same.group(1)}] needs identical blocks: give its members exactly "
+                "the same life and repair models.")
     return plain_reason(text)
+
+
+_CCF_NOT_IDENTICAL = re.compile(r"^The members of a CCF group, \[(.*?)\], must be identical components\b")
 
 
 # RePyability's reasons end with the Python call that would simulate the
@@ -3389,19 +3403,36 @@ def _availability_routes(graph: dict, with_status: bool = False):
     figures over time and simulation are computed (route + reason), or None
     when the diagram can't be built from the graph alone (a saved model
     that needs resolving, say). ``with_status``: ``(routes, common-cause
-    status)`` (:func:`common_cause_status`)."""
+    status, refusal)`` (:func:`common_cause_status`); ``refusal`` is
+    RePyability's refusal of a common-cause group whose members aren't
+    identical, in the user's words, else None."""
     try:
         rbd, labels, *_ = _build_repairable_rbd(graph)
         summary = _routes_summary(rbd.analysis_routes(), labels)
+    except AnalysisError as exc:
+        refusal = str(exc) if _is_ccf_identity_refusal(exc) else None
+        return (None, None, refusal) if with_status else None
     except Exception:  # noqa: BLE001 - only a label; Calculate reports problems
-        return (None, None) if with_status else None
+        return (None, None, None) if with_status else None
     routes = {
         "long_run": summary.get("mean_availability"),
         "over_time": summary.get("point_availability"),
         "window": summary.get("expected_events"),
         "simulation": summary.get("availability"),
     }
-    return (routes, common_cause_status(rbd)) if with_status else routes
+    return (routes, common_cause_status(rbd), None) if with_status else routes
+
+
+def _is_ccf_identity_refusal(exc: Exception) -> bool:
+    """Whether ``exc`` is RePyability refusing a common-cause group because
+    its members aren't identical (the same life and repair models, compared
+    exactly), raised when the diagram is built."""
+    cause = getattr(exc, "__cause__", None)
+    return isinstance(cause, ValueError) and str(cause).startswith(_CCF_IDENTITY_REFUSALS)
+
+
+#: How RePyability's refusals of a group whose members differ begin.
+_CCF_IDENTITY_REFUSALS = ("The members of a CCF group",)
 
 
 def common_cause_left_out(groups: int, reason: Optional[str], safety: bool = False) -> str:

@@ -5,6 +5,7 @@ import { unitInText } from "./unitText.js";
 import Chip from "./ui/Chip.jsx";
 import { CardHeader } from "./ui/Card.jsx";
 import { PlusIcon } from "./LibRows.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 const fmt = (v, digits = 0) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -55,7 +56,7 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
           <p>No tracked items yet. Register one to get its first prediction.</p>
         </div>
       ) : (
-        <div className="table-scroll">
+        <ScrollCue className="table-scroll">
           <table className="lib-table">
             <thead>
               <tr>
@@ -118,7 +119,7 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       )}
 
       {registering && (

@@ -13,6 +13,7 @@ import RbdEmptyState from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
 import { formatNumber, formatPercent } from "../format.js";
 import "./RbdFaultTree.css";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // The RBD builder's "Fault tree" tab (#101): a read-only view of the diagram's
 // failure logic. The server converts the diagram with RePyability's
@@ -401,7 +402,7 @@ function CutSetTable({ result }) {
       {cuts.listed.length === 0 ? (
         <p className="muted-line">No cut sets of up to {cuts.max_order} events.</p>
       ) : (
-        <div className="ft-table-scroll">
+        <ScrollCue className="ft-table-scroll">
           <table className="calc-table ft-table ft-cuts">
             <thead>
               <tr>
@@ -439,7 +440,7 @@ function CutSetTable({ result }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       )}
       {cuts.listed.length > TABLE_ROWS && (
         <button className="link ft-show-all" onClick={() => setAll(!all)}>
@@ -525,7 +526,7 @@ function ImportanceTable({ result }) {
   return (
     <div className="ft-section">
       <div className="rbd-section-head">Basic events: importance to the top event</div>
-      <div className="ft-table-scroll">
+      <ScrollCue className="ft-table-scroll">
         <table className="calc-table ft-table">
           <thead>
             <tr>
@@ -553,7 +554,7 @@ function ImportanceTable({ result }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
       {sorted.length > TABLE_ROWS && (
         <button className="link ft-show-all" onClick={() => setAll(!all)}>
           {all ? "Show fewer" : `Show all ${sorted.length}`}
@@ -633,7 +634,7 @@ export default function RbdFaultTree({ graph, validation, stale, active, name, o
               <label className="calc-t">
                 <span>Evaluate at t{unit ? ` (${unit})` : ""}</span>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="0"
                   step="any"
                   placeholder={result?.t_default != null ? Number(result.t_default.toPrecision(4)).toString() : "auto"}

@@ -11,11 +11,13 @@ import {
 import { relativeTime } from "../instrument.js";
 import Select from "../components/Select.jsx";
 import UsageSection from "../components/UsageSection.jsx";
+import WalkthroughStats from "../components/WalkthroughStats.jsx";
 import Card, { CardHeader } from "../components/ui/Card.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import Switch from "../components/ui/Switch.jsx";
+import ScrollCue from "../components/ui/ScrollCue.jsx";
 
 const LABELS = {
   datasets: "Datasets",
@@ -115,7 +117,7 @@ function RecentSignups({ state }) {
       ) : rows.length === 0 ? (
         <p className="muted-line">No new accounts in this window.</p>
       ) : (
-        <div className="usage-table-wrap">
+        <ScrollCue className="usage-table-wrap">
           <table className="usage-table admin-signups">
             <thead>
               <tr>
@@ -136,7 +138,7 @@ function RecentSignups({ state }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       )}
     </Card>
   );
@@ -214,7 +216,7 @@ function EmailCampaigns({ state }) {
   if (!data) return <p className="muted-line">Loading…</p>;
   if (rows.length === 0) return <p className="muted-line">No emails sent or tagged visits in this window.</p>;
   return (
-    <div className="usage-table-wrap">
+    <ScrollCue className="usage-table-wrap">
       <table className="usage-table">
         <thead>
           <tr>
@@ -241,7 +243,7 @@ function EmailCampaigns({ state }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollCue>
   );
 }
 
@@ -344,6 +346,8 @@ export default function AdminPage() {
           <TopList title="Product events" rows={traffic.events} empty="" />
         </div>
       )}
+
+      {traffic && <WalkthroughStats rows={traffic.walkthroughs} />}
 
       <Card className="admin-fold">
         <ResultDetails summary="Email campaigns">

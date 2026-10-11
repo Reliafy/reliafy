@@ -5,19 +5,25 @@
 // LOCAL, auth-disabled, seeded instance of the app (single-user mode, which
 // serves the sample data): the same server used for local development.
 //
-//   1. Build + serve the auth-disabled app so /rbds etc. are reachable, e.g.
-//      the local dev backend on :8000 that serves frontend/dist.
-//   2. npm i -D playwright && npx playwright install chromium
-//   3. BASE_URL=http://localhost:8000 node scripts/capture-guides.mjs
+//   1. Build the auth-disabled bundle: VITE_AUTH_DISABLED=true npm run build
+//   2. Serve it with the backend in single-user mode and the samples seeded
+//      (AUTH_DISABLED=true SEED_SAMPLES=true; with no MONGODB_URI it uses an
+//      in-memory database), e.g. on :8000.
+//   3. npx playwright install chromium   (playwright is a devDependency)
+//   4. BASE_URL=http://localhost:8000 npm run capture:guides
+//
+// The weekly "Guide screenshots" workflow (.github/workflows/guide-screenshots.yml)
+// does exactly this and opens a pull request when any image changed (#74).
 //
 // The hard canvas gestures (drag-to-wire, right-click menus) are NOT scripted —
 // instead each RBD guide seeds a real saved diagram through the API and the
-// harness screenshots its builder and results. Add new shots to SHOTS below.
+// harness screenshots its builder and results. Add new shots to sampleShots
+// (sample data only) or fixtureShots (seeded fixtures) below.
 
 import { chromium } from "playwright";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { mkdir } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 
 const BASE = process.env.BASE_URL || "http://localhost:8000";
 const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../public/guides/img");
@@ -156,34 +162,125 @@ async function seedLoadSharingRbd() {
   return { rbdId: rbd.id, modelId: model.id, datasetId: ds.id };
 }
 
+// The safety function starter (src/rbdSafetyStarter.js) with a second shutdown
+// valve alongside the first, voting 1oo2 through a junction, the two valves in
+// a common-cause group of their own (verify-a-safety-function guide).
+async function seedTwoValveSif() {
+  const EDGE = { type: "smoothstep", markerEnd: { type: "arrowclosed", width: 18, height: 18 } };
+  const el = (id, label, rate, x, y) => ({
+    id, type: "component", position: { x, y }, sourcePosition: "right", targetPosition: "left",
+    data: { label, instant_repair: true, inspection: { interval: 8760 },
+            model: { source: "params", distribution: "Exponential", distribution_id: "exponential",
+                     params: [{ name: "failure_rate", value: rate }] } },
+  });
+  const nodes = [
+    { id: "input", type: "input", data: { label: "Input" }, position: { x: 0, y: 0 } },
+    el("c1", "Pressure transmitter A", 3e-7, 240, -90),
+    el("c2", "Pressure transmitter B", 3e-7, 240, 90),
+    el("c3", "Logic solver", 1e-8, 520, 0),
+    el("c4", "Shutdown valve", 1e-6, 800, -90),
+    el("c5", "Shutdown valve B", 1e-6, 800, 90),
+    { id: "k6", type: "knode", data: { n: 1, k: 2 }, position: { x: 1040, y: 0 } },
+    { id: "output", type: "output", data: { label: "Output" }, position: { x: 1200, y: 0 } },
+  ];
+  const links = [["input", "c1"], ["input", "c2"], ["c1", "c3"], ["c2", "c3"], ["c3", "c4"], ["c3", "c5"],
+                 ["c4", "k6"], ["c5", "k6"], ["k6", "output"]];
+  const graph = {
+    unit: "Hours", repairable: true, safety_function: true, target_sil: 3, nodes,
+    edges: links.map(([source, target]) => ({ id: `e-${source}-${target}`, source, target, ...EDGE })),
+    ccf_groups: [{ id: "ccf-transmitters", members: ["c1", "c2"], beta: 0.05 },
+                 { id: "ccf-valves", members: ["c4", "c5"], beta: 0.1 }],
+  };
+  return (await api("/rbds", { name: "Safety function — two shutdown valves", graph })).id;
+}
+
+// A model of the user's own (samples can't be shared), for the Share dialog.
+async function seedOwnModel() {
+  const form = new FormData();
+  form.append("name", "Pump life — Weibull");
+  form.append("distribution", "weibull");
+  form.append("dataset_id", "sample-ds-pumps");
+  form.append("x", "months");
+  form.append("c", "censored");
+  form.append("unit", "Months");
+  const res = await fetch(`${BASE}/api/models`, { method: "POST", body: form });
+  if (!res.ok) throw new Error(`save model → ${res.status} ${await res.text()}`);
+  return (await res.json()).id;
+}
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Click the first control named `name`, whichever role it has: tabs and
+// segmented choices are radios or tabs, menu items and actions are buttons.
+async function press(page, name) {
+  for (const role of ["button", "tab", "radio", "link", "option"]) {
+    const loc = page.getByRole(role, { name });
+    if (await loc.count()) return loc.first().click();
+  }
+  throw new Error(`No control named ${name}`);
+}
+
+// Open the builder's ⋯ menu and choose an item.
+async function builderMenu(page, item) {
+  await page.getByRole("button", { name: "More diagram settings" }).click();
+  await wait(300);
+  await page.getByRole("button", { name: item }).click();
+}
 
 // Select the two pump blocks (click + shift-click) so the group button appears.
 async function selectPumps(page) {
-  await page.locator(".rbd-comp", { hasText: "Pump A" }).click().catch(() => {});
-  await page.locator(".rbd-comp", { hasText: "Pump B" }).click({ modifiers: ["Shift"] }).catch(() => {});
+  await page.locator(".rbd-comp", { hasText: "Pump A" }).click();
+  await page.locator(".rbd-comp", { hasText: "Pump B" }).click({ modifiers: ["Shift"] });
   await wait(600);
 }
 
-// Tidy the diagram: click Auto-arrange and let the layout settle.
+// Tidy the diagram: ⋯ → Auto-arrange, and let the layout settle.
 async function arrange(page) {
-  await page.getByRole("button", { name: /Auto-arrange/i }).click().catch(() => {});
+  await builderMenu(page, /^Auto-arrange$/);
   await wait(1200);
 }
-// Validate on the Builder tab (Calculate is gated on it), then show the panel.
-async function validateAndShowPanel(page) {
-  await page.getByRole("button", { name: /^Validate$/i }).click().catch(() => {});
-  await wait(2200);
-  await page.getByRole("button", { name: /^Calculator$/i }).click().catch(() => {});
-  await wait(700);
+// Validate on the Builder tab (Calculate is gated on it). After a pass the
+// button becomes the "✓ Valid" status.
+async function validate(page) {
+  const btn = page.getByRole("button", { name: /^Validate$/ });
+  if (await btn.count()) await btn.click();
+  await page.locator(".rbd-valid-toggle").waitFor({ timeout: 20000 });
 }
-// Full run: validate, open Calculator, Calculate, wait for the results to render
-// (availability Monte-Carlo can take several seconds).
+// The check itself: validate, then open the status's panel.
+async function validateAndShowCheck(page) {
+  await validate(page);
+  await page.locator(".rbd-valid-toggle").click();
+  await wait(500);
+}
+// Full run: validate, open the Calculator tab, Calculate, wait for the results
+// to render (a repairable diagram can take several seconds).
 async function calculate(page) {
-  await validateAndShowPanel(page);
-  await page.getByRole("button", { name: /^Calculate$/i }).click().catch(() => {});
-  await page.waitForSelector(".rbd-avail, .calc .params, .rbd-ccf-impact", { timeout: 40000 }).catch(() => {});
-  await wait(1200);
+  await validate(page);
+  await page.locator(".rbd-tabs .tab", { hasText: /^Calculator$/ }).click();
+  await wait(500);
+  await page.getByRole("button", { name: /^Calculate$/ }).click();
+  await page.getByRole("button", { name: /^Recalculate$/ }).waitFor({ timeout: 60000 });
+  await wait(2500);
+}
+// The model page's Calculator tab.
+async function modelCalculator(page) {
+  await press(page, /^Calculator$/);
+  await wait(1500);
+}
+
+// Guard: the served bundle must be the auth-disabled build, or every shot is
+// silently a screenshot of the sign-in page. Fail loudly instead.
+async function assertNotSignIn(page, url) {
+  const signIn = (await page.locator("text=Continue with Google").count()) > 0
+    || /\/login\b/.test(new URL(page.url()).pathname);
+  if (signIn) {
+    throw new Error(
+      `Landed on the sign-in page at ${url}.\n` +
+      "The served bundle is the production (auth-enabled) build. Rebuild with:\n" +
+      "  VITE_AUTH_DISABLED=true npm run build\n" +
+      "then re-run the capture."
+    );
+  }
 }
 
 async function main() {
@@ -192,17 +289,24 @@ async function main() {
   // that prefix — much faster than a full run when iterating on one guide.
   const only = process.env.ONLY || "";
 
+  // Refuse an auth-enabled server before taking anything.
+  const config = await api("/config");
+  if (config.auth) {
+    throw new Error(
+      `${BASE} has sign-in switched on. Serve the app with AUTH_DISABLED=true (single-user mode) ` +
+      "and the VITE_AUTH_DISABLED=true build, then re-run the capture."
+    );
+  }
+
   // Guides that document existing flows are shot against the seeded sample
   // data, so they need no fixtures of their own.
   const S = {
     bearings: "sample-model-bearings-weibull",
     pumps: "sample-model-pumps-weibull",
-    seal: "sample-ds-seal-alt",
-    events: "sample-ds-compressor-events",
-    wear: "sample-ds-brake-wear",
     altModel: "sample-alt-fluid",
     recurrent: "sample-rec-compressors",
     degradation: "sample-deg-brake-wear",
+    fleet: "sample-fleet-trucks",
   };
 
   // Shots that only need the app's own seeded sample data. These run FIRST,
@@ -212,17 +316,43 @@ async function main() {
     // --- Fit your first model ---
     { file: "fit-01-new.png", url: "/modelling/new?mode=data", settle: 1200 },
     { file: "fit-02-result.png", url: `/modelling/m/${S.bearings}`, settle: 2500 },
-    { file: "fit-03-calculator.png", url: `/modelling/m/${S.bearings}`, settle: 2000,
-      async act(page) { await page.getByRole("button", { name: /^Calculator$/i }).first().click().catch(() => {}); await wait(1800); } },
+    { file: "fit-03-calculator.png", url: `/modelling/m/${S.bearings}`, settle: 2000, act: modelCalculator },
     // --- Censored data (the pump model is right-censored) ---
     { file: "censored-01-model.png", url: `/modelling/m/${S.pumps}`, settle: 2500 },
+    // --- B-lives and confidence bounds ---
+    { file: "blife-01-life-card.png", url: `/modelling/m/${S.bearings}`, settle: 2500,
+      async act(page) { await page.locator(".sel-trigger", { hasText: /lower bound/ }).click(); await wait(500); } },
+    { file: "blife-02-calculator.png", url: `/modelling/m/${S.bearings}`, settle: 2000,
+      async act(page) { await modelCalculator(page); await press(page, /^Time at reliability$/); await wait(2000); } },
+    // --- Check a requirement and plan a demonstration test ---
+    { file: "req-01-check.png", url: `/modelling/m/${S.bearings}`, settle: 2500,
+      async act(page) {
+        await page.getByRole("button", { name: /Check a requirement/ }).click(); await wait(600);
+        const m = page.locator(".req-modal");
+        await m.locator("input").nth(0).fill("10");
+        await m.locator("input").nth(1).fill("500");
+        await m.getByRole("button", { name: /^Check$/ }).click();
+        await m.locator(".req-verdict").waitFor({ timeout: 20000 }); await wait(600);
+      } },
+    { file: "req-02-plan.png",
+      url: `/strategy/demonstration-test?b=10&life=500&conf=90&unit=Hours&model=${S.bearings}`, settle: 2500,
+      async act(page) {
+        await press(page, /Lower bound 1\.88/);
+        await page.getByLabel(/Test length per unit/).fill("2");
+        await page.getByLabel(/true reliability|Good design's reliability/).fill("97");
+        await page.getByLabel(/Producer's risk/).fill("20");
+        await page.getByRole("button", { name: /^Compute$/ }).click(); await wait(3500);
+        // The answer sits under the form: bring it to the top of the view.
+        await page.locator(".result-summary").first().evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 232));
+        await wait(600);
+      } },
     // --- Accelerated life ---
     { file: "alt-01-new.png", url: "/modelling/alt/new", settle: 1200 },
     { file: "alt-02-lifestress.png", url: `/modelling/alt/${S.altModel}`, settle: 2500 },
     { file: "alt-03-probplot.png", url: `/modelling/alt/${S.altModel}`, settle: 1800,
-      async act(page) { await page.getByRole("button", { name: /Probability plot/i }).click().catch(() => {}); await wait(1800); } },
+      async act(page) { await press(page, /^Probability plot$/); await wait(1800); } },
     { file: "alt-04-uselevel.png", url: `/modelling/alt/${S.altModel}`, settle: 1800,
-      async act(page) { await page.getByRole("button", { name: /Use-level calculator/i }).click().catch(() => {}); await wait(1200);
+      async act(page) { await press(page, /^Use-level calculator$/); await wait(1200);
                         await page.getByRole("button", { name: /Compute at use level/i }).click().catch(() => {}); await wait(3000); } },
     // --- Recurrent events ---
     { file: "recurrent-01-new.png", url: "/modelling/recurrent/new", settle: 1200 },
@@ -230,65 +360,96 @@ async function main() {
     // --- Degradation ---
     { file: "degradation-01-model.png", url: `/modelling/degradation/${S.degradation}`, settle: 2500 },
     { file: "degradation-02-tracking.png", url: "/fleet/tracking", settle: 2000 },
-    // --- Optimal replacement ---
-    { file: "replacement-01-inputs.png", url: "/strategy/replacement", settle: 1800 },
-    // --- Reliability Agent ---
-    { file: "agent-01-landing.png", url: "/agent", settle: 1800 },
-    // --- Sharing / saved work ---
-    { file: "share-01-models.png", url: "/modelling/models", settle: 1800 },
+    // --- Optimal replacement: the bearing model, 1,000 planned vs 8,000 failure ---
+    // The tool opens on "Saved model"; ?model= chooses the bearing fit, as a
+    // model page's "Use this model" does (#294).
+    { file: "replacement-01-result.png", url: `/strategy/replacement?model=${S.bearings}`, settle: 1800,
+      async act(page) {
+        await page.locator(".sel-trigger", { hasText: /Bearing life — Weibull/ }).waitFor(); await wait(400);
+        await page.getByLabel(/Planned replacement cost/).fill("1000");
+        await page.getByLabel(/Unplanned/).fill("8000");
+        await page.getByRole("button", { name: /^Compute$/ }).click(); await wait(3000);
+      } },
+    // --- Fleet failures and spares ---
+    { file: "fleet-01-forecast.png", url: `/fleet/forecasts/${S.fleet}`, settle: 3000 },
+    { file: "fleet-02-new.png", url: "/fleet", settle: 1500,
+      async act(page) {
+        await page.getByRole("button", { name: /New forecast/ }).click(); await wait(800);
+        const m = page.locator(".modal").last();
+        await m.locator("input").first().fill("Pump bearings — spares");
+        await m.locator(".sel-trigger", { hasText: /Choose a saved model/ }).click(); await wait(400);
+        await page.getByRole("option", { name: /Bearing life — Weibull/ }).first().click(); await wait(500);
+      } },
+    // --- Verify a safety function: the starter, as it opens and calculated ---
+    { file: "sif-01-starter.png", url: "/modelling", settle: 1500,
+      async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); } },
+    { file: "sif-02-results.png", url: "/modelling", settle: 1500,
+      async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
   ];
 
   // Shots needing purpose-built fixtures (created below, deleted afterwards).
-  const fixtureShots = (repairableId, ccfId, ccfUngroupedId, loadshare) => [
+  const fixtureShots = (fx) => [
     // --- Load-sharing ---
-    { file: "loadshare-01-config.png", url: `/rbds/b/${loadshare.rbdId}`, settle: 1600,
-      async act(page) { await page.locator(".rbd-loadshare").dblclick().catch(() => {}); await wait(1500); } },
+    { file: "loadshare-01-config.png", url: `/rbds/b/${fx.loadshare.rbdId}`, settle: 1600,
+      async act(page) { await page.locator(".rbd-loadshare").dblclick(); await wait(1500); } },
     // --- Build an RBD (the seeded sample diagram) ---
     { file: "rbd-01-builder.png", url: "/rbds/b/sample-rbd-pump-station", settle: 2000, act: arrange },
     { file: "rbd-02-results.png", url: "/rbds/b/sample-rbd-pump-station", settle: 1200, act: calculate },
     // Availability guide.
     { file: "availability-01-new.png", url: "/rbds/b", settle: 900 },
-    { file: "availability-02-system.png", url: `/rbds/b/${repairableId}`, settle: 1200,
-      async act(page) { await page.locator(".sel-trigger", { hasText: /repairable/i }).first().click().catch(() => {}); await wait(700); } },
-    { file: "availability-03-add.png", url: `/rbds/b/${repairableId}`, settle: 1200,
-      async act(page) { await page.locator(".react-flow__pane").click({ button: "right", position: { x: 260, y: 180 } }).catch(() => {}); await wait(600); } },
-    { file: "availability-04-models.png", url: `/rbds/b/${repairableId}`, settle: 1400,
-      async act(page) { await page.locator(".rbd-comp", { hasText: "Controller" }).dblclick().catch(() => {}); await wait(900); } },
-    { file: "availability-05-wired.png", url: `/rbds/b/${repairableId}`, settle: 1400, act: arrange },
-    { file: "availability-06-validate.png", url: `/rbds/b/${repairableId}`, settle: 900, act: validateAndShowPanel },
-    { file: "availability-07-results.png", url: `/rbds/b/${repairableId}`, settle: 900, act: calculate },
+    { file: "availability-02-system.png", url: `/rbds/b/${fx.repairableId}`, settle: 1200,
+      async act(page) { await page.locator(".rbd-mode-select .sel-trigger, .sel-trigger", { hasText: /^Repairable$/ }).first().click(); await wait(700); } },
+    { file: "availability-03-add.png", url: `/rbds/b/${fx.repairableId}`, settle: 1200,
+      async act(page) { await page.getByRole("button", { name: "Add block" }).click(); await wait(600); } },
+    { file: "availability-04-models.png", url: `/rbds/b/${fx.repairableId}`, settle: 1400,
+      async act(page) { await page.locator(".rbd-comp", { hasText: "Controller" }).dblclick(); await wait(900); } },
+    { file: "availability-05-wired.png", url: `/rbds/b/${fx.repairableId}`, settle: 1400, act: arrange },
+    { file: "availability-06-validate.png", url: `/rbds/b/${fx.repairableId}`, settle: 900, act: validateAndShowCheck },
+    { file: "availability-07-results.png", url: `/rbds/b/${fx.repairableId}`, settle: 900, act: calculate },
     // Common-cause guide.
-    { file: "ccf-01-select.png", url: `/rbds/b/${ccfUngroupedId}`, settle: 1400,
+    { file: "ccf-01-select.png", url: `/rbds/b/${fx.ccfUngroupedId}`, settle: 1400,
       async act(page) { await arrange(page); await selectPumps(page); } },
-    { file: "ccf-02-beta.png", url: `/rbds/b/${ccfUngroupedId}`, settle: 1400,
-      async act(page) { await arrange(page); await selectPumps(page); await page.getByRole("button", { name: /Common-cause group/i }).click().catch(() => {}); await wait(900); } },
-    { file: "ccf-03-grouped.png", url: `/rbds/b/${ccfId}`, settle: 1400, act: arrange },
-    { file: "ccf-04-impact.png", url: `/rbds/b/${ccfId}`, settle: 900, act: calculate },
+    { file: "ccf-02-beta.png", url: `/rbds/b/${fx.ccfUngroupedId}`, settle: 1400,
+      async act(page) { await arrange(page); await selectPumps(page); await page.getByRole("button", { name: /Common-cause group/i }).click(); await wait(900); } },
+    { file: "ccf-03-grouped.png", url: `/rbds/b/${fx.ccfId}`, settle: 1400, act: arrange },
+    { file: "ccf-04-impact.png", url: `/rbds/b/${fx.ccfId}`, settle: 900, act: calculate },
+    // Safety function: a second valve alongside the first, in a common-cause group.
+    { file: "sif-03-two-valves.png", url: `/rbds/b/${fx.sifId}`, settle: 1600, act: arrange },
+    // Sharing: the Share dialog on a model of your own.
+    { file: "share-01-dialog.png", url: `/modelling/m/${fx.ownModelId}`, settle: 2500,
+      async act(page) {
+        await page.locator(".page-header .ovm button").first().click(); await wait(400);
+        await page.getByRole("button", { name: /^Share$/ }).click(); await wait(1200);
+      } },
   ];
 
   const pick = (list) => (only ? list.filter((s) => s.file.startsWith(only)) : list);
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2 });
+  const page = await browser.newPage({ viewport: { width: 1360, height: 900 }, deviceScaleFactor: 2 });
   let n = 0;
+  const failed = [];
 
   const shoot = async (list) => {
     for (const s of list) {
-      await page.goto(`${BASE}${s.url}`, { waitUntil: "networkidle" });
-      await wait(s.settle || 500);
-      // Guard: the served bundle must be the auth-disabled build, or every shot
-      // is silently a screenshot of the sign-in page. Fail loudly instead.
-      if (await page.locator("text=Continue with Google").count()) {
-        throw new Error(
-          `Landed on the sign-in page at ${s.url}.\n` +
-          "The served bundle is the production (auth-enabled) build. Rebuild with:\n" +
-          "  VITE_AUTH_DISABLED=true npm run build\n" +
-          "then re-run the capture."
-        );
+      try {
+        await page.goto(`${BASE}${s.url}`, { waitUntil: "networkidle" });
+        await wait(s.settle || 500);
+        await assertNotSignIn(page, s.url);
+        if (s.act) await s.act(page);
+        // A shot that drifted onto the sign-in page during its steps is no shot.
+        await assertNotSignIn(page, s.url);
+        const path = resolve(OUT, s.file);
+        await page.screenshot({ path });
+        if ((await stat(path)).size < 10_000) throw new Error(`${s.file} is nearly empty`);
+        console.log("captured", s.file);
+        n += 1;
+      } catch (e) {
+        // A sign-in page means the whole run is wrong: stop at once.
+        if (/sign-in/.test(e.message)) throw e;
+        // Otherwise one broken step shouldn't lose the rest; report it at the end.
+        console.error(`FAILED ${s.file}: ${e.message.split("\n")[0]}`);
+        failed.push(s.file);
       }
-      if (s.act) await s.act(page);
-      await page.screenshot({ path: resolve(OUT, s.file) });
-      console.log("captured", s.file);
-      n += 1;
     }
   };
 
@@ -296,7 +457,7 @@ async function main() {
   await shoot(pick(sampleShots));
 
   // Phase 2 — create fixtures, shoot, then always remove them.
-  const wanted = pick(fixtureShots("", "", "", { rbdId: "" }));
+  const wanted = pick(fixtureShots({ loadshare: {} }));
   let fx = null;
   if (wanted.length) {
     fx = {
@@ -304,23 +465,30 @@ async function main() {
       ccfId: await seedCcfRbd(),
       ccfUngroupedId: await seedCcfUngroupedRbd(),
       loadshare: await seedLoadSharingRbd(),
+      sifId: await seedTwoValveSif(),
+      ownModelId: await seedOwnModel(),
     };
     try {
-      await shoot(pick(fixtureShots(fx.repairableId, fx.ccfId, fx.ccfUngroupedId, fx.loadshare)));
+      await shoot(pick(fixtureShots(fx)));
     } finally {
       await browser.close();
-      // The local DB is the production one — never leave fixtures behind.
-      for (const id of [fx.repairableId, fx.ccfId, fx.ccfUngroupedId, fx.loadshare.rbdId]) {
+      // Never leave fixtures behind in the database the app is serving.
+      for (const id of [fx.repairableId, fx.ccfId, fx.ccfUngroupedId, fx.loadshare.rbdId, fx.sifId]) {
         await fetch(`${BASE}/api/rbds/${id}`, { method: "DELETE" }).catch(() => {});
       }
-      await fetch(`${BASE}/api/models/${fx.loadshare.modelId}`, { method: "DELETE" }).catch(() => {});
+      for (const id of [fx.loadshare.modelId, fx.ownModelId]) {
+        await fetch(`${BASE}/api/models/${id}`, { method: "DELETE" }).catch(() => {});
+      }
       await fetch(`${BASE}/api/datasets/${fx.loadshare.datasetId}`, { method: "DELETE" }).catch(() => {});
     }
   } else {
     await browser.close();
   }
   console.log(`\nDone. ${n} screenshots in ${OUT}${fx ? "; fixtures cleaned up" : ""}.`);
-  console.log("Note: shots needing multi-select / right-click menus (…-02, ccf-01/02) are best captured by hand.");
+  if (failed.length) {
+    console.error(`${failed.length} shot(s) failed: ${failed.join(", ")}`);
+    process.exit(1);
+  }
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

@@ -1,11 +1,13 @@
 import Select from "./Select.jsx";
 import { useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import ModelPicker from "./ModelPicker.jsx";
 import CompareResult, { COLORS } from "./CompareResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { getColumns, compareTwoModels, SPREADSHEET_ACCEPT } from "../api.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import { modelFromSearch, plainName } from "../modelNext.js";
 
 
 // Minimal CSV parse: pull a numeric column (and an optional 0/1 censor column).
@@ -31,7 +33,10 @@ function parseColumn(text, col, censorCol) {
 
 // Editor for one side of the comparison: a parametric life model, or a CSV of
 // raw times fit non-parametrically (Kaplan–Meier).
-function SideEditor({ tag, side, onChange }) {
+// Both sides start on "Saved model" (#294): side A with the one a link asked
+// for (``wanted``) or the one used last chosen, side B for the user to pick. A saved model names its side, unless
+// the side was named by hand.
+function SideEditor({ tag, side, onChange, wanted = null, onUnit = null }) {
   const inputRef = useRef(null);
   const set = (patch) => onChange({ ...side, ...patch });
   const { toCsv, modal: sheetModal } = useSpreadsheet();
@@ -78,7 +83,14 @@ function SideEditor({ tag, side, onChange }) {
       {side.mode === "model" ? (
         <ModelPicker
           value={side.model}
-          onChange={(m) => set({ model: m })}
+          preferSaved
+          autoPick={tag === "a"}
+          wanted={wanted}
+          onChange={(m) => {
+            const auto = [tag === "a" ? "Item A" : "Item B", "", plainName(side.model?.name)].includes(side.label);
+            set({ model: m, ...(m?.source === "saved" && auto ? { label: plainName(m.name) } : {}) });
+            if (m?.unit) onUnit?.(m.unit);
+          }}
         />
       ) : (
         <div className="compare-data">
@@ -159,6 +171,7 @@ export default function CompareTwoModels() {
   const [inputs, setInputs] = useState(null); // specs that produced the result
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const wanted = modelFromSearch(useLocation().search);
 
   const run = async () => {
     setLoading(true);
@@ -180,8 +193,9 @@ export default function CompareTwoModels() {
   return (
     <div className="strategy-tool">
       <div className="compare-sides">
-        <SideEditor tag="a" side={sideA} onChange={setSideA} />
-        <SideEditor tag="b" side={sideB} onChange={setSideB} />
+        {/* A saved model brings its unit, unless one is already set. */}
+        <SideEditor tag="a" side={sideA} onChange={setSideA} wanted={wanted} onUnit={(u) => setUnit((v) => v || u)} />
+        <SideEditor tag="b" side={sideB} onChange={setSideB} onUnit={(u) => setUnit((v) => v || u)} />
       </div>
 
       <div className="strategy-actions">

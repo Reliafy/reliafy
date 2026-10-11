@@ -880,7 +880,8 @@ h6 {
   position: relative;
   box-sizing: border-box;
   width: 171px;
-  height: 95px;
+  /* A name on two lines makes the card taller (still inside a row's 150). */
+  min-height: 95px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -895,12 +896,16 @@ h6 {
   box-shadow: var(--shadow-card);
   padding: var(--sp-1) var(--sp-2);
 }
+/* Room above the chips that overhang the bottom edge, so no line sits under them. */
+.rbd-comp:has(> .rbd-chips) { padding-bottom: var(--sp-4); }
 
 .react-flow__node.selected .rbd-comp {
   border-color: var(--acc);
   box-shadow: var(--ring-sel);
 }
 
+/* The name wraps to two lines, then ends in an ellipsis; the whole name is
+   on its tooltip. */
 .rbd-comp-title {
   font-size: calc(var(--fs-14) * var(--node-scale));
   line-height: 1.2;
@@ -908,8 +913,10 @@ h6 {
   color: var(--ink);
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .rbd-comp-model {
@@ -2723,20 +2730,35 @@ h1 .chip,
   color: var(--muted);
 }
 
-/* Tabs */
-.tabs {
-  display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--line);
+/* Tabs (ui/Tabs.jsx). A row that can't fit scrolls sideways, with a fade and
+   a chevron on the hidden side (#301). The rule under the tabs is drawn inside
+   the row so scrolling can't clip the active tab's underline. */
+.tabs-strip {
   margin: 0.9rem 0 1rem;
+  /* Clear under the chevron, then fading in. */
+  --cue-gap: 28px;
+  --cue-w: 60px;
 }
 /* When the tabs are the first thing in the card (lean model page), don't add
    dead space above them. */
-.tabs:first-child {
+.tabs-strip:first-child {
   margin-top: 0;
+}
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  background: linear-gradient(var(--line), var(--line)) left bottom / 100% 1px no-repeat;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
+  flex: none;
+  white-space: nowrap;
   background: transparent;
   color: var(--muted);
   border: none;
@@ -2746,7 +2768,6 @@ h1 .chip,
   font-size: var(--fs-14);
   font-weight: 500;
   cursor: pointer;
-  margin-bottom: -1px;
   box-shadow: none;
 }
 
@@ -2760,6 +2781,49 @@ h1 .chip,
   border-bottom-color: var(--acc);
   font-weight: 600;
 }
+
+/* Sideways-scroll cue (ui/ScrollCue.jsx, #301): a strip with more content past
+   an edge fades out at that edge; tab rows add a chevron that scrolls them. */
+.scroll-cue {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+.scroll-cue-body {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  --cue-l: 0px;
+  --cue-r: 0px;
+  --cue-lg: 0px;
+  --cue-rg: 0px;
+}
+.scroll-cue.cue-start > .scroll-cue-body { --cue-l: var(--cue-w, 32px); --cue-lg: var(--cue-gap, 0px); }
+.scroll-cue.cue-end > .scroll-cue-body { --cue-r: var(--cue-w, 32px); --cue-rg: var(--cue-gap, 0px); }
+.scroll-cue.cue-start > .scroll-cue-body,
+.scroll-cue.cue-end > .scroll-cue-body {
+  -webkit-mask-image: linear-gradient(to right, transparent var(--cue-lg), #000 var(--cue-l),
+                                      #000 calc(100% - var(--cue-r)), transparent calc(100% - var(--cue-rg)));
+  mask-image: linear-gradient(to right, transparent var(--cue-lg), #000 var(--cue-l),
+                              #000 calc(100% - var(--cue-r)), transparent calc(100% - var(--cue-rg)));
+}
+.scroll-cue-arrow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+.scroll-cue-arrow.start { left: 0; }
+.scroll-cue-arrow.end { right: 0; }
+.scroll-cue-arrow:hover:not(:disabled) { background: transparent; color: var(--acc); }
+.scroll-cue-arrow svg { width: 16px; height: 16px; }
 
 /* RBD calculator tab */
 .rbd-shell {
@@ -5040,7 +5104,7 @@ select:disabled {
   background: var(--acc-t);
   color: var(--acc-d);
 }
-.api-path { font-family: var(--mono); font-size: var(--fs-13); color: var(--ink); }
+.api-path { font-family: var(--mono); font-size: var(--fs-13); color: var(--ink); overflow-wrap: anywhere; }
 
 /* OpenAPI-style request/response field tables. */
 .api-ep-desc { margin: 0.4rem 0 0.5rem; }
@@ -7640,6 +7704,20 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .guide-prose p { margin: 0 0 16px; }
 .guide-prose ul, .guide-prose ol { margin: 0 0 16px; padding-left: 22px; }
 .guide-prose li { margin: 4px 0; }
+/* Code, tables and quoted results (#302): each scrolls inside itself, never the drawer. */
+.guide-prose pre {
+  overflow-x: auto; margin: 0 0 16px; padding: 12px 14px;
+  background: var(--surf-2); border-radius: var(--r-sm); font-size: var(--fs-13); line-height: 1.5;
+}
+.guide-prose table {
+  display: block; overflow-x: auto; border-collapse: collapse; margin: 0 0 16px;
+  font-size: var(--fs-14); line-height: 1.5; font-variant-numeric: tabular-nums;
+}
+.guide-prose th, .guide-prose td { padding: 6px 16px 6px 0; border-bottom: 1px solid var(--line); text-align: left; }
+.guide-prose th { font-size: var(--fs-13); font-weight: 500; color: var(--muted); }
+.guide-prose blockquote { margin: 0 0 16px; padding: 2px 0 2px 16px; border-left: 3px solid var(--line); }
+.guide-prose blockquote p { margin: 0 0 8px; }
+.guide-prose blockquote p:last-child { margin-bottom: 0; }
 .guide-prose img {
   display: block; width: 100%; max-width: 660px; margin: 18px 0 22px;
   border: 1px solid var(--line); border-radius: var(--r);
@@ -8083,7 +8161,12 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 /* A block's chips (#314): one neutral style with an icon each, overhanging
    the card's bottom edge so the card keeps its size; big enough to read at
    fit-to-view. */
-.rbd-chips { position: absolute; bottom: -14px; left: 8px; right: 8px; display: flex; gap: 4px; z-index: 2; overflow: hidden; }
+/* Centred on the card and as wide as the chips need ("⏱ 8,760 h" and "⚭ β 10%"
+   together are a little wider than the card), never cut off. */
+.rbd-chips {
+  position: absolute; bottom: -14px; left: 50%; transform: translateX(-50%); width: max-content;
+  max-width: calc(100% + 32px); display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; z-index: 2;
+}
 .rbd-chip {
   font-size: calc(var(--fs-12) * var(--node-scale)); font-weight: 500; line-height: 24px; border-radius: var(--r-sm); padding: 0 6px;
   color: var(--ink); background: var(--surf); border: 1px solid var(--line); white-space: nowrap;
@@ -8323,25 +8406,6 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
   .app {
     padding: 22px 16px 48px;
   }
-  /* Tab strips scroll sideways instead of pushing the page wider. The rule
-     under the tabs is drawn inside the strip so scrolling can't clip the
-     active tab's underline. */
-  .tabs {
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    border-bottom: none;
-    /* The line under the scrolling tabs, drawn behind the active tab's underline. */
-    background: linear-gradient(var(--line), var(--line)) left bottom / 100% 1px no-repeat;
-  }
-  .tabs::-webkit-scrollbar {
-    display: none;
-  }
-  .tabs .tab {
-    flex: none;
-    margin-bottom: 0;
-    white-space: nowrap;
-  }
   /* Stat strips (Saved models, a dataset, model parameters, RBD results):
      two to a row, divided by the strip's own background showing through the
      1px gaps. */
@@ -8457,23 +8521,31 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
 .gp-actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .fleet-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-/* Chart download button (#308): top right of the chart, over its top margin. */
+/* Chart download (#308, #301): a download icon then PNG and SVG, top right
+   of the chart, over its top margin. */
 .plot-frame { position: relative; }
 .plot-dl {
   position: absolute; top: 0; right: 0; z-index: 2;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; padding: 0;
-  border: 1px solid transparent; border-radius: var(--r-sm);
-  background: transparent; color: var(--muted);
-  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 2px;
+  padding-left: 6px;
+  /* On the chart's own ground, so a line under it doesn't run through the labels. */
+  background: var(--surf); border-radius: var(--r-sm);
+  color: var(--muted);
 }
-.plot-dl:hover { background: var(--acc-t); color: var(--acc); }
-/* Out of the way until wanted: shown on hover or keyboard focus, faint on
-   touch screens (no hover there). */
+.plot-dl > svg { flex: none; margin-right: 2px; }
+.plot-dl-btn {
+  height: 32px; padding: 0 8px;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; color: var(--muted); box-shadow: none;
+  font-size: var(--fs-12); font-weight: 500;
+}
+.plot-dl-btn:hover:not(:disabled) { background: var(--acc-t); color: var(--acc); }
+/* Out of the way until wanted: shown on hover or keyboard focus, and always
+   on touch screens (no hover there), where the muted labels keep it quiet. */
 .plot-dl { opacity: 0; transition: opacity 0.15s; }
-.plot-frame:hover .plot-dl, .plot-dl:focus-visible { opacity: 1; }
-@media (hover: none) { .plot-dl { opacity: 0.55; } }
-.plot-dl:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--acc); }
+.plot-frame:hover .plot-dl, .plot-dl:focus-within { opacity: 1; }
+@media (hover: none) { .plot-dl { opacity: 1; } }
+.plot-dl-btn:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--acc); }
 
 /* Fit statistics in their modal: the table is the dialog's content, not a card in it. */
 .modal .gof-metrics-card { border: none; border-radius: 0; max-width: none; width: 100%; box-shadow: none; }
@@ -8543,4 +8615,19 @@ input.rbd-rename {
   .rbd-sif-shares-table th, .rbd-sif-shares-table td { padding: 0.4rem 0.3rem; }
   /* "+ Add block" says "+ Add" so the toolbar keeps one row. */
   .rbd-add-word { display: none; }
+}
+
+/* ---- "Use this model" (#294) ------------------------------------------- */
+/* Quiet next steps at the foot of a life model's panel: link rows, ink text. */
+.detail-panel .next-steps .gofh { font-size: var(--fs-13); color: var(--muted); font-weight: 500; }
+.detail-panel .gofr.next-step { color: var(--acc); font-weight: 500; }
+.detail-panel .gofr.next-step:disabled { cursor: progress; opacity: 0.7; }
+.detail-panel .next-steps-note { margin: 0; padding: 8px 16px 10px; font-size: var(--fs-12); line-height: 1.45; color: var(--muted); }
+.detail-panel .next-steps-note.error { color: var(--danger); }
+/* The replacement-interval action beside the wear-out reading. */
+.detail-panel .life-reading .life-reading-action { display: inline-block; margin-top: 6px; font-size: var(--fs-13); font-weight: 500; text-align: left; }
+.detail-panel .life-reading .life-reading-error { display: block; margin-top: 4px; font-size: var(--fs-12); }
+@media (max-width: 720px) {
+  .detail-panel .gofr.next-step { min-height: 44px; }
+  .detail-panel .life-reading .life-reading-action { min-height: 44px; }
 }

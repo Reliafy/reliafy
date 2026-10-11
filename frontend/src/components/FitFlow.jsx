@@ -401,21 +401,35 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     }
   };
 
+  const persist = () =>
+    saveModel(name.trim(), distribution, file, fitMapping, {
+      unit,
+      datasetId: datasetId || undefined,
+      ...(hasCovariates
+        ? { ...(advanced ? { formula } : { covariates, covariateUnits: covUnits }), ...coxFit }
+        : byMode ? {} : { fitOptions: fitOpts }),
+    });
+
   const onSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
     setError(null);
     try {
-      const saved = await saveModel(name.trim(), distribution, file, fitMapping, {
-        unit,
-        datasetId: datasetId || undefined,
-        ...(hasCovariates
-          ? { ...(advanced ? { formula } : { covariates, covariateUnits: covUnits }), ...coxFit }
-          : byMode ? {} : { fitOptions: fitOpts }),
-      });
-      onSaved?.(saved);
+      onSaved?.(await persist());
     } catch (err) {
       setError(err.message);
+      setSaving(false);
+    }
+  };
+
+  // "Use this model" on a fit not saved yet (#294): save it under the name
+  // beside Save, then the tool opens with it (the caller navigates).
+  const saveForUse = async () => {
+    if (!name.trim()) throw new Error("Name the model beside Save first.");
+    setSaving(true);
+    try {
+      return (await persist()).id;
+    } finally {
       setSaving(false);
     }
   };
@@ -460,14 +474,14 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-        <button onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
+        <button data-wt="fit-next" onClick={() => setStep(3)} disabled={!mappingValid}>Next</button>
       </>
     );
   } else if (step === 3) {
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-        <button onClick={onFit} disabled={!distribution || loading || !!groupProblem(selectedOpt, group)}
+        <button data-wt="fit-run" onClick={onFit} disabled={!distribution || loading || !!groupProblem(selectedOpt, group)}
                 title={groupProblem(selectedOpt, group) || undefined}>
           {loading ? "Fitting…" : `Fit ${distName}`}
         </button>
@@ -620,8 +634,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         </>
       )}
 
+      {/* data-wt: the guided walkthrough's anchors (walkthroughs.js). */}
       {step === 2 && csv && (
-        <div className="fit-step">
+        <div className="fit-step" data-wt="fit-data">
           <p className="muted-line">
             {sourceName === PASTED ? "Pasted values" : sourceName} · {csv.n_rows} rows
             {!simple && ` · ${csv.columns.length} columns`}
@@ -767,12 +782,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       )}
 
       {step === 4 && result && (
-        <div className="fit-step">
+        <div className="fit-step" data-wt="fit-result">
           <ResultView
             result={result}
             split={split}
             compare={result.kind === "distribution" && !hasCovariates ? compareFit : null}
             onPick={ownOptions ? null : pickFit}
+            onUse={saveForUse}
           />
         </div>
       )}

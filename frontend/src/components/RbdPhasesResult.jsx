@@ -9,6 +9,7 @@ import { ACCENT, REFERENCE } from "../plotTheme.js";
 import { formatNumber, formatPercent } from "../format.js";
 import { unitInText } from "./unitText.js";
 import "./RbdMission.css";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // The Calculator tab's "Phased mission" section (#160), under the diagram's
 // own results when it has phases: the mission's reliability (exact, or
@@ -131,7 +132,7 @@ function MissionAnswer({ result, unit, name, dim }) {
         </div>
       )}
       <ResultDetails summary="Each phase">
-        <div className="rbd-avail-imp-scroll">
+        <ScrollCue className="rbd-avail-imp-scroll">
           <table className="calc-table rbd-mission-table">
             <thead>
               <tr>
@@ -166,7 +167,7 @@ function MissionAnswer({ result, unit, name, dim }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
         <p className="muted-line">
           A block that fails in one phase stays failed in the later ones, so the mission's reliability isn't the
           product of the phases'. {(result.notes || []).join(" ")}

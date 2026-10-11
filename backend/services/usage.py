@@ -398,7 +398,7 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
 _SKIP_PREFIXES = (
     "/api/admin", "/api/metrics", "/api/client-error", "/api/stripe", "/api/email",
     "/api/me/email-preferences", "/api/columns", "/api/rbds/validate", "/api/health",
-    "/api/config",
+    "/api/config", "/api/me/walkthroughs",
 )
 # Areas for the fallback name of an unmapped write: /api/<area>/… -> <name>.
 _AREAS = {

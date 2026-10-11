@@ -2,13 +2,14 @@ import Plot from "./Plot.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent, formatWithUnit } from "../format.js";
 import { fitLine, optimumMarker, referenceLine } from "../plotTheme.js";
+import { unitInText } from "./unitText.js";
 
 // Presentational renderer for an optimal-replacement result — used by the live
 // tool and by saved analyses (which render the stored payload without refetch).
 // Answer first (#311): the replacement age and the saving, the cost-rate
 // curve, then the cost rates and MTTF under Details. ``actions`` (the live
 // tool's Save) sits with the answer.
-export default function ReplacementResult({ result, name = null, actions = null }) {
+export default function ReplacementResult({ result, name = null, actions = null, wt }) {
   const unit = result?.unit || "";
   const u = unit ? ` (${unit})` : "";
   const c = result.curve;
@@ -43,7 +44,7 @@ export default function ReplacementResult({ result, name = null, actions = null 
   };
 
   const pays = result.beneficial && result.optimal_time != null;
-  const age = formatWithUnit(result.optimal_time, unit);
+  const age = formatWithUnit(result.optimal_time, unitInText(unit));
   const saving = formatPercent(result.savings);
 
   return (
@@ -51,6 +52,7 @@ export default function ReplacementResult({ result, name = null, actions = null 
       {pays ? (
         <ResultSummary
           tone="good"
+          wt={wt}
           sentence={
             <>
               Replace preventively at about <b>{age}</b>. That lowers the long-run cost rate by{" "}
@@ -63,7 +65,7 @@ export default function ReplacementResult({ result, name = null, actions = null 
           ]}
         />
       ) : (
-        <ResultSummary tone="caveat" sentence={result.recommendation} />
+        <ResultSummary tone="caveat" sentence={result.recommendation} wt={wt} />
       )}
       {actions && <div className="rs-actions">{actions}</div>}
 

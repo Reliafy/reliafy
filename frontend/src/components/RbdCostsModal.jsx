@@ -53,17 +53,17 @@ export default function RbdCostsModal({ initial, unit, onClose, onSubmit }) {
       <div className="param-fields">
         <label className="param-field rbd-cost-field" title="Charged for every unit of time the whole system is down (lost production).">
           <span>System downtime cost</span>
-          <input type="number" step="any" min="0" value={rate} placeholder="—" onChange={(e) => setRate(e.target.value)} />
+          <input type="number" inputMode="decimal" step="any" min="0" value={rate} placeholder="—" onChange={(e) => setRate(e.target.value)} />
           <small>per {u} the system is down</small>
         </label>
         <label className="param-field rbd-cost-field" title="How long the system is owned: the total cost of ownership is purchase prices + running cost over this long. Blank uses the simulated window.">
           <span>Ownership horizon</span>
-          <input type="number" step="any" min="0" value={horizon} placeholder="—" onChange={(e) => setHorizon(e.target.value)} />
+          <input type="number" inputMode="decimal" step="any" min="0" value={horizon} placeholder="—" onChange={(e) => setHorizon(e.target.value)} />
           <small>{unit || "time"} · e.g. 87600 h = 10 years</small>
         </label>
         <label className="param-field rbd-cost-field" title="Makes the total cost of ownership a present value: purchases at the start, running costs discounted continuously over the horizon. Converted to the diagram's time unit. Blank or 0: undiscounted.">
           <span>Discount rate</span>
-          <input type="number" step="any" min="0" max="100" value={discount} placeholder="—" onChange={(e) => setDiscount(e.target.value)} />
+          <input type="number" inputMode="decimal" step="any" min="0" max="100" value={discount} placeholder="—" onChange={(e) => setDiscount(e.target.value)} />
           <small>% a year · e.g. 7</small>
         </label>
       </div>

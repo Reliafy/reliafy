@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import ModelPicker from "./ModelPicker.jsx";
 import FfiResult from "./FfiResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { failureFinding } from "../api.js";
+import { analysisName, modelFromSearch } from "../modelNext.js";
 
 // Failure-finding interval tool: how often to check a HIDDEN function (e.g. a
 // protective device) so its availability stays above the target.
@@ -14,6 +16,14 @@ export default function FailureFinding() {
   const [inputs, setInputs] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [ranWith, setRanWith] = useState(null); // the model the result is for
+  // Opened from a model's "Use this model" (#294): that model, chosen.
+  const wanted = modelFromSearch(useLocation().search);
+  // A saved model brings its unit.
+  const pickModel = (m) => {
+    setModel(m);
+    if (m?.unit) setUnit(m.unit);
+  };
 
   const isRegression = model?.kind === "regression";
   const canRun =
@@ -35,6 +45,7 @@ export default function FailureFinding() {
       );
       setResult(res);
       setInputs(body);
+      setRanWith(model);
     } catch (err) {
       setError(err.message);
       setResult(null);
@@ -47,14 +58,14 @@ export default function FailureFinding() {
   return (
     <div className="strategy-tool">
       <div className="strategy-form">
-        <ModelPicker label="Life model of the hidden function" value={model} onChange={setModel} />
+        <ModelPicker label="Life model of the hidden function" value={model} onChange={pickModel} preferSaved wanted={wanted} />
         {isRegression && (
           <p className="hint">Pick a plain distribution — proportional-hazards models aren't supported here.</p>
         )}
         <div className="strategy-costs">
           <label className="calc-t">
             <span>Target availability (%)</span>
-            <input type="number" min="1" max="99.999" step="any" value={availability}
+            <input type="number" inputMode="decimal" min="1" max="99.999" step="any" value={availability}
               onChange={(e) => setAvailability(e.target.value)} />
           </label>
           <label className="calc-t">
@@ -77,7 +88,7 @@ export default function FailureFinding() {
             <SaveAnalysisButton
               kind="failure_finding"
               inputs={inputs}
-              defaultName={`Failure finding — ${result.distribution}`}
+              defaultName={analysisName("Failure finding", ranWith, result.distribution)}
             />
           )}
         />

@@ -8,6 +8,7 @@ import { formatNumber } from "../format.js";
 import { COLORWAY, referenceShape } from "../plotTheme.js";
 import { unitInText } from "./unitText.js";
 import "./RegressionChecks.css";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // "Does the model hold?" (#61), beside "How good is this model?" in a
 // regression model's Validation tab: a plain verdict on each check first —
@@ -143,7 +144,7 @@ export default function RegressionChecks({ diagnostics, modelId, residualsPath, 
 
 function PhTable({ ph }) {
   return (
-    <div className="rs-table-wrap">
+    <ScrollCue className="rs-table-wrap">
       <table className="mini-table checks-table">
         <thead>
           <tr><th>Covariate</th><th>χ²</th><th>df</th><th>p</th></tr>
@@ -165,13 +166,13 @@ function PhTable({ ph }) {
           </tr>
         </tbody>
       </table>
-    </div>
+    </ScrollCue>
   );
 }
 
 function RobustTable({ rob }) {
   return (
-    <div className="rs-table-wrap">
+    <ScrollCue className="rs-table-wrap">
       <table className="mini-table checks-table">
         <thead>
           <tr><th>Covariate</th><th>Hazard ratio</th><th>Std error</th><th>Robust</th><th>Robust 95% interval</th><th>p (robust)</th></tr>
@@ -189,7 +190,7 @@ function RobustTable({ rob }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollCue>
   );
 }
 

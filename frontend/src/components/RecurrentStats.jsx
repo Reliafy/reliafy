@@ -1,5 +1,6 @@
 import { formatNumber } from "../format.js";
 import { ciText, paramLabel } from "../recurrentResults.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 const sig = (v, n = 4) => formatNumber(v, { sig: n });
 const pText = (p) => (p < 0.001 ? "p < 0.001" : `p = ${formatNumber(p, { sig: 2 })}`);
@@ -21,7 +22,7 @@ export default function RecurrentStats({ r }) {
       {(params.length > 0 || coefs.length > 0) && (
         <section>
           <h3 className="rec-stats-h">Parameters</h3>
-          <div className="rs-table-wrap">
+          <ScrollCue className="rs-table-wrap">
             <table className="mini-table rec-stats-table">
               <thead><tr><th>Parameter</th><th>Estimate</th><th>95% interval</th></tr></thead>
               <tbody>
@@ -37,7 +38,7 @@ export default function RecurrentStats({ r }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
           {r.baseline && r.family === "regression" && (
             <p className="rs-note">
               The baseline ({r.baseline.name}) is a system with every covariate at 0 and each text covariate at its
@@ -150,7 +151,7 @@ export default function RecurrentStats({ r }) {
       {systems.length > 1 && (
         <section>
           <h3 className="rec-stats-h">Systems against the model</h3>
-          <div className="rs-table-wrap rec-stats-scroll">
+          <ScrollCue className="rs-table-wrap rec-stats-scroll">
             <table className="mini-table rec-stats-table">
               <thead><tr><th>System</th><th>Failures</th><th>Expected</th><th>Excess</th></tr></thead>
               <tbody>
@@ -164,7 +165,7 @@ export default function RecurrentStats({ r }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
           <p className="rs-note">
             Most excess failures first: each system's failures against what the model expects over its own window.
           </p>

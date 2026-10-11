@@ -154,7 +154,7 @@ export default function RcmTree({ functions, readOnly, onChange, onEditDecision 
 
       {functions.map((fn) => (
         <div key={fn.id} className="tree-fn">
-          <div className="tree-row fn-row">
+          <div className="tree-row fn-row" data-wt="rcm-function">
             <button className="tree-chevron" onClick={() => toggle(fn.id)} aria-label="Toggle">
               <Chevron open={!collapsed[fn.id]} />
             </button>
@@ -204,7 +204,7 @@ export default function RcmTree({ functions, readOnly, onChange, onEditDecision 
                         const d = mode.decision;
                         return (
                           <div key={mode.id} className="tree-mode">
-                            <div className="tree-row mode-row">
+                            <div className="tree-row mode-row" data-wt="rcm-mode">
                               <span className="sr-only">Failure mode:</span>
                               <NodeText
                                 text={mode.text}
@@ -241,7 +241,7 @@ export default function RcmTree({ functions, readOnly, onChange, onEditDecision 
                               </div>
                             )}
                             {(d?.summary || d?.reason || d?.artifact_name) && (
-                              <div className="mode-evidence">
+                              <div className="mode-evidence" data-wt="rcm-evidence">
                                 {d.artifact_name && d.artifact_link_path && (
                                   <Link to={d.artifact_link_path} className="evidence-link">
                                     {d.artifact_name}

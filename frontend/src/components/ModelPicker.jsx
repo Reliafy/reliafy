@@ -5,6 +5,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { paramLabel } from "../paramLabels.js";
 import { unitInText } from "./unitText.js";
 import { formatNumber } from "../format.js";
+import { preferredModel, recentModel, rememberModel, savedModelRef } from "../modelNext.js";
 
 // The shape or spread a mean leaves open, in the words the Mean entry uses
 // (#299): a lognormal "takes mean + spread".
@@ -22,13 +23,22 @@ const GIVEN_LABEL = {
 // as its mean — "Mean life (MTBF)" or "Mean repair time (MTTR)", the label
 // given — plus the shape or spread it leaves open; the server turns it into
 // SurPyval's parameters. ``unit`` (the diagram's) puts the unit on the labels.
-export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "" }) {
+//
+// ``preferSaved`` (the Strategy tools, #294) opens on "Saved model" with one
+// chosen: ``wanted`` (a link's ?model=), else the one used last, else the
+// newest; with no saved models it falls back to Parameters. ``autoPick``
+// false opens on "Saved model" with none chosen.
+// ``initialSavedId`` opens on that saved model and emits it (a link's preset).
+// ``wt`` is a guided walkthrough's anchor (walkthroughs.js).
+export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "",
+                                      preferSaved = false, wanted = null, autoPick = true, initialSavedId = "", wt }) {
   const hasParams = value?.source === "params" && (value.params || []).length > 0;
   const [source, setSource] = useState(
-    value?.source === "saved" ? "saved" : hasParams || !meanEntry ? "params" : "mean"
+    value?.source === "saved" || initialSavedId || (preferSaved && !hasParams) ? "saved" : hasParams || !meanEntry ? "params" : "mean"
   );
   const [dists, setDists] = useState([]);
   const [saved, setSaved] = useState([]);
+  const [savedLoaded, setSavedLoaded] = useState(false);
   const [forms, setForms] = useState(null); // {distId: {given: [...]}} — which take a mean
   const [distId, setDistId] = useState(
     value?.source === "params" ? value.distribution_id : meanEntry ? "exponential" : "weibull"
@@ -39,7 +49,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
     )
   );
   const [savedId, setSavedId] = useState(
-    value?.source === "saved" ? value.modelId : ""
+    value?.source === "saved" ? value.modelId : initialSavedId || ""
   );
   // Mean entry: the mean, the given shape/spread, the parameters it made
   // (shown under the inputs) and the server's reason when it can't.
@@ -61,7 +71,8 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
       // Fits by failure mode (#177) have no single life distribution to pick.
       .then((d) => setSaved(d.models.filter((m) => m.kind !== "competing_risks"
         && !(rbdBlock && m.kind === "nonparametric"))))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setSavedLoaded(true));
     if (meanEntry) rbdMeanForms().then(setForms).catch(() => setForms({}));
   }, [rbdBlock, meanEntry]);
 
@@ -148,31 +159,35 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
   const onPickSaved = async (id) => {
     setSavedId(id);
     if (!id) return onChange(null);
+    rememberModel(id);
     try {
-      const full = await getModel(id);
-      const r = full.results || {};
-      onChange({
-        source: "saved",
-        kind: full.kind,
-        modelId: id,
-        name: full.name,
-        distribution: r.distribution,
-        distribution_id: r.distribution_id,
-        params: r.params || [],
-        // Extra fitted quantities (offset/LFP/ZI) so calculators rebuild the
-        // model exactly as it was fitted.
-        extras: r.extras || null,
-        // Covariate field definitions for proportional-hazards models; the RBD
-        // calculator prompts for these values.
-        covariates: (r.functions && r.functions.covariates) || [],
-        unit: r.unit || "",
-        // A mixture fit's modes follow this distribution (#318).
-        ...(r.distribution_id === "mixture" ? { base_distribution_id: r.base_distribution_id || "weibull" } : {}),
-      });
+      onChange(savedModelRef({ ...(await getModel(id)), id }));
     } catch {
       onChange(null);
     }
   };
+
+  // Strategy tools start on a saved model (#294): once the list is in, pick
+  // the preferred plain distribution, or fall back to Parameters. A preset
+  // (``initialSavedId``) is picked on mount instead.
+  const autoRef = useRef(false);
+  useEffect(() => {
+    if (!preferSaved || initialSavedId || !savedLoaded || autoRef.current || value || source !== "saved") return;
+    autoRef.current = true;
+    const plain = saved.filter((m) => m.kind === "distribution");
+    const id = !autoPick ? null : wanted && saved.some((m) => m.id === wanted)
+      ? wanted : preferredModel(plain, { recent: recentModel() });
+    if (id) onPickSaved(id);
+    else if (!saved.length) setSource("params");
+    // onPickSaved is this render's; the pick runs once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferSaved, savedLoaded, saved, wanted, value, source]);
+
+  useEffect(() => {
+    if (initialSavedId) onPickSaved(initialSavedId);
+    // Once, on mount: the preset is a starting point, not a binding.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const u = unit ? unitInText(unit) : "";
   const distSelect = (options, valueId, onPick) => (
@@ -187,7 +202,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
   );
 
   return (
-    <div className="picker">
+    <div className="picker" data-wt={wt}>
       {label && <div className="picker-label">{label}</div>}
       <SegmentedControl
         label={label || "Model source"}
@@ -219,7 +234,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
             <label className="param-field">
               <span>{meanEntry}{u ? ` (${u})` : ""}</span>
               <input
-                type="number"
+                type="number" inputMode="decimal"
                 step="any"
                 min="0"
                 value={meanVal}
@@ -233,7 +248,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
               <label className="param-field" key={g}>
                 <span>{GIVEN_LABEL[meanDistId]?.[g] || paramLabel(meanDistId, g, unit)}</span>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   step="any"
                   min="0"
                   value={given[g] ?? ""}

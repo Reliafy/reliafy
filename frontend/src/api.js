@@ -1612,6 +1612,21 @@ export function revokePublicLink(token) {
   return request(`/api/public-links/${encodeURIComponent(token)}`, { method: "DELETE" });
 }
 
+// ---- Reports (#30): several items on one share page ---------------------------
+// A report is published with a public link (collection "reports").
+const jsonBody = (method, body) => ({
+  method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+});
+export const listReports = () => request("/api/reports");
+export const listReportItems = () => request("/api/reports/items");
+export const createReport = (report) => request("/api/reports", jsonBody("POST", report));
+export const updateReport = (id, report) =>
+  request(`/api/reports/${encodeURIComponent(id)}`, jsonBody("PUT", report));
+export const deleteReport = (id) => request(`/api/reports/${encodeURIComponent(id)}`, { method: "DELETE" });
+// The assistant words the items' stored figures; nothing is saved (#41).
+export const draftReportNotes = (title, sections) =>
+  request("/api/reports/draft", jsonBody("POST", { title, sections }));
+
 // The header that carries a password-protected link's unlock token.
 const UNLOCK_HEADER = "X-Share-Unlock";
 const unlockHeaders = (unlock) => (unlock ? { [UNLOCK_HEADER]: unlock } : {});
@@ -1972,4 +1987,26 @@ export function getOutageHistory(rbdId, logId) {
 
 export function fitOutageModels(rbdId, logId, body) {
   return outageJson("POST", `/api/rbds/${rbdId}/outage-logs/${logId}/fit`, body);
+}
+
+// ---- Guided walkthroughs (#32) ----------------------------------------------
+
+// Claim a walkthrough's one automatic start for this user: { start: bool },
+// true only the first time (frontend/src/components/Walkthrough.jsx).
+export function claimWalkthroughAutoStart(id) {
+  return request("/api/me/walkthroughs/auto", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+}
+
+// What changed in the active workspace over a period (#41): ``days`` (default
+// 30) or ``since`` ("last_visit" or a date). Computed by the server.
+export function getWorkspaceChanges({ days = null, since = null } = {}) {
+  const q = new URLSearchParams();
+  if (since) q.set("since", since);
+  else if (days) q.set("days", String(days));
+  const qs = q.toString();
+  return request(`/api/changes${qs ? `?${qs}` : ""}`);
 }

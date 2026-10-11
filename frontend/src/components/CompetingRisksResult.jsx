@@ -8,6 +8,8 @@ import { formatNumber } from "../format.js";
 import { causesAt, effectSentence, leadSentence, pct, readingAt } from "../competingRisks.js";
 import "./NonParametric.css";
 import "./CompetingRisks.css";
+import Tabs from "./ui/Tabs.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const pText = (p) => (p == null ? "—" : p < 0.001 ? "< 0.001" : formatNumber(p, { sig: 2 }));
@@ -19,7 +21,7 @@ function GrayTable({ gray, unit }) {
   return (
     <>
       <p className="cr-modal-lead">{gray.sentence}</p>
-      <div className="rs-table-wrap">
+      <ScrollCue className="rs-table-wrap">
         <table className="mini-table cr-table">
           <thead>
             <tr>
@@ -38,7 +40,7 @@ function GrayTable({ gray, unit }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
       <p className="muted-line">
         The share of each group's units that fail from each mode by {when}. Gray's test asks whether a
         mode's chance differs between the groups, with the other modes still acting; under 0.05, it
@@ -60,7 +62,7 @@ function CoefficientsByMode({ regression }) {
           ? `${sig.map((c) => effectSentence(c, regression.ratio_label)).join("; ")}.`
           : "No covariate changes any failure mode clearly (every p ≥ 0.05)."}
       </p>
-      <div className="rs-table-wrap">
+      <ScrollCue className="rs-table-wrap">
         <table className="mini-table cr-table">
           <thead>
             <tr><th>Failure mode</th><th>Covariate</th><th>{label}</th><th>95% interval</th><th>p-value</th></tr>
@@ -77,7 +79,7 @@ function CoefficientsByMode({ regression }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
       <p className="muted-line">
         {regression.model === "Cox"
           ? "Cause-specific Cox: a ratio multiplies the failure rate from that mode, among units still running."
@@ -116,7 +118,7 @@ function CompetingRisksAside({ result }) {
           <label className="cr-by">
             <input
               className="cr-t"
-              type="number"
+              type="number" inputMode="decimal"
               min="0"
               step="any"
               value={text}
@@ -186,13 +188,7 @@ export default function CompetingRisksResult({ result, name = null }) {
   ];
   return (
     <>
-      <div className="tabs">
-        {tabs.map((t) => (
-          <button key={t.id} className={"tab" + (tab === t.id ? " active" : "")} onClick={() => setTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={tabs} value={tab} onChange={setTab} label="Result views" />
       <div className="tab-panel">
         {tab === "cif" && (
           <div className="detail-panel life-panel">

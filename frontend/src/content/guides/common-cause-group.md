@@ -84,10 +84,11 @@ give them the same model for a result that means anything.
 
 ## Read the impact
 
-Grouped components carry a **CC β** chip and a shared outline, and the group is
-listed at the bottom-left where you can adjust β or ungroup it.
+Grouped components carry a **⚭ β** chip with the group's β, and the toolbar
+gains a **⚭ 1 common-cause group** chip. Click it for the list of groups, where
+you can change a group's β or ungroup it.
 
-![Grouped components showing CC chips, with the groups panel](/guides/img/ccf-03-grouped.png)
+![Grouped components showing their β chips, with the common-cause chip in the toolbar](/guides/img/ccf-03-grouped.png)
 
 Validate and calculate, and the results lead with the number worth knowing: the
 system reliability **with** the common cause against what you'd have got
@@ -95,7 +96,7 @@ system reliability **with** the common cause against what you'd have got
 
 ![The results showing the common-cause reliability impact callout](/guides/img/ccf-04-impact.png)
 
-In this example a β of 0.1 takes the design-point reliability from 91.0% down
+In this example a β of 10% takes the design-point reliability from 91.7% down
 to 89.9%. A repairable diagram says the same under its availability: the
 figures include the groups, and the long-run availability without them is
 alongside. That gap is the cost of the shared cause — the part of your redundancy

@@ -14,6 +14,7 @@ import "./RbdDesignPanel.css";
 import { unitInText } from "./unitText.js";
 import { formatPercent } from "../format.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // "Design for a target" (redundancy allocation, #98): how many copies of each
 // block a non-repairable diagram needs — the most reliable design within a
@@ -268,7 +269,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
       <div className="calc-controls rbd-design-goal">
         <label className="calc-t">
           <span>Mission time t{graph.unit ? ` (${graph.unit})` : ""}</span>
-          <input type="number" min="0" step="any" value={tValue} onChange={(e) => setT(e.target.value)} />
+          <input type="number" inputMode="decimal" min="0" step="any" value={tValue} onChange={(e) => setT(e.target.value)} />
         </label>
         <div className="calc-t">
           <span>Goal</span>
@@ -286,21 +287,21 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
           <label className="calc-t">
             <span>Cost budget</span>
             <input
-              type="number" min="0" step="any" value={budgetCost}
+              type="number" inputMode="decimal" min="0" step="any" value={budgetCost}
               onChange={(e) => setBudget((b) => ({ ...b, cost: e.target.value }))}
             />
           </label>
         ) : (
           <label className="calc-t">
             <span>Target R(t)</span>
-            <input type="number" min="0" max="1" step="any" value={target} onChange={(e) => setTarget(e.target.value)} />
+            <input type="number" inputMode="decimal" min="0" max="1" step="any" value={target} onChange={(e) => setTarget(e.target.value)} />
           </label>
         )}
         {useWeight && (
           <label className="calc-t">
             <span>Weight limit</span>
             <input
-              type="number" min="0" step="any" placeholder="none" value={budget.weight}
+              type="number" inputMode="decimal" min="0" step="any" placeholder="none" value={budget.weight}
               onChange={(e) => setBudget((b) => ({ ...b, weight: e.target.value }))}
             />
           </label>
@@ -309,7 +310,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
           <label className="calc-t">
             <span>Volume limit</span>
             <input
-              type="number" min="0" step="any" placeholder="none" value={budget.volume}
+              type="number" inputMode="decimal" min="0" step="any" placeholder="none" value={budget.volume}
               onChange={(e) => setBudget((b) => ({ ...b, volume: e.target.value }))}
             />
           </label>
@@ -329,7 +330,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
           Add components with life models on the Builder tab — each one can then be given copies.
         </p>
       ) : (
-        <div className="rbd-design-scroll">
+        <ScrollCue className="rbd-design-scroll">
           <table className="calc-table rbd-design-table">
             <thead>
               <tr>
@@ -360,17 +361,17 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
                       </label>
                     </td>
                     <td>{n.type === "parallel" ? Math.max(Number(n.data.n) || 1, 1) : 1}</td>
-                    <td><input className="rbd-design-num" type="number" min="0" step="any" disabled={off} value={r.cost} onChange={(e) => update(n.id, { cost: e.target.value })} /></td>
+                    <td><input className="rbd-design-num" type="number" inputMode="decimal" min="0" step="any" disabled={off} value={r.cost} onChange={(e) => update(n.id, { cost: e.target.value })} /></td>
                     {useWeight && (
-                      <td><input className="rbd-design-num" type="number" min="0" step="any" disabled={off} placeholder="0" value={r.weight} onChange={(e) => update(n.id, { weight: e.target.value })} /></td>
+                      <td><input className="rbd-design-num" type="number" inputMode="decimal" min="0" step="any" disabled={off} placeholder="0" value={r.weight} onChange={(e) => update(n.id, { weight: e.target.value })} /></td>
                     )}
                     {useVolume && (
-                      <td><input className="rbd-design-num" type="number" min="0" step="any" disabled={off} placeholder="0" value={r.volume} onChange={(e) => update(n.id, { volume: e.target.value })} /></td>
+                      <td><input className="rbd-design-num" type="number" inputMode="decimal" min="0" step="any" disabled={off} placeholder="0" value={r.volume} onChange={(e) => update(n.id, { volume: e.target.value })} /></td>
                     )}
-                    <td><input className="rbd-design-num sm" type="number" min="1" max={MAX_COPIES} step="1" disabled={off} value={r.max} onChange={(e) => update(n.id, { max: e.target.value })} /></td>
+                    <td><input className="rbd-design-num sm" type="number" inputMode="numeric" min="1" max={MAX_COPIES} step="1" disabled={off} value={r.max} onChange={(e) => update(n.id, { max: e.target.value })} /></td>
                     <td>
                       <input
-                        className="rbd-design-num sm" type="number" min="1" step="1"
+                        className="rbd-design-num sm" type="number" inputMode="numeric" min="1" step="1"
                         disabled={off || r.strategy !== "active"}
                         title={r.strategy !== "active" ? "Standby spares run one unit at a time" : undefined}
                         value={r.strategy !== "active" ? "1" : r.required}
@@ -388,7 +389,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
                         {r.strategy !== "active" && (
                           <label className="rbd-design-switch" title="Probability that switching to a spare works">
                             <span>switch R</span>
-                            <input className="rbd-design-num sm" type="number" min="0" max="1" step="any" disabled={off} value={r.switching} onChange={(e) => update(n.id, { switching: e.target.value })} />
+                            <input className="rbd-design-num sm" type="number" inputMode="decimal" min="0" max="1" step="any" disabled={off} value={r.switching} onChange={(e) => update(n.id, { switching: e.target.value })} />
                           </label>
                         )}
                       </div>
@@ -420,12 +421,12 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
                         </span>
                       </td>
                       <td />
-                      <td><input className="rbd-design-num" type="number" min="0" step="any" disabled={off} value={ty.cost} onChange={(e) => updateType(n.id, i, { cost: e.target.value })} /></td>
+                      <td><input className="rbd-design-num" type="number" inputMode="decimal" min="0" step="any" disabled={off} value={ty.cost} onChange={(e) => updateType(n.id, i, { cost: e.target.value })} /></td>
                       {useWeight && (
-                        <td><input className="rbd-design-num" type="number" min="0" step="any" disabled={off} placeholder="0" value={ty.weight} onChange={(e) => updateType(n.id, i, { weight: e.target.value })} /></td>
+                        <td><input className="rbd-design-num" type="number" inputMode="decimal" min="0" step="any" disabled={off} placeholder="0" value={ty.weight} onChange={(e) => updateType(n.id, i, { weight: e.target.value })} /></td>
                       )}
                       {useVolume && (
-                        <td><input className="rbd-design-num" type="number" min="0" step="any" disabled={off} placeholder="0" value={ty.volume} onChange={(e) => updateType(n.id, i, { volume: e.target.value })} /></td>
+                        <td><input className="rbd-design-num" type="number" inputMode="decimal" min="0" step="any" disabled={off} placeholder="0" value={ty.volume} onChange={(e) => updateType(n.id, i, { volume: e.target.value })} /></td>
                       )}
                       <td colSpan={3} className="rbd-design-type-note">alternative type</td>
                       <td>
@@ -442,7 +443,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       )}
       {fixed.length > 0 && (
         <p className="hint rbd-design-fixed">

@@ -8,6 +8,7 @@ import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { graphSignature } from "./RbdValidation.jsx";
 import { unitAbbr } from "./rbdModelText.js";
 import "./RbdProduction.css";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // Production availability (#122), a section of the Calculator tab for a
 // diagram whose blocks carry capacities: the share of the demand the system
@@ -158,7 +159,7 @@ function ProductionDetails({ p, cu }) {
           <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
         ))}
       </dl>
-      <div className="rbd-design-scroll">
+      <ScrollCue className="rbd-design-scroll">
         <table className="calc-table rbd-production-levels">
           <thead>
             <tr><th>Delivers{cu ? ` (${cu})` : ""}</th><th>{p.kind === "repairable" ? "Share of time" : "Probability"}</th></tr>
@@ -172,7 +173,7 @@ function ProductionDetails({ p, cu }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
       <p className="rbd-details-p">
         Exact, from each block's capacity and availability: blocks in series pass the least of their capacities,
         blocks in parallel add up. The production availability is the expected share of the demand delivered;

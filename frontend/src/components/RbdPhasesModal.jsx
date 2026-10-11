@@ -95,7 +95,7 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, onClose, o
                 </label>
                 <label className="rbd-phase-duration">
                   <span>Duration{u}</span>
-                  <input type="number" min="0" step="any" value={row.duration} placeholder="—"
+                  <input type="number" inputMode="decimal" min="0" step="any" value={row.duration} placeholder="—"
                          onChange={(e) => update(row.key, { duration: e.target.value })} />
                 </label>
                 <div className="rbd-phase-tools">
@@ -131,7 +131,7 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, onClose, o
                   {votes.map((v) => (
                     <label key={v.id} className="rbd-phase-vote">
                       <span>{v.label}: working inputs needed</span>
-                      <input type="number" min="1" max={v.inputs || undefined} step="1" value={row.votes[v.id] ?? ""}
+                      <input type="number" inputMode="numeric" min="1" max={v.inputs || undefined} step="1" value={row.votes[v.id] ?? ""}
                              placeholder={String(v.n)}
                              onChange={(e) => update(row.key, { votes: { ...row.votes, [v.id]: e.target.value } })} />
                       <small>of {v.inputs}</small>
