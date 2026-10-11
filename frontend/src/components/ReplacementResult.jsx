@@ -2,6 +2,7 @@ import Plot from "./Plot.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent, formatWithUnit } from "../format.js";
 import { fitLine, optimumMarker, referenceLine } from "../plotTheme.js";
+import { unitInText } from "./unitText.js";
 
 // Presentational renderer for an optimal-replacement result — used by the live
 // tool and by saved analyses (which render the stored payload without refetch).
@@ -43,7 +44,7 @@ export default function ReplacementResult({ result, name = null, actions = null,
   };
 
   const pays = result.beneficial && result.optimal_time != null;
-  const age = formatWithUnit(result.optimal_time, unit);
+  const age = formatWithUnit(result.optimal_time, unitInText(unit));
   const saving = formatPercent(result.savings);
 
   return (
