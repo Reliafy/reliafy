@@ -5,6 +5,11 @@ Updates are the Markdown files under ``frontend/src/content/updates/``
 optional ``email_subject``), the same files the public /whats-new pages
 render. This script turns one into an email and sends it.
 
+An update with ``send: auto`` is sent by the scheduled content job instead
+(#367, ``backend/services/content_jobs.py``): a test copy on the Friday
+before, the list at 10:00 Brisbane on its date. It uses the same rendering,
+recipients and send log as this script, so the two never double-send.
+
     # Dry run (default): who would get it, and a rendered sample on disk.
     python -m backend.scripts.send_update --update october-2026
 
@@ -59,7 +64,8 @@ class Update:
     summary: str
     subject: str
     body: str  # markdown
-    path: pathlib.Path
+    path: pathlib.Path | None
+    send: str = ""  # "auto": the scheduled content job sends it (#367)
 
 
 def slug_from_path(path: pathlib.Path) -> str:
@@ -111,6 +117,23 @@ def load_update(path: pathlib.Path) -> Update:
         subject=(meta.get("email_subject") or "").strip() or title,
         body=body.strip(),
         path=path,
+        send=(meta.get("send") or "").strip().lower(),
+    )
+
+
+def update_from_build(item: dict) -> Update:
+    """An update as the build writes it to ``dist/content.json`` (the source
+    files aren't in the runtime image)."""
+    title = str(item.get("title") or "").strip()
+    return Update(
+        slug=str(item.get("slug") or ""),
+        title=title,
+        date=str(item.get("date") or "").strip(),
+        summary=str(item.get("summary") or "").strip(),
+        subject=str(item.get("email_subject") or "").strip() or title,
+        body=str(item.get("body") or "").strip(),
+        path=None,
+        send=str(item.get("send") or "").strip().lower(),
     )
 
 
@@ -315,14 +338,23 @@ def _record(db, slug: str, u: dict, status: str, error: str | None = None) -> No
     )
 
 
-def _send_all(db, update: Update, eligible: list[dict], delay: float,
-              sleep=time.sleep) -> int:
+def send_batch(db, update: Update, eligible: list[dict], delay: float,
+               sleep=time.sleep, *, deadline: float | None = None,
+               clock=time.monotonic, log=print) -> Counter:
+    """Send to ``eligible``, recording each in ``update_sends``. Returns the
+    tally (``sent``/``failed``/``skipped``, plus ``stopped`` = 1 when it gave
+    up early: failures in a row, or ``deadline`` on ``clock`` passed). Used
+    by this script and the scheduled content job."""
     from backend.services import email as email_service
     from backend.services import email_prefs
 
     db.update_sends.create_index([("update_slug", 1), ("uid", 1)], unique=True)
     tally, consecutive = Counter(), 0
     for i, u in enumerate(eligible):
+        if deadline is not None and clock() >= deadline:
+            log(f"Stopping: out of time after {tally['sent']} sent. Re-run to continue.")
+            tally["stopped"] = 1
+            break
         if i:
             sleep(delay)
         # Re-read: someone may have unsubscribed while the run was going.
@@ -340,17 +372,29 @@ def _send_all(db, update: Update, eligible: list[dict], delay: float,
             _record(db, update.slug, u, "failed", str(exc)[:500])
             tally["failed"] += 1
             consecutive += 1
-            print(f"  failed {u['_id']}: {exc}", file=sys.stderr)
+            log(f"  failed {u['_id']}: {exc}")
             if consecutive >= MAX_CONSECUTIVE_FAILURES:
-                print(f"Stopping: {consecutive} failures in a row (SMTP down?). "
-                      "Re-run to retry.", file=sys.stderr)
+                log(f"Stopping: {consecutive} failures in a row (SMTP down?). Re-run to retry.")
+                tally["stopped"] = 1
                 break
             continue
         consecutive = 0
         _record(db, update.slug, u, "sent")
         tally["sent"] += 1
         if tally["sent"] % 25 == 0:
-            print(f"  ... {tally['sent']} sent")
+            log(f"  ... {tally['sent']} sent")
+    return tally
+
+
+def _cli_log(message: str) -> None:
+    """Progress to stdout; failures and early stops to stderr."""
+    trouble = message.lstrip().startswith(("failed", "Stopping"))
+    print(message, file=sys.stderr if trouble else sys.stdout)
+
+
+def _send_all(db, update: Update, eligible: list[dict], delay: float,
+              sleep=time.sleep) -> int:
+    tally = send_batch(db, update, eligible, delay, sleep, log=_cli_log)
     print(f"Done: {tally['sent']} sent, {tally['failed']} failed, "
           f"{tally['skipped']} skipped (of {len(eligible)} eligible).")
     return 1 if tally["failed"] else 0

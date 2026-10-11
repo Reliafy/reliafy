@@ -175,6 +175,21 @@ export function gatedPages() {
   return pages;
 }
 
+// Every What's new update as the email needs it. The runtime image has no
+// source files, so the scheduled send (backend/services/content_jobs.py)
+// reads updates — `send: auto` ones included — from dist/content.json.
+export function emailUpdates() {
+  return allUpdates.map((u) => ({
+    slug: u.slug,
+    title: u.title,
+    date: u.date,
+    summary: u.summary,
+    email_subject: u.emailSubject,
+    send: u.send,
+    body: u.body,
+  }));
+}
+
 export function render(path) {
   return renderToString(
     <MemoryRouter initialEntries={[path]}>

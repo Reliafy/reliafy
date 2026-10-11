@@ -428,3 +428,30 @@ LIFECYCLE_EMAILS = _truthy(os.environ.get("LIFECYCLE_EMAILS", "false"))
 # Either unset = the endpoint refuses every call. See ops/lifecycle-emails.md.
 LIFECYCLE_CRON_AUDIENCE = (os.environ.get("LIFECYCLE_CRON_AUDIENCE") or "").strip() or None
 LIFECYCLE_CRON_SA = (os.environ.get("LIFECYCLE_CRON_SA") or "").strip() or None
+
+# ---- Content pipeline (#367) ------------------------------------------------
+# One scheduled job, POST /internal/content/run, called by Cloud Scheduler
+# with an OIDC token (same check as the lifecycle job): it emails an approved
+# What's new (frontmatter `send: auto`) — a test copy to the operators on the
+# Friday before, the list at 10:00 Brisbane on its date — and the operators'
+# monthly content report on the 1st. See ops/content-pipeline.md.
+# Either of the first two unset = the endpoint refuses every call.
+CONTENT_CRON_AUDIENCE = (os.environ.get("CONTENT_CRON_AUDIENCE") or "").strip() or None
+CONTENT_CRON_SA = (os.environ.get("CONTENT_CRON_SA") or "").strip() or None
+# Off unless true: no `send: auto` update is emailed (test copy or list).
+UPDATE_AUTO_SEND = _truthy(os.environ.get("UPDATE_AUTO_SEND", "false"))
+# Addresses the automatic send skips, comma-separated (case-insensitive). Set
+# on the service, never in the repo. Opt-outs are honoured regardless.
+UPDATE_EMAIL_EXCLUDE = {
+    e.strip().lower()
+    for e in os.environ.get("UPDATE_EMAIL_EXCLUDE", "").split(",")
+    if e.strip()
+}
+# Who gets the test copies and the monthly report (comma-separated);
+# defaults to ADMIN_EMAILS.
+CONTENT_OPERATOR_EMAILS = sorted(
+    {e.strip().lower() for e in os.environ.get("CONTENT_OPERATOR_EMAILS", "").split(",") if e.strip()}
+    or ADMIN_EMAILS
+)
+# Seconds one run may spend sending before it stops; the next run continues.
+UPDATE_AUTO_SECONDS = _int("UPDATE_AUTO_SECONDS", 240)
