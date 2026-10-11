@@ -80,6 +80,7 @@ from backend.routers import public as public_router
 from backend.routers import ingest as ingest_router
 from backend.routers import public_api as public_api_router
 from backend.routers import email_prefs as email_prefs_router
+from backend.routers import walkthroughs as walkthroughs_router
 from backend.routers import lifecycle as lifecycle_router
 from backend.routers import feeds as feeds_router
 from backend.routers import oauth as oauth_router
@@ -247,6 +248,7 @@ app.include_router(public_router.router)
 app.include_router(ingest_router.router)
 app.include_router(public_api_router.router)
 app.include_router(email_prefs_router.router)
+app.include_router(walkthroughs_router.router)
 # Lifecycle emails (#272): the daily day-3 trigger (Cloud Scheduler, OIDC).
 app.include_router(lifecycle_router.router)
 app.include_router(outage_logs_router.router)
