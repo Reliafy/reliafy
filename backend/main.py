@@ -88,6 +88,7 @@ from backend.routers import uploads as uploads_router
 from backend.routers import compare_groups as compare_groups_router
 from backend.routers import regression_diagnostics as regression_diagnostics_router
 from backend.routers import tvc as tvc_router
+from backend.routers import workspace_changes as workspace_changes_router
 from backend.services import datasets as datasets_service
 
 logging.basicConfig(level=logging.INFO)
@@ -250,6 +251,8 @@ app.include_router(email_prefs_router.router)
 # Lifecycle emails (#272): the daily day-3 trigger (Cloud Scheduler, OIDC).
 app.include_router(lifecycle_router.router)
 app.include_router(outage_logs_router.router)
+# What changed in the workspace over a period (#41).
+app.include_router(workspace_changes_router.router)
 # MCP file uploads: PUT /api/uploads/{id}?t=… (token-authed, see services/uploads.py).
 app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
@@ -605,7 +608,7 @@ SPA_ROOTS = frozenset({
     "reliability-analysis-software",
     # The signed-in app.
     "modelling", "rbds", "datasets", "strategy", "fleet", "agent", "rcm", "team", "settings",
-    "tokens", "admin", "billing",
+    "tokens", "admin", "billing", "changes",
 })
 
 
