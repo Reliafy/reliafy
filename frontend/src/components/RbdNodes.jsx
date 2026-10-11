@@ -66,7 +66,8 @@ function NodeTitle({ nodeId, label, className, children }) {
     <div
       className={className}
       onDoubleClick={ctx ? (e) => { e.stopPropagation(); ctx.start(nodeId); } : undefined}
-      title={ctx ? "Double-click to rename" : undefined}
+      // The full name, which the block may clamp to two lines.
+      title={ctx ? `${label ? `${label}\n` : ""}Double-click to rename` : undefined}
     >
       {children}
     </div>

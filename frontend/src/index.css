@@ -880,7 +880,8 @@ h6 {
   position: relative;
   box-sizing: border-box;
   width: 171px;
-  height: 95px;
+  /* A name on two lines makes the card taller (still inside a row's 150). */
+  min-height: 95px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -895,12 +896,16 @@ h6 {
   box-shadow: var(--shadow-card);
   padding: var(--sp-1) var(--sp-2);
 }
+/* Room above the chips that overhang the bottom edge, so no line sits under them. */
+.rbd-comp:has(> .rbd-chips) { padding-bottom: var(--sp-4); }
 
 .react-flow__node.selected .rbd-comp {
   border-color: var(--acc);
   box-shadow: var(--ring-sel);
 }
 
+/* The name wraps to two lines, then ends in an ellipsis; the whole name is
+   on its tooltip. */
 .rbd-comp-title {
   font-size: calc(var(--fs-14) * var(--node-scale));
   line-height: 1.2;
@@ -908,8 +913,10 @@ h6 {
   color: var(--ink);
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .rbd-comp-model {
@@ -8154,7 +8161,12 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 /* A block's chips (#314): one neutral style with an icon each, overhanging
    the card's bottom edge so the card keeps its size; big enough to read at
    fit-to-view. */
-.rbd-chips { position: absolute; bottom: -14px; left: 8px; right: 8px; display: flex; gap: 4px; z-index: 2; overflow: hidden; }
+/* Centred on the card and as wide as the chips need ("⏱ 8,760 h" and "⚭ β 10%"
+   together are a little wider than the card), never cut off. */
+.rbd-chips {
+  position: absolute; bottom: -14px; left: 50%; transform: translateX(-50%); width: max-content;
+  max-width: calc(100% + 32px); display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; z-index: 2;
+}
 .rbd-chip {
   font-size: calc(var(--fs-12) * var(--node-scale)); font-weight: 500; line-height: 24px; border-radius: var(--r-sm); padding: 0 6px;
   color: var(--ink); background: var(--surf); border: 1px solid var(--line); white-space: nowrap;
