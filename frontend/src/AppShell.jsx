@@ -5,6 +5,7 @@ import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 import VerifyEmailBanner from "./components/VerifyEmailBanner.jsx";
+import { WalkthroughProvider } from "./components/Walkthrough.jsx";
 const BillingPage = lazy(() => import("./views/BillingPage.jsx"));
 const ModellingDashboard = lazy(() => import("./views/ModellingDashboard.jsx"));
 const ModellingHome = lazy(() => import("./views/ModellingHome.jsx"));
@@ -130,7 +131,7 @@ export default function AppShell() {
     return () => window.clearTimeout(id);
   }, []);
   return (
-    <>
+    <WalkthroughProvider>
       <NavBar
         menuOpen={phone && menuOpen}
         onMenu={() => setMenuOpen((o) => !o)}
@@ -213,6 +214,6 @@ export default function AppShell() {
         </main>
         {ai && <ChatPanel />}
       </div>
-    </>
+    </WalkthroughProvider>
   );
 }
