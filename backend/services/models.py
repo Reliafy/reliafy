@@ -271,6 +271,7 @@ def update_fit(
     )
     resolved_id = result.get("distribution_id", distribution_id)
 
+    before_results = model.results
     model.results = result
     model.kind = result.get("kind", "distribution")
     model.distribution_id = resolved_id
@@ -300,6 +301,10 @@ def update_fit(
     )
     # The cached live model (refit-on-demand) is stale now.
     _LIVE.pop(model_id, None)
+    # Its answer before and after, for "what changed" (#41).
+    from backend.services import workspace_changes
+
+    workspace_changes.record_refit(db, model_id, owner_id, before_results, result)
     return model
 
 
