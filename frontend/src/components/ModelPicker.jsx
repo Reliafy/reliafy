@@ -22,10 +22,12 @@ const GIVEN_LABEL = {
 // as its mean — "Mean life (MTBF)" or "Mean repair time (MTTR)", the label
 // given — plus the shape or spread it leaves open; the server turns it into
 // SurPyval's parameters. ``unit`` (the diagram's) puts the unit on the labels.
-export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "" }) {
+//
+// ``initialSavedId`` opens on that saved model and emits it (a link's preset).
+export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "", initialSavedId = "" }) {
   const hasParams = value?.source === "params" && (value.params || []).length > 0;
   const [source, setSource] = useState(
-    value?.source === "saved" ? "saved" : hasParams || !meanEntry ? "params" : "mean"
+    value?.source === "saved" || initialSavedId ? "saved" : hasParams || !meanEntry ? "params" : "mean"
   );
   const [dists, setDists] = useState([]);
   const [saved, setSaved] = useState([]);
@@ -39,7 +41,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
     )
   );
   const [savedId, setSavedId] = useState(
-    value?.source === "saved" ? value.modelId : ""
+    value?.source === "saved" ? value.modelId : initialSavedId || ""
   );
   // Mean entry: the mean, the given shape/spread, the parameters it made
   // (shown under the inputs) and the server's reason when it can't.
@@ -173,6 +175,12 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
       onChange(null);
     }
   };
+
+  useEffect(() => {
+    if (initialSavedId) onPickSaved(initialSavedId);
+    // Once, on mount: the preset is a starting point, not a binding.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const u = unit ? unitInText(unit) : "";
   const distSelect = (options, valueId, onPick) => (

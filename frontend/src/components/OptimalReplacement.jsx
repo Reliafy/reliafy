@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import ModelPicker from "./ModelPicker.jsx";
 import ReplacementResult from "./ReplacementResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
@@ -6,10 +7,15 @@ import { optimalReplacement } from "../api.js";
 
 // Optimal preventive-replacement tool: the age that minimises the long-run
 // cost rate given planned vs. unplanned costs.
+//
+// A link can preset it: ?model=<saved model id>&planned=<cost>&unplanned=<cost>
+// (the guided walkthrough opens it on the bearing sample this way).
 export default function OptimalReplacement() {
+  const [params] = useSearchParams();
+  const presetModel = params.get("model") || "";
   const [model, setModel] = useState(null);
-  const [cp, setCp] = useState("");
-  const [cu, setCu] = useState("");
+  const [cp, setCp] = useState(() => params.get("planned") || "");
+  const [cu, setCu] = useState(() => params.get("unplanned") || "");
   const [unit, setUnit] = useState("");
   const [result, setResult] = useState(null);
   const [inputs, setInputs] = useState(null); // what produced the result
@@ -49,7 +55,8 @@ export default function OptimalReplacement() {
   return (
     <div className="strategy-tool">
       <div className="strategy-form">
-        <ModelPicker label="Life model" value={model} onChange={setModel} />
+        <ModelPicker key={presetModel} label="Life model" value={model} onChange={setModel}
+                     initialSavedId={presetModel} />
         {isRegression && (
           <p className="hint">
             Pick a plain distribution — proportional-hazards models aren't
