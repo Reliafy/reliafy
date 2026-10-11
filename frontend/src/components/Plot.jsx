@@ -6,12 +6,12 @@
 //
 // Every chart wears the shared theme (src/plotTheme.js): its layout and config
 // are merged over the theme's, so a call site sets only what is particular to
-// its chart. `download="Bearings — probability plot"` adds a small button that
-// saves the chart as a PNG named after it (the Plotly toolbar is off).
+// its chart. `download="Bearings — probability plot"` adds small PNG and SVG
+// buttons that save the chart named after it (the Plotly toolbar is off).
 import { useEffect, useMemo, useRef, useState } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-basic-dist-min";
-import { INK, SURFACE, slugify, themedConfig, themedLayout } from "../plotTheme.js";
+import { INK, SURFACE, chartFileName, themedConfig, themedLayout } from "../plotTheme.js";
 
 const PlotlyPlot = createPlotlyComponent(Plotly);
 
@@ -31,8 +31,9 @@ function useNarrow() {
   return narrow;
 }
 
-// Save the chart as a PNG: on white, at a readable width, titled with its name.
-async function downloadPng(gd, title) {
+// Save the chart as a PNG (2x, for slides) or an SVG (for print and editing):
+// on white, at a readable width, titled with its name.
+async function downloadImage(gd, title, format) {
   if (!gd) return;
   const height = gd.offsetHeight || gd.layout?.height || 400;
   const layout = {
@@ -48,10 +49,11 @@ async function downloadPng(gd, title) {
     width: 1000,
     height: height + 48,
   };
-  const url = await Plotly.toImage({ data: gd.data, layout }, { format: "png", width: 1000, height: height + 48, scale: 2 });
+  const size = { width: 1000, height: height + 48, scale: format === "png" ? 2 : 1 };
+  const url = await Plotly.toImage({ data: gd.data, layout }, { format, ...size });
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${slugify(title)}.png`;
+  a.download = chartFileName(title, format);
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -99,15 +101,21 @@ export default function Plot({
   if (!download) return plot;
   return (
     <div className="plot-frame">
-      <button
-        type="button"
-        className="plot-dl"
-        title="Download PNG"
-        aria-label={`Download ${download} as PNG`}
-        onClick={() => downloadPng(gd.current, download)}
-      >
+      <div className="plot-dl" role="group" aria-label={`Download ${download}`}>
         <DownloadIcon />
-      </button>
+        {["png", "svg"].map((format) => (
+          <button
+            key={format}
+            type="button"
+            className="plot-dl-btn"
+            title={`Download ${format.toUpperCase()}`}
+            aria-label={`Download ${download} as ${format.toUpperCase()}`}
+            onClick={() => downloadImage(gd.current, download, format)}
+          >
+            {format.toUpperCase()}
+          </button>
+        ))}
+      </div>
       {plot}
     </div>
   );
