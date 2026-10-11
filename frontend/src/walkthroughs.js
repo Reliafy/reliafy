@@ -3,7 +3,9 @@
 // shared sample and points at the real controls, one sentence a step.
 //
 // A step:
-//   target  CSS selector (or a list, first match wins) of the element to point at
+//   target  CSS selector (or a list, first match wins) of the element to point at.
+//           Point at a data-wt anchor on the element itself, not a class path:
+//           class names and markup move (the shared tab row did), anchors don't.
 //   text    one sentence
 //   next    "click" — Next also clicks the target (runs the fit, opens the tab),
 //           so the following step can point at what that shows
@@ -47,20 +49,20 @@ export const WALKTHROUGHS = {
     route: "/strategy/replacement?model=sample-model-bearings-weibull&planned=200&unplanned=1500",
     steps: [
       {
-        target: ".strategy-form .picker",
+        target: '[data-wt="repl-model"]',
         text: "Start from a life model: here, the bearing sample's Weibull fit.",
       },
       {
-        target: ".strategy-costs",
+        target: '[data-wt="repl-costs"]',
         text: "Then what each event costs: 200 to replace a bearing on schedule, 1,500 when one fails in service.",
       },
       {
-        target: ".strategy-costs > button",
+        target: '[data-wt="repl-run"]',
         text: "Compute finds the replacement age with the lowest long-run cost per hour.",
         next: "click",
       },
       {
-        target: ".strategy-tool .result-summary",
+        target: '[data-wt="repl-result"]',
         text: "The answer: the age to replace at and what it saves against running to failure; save it to cite in an RCM study.",
         wait: 15000,
       },
@@ -71,22 +73,22 @@ export const WALKTHROUGHS = {
     route: "/rbds/b/sample-rbd-pump-station",
     steps: [
       {
-        target: ".rbd-canvas",
+        target: '[data-wt="rbd-canvas"]',
         text: "A controller in series with two pumps in parallel: the system runs while the controller and either pump work.",
         wait: 8000,
       },
       {
-        target: ".rbd-add-menu",
+        target: '[data-wt="rbd-add"]',
         text: "Add a block here, or right-click the canvas, then drag from one block's edge to the next to wire it in.",
       },
       {
-        target: ".rbd-tabs .tab:nth-child(2)",
+        target: '[data-wt="rbd-tab-calc"]',
         text: "The Calculator works out the whole system from its blocks.",
         next: "click",
       },
       {
         // The last step's Done runs the calculation, so it ends on the answer.
-        target: ".rbd-calc-actions > button",
+        target: '[data-wt="rbd-calculate"]',
         text: "Calculate gives the system's reliability over time and its mean life; Done runs it for this diagram.",
         next: "click",
         wait: 8000,
@@ -98,19 +100,19 @@ export const WALKTHROUGHS = {
     route: "/rcm/studies/sample-rcm-truck",
     steps: [
       {
-        target: ".rcm-tree .fn-row",
+        target: '[data-wt="rcm-function"]',
         text: "A study starts from what the system must do, its functions, and then the ways each one can fail.",
       },
       {
-        target: ".rcm-tree .mode-row",
+        target: '[data-wt="rcm-mode"]',
         text: "Each failure mode gets a decision: inspect its condition, replace on a schedule, check a hidden function, or run to failure.",
       },
       {
-        target: ".rcm-tree .mode-evidence",
+        target: '[data-wt="rcm-evidence"]',
         text: "Link a decision to its evidence, a saved model or analysis, and Reliafy checks that the evidence backs it.",
       },
       {
-        target: ".page-header .ph-chips",
+        target: '[data-wt="rcm-checks"]',
         text: "The checks run each time you open the study: here one run-to-failure call is contradicted, because its own model shows wear-out.",
       },
     ],
@@ -120,20 +122,20 @@ export const WALKTHROUGHS = {
     route: "/fleet/forecasts/sample-fleet-trucks",
     steps: [
       {
-        target: ".page-header .ph-meta",
+        target: '[data-wt="fleet-model"]',
         text: "A forecast runs every item in a fleet against one life model, here the bearing Weibull.",
       },
       {
-        target: ".fleet-assume-line",
+        target: '[data-wt="fleet-assume"]',
         text: "It assumes how much each item is used a month and how far ahead to look.",
       },
       {
-        target: ".result-summary",
+        target: '[data-wt="fleet-answer"]',
         text: "The answer: how many failures to expect over the horizon, replacements failing again included, with a likely range.",
         wait: 15000,
       },
       {
-        target: ".fleet-items-scroll",
+        target: '[data-wt="fleet-items"]',
         text: "Each item's use so far sets its share; add your own items, or send usage over the API to keep the forecast current.",
       },
     ],

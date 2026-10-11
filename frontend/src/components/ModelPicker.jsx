@@ -29,8 +29,9 @@ const GIVEN_LABEL = {
 // newest; with no saved models it falls back to Parameters. ``autoPick``
 // false opens on "Saved model" with none chosen.
 // ``initialSavedId`` opens on that saved model and emits it (a link's preset).
+// ``wt`` is a guided walkthrough's anchor (walkthroughs.js).
 export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "",
-                                      preferSaved = false, wanted = null, autoPick = true, initialSavedId = "" }) {
+                                      preferSaved = false, wanted = null, autoPick = true, initialSavedId = "", wt }) {
   const hasParams = value?.source === "params" && (value.params || []).length > 0;
   const [source, setSource] = useState(
     value?.source === "saved" || initialSavedId || (preferSaved && !hasParams) ? "saved" : hasParams || !meanEntry ? "params" : "mean"
@@ -201,7 +202,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
   );
 
   return (
-    <div className="picker">
+    <div className="picker" data-wt={wt}>
       {label && <div className="picker-label">{label}</div>}
       <SegmentedControl
         label={label || "Model source"}

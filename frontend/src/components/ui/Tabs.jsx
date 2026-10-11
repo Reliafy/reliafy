@@ -2,7 +2,7 @@
 // hidden side fades out with a chevron that scrolls it, and the active tab is
 // kept in view. Renders the .tabs / .tab markup the app already styles.
 //
-//   tabs      [{ id, label, title? }]
+//   tabs      [{ id, label, title?, wt? }] (wt: a guided walkthrough's anchor)
 //   value     the active tab's id
 //   onChange  (id) => void
 //   label     accessible name of the row
@@ -29,6 +29,7 @@ export default function Tabs({ tabs, value, onChange, label, className }) {
           aria-selected={value === t.id}
           className={"tab" + (value === t.id ? " active" : "")}
           title={t.title}
+          data-wt={t.wt}
           onClick={() => onChange(t.id)}
         >
           {t.label}

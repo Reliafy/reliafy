@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import {
   SHEET_MAX_WIDTH,
   WALKTHROUGHS,
@@ -171,4 +173,29 @@ test("stepFunnel: runs reaching each step, in order, zeros included", () => {
   assert.deepEqual(stepFunnel({ steps: { 1: 5, 2: 4, 4: 1 } }, "fit"), [5, 4, 0, 1]);
   assert.deepEqual(stepFunnel({ steps: {} }, "rcm"), [0, 0, 0, 0]);
   assert.deepEqual(stepFunnel({ steps: { 1: 2, 2: 1 } }, "unknown"), [2, 1]);
+});
+
+// Every step's first selector is a data-wt anchor that some component sets:
+// class paths broke when the shared tab row changed the markup (#301).
+test("each step points at a data-wt anchor the app sets", () => {
+  const root = new URL(".", import.meta.url).pathname;
+  const files = [];
+  const walk = (dir) => {
+    for (const f of readdirSync(dir)) {
+      const p = join(dir, f);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (p.endsWith(".jsx")) files.push(p);
+    }
+  };
+  walk(root);
+  const src = files.map((f) => readFileSync(f, "utf8")).join("\n");
+  for (const id of WALKTHROUGH_IDS) {
+    for (const step of WALKTHROUGHS[id].steps) {
+      const m = targetsOf(step)[0].match(/^\[data-wt="([\w-]+)"\]/);
+      assert.ok(m, `${id}: ${targetsOf(step)[0]} is not a data-wt anchor`);
+      const name = m[1];
+      const set = src.includes(`data-wt="${name}"`) || src.includes(`wt="${name}"`) || src.includes(`wt: "${name}"`);
+      assert.ok(set, `${id}: no component sets data-wt="${name}"`);
+    }
+  }
 });

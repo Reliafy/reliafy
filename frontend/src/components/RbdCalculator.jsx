@@ -1643,6 +1643,7 @@ export default function RbdCalculator({
   const action = (
     <div className="rbd-calc-actions">
       <button
+        data-wt="rbd-calculate"
         // The next step until there's a current result; then the results'
         // own action (a simulation, say) is the primary one.
         className={result && !stale && !dirty ? "secondary" : ""}

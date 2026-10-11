@@ -65,14 +65,15 @@ export default function OptimalReplacement() {
   return (
     <div className="strategy-tool">
       <div className="strategy-form">
-        <ModelPicker key={wanted || ""} label="Life model" value={model} onChange={pickModel} preferSaved wanted={wanted} />
+        <ModelPicker key={wanted || ""} label="Life model" value={model} onChange={pickModel} preferSaved wanted={wanted}
+                     wt="repl-model" />
         {isRegression && (
           <p className="hint">
             Pick a plain distribution — proportional-hazards models aren't
             supported here.
           </p>
         )}
-        <div className="strategy-costs">
+        <div className="strategy-costs" data-wt="repl-costs">
           <label className="calc-t">
             <span>Planned replacement cost</span>
             <input type="number" inputMode="decimal" min="0" step="any" value={cp}
@@ -88,7 +89,7 @@ export default function OptimalReplacement() {
             <input type="text" placeholder="e.g. Hours" value={unit}
               onChange={(e) => setUnit(e.target.value)} />
           </label>
-          <button onClick={run} disabled={!canRun || loading}>
+          <button data-wt="repl-run" onClick={run} disabled={!canRun || loading}>
             {loading ? "Computing…" : "Compute"}
           </button>
         </div>
@@ -99,6 +100,7 @@ export default function OptimalReplacement() {
       {result && (
         <ReplacementResult
           result={result}
+          wt="repl-result"
           actions={inputs && (
             <SaveAnalysisButton
               kind="optimal_replacement"

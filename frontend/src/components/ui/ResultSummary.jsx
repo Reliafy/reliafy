@@ -9,13 +9,14 @@
 //   stats     [{ label, value, hint? }] — at most 4, values formatted by the
 //             caller (format.js: formatNumber / formatPercent)
 //   children  an optional short muted line under the sentence
+//   wt        a guided walkthrough's anchor (walkthroughs.js)
 const ICON = { good: "✓", caveat: "!", bad: "✕" };
 
-export default function ResultSummary({ tone = "neutral", sentence, stats = [], children, className }) {
+export default function ResultSummary({ tone = "neutral", sentence, stats = [], children, className, wt }) {
   const t = ["good", "caveat", "bad", "neutral"].includes(tone) ? tone : "neutral";
   const tiles = stats.filter(Boolean).slice(0, 4);
   return (
-    <section className={`result-summary rs-${t}` + (className ? " " + className : "")} aria-label="Result">
+    <section className={`result-summary rs-${t}` + (className ? " " + className : "")} aria-label="Result" data-wt={wt}>
       <div className="rs-answer">
         {ICON[t] && <span className="rs-icon" aria-hidden="true">{ICON[t]}</span>}
         <div>

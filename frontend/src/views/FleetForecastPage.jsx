@@ -278,7 +278,7 @@ export default function FleetForecastPage() {
           </>
         }
         meta={
-          <>
+          <span data-wt="fleet-model">
             Against{" "}
             <Link to={modelUrl} className="evidence-link">
               {forecast.model_name || "the linked model"}
@@ -286,7 +286,7 @@ export default function FleetForecastPage() {
             {forecast.model_kind === "alt" ? " (ALT)" : forecast.model_kind === "regression" ? " (regression)" : ""}
             {unit ? ` · time in ${unitInText(unit)}` : ""}
             {fleet.updated_by ? ` · last edited by ${fleet.updated_by}` : ""}
-          </>
+          </span>
         }
         actions={computed && savedNoUsage === 0 && <button className="secondary" onClick={exportCsv}>Export CSV</button>}
         // With no items yet, "Add item" is the next step, not saving.
@@ -304,7 +304,7 @@ export default function FleetForecastPage() {
           </>
         }
       >
-        <div className="fleet-assume-line">
+        <div className="fleet-assume-line" data-wt="fleet-assume">
           <span><span className="fleet-assume-k">Assumes</span> {assumptions.join(" · ")}</span>
           {!readOnly && noUsage === 0 && (
             <button className="secondary sm" onClick={() => setEditing((v) => !v)} aria-expanded={editing}>
@@ -455,6 +455,7 @@ export default function FleetForecastPage() {
       {showAnswer && (
         <div className="card" style={{ marginTop: "1rem" }}>
           <ResultSummary
+            wt="fleet-answer"
             sentence={
               single && !repairable ? (
                 <>≈ <b>{formatNumber(forecast.expected)}</b> items fail in the next <b>{horizon}</b>.</>
@@ -523,7 +524,7 @@ export default function FleetForecastPage() {
             {!readOnly && <button onClick={addItem}><PlusIcon /> Add item</button>}
           </div>
         ) : (
-          <ScrollCue className="fleet-items-scroll">
+          <ScrollCue className="fleet-items-scroll" data-wt="fleet-items">
             <table className={"fleet-items" + (repairable ? " repairable" : "")}>
               <thead>
                 <tr>

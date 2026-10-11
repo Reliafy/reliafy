@@ -78,7 +78,7 @@ const initialTab = () =>
 // The result tabs; on a phone the row scrolls, with a cue on the hidden side.
 const RBD_TABS = [
   { id: "builder", label: "Builder" },
-  { id: "calc", label: "Calculator" },
+  { id: "calc", label: "Calculator", wt: "rbd-tab-calc" },
   { id: "tree", label: "Fault tree" },
   { id: "design", label: "Design", title: "How many copies of each block: most reliable within a budget, or cheapest to reach a target" },
   { id: "targets", label: "Targets", title: "What each block needs for the system to meet a target" },
@@ -228,7 +228,7 @@ function policyFields(policies) {
 
 // A toolbar dropdown (#314): the trigger, and a menu of .ovm-item buttons that
 // closes on an outside click or on choosing an item. Items stay mounted.
-function ToolbarMenu({ label, title, aria, caret = true, className = "", children }) {
+function ToolbarMenu({ label, title, aria, caret = true, className = "", wt, children }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -243,7 +243,7 @@ function ToolbarMenu({ label, title, aria, caret = true, className = "", childre
     };
   }, [open]);
   return (
-    <div className={"ovm rbd-tb-menu " + className} ref={ref}>
+    <div className={"ovm rbd-tb-menu " + className} ref={ref} data-wt={wt}>
       <button
         type="button"
         className="secondary sm rbd-tb-trigger"
@@ -1356,7 +1356,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     <div className="rbd-toolbar">
       {/* Add a block without right-clicking (#299); on a phone the only way. */}
       <ToolbarMenu label={<span>+ Add<span className="rbd-add-word"> block</span></span>} title="Add a block: wired in after or alongside what's selected, or in the middle of the canvas"
-                   aria="Add block" className="rbd-add-menu">
+                   aria="Add block" className="rbd-add-menu" wt="rbd-add">
         {/* In place first, when something is selected (#282); then anywhere. */}
         {inPlace && (
           <>
@@ -1571,6 +1571,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     </div>
     <div
       className={"rbd-canvas" + (canvasH ? " is-sized" : "")}
+      data-wt="rbd-canvas"
       ref={wrapper}
       style={canvasH ? { height: canvasH } : undefined}
     >
