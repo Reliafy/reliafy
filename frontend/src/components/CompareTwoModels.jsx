@@ -36,7 +36,7 @@ function parseColumn(text, col, censorCol) {
 // Both sides start on "Saved model" (#294): side A with the one a link asked
 // for (``wanted``) or the one used last chosen, side B for the user to pick. A saved model names its side, unless
 // the side was named by hand.
-function SideEditor({ tag, side, onChange, wanted = null }) {
+function SideEditor({ tag, side, onChange, wanted = null, onUnit = null }) {
   const inputRef = useRef(null);
   const set = (patch) => onChange({ ...side, ...patch });
   const { toCsv, modal: sheetModal } = useSpreadsheet();
@@ -89,6 +89,7 @@ function SideEditor({ tag, side, onChange, wanted = null }) {
           onChange={(m) => {
             const auto = [tag === "a" ? "Item A" : "Item B", "", plainName(side.model?.name)].includes(side.label);
             set({ model: m, ...(m?.source === "saved" && auto ? { label: plainName(m.name) } : {}) });
+            if (m?.unit) onUnit?.(m.unit);
           }}
         />
       ) : (
@@ -192,8 +193,9 @@ export default function CompareTwoModels() {
   return (
     <div className="strategy-tool">
       <div className="compare-sides">
-        <SideEditor tag="a" side={sideA} onChange={setSideA} wanted={wanted} />
-        <SideEditor tag="b" side={sideB} onChange={setSideB} />
+        {/* A saved model brings its unit, unless one is already set. */}
+        <SideEditor tag="a" side={sideA} onChange={setSideA} wanted={wanted} onUnit={(u) => setUnit((v) => v || u)} />
+        <SideEditor tag="b" side={sideB} onChange={setSideB} onUnit={(u) => setUnit((v) => v || u)} />
       </div>
 
       <div className="strategy-actions">
