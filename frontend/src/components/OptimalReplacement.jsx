@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import ModelPicker from "./ModelPicker.jsx";
 import ReplacementResult from "./ReplacementResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { optimalReplacement } from "../api.js";
+import { analysisName, modelFromSearch } from "../modelNext.js";
 
 // Optimal preventive-replacement tool: the age that minimises the long-run
 // cost rate given planned vs. unplanned costs.
@@ -15,6 +17,14 @@ export default function OptimalReplacement() {
   const [inputs, setInputs] = useState(null); // what produced the result
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [ranWith, setRanWith] = useState(null); // the model the result is for
+  // Opened from a model's "Use this model" (#294): that model, chosen.
+  const wanted = modelFromSearch(useLocation().search);
+  // A saved model brings its unit.
+  const pickModel = (m) => {
+    setModel(m);
+    if (m?.unit) setUnit(m.unit);
+  };
 
   const isRegression = model?.kind === "regression";
   const canRun =
@@ -37,6 +47,7 @@ export default function OptimalReplacement() {
       );
       setResult(res);
       setInputs(body);
+      setRanWith(model);
     } catch (err) {
       setError(err.message);
       setResult(null);
@@ -49,7 +60,7 @@ export default function OptimalReplacement() {
   return (
     <div className="strategy-tool">
       <div className="strategy-form">
-        <ModelPicker label="Life model" value={model} onChange={setModel} />
+        <ModelPicker label="Life model" value={model} onChange={pickModel} preferSaved wanted={wanted} />
         {isRegression && (
           <p className="hint">
             Pick a plain distribution — proportional-hazards models aren't
@@ -87,7 +98,7 @@ export default function OptimalReplacement() {
             <SaveAnalysisButton
               kind="optimal_replacement"
               inputs={inputs}
-              defaultName={`Replacement — ${result.distribution}`}
+              defaultName={analysisName("Replacement", ranWith, result.distribution)}
             />
           )}
         />

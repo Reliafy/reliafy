@@ -72,6 +72,13 @@ test("no requirement, or a malformed one, pre-fills nothing", () => {
   assert.equal(parseDemoPrefill("b=10&life=5&conf=150").confidence, undefined);
 });
 
+test("a model alone pre-fills its β and unit, not a requirement (#294)", () => {
+  assert.deepEqual(parseDemoPrefill("model=m-1&unit=Hours"), { modelId: "m-1", unit: "Hours" });
+  assert.deepEqual(parseDemoPrefill("model=m-1"), { modelId: "m-1" });
+  // A malformed requirement still pre-fills nothing.
+  assert.equal(parseDemoPrefill("model=m-1&b=100&life=5"), null);
+});
+
 test("betaSource: a Weibull's β and its interval, nothing for another distribution", () => {
   const weib = { distribution_id: "weibull", params: [{ name: "alpha", value: 900 }, { name: "beta", value: 2.08, ci: [1.03, 4.21] }] };
   assert.deepEqual(betaSource(weib, "Seals", "m-2"), { name: "Seals", estimate: 2.08, lower: 1.03, upper: 4.21, modelId: "m-2" });
