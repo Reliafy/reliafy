@@ -7,6 +7,7 @@ import { relativeTime } from "../instrument.js";
 import { trackEvent } from "../telemetry.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
+import WhatChangedPanel from "../components/WhatChanged.jsx";
 
 const ACTIVATED_KEY = "reliafy_activated";
 const RECENT = 5;
@@ -44,6 +45,9 @@ export default function ModellingDashboard() {
   return (
     <div className="app">
       <PageHeader title="Modelling" meta="Fit life data, repairable systems, accelerated tests and degradation." />
+
+      {/* What changed in the workspace (#41): first, once it has work of its own. */}
+      <WhatChangedPanel />
 
       <StartHere info={firstRun} sampleModelId={sampleModelId} />
 
