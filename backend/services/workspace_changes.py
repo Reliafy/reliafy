@@ -437,7 +437,7 @@ def _rcm(db, study_docs: dict, model_docs: dict, refit_rows: dict, owners) -> li
         return []
     out = []
     for sid, sdoc in study_docs.items():
-        study = None
+        statuses = None  # each decision's status now, resolved once per study
         for fn in sdoc.get("functions") or []:
             for failure in fn.get("failures") or []:
                 for mode in failure.get("modes") or []:
@@ -445,7 +445,7 @@ def _rcm(db, study_docs: dict, model_docs: dict, refit_rows: dict, owners) -> li
                     evidence = decision.get("evidence") or {}
                     if evidence.get("type") != "model" or evidence.get("id") not in refit_rows:
                         continue
-                    if study is None:
+                    if statuses is None:
                         study = from_doc(RcmStudy, db.rcm_studies.find_one({"_id": sid}))
                         resolved = rcm_service.resolve(db, study, [*owners, SAMPLE_OWNER])
                         statuses = {m.get("id"): (m.get("decision") or {}).get("status")
