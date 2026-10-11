@@ -35,7 +35,9 @@ import {
   getRecurrentModel,
   createFleet,
   putFleetItems,
+  getWorkspaceChanges,
 } from "./api.js";
+import { changesForAssistant } from "./changes.js";
 import { getRbdCanvas, waitForRbdCanvas } from "./rbdBridge.js";
 import { normalizeRbdGraph, compactGraph } from "./rbdGraph.js";
 
@@ -63,7 +65,7 @@ function interpCurve(x, y, xq) {
 
 // Only let the assistant route to real in-app pages.
 const NAV_PREFIXES = [
-  "/modelling", "/rbds", "/datasets", "/strategy", "/fleet", "/rcm", "/team",
+  "/modelling", "/rbds", "/datasets", "/strategy", "/fleet", "/rcm", "/team", "/changes",
 ];
 export function isAllowedPath(path) {
   return typeof path === "string" && path.startsWith("/") && NAV_PREFIXES.some(
@@ -491,6 +493,12 @@ export function makeExecutor({ navigate, onChange, confirm }) {
         if (!ok) return DECLINED;
         const r = await createShare(input.collection, input.artifact_id, email);
         return { ok: true, shared_with: r.email };
+      }
+      case "workspace_changes": {
+        // Facts computed by the server (#41); the model only words them.
+        const since = typeof input.since === "string" && input.since.trim() ? input.since.trim() : null;
+        const data = await getWorkspaceChanges({ since, days: since ? null : input.days || null });
+        return changesForAssistant(data);
       }
       case "navigate": {
         if (!isAllowedPath(input.path)) {
