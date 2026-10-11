@@ -2723,20 +2723,35 @@ h1 .chip,
   color: var(--muted);
 }
 
-/* Tabs */
-.tabs {
-  display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--line);
+/* Tabs (ui/Tabs.jsx). A row that can't fit scrolls sideways, with a fade and
+   a chevron on the hidden side (#301). The rule under the tabs is drawn inside
+   the row so scrolling can't clip the active tab's underline. */
+.tabs-strip {
   margin: 0.9rem 0 1rem;
+  /* Clear under the chevron, then fading in. */
+  --cue-gap: 28px;
+  --cue-w: 60px;
 }
 /* When the tabs are the first thing in the card (lean model page), don't add
    dead space above them. */
-.tabs:first-child {
+.tabs-strip:first-child {
   margin-top: 0;
+}
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  background: linear-gradient(var(--line), var(--line)) left bottom / 100% 1px no-repeat;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
+  flex: none;
+  white-space: nowrap;
   background: transparent;
   color: var(--muted);
   border: none;
@@ -2746,7 +2761,6 @@ h1 .chip,
   font-size: var(--fs-14);
   font-weight: 500;
   cursor: pointer;
-  margin-bottom: -1px;
   box-shadow: none;
 }
 
@@ -2760,6 +2774,49 @@ h1 .chip,
   border-bottom-color: var(--acc);
   font-weight: 600;
 }
+
+/* Sideways-scroll cue (ui/ScrollCue.jsx, #301): a strip with more content past
+   an edge fades out at that edge; tab rows add a chevron that scrolls them. */
+.scroll-cue {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+.scroll-cue-body {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  --cue-l: 0px;
+  --cue-r: 0px;
+  --cue-lg: 0px;
+  --cue-rg: 0px;
+}
+.scroll-cue.cue-start > .scroll-cue-body { --cue-l: var(--cue-w, 32px); --cue-lg: var(--cue-gap, 0px); }
+.scroll-cue.cue-end > .scroll-cue-body { --cue-r: var(--cue-w, 32px); --cue-rg: var(--cue-gap, 0px); }
+.scroll-cue.cue-start > .scroll-cue-body,
+.scroll-cue.cue-end > .scroll-cue-body {
+  -webkit-mask-image: linear-gradient(to right, transparent var(--cue-lg), #000 var(--cue-l),
+                                      #000 calc(100% - var(--cue-r)), transparent calc(100% - var(--cue-rg)));
+  mask-image: linear-gradient(to right, transparent var(--cue-lg), #000 var(--cue-l),
+                              #000 calc(100% - var(--cue-r)), transparent calc(100% - var(--cue-rg)));
+}
+.scroll-cue-arrow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+.scroll-cue-arrow.start { left: 0; }
+.scroll-cue-arrow.end { right: 0; }
+.scroll-cue-arrow:hover:not(:disabled) { background: transparent; color: var(--acc); }
+.scroll-cue-arrow svg { width: 16px; height: 16px; }
 
 /* RBD calculator tab */
 .rbd-shell {
@@ -5040,7 +5097,7 @@ select:disabled {
   background: var(--acc-t);
   color: var(--acc-d);
 }
-.api-path { font-family: var(--mono); font-size: var(--fs-13); color: var(--ink); }
+.api-path { font-family: var(--mono); font-size: var(--fs-13); color: var(--ink); overflow-wrap: anywhere; }
 
 /* OpenAPI-style request/response field tables. */
 .api-ep-desc { margin: 0.4rem 0 0.5rem; }
@@ -8323,25 +8380,6 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
   .app {
     padding: 22px 16px 48px;
   }
-  /* Tab strips scroll sideways instead of pushing the page wider. The rule
-     under the tabs is drawn inside the strip so scrolling can't clip the
-     active tab's underline. */
-  .tabs {
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    border-bottom: none;
-    /* The line under the scrolling tabs, drawn behind the active tab's underline. */
-    background: linear-gradient(var(--line), var(--line)) left bottom / 100% 1px no-repeat;
-  }
-  .tabs::-webkit-scrollbar {
-    display: none;
-  }
-  .tabs .tab {
-    flex: none;
-    margin-bottom: 0;
-    white-space: nowrap;
-  }
   /* Stat strips (Saved models, a dataset, model parameters, RBD results):
      two to a row, divided by the strip's own background showing through the
      1px gaps. */
@@ -8457,23 +8495,31 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
 .gp-actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .fleet-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-/* Chart download button (#308): top right of the chart, over its top margin. */
+/* Chart download (#308, #301): a download icon then PNG and SVG, top right
+   of the chart, over its top margin. */
 .plot-frame { position: relative; }
 .plot-dl {
   position: absolute; top: 0; right: 0; z-index: 2;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; padding: 0;
-  border: 1px solid transparent; border-radius: var(--r-sm);
-  background: transparent; color: var(--muted);
-  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 2px;
+  padding-left: 6px;
+  /* On the chart's own ground, so a line under it doesn't run through the labels. */
+  background: var(--surf); border-radius: var(--r-sm);
+  color: var(--muted);
 }
-.plot-dl:hover { background: var(--acc-t); color: var(--acc); }
-/* Out of the way until wanted: shown on hover or keyboard focus, faint on
-   touch screens (no hover there). */
+.plot-dl > svg { flex: none; margin-right: 2px; }
+.plot-dl-btn {
+  height: 32px; padding: 0 8px;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; color: var(--muted); box-shadow: none;
+  font-size: var(--fs-12); font-weight: 500;
+}
+.plot-dl-btn:hover:not(:disabled) { background: var(--acc-t); color: var(--acc); }
+/* Out of the way until wanted: shown on hover or keyboard focus, and always
+   on touch screens (no hover there), where the muted labels keep it quiet. */
 .plot-dl { opacity: 0; transition: opacity 0.15s; }
-.plot-frame:hover .plot-dl, .plot-dl:focus-visible { opacity: 1; }
-@media (hover: none) { .plot-dl { opacity: 0.55; } }
-.plot-dl:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--acc); }
+.plot-frame:hover .plot-dl, .plot-dl:focus-within { opacity: 1; }
+@media (hover: none) { .plot-dl { opacity: 1; } }
+.plot-dl-btn:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--acc); }
 
 /* Fit statistics in their modal: the table is the dialog's content, not a card in it. */
 .modal .gof-metrics-card { border: none; border-radius: 0; max-width: none; width: 100%; box-shadow: none; }

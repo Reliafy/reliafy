@@ -18,6 +18,7 @@ import {
   setEmailPreferences,
 } from "../api.js";
 import { AUTH_DISABLED } from "../firebase.js";
+import Tabs from "../components/ui/Tabs.jsx";
 
 const TABS = [
   { id: "general", label: "General" },
@@ -185,17 +186,7 @@ export default function SettingsPage() {
     <div className="app">
       <PageHeader title="Settings" />
 
-      <div className="tabs">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            className={"tab" + (tab === t.id ? " active" : "")}
-            onClick={() => selectTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={TABS} value={tab} onChange={selectTab} label="Settings sections" />
 
       {tab === "general" && (
         <div className="set-section">

@@ -65,6 +65,7 @@ import RbdPhasesResult from "../components/RbdPhasesResult.jsx";
 import RbdNetworkPanel, { NetworkOnlyNote } from "../components/RbdNetworkPanel.jsx";
 import { MISSION_KEYS, missionFields, undirectedEdges } from "../rbdMission.js";
 import { graphWithModel, plainName } from "../modelNext.js";
+import Tabs from "../components/ui/Tabs.jsx";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -74,6 +75,15 @@ const initialTab = () =>
   typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "outages"
     ? "outages"
     : "builder";
+// The result tabs; on a phone the row scrolls, with a cue on the hidden side.
+const RBD_TABS = [
+  { id: "builder", label: "Builder" },
+  { id: "calc", label: "Calculator" },
+  { id: "tree", label: "Fault tree" },
+  { id: "design", label: "Design", title: "How many copies of each block: most reliable within a budget, or cheapest to reach a target" },
+  { id: "targets", label: "Targets", title: "What each block needs for the system to meet a target" },
+  { id: "outages", label: "Outage history" },
+];
 
 const TIME_UNITS = [
   "Seconds",
@@ -1339,46 +1349,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     <RbdCcfContext.Provider value={ccfMap}>
     <RbdRenameContext.Provider value={rename}>
     <div className="rbd-shell">
-    <div className="tabs rbd-tabs">
-      <button
-        className={"tab" + (tab === "builder" ? " active" : "")}
-        onClick={() => setTab("builder")}
-      >
-        Builder
-      </button>
-      <button
-        className={"tab" + (tab === "calc" ? " active" : "")}
-        onClick={() => setTab("calc")}
-      >
-        Calculator
-      </button>
-      <button
-        className={"tab" + (tab === "tree" ? " active" : "")}
-        onClick={() => setTab("tree")}
-      >
-        Fault tree
-      </button>
-      <button
-        className={"tab" + (tab === "design" ? " active" : "")}
-        onClick={() => setTab("design")}
-        title="How many copies of each block: most reliable within a budget, or cheapest to reach a target"
-      >
-        Design
-      </button>
-      <button
-        className={"tab" + (tab === "targets" ? " active" : "")}
-        onClick={() => setTab("targets")}
-        title="What each block needs for the system to meet a target"
-      >
-        Targets
-      </button>
-      <button
-        className={"tab" + (tab === "outages" ? " active" : "")}
-        onClick={() => setTab("outages")}
-      >
-        Outage history
-      </button>
-    </div>
+    <Tabs tabs={RBD_TABS} value={tab} onChange={setTab} label="Diagram views" className="rbd-tabs" />
     <div className="rbd-builder" style={{ display: tab === "builder" ? undefined : "none" }}>
     {/* One row above the canvas (#314): the diagram's settings on the left;
         Validate, Save ▾ and ⋯ on the right. On a phone the settings move into ⋯. */}

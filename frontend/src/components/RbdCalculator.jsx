@@ -27,6 +27,7 @@ import Chip from "./ui/Chip.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent } from "../format.js";
 import { hoursPerUnit } from "./rbdModelText.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -277,7 +278,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
           </div>
           {/* Scrolls sideways on a phone rather than widening the page,
               as the availability table already does. */}
-          <div className="rbd-avail-imp-scroll">
+          <ScrollCue className="rbd-avail-imp-scroll">
           <table className="calc-table">
             <thead>
               <tr>
@@ -310,7 +311,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
               ))}
             </tbody>
           </table>
-          </div>
+          </ScrollCue>
         </div>
       )}
 
@@ -1024,7 +1025,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
         {blocks.length > 0 && impCols.length > 0 && (
           <div className="rbd-avail-imp">
             <div className="ds-section-h">Block importance</div>
-            <div className="rbd-avail-imp-scroll">
+            <ScrollCue className="rbd-avail-imp-scroll">
               <table className="calc-table">
                 <thead>
                   <tr>
@@ -1048,7 +1049,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollCue>
             <ul className="rbd-avail-legend">
               {impCols.map((c) => (
                 <li key={c.key}><b>{c.label}</b> — {c.help}</li>
@@ -1226,7 +1227,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
           : "Mark blocks that have failed, or set how long they've been running. Results then run " +
             "from now: the remaining life. Blocks left as New start new."}
       </p>
-      <div className="rbd-avail-imp-scroll">
+      <ScrollCue className="rbd-avail-imp-scroll">
         <table className="calc-table rbd-asof-table">
           <thead>
             <tr>
@@ -1260,7 +1261,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
                       <span className="muted">—</span>
                     ) : (
                       <input
-                        type="number"
+                        type="number" inputMode="decimal"
                         min="0"
                         step="any"
                         value={st.value}
@@ -1275,7 +1276,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
     </div>
   );
 }
@@ -1705,7 +1706,7 @@ export default function RbdCalculator({
           <label className="calc-t">
             <span>To{unitLabel} — x-axis limit</span>
             <input
-              type="number"
+              type="number" inputMode="decimal"
               min="0"
               step="any"
               placeholder="auto"
@@ -1719,7 +1720,7 @@ export default function RbdCalculator({
           <label className="calc-t">
             <span>Evaluate at t{unitLabel}</span>
             <input
-              type="number"
+              type="number" inputMode="decimal"
               min="0"
               max={tMax || undefined}
               step="any"
@@ -1734,7 +1735,7 @@ export default function RbdCalculator({
             <label className="calc-t">
               <span>Given survived to{unitLabel}</span>
               <input
-                type="number"
+                type="number" inputMode="decimal"
                 min="0"
                 step="any"
                 placeholder="0"
@@ -1746,7 +1747,7 @@ export default function RbdCalculator({
           <label className="calc-t" title="The design life: how long system reliability stays at or above this">
             <span>Design life at R (%)</span>
             <input
-              type="number"
+              type="number" inputMode="decimal"
               min="1"
               max="99.9"
               step="any"
@@ -1805,7 +1806,7 @@ export default function RbdCalculator({
             {windowPreset === "custom" && (
               <label className="rbd-window-custom">
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="0"
                   step="any"
                   aria-label={`Window${unitLabel}`}

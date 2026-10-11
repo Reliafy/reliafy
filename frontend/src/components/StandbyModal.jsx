@@ -134,12 +134,12 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
         <div className="param-fields">
           <label className="param-field" title="How many units must run at once: 2 running and 1 spare is a 2-of-3 duty/standby train.">
             <span>Units running</span>
-            <input type="number" min="1" step="1" value={running} onChange={(e) => setRunning(e.target.value)} />
+            <input type="number" inputMode="numeric" min="1" step="1" value={running} onChange={(e) => setRunning(e.target.value)} />
           </label>
           <label className="param-field">
             <span>Spares</span>
             <input
-              type="number"
+              type="number" inputMode="decimal"
               min="1"
               value={spares}
               onChange={(e) => setSpares(e.target.value)}
@@ -149,7 +149,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             <label className="param-field" title="How fast an idle spare ages relative to a running one: 0 is cold, 1 is hot.">
               <span>Dormancy factor</span>
               <input
-                type="number"
+                type="number" inputMode="decimal"
                 step="any"
                 min="0"
                 max="1"
@@ -162,7 +162,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
             <label className="param-field" title="The chance a spare starts when it's switched in: 1 is a perfect switch-over, 0.99 one failed start in 100 demands.">
               <span>Chance a spare starts</span>
               <input
-                type="number"
+                type="number" inputMode="decimal"
                 step="any"
                 min="0"
                 max="1"

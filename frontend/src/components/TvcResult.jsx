@@ -12,6 +12,7 @@ import { formatNumber, formatPercent } from "../format.js";
 import { boundWords, timeAtValue } from "../lifeResults.js";
 import { initialSchedule, scheduleBody, scheduleXMax, tvcPath } from "../tvcData.js";
 import "./Tvc.css";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // A regression model whose covariates change over time (#60): the
 // coefficients with a plain reading each, and a calculator that follows a
@@ -233,12 +234,12 @@ export function TvcCalculator({ result, state, setState, name = null }) {
               </label>
               <label className="calc-t">
                 <span>At{unit ? ` (${unitInText(unit)})` : ""}</span>
-                <input type="number" min={0} step="any" value={t} onChange={(e) => set({ t: e.target.value })} />
+                <input type="number" inputMode="decimal" min={0} step="any" value={t} onChange={(e) => set({ t: e.target.value })} />
               </label>
               </div>
               <div className="tvc-schedule" role="group" aria-label="Covariate schedule">
                 <span className="tvc-schedule-h">Covariate schedule <span className="tvc-schedule-sub">· each row holds until the next</span></span>
-                <div className="tvc-table-wrap">
+                <ScrollCue className="tvc-table-wrap">
                   <table className="tvc-table">
                     <thead>
                       <tr>
@@ -252,7 +253,7 @@ export function TvcCalculator({ result, state, setState, name = null }) {
                         <tr key={r.id}>
                           <td>
                             {k === 0 ? <span className="tvc-zero">0</span> : (
-                              <input type="number" min={0} step="any" aria-label={`Row ${k + 1} starts at`}
+                              <input type="number" inputMode="decimal" min={0} step="any" aria-label={`Row ${k + 1} starts at`}
                                      value={r.t} onChange={(e) => setRow(r.id, { t: e.target.value })} />
                             )}
                           </td>
@@ -276,7 +277,7 @@ export function TvcCalculator({ result, state, setState, name = null }) {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollCue>
                 {rows.length < MAX_ROWS && (
                   <button type="button" className="secondary sm tvc-add" onClick={addRow}>+ Add a change</button>
                 )}
@@ -293,7 +294,7 @@ export function TvcCalculator({ result, state, setState, name = null }) {
                   {bound !== "none" && (
                     <label className="calc-t">
                       <span>Level %</span>
-                      <input type="number" min={1} max={99.9} step="any" value={level}
+                      <input type="number" inputMode="decimal" min={1} max={99.9} step="any" value={level}
                              onChange={(e) => set({ level: e.target.value })} />
                     </label>
                   )}

@@ -51,7 +51,7 @@ export default function RbdCapacityFold({ initial, onChange }) {
           <label className="param-field rbd-capacity-one">
             <span>Capacity while it works</span>
             <input
-              type="number" min="0" step="any" placeholder="none" aria-label="Capacity while it works"
+              type="number" inputMode="decimal" min="0" step="any" placeholder="none" aria-label="Capacity while it works"
               value={rows[0].value} onChange={(e) => set(0, { value: e.target.value })}
             />
           </label>
@@ -64,11 +64,11 @@ export default function RbdCapacityFold({ initial, onChange }) {
             {rows.map((r, i) => (
               <div className="rbd-capacity-row" key={i}>
                 <input
-                  type="number" min="0" step="any" aria-label={`Level ${i + 1} capacity`}
+                  type="number" inputMode="decimal" min="0" step="any" aria-label={`Level ${i + 1} capacity`}
                   value={r.value} onChange={(e) => set(i, { value: e.target.value })}
                 />
                 <input
-                  type="number" min="0" max="100" step="any" aria-label={`Level ${i + 1} share of up time (%)`}
+                  type="number" inputMode="decimal" min="0" max="100" step="any" aria-label={`Level ${i + 1} share of up time (%)`}
                   value={r.share} onChange={(e) => set(i, { share: e.target.value })}
                 />
                 <button

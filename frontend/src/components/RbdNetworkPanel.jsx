@@ -10,6 +10,7 @@ import { fitLine, pointMarker } from "../plotTheme.js";
 import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
 import "./RbdMission.css";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // The Calculator tab of a network diagram (#160): an undirected network's
 // two-terminal reliability. The terminals are chosen here (Input and Output
@@ -65,7 +66,7 @@ export default function RbdNetworkPanel({ graph, active, name, onNetworkChange, 
       </label>
       <label className="calc-t" title="When to read the connection's reliability (blank: where it's about 90%)">
         <span>At t{unit ? ` (${unit})` : ""}</span>
-        <input type="number" min="0" step="any" placeholder="auto" value={tText}
+        <input type="number" inputMode="decimal" min="0" step="any" placeholder="auto" value={tText}
                onChange={(e) => setTText(e.target.value)} aria-invalid={!tOk} />
       </label>
     </div>
@@ -148,7 +149,7 @@ function NetworkAnswer({ result, unit, name, dim }) {
       )}
       <ResultDetails summary="Importance and details">
         {(result.importance || []).length > 0 && (
-          <div className="rbd-avail-imp-scroll">
+          <ScrollCue className="rbd-avail-imp-scroll">
             <table className="calc-table rbd-mission-table">
               <thead>
                 <tr>
@@ -167,7 +168,7 @@ function NetworkAnswer({ result, unit, name, dim }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
         )}
         <p className="muted-line">
           Read as an undirected network: each block is a point that can fail, and each connection is a link

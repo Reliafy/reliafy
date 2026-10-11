@@ -65,7 +65,7 @@ export default function FailureFinding() {
         <div className="strategy-costs">
           <label className="calc-t">
             <span>Target availability (%)</span>
-            <input type="number" min="1" max="99.999" step="any" value={availability}
+            <input type="number" inputMode="decimal" min="1" max="99.999" step="any" value={availability}
               onChange={(e) => setAvailability(e.target.value)} />
           </label>
           <label className="calc-t">

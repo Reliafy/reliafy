@@ -6,6 +6,7 @@ import { altBounds, evaluateAlt, getRbdJob } from "../api.js";
 import { stressName } from "./stressName.js";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
@@ -301,7 +302,7 @@ export default function AltCalculator({ modelId, results }) {
                 one-sided {levelText} lower bounds.
               </p>
               {(bounds.coefficients || []).length > 0 && (
-                <div className="table-scroll">
+                <ScrollCue className="table-scroll">
                   <table className="mini-table alt-ci-table">
                     <thead><tr><th>Parameter</th><th>Estimate</th><th>{levelText} interval</th></tr></thead>
                     <tbody>
@@ -314,7 +315,7 @@ export default function AltCalculator({ modelId, results }) {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollCue>
               )}
             </>
           )}

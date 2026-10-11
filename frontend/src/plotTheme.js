@@ -229,3 +229,8 @@ export function slugify(text) {
     .slice(0, 80);
   return s || "chart";
 }
+
+// A downloaded chart's file name: its title, slugged, with the format's extension.
+export function chartFileName(title, format = "png") {
+  return `${slugify(title)}.${format}`;
+}

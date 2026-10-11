@@ -15,6 +15,8 @@ import { bestFitSentence, compareRows } from "../lifeResults.js";
 import Chip from "./ui/Chip.jsx";
 import { TvcCalculator, TvcCoefficients, initTvcState } from "./TvcResult.jsx";
 import { FlexibleSurvival, RegressionCoefficients } from "./MoreModelPanels.jsx";
+import Tabs from "./ui/Tabs.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // The fit statistics open from the panel beside the plot.
 const DISTRIBUTION_TABS = [
@@ -91,7 +93,7 @@ function PerDemandPanel({ result }) {
         )}
       </div>
       {batches.length > 1 && (
-        <div className="pd-batch-table">
+        <ScrollCue className="pd-batch-table">
           <table className="mini-table">
             <thead><tr><th>Batch</th><th>Demands</th><th>Failures</th><th>Failures / demand</th></tr></thead>
             <tbody>
@@ -100,7 +102,7 @@ function PerDemandPanel({ result }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       )}
       {d.success_run ? (
         <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
@@ -267,17 +269,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
           <CiNote params={params} note={result.ci_note} />
         </>
       )}
-      <div className="tabs">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            className={"tab" + (tab === t.id ? " active" : "")}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={tabs} value={tab} onChange={setTab} label="Result views" />
 
       <div className="tab-panel">
         {tab === "survival" && isFlexible && (
@@ -336,7 +328,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
       {details && (
         <ResultDetails>
           {moreParams && (
-            <div className="rs-table-wrap">
+            <ScrollCue className="rs-table-wrap">
               <table className="mini-table">
                 <thead><tr><th>Parameter</th><th>Estimate</th><th>95% interval</th></tr></thead>
                 <tbody>
@@ -349,7 +341,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollCue>
           )}
           {selectionNote && <p className="rs-note">{selectionNote}</p>}
           {optionWords.length > 0 && <p className="rs-note">Fit options: {optionWords.join(" · ")}</p>}

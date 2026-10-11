@@ -179,7 +179,7 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
             </label>
             <label className="calc-t">
               <span>Window</span>
-              <input type="number" min="0" placeholder="auto" value={tau} onChange={(e) => setTau(e.target.value)} />
+              <input type="number" inputMode="decimal" min="0" placeholder="auto" value={tau} onChange={(e) => setTau(e.target.value)} />
             </label>
           </div>
           <button className="cg-run" onClick={() => run(null)} disabled={loading || !timeCol || !groupCol}>

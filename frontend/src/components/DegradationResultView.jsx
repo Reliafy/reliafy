@@ -8,6 +8,8 @@ import { paramView } from "./LifeSummary.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber } from "../format.js";
 import DegradationInducedLife from "./DegradationInducedLife.jsx";
+import Tabs from "./ui/Tabs.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // Per-item colours: the theme's series colours while each item can have its
 // own; past that, every item is plain ink (colours are never reused). Items
@@ -209,13 +211,8 @@ export default function DegradationResultView({ results, modelId, name = null })
 
   return (
     <>
-      <div className="tabs">
-        {TABS.filter((t) => (t.id !== "rel" || relTraces) && (t.id !== "induced" || modelId)).map((t) => (
-          <button key={t.id} className={"tab" + (tab === t.id ? " active" : "")} onClick={() => setTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={TABS.filter((t) => (t.id !== "rel" || relTraces) && (t.id !== "induced" || modelId))}
+            value={tab} onChange={setTab} label="Result views" />
 
       <div className="tab-panel">
         {tab === "paths" && (
@@ -289,7 +286,7 @@ export default function DegradationResultView({ results, modelId, name = null })
                   <label className="calc-t">
                     <span>Confidence %</span>
                     <input
-                      type="number" min="1" max="99" step="1" value={confPct}
+                      type="number" inputMode="numeric" min="1" max="99" step="1" value={confPct}
                       disabled={!modelId || busy}
                       onChange={(e) => setConfPct(Number(e.target.value))}
                       onBlur={(e) => fetchBand(Number(e.target.value))}
@@ -299,7 +296,7 @@ export default function DegradationResultView({ results, modelId, name = null })
                   <label className="calc-t">
                     <span>Reliability %</span>
                     <input
-                      type="number" min="1" max="99" step="1" value={relPct}
+                      type="number" inputMode="numeric" min="1" max="99" step="1" value={relPct}
                       onChange={(e) => setRelPct(Number(e.target.value))}
                     />
                   </label>
@@ -323,7 +320,7 @@ export default function DegradationResultView({ results, modelId, name = null })
         <p className="rs-note" style={{ marginTop: 0 }}>
           When each item's fitted path crosses the threshold. The life model is fitted to these.
         </p>
-        <div className="rs-table-wrap">
+        <ScrollCue className="rs-table-wrap">
           <table className="mini-table">
             <thead><tr><th>Item</th><th>Crossing{unitLabel}</th></tr></thead>
             <tbody>
@@ -339,7 +336,7 @@ export default function DegradationResultView({ results, modelId, name = null })
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       </ResultDetails>
 
       {statsOpen && (
@@ -349,7 +346,7 @@ export default function DegradationResultView({ results, modelId, name = null })
           <p className="rs-note" style={{ marginTop: 0 }}>
             Path models compared by AICc over every item's readings; lower is better, and the best is used.
           </p>
-          <div className="rs-table-wrap">
+          <ScrollCue className="rs-table-wrap">
             <table className="mini-table">
               <thead><tr><th>Path</th><th>AICc</th><th>ΔAICc</th></tr></thead>
               <tbody>
@@ -362,7 +359,7 @@ export default function DegradationResultView({ results, modelId, name = null })
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
         </Modal>
       )}
     </>

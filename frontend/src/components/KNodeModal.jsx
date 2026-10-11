@@ -50,7 +50,7 @@ export default function KNodeModal({ initial, onClose, onSubmit }) {
         <label className="param-field">
           <span>M — needed to work</span>
           <input
-            type="number"
+            type="number" inputMode="decimal"
             min="1"
             value={n}
             onChange={(e) => setN(e.target.value)}
@@ -59,7 +59,7 @@ export default function KNodeModal({ initial, onClose, onSubmit }) {
         <label className="param-field">
           <span>N — branches in total</span>
           <input
-            type="number"
+            type="number" inputMode="decimal"
             min="1"
             value={k}
             onChange={(e) => setK(e.target.value)}
