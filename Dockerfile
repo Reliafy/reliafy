@@ -28,9 +28,9 @@ WORKDIR /code
 # them: a later `apt-get purge` in a separate RUN only hides files, and the image
 # (downloaded on every Cloud Run cold start) would still carry them.
 #
-# - RePyability is installed --no-deps, after the rest, so our git-pinned
+# - RePyability is installed --no-deps, after the rest, so our pinned
 #   surpyval stays authoritative (it declares surpyval>=0.23, uncapped, and
-#   --no-deps stops pip re-resolving it from PyPI; see requirements.txt).
+#   --no-deps stops pip re-resolving it to a newer one; see requirements.txt).
 # - firebase-admin is installed --no-deps with only what its auth module needs
 #   (google-auth, cachecontrol, pyjwt, requests, httpx): we only verify ID
 #   tokens, and its Firestore / Cloud Storage / gRPC dependencies (~60 MB) are

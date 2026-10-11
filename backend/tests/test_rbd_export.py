@@ -408,7 +408,8 @@ def test_output_is_deterministic_and_self_describing():
     assert head.startswith(name)
     assert "Exported from Reliafy <https://reliafy.com>".lower() in head.lower().replace("\n", " ")
     assert "on 2026-09-26 (UTC)" in head
-    assert "SurPyval.git@v0.23" in head and "RePyability.git@v0.13" in head
+    assert 'pip install "surpyval==0.23"' in head and "RePyability.git@v0.13" in head
+    assert "SurPyval.git" not in head
     assert "--no-deps" in head and "surpyval==0.23" in head
     assert "python instrument_air_2oo3_compressors_cold_standby_dryer_ccf.py" in head
     # One commented variable per block, with its label.
