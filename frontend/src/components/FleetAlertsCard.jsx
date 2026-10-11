@@ -179,14 +179,14 @@ export default function FleetAlertsCard({ fleetId, version }) {
             {kind === "above" && (
               <label className="login-field" style={{ width: 170 }}>
                 <span>Expected failures (N)</span>
-                <input type="number" min="0" step="any" required value={threshold}
+                <input type="number" inputMode="decimal" min="0" step="any" required value={threshold}
                        placeholder={fmt(data.current_value)} onChange={(e) => setThreshold(e.target.value)} />
               </label>
             )}
             {kind === "change" && (
               <label className="login-field" style={{ width: 150 }}>
                 <span>Percent (P)</span>
-                <input type="number" min="0.1" max="1000" step="any" required value={percent}
+                <input type="number" inputMode="decimal" min="0.1" max="1000" step="any" required value={percent}
                        onChange={(e) => setPercent(e.target.value)} />
               </label>
             )}
@@ -194,11 +194,11 @@ export default function FleetAlertsCard({ fleetId, version }) {
               <>
                 <label className="login-field" style={{ width: 130 }}>
                   <span>Failures (X)</span>
-                  <input type="number" min="0.01" step="any" required value={x} onChange={(e) => setX(e.target.value)} />
+                  <input type="number" inputMode="decimal" min="0.01" step="any" required value={x} onChange={(e) => setX(e.target.value)} />
                 </label>
                 <label className="login-field" style={{ width: 150 }}>
                   <span>Within (Y {label})</span>
-                  <input type="number" min="0.1" max={data.periods || undefined} step="any" required value={y}
+                  <input type="number" inputMode="decimal" min="0.1" max={data.periods || undefined} step="any" required value={y}
                          onChange={(e) => setY(e.target.value)} />
                 </label>
               </>

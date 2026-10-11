@@ -4,6 +4,8 @@ import { MCP_CONTACT } from "../appConfig.js";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import { PasteIcon, RbdIcon, UploadIcon, WaveIcon } from "./icons.jsx";
 import { SAMPLE_MODEL } from "../firstRun.js";
+import { withLaunch } from "../walkthroughs.js";
+import { ShowMeHow } from "./Walkthrough.jsx";
 
 // First-run starts (#194). Each start reports one client event (allowlisted in
 // backend/routers/telemetry.py), so first actions can be counted against
@@ -47,7 +49,8 @@ function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
   }
   list.push({
     key: "rbd",
-    to: sampleRbdId ? `/rbds/b/${sampleRbdId}` : "/rbds/b",
+    // The sample diagram opens with its walkthrough, once per user (#32).
+    to: sampleRbdId ? withLaunch(`/rbds/b/${sampleRbdId}`, "rbd", { auto: true }) : "/rbds/b",
     onClick: () => trackEvent("first_run_rbd"),
     icon: <RbdIcon />,
     title: "Build a block diagram",
@@ -110,6 +113,16 @@ export function StartHere({ info, sampleModelId = null }) {
         <Link to="/modelling/alt/new">Accelerated life</Link> ·{" "}
         <Link to="/modelling/degradation">Degradation</Link>
       </p>
+      {first && (
+        <p className="first-run-more">
+          Show me how, on a sample:{" "}
+          <ShowMeHow id="fit">Fit a model</ShowMeHow> ·{" "}
+          <ShowMeHow id="replacement">Optimal replacement</ShowMeHow> ·{" "}
+          <ShowMeHow id="rbd">Block diagram</ShowMeHow> ·{" "}
+          <ShowMeHow id="rcm">RCM study</ShowMeHow> ·{" "}
+          <ShowMeHow id="fleet">Fleet forecast</ShowMeHow>
+        </p>
+      )}
       {first && <AgentLine />}
     </section>
   );

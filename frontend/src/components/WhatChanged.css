@@ -1,0 +1,142 @@
+/* "What changed" (#41): the Modelling home's panel and the /changes page. */
+
+.wc-panel {
+  margin-top: 24px;
+}
+
+.wc-card {
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.wc-sentence {
+  margin: 0;
+  padding: 12px 16px;
+  font-size: var(--fs-14);
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.wc-sentence b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.wc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wc-sentence + .wc-list,
+.wc-list li + li {
+  border-top: 1px solid var(--line2);
+}
+
+.wc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 12px 16px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: var(--fs-14);
+}
+
+.wc-row:hover,
+.wc-row:focus-visible {
+  background: var(--acc-t);
+}
+
+.wc-kind {
+  flex: 0 0 168px;
+  color: var(--muted);
+  font-size: var(--fs-13);
+}
+
+.wc-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wc-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wc-detail {
+  color: var(--muted);
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.wc-when {
+  flex: none;
+  color: var(--subtle);
+  font-size: var(--fs-13);
+}
+
+/* The full page */
+.wc-controls {
+  margin: 16px 0;
+}
+
+.wc-page .wc-card + .rs-details,
+.wc-page .result-summary + .wc-card {
+  margin-top: 16px;
+}
+
+.wc-page .rs-details {
+  margin-top: 16px;
+}
+
+.wc-not-compared {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.wc-not-compared li + li {
+  margin-top: 6px;
+}
+
+.wc-not-compared b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+@media (max-width: 720px) {
+  .wc-row {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    min-height: 44px;
+  }
+
+  .wc-kind {
+    flex: 1 1 auto;
+    order: 0;
+  }
+
+  .wc-when {
+    order: 1;
+  }
+
+  .wc-body {
+    flex: 1 1 100%;
+    order: 2;
+  }
+
+  .wc-name {
+    white-space: normal;
+  }
+}

@@ -65,17 +65,17 @@ export default function LoadShareModal({ initial, onClose, onSubmit }) {
       <div className="ls-fields">
         <label className="login-field">
           <span>Total shared load</span>
-          <input type="number" min="0" step="any" value={load}
+          <input type="number" inputMode="decimal" min="0" step="any" value={load}
                  onChange={(e) => setLoad(e.target.value)} placeholder="e.g. 3" />
         </label>
         <label className="login-field">
           <span>Number of units</span>
-          <input type="number" min="2" step="1" value={units}
+          <input type="number" inputMode="numeric" min="2" step="1" value={units}
                  onChange={(e) => setUnits(e.target.value)} />
         </label>
         <label className="login-field">
           <span>Units required (k)</span>
-          <input type="number" min="1" max={nUnits} step="1" value={k}
+          <input type="number" inputMode="numeric" min="1" max={nUnits} step="1" value={k}
                  onChange={(e) => setK(e.target.value)} />
         </label>
       </div>

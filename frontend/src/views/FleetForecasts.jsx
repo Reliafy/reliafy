@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import Modal from "../components/Modal.jsx";
 import Select from "../components/Select.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
@@ -7,8 +7,10 @@ import { listFleets, createFleet, deleteFleet, listModels, listAltModels, listRe
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { ShowMeHow } from "../components/Walkthrough.jsx";
 import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 import { formatNumber } from "../format.js";
+import { modelFromSearch, plainName } from "../modelNext.js";
 
 // A forecast's row figure: "≈ 40.3 in 12 months", or why there isn't one.
 function expectedCell(f) {
@@ -50,9 +52,15 @@ export default function FleetForecasts() {
   }, []);
   useEffect(() => refresh(), [refresh]);
 
-  const openCreate = async () => {
+  // ``preset`` (a model's "Forecast a fleet", #294): that model chosen and
+  // the forecast named after it.
+  const openCreate = async (preset = null) => {
     setCreateError(null);
     setModalOpen(true);
+    if (preset) {
+      setModelKind("life");
+      setModelId("");
+    }
     // Replaceable equipment: life distributions, regression models and ALT
     // models (#234) — a regression or ALT fleet forecasts each item at its own
     // covariates or stress; picker values carry the kind, "alt:<id>" for an
@@ -74,7 +82,24 @@ export default function FleetForecasts() {
       ...alt.map((m) => asOpt(m, `alt:${m.id}`, [m.distribution, m.life_model].filter(Boolean).join(" · "))),
     ]);
     setRecurrentModels(rec.map((m) => asOpt(m, m.id, m.model)));
+    const chosen = preset && [...plain, ...regression].find((m) => m.id === preset);
+    if (chosen) {
+      setModelId(chosen.id);
+      setName((n) => n || `${plainName(chosen.name)} fleet`);
+    }
   };
+
+  // Opened as /fleet?new=1&model=<id>: the new-forecast dialog, with the
+  // model chosen. The query is dropped so a reload doesn't reopen it.
+  const { search } = useLocation();
+  useEffect(() => {
+    const wanted = modelFromSearch(search);
+    if (!wanted || new URLSearchParams(search).get("new") !== "1") return;
+    navigate("/fleet", { replace: true });
+    openCreate(wanted);
+    // openCreate is this render's; it runs once per link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   const onCreate = async () => {
     if (!name.trim() || !modelId) return;
@@ -118,8 +143,8 @@ export default function FleetForecasts() {
       <PageHeader
         crumbs={[{ label: "Fleet" }]}
         title="Failure forecasts"
-        meta="How many failures a fleet will see over a horizon, from your fitted models."
-        primary={<button onClick={openCreate}><PlusIcon /> New forecast</button>}
+        meta={<>How many failures a fleet will see over a horizon, from your fitted models. <ShowMeHow id="fleet" /></>}
+        primary={<button onClick={() => openCreate()}><PlusIcon /> New forecast</button>}
       />
 
       {error && <div className="card error">{error}</div>}
@@ -137,8 +162,8 @@ export default function FleetForecasts() {
       ) : fleets.length === 0 ? (
         <div className="card empty">
           <h2>No fleet forecasts</h2>
-          <p>Create one from a saved life model and list the items you have in service.</p>
-          <button style={{ marginTop: "1rem" }} onClick={openCreate}>
+          <p>Create one from a saved life model and list the items you have in service. <ShowMeHow id="fleet" /></p>
+          <button style={{ marginTop: "1rem" }} onClick={() => openCreate()}>
             <PlusIcon /> New forecast
           </button>
         </div>

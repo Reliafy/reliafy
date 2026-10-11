@@ -7,6 +7,7 @@ import McpOnRequest from "../components/McpOnRequest.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import ScrollCue from "../components/ui/ScrollCue.jsx";
 
 // AI usage is denominated in "credits" — users never see a dollar balance.
 // (Internally 1 credit == 1 cent; only pack purchase prices show as dollars.)
@@ -140,7 +141,7 @@ export default function BillingPage() {
               </span>
             }
           />
-          <div className="bill-compare-wrap">
+          <ScrollCue className="bill-compare-wrap">
             <table className="bill-compare-table">
               <thead>
                 <tr>
@@ -159,7 +160,7 @@ export default function BillingPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
           {data.pro_available ? (
             <div className="bill-compare-cta">
               <button disabled={working === "pro"} onClick={() => go("pro", subscribePro)}>

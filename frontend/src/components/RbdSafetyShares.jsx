@@ -1,4 +1,5 @@
 import { formatPercent } from "../format.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // "Where the PFDavg comes from" (#298): each element's share of a safety
 // function's PFDavg and of its dangerous failures, with each common-cause
@@ -20,7 +21,7 @@ export default function RbdSafetyShares({ shares }) {
           better element or more redundancy there does the most good.
         </p>
       )}
-      <div className="rbd-avail-imp-scroll">
+      <ScrollCue className="rbd-avail-imp-scroll">
         <table className="calc-table rbd-sif-shares-table">
           <thead>
             <tr>
@@ -60,7 +61,7 @@ export default function RbdSafetyShares({ shares }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
       {groups.length > 0 && shares.common_cause_note && <p className="rbd-details-p muted">{shares.common_cause_note}</p>}
       {!hasPfd && shares.pfd_share_reason && (
         <p className="rbd-details-p muted">No share of the PFDavg: {shares.pfd_share_reason}</p>

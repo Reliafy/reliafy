@@ -1,5 +1,6 @@
 import { unitInText } from "./unitText.js";
 import { horizonWords } from "../rbdOwnership.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // Cost of ownership (#99) and the failures/maintenance downtime split (#100)
 // in a repairable diagram's availability results. Shown only when the diagram
@@ -38,7 +39,7 @@ function HorizonTable({ table, unit, disc }) {
   if (rows.length < 2) return null;
   const hasNew = rows.some((r) => r.from_new != null);
   return (
-    <div className="rbd-avail-imp-scroll">
+    <ScrollCue className="rbd-avail-imp-scroll">
       <table className="calc-table rbd-costs-table rbd-horizons-table">
         <thead>
           <tr>
@@ -67,7 +68,7 @@ function HorizonTable({ table, unit, disc }) {
           ? "From new counts the early years as they are — a new system fails less (or more) than in the long run."
           : table.from_new_note || ""}
       </p>
-    </div>
+    </ScrollCue>
   );
 }
 
@@ -180,7 +181,7 @@ export default function AvailabilityCosts({ result, unit }) {
       )}
 
       {blocks.length > 0 && (
-        <div className="rbd-avail-imp-scroll">
+        <ScrollCue className="rbd-avail-imp-scroll">
           <table className="calc-table rbd-costs-table">
             <thead>
               <tr>
@@ -203,7 +204,7 @@ export default function AvailabilityCosts({ result, unit }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       )}
 
       <p className="muted-line" style={{ margin: 0 }}>

@@ -116,9 +116,9 @@ export default function PerDemandPanel({ onCreated, onBack }) {
                 <input type="text" aria-label={`Batch ${i + 1} name`} placeholder={`Batch ${i + 1}`}
                        value={r.label} onChange={(e) => setRow(i, "label", e.target.value)} />
               )}
-              <input type="number" min="1" step="1" aria-label="Demands" placeholder="Demands"
+              <input type="number" inputMode="numeric" min="1" step="1" aria-label="Demands" placeholder="Demands"
                      value={r.demands} onChange={(e) => setRow(i, "demands", e.target.value)} />
-              <input type="number" min="0" step="1" aria-label="Failures" placeholder="Failures"
+              <input type="number" inputMode="numeric" min="0" step="1" aria-label="Failures" placeholder="Failures"
                      value={r.failures} onChange={(e) => setRow(i, "failures", e.target.value)} />
               {rows.length > 1 && (
                 <button className="secondary pd-remove" aria-label={`Remove batch ${i + 1}`}
@@ -159,7 +159,7 @@ export default function PerDemandPanel({ onCreated, onBack }) {
 
       <label className="login-field" style={{ maxWidth: 200, marginTop: "0.8rem" }}>
         <span>Confidence (%)</span>
-        <input type="number" min="1" max="99" step="1" value={conf}
+        <input type="number" inputMode="numeric" min="1" max="99" step="1" value={conf}
                onChange={(e) => setConf(e.target.value)} />
       </label>
 

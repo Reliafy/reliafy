@@ -4,12 +4,14 @@ import GoodnessOfFit from "./GoodnessOfFit.jsx";
 import Select from "./Select.jsx";
 import Chip from "./ui/Chip.jsx";
 import RequirementCheck from "./RequirementCheck.jsx";
+import ModelNextSteps, { ReplacementLink } from "./ModelNextSteps.jsx";
 import { openGuide } from "./HelpButton.jsx";
 import { lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
 import { bestFitSentence, boundWords, compareRows, criterionLabel, timeAtValue } from "../lifeResults.js";
 import { unitInText } from "./unitText.js";
 import { PARAMS, paramLabel } from "../paramLabels.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // The side panel beside a fitted life distribution's plot (#311): its
 // parameters by their plain names with their intervals, the data, and a quiet
@@ -55,7 +57,8 @@ function verdict(result) {
     const beta = byName.beta.value;
     const v = result.randomness?.verdict;
     if (v === "wear_out")
-      return { title: "Wear-out", text: "β is above 1 at 95% confidence: the failure rate rises with age, so preventive replacement can pay off." };
+      return { title: "Wear-out", text: "β is above 1 at 95% confidence: the failure rate rises with age, so preventive replacement can pay off.",
+               action: "replacement" };
     if (v === "infant_mortality")
       return { title: "Early-life failures", text: "β is below 1 at 95% confidence: the failure rate falls with age, so replacing early does harm." };
     if (v === "random" && byName.beta.ci) {
@@ -169,7 +172,7 @@ function TauInput({ tau, unit, onChange }) {
   return (
     <input
       className="life-tau"
-      type="number"
+      type="number" inputMode="decimal"
       min="0"
       step="any"
       value={text}
@@ -297,7 +300,7 @@ function CompareDistributions({ result, compare, onPick }) {
       <div className="gofh">Compare distributions</div>
       <p className="compare-sentence">{bestFitSentence(rows)}</p>
       {selection.summary && <p className="muted-line">{selection.summary}</p>}
-      <div className="rs-table-wrap">
+      <ScrollCue className="rs-table-wrap">
         <table className="mini-table compare-table">
           <thead>
             <tr><th>Distribution</th><th>{label}</th><th>Δ{label}</th><th>Verdict</th></tr>
@@ -325,7 +328,7 @@ function CompareDistributions({ result, compare, onPick }) {
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
       <p className="muted-line">
         Lower {label} is better. Under 2 apart, the data can't tell two distributions apart.
         {onPick ? " Pick a name to fit that one instead." : ""}
@@ -341,9 +344,10 @@ function CompareDistributions({ result, compare, onPick }) {
 // ``children`` (the plot) goes on the left; the panel sits on the right.
 // ``level`` / ``onLevel``: the confidence (%) of the life card's lower bounds,
 // shared with the calculator. ``compare`` / ``onPick``: see CompareDistributions.
-// ``modelId`` / ``name``: the saved model, for the requirement check's test plan.
+// ``modelId`` / ``name``: the saved model, for the requirement check's test plan
+// and "Use this model" (#294); ``onUse`` (a fit not saved yet) saves it first.
 export default function LifeAside({ result, split = null, bestFit = false, level = 90, onLevel = null,
-                                   compare = null, onPick = null, modelId = null, name = null }) {
+                                   compare = null, onPick = null, modelId = null, name = null, onUse = null }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const aic = (result.gof || []).find((g) => g.id === "aic") || (result.gof || [])[0];
   const id = distId(result);
@@ -418,8 +422,11 @@ export default function LifeAside({ result, split = null, bestFit = false, level
         <div className="life-reading">
           <div className="life-reading-title">{reading.title}</div>
           <div>{reading.text}</div>
+          {reading.action === "replacement" && <ReplacementLink result={result} modelId={modelId} onUse={onUse} />}
         </div>
       )}
+      <ModelNextSteps result={result} modelId={modelId} onUse={onUse}
+                      skip={reading?.action === "replacement" ? ["replacement"] : []} />
       {method && <p className="life-method">{method} fit.</p>}
       {statsOpen && (
         <Modal title="Fit statistics" onClose={() => setStatsOpen(false)}

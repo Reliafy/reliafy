@@ -6,6 +6,7 @@ import {
 } from "../plotTheme.js";
 import { formatNumber } from "../format.js";
 import { effectTone, familyOf, growthReading, pct, ratioCiText, ratioText } from "../recurrentResults.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // The charts of a recurrent model's tabs (#65), each in the life model's
 // layout: the chart on the left, in a tight card with no title above it and
@@ -224,7 +225,7 @@ export function NextFailurePanel({ r, name }) {
           <div className="gofh life-card-head">
             <span>Next failure{unit ? <span className="gof-sub">{unit} from now</span> : null}</span>
           </div>
-          <div className="rs-table-wrap rec-nf-scroll">
+          <ScrollCue className="rs-table-wrap rec-nf-scroll">
             <table className="mini-table rec-nf-table">
               <thead><tr><th>System</th><th>Failures</th><th>Median</th><th>10% by</th></tr></thead>
               <tbody>
@@ -238,7 +239,7 @@ export function NextFailurePanel({ r, name }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
         </div>
         <p className="life-method">
           Median: half the chance of a failure by then. 10% by: a 1-in-10 chance of a failure by then. {nf.note}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import Modal from "./Modal.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import {
@@ -6,6 +6,9 @@ import {
   createPublicLink, listPublicLinks, updatePublicLink, revokePublicLink,
 } from "../api.js";
 import Chip from "./ui/Chip.jsx";
+
+// The report composer (#30) loads only when someone opens it.
+const ReportComposer = lazy(() => import("./ReportComposer.jsx"));
 
 // Collections with a public read-only renderer at /p/:token.
 const PUBLIC_LINKABLE = new Set([
@@ -74,7 +77,7 @@ function PassphraseNote({ phrase, onDismiss }) {
 
 // One existing public link: its URL, label, expiry and password state, with
 // copy, password changes and revoke.
-function LinkRow({ link, phrase, busy, onCopy, copied, onChange, onRevoke, onDismissPhrase }) {
+function LinkRow({ link, phrase, busy, onCopy, copied, onChange, onRevoke, onDismissPhrase, openable }) {
   const url = `${window.location.origin}${link.path}`;
   return (
     <div className="pl-link">
@@ -102,6 +105,7 @@ function LinkRow({ link, phrase, busy, onCopy, copied, onChange, onRevoke, onDis
         <button type="button" onClick={() => onCopy(link, url)}>{copied ? "Copied ✓" : "Copy"}</button>
       </div>
       <div className="pl-link-acts">
+        {openable && <a className="link" href={link.path} target="_blank" rel="noopener noreferrer">Open page</a>}
         {link.protected ? (
           <>
             <button type="button" className="link" disabled={busy}
@@ -127,8 +131,9 @@ function LinkRow({ link, phrase, busy, onCopy, copied, onChange, onRevoke, onDis
 
 // Public links: anyone with the URL can view, no account needed. An
 // artifact can have several (one per recipient), each with an optional
-// label, expiry and password, each revocable on its own.
-function PublicLinks({ collection, artifactId, onError }) {
+// label, expiry and password, each revocable on its own. The report
+// composer uses it too (`openable` adds an "Open page" link to each).
+export function PublicLinks({ collection, artifactId, onError, openable = false }) {
   const [links, setLinks] = useState(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(null); // token
@@ -213,6 +218,7 @@ function PublicLinks({ collection, artifactId, onError }) {
           onChange={onChange}
           onRevoke={onRevoke}
           onDismissPhrase={() => setPhrase(null)}
+          openable={openable}
         />
       ))}
 
@@ -273,6 +279,7 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
+  const [composing, setComposing] = useState(false);
 
   const linkable = PUBLIC_LINKABLE.has(collection);
 
@@ -306,6 +313,15 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
     refresh();
   };
 
+  // "Add to a report…" swaps this dialog for the report composer (#30).
+  if (composing) {
+    return (
+      <Suspense fallback={null}>
+        <ReportComposer initial={{ collection, artifact_id: artifactId, name }} onClose={onClose} />
+      </Suspense>
+    );
+  }
+
   return (
     <Modal
       title={`Share — ${name}`}
@@ -313,9 +329,15 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
       locked={busy}
       onClose={onClose}
       footer={
-        <div style={{ display: "flex", gap: "0.6rem", marginLeft: "auto" }}>
+        <>
+          {linkable ? (
+            <button type="button" className="link" onClick={() => setComposing(true)}
+              title="Put this and other items on one page, with a title and notes, ready to print">
+              Add to a report…
+            </button>
+          ) : <span />}
           <button className="secondary" onClick={onClose}>Done</button>
-        </div>
+        </>
       }
     >
       <p className="muted-line" style={{ marginTop: 0 }}>

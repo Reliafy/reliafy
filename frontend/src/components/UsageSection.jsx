@@ -3,6 +3,7 @@ import { CATEGORY, COLORWAY, SUBTLE } from "../plotTheme.js";
 import Card, { CardHeader } from "./ui/Card.jsx";
 import Chip from "./ui/Chip.jsx";
 import { formatPercent } from "../format.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // Product usage for the operator dashboard (GET /api/admin/usage): how the
 // app, MCP and the API are used, and the MCP plan wall — the numbers behind
@@ -59,7 +60,7 @@ function OutcomeTable({ title, rows, columns, empty }) {
       {rows.length === 0 ? (
         <p className="muted-line">{empty}</p>
       ) : (
-        <div className="usage-table-wrap">
+        <ScrollCue className="usage-table-wrap">
           <table className="usage-table">
             <thead>
               <tr>
@@ -80,7 +81,7 @@ function OutcomeTable({ title, rows, columns, empty }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       )}
     </Card>
   );

@@ -36,6 +36,14 @@ export default function NewModelPage() {
   // Dataset the fit flow should open on (a sample picked here, or the deep link).
   const [datasetId, setDatasetId] = useState(queryDatasetId);
   const [samples, setSamples] = useState([]);
+  // A later link to this page with another ?dataset= (a walkthrough's start)
+  // doesn't remount it: open the fit flow on that dataset.
+  useEffect(() => {
+    if (queryDatasetId) {
+      setDatasetId(queryDatasetId);
+      setMode("data");
+    }
+  }, [queryDatasetId]);
 
   useEffect(() => {
     listDatasets()

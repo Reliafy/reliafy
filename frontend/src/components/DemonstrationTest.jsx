@@ -129,11 +129,11 @@ export default function DemonstrationTest({ initial = null }) {
 
   const defaultName = result
     ? result.method === "mtbf"
-      ? `MTBF test — ${result.mtbf} ${unitInText(result.unit)}`.trim()
+      ? `MTBF test: ${result.mtbf} ${unitInText(result.unit)}`.trim()
       : result.b_life != null
-      ? `Demonstration test — ${bLabel(result.b_life)} ≥ ${[formatNumber(result.mission_time), unitInText(result.unit)]
+      ? `Demonstration test: ${bLabel(result.b_life)} ≥ ${[formatNumber(result.mission_time), unitInText(result.unit)]
           .filter(Boolean).join(" ")} at ${Number((result.confidence * 100).toFixed(4))}%`
-      : `Demonstration test — R ${(result.reliability * 100).toFixed(4).replace(/\.?0+$/, "")}% at ${(
+      : `Demonstration test: R ${(result.reliability * 100).toFixed(4).replace(/\.?0+$/, "")}% at ${(
           result.confidence * 100
         ).toFixed(4).replace(/\.?0+$/, "")}%`
     : "";

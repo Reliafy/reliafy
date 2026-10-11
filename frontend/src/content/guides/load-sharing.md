@@ -27,9 +27,10 @@ the load per unit goes up.
 So before you can add a load-sharing block, you need an
 **accelerated-failure-time (AFT) model with load as its single covariate**. In
 practice that means failure data gathered at more than one load level. Fit it
-under **Modelling → New model → Fit to data**, mapping your failure times to `x`
-and choosing a regression model — `weibull_aft` is the usual starting point —
-with your load column as the covariate.
+under **Modelling → New model → Fit to data**: in the Data step choose your
+failure times as **Time to failure or removal**, open **Advanced (regression):
+covariates** and add your load column; then in the Model step choose an AFT
+model — **Weibull AFT** is the usual starting point.
 
 If you've done accelerated life testing with load as the stress, you already have
 exactly this data. It's the same relationship viewed from a different angle: ALT
@@ -38,8 +39,8 @@ extrapolate *up* as survivors take on more.
 
 ## Adding the block
 
-In the RBD builder, right-click the canvas and choose **Add load-sharing node**,
-then double-click it to configure:
+In the RBD builder (a non-repairable diagram), choose **+ Add block →
+Load-sharing**, then double-click the new block to configure it:
 
 - **Load-life model** — the saved AFT model from above.
 - **Total shared load** — the load the group carries between them. Each of the

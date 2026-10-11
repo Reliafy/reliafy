@@ -582,7 +582,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                   <label className="calc-t">
                     <span>Reliability %</span>
                     <input
-                      type="number"
+                      type="number" inputMode="decimal"
                       value={rTarget}
                       min={0.01}
                       max={99.99}
@@ -604,7 +604,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 <label className="calc-t">
                   <span>{cond > 0 ? "For a further" : "At"}{unit ? ` (${unitInText(unit)})` : ""}</span>
                   <input
-                    type="number"
+                    type="number" inputMode="decimal"
                     value={t}
                     min={0}
                     max={xMaxView}
@@ -615,7 +615,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 <label className="calc-t">
                   <span>Given survived to{unit ? ` (${unit})` : ""}</span>
                   <input
-                    type="number"
+                    type="number" inputMode="decimal"
                     value={condAge}
                     min={0}
                     max={x[x.length - 1]}
@@ -645,7 +645,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                       <label className="calc-t">
                         <span>Confidence level %</span>
                         <input
-                          type="number"
+                          type="number" inputMode="decimal"
                           value={ci.level}
                           min={1}
                           max={99.9}

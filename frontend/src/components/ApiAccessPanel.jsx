@@ -5,6 +5,7 @@ import { useAppConfig } from "../ConfigProvider.jsx";
 import { relativeTime } from "../instrument.js";
 import Button from "./ui/Button.jsx";
 import Card, { CardHeader } from "./ui/Card.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // What a token may do. Each token carries a subset; a token created before
 // scopes existed carries all three.
@@ -182,7 +183,7 @@ export default function ApiAccessPanel() {
         ) : tokens.length === 0 ? (
           !creating && <p className="muted-line">No tokens yet.</p>
         ) : (
-          <div className="usage-table-wrap">
+          <ScrollCue className="usage-table-wrap">
             <table className="lib-table">
               <thead>
                 <tr>
@@ -213,7 +214,7 @@ export default function ApiAccessPanel() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
         )}
       </Card>
     </div>

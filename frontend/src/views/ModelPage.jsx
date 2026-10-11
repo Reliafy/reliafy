@@ -8,6 +8,8 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
+import ModelNextSteps from "../components/ModelNextSteps.jsx";
+import { rememberModel } from "../modelNext.js";
 
 // Reopen a saved model by id and render its cached results. The answer card
 // names the distribution, so the header doesn't.
@@ -22,7 +24,11 @@ export default function ModelPage() {
     setModel(null);
     setError(null);
     getModel(id)
-      .then(setModel)
+      .then((m) => {
+        setModel(m);
+        // The Strategy tools start on the model used last (#294).
+        rememberModel(m.id);
+      })
       .catch((err) => setError(err.message));
   }, [id]);
 
@@ -46,6 +52,8 @@ export default function ModelPage() {
         id={model?.id}
         menu={model && (
           <>
+            {/* "Use this model" (#294): also in the panel beside the plot. */}
+            <ModelNextSteps result={model.results} modelId={model.id} variant="menu" />
             <ShareButton
               collection="models"
               artifactId={model.id}
@@ -67,6 +75,7 @@ export default function ModelPage() {
             result={model.results}
             modelId={model.id}
             name={model.name}
+            split={model.results?.split || null}
             compare={model.kind === "distribution" && model.dataset_id ? () => compareModel(model.id) : null}
           />
         </div>

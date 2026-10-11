@@ -8,6 +8,7 @@ import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import { FirstRunStrip } from "../components/FirstRun.jsx";
 import { useFirstRun } from "../firstRun.js";
+import { ShowMeHow } from "../components/Walkthrough.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
@@ -129,7 +130,7 @@ export default function RbdHome() {
       />
       <PageHeader
         title="RBDs"
-        meta="Reliability block diagrams: system reliability, availability and importance."
+        meta={<>Reliability block diagrams: system reliability, availability and importance. <ShowMeHow id="rbd" /></>}
         actions={
           <button
             className="secondary"

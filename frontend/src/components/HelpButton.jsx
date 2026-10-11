@@ -51,6 +51,16 @@ export default function HelpButton({ openSlug = null }) {
     return () => window.removeEventListener("reliafy:help", onHelp);
   }, []);
 
+  // Escape closes the drawer, as it does a modal (#302).
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
   const back = () => { setSlug(null); setRefId(null); };
 
   return (

@@ -5,6 +5,7 @@ import { compareRbds, listRbds, saveRbd } from "../api.js";
 import { pctAt, pctDigits, pointsAt } from "./availabilityPrecision.js";
 import { fmtMoney } from "./AvailabilityCosts.jsx";
 import { unitInText } from "./unitText.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // "Compare with…" on a repairable diagram's availability results (#104): pick
 // another saved repairable diagram — typically a copy of this one with one
@@ -210,7 +211,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
             <p className={`rbd-compare-verdict ${q.tone(diff.verdict)}`}>
               {verdict(q, diff, nameA === THIS ? "this diagram" : nameA, nameB)}
             </p>
-            <div className="rbd-avail-imp-scroll">
+            <ScrollCue className="rbd-avail-imp-scroll">
               <table className="calc-table rbd-compare-table">
                 <thead>
                   <tr>
@@ -242,7 +243,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
                   </tr>
                 </tbody>
               </table>
-            </div>
+            </ScrollCue>
             {q.key === "cost" ? (
               <p className="muted-line" style={{ margin: 0 }}>
                 Owning each design for {fmtT(c.t_simulation)}{u} from new: its purchase prices

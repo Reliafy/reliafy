@@ -15,6 +15,7 @@ from backend.services import fleet as fleet_service
 from backend.services import fleet_alerts as alerts_service
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
+from backend.services import workspace_changes
 from backend.services import access as access_service
 from backend.services.access import AccessCtx, get_access
 
@@ -79,6 +80,7 @@ def list_fleets(session=Depends(get_session), ctx: AccessCtx = Depends(get_acces
     out = []
     for fleet in fleet_service.list_fleets(session, ctx.list_owners, ctx.hidden, shared=set(shared_by)):
         forecast = fleet_service.compute(session, fleet, [*ctx.read_owners, fleet.owner_id])
+        workspace_changes.note_forecast(session, fleet, forecast)
         row = _summary(fleet, ctx, forecast)
         if fleet.id in shared_by:
             row["shared_by"] = shared_by[fleet.id]
@@ -94,6 +96,7 @@ def get_fleet(
     if fleet is None or fleet.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Fleet not found."})
     forecast = fleet_service.compute(session, fleet, [*ctx.read_owners, fleet.owner_id])
+    workspace_changes.note_forecast(session, fleet, forecast)
     payload = {**_summary(fleet, ctx, forecast), "items": fleet.items, "forecast": forecast}
     if via_share:
         payload["shared_by"] = shares_service.shared_by_for(session, ctx.uid, fleet.id)
@@ -171,6 +174,7 @@ def put_items(
     access_service.stamp_editor(session, "fleets", fleet_id, ctx)
     fleet.updated_by = access_service.editor_of(ctx)
     forecast = fleet_service.compute(session, fleet, [*ctx.read_owners, fleet.owner_id])
+    workspace_changes.note_forecast(session, fleet, forecast)
     return JSONResponse(content={**_summary(fleet, ctx, forecast), "items": fleet.items, "forecast": forecast})
 
 

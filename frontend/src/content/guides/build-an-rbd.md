@@ -27,11 +27,14 @@ Open **RBDs → New diagram**. Every diagram runs from an **input** node to an
 **output** node, and the system works whenever there's a complete path between
 them.
 
-Right-click the canvas to add a component, then drag from one block's handle to
-another to connect them. Series is a straight chain; parallel is two blocks that
-both branch from the same predecessor and both feed the same successor.
+Everything for laying out the diagram is in the one toolbar above the canvas.
+**+ Add block** at its left adds a component, a junction, a voting node or one of
+the other block types in the middle of the canvas (a right-click on the canvas
+offers the same list where you clicked). Drag from one block's handle to another
+to connect them. Series is a straight chain; parallel is two blocks that both
+branch from the same predecessor and both feed the same successor.
 
-**+ Add block** can do the wiring for you. Select a block first and it offers
+**+ Add block** can also do the wiring for you. Select a block first and it offers
 **Add after (in series)**, which puts the new block between that block and
 whatever it fed, and **Add alongside (in parallel)**, which gives the new block
 the same connections and merges the pair through a junction. Select a line of
@@ -47,7 +50,7 @@ a whole region wires its stages in one press. Links that already exist are left
 alone, so pressing `C` twice does nothing the second time.
 
 When several branches converge and then fan out again, wiring every branch to
-every successor gets messy. Right-click → **Add junction** drops in a dot that
+every successor gets messy. **+ Add block → Junction** drops in a dot that
 merges them: everything feeds the junction, and the junction feeds what comes
 next. A junction is perfectly reliable and changes no number in the results — it
 only tidies the wiring. (It's the voting node with n = 1, so any one branch is
@@ -55,14 +58,22 @@ enough.)
 
 ![A pump station diagram: input, controller, redundant pumps, output](/guides/img/rbd-01-builder.png)
 
-Set the **unit** in the top-left. Everything in the diagram should share one time
+Set the **Unit** in the toolbar. Everything in the diagram should share one time
 base, and Reliafy will warn you if you drop in a saved model that was fitted in
-different units.
+different units. The menu beside it says what kind of diagram this is:
+**Non-repairable** (reliability over time, this guide), **Repairable**
+(availability) or **Network**. The **⋯** menu at the right holds the rest,
+including **Auto-arrange** to tidy the layout.
 
 ## Giving blocks their life models
 
-Double-click a block to set its model. You have two options, and both are
-legitimate:
+Double-click a block to open it. **Name** comes first: call the block what your
+report will call it (a tag, or "Feed pump A"), because every result names the
+block by it. To rename without opening the block, double-click its name on the
+canvas, or select it and press F2.
+
+Then set its life model, as a **Mean** life, as **Parameters** or as a **Saved
+model**. The two sources are both legitimate:
 
 - **A saved model** — a fit from your own data. Best when you have it.
 - **Parameters** — type a distribution and its parameters directly. This is how
@@ -98,14 +109,17 @@ worth reading if you're relying on redundancy for anything that matters.
 
 ## Validate before you calculate
 
-Press **Validate**. This is a genuine structural check, not a formality: it will
+Press **Validate** at the right of the toolbar. This is a genuine structural check, not a formality: it will
 tell you if the diagram has a loop, if blocks aren't wired to anything, if a
 component is missing its life model, or if a k-of-n setting leaves no path
 through the system at all. It also tells you whether the diagram can be solved in
-closed form or needs simulation.
+closed form or needs simulation. Once it passes, the button becomes a status
+(**✓ Valid**, or the number of problems) that opens the full check, and it turns
+back into **Validate** when you change the diagram.
 
 Fix anything it reports, then switch to the **Calculator** tab and press
-**Calculate**.
+**Calculate**. For the sample pump station (a controller in series with two
+redundant pumps) the MTTF is 849 hours and the B10 life 318 hours.
 
 ## Reading the results
 
@@ -129,9 +143,14 @@ whole exercise.
 
 ![System reliability results with importance measures and cut sets](/guides/img/rbd-02-results.png)
 
+The other tabs ask other questions of the same diagram: **Fault tree** draws it
+as a fault tree, **Design** works out how many copies of each block give the most
+reliability within a budget or reach a target at the least cost, and **Targets** sets a reliability target for the
+whole system and works out what each block needs to meet it.
+
 ## Take it with you: download as Python
 
-Once a diagram is saved, **Download as Python** in the builder toolbar gives you a
+Once a diagram is saved, **Save → Download as Python** in the toolbar gives you a
 standalone script that rebuilds the same diagram with the open-source
 [SurPyval](https://github.com/derrynknife/SurPyval) and
 [RePyability](https://github.com/derrynknife/RePyability) libraries and runs the
@@ -164,6 +183,10 @@ If your system is repaired and returned to service rather than replaced, build i
 as a repairable diagram instead and you'll get uptime rather than a survival
 curve — see [modelling system availability](/guides/repairable-availability).
 
-You can also skip the drawing entirely: the
-[Reliability Agent](/guides/reliability-agent) can research a system and build
-the diagram for you, which you then review and adjust.
+If the diagram is a safety instrumented function, switch on **Safety function**
+in the toolbar and the results lead with the PFDavg and the SIL instead — see
+[verifying a safety function](/guides/verify-a-safety-function).
+
+You can also build diagrams from Claude or another AI agent: connect it to
+Reliafy over [MCP](/api-docs#mcp) and it can create, edit and analyse diagrams in
+your workspace.

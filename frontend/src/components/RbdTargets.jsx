@@ -11,6 +11,7 @@ import { graphSignature } from "./RbdValidation.jsx";
 import { modelMean, unitAbbr } from "./rbdModelText.js";
 import "./RbdTargets.css";
 import "./RbdDesignPanel.css";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // The Targets tab (#53): design to a system target. Enter a target — a
 // reliability at a mission time, or a repairable diagram's long-run
@@ -112,7 +113,7 @@ function MethodHelp({ methods }) {
   return (
     <details className="rbd-targets-help">
       <summary>How the methods compare</summary>
-      <div className="rbd-targets-help-scroll">
+      <ScrollCue className="rbd-targets-help-scroll">
         <table className="calc-table rbd-targets-help-table">
           <thead>
             <tr><th>Method</th><th>What it does</th><th>Use it for</th><th>Limits</th></tr>
@@ -128,7 +129,7 @@ function MethodHelp({ methods }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
     </details>
   );
 }
@@ -231,12 +232,12 @@ export default function RbdTargets({ graph, onBuild }) {
       <div className="calc-controls rbd-targets-controls">
         <label className="calc-t">
           <span>Target {repairable ? "availability" : "reliability"} (%)</span>
-          <input type="number" min="0" max="100" step="any" value={targetValue} onChange={(e) => setTarget(e.target.value)} />
+          <input type="number" inputMode="decimal" min="0" max="100" step="any" value={targetValue} onChange={(e) => setTarget(e.target.value)} />
         </label>
         {!repairable && (
           <label className="calc-t">
             <span>Mission time{unit ? ` (${unit.toLowerCase()})` : ""}</span>
-            <input type="number" min="0" step="any" value={tValue} onChange={(e) => setT(e.target.value)} />
+            <input type="number" inputMode="decimal" min="0" step="any" value={tValue} onChange={(e) => setT(e.target.value)} />
           </label>
         )}
         <div className="calc-t rbd-targets-method">
@@ -274,7 +275,7 @@ export default function RbdTargets({ graph, onBuild }) {
       {columns.length > 0 && (
         <details className="rbd-targets-advanced">
           <summary>Advanced: per-block settings</summary>
-          <div className="rbd-design-scroll">
+          <ScrollCue className="rbd-design-scroll">
             <table className="calc-table rbd-targets-table">
               <thead>
                 <tr>
@@ -295,7 +296,7 @@ export default function RbdTargets({ graph, onBuild }) {
                   const field = (key, props = {}) => (
                     <td>
                       <input
-                        className="rbd-design-num" type="number" step="any" min="0" placeholder="—"
+                        className="rbd-design-num" type="number" inputMode="decimal" step="any" min="0" placeholder="—"
                         aria-label={`${n.data?.label || n.id}: ${key}`} disabled={o.fixed}
                         value={o[key] ?? ""} onChange={(e) => setOpt(n.id, key, e.target.value)} {...props}
                       />
@@ -324,7 +325,7 @@ export default function RbdTargets({ graph, onBuild }) {
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
         </details>
       )}
 
@@ -387,7 +388,7 @@ function TargetResult({ result, stale, unit }) {
           { label: "Blocks to improve", value: `${raise.length} of ${rows.length}` },
         ]}
       />
-      <div className="rbd-design-scroll">
+      <ScrollCue className="rbd-design-scroll">
         <table className="calc-table rbd-targets-table rbd-targets-out">
           <thead>
             <tr>
@@ -427,7 +428,7 @@ function TargetResult({ result, stale, unit }) {
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
       {repairable && result.method === "availability" && (
         <p className="hint">Either the mean life or the repair time shown gives a block its availability (or any pair in the same ratio).</p>
       )}

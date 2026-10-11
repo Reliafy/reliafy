@@ -8,6 +8,9 @@ related_label: "Open the Reliability Agent"
 order: 40
 ---
 
+The Reliability Agent is available on request — email hello@reliafy.com and
+we'll switch it on for you.
+
 The Reliability Agent is a different thing from the assistant in the corner of
 the screen. The assistant answers questions about the app. The agent **does the
 work**: it runs Python in a sandbox with surpyval and repyability installed,
