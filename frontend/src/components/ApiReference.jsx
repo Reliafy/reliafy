@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import McpOnRequest from "./McpOnRequest.jsx";
+import Tabs from "./ui/Tabs.jsx";
 
 // A copyable code block (monospace, with a copy button).
 function Code({ children }) {
@@ -676,6 +677,11 @@ export function McpDocs({ tokenNote }) {
   );
 }
 
+const API_TABS = [
+  { id: "client", label: "reliafy-client (Python)" },
+  { id: "http", label: "HTTP API" },
+];
+
 // In-app reference for the programmatic API + the reliafy-client package.
 // Examples use the live origin, so self-hosted instances show their own base URL.
 export default function ApiReference() {
@@ -684,14 +690,7 @@ export default function ApiReference() {
 
   return (
     <div className="card api-ref">
-      <div className="tabs">
-        <button className={"tab" + (tab === "client" ? " active" : "")} onClick={() => setTab("client")}>
-          reliafy-client (Python)
-        </button>
-        <button className={"tab" + (tab === "http" ? " active" : "")} onClick={() => setTab("http")}>
-          HTTP API
-        </button>
-      </div>
+      <Tabs tabs={API_TABS} value={tab} onChange={setTab} label="API reference" />
       {tab === "client" ? <ClientDocs /> : <HttpDocs base={base} />}
     </div>
   );

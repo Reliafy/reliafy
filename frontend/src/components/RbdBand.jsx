@@ -3,6 +3,7 @@ import Select from "./Select.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber } from "../format.js";
 import { BAND_FILL } from "../plotTheme.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // Confidence band on a non-repairable RBD's reliability (#103): the spread of
 // the system reliability, MTTF and B-lives over draws of the fitted blocks'
@@ -138,7 +139,7 @@ export function BandTargets({ band, unit, onChange }) {
   return (
     <ResultDetails summary="B-lives and reliability with intervals">
       {rows.length > 0 && (
-        <div className="rbd-avail-imp-scroll">
+        <ScrollCue className="rbd-avail-imp-scroll">
           <table className="calc-table rbd-band-targets">
             <thead><tr><th>Target</th><th>Best estimate</th><th>{pct(band.level)} interval</th></tr></thead>
             <tbody>
@@ -147,7 +148,7 @@ export function BandTargets({ band, unit, onChange }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       )}
       {onChange && (
         <div className="param-fields rbd-band-target-inputs">

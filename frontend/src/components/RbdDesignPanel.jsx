@@ -14,6 +14,7 @@ import "./RbdDesignPanel.css";
 import { unitInText } from "./unitText.js";
 import { formatPercent } from "../format.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // "Design for a target" (redundancy allocation, #98): how many copies of each
 // block a non-repairable diagram needs — the most reliable design within a
@@ -329,7 +330,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
           Add components with life models on the Builder tab — each one can then be given copies.
         </p>
       ) : (
-        <div className="rbd-design-scroll">
+        <ScrollCue className="rbd-design-scroll">
           <table className="calc-table rbd-design-table">
             <thead>
               <tr>
@@ -442,7 +443,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       )}
       {fixed.length > 0 && (
         <p className="hint rbd-design-fixed">

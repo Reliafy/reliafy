@@ -15,6 +15,7 @@ import { formatNumber, formatPercent } from "../format.js";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { unitInText } from "../components/unitText.js";
 import { itemsWithoutUsage, usageInputValue } from "../fleetUsage.js";
+import ScrollCue from "../components/ui/ScrollCue.jsx";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -522,7 +523,7 @@ export default function FleetForecastPage() {
             {!readOnly && <button onClick={addItem}><PlusIcon /> Add item</button>}
           </div>
         ) : (
-          <div className="fleet-items-scroll">
+          <ScrollCue className="fleet-items-scroll">
             <table className={"fleet-items" + (repairable ? " repairable" : "")}>
               <thead>
                 <tr>
@@ -633,7 +634,7 @@ export default function FleetForecastPage() {
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
         )}
         {hideProb && (
           <p className="rs-note">Every item is more than 95% likely to fail within the horizon.</p>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { getRbdJob, rbdSensitivity } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import RbdMeasure, { TABS } from "./RbdMeasures.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // "What to improve" on a repairable diagram's availability results (#225):
 // every lever RePyability exposes (a block's mean life and repair time, its
@@ -332,7 +333,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
       {data?.status === "too_large" && <div className="card note" role="status">{data.message}</div>}
 
       {visible.length > 0 && (
-        <div className="rbd-avail-imp-scroll">
+        <ScrollCue className="rbd-avail-imp-scroll">
           <table className="calc-table rbd-improve-table">
             <thead>
               <tr>
@@ -427,7 +428,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollCue>
       )}
 
       {editCosts && rows.length > 0 && (

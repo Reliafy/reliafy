@@ -3,6 +3,7 @@ import RecurrentCalculator from "./RecurrentCalculator.jsx";
 import RecurrentAside from "./RecurrentAside.jsx";
 import { CausePanel, CovariatePanel, McfPlot, NextFailurePanel } from "./RecurrentCharts.jsx";
 import { familyOf } from "../recurrentResults.js";
+import Tabs from "./ui/Tabs.jsx";
 
 // A fitted recurrent-event (repairable-system) model, laid out like the life
 // model page (#65, #311): the tabs first; the MCF plot beside a panel with the
@@ -28,19 +29,7 @@ export default function RecurrentResultView({ results, name = null, extraTabs = 
 
   return (
     <>
-      <div className="tabs" role="tablist">
-        {tabs.map((tb) => (
-          <button
-            key={tb.id}
-            role="tab"
-            aria-selected={active === tb.id}
-            className={"tab" + (active === tb.id ? " active" : "")}
-            onClick={() => setTab(tb.id)}
-          >
-            {tb.label}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={tabs} value={active} onChange={setTab} label="Result views" />
 
       <div className="tab-panel">
         {active === "mcf" && (

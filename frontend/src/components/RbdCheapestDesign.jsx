@@ -5,6 +5,7 @@ import { graphSignature } from "./RbdValidation.jsx";
 import { fmtMoney } from "./AvailabilityCosts.jsx";
 import { copiesText, horizonWords } from "../rbdOwnership.js";
 import { unitInText } from "./unitText.js";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // The Design tab for a repairable diagram (#99): how many copies of each block
 // with a purchase price own the system at the lowest total cost over a
@@ -199,7 +200,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
                 ? <>Adding copies saves <b>{fmtMoney(result.saving)}</b> over {fmtT(result.horizon)}{unit}{pv}: {fmtMoney(result.current.total_cost)} → <b>{fmtMoney(result.design.total_cost)}</b>.</>
                 : <>Meeting {pct(result.min_availability)} availability at the lowest cost takes <b>{fmtMoney(-result.saving)}</b> more than the design as drawn (which is {pct(result.current.availability)} available).</>}
           </p>
-          <div className="rbd-avail-imp-scroll">
+          <ScrollCue className="rbd-avail-imp-scroll">
             <table className="calc-table rbd-costs-table">
               <thead>
                 <tr><th>Block</th><th>Copies now</th><th>Cheapest</th><th>Price each</th></tr>
@@ -225,8 +226,8 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
                 ))}
               </tbody>
             </table>
-          </div>
-          <div className="rbd-avail-imp-scroll">
+          </ScrollCue>
+          <ScrollCue className="rbd-avail-imp-scroll">
             <table className="calc-table rbd-costs-table">
               <thead>
                 <tr><th></th><th>As drawn</th><th>Cheapest</th></tr>
@@ -238,10 +239,10 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
                 <tr><td className="calc-row-label">Long-run availability</td><td>{pct(result.current.availability)}</td><td>{pct(result.design.availability)}</td></tr>
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
           {/* The choice over several horizons (#319): the cheapest design at each. */}
           {(result.by_horizon?.rows || []).length > 1 && (
-            <div className="rbd-avail-imp-scroll">
+            <ScrollCue className="rbd-avail-imp-scroll">
               <table className="calc-table rbd-costs-table rbd-horizons-table">
                 <thead>
                   <tr><th>Owned for</th><th>Cheapest design</th><th>As drawn</th><th>Cheapest</th><th>Saving</th></tr>
@@ -262,7 +263,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollCue>
           )}
           {result.note && <p className="hint" style={{ margin: 0 }}>{result.note}</p>}
           {result.common_cause?.note && <p className="hint" style={{ margin: 0 }}>{result.common_cause.note}</p>}

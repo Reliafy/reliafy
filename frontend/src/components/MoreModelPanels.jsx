@@ -5,6 +5,7 @@ import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { DATA_INK, fitLine } from "../plotTheme.js";
 import { formatNumber } from "../format.js";
 import "./MoreModels.css";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // Result panels for the models of #179 / #63: the semi-parametric and
 // shared-frailty regressions (their coefficient table and the spread
@@ -64,7 +65,7 @@ function CoefTable({ result }) {
   return (
     <div className="gof-card mm-table-card">
       <div className="gofh">Coefficients</div>
-      <div className="rs-table-wrap">
+      <ScrollCue className="rs-table-wrap">
         <table className="mini-table">
           <thead>
             <tr>
@@ -94,7 +95,7 @@ function CoefTable({ result }) {
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
     </div>
   );
 }
@@ -109,7 +110,7 @@ function GroupTable({ frailty }) {
         Above 1: that group fails sooner than the average group with the same covariates; below 1, later.
         {groups.length > shown.length ? ` The ${shown.length} highest of ${groups.length}.` : ""}
       </p>
-      <div className="rs-table-wrap">
+      <ScrollCue className="rs-table-wrap">
         <table className="mini-table">
           <thead><tr><th>{frailty.group_column || "Group"}</th><th>Frailty</th></tr></thead>
           <tbody>
@@ -118,7 +119,7 @@ function GroupTable({ frailty }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollCue>
     </ResultDetails>
   );
 }

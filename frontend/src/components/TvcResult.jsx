@@ -12,6 +12,7 @@ import { formatNumber, formatPercent } from "../format.js";
 import { boundWords, timeAtValue } from "../lifeResults.js";
 import { initialSchedule, scheduleBody, scheduleXMax, tvcPath } from "../tvcData.js";
 import "./Tvc.css";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // A regression model whose covariates change over time (#60): the
 // coefficients with a plain reading each, and a calculator that follows a
@@ -238,7 +239,7 @@ export function TvcCalculator({ result, state, setState, name = null }) {
               </div>
               <div className="tvc-schedule" role="group" aria-label="Covariate schedule">
                 <span className="tvc-schedule-h">Covariate schedule <span className="tvc-schedule-sub">· each row holds until the next</span></span>
-                <div className="tvc-table-wrap">
+                <ScrollCue className="tvc-table-wrap">
                   <table className="tvc-table">
                     <thead>
                       <tr>
@@ -276,7 +277,7 @@ export function TvcCalculator({ result, state, setState, name = null }) {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollCue>
                 {rows.length < MAX_ROWS && (
                   <button type="button" className="secondary sm tvc-add" onClick={addRow}>+ Add a change</button>
                 )}

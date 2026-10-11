@@ -6,6 +6,7 @@ import { fmtMoney } from "./AvailabilityCosts.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import "./RbdIntervals.css";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 // Maintenance and proof-test intervals chosen together (#172, #228), on the
 // Design tab of a repairable diagram: RePyability's
@@ -416,7 +417,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
               </span>
             ))}
           </p>
-          <div className="rbd-avail-imp-scroll">
+          <ScrollCue className="rbd-avail-imp-scroll">
             <table className="calc-table rbd-costs-table">
               <thead>
                 <tr>
@@ -451,8 +452,8 @@ export default function RbdIntervals({ graph, onApply, onView }) {
                 ))}
               </tbody>
             </table>
-          </div>
-          <div className="rbd-avail-imp-scroll">
+          </ScrollCue>
+          <ScrollCue className="rbd-avail-imp-scroll">
             <table className="calc-table rbd-costs-table">
               <thead>
                 <tr>
@@ -501,7 +502,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
                 )}
               </tbody>
             </table>
-          </div>
+          </ScrollCue>
           {showTogether && !together.met && <p className="hint" style={{ margin: 0 }}>Tests together: {together.message}</p>}
           {result.current == null && result.current_note && (
             <p className="hint" style={{ margin: 0 }}>As drawn: {result.current_note}</p>

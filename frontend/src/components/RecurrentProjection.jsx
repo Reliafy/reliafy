@@ -4,6 +4,7 @@ import { getRecurrentProjection, runRecurrentProjection } from "../api.js";
 import { unitInText } from "./unitText.js";
 import { CardHeader } from "./ui/Card.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
+import ScrollCue from "./ui/ScrollCue.jsx";
 
 const fmt = (v, d = 4) =>
   v == null || !Number.isFinite(v)
@@ -143,7 +144,7 @@ export default function RecurrentProjection({ modelId, unit }) {
           )}
 
           {rows.length > 0 && (
-            <div className="gp-table-wrap">
+            <ScrollCue className="gp-table-wrap">
               <table className="lib-table gp-table">
                 <thead>
                   <tr>
@@ -185,7 +186,7 @@ export default function RecurrentProjection({ modelId, unit }) {
                   })}
                 </tbody>
               </table>
-            </div>
+            </ScrollCue>
           )}
 
           <div className="gp-actions">
