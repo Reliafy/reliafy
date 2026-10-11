@@ -133,6 +133,10 @@ def upsert_user(db, user: dict) -> dict:
     """Record/refresh the user's profile on first sight (and each login)."""
     now = datetime.now(timezone.utc)
     email = user.get("email")
+    # The load before this one, if it was a visit ago: "since my last visit" (#41).
+    from backend.services import workspace_changes
+
+    workspace_changes.note_visit(db, user["uid"], now)
     result = db.users.update_one(
         {"_id": user["uid"]},
         {
