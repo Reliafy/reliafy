@@ -11,6 +11,7 @@ import {
 import { relativeTime } from "../instrument.js";
 import Select from "../components/Select.jsx";
 import UsageSection from "../components/UsageSection.jsx";
+import WalkthroughStats from "../components/WalkthroughStats.jsx";
 import Card, { CardHeader } from "../components/ui/Card.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
@@ -344,6 +345,8 @@ export default function AdminPage() {
           <TopList title="Product events" rows={traffic.events} empty="" />
         </div>
       )}
+
+      {traffic && <WalkthroughStats rows={traffic.walkthroughs} />}
 
       <Card className="admin-fold">
         <ResultDetails summary="Email campaigns">
