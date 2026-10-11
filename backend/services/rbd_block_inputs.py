@@ -11,6 +11,13 @@ with ``from_params``, and its ``mean()`` and ``qf(0.5)`` are SurPyval's. A
 mean is turned into parameters by solving SurPyval's own ``mean()`` for the
 one parameter it leaves free (the scale, the rate or the log-location),
 which the mean moves monotonically.
+
+The answer is a clean number. Two blocks of a common-cause group must carry
+identical models, compared exactly, so "Mean 1,000,000 h" has to give the
+same λ as typing 1e-6. Where the mean is the parameter itself, or its
+reciprocal (the exponential's rate, the normal's μ), that is the answer,
+checked against SurPyval's ``mean()``; a solved parameter is kept to 12
+significant figures, past the solver's last reliable digits.
 """
 
 from __future__ import annotations
@@ -35,6 +42,16 @@ MEAN_ENTRY = {
     "gamma": {"solve": "beta", "given": ["alpha"], "positive": True},
     "loglogistic": {"solve": "alpha", "given": ["beta"], "positive": True},
 }
+#: Where the mean gives the free parameter directly (SurPyval's ``mean()`` of
+#: the result is checked to match): the exponential's rate is 1/mean, the
+#: normal's μ is the mean.
+_DIRECT = {
+    "exponential": lambda mean: 1.0 / mean,
+    "normal": lambda mean: mean,
+}
+#: Significant figures a solved parameter is kept to.
+SOLVED_SIG_FIGS = 12
+
 #: The given parameters in words, for a message.
 _GIVEN_WORDS = {("weibull", "beta"): "shape β", ("lognormal", "sigma"): "spread σ",
                 ("normal", "sigma"): "standard deviation σ", ("gamma", "alpha"): "shape α",
@@ -124,6 +141,15 @@ def from_mean(distribution_id: str, mean: float, given: Optional[dict] = None) -
     names = _names(distribution_id)
     solve = form["solve"]
 
+    def params_with(value: float) -> list:
+        return [{"name": n, "value": float(value if n == solve else fixed[n])} for n in names]
+
+    direct = _DIRECT.get(distribution_id)
+    if direct is not None:
+        out = summary(distribution_id, params_with(direct(target)))
+        if out["mean"] is not None and math.isclose(out["mean"], target, rel_tol=1e-12):
+            return out
+
     def mean_at(x: float) -> Optional[float]:
         values = {**fixed, solve: math.exp(x) if form["positive"] else x}
         try:
@@ -163,9 +189,17 @@ def from_mean(distribution_id: str, mean: float, given: Optional[dict] = None) -
     if bracket is None:
         raise BlockInputError(f"No {_entry(distribution_id)['name']} with this shape has that mean.")
     x = bracket[0] if bracket[0] == bracket[1] else brentq(gap, *bracket, xtol=1e-14, rtol=1e-14, maxiter=500)
-    value = math.exp(x) if form["positive"] else x
-    params = [{"name": n, "value": float(value if n == solve else fixed[n])} for n in names]
-    return summary(distribution_id, params)
+    value = _round_sig(math.exp(x) if form["positive"] else x)
+    return summary(distribution_id, params_with(value))
+
+
+def _round_sig(value: float, sig: int = SOLVED_SIG_FIGS) -> float:
+    """``value`` to ``sig`` significant figures: the solver's answer without
+    the noise in its last digits, so the same mean always gives the same
+    parameter, and a round one stays round."""
+    if value == 0 or not math.isfinite(value):
+        return value
+    return float(f"{value:.{sig}g}")
 
 
 def mean_entry_forms() -> dict:
