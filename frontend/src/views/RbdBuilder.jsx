@@ -2184,7 +2184,11 @@ export default function RbdBuilder() {
             imported={imported}
             onNew={() => navigate("/rbds/b")}
             onOpenLibrary={() => navigate("/rbds")}
-            onSaved={(savedId) => navigate(`/rbds/b/${savedId}`, { replace: true })}
+            onSaved={(savedId) => {
+              // Saved: the "added as a block — not saved yet" note no longer holds.
+              setAdded(null);
+              navigate(`/rbds/b/${savedId}`, { replace: true });
+            }}
             onMeta={setMeta}
             onTab={setTab}
             addModel={addModel}
