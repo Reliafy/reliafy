@@ -1261,7 +1261,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
                       <span className="muted">—</span>
                     ) : (
                       <input
-                        type="number"
+                        type="number" inputMode="decimal"
                         min="0"
                         step="any"
                         value={st.value}
@@ -1706,7 +1706,7 @@ export default function RbdCalculator({
           <label className="calc-t">
             <span>To{unitLabel} — x-axis limit</span>
             <input
-              type="number"
+              type="number" inputMode="decimal"
               min="0"
               step="any"
               placeholder="auto"
@@ -1720,7 +1720,7 @@ export default function RbdCalculator({
           <label className="calc-t">
             <span>Evaluate at t{unitLabel}</span>
             <input
-              type="number"
+              type="number" inputMode="decimal"
               min="0"
               max={tMax || undefined}
               step="any"
@@ -1735,7 +1735,7 @@ export default function RbdCalculator({
             <label className="calc-t">
               <span>Given survived to{unitLabel}</span>
               <input
-                type="number"
+                type="number" inputMode="decimal"
                 min="0"
                 step="any"
                 placeholder="0"
@@ -1747,7 +1747,7 @@ export default function RbdCalculator({
           <label className="calc-t" title="The design life: how long system reliability stays at or above this">
             <span>Design life at R (%)</span>
             <input
-              type="number"
+              type="number" inputMode="decimal"
               min="1"
               max="99.9"
               step="any"
@@ -1806,7 +1806,7 @@ export default function RbdCalculator({
             {windowPreset === "custom" && (
               <label className="rbd-window-custom">
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="0"
                   step="any"
                   aria-label={`Window${unitLabel}`}
