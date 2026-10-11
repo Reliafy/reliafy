@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from backend import config
+from backend.services import walkthroughs as walkthroughs_service
 
 # Crawlers and headless browsers aren't visitors.
 _BOT_RE = re.compile(
@@ -66,25 +67,31 @@ def record_event(
     utm_campaign: str = "",
     ip: str = "",
     user_agent: str = "",
+    walkthrough: str = "",
+    step: int | None = None,
 ) -> bool:
-    """Store one event; returns False when filtered (bots)."""
+    """Store one event; returns False when filtered (bots). A guided
+    walkthrough's events (#32) also carry its id and, for a step, the step."""
     if user_agent and _BOT_RE.search(user_agent):
         return False
     now = datetime.now(timezone.utc)
     day = now.strftime("%Y-%m-%d")
-    db.metrics_events.insert_one(
-        {
-            "name": _field(name or "pageview", 100),
-            "path": _field(path, _CLIP),
-            "ref_host": _field(_referrer_host(str(referrer or "")), _CLIP),
-            "utm_source": _field(utm_source, 100),
-            "utm_medium": _field(utm_medium, 100),
-            "utm_campaign": _field(utm_campaign, 100),
-            "visitor": _visitor_hash(day, ip, user_agent),
-            "day": day,
-            "created_at": now,
-        }
-    )
+    doc = {
+        "name": _field(name or "pageview", 100),
+        "path": _field(path, _CLIP),
+        "ref_host": _field(_referrer_host(str(referrer or "")), _CLIP),
+        "utm_source": _field(utm_source, 100),
+        "utm_medium": _field(utm_medium, 100),
+        "utm_campaign": _field(utm_campaign, 100),
+        "visitor": _visitor_hash(day, ip, user_agent),
+        "day": day,
+        "created_at": now,
+    }
+    if walkthrough:
+        doc["walkthrough"] = _field(walkthrough, 40)
+        if step is not None:
+            doc["step"] = int(step)
+    db.metrics_events.insert_one(doc)
     return True
 
 
@@ -101,7 +108,7 @@ def traffic(db, days: int = 14) -> dict:
         {"created_at": {"$gte": since}},
         {
             "_id": 0, "name": 1, "path": 1, "ref_host": 1,
-            "utm_source": 1, "visitor": 1, "day": 1,
+            "utm_source": 1, "visitor": 1, "day": 1, "walkthrough": 1, "step": 1,
         },
     )
 
@@ -111,6 +118,7 @@ def traffic(db, days: int = 14) -> dict:
     referrers: Counter = Counter()
     sources: Counter = Counter()
     events: Counter = Counter()
+    walkthrough_events = []
 
     for e in cursor:
         day = e.get("day", "")
@@ -122,6 +130,8 @@ def traffic(db, days: int = 14) -> dict:
                 referrers[e["ref_host"]] += 1
             if e.get("utm_source"):
                 sources[e["utm_source"]] += 1
+        elif e.get("walkthrough"):
+            walkthrough_events.append(e)  # counted in "walkthroughs" below
         else:
             events[e["name"]] += 1
 
@@ -143,4 +153,7 @@ def traffic(db, days: int = 14) -> dict:
         "top_referrers": top(referrers),
         "top_sources": top(sources),
         "events": top(events),
+        # Guided walkthroughs (#32): runs started, completed, skipped and
+        # each step reached, per walkthrough.
+        "walkthroughs": walkthroughs_service.summarise(walkthrough_events),
     }

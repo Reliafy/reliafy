@@ -17,6 +17,7 @@ from backend.log_redaction import redact_secrets
 from backend.ratelimit import SlidingWindowLimiter
 from backend.request_ip import client_ip
 from backend.services import metrics as metrics_service
+from backend.services import walkthroughs as walkthroughs_service
 
 logger = logging.getLogger("reliafy.telemetry")
 
@@ -54,6 +55,9 @@ CLIENT_EVENTS = frozenset({
     "first_run_paste",
     "first_run_rbd",
     "first_run_agent",
+    # Guided walkthroughs (#32): frontend/src/components/Walkthrough.jsx. They
+    # carry the walkthrough's id (and a step number) — see metrics_event.
+    *walkthroughs_service.EVENTS,
 })
 
 # Re-exported for modules that import it from here.
@@ -102,6 +106,8 @@ def metrics_event(
     utm_source: str = Body(default=""),
     utm_medium: str = Body(default=""),
     utm_campaign: str = Body(default=""),
+    walkthrough: str = Body(default=""),
+    step: int | None = Body(default=None),
     session=Depends(get_session),
 ):
     """Record a lightweight product event (pageview, signup, ...).
@@ -114,6 +120,11 @@ def metrics_event(
         return _too_many()
     if name not in CLIENT_EVENTS:
         return JSONResponse(status_code=422, content={"detail": "Unknown event."})
+    if name in walkthroughs_service.EVENTS:
+        if not walkthroughs_service.valid_event(name, walkthrough, step):
+            return JSONResponse(status_code=422, content={"detail": "Unknown walkthrough or step."})
+    else:
+        walkthrough, step = "", None
     stored = metrics_service.record_event(
         session,
         name=name,
@@ -124,6 +135,8 @@ def metrics_event(
         utm_campaign=utm_campaign,
         ip=ip,
         user_agent=request.headers.get("user-agent", ""),
+        walkthrough=walkthrough,
+        step=step,
     )
     logger.info(
         "event name=%s path=%s referrer=%s stored=%s",
