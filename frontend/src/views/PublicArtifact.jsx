@@ -15,7 +15,10 @@ import PreviewTable from "../components/PreviewTable.jsx";
 import RcmTree from "../components/RcmTree.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import PublicRbd from "../components/PublicRbd.jsx";
+import ReportView from "./PublicReport.jsx";
 import { getPublicArtifact, unlockPublicLink } from "../api.js";
+import { installPrintFit } from "../printFit.js";
+import "./PublicPage.css";
 
 // Public, read-only view of a shared artifact (/p/:token) — no account
 // needed. Renders the same payloads as the in-app detail pages through the
@@ -24,7 +27,9 @@ import { getPublicArtifact, unlockPublicLink } from "../api.js";
 // deliberately bare — just the brand bar and the content, no marketing nav
 // or footer — because it's what an owner (or their agent) hands to a client
 // or colleague. The one prompt is "Create free account" at the bar's right,
-// for visitors who aren't signed in.
+// for visitors who aren't signed in. A report (#30) is several items on one
+// page, each rendered by the same Body. Every share page prints cleanly
+// (PublicPage.css, printFit.js).
 
 const KIND_LABEL = {
   models: "Fitted life model",
@@ -35,6 +40,7 @@ const KIND_LABEL = {
   fleets: "Fleet failure forecast",
   rbds: "Reliability block diagram",
   recurrent_models: "Recurrent-event model",
+  reports: "Report",
 };
 
 const fmt = (v, dp = 1) =>
@@ -274,6 +280,9 @@ export default function PublicArtifact() {
     return () => meta.remove();
   }, []);
 
+  // Charts and diagrams fit the paper when the page is printed.
+  useEffect(() => installPrintFit(".public-page"), []);
+
   // Name the tab after the shared artifact (the SPA shell's title is generic).
   useEffect(() => {
     if (!data?.artifact?.name) return undefined;
@@ -285,7 +294,7 @@ export default function PublicArtifact() {
   }, [data]);
 
   return (
-    <div className="landing">
+    <div className="landing public-page">
       <header className="landing-nav share-bar">
         <Link className="brand" to="/">
           <Logo size={26} />
@@ -307,8 +316,13 @@ export default function PublicArtifact() {
         {!error && !locked && !data && (
           <div className="card empty" style={{ margin: "3rem auto", maxWidth: 520 }}>Loading…</div>
         )}
-        {data && (
-          <div className="app" style={{ margin: "0 auto", maxWidth: 1080 }}>
+        {data?.collection === "reports" && (
+          <div className="app public-app">
+            <ReportView report={data.artifact} sharedBy={data.shared_by} Item={Body} />
+          </div>
+        )}
+        {data && data.collection !== "reports" && (
+          <div className="app public-app">
             <header>
               <div>
                 <div className="crumb">{KIND_LABEL[data.collection] || "Analysis"} · shared by {data.shared_by}</div>
