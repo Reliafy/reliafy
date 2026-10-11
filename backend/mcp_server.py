@@ -117,6 +117,7 @@ from backend.services import rbd_runs as rbd_runs_service
 from backend.services import rbd_repeats
 from backend.services.rbd_import import structure as rbd_structure
 from backend.services import rbds as rbds_service
+from backend.services import workspace_changes as changes_service
 from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
 from backend.services import strategy_store
@@ -7028,6 +7029,45 @@ def update_dataset(
 # ---------------------------------------------------------------------------
 # Plans
 # ---------------------------------------------------------------------------
+
+# ---- workspace_changes (#41): what changed over a period -------------------------
+
+def _absolute_urls(value):
+    """The summary with every app path as a full link."""
+    if isinstance(value, list):
+        return [_absolute_urls(v) for v in value]
+    if isinstance(value, dict):
+        return {k: (_url(v) if k in ("url", "evidence_url") and isinstance(v, str) and v.startswith("/")
+                    else _absolute_urls(v)) for k, v in value.items()}
+    return value
+
+
+@_tool("workspace_changes", _READ, "What changed")
+def workspace_changes(
+    ctx: Context,
+    since: Annotated[Optional[str], Field(description=(
+        "'last_visit' (since the user last opened Reliafy) or a date, e.g. '2026-09-01'. Overrides days."))] = None,
+    days: Annotated[Optional[int], Field(ge=1, le=changes_service.MAX_DAYS, description=(
+        "Look back this many days (default 30)."))] = None,
+) -> dict[str, Any]:
+    """What changed in the user's own workspace over a period ("what changed since last month?"), computed by
+    Reliafy from what it stores — never estimated: new and changed items (models, datasets, diagrams, fleets,
+    RCM studies, analyses), life-model refits whose B10 or MTTF moved by more than 10% (before → after, from
+    the saved fits), fleet forecasts whose expected failures moved by more than 10% since the last forecast
+    recorded before the period, fleet alerts that fired, RCM decisions whose linked model was refitted (with
+    the evidence status before and now) and availability simulations that moved. `sentence` sums it up;
+    `not_compared` says what can't be compared because nothing earlier is stored (e.g. failures recorded
+    against a forecast) — report those as unknown, never guess them. Shared samples aren't included. On
+    Free, fleet forecasts and alerts are left out (fleets are Pro), and not_compared says so."""
+    user, db = _caller(ctx), _db()
+    try:
+        period = changes_service.resolve_period(db, user["uid"], since=since, days=days)
+    except changes_service.PeriodError as exc:
+        raise ToolError(str(exc)) from exc
+    # Fleets are Pro over MCP (_FLEET_TOOLS): a plan without them gets the rest.
+    fleets = user.get("mcp_plan", "pro") == "pro"
+    return _absolute_urls(changes_service.summarize(db, user["uid"], user["uid"], period, fleets=fleets))
+
 
 # ---- get_account (#133): the caller's plan and what's left on it -------------
 # Ungated like upgrade_link: an agent asks "what's left?" most when nothing is.

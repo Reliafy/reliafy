@@ -192,6 +192,10 @@ def init_db() -> None:
     from backend.services import usage as usage_service
 
     usage_service.ensure_indexes(db)
+    # What changed (#41): the refit and forecast logs it compares against.
+    from backend.services import workspace_changes
+
+    workspace_changes.ensure_indexes(db)
 
 
 def get_session() -> Iterator:

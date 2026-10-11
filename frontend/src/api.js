@@ -1985,3 +1985,13 @@ export function claimWalkthroughAutoStart(id) {
     body: JSON.stringify({ id }),
   });
 }
+
+// What changed in the active workspace over a period (#41): ``days`` (default
+// 30) or ``since`` ("last_visit" or a date). Computed by the server.
+export function getWorkspaceChanges({ days = null, since = null } = {}) {
+  const q = new URLSearchParams();
+  if (since) q.set("since", since);
+  else if (days) q.set("days", String(days));
+  const qs = q.toString();
+  return request(`/api/changes${qs ? `?${qs}` : ""}`);
+}

@@ -113,7 +113,10 @@ def test_a_running_step_holds_credit_so_a_parallel_step_is_refused(env, monkeypa
 
     client, db = env
     hold = assistant_service.hold_millicents(MSGS)
-    billing.grant_credits(db, U, -(-hold // 1000) + 1, "test")  # covers one hold, not two
+    # Covers one hold plus one step's cost (1800 mc), not two holds — whatever
+    # the size of the server's prompt and tools.
+    billing.grant_credits(db, U, -(-(hold + 1800) // 1000), "test")
+    assert -(-(hold + 1800) // 1000) * 1000 < 2 * hold
     release = threading.Event()
 
     def slow_stream(system, messages, tools):
