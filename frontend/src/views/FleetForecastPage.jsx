@@ -340,14 +340,14 @@ export default function FleetForecastPage() {
           <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap", marginTop: 0 }}>
             <label className="login-field" style={{ width: 190 }}>
               <span>Usage per {settingsWord}{unit ? ` (${unit})` : ""}</span>
-              <input type="number" min="0" step="any" value={usageInputValue(settings.default_rate)}
+              <input type="number" inputMode="decimal" min="0" step="any" value={usageInputValue(settings.default_rate)}
                      placeholder="required" required aria-invalid={noUsage > 0}
                      aria-describedby={noUsage > 0 ? "fleet-usage-missing" : undefined}
                      onChange={(e) => setSetting("default_rate", e.target.value)} />
             </label>
             <label className="login-field" style={{ width: 110 }}>
               <span>Horizon</span>
-              <input type="number" min="1" max="120" value={settings.periods ?? 12}
+              <input type="number" inputMode="decimal" min="1" max="120" value={settings.periods ?? 12}
                      onChange={(e) => setSetting("periods", e.target.value)} />
             </label>
             <label className="login-field" style={{ width: 130 }}>
@@ -412,12 +412,12 @@ export default function FleetForecastPage() {
               <div className="row fleet-warranty">
                 <label className="login-field" style={{ width: 200 }}>
                   <span>Warranty: use{unit ? ` (${unit})` : ""}</span>
-                  <input type="number" min="0" step="any" value={settings.warranty_use ?? ""} placeholder="no limit"
+                  <input type="number" inputMode="decimal" min="0" step="any" value={settings.warranty_use ?? ""} placeholder="no limit"
                          onChange={(e) => setSetting("warranty_use", e.target.value === "" ? null : e.target.value)} />
                 </label>
                 <label className="login-field" style={{ width: 200 }}>
                   <span>Warranty: {settings.period_label || "periods"} in service</span>
-                  <input type="number" min="0" step="any" value={settings.warranty_periods ?? ""} placeholder="no limit"
+                  <input type="number" inputMode="decimal" min="0" step="any" value={settings.warranty_periods ?? ""} placeholder="no limit"
                          onChange={(e) => setSetting("warranty_periods", e.target.value === "" ? null : e.target.value)} />
                 </label>
                 <p className="muted-line">
@@ -561,14 +561,14 @@ export default function FleetForecastPage() {
                       )}
                       <td className="num">
                         {readOnly ? asText(it.current_use) : (
-                          <input className="cell-input" type="number" min="0" step="any" value={it.current_use}
+                          <input className="cell-input" type="number" inputMode="decimal" min="0" step="any" value={it.current_use}
                                  aria-label={`Current use of ${it.name || "item"}`}
                                  onChange={(e) => setItem(idx, "current_use", e.target.value)} />
                         )}
                       </td>
                       <td className="num">
                         {readOnly ? asText(it.rate) : (
-                          <input className="cell-input" type="number" min="0" step="any"
+                          <input className="cell-input" type="number" inputMode="decimal" min="0" step="any"
                                  value={it.rate ?? ""} placeholder="—"
                                  aria-label={`Own usage rate of ${it.name || "item"}`}
                                  title={`Blank uses the fleet's ${asText(settings.default_rate || 0)} per ${settingsWord}`}
@@ -592,7 +592,7 @@ export default function FleetForecastPage() {
                       {showService && (
                         <td className="num">
                           {readOnly ? asText(it.service_periods) : (
-                            <input className="cell-input" type="number" min="0" step="any"
+                            <input className="cell-input" type="number" inputMode="decimal" min="0" step="any"
                                    value={it.service_periods ?? ""} placeholder="from use ÷ rate"
                                    title="How long the item has been in service; blank estimates it from its use at its rate."
                                    onChange={(e) => setItem(idx, "service_periods", e.target.value === "" ? null : e.target.value)} />
@@ -602,7 +602,7 @@ export default function FleetForecastPage() {
                       {repairable && (
                         <td className="num">
                           {readOnly ? asText(it.next_service_at) : (
-                            <input className="cell-input" type="number" min="0" step="any"
+                            <input className="cell-input" type="number" inputMode="decimal" min="0" step="any"
                                    value={it.next_service_at ?? ""} placeholder="—"
                                    title={`The use${unit ? ` (${unit})` : ""} the item is next serviced at`}
                                    onChange={(e) => setItem(idx, "next_service_at", e.target.value === "" ? null : e.target.value)} />

@@ -125,7 +125,7 @@ export default function RecurrentProjection({ modelId, unit }) {
               </label>
               <label className="calc-t">
                 <span>End of test, T{u ? ` (${unit})` : ""}</span>
-                <input type="number" min="0" step="any" value={testEnd} placeholder="from the data"
+                <input type="number" inputMode="decimal" min="0" step="any" value={testEnd} placeholder="from the data"
                        onChange={(e) => setTestEnd(e.target.value)} />
               </label>
             </div>
@@ -170,7 +170,7 @@ export default function RecurrentProjection({ modelId, unit }) {
                                   onChange={(v) => setRow(idx, "kind", v)} />
                         </td>
                         <td className="num">
-                          <input className="cell-input gp-fef" type="number" min="0" max="1" step="0.05"
+                          <input className="cell-input gp-fef" type="number" inputMode="decimal" min="0" max="1" step="0.05"
                                  value={r.kind === "BD" ? r.fef : ""} disabled={r.kind !== "BD"}
                                  placeholder={r.kind === "BD" ? "0.7" : "—"}
                                  onChange={(e) => setRow(idx, "fef", e.target.value)} />

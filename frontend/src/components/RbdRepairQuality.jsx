@@ -66,12 +66,12 @@ export default function RbdRepairQuality({ initial, onChange }) {
             <div className="param-fields">
               <label className="param-field" title="0 as good as new, 1 as bad as old (a minimal repair).">
                 <span>Restoration factor q</span>
-                <input type="number" step="any" min="0" max="1" value={q} aria-label="Restoration factor q"
+                <input type="number" inputMode="decimal" step="any" min="0" max="1" value={q} aria-label="Restoration factor q"
                        onChange={(e) => setQ(e.target.value)} />
               </label>
               <label className="param-field" title="Replace the unit, as new, at this failure since it was renewed. Leave blank to always repair.">
                 <span>Replace at failure no.</span>
-                <input type="number" step="1" min="1" value={n} placeholder="Never" aria-label="Replace at failure number"
+                <input type="number" inputMode="numeric" step="1" min="1" value={n} placeholder="Never" aria-label="Replace at failure number"
                        onChange={(e) => setN(e.target.value)} />
               </label>
             </div>

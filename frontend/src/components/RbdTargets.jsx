@@ -232,12 +232,12 @@ export default function RbdTargets({ graph, onBuild }) {
       <div className="calc-controls rbd-targets-controls">
         <label className="calc-t">
           <span>Target {repairable ? "availability" : "reliability"} (%)</span>
-          <input type="number" min="0" max="100" step="any" value={targetValue} onChange={(e) => setTarget(e.target.value)} />
+          <input type="number" inputMode="decimal" min="0" max="100" step="any" value={targetValue} onChange={(e) => setTarget(e.target.value)} />
         </label>
         {!repairable && (
           <label className="calc-t">
             <span>Mission time{unit ? ` (${unit.toLowerCase()})` : ""}</span>
-            <input type="number" min="0" step="any" value={tValue} onChange={(e) => setT(e.target.value)} />
+            <input type="number" inputMode="decimal" min="0" step="any" value={tValue} onChange={(e) => setT(e.target.value)} />
           </label>
         )}
         <div className="calc-t rbd-targets-method">
@@ -296,7 +296,7 @@ export default function RbdTargets({ graph, onBuild }) {
                   const field = (key, props = {}) => (
                     <td>
                       <input
-                        className="rbd-design-num" type="number" step="any" min="0" placeholder="—"
+                        className="rbd-design-num" type="number" inputMode="decimal" step="any" min="0" placeholder="—"
                         aria-label={`${n.data?.label || n.id}: ${key}`} disabled={o.fixed}
                         value={o[key] ?? ""} onChange={(e) => setOpt(n.id, key, e.target.value)} {...props}
                       />

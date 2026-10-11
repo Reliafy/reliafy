@@ -249,14 +249,14 @@ function CostField({ label, hint, cost, onChange, title, filled }) {
       </span>
       {cost.range ? (
         <span className="rbd-range-inputs">
-          <input type="number" step="any" min="0" value={cost.min} placeholder="min" aria-label={`${label} minimum`}
+          <input type="number" inputMode="decimal" step="any" min="0" value={cost.min} placeholder="min" aria-label={`${label} minimum`}
                  onChange={(e) => onChange({ ...cost, min: e.target.value })} />
           <span aria-hidden="true">–</span>
-          <input type="number" step="any" min="0" value={cost.max} placeholder="max" aria-label={`${label} maximum`}
+          <input type="number" inputMode="decimal" step="any" min="0" value={cost.max} placeholder="max" aria-label={`${label} maximum`}
                  onChange={(e) => onChange({ ...cost, max: e.target.value })} />
         </span>
       ) : (
-        <input type="number" step="any" min="0" value={cost.value} placeholder="—" aria-label={label}
+        <input type="number" inputMode="decimal" step="any" min="0" value={cost.value} placeholder="—" aria-label={label}
                onChange={(e) => onChange({ ...cost, value: e.target.value })} />
       )}
       {(hint || mean != null) && (

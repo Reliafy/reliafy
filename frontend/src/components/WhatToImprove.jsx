@@ -403,7 +403,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
                     {editCosts && (
                       <td>
                         <input
-                          type="number"
+                          type="number" inputMode="decimal"
                           min="0"
                           step="any"
                           className="rbd-improve-cost"

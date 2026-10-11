@@ -234,7 +234,7 @@ export function TvcCalculator({ result, state, setState, name = null }) {
               </label>
               <label className="calc-t">
                 <span>At{unit ? ` (${unitInText(unit)})` : ""}</span>
-                <input type="number" min={0} step="any" value={t} onChange={(e) => set({ t: e.target.value })} />
+                <input type="number" inputMode="decimal" min={0} step="any" value={t} onChange={(e) => set({ t: e.target.value })} />
               </label>
               </div>
               <div className="tvc-schedule" role="group" aria-label="Covariate schedule">
@@ -253,7 +253,7 @@ export function TvcCalculator({ result, state, setState, name = null }) {
                         <tr key={r.id}>
                           <td>
                             {k === 0 ? <span className="tvc-zero">0</span> : (
-                              <input type="number" min={0} step="any" aria-label={`Row ${k + 1} starts at`}
+                              <input type="number" inputMode="decimal" min={0} step="any" aria-label={`Row ${k + 1} starts at`}
                                      value={r.t} onChange={(e) => setRow(r.id, { t: e.target.value })} />
                             )}
                           </td>
@@ -294,7 +294,7 @@ export function TvcCalculator({ result, state, setState, name = null }) {
                   {bound !== "none" && (
                     <label className="calc-t">
                       <span>Level %</span>
-                      <input type="number" min={1} max={99.9} step="any" value={level}
+                      <input type="number" inputMode="decimal" min={1} max={99.9} step="any" value={level}
                              onChange={(e) => set({ level: e.target.value })} />
                     </label>
                   )}

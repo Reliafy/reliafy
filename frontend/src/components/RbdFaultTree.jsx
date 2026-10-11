@@ -634,7 +634,7 @@ export default function RbdFaultTree({ graph, validation, stale, active, name, o
               <label className="calc-t">
                 <span>Evaluate at t{unit ? ` (${unit})` : ""}</span>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="0"
                   step="any"
                   placeholder={result?.t_default != null ? Number(result.t_default.toPrecision(4)).toString() : "auto"}

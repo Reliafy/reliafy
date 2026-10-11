@@ -75,7 +75,7 @@ function PhaseTable({ field, draft, onDraft, unit }) {
             <tr key={i}>
               <td>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="0"
                   step="any"
                   aria-label={`Phase ${i + 1} starts at`}
@@ -105,7 +105,7 @@ function PhaseTable({ field, draft, onDraft, unit }) {
         <label className="rbd-sched-period">
           <span>Repeat every ({unitWord(unit)})</span>
           <input
-            type="number"
+            type="number" inputMode="decimal"
             min="0"
             step="any"
             placeholder="No repeat"

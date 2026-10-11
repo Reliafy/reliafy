@@ -110,7 +110,7 @@ export default function RbdCrewsModal({ initial = {}, groupNames = [], onClose, 
           <div className="param-fields">
             <label className="param-field rbd-cost-field" title="Every block's repairs (and each failed unit of a standby group) share these crews. Blank: as many as are needed, so no repair ever waits.">
               <span>Crews</span>
-              <input type="number" min="1" step="1" value={crews} placeholder="unlimited" aria-label="Repair crews"
+              <input type="number" inputMode="numeric" min="1" step="1" value={crews} placeholder="unlimited" aria-label="Repair crews"
                      onChange={(e) => setCrews(e.target.value)} />
               <small>shared by every block · blank = unlimited</small>
             </label>
@@ -131,7 +131,7 @@ export default function RbdCrewsModal({ initial = {}, groupNames = [], onClose, 
                   <tr key={g.name}>
                     <td>{g.name}{!g.used && <span className="muted"> (no blocks)</span>}</td>
                     <td>
-                      <input type="number" min="0" step="any" value={g.setup} placeholder="—"
+                      <input type="number" inputMode="decimal" min="0" step="any" value={g.setup} placeholder="—"
                              aria-label={`Set-up cost of ${g.name}`} onChange={(e) => setGroup(i, { setup: e.target.value })} />
                     </td>
                     <td>

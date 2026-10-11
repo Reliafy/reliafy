@@ -150,7 +150,7 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
             {fields.includes("interval") && (
               <>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   className="interval-input"
                   min="0"
                   step="any"

@@ -66,7 +66,7 @@ export default function RbdNetworkPanel({ graph, active, name, onNetworkChange, 
       </label>
       <label className="calc-t" title="When to read the connection's reliability (blank: where it's about 90%)">
         <span>At t{unit ? ` (${unit})` : ""}</span>
-        <input type="number" min="0" step="any" placeholder="auto" value={tText}
+        <input type="number" inputMode="decimal" min="0" step="any" placeholder="auto" value={tText}
                onChange={(e) => setTText(e.target.value)} aria-invalid={!tOk} />
       </label>
     </div>

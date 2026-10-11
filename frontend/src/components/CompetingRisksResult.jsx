@@ -118,7 +118,7 @@ function CompetingRisksAside({ result }) {
           <label className="cr-by">
             <input
               className="cr-t"
-              type="number"
+              type="number" inputMode="decimal"
               min="0"
               step="any"
               value={text}

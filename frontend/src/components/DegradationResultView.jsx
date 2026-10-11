@@ -286,7 +286,7 @@ export default function DegradationResultView({ results, modelId, name = null })
                   <label className="calc-t">
                     <span>Confidence %</span>
                     <input
-                      type="number" min="1" max="99" step="1" value={confPct}
+                      type="number" inputMode="numeric" min="1" max="99" step="1" value={confPct}
                       disabled={!modelId || busy}
                       onChange={(e) => setConfPct(Number(e.target.value))}
                       onBlur={(e) => fetchBand(Number(e.target.value))}
@@ -296,7 +296,7 @@ export default function DegradationResultView({ results, modelId, name = null })
                   <label className="calc-t">
                     <span>Reliability %</span>
                     <input
-                      type="number" min="1" max="99" step="1" value={relPct}
+                      type="number" inputMode="numeric" min="1" max="99" step="1" value={relPct}
                       onChange={(e) => setRelPct(Number(e.target.value))}
                     />
                   </label>

@@ -114,11 +114,11 @@ export default function RequirementCheck({ result, level, onLevel, levels, model
           <form className="req-form" onSubmit={submit}>
             <label className="calc-t">
               <span>B-life (% failed)</span>
-              <input type="number" step="any" min="0" max="100" value={bText} onChange={(e) => setBText(e.target.value)} />
+              <input type="number" inputMode="decimal" step="any" min="0" max="100" value={bText} onChange={(e) => setBText(e.target.value)} />
             </label>
             <label className="calc-t">
               <span>Required life{u ? ` (${u})` : ""}</span>
-              <input type="number" step="any" min="0" value={lifeText} placeholder="e.g. 50000"
+              <input type="number" inputMode="decimal" step="any" min="0" value={lifeText} placeholder="e.g. 50000"
                      onChange={(e) => setLifeText(e.target.value)} />
             </label>
             <div className="calc-t">

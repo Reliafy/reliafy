@@ -59,12 +59,12 @@ export default function OptimalReplacement() {
         <div className="strategy-costs">
           <label className="calc-t">
             <span>Planned replacement cost</span>
-            <input type="number" min="0" step="any" value={cp}
+            <input type="number" inputMode="decimal" min="0" step="any" value={cp}
               onChange={(e) => setCp(e.target.value)} />
           </label>
           <label className="calc-t">
             <span>Unplanned (failure) cost</span>
-            <input type="number" min="0" step="any" value={cu}
+            <input type="number" inputMode="decimal" min="0" step="any" value={cu}
               onChange={(e) => setCu(e.target.value)} />
           </label>
           <label className="calc-t">

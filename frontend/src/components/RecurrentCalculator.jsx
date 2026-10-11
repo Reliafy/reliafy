@@ -102,7 +102,7 @@ export default function RecurrentCalculator({ r, name = null }) {
             />
             <span>at</span>
             <input
-              type="number"
+              type="number" inputMode="decimal"
               className="calc-t-input"
               aria-label={`Evaluate at ${tLabel}`}
               min={0}
@@ -133,7 +133,7 @@ export default function RecurrentCalculator({ r, name = null }) {
             <div className="calc-eval-body">
               <label className="calc-t">
                 <span>From{unit ? ` (${unit})` : ""} — for a window</span>
-                <input type="number" min={0} step="any" placeholder="e.g. 0" value={from} onChange={(e) => setFrom(e.target.value)} />
+                <input type="number" inputMode="decimal" min={0} step="any" placeholder="e.g. 0" value={from} onChange={(e) => setFrom(e.target.value)} />
               </label>
               {!analytic && (
                 <p className="rs-note">

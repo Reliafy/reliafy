@@ -107,19 +107,19 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
           <div className="param-fields rbd-cheapest-inputs">
             <label className="param-field rbd-cost-field" title="How long the system is owned: purchase prices plus running cost over this long.">
               <span>Ownership horizon</span>
-              <input type="number" step="any" min="0" value={horizon} placeholder="e.g. 87600"
+              <input type="number" inputMode="decimal" step="any" min="0" value={horizon} placeholder="e.g. 87600"
                      onChange={(e) => setHorizon(e.target.value)} />
               <small>{graph.unit || "time"}</small>
             </label>
             <label className="param-field rbd-cost-field" title="Only designs at least this available (long run). Blank: no floor.">
               <span>Minimum availability</span>
-              <input type="number" step="any" min="0" max="100" value={floor} placeholder="optional"
+              <input type="number" inputMode="decimal" step="any" min="0" max="100" value={floor} placeholder="optional"
                      onChange={(e) => setFloor(e.target.value)} />
               <small>% (e.g. 99.95)</small>
             </label>
             <label className="param-field rbd-cost-field" title="Makes the totals present values: copies bought now, running costs and the downtime they save discounted over the horizon. Blank or 0: undiscounted.">
               <span>Discount rate</span>
-              <input type="number" step="any" min="0" max="100" value={discount} placeholder="optional"
+              <input type="number" inputMode="decimal" step="any" min="0" max="100" value={discount} placeholder="optional"
                      onChange={(e) => setDiscount(e.target.value)} />
               <small>% a year (e.g. 7)</small>
             </label>

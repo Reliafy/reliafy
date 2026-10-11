@@ -219,7 +219,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
             <label className="param-field">
               <span>{meanEntry}{u ? ` (${u})` : ""}</span>
               <input
-                type="number"
+                type="number" inputMode="decimal"
                 step="any"
                 min="0"
                 value={meanVal}
@@ -233,7 +233,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
               <label className="param-field" key={g}>
                 <span>{GIVEN_LABEL[meanDistId]?.[g] || paramLabel(meanDistId, g, unit)}</span>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   step="any"
                   min="0"
                   value={given[g] ?? ""}

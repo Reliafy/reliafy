@@ -338,7 +338,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
                 {[1, 2, 3, 4].map((s) => <option key={s} value={String(s)}>SIL {s}</option>)}
               </select>
             ) : (
-              <input type="number" step="any" min="0" value={value} onChange={(e) => setValue(e.target.value)} />
+              <input type="number" inputMode="decimal" step="any" min="0" value={value} onChange={(e) => setValue(e.target.value)} />
             )}
             <small>{{ availability: "% (e.g. 99.9)", pfd: "e.g. 0.001", sil: "PFDavg below the band's top", budget: `${per(unit).trim()}` }[target]}</small>
           </label>
