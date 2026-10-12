@@ -1,6 +1,7 @@
 ---
 date: 2026-10-12
 link: /blog/import-rbds-from-blocksim-open-psa-galileo
+image: /blog/import-diagram.png
 ---
 Reliafy now opens block diagrams and fault trees from BlockSim, Open-PSA, Galileo and Excel.
 
