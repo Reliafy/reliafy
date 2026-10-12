@@ -184,6 +184,19 @@ export function pageTitles() {
   return titles;
 }
 
+// Every blog post as the admin page's publishing calendar needs it
+// (backend/services/content_calendar.py): the image has no source files.
+export function calendarPosts() {
+  return allPosts.map((p) => ({
+    slug: p.slug,
+    title: p.title,
+    date: p.date,
+    summary: p.summary,
+    image: p.image,
+    type: p.type,
+  }));
+}
+
 // Every What's new update as the email needs it. The runtime image has no
 // source files, so the scheduled send (backend/services/content_jobs.py)
 // reads updates — `send: auto` ones included — from dist/content.json.
