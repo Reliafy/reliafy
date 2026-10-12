@@ -95,7 +95,9 @@ export const PRODUCT_PAGES = [
         <p>
           The cloud free tier includes saved datasets and models with sample data to learn on. The
           full engine is AGPL-licensed and self-hostable with one command if your data can't leave
-          site. Statistical core built on the open-source <code>surpyval</code> library.
+          site. Statistical core built on the open-source SurPyval library (
+          <a href="https://github.com/derrynknife/SurPyval" target="_blank" rel="noreferrer">GitHub</a>,{" "}
+          <a href="https://surpyval.readthedocs.io/en/latest/" target="_blank" rel="noreferrer">docs</a>).
         </p>
 
         <h2>Keep reading</h2>
@@ -283,9 +285,15 @@ export const PRODUCT_PAGES = [
         <p>
           The full toolkit is AGPL-3.0 on{" "}
           <a href="https://github.com/Reliafy/reliafy" target="_blank" rel="noreferrer">GitHub</a> and
-          self-hosts with one <code>docker compose</code> command — the statistical core builds on
-          the <code>surpyval</code> library. Your data can stay on your hardware, permanently, with
-          no feature gates on the analysis engine.
+          self-hosts with one <code>docker compose</code> command. The analyses come from two
+          open-source Python libraries:{" "}
+          <a href="https://github.com/derrynknife/SurPyval" target="_blank" rel="noreferrer">SurPyval</a>{" "}
+          (<a href="https://surpyval.readthedocs.io/en/latest/" target="_blank" rel="noreferrer">docs</a>) for life
+          data, and{" "}
+          <a href="https://github.com/derrynknife/RePyability" target="_blank" rel="noreferrer">RePyability</a>{" "}
+          (<a href="https://derrynknife.github.io/RePyability/" target="_blank" rel="noreferrer">docs</a>) for
+          systems. Your data can stay on your hardware, permanently, with no feature gates on the
+          analysis engine.
         </p>
 
         <h2>Or hosted, with the extras</h2>

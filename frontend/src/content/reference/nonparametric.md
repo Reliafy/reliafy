@@ -14,6 +14,10 @@ against, or when the shape is genuinely unknown. Use a distribution when you
 need to predict past the data, or feed a model into an RBD or a replacement
 calculation.
 
+**In Python:** these are [SurPyval](https://github.com/derrynknife/SurPyval)'s
+estimators. Its [non-parametric modelling docs](https://surpyval.readthedocs.io/en/latest/Non-Parametric%20SurPyval%20Modelling.html)
+use them in code.
+
 ## kaplan_meier
 
 **The standard empirical survival estimator.** A step function that drops at

@@ -117,6 +117,11 @@ The relationships, the activation-energy interpretation, and a worked
 temperature example are in the Learn article on
 [accelerated life testing](/learn/accelerated-life-testing).
 
+The models come from [SurPyval](https://github.com/derrynknife/SurPyval), an
+open-source Python library; its
+[accelerated life documentation](https://surpyval.readthedocs.io/en/latest/Regression%20Modelling%20with%20SurPyval.html#accelerated-life-al)
+fits them in code.
+
 If your interest is the opposite direction — what happens as surviving units get
 *more* stressed — see [load-sharing](/guides/load-sharing), which uses the same
 kind of stress-life model in reverse.

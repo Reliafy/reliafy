@@ -43,8 +43,10 @@ for a component, or that a Weibull shape parameter is 1.8 with a given
 confidence bound, that number feeds real maintenance decisions with real
 costs. With Reliafy you can now read exactly how every figure is computed —
 the fitting is built on [SurPyval](https://github.com/derrynknife/SurPyval)
-and [RePyability](https://github.com/derrynknife/RePyability), both open
-source, and now the application around them is too. No black boxes between
+([docs](https://surpyval.readthedocs.io/en/latest/)) and
+[RePyability](https://github.com/derrynknife/RePyability)
+([docs](https://derrynknife.github.io/RePyability/)), both open source, and now
+the application around them is too. No black boxes between
 your data and your decisions.
 
 ## What's in the open-source version

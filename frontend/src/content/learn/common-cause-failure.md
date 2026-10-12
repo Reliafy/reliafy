@@ -112,6 +112,11 @@ maintenance). The honest move is to *include a plausible β and see whether the
 system still meets its target* — a redundant design that only passes at β = 0 is
 a design that's trusting its redundancy further than the physics allows.
 
+Reliafy's common-cause groups come from
+[RePyability](https://github.com/derrynknife/RePyability), an open-source
+Python library. Its guide to [common-cause failures](https://derrynknife.github.io/RePyability/guide/common-cause/)
+builds the beta-factor and MGL models in code.
+
 ## Frequently asked questions
 
 ### What is a common-cause failure?

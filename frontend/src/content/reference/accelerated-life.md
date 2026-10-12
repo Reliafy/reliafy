@@ -31,6 +31,10 @@ two-stress models divide by the stress, so temperature must be **absolute
 (kelvin)**. Feeding degrees Celsius gives a fit that looks fine and extrapolates
 wrongly — and breaks outright if any value is zero or negative.
 
+**In Python:** these are [SurPyval](https://github.com/derrynknife/SurPyval)'s
+life models. The [accelerated life section](https://surpyval.readthedocs.io/en/latest/Regression%20Modelling%20with%20SurPyval.html#accelerated-life-al)
+of its documentation fits them in code.
+
 ## arrhenius
 
 **The standard thermal model**, from reaction-rate chemistry — the right first

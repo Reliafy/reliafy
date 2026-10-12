@@ -152,3 +152,8 @@ tab finds the overhaul interval for a minimal-repair model.
 A saved recurrent model can also drive a
 [fleet failure forecast](/guides/forecast-fleet-failures-and-spares) for
 repairable equipment, counting every repeat failure across the fleet.
+
+The models come from [SurPyval](https://github.com/derrynknife/SurPyval), an
+open-source Python library; its
+[recurrent event modelling docs](https://surpyval.readthedocs.io/en/latest/Recurrent%20Event%20Modelling%20with%20SurPyval.html)
+fit them in code.

@@ -12,7 +12,8 @@ yet: no secret, no scheduler job, no settings, and the Zap still watches
 
 ```
  15th, 08:00 Brisbane          GitHub Actions: content-draft.yml
-   calendar.yml + what shipped ──► Claude Code drafts next month
+   calendar.yml + what shipped
+   + library releases          ──► Claude Code drafts next month
                                    └─► one PR "Content for <Month>"
  founder reviews, edits, merges ──► approval of every item, email included
  deploy (before the first date) ──► content baked into the image
@@ -31,7 +32,7 @@ yet: no secret, no scheduler job, no settings, and the Zap still watches
 |---|---|---|
 | Calendar | `.github/content/calendar.yml` | Slots to Jan 2027: date, type, title. Tested by `backend/tests/test_content_calendar.py`. |
 | Drafting instructions | `.github/content/draft-prompt.md` | What Claude reads and writes, the house style, the no-invented-figures rule. |
-| Drafting job | `.github/workflows/content-draft.yml` | 15th and by hand. |
+| Drafting job | `.github/workflows/content-draft.yml` | 15th and by hand. Gathers what shipped and the library releases for Claude, who has no network. |
 | Blog posts | `frontend/src/content/blog/YYYY-MM-DD-<slug>.md` | Optional `linkedin: \|` block: the exact LinkedIn announcement. |
 | What's new | `frontend/src/content/updates/YYYY-MM-DD-<slug>.md` | `send: auto` = the job emails it. Optional `linkedin: \|`. |
 | Short LinkedIn posts | `frontend/src/content/social/YYYY-MM-DD-<slug>.md` | `date`, optional `link` (a Reliafy URL or site path) and `image`; the body is the post. Never on the website. |
@@ -42,6 +43,20 @@ yet: no secret, no scheduler job, no settings, and the Zap still watches
 
 A short post, a `linkedin:` block, a `send:` value and every committed content
 file are checked by `frontend/src/contentFeed.test.js` (in CI).
+
+### Library releases
+
+Each batch announces new versions of SurPyval and RePyability, the
+open-source libraries Reliafy is built on, on the Reliafy LinkedIn page. The
+drafting job lists every version released in the last 45 days: GitHub
+Releases (with their notes), and tags with no Release (SurPyval's older
+releases), pointing to the library's changelog. For each library with a version
+not yet announced, Claude drafts one short post,
+`social/<date>-<library>-<version>.md` (`surpyval-0-24`), dated in the month,
+ending "Release notes: <url>". A post for a version, or for a later one, means
+it was announced, so the window's overlap doesn't post twice. The
+`link` field takes only Reliafy pages, so the release notes are in the text.
+Delete the file in review to skip a release.
 
 ### Pages and the sitemap
 
