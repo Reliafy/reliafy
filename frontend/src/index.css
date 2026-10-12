@@ -4990,6 +4990,139 @@ select:disabled {
 .admin-mcp-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); }
 .admin-mcp .muted-line { margin: 8px 0 0; }
 
+/* Admin, Content tab: the publishing calendar. Kind = the chip's left bar
+   (categorical colours); status = its fill: published tinted, scheduled
+   white, planned dashed. A gap (weekday with no LinkedIn item) is a faint
+   amber cell. On a phone the grid gives way to a list by day. */
+.cal .muted, .lib .muted { color: var(--muted); }
+.cal .warn-text { color: var(--warn); }
+.cal-small { font-size: var(--fs-13); }
+.cal-summary {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 4px var(--sp-4); margin: 0 0 var(--sp-3); font-size: var(--fs-14); color: var(--ink);
+}
+.cal-summary b { font-weight: 600; }
+.cal-counts { color: var(--muted); font-size: var(--fs-13); font-variant-numeric: tabular-nums; }
+.cal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: var(--sp-4); align-items: start; }
+.cal-layout .card { margin-top: 0; }
+.card.cal-card { padding: var(--sp-4); }
+.cal-side { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.cal-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.card .cal-month { margin: 0; min-width: 9.5em; text-align: center; font-size: var(--fs-16); font-weight: 600; }
+button.cal-nav { font-size: var(--fs-16); line-height: 1; padding: 4px 10px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--line2); border-left: 1px solid var(--line2); }
+.cal-wd { padding: 6px 8px; font-size: var(--fs-12); color: var(--muted); border-right: 1px solid var(--line2); border-bottom: 1px solid var(--line2); background: var(--surf-2); }
+.cal-cell {
+  display: flex; flex-direction: column; gap: 3px; min-height: 92px; min-width: 0; padding: 4px 5px 6px;
+  border-right: 1px solid var(--line2); border-bottom: 1px solid var(--line2);
+}
+.cal-cell.weekend { background: var(--bg); }
+.cal-cell.out { background: var(--surf-2); }
+.cal-cell.out .cal-day { color: var(--faint); }
+.cal-cell.gap { background: var(--warn-bg); }
+.cal-day { font-size: var(--fs-12); color: var(--muted); line-height: 20px; width: 20px; text-align: center; font-variant-numeric: tabular-nums; }
+.cal-cell.today .cal-day { background: var(--acc); color: var(--on-fill); border-radius: 50%; font-weight: 600; }
+.cal-gap-note { margin-top: auto; font-size: var(--fs-12); color: var(--subtle); }
+
+.cal-chip, .cal-kind, .cal-key {
+  --k: var(--cat-grey); --kt: var(--surf-2);
+}
+.k-blog-technical { --k: var(--cat-violet); --kt: var(--cat-violet-t); }
+.k-blog-commentary { --k: var(--cat-amber); --kt: var(--cat-amber-t); }
+.k-blog-tutorial { --k: var(--cat-teal); --kt: var(--cat-teal-t); }
+.k-whatsnew { --k: var(--acc); --kt: var(--acc-t); }
+.k-announcement { --k: var(--faint); --kt: var(--surf-2); }
+button.cal-chip {
+  display: block; width: 100%; min-width: 0; text-align: left;
+  padding: 1px 6px 1px 6px; font-size: var(--fs-12); font-weight: 500; line-height: 18px;
+  color: var(--ink); background: var(--kt); border: 1px solid var(--line); border-left: 3px solid var(--k);
+  border-radius: var(--r-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: none;
+}
+button.cal-chip:hover:not(:disabled) { background: var(--kt); border-color: var(--acc-line); border-left-color: var(--k); }
+button.cal-chip.s-scheduled { background: var(--surf); }
+button.cal-chip.s-planned, button.cal-chip.s-missed { background: transparent; border-style: dashed; border-left-style: dashed; color: var(--muted); font-style: italic; }
+button.cal-chip.s-missed { color: var(--warn); }
+button.cal-chip.selected { outline: 2px solid var(--acc); outline-offset: 1px; }
+.cal-chip-meta { color: var(--muted); font-weight: 400; }
+
+.cal-list { display: none; list-style: none; margin: 0; padding: 0; }
+.cal-list-day { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: var(--sp-2); padding: var(--sp-2) 0; border-top: 1px solid var(--line2); }
+.cal-list-day.gap { background: var(--warn-bg); }
+.cal-list-date { font-size: var(--fs-13); color: var(--muted); padding: 10px 0 0 4px; }
+.cal-list-day.today .cal-list-date { color: var(--acc); font-weight: 600; }
+.cal-list-items { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cal-list-items .cal-gap-note { padding: 12px 0; }
+.cal-list-day.gap-only .cal-list-date { padding-top: 2px; }
+.cal-list-day.gap-only .cal-gap-note { padding: 2px 0; margin: 0; }
+button.cal-chip.wide { min-height: 44px; padding: 6px 10px; font-size: var(--fs-13); white-space: normal; line-height: 1.35; }
+
+.cal-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: var(--sp-3); font-size: var(--fs-12); color: var(--muted); }
+.cal-key { display: inline-flex; align-items: center; gap: 5px; }
+.cal-key[class*="k-"]::before { content: ""; width: 3px; height: 12px; border-radius: 1px; background: var(--k); }
+.cal-key.s-published::before, .cal-key.s-scheduled::before, .cal-key.s-planned::before, .cal-key-gap::before {
+  content: ""; width: 14px; height: 10px; border-radius: 3px; border: 1px solid var(--line);
+}
+.cal-key.s-published::before { background: var(--surf-2); }
+.cal-key.s-scheduled::before { background: var(--surf); }
+.cal-key.s-planned::before { border-style: dashed; }
+.cal-key-gap::before { background: var(--warn-bg); border-color: var(--warn-line); }
+.cal-key-sep { width: 1px; height: 12px; background: var(--line); align-self: center; }
+
+.card.cal-detail, .card.cal-pipeline { padding: var(--sp-4); }
+.cal-detail-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cal-kind { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-12); color: var(--muted); margin-right: auto; }
+.cal-kind::before { content: ""; width: 3px; height: 14px; border-radius: 1px; background: var(--k); }
+.card .cal-detail-title { margin: var(--sp-2) 0 2px; font-size: var(--fs-16); font-weight: 600; line-height: 1.35; }
+.cal-detail-when { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.cal-thumb { display: block; width: 100%; aspect-ratio: 1200 / 630; object-fit: cover; margin-top: var(--sp-3); border: 1px solid var(--line2); border-radius: var(--r-sm); }
+.cal-text { margin: var(--sp-3) 0 0; font-size: var(--fs-13); line-height: 1.5; white-space: pre-line; color: var(--ink); }
+.cal-detail .cal-small { margin: var(--sp-2) 0 0; overflow-wrap: anywhere; }
+.rs-dl.cal-dl { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line2); grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2) var(--sp-3); }
+.cal-pipeline .card-head { margin-bottom: var(--sp-2); }
+.cal-rows, .lib-rows { margin: 0; display: grid; gap: var(--sp-2); }
+.cal-rows > div, .lib-rows > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--sp-2); font-size: var(--fs-13); line-height: 1.45; }
+.cal-rows dt, .lib-rows dt { color: var(--muted); }
+.cal-rows dd, .lib-rows dd { margin: 0; min-width: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
+.cal-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 2px; }
+
+@media (max-width: 1100px) {
+  .cal-layout { grid-template-columns: 1fr; }
+  .cal-side { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .cal-grid { display: none; }
+  .cal-list { display: block; }
+  .cal-side { display: flex; }
+  .cal-summary { flex-direction: column; }
+  .cal-head { justify-content: space-between; }
+  .card .cal-month { min-width: 0; }
+  button.cal-nav { min-width: 44px; min-height: 44px; }
+  .cal-head button.link { min-height: 44px; }
+}
+
+/* Admin, Libraries tab: the answer, the steps, then one card per codebase. */
+.lib-bar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); margin: 0 0 var(--sp-3); font-size: var(--fs-13); }
+.card.lib-steps { margin-top: 0; padding: var(--sp-4); }
+.lib-steps .card-head { margin-bottom: var(--sp-2); }
+.lib-steps ol { margin: 0; padding-left: 1.25rem; display: grid; gap: var(--sp-2); font-size: var(--fs-14); line-height: 1.5; }
+.lib-steps li .chip { margin-right: 4px; }
+.lib-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); margin-top: var(--sp-4); align-items: start; }
+.lib-cards .card { margin-top: 0; padding: var(--sp-4) var(--sp-4) var(--sp-3); }
+.lib-cards .card-head { margin-bottom: var(--sp-3); }
+.lib-cards .card-title a { color: inherit; text-decoration: none; }
+.lib-cards .card-title a:hover { color: var(--acc); }
+.lib-rows > div { grid-template-columns: 104px minmax(0, 1fr); }
+.lib-prs { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.lib-prs li { overflow-wrap: anywhere; }
+.lib .rs-details { margin-top: 4px; border-top: 0; padding-top: 0; }
+.lib .rs-details-body { padding-top: 4px; }
+@media (max-width: 1100px) { .lib-cards { grid-template-columns: 1fr; } }
+@media (max-width: 720px) {
+  .lib-bar { justify-content: space-between; }
+  .lib-bar button { min-height: 44px; }
+  .lib-rows > div { grid-template-columns: 1fr; gap: 0; }
+}
+
 /* Admin: product usage */
 .usage-legend { margin-top: 12px; }
 .usage-note { margin: 12px 0 0; font-size: var(--fs-12); color: var(--subtle); line-height: 1.45; }
