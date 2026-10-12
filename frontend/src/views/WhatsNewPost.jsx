@@ -4,10 +4,10 @@ import PublicFooter from "../components/PublicFooter.jsx";
 import { getUpdate, renderMarkdown, formatDate } from "../updates.js";
 
 // Public single-update page. Renders the Markdown body to HTML (content is
-// authored in-repo, so it's trusted).
-export default function WhatsNewPost() {
+// authored in-repo, so it's trusted). `includeFuture`: prerender only.
+export default function WhatsNewPost({ includeFuture = false }) {
   const { slug } = useParams();
-  const update = getUpdate(slug);
+  const update = getUpdate(slug, { includeFuture });
 
   if (!update) {
     return (

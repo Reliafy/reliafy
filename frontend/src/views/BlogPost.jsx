@@ -4,10 +4,11 @@ import PublicFooter from "../components/PublicFooter.jsx";
 import { getPost, renderMarkdown, formatDate } from "../blog.js";
 
 // Public single-post page. Renders the Markdown body to HTML (content is
-// authored in-repo, so it's trusted).
-export default function BlogPost() {
+// authored in-repo, so it's trusted). `includeFuture` is set only by the
+// build-time prerender, which renders queued posts ahead of their date.
+export default function BlogPost({ includeFuture = false }) {
   const { slug } = useParams();
-  const post = getPost(slug);
+  const post = getPost(slug, { includeFuture });
 
   if (!post) {
     return (

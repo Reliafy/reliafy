@@ -14,8 +14,8 @@ const files = import.meta.glob("./content/updates/*.md", {
 });
 
 // Same date gate as the blog: future-dated updates are queued — hidden from
-// the list, 404 by direct URL, and absent from prerendered HTML and the
-// sitemap until the first build on or after their (UTC) date.
+// the list and 404 by direct URL until their (UTC) date. Prerendered ahead,
+// served from their date (backend/services/content_gate.py).
 // Every item, including future-dated ones — the server's RSS route filters
 // by date at request time (scripts/prerender.mjs writes these to feeds.json).
 export const allUpdates = Object.entries(files)
@@ -27,6 +27,10 @@ export const allUpdates = Object.entries(files)
       date: meta.date || "",
       summary: meta.summary || "",
       emailSubject: meta.email_subject || "",
+      // `send: auto` = the scheduled job emails it on its date (#367).
+      send: meta.send || "",
+      // Optional LinkedIn announcement text; see blog.js.
+      linkedin: meta.linkedin || "",
       body,
     };
   })
@@ -35,6 +39,7 @@ export const allUpdates = Object.entries(files)
 
 export const updates = allUpdates.filter((u) => !u.date || u.date <= TODAY);
 
-export function getUpdate(slug) {
-  return updates.find((u) => u.slug === slug) || null;
+// `includeFuture` is for the build-time prerender only.
+export function getUpdate(slug, { includeFuture = false } = {}) {
+  return (includeFuture ? allUpdates : updates).find((u) => u.slug === slug) || null;
 }

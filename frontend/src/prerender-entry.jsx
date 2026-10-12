@@ -21,18 +21,29 @@ import ReferenceFamily from "./views/ReferenceFamily.jsx";
 import ApiDocsPublicPage from "./views/ApiDocsPublicPage.jsx";
 import ProductPage from "./views/ProductPage.jsx";
 import { PRODUCT_PAGES } from "./productPages.jsx";
-import { posts, allPosts } from "./blog.js";
-import { updates, allUpdates } from "./updates.js";
+import { allPosts } from "./blog.js";
+import { allUpdates } from "./updates.js";
 import { articles } from "./learn.js";
 import { guides } from "./guides.js";
 import { families as refFamilies, totalEntries } from "./reference.js";
+import { linkedinFeed, socialPost } from "./contentFeed.js";
+
+// Short LinkedIn posts (#367). Globbed here, in the build-time bundle only:
+// they're never part of the website's own bundle or pages.
+const socialFiles = import.meta.glob("./content/social/*.md", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
 
 const SITE = "https://reliafy.com";
 
 // Every prerendered route with its head metadata (title, description, and
 // optional JSON-LD structured data). Future-dated blog posts and updates are
-// already filtered out by blog.js / updates.js, so they're absent from static HTML and the
-// sitemap until the first build after their date.
+// rendered too: the server serves each page, and lists it in the sitemap,
+// only from its (UTC) date — see gatedPages() and
+// backend/services/content_gate.py — so search engines can read a post on
+// its day without a rebuild.
 export function routes() {
   const base = [
     {
@@ -117,15 +128,14 @@ export function routes() {
         : []),
     ],
   }));
-  const blog = posts.map((p) => ({
+  const blog = allPosts.map((p) => ({
     path: `/blog/${p.slug}`,
     title: `${p.title} — Reliafy Blog`,
     description: p.summary || "",
     lastmod: p.date || null,
     image: p.image || null,
   }));
-  // Future-dated updates are filtered out by updates.js, same as the blog.
-  const updatePages = updates.map((u) => ({
+  const updatePages = allUpdates.map((u) => ({
     path: `/whats-new/${u.slug}`,
     title: `${u.title} — What's new in Reliafy`,
     description: u.summary || "",
@@ -154,6 +164,41 @@ export function routes() {
   return [...base, ...product, ...learn, ...blog, ...updatePages, ...guidePages, ...referencePages];
 }
 
+// Dated pages the server holds back until their date (UTC): path -> date.
+// scripts/prerender.mjs writes them to dist/content.json; the backend skips
+// a held page's prerendered HTML (answering as for any unknown path) and
+// drops it from /sitemap.xml until the day.
+export function gatedPages() {
+  const pages = {};
+  for (const p of allPosts) if (p.date) pages[`/blog/${p.slug}`] = p.date;
+  for (const u of allUpdates) if (u.date) pages[`/whats-new/${u.slug}`] = u.date;
+  return pages;
+}
+
+// Titles of the blog posts and updates, for the operators' monthly content
+// report (backend/services/content_report.py).
+export function pageTitles() {
+  const titles = {};
+  for (const p of allPosts) titles[`/blog/${p.slug}`] = p.title;
+  for (const u of allUpdates) titles[`/whats-new/${u.slug}`] = u.title;
+  return titles;
+}
+
+// Every What's new update as the email needs it. The runtime image has no
+// source files, so the scheduled send (backend/services/content_jobs.py)
+// reads updates — `send: auto` ones included — from dist/content.json.
+export function emailUpdates() {
+  return allUpdates.map((u) => ({
+    slug: u.slug,
+    title: u.title,
+    date: u.date,
+    summary: u.summary,
+    email_subject: u.emailSubject,
+    send: u.send,
+    body: u.body,
+  }));
+}
+
 export function render(path) {
   return renderToString(
     <MemoryRouter initialEntries={[path]}>
@@ -162,9 +207,9 @@ export function render(path) {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/blog" element={<Blog />} />
-            <Route path="/blog/:slug" element={<BlogPost />} />
+            <Route path="/blog/:slug" element={<BlogPost includeFuture />} />
             <Route path="/whats-new" element={<WhatsNew />} />
-            <Route path="/whats-new/:slug" element={<WhatsNewPost />} />
+            <Route path="/whats-new/:slug" element={<WhatsNewPost includeFuture />} />
             <Route path="/learn/:slug" element={<LearnArticle />} />
             <Route path="/guides" element={<GuidesIndex />} />
             <Route path="/guides/:slug" element={<GuidePage />} />
@@ -185,23 +230,29 @@ export function render(path) {
 
 // RSS feed definitions. scripts/prerender.mjs writes them — INCLUDING
 // future-dated items — to dist/feeds.json; the backend (backend/routers/feeds.py)
-// serves /whats-new/feed.xml and /blog/feed.xml from it, filtering by the
-// current UTC date on every request. So a queued item enters its feed on its
-// date with no rebuild, and Zapier/Buffer auto-post it that day.
+// serves /whats-new/feed.xml, /blog/feed.xml and /social/feed.xml from it,
+// filtering by the current UTC date on every request. So a queued item enters
+// its feed on its date with no rebuild. /social/feed.xml is the one the
+// Zapier → LinkedIn Zap watches (contentFeed.js).
 export function feeds() {
+  // Links in the RSS feeds carry utm_source=rss&utm_medium=feed&
+  // utm_campaign=<slug>, added by the server; the guid stays the bare URL.
   const item = (base) => (x) => ({
     title: x.title,
     link: `${SITE}${base}/${x.slug}`,
     guid: `${SITE}${base}/${x.slug}`,
     date: x.date,
     summary: x.summary,
+    campaign: x.slug,
   });
+  const rss = { source: "rss", medium: "feed" };
   return [
     {
       path: "/whats-new/feed.xml",
       title: "Reliafy — What's new",
       link: `${SITE}/whats-new`,
       description: "Product updates from Reliafy: new features, improvements and fixes.",
+      utm: rss,
       items: allUpdates.map(item("/whats-new")),
     },
     {
@@ -209,8 +260,15 @@ export function feeds() {
       title: "Reliafy blog",
       link: `${SITE}/blog`,
       description: "Reliability engineering, maintenance strategy and Reliafy in practice.",
+      utm: rss,
       items: allPosts.map(item("/blog")),
     },
+    linkedinFeed({
+      posts: allPosts,
+      updates: allUpdates,
+      social: Object.entries(socialFiles).map(([path, raw]) => socialPost(path, raw, SITE)),
+      site: SITE,
+    }),
   ];
 }
 

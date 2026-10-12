@@ -1792,6 +1792,11 @@ export function getAdminEmailCampaigns(days = 90) {
   return request(`/api/admin/email-campaigns?days=${days}`);
 }
 
+// Operator-only monthly content report (#353): month is YYYY-MM, "" = last month.
+export function getAdminContentReport(month = "") {
+  return request(`/api/admin/content-report${month ? `?month=${encodeURIComponent(month)}` : ""}`);
+}
+
 // Operator-only product usage (app / MCP / API, the MCP plan wall).
 export function getAdminUsage(days = 30, includeAdmin = false) {
   return request(`/api/admin/usage?days=${days}${includeAdmin ? "&include_admin=true" : ""}`);
