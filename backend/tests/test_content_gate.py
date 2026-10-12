@@ -69,11 +69,13 @@ def test_future_post_answers_like_an_unknown_path_until_its_date(site, monkeypat
     _on(monkeypatch, "2026-10-18")
     unknown = site.get("/blog/never-written")
     held = site.get("/blog/future")
-    assert held.status_code == unknown.status_code == 200
+    # A real 404 with the shell, so the app's "Post not found" shows (#374).
+    assert held.status_code == unknown.status_code == 404
     assert held.text == unknown.text and "SHELL" in held.text
     assert held.headers["cache-control"] == unknown.headers["cache-control"]
     # Trailing slash and case don't get round it.
     assert "SHELL" in site.get("/blog/future/").text
+    assert site.get("/blog/future/").status_code == 404
     # (On a case-insensitive disk /Blog/Future finds the same file.)
     assert "PRERENDERED" not in site.get("/Blog/Future").text
     # A past post is served prerendered.
@@ -82,8 +84,10 @@ def test_future_post_answers_like_an_unknown_path_until_its_date(site, monkeypat
 
 def test_future_post_is_served_prerendered_on_its_date(site, monkeypatch):
     _on(monkeypatch, "2026-10-19")
-    assert site.get("/blog/future").text == "PRERENDERED blog/future"
+    r = site.get("/blog/future")
+    assert r.status_code == 200 and r.text == "PRERENDERED blog/future"
     assert "SHELL" in site.get("/whats-new/november-2026").text
+    assert site.get("/whats-new/november-2026").status_code == 404
     _on(monkeypatch, "2026-11-02")
     assert site.get("/whats-new/november-2026").text == "PRERENDERED whats-new/november-2026"
 
