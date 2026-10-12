@@ -177,6 +177,12 @@ can't rebuild on its own — one using a fitted proportional-hazards,
 non-parametric or load-sharing model — is left as a clearly marked placeholder
 that stops with an explanation until you set its parameters.
 
+To change the diagram in code, RePyability's guide to
+[building an RBD](https://derrynknife.github.io/RePyability/guide/building/)
+covers its structure, and the rest of
+[its documentation](https://derrynknife.github.io/RePyability/) every analysis
+it runs.
+
 ## Where to go next
 
 If your system is repaired and returned to service rather than replaced, build it

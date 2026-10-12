@@ -282,7 +282,10 @@ export default function Landing() {
           <h3>Open source at the core</h3>
           <p>
             The full toolkit is AGPL-licensed and self-hostable with one
-            command. Your data can stay on your hardware; the cloud adds
+            command, built on the open-source{" "}
+            <a href="https://github.com/derrynknife/SurPyval" target="_blank" rel="noreferrer">SurPyval</a> and{" "}
+            <a href="https://github.com/derrynknife/RePyability" target="_blank" rel="noreferrer">RePyability</a>{" "}
+            libraries. Your data can stay on your hardware; the cloud adds
             accounts, teams, and the assistant.
           </p>
         </div>

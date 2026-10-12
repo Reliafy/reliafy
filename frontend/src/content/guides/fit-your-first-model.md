@@ -162,3 +162,8 @@ and as the evidence for a
 For the theory behind the fit — how censoring is handled in the likelihood, what
 the parameters mean, and how to read the plots — see the Learn article on
 [Weibull analysis](/learn/weibull-analysis).
+
+The fitting is done by [SurPyval](https://github.com/derrynknife/SurPyval), an
+open-source Python library; its
+[parametric modelling docs](https://surpyval.readthedocs.io/en/latest/Parametric%20SurPyval%20Modelling.html) show
+the same fit in code.

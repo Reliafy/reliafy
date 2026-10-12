@@ -170,6 +170,12 @@ The fit is the means, not the end:
   reliability block diagrams and to
   [MTBF/MTTF figures](/learn/mtbf-vs-mttf) that actually mean something.
 
+Reliafy's fits come from [SurPyval](https://github.com/derrynknife/SurPyval),
+an open-source Python library. To go further into the estimation methods, or
+to run the same analysis in code, see its documentation on
+[parametric estimation](https://surpyval.readthedocs.io/en/latest/Parametric%20Estimation.html) and
+[parametric modelling](https://surpyval.readthedocs.io/en/latest/Parametric%20SurPyval%20Modelling.html).
+
 ## Frequently asked questions
 
 ### What is Weibull analysis used for?
