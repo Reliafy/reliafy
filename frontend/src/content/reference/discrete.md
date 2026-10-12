@@ -9,6 +9,10 @@ survived, demands before a failure. They take the same `x`/`c`/`n` mapping as
 the continuous distributions, but there's no probability paper for them — you
 get parameters, reliability functions and goodness-of-fit, without the plot.
 
+**In Python:** these are [SurPyval](https://github.com/derrynknife/SurPyval)'s
+discrete distributions, fitted in code as its
+[parametric modelling docs](https://surpyval.readthedocs.io/en/latest/Parametric%20SurPyval%20Modelling.html) show.
+
 ## discrete_weibull
 
 **The whole-count analogue of the Weibull**, with the same shape-driven

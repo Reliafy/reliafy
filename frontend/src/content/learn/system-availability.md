@@ -96,6 +96,11 @@ diagram wants a failure distribution **and** a repair distribution on every
 block, and reports availability; a *non-repairable* diagram wants only a life
 model and reports reliability over time.
 
+Reliafy's availability figures come from
+[RePyability](https://github.com/derrynknife/RePyability), an open-source
+Python library. Its lesson on [repair and availability](https://derrynknife.github.io/RePyability/learn/availability/)
+works the same ideas out by hand and in code.
+
 ## Frequently asked questions
 
 ### What's the difference between availability and reliability?

@@ -127,3 +127,8 @@ If you want the theory behind the numbers — the MTBF/MTTR formula, how
 availability composes through series and parallel structures, and the
 distinction between inherent and operational availability — that's covered in
 the Learn article on [system availability](/learn/system-availability).
+
+The analysis comes from [RePyability](https://github.com/derrynknife/RePyability),
+an open-source Python library; its guide to
+[repairable systems](https://derrynknife.github.io/RePyability/guide/repairable/)
+runs the same calculations in code.

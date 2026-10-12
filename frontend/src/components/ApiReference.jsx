@@ -94,7 +94,8 @@ function ClientDocs() {
         <code>reliafy-client</code> is a thin Python wrapper over the HTTP API —
         each call maps to one endpoint (shown on the right). Pure standard
         library; you bring{" "}
-        <a className="evidence-link" href="https://github.com/derrynknife/SurPyval" target="_blank" rel="noreferrer">SurPyval</a>.
+        <a className="evidence-link" href="https://github.com/derrynknife/SurPyval" target="_blank" rel="noreferrer">SurPyval</a>{" "}
+        (<a className="evidence-link" href="https://surpyval.readthedocs.io/en/latest/" target="_blank" rel="noreferrer">docs</a>).
       </p>
 
       <h3>Install &amp; authenticate</h3>

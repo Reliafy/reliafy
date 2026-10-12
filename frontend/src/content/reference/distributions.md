@@ -19,6 +19,11 @@ can follow two modes at once. A mixture always fits better than a single
 distribution because it has more parameters, so judge it on the AIC, not on the
 plot. Mixture fits report no confidence bounds.
 
+**In Python:** these are [SurPyval](https://github.com/derrynknife/SurPyval)'s
+distributions. Its [parametric modelling docs](https://surpyval.readthedocs.io/en/latest/Parametric%20SurPyval%20Modelling.html)
+fit them in code, and [Parametric Estimation](https://surpyval.readthedocs.io/en/latest/Parametric%20Estimation.html)
+explains the estimation methods.
+
 ## weibull
 
 **The workhorse of life-data analysis.** Its shape parameter spans

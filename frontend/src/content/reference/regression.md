@@ -14,6 +14,10 @@ it's the effect type that determines how you read the coefficients. Reliafy
 reports each coefficient with a 95% interval; an interval spanning zero means
 the data can't distinguish that covariate from no effect.
 
+**In Python:** these are [SurPyval](https://github.com/derrynknife/SurPyval)'s
+regression models. Its [regression modelling docs](https://surpyval.readthedocs.io/en/latest/Regression%20Modelling%20with%20SurPyval.html)
+fit them in code.
+
 ### Proportional hazards (`*_ph`)
 
 Covariates multiply the hazard by a constant factor at every age.

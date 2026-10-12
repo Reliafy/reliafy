@@ -46,6 +46,11 @@ system from 0 to the same end) or one system run to its last failure these are
 Crow's exact bounds, as tabulated in MIL-HDBK-189C; otherwise they are Wald
 (delta-method) bounds.
 
+**In Python:** these are [SurPyval](https://github.com/derrynknife/SurPyval)'s
+recurrent-event models. Its
+[recurrent event modelling docs](https://surpyval.readthedocs.io/en/latest/Recurrent%20Event%20Modelling%20with%20SurPyval.html)
+fit them in code.
+
 ## crow_amsaa
 
 **The standard reliability-growth model** — a non-homogeneous Poisson process
