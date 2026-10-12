@@ -62,6 +62,9 @@ COPY backend/ ./backend/
 # Precompile our own code so a cold start doesn't byte-compile it.
 RUN python -m compileall -q backend
 COPY --from=frontend /frontend/dist ./frontend/dist
+# The content calendar, at its repository path: the admin page's publishing
+# calendar shows its planned slots (backend/services/content_calendar.py).
+COPY .github/content/calendar.yml ./.github/content/calendar.yml
 
 # Run as an unprivileged user. The code stays root-owned (read-only to the
 # app); nothing is written at runtime except under /tmp.

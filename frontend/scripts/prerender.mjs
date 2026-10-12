@@ -22,7 +22,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 const entry = pathToFileURL(join(root, "dist-ssr", "prerender-entry.js")).href;
 
-const { render, routes, feeds, gatedPages, pageTitles, emailUpdates, SITE } = await import(entry);
+const { render, routes, feeds, gatedPages, pageTitles, emailUpdates, calendarPosts, SITE } = await import(entry);
 
 const template = readFileSync(join(dist, "index.html"), "utf8");
 const escape = (s) =>
@@ -97,10 +97,15 @@ const feedCount = feedData.length;
 
 // Dated pages for the server's date gate (path -> YYYY-MM-DD, UTC), and the
 // updates for the scheduled What's new send (the image has no source files),
-// and the posts' titles for the monthly content report.
+// the posts' titles for the monthly content report, and the blog posts for
+// the admin page's publishing calendar.
 writeFileSync(
   join(dist, "content.json"),
-  JSON.stringify({ pages: gatedPages(), titles: pageTitles(), updates: emailUpdates() }, null, 1)
+  JSON.stringify(
+    { pages: gatedPages(), titles: pageTitles(), updates: emailUpdates(), posts: calendarPosts() },
+    null,
+    1
+  )
 );
 
 console.log(`prerendered ${count} pages + sitemap.xml + robots.txt + feeds.json (${feedCount} feeds) + content.json`);

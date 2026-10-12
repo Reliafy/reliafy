@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   getAdminContentReport,
   getAdminEmailCampaigns,
@@ -13,12 +14,15 @@ import { relativeTime } from "../instrument.js";
 import Select from "../components/Select.jsx";
 import UsageSection from "../components/UsageSection.jsx";
 import WalkthroughStats from "../components/WalkthroughStats.jsx";
+import AdminContentTab from "../components/AdminContentTab.jsx";
+import AdminLibrariesTab from "../components/AdminLibrariesTab.jsx";
 import Card, { CardHeader } from "../components/ui/Card.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import Switch from "../components/ui/Switch.jsx";
 import ScrollCue from "../components/ui/ScrollCue.jsx";
+import Tabs from "../components/ui/Tabs.jsx";
 
 const LABELS = {
   datasets: "Datasets",
@@ -316,12 +320,9 @@ function ContentReport() {
   );
 }
 
-// Operator dashboard (ADMIN_EMAILS accounts only): the week's answer in one
-// tile row, then product usage and MCP, then traffic, with emails and artifact
-// volumes folded away at the end.
-export default function AdminPage() {
-  const [days, setDays] = useState("7");
-  const [includeAdmin, setIncludeAdmin] = useState(false);
+// The Usage tab: the week's answer in one tile row, then product usage and
+// MCP, then traffic, with emails and artifact volumes folded away at the end.
+function UsageTab({ days, includeAdmin, setIncludeAdmin }) {
   const d = Number(days);
 
   const stats = useLoad(getAdminStats, []);
@@ -333,34 +334,14 @@ export default function AdminPage() {
   const s = stats.data;
   const u = usage.data;
 
-  const header = (
-    <PageHeader
-      title="Operator stats"
-      actions={
-        <div className="admin-range">
-          <Select value={days} onChange={setDays} options={RANGES} title="Date range for the whole page" />
-        </div>
-      }
-    />
-  );
-
-  if (stats.error) {
-    return (
-      <div className="app">
-        {header}
-        <Card className="empty"><p>{stats.error}</p></Card>
-      </div>
-    );
-  }
-  if (!s) return <div className="app">{header}<Card className="empty">Loading…</Card></div>;
+  if (stats.error) return <Card className="empty"><p>{stats.error}</p></Card>;
+  if (!s) return <Card className="empty">Loading…</Card>;
 
   const dash = (v) => (v == null ? "…" : n(v));
   const errors = u?.totals?.errors;
 
   return (
-    <div className="app">
-      {header}
-
+    <>
       <div className="stats admin-tiles">
         <div className="stat"><div className="k">New signups</div><div className="v">{dash(signups.data?.count)}</div></div>
         <div className="stat"><div className="k">Active accounts</div><div className="v">{dash(u?.share?.any_accounts)}</div></div>
@@ -447,6 +428,53 @@ export default function AdminPage() {
         Live counts straight from the database. Traffic is first-party: no cookies,
         daily-hashed visitors, 90-day retention.
       </p>
+    </>
+  );
+}
+
+const TABS = [
+  { id: "usage", label: "Usage" },
+  { id: "content", label: "Content" },
+  { id: "libraries", label: "Libraries" },
+];
+
+// Operator dashboard (ADMIN_EMAILS accounts only): usage, the publishing
+// calendar, and where the libraries stand, one tab each (?tab=).
+export default function AdminPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const initial = new URLSearchParams(location.search).get("tab");
+  const [tab, setTab] = useState(TABS.some((t) => t.id === initial) ? initial : "usage");
+  const [days, setDays] = useState("7");
+  const [includeAdmin, setIncludeAdmin] = useState(false);
+
+  // Follow the URL (back/forward, a link to ?tab=).
+  useEffect(() => {
+    const t = new URLSearchParams(location.search).get("tab");
+    setTab(TABS.some((x) => x.id === t) ? t : "usage");
+  }, [location.search]);
+
+  const selectTab = (id) => {
+    setTab(id);
+    navigate(id === "usage" ? "/admin" : `/admin?tab=${id}`, { replace: true });
+  };
+
+  return (
+    <div className="app">
+      <PageHeader
+        title="Operator stats"
+        actions={
+          tab === "usage" ? (
+            <div className="admin-range">
+              <Select value={days} onChange={setDays} options={RANGES} title="Date range for the Usage tab" />
+            </div>
+          ) : null
+        }
+      />
+      <Tabs tabs={TABS} value={tab} onChange={selectTab} label="Operator sections" />
+      {tab === "usage" && <UsageTab days={days} includeAdmin={includeAdmin} setIncludeAdmin={setIncludeAdmin} />}
+      {tab === "content" && <AdminContentTab />}
+      {tab === "libraries" && <AdminLibrariesTab />}
     </div>
   );
 }
