@@ -59,6 +59,9 @@ slots:
   - date: "2026-11-23"
     type: tutorial
     title: "Design to a target: reliability allocation"
+  - date: "2026-11-30"
+    type: tutorial
+    title: "The Reliability Agent, in action: 30,000 GPUs and a temperature it wasn't told about"
   - date: "2026-12-07"
     type: whatsnew
     title: "What's new in Reliafy: December 2026"
