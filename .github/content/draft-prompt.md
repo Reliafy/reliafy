@@ -74,23 +74,54 @@ the founder the Friday before). It describes only what is live by its date.
 Read `frontend/src/content/updates/` for its shape: one lead feature, a few
 smaller ones, how to try each.
 
-**Short LinkedIn posts**: 2-3 per week of the month, on weekdays other than
-the long piece's Monday (Tuesday to Thursday mornings work best), mostly cut
-from that week's long piece: a chart's finding, a tip, one paragraph of
-insight. `frontend/src/content/social/<date>-<slug>.md`:
+**Short LinkedIn posts**: the LinkedIn page gets **one post every weekday**
+(Monday to Friday), never two on one day (`cadence.posts_per_weekday` in the
+calendar). A blog post or What's new is its date's post: its `linkedin:` block
+goes out that day. So draft exactly one short post for every weekday of
+`TARGET_MONTH` that has no blog post, What's new or short post dated on it
+already (count what is in `frontend/src/content/` as well as what you draft;
+a library release post below fills one of these days). No posts on Saturdays
+or Sundays. `frontend/src/content/social/<date>-<slug>.md`:
 
 ```
 ---
 date: <YYYY-MM-DD>
-link: /blog/<slug>
-image: /blog/<an existing image under frontend/public>   (optional)
+link: /<blog|learn|guides|reference|whats-new>/<slug>
+image: /<an existing image under frontend/public>   (optional)
 ---
-<the exact post text, 40-150 words, plain text>
+<the exact post text, 30-70 words, plain text>
 ```
 
-`link` must be a Reliafy page (a site path). A short post linking to a post
-not yet live is held until it is, so date shorts on or after their long piece.
-Never invent an image path; omit `image` unless the file exists.
+Each post makes one sharp point, with at most two hashtags (or none). Spread
+the month's posts across the four themes (§1), so no theme runs more than
+two days in a row, and mix these kinds of post:
+
+- **cut from the month's pieces**: a chart's finding, a worked example's
+  number, one paragraph of insight from that week's blog post (dated after it);
+- **one feature with a screenshot**: what it does and what you get, on a sample;
+- **a method tip with a number**: β, B10 against MTTF, censoring, PFDavg…,
+  with one figure from a sample or a worked example;
+- **the AI-agent angle**: one plain-words request to Reliafy through the MCP
+  connector, and what it returns;
+- **open source and library releases**: SurPyval and RePyability, what they
+  can do and how to install them (release posts below);
+- **fleet and maintenance numbers**: expected failures, spares, replacement
+  intervals, from the samples.
+
+**Prefer posts with an image.** `image` must be a file that already exists
+under `frontend/public/` (`blog/`, `guides/img/`, `social/`) and shows the
+post's point; never invent a path. You can't take screenshots or add files
+outside `frontend/src/content/`, so where a new screenshot would carry a post
+better, leave `image` out and add a PR box saying what to capture (the page,
+the sample, what it should show) for the founder to save as
+`frontend/public/social/<name>.png` (1360×900 or 1200×627) and set as the
+post's `image`.
+
+`link` must be a live Reliafy page (a site path), the most relevant guide,
+Learn, Reference or blog page. A short post linking to a post not yet live is
+held until it is, so date shorts on or after their long piece. Every number
+follows §5: from the code, the tests, existing content or a calculation you
+ran, never invented.
 
 **Library releases**: `RELEASES_FILE` lists each version of SurPyval and
 RePyability released in the last 45 days (`library`, `tag`, `date`,
@@ -103,8 +134,8 @@ dots as dashes (`surpyval-0-24`, `repyability-0-13`). For each library with a
 version not yet announced, draft one short post, named that way for its
 newest version:
 
-- Date it on a weekday in `TARGET_MONTH` (the first Tuesday to Thursday free
-  of other short posts), and count it as one of that week's short posts.
+- Date it on the first weekday of `TARGET_MONTH` with no other post (it is
+  that day's post).
 - 40-100 words: the version (and any earlier unannounced ones it follows),
   two or three changes from `notes` (when `notes` is empty, from the pull
   requests in `SHIPPED_FILE` that adopted it, if any; otherwise say only that
@@ -165,12 +196,14 @@ checklist. Worked examples must be reproducible: give the inputs.
 ## 7. Check and hand over
 
 1. Run `node --test src/contentFeed.test.js` from `frontend/` (it validates
-   every short post, `linkedin:` block and `send:` value) and fix anything it
-   reports.
+   every short post, `linkedin:` block and `send:` value, and fails on two
+   posts on one day or a post at the weekend) and fix anything it reports.
 2. Write `PR_BODY_FILE` (Markdown):
    - one line saying what the batch is;
    - a checklist, one box per file, in date order:
      `- [ ] 2026-11-09 technical: <title> (blog/<file>.md): <one-line summary>`;
+     list every weekday of the month, so a day with no post (or two) shows;
+   - a box for each screenshot a post should have, with what to capture;
    - a box for the What's new email: "Read the test copy on Friday <date>";
    - every `[CHECK: ...]` marker, as its own box;
    - for any "to be chosen" slot, the topic you chose and why;

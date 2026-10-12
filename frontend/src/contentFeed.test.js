@@ -132,6 +132,8 @@ test("linkedinFeed refuses duplicate guids", () => {
   assert.throws(() => linkedinFeed({ social: [p, p] }), /share the guid/);
 });
 
+const ONE_A_DAY_FROM = "2026-10-13";
+
 // The real content: every short post must parse, and every blog post and
 // update must give a non-empty announcement.
 test("every committed short post, blog post and update is feed-ready", () => {
@@ -152,6 +154,16 @@ test("every committed short post, blog post and update is feed-ready", () => {
   const updates = load("updates");
   const feed = linkedinFeed({ posts, updates, social });
   for (const item of feed.items) assert.ok(item.summary.trim(), `${item.guid} has no text`);
+  // One LinkedIn post a weekday (calendar cadence.posts_per_weekday): never
+  // two items on one date, none at the weekend. 12 Oct 2026 had two and is
+  // live already, so the rule starts the day after.
+  const byDate = new Map();
+  for (const item of feed.items.filter((i) => i.date >= ONE_A_DAY_FROM)) {
+    const day = new Date(`${item.date}T00:00:00Z`).getUTCDay();
+    assert.ok(day >= 1 && day <= 5, `${item.guid} is dated ${item.date}, a weekend`);
+    assert.ok(!byDate.has(item.date), `${item.date} has two LinkedIn posts: ${byDate.get(item.date)} and ${item.guid}`);
+    byDate.set(item.date, item.guid);
+  }
   for (const u of updates) {
     const { meta } = parseFrontmatter(readFileSync(join(CONTENT, "updates", dir("updates").find((f) => slugFromPath(f) === u.slug)), "utf8"));
     assert.ok(!meta.send || meta.send === "auto", `${u.slug}: send must be "auto" or absent`);
