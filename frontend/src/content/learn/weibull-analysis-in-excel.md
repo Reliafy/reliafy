@@ -52,7 +52,7 @@ i = 1…8 in column A, times in column B.
 
 **Step 2 — estimate F(t) for each failure with median ranks.** You can't use
 i/n (the last point would be 100% failed, and `ln(−ln(0))` explodes). The
-standard fix is **Bernard's approximation** to the median rank:
+standard fix is **Benard's approximation** to the median rank:
 
 ```
 F_i ≈ (i − 0.3) / (n + 0.4)
@@ -148,7 +148,7 @@ spreadsheet, but it's laborious, easy to get wrong, and still second-best to
 maximum likelihood estimation, which spreadsheets can't do robustly without
 add-ins.
 
-### What is Bernard's approximation?
+### What is Benard's approximation?
 
 A closed-form estimate of the median rank of the i-th ordered failure in a
 sample of n: F ≈ (i − 0.3)/(n + 0.4). It approximates the exact median rank

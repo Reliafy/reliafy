@@ -42,7 +42,33 @@ yet: no secret, no scheduler job, no settings, and the Zap still watches
 | Report | `backend/services/content_report.py` | Also on the admin page: "Content report (monthly)". |
 
 A short post, a `linkedin:` block, a `send:` value and every committed content
-file are checked by `frontend/src/contentFeed.test.js` (in CI).
+file are checked by `frontend/src/contentFeed.test.js` (in CI), which also
+fails if two LinkedIn items share a date or one falls on a weekend (from
+13 Oct 2026).
+
+### Cadence: one LinkedIn post every weekday
+
+The LinkedIn page gets one post every weekday, Monday to Friday, about 20 a
+month, and never two on one day (`cadence.posts_per_weekday: 1` in the
+calendar). A blog post or What's new is its date's post: its `linkedin:`
+announcement goes out that day. Each monthly batch drafts exactly one short
+post for every other weekday of the month (one with no blog post, What's new
+or short post on it already), 30-70 words, one point each, spread across the
+four themes (life data; system reliability and safety; maintenance decisions;
+open source and AI agents) and these kinds of post:
+
+- cut from the month's pieces (a chart's finding, a worked example's number);
+- one feature with a screenshot;
+- a method tip with a number;
+- the AI-agent angle (a request through the MCP connector and what it returns);
+- open source and library releases;
+- fleet and maintenance numbers.
+
+Posts with an image are preferred. The drafting job can only use images
+already under `frontend/public/` (it can't take screenshots or write outside
+`frontend/src/content/`), so where a post wants a new one, the PR has a box
+saying what to capture; save it as `frontend/public/social/<name>.png`
+(1360×900 or 1200×627) and add `image: /social/<name>.png` to the post.
 
 ### Library releases
 
@@ -52,8 +78,8 @@ drafting job lists every version released in the last 45 days: GitHub
 Releases (with their notes), and tags with no Release (SurPyval's older
 releases), pointing to the library's changelog. For each library with a version
 not yet announced, Claude drafts one short post,
-`social/<date>-<library>-<version>.md` (`surpyval-0-24`), dated in the month,
-ending "Release notes: <url>". A post for a version, or for a later one, means
+`social/<date>-<library>-<version>.md` (`surpyval-0-24`), on one of the
+month's free weekdays (it is that day's post), ending "Release notes: <url>". A post for a version, or for a later one, means
 it was announced, so the window's overlap doesn't post twice. The
 `link` field takes only Reliafy pages, so the release notes are in the text.
 Delete the file in review to skip a release.
@@ -262,8 +288,9 @@ new is posted once, from the new feed.
 ## Approving a month
 
 1. The PR "Content for <Month>" arrives around the 15th with a checklist:
-   one box per item, every `[CHECK: …]` figure, the topic chosen for any
-   "to be chosen" slot.
+   one box per item (every weekday of the month, so a gap or a double shows),
+   every `[CHECK: …]` figure, each screenshot a post wants, the topic chosen
+   for any "to be chosen" slot.
 2. Edit on the branch: wording, dates, `linkedin:` text, short posts. Resolve
    every `[CHECK: …]`. Delete anything you don't want.
 3. **Merge = approval.** Every item then goes out on its date, the What's new
