@@ -49,7 +49,9 @@ def test_slots_are_well_formed():
         assert s["title"].strip()
     assert set(cal["types"]) == {"whatsnew", "technical", "commentary", "tutorial"}
     assert not set(cal["skipped_weeks"]) & set(dates)
-    assert cal["cadence"]["short_posts_per_week"] == [2, 3]
+    # One LinkedIn post a weekday; announcements count as their day's post.
+    assert cal["cadence"]["posts_per_weekday"] == 1
+    assert "short_posts_per_week" not in cal["cadence"]
     assert cal["cadence"]["evergreen_pages_per_month"] == [1, 2]
 
 

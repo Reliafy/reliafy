@@ -2,7 +2,8 @@
 #
 # Read by the monthly drafting job (.github/workflows/content-draft.yml, which
 # follows .github/content/draft-prompt.md): on the 15th it drafts every slot of
-# the next month, plus that month's short LinkedIn posts and evergreen pages.
+# the next month, plus a short LinkedIn post for each of that month's other
+# weekdays and its evergreen pages.
 # backend/tests/test_content_calendar.py checks this file parses and stays in
 # shape.
 #
@@ -25,7 +26,10 @@ types:
 
 # Besides the slots, every month.
 cadence:
-  short_posts_per_week: [2, 3]      # mostly cut from that week's long piece
+  # One LinkedIn post every weekday (Mon-Fri), never two on one day. A blog
+  # post or What's new is its date's post (its linkedin: announcement); every
+  # other weekday gets one short post (content/social/), about 20 a month.
+  posts_per_weekday: 1
   evergreen_pages_per_month: [1, 2] # Learn / Reference pages
 
 # The week of 28 Dec 2026 has no slot.
