@@ -49,12 +49,14 @@ def should_tag(url: str) -> bool:
     return not re.search(r"(^|&)utm_[a-z]+=", parts.query)
 
 
-def tag_url(url: str, *, medium: str, campaign: str) -> str:
-    """``url`` with the campaign tags added, or unchanged (see module doc)."""
+def tag_url(url: str, *, medium: str, campaign: str, source: str = SOURCE) -> str:
+    """``url`` with the campaign tags added, or unchanged (see module doc).
+    ``source`` is ``email`` for our emails; the RSS and LinkedIn feeds
+    (``backend/routers/feeds.py``) pass their own."""
     if not should_tag(url):
         return url
     base, hash_, fragment = url.partition("#")
-    tags = urlencode({"utm_source": SOURCE, "utm_medium": medium, "utm_campaign": campaign})
+    tags = urlencode({"utm_source": source, "utm_medium": medium, "utm_campaign": campaign})
     if "?" in base:
         sep = "" if base.endswith(("?", "&")) else "&"
     else:

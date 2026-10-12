@@ -348,3 +348,41 @@ def test_tag_text_and_html(test_db):
     assert tag_html(html, medium="update", campaign="nov-2026") == (
         f'<a href="https://reliafy.com/a?b=1&amp;c=2&amp;{amp}#d">x</a> '
         '<a href="https://example.org/">y</a> <img src="https://reliafy.com/logo.png">')
+
+
+def test_frontmatter_block_scalar_matches_the_frontend_parser():
+    """``linkedin: |`` (#367) takes the indented lines below it; they never
+    become keys of their own (frontend/src/frontmatter.js does the same)."""
+    from backend.scripts.send_update import parse_frontmatter
+
+    meta, body = parse_frontmatter(
+        "---\ntitle: \"A: title\"\nlinkedin: |\n  First: line.\n\n  Second.\n    deeper\n"
+        "send: auto\n---\nBody\n")
+    assert meta == {"title": "A: title", "linkedin": "First: line.\n\nSecond.\n  deeper", "send": "auto"}
+    assert body == "Body\n"
+
+
+def test_every_site_link_in_an_update_email_is_tagged_without_personal_data(test_db, outbox):
+    """UTM tags (#353): every link to the site carries utm_source=email and the
+    update's slug; only the unsubscribe links (a token, nothing to measure)
+    are left alone, and no tagged URL carries the recipient's address, id or
+    token."""
+    from backend.services import email_prefs
+
+    _seed_users(test_db)
+    assert _run("--send", "--yes", "--limit", "1") == 0
+    (msg,) = outbox
+    token = email_prefs.token_for(test_db, "u1")
+    html = msg.get_body(("html",)).get_content()
+    text = msg.get_body(("plain",)).get_content()
+    hrefs = [h.replace("&amp;", "&") for h in re.findall(r'href="([^"]+)"', html)]
+    urls = hrefs + re.findall(r"https?://\S+", text)
+    site = [u.rstrip(").,") for u in urls if u.startswith("https://reliafy.com")]
+    assert site
+    for url in site:
+        if "/unsubscribe" in url:
+            assert "utm_" not in url
+            continue
+        assert "utm_source=email" in url and "utm_campaign=test-update" in url, url
+        for personal in (token, "u1", "alice", "Alice"):
+            assert personal not in url, url

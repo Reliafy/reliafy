@@ -24,7 +24,7 @@ import time
 from collections import OrderedDict
 from datetime import datetime, timezone
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 
 from backend import config
 from backend.db import get_session
@@ -129,8 +129,12 @@ def _noted(user: dict) -> dict:
     return user
 
 
-def upsert_user(db, user: dict) -> dict:
-    """Record/refresh the user's profile on first sight (and each login)."""
+def upsert_user(db, user: dict, *, ip: str = "", user_agent: str = "") -> dict:
+    """Record/refresh the user's profile on first sight (and each login).
+
+    ``ip`` / ``user_agent`` (only ever hashed) give the signup event the same
+    daily visitor hash as that browser's pageviews, so the content report can
+    say which tagged link or post the visit that signed up came from (#353)."""
     now = datetime.now(timezone.utc)
     email = user.get("email")
     # The load before this one, if it was a visit ago: "since my last visit" (#41).
@@ -159,7 +163,8 @@ def upsert_user(db, user: dict) -> dict:
         # funnel needs. Server-side so it can't be missed or double-fired.
         from backend.services import metrics as metrics_service
 
-        metrics_service.record_event(db, name="signup", path="/login")
+        metrics_service.record_event(db, name="signup", path="/login", ip=ip,
+                                     user_agent=user_agent, filter_bots=False)
         # Notify the operators (ADMIN_EMAILS) that a new account signed up.
         # Non-blocking (daemon thread) and never allowed to break login.
         try:
@@ -181,9 +186,12 @@ def upsert_user(db, user: dict) -> dict:
     return user
 
 
-def current_user_doc(user: dict = Depends(get_current_user), db=Depends(get_session)) -> dict:
+def current_user_doc(request: Request, user: dict = Depends(get_current_user),
+                     db=Depends(get_session)) -> dict:
     """Dependency that also upserts the profile and returns it — used by /api/me."""
-    upsert_user(db, user)
+    from backend.request_ip import client_ip
+
+    upsert_user(db, user, ip=client_ip(request), user_agent=request.headers.get("user-agent", ""))
     doc = db.users.find_one({"_id": user["uid"]}) or {}
     created = doc.get("created_at")
     return {

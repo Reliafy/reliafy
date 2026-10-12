@@ -69,10 +69,13 @@ def record_event(
     user_agent: str = "",
     walkthrough: str = "",
     step: int | None = None,
+    filter_bots: bool = True,
 ) -> bool:
     """Store one event; returns False when filtered (bots). A guided
-    walkthrough's events (#32) also carry its id and, for a step, the step."""
-    if user_agent and _BOT_RE.search(user_agent):
+    walkthrough's events (#32) also carry its id and, for a step, the step.
+    ``filter_bots=False`` keeps an event whatever the user agent (the
+    server-side signup: an account is real however it was made)."""
+    if filter_bots and user_agent and _BOT_RE.search(user_agent):
         return False
     now = datetime.now(timezone.utc)
     day = now.strftime("%Y-%m-%d")

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  getAdminContentReport,
   getAdminEmailCampaigns,
   getAdminMcp,
   getAdminSignups,
@@ -247,6 +248,74 @@ function EmailCampaigns({ state }) {
   );
 }
 
+// The monthly content report (#353, #367): the tables the operators' email on
+// the 1st carries, for this month so far or one of the three before it
+// (analytics are kept 90 days).
+function recentMonths() {
+  const d = new Date();
+  return [0, 1, 2, 3].map((back) => {
+    const m = new Date(d.getFullYear(), d.getMonth() - back, 1);
+    const value = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
+    const label = m.toLocaleDateString(undefined, { year: "numeric", month: "long" });
+    return { value, label: back === 0 ? `${label} (so far)` : label };
+  });
+}
+
+function ReportTable({ head, rows, empty }) {
+  if (rows.length === 0) return <p className="muted-line">{empty}</p>;
+  return (
+    <ScrollCue className="usage-table-wrap">
+      <table className="usage-table">
+        <thead>
+          <tr>{head.map((h, i) => <th key={h} style={i === 0 ? { textAlign: "left" } : undefined}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r[0] + "|" + r[1]}>
+              {r.map((c, i) => <td key={i} className={i === 0 ? "usage-key" : undefined}>{c}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </ScrollCue>
+  );
+}
+
+function ContentReport() {
+  const months = recentMonths();
+  const [month, setMonth] = useState(months[1].value);
+  const { data, error } = useLoad(() => getAdminContentReport(month), [month]);
+  return (
+    <>
+      <div className="admin-range" style={{ marginBottom: "0.75rem" }}>
+        <Select value={month} onChange={setMonth} options={months} title="Month (Brisbane)" />
+      </div>
+      {error ? (
+        <p className="muted-line">{error}</p>
+      ) : !data ? (
+        <p className="muted-line">Loading…</p>
+      ) : (
+        <>
+          <p className="muted-line">
+            {n(data.signups.accounts)} new accounts · {n(data.signups.tagged)} sign-ups from a tagged visit ·{" "}
+            {n(data.emails.reduce((t, e) => t + e.sent, 0))} update emails sent · {n(data.unsubscribes.total)} unsubscribes
+          </p>
+          <ReportTable
+            head={["Post", "Views", "Visitors", "Sign-ups"]}
+            rows={data.posts.map((p) => [p.title || p.path, p.views, p.visitors, p.signups])}
+            empty="No blog or update views this month."
+          />
+          <ReportTable
+            head={["Source · campaign", "Visitors", "Pageviews", "Sign-ups"]}
+            rows={data.channels.map((c) => [`${c.source}${c.campaign ? ` · ${c.campaign}` : ""}`, c.visitors, c.pageviews, c.signups])}
+            empty="No tagged visits this month."
+          />
+        </>
+      )}
+    </>
+  );
+}
+
 // Operator dashboard (ADMIN_EMAILS accounts only): the week's answer in one
 // tile row, then product usage and MCP, then traffic, with emails and artifact
 // volumes folded away at the end.
@@ -352,6 +421,12 @@ export default function AdminPage() {
       <Card className="admin-fold">
         <ResultDetails summary="Email campaigns">
           <EmailCampaigns state={emails} />
+        </ResultDetails>
+      </Card>
+
+      <Card className="admin-fold">
+        <ResultDetails summary="Content report (monthly)">
+          <ContentReport />
         </ResultDetails>
       </Card>
 
