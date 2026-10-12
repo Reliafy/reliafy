@@ -13,6 +13,7 @@ so that ``frontend/dist`` exists and can be served as static files.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, UploadFile, Request
@@ -603,11 +604,11 @@ def contained_path(path: Path, root: Path) -> Path | None:
 
 # The first path segment of every route the React app draws itself
 # (frontend/src/App.jsx, AppShell.jsx and productPages.jsx; a test keeps this
-# in step with them). These get the SPA shell, which routes on the client —
-# an unknown slug under one (/blog/<slug>) is the app's to answer, since a
-# post can go live by date between builds. Any other path that isn't a built
-# file or a prerendered page is a real 404 (#118): crawlers and agents asking
-# for /llms.txt-style paths used to get the shell with a 200.
+# in step with them). These get the SPA shell, which routes on the client.
+# Any other path that isn't a built file or a prerendered page is a real 404
+# (#118): crawlers and agents asking for /llms.txt-style paths used to get the
+# shell with a 200. Under the public roots below, a cloud build can also tell
+# a page that doesn't exist (#374).
 SPA_ROOTS = frozenset({
     # Public pages (cloud builds) and sign-in.
     "blog", "whats-new", "learn", "guides", "reference", "api-docs", "p", "terms", "privacy",
@@ -624,6 +625,64 @@ def is_spa_route(full_path: str) -> bool:
     """Whether ``full_path`` (no leading slash) is one of the app's routes."""
     first = full_path.strip("/").split("/", 1)[0]
     return first == "" or first in SPA_ROOTS
+
+
+# Public pages that a cloud build prerenders, every one of them (#374):
+# frontend/src/prerender-entry.jsx renders each blog post, update, Learn
+# article, guide and reference family, the index pages and the single pages
+# below. With the build's content index (dist/content.json) present, a path
+# under one of these roots with no live prerendered page doesn't exist.
+#
+# Collections whose ``/<root>/<slug>`` the app answers with its own "not found"
+# page (BlogPost, WhatsNewPost, LearnArticle, GuidePage, ReferenceFamily): an
+# unknown or not-yet-dated slug gets that page from the shell, with a 404.
+CONTENT_COLLECTIONS = frozenset({"blog", "whats-new", "learn", "guides", "reference"})
+# Single prerendered pages: nothing lives beneath them.
+CONTENT_PAGES = frozenset({
+    "api-docs", "terms", "privacy",
+    "weibull-analysis-software", "rcm-software", "reliability-block-diagram-software",
+    "reliability-analysis-software",
+})
+# Public paths the app answers without a prerendered page: /learn redirects to
+# /blog in the browser.
+CLIENT_ONLY_PAGES = frozenset({"learn"})
+
+
+def content_status(full_path: str, dist: Path) -> str | None:
+    """For a public content path with no live prerendered page: ``"shell"``
+    when the app has a "not found" page for it (an unknown or held slug in a
+    collection), ``"missing"`` for anything else under a content root, None
+    when the path isn't public content or the build can't tell (no content
+    index: self-host and dev builds don't prerender)."""
+    parts = full_path.strip("/").split("/")
+    root = parts[0]
+    if root not in CONTENT_COLLECTIONS | CONTENT_PAGES or "/".join(parts) in CLIENT_ONLY_PAGES:
+        return None
+    if not content_gate.indexed(dist):
+        return None
+    if root in CONTENT_COLLECTIONS and len(parts) == 2 and parts[1]:
+        return "shell"
+    return "missing"
+
+
+# Share links (/p/<token>): tokens are secrets.token_urlsafe(18), 24 characters.
+_SHARE_TOKEN = re.compile(r"[A-Za-z0-9_-]{1,128}")
+
+
+def share_link_live(token: str) -> bool:
+    """Whether ``/p/<token>`` opens anything: one indexed lookup (the same
+    check /api/public/<token> makes first). A database error counts as live:
+    the page then asks the API, as before #374."""
+    if not _SHARE_TOKEN.fullmatch(token):
+        return False
+    from backend.db import get_db
+    from backend.services import public_links
+
+    try:
+        return public_links.resolve(get_db(), token) is not None
+    except Exception:  # pragma: no cover - defensive
+        logger.warning("Share link lookup failed; serving the page", exc_info=True)
+        return True
 
 
 _NOT_FOUND_HTML = """<!doctype html>
@@ -667,8 +726,26 @@ def not_found(full_path: str) -> Response:
 # reloads once on vite:preloadError, for pages already open or cached.)
 _NO_CACHE = {"Cache-Control": "no-cache"}
 
+_NOINDEX = '<meta name="robots" content="noindex">'
+_shell_cache: dict[str, tuple[float, str]] = {}
 
-def spa_response(full_path: str, dist: Path) -> Response:
+
+def not_found_shell(dist: Path) -> Response:
+    """A 404 with the SPA shell, for a page the app answers with its own "not
+    found" message (#374), marked noindex in the HTML itself."""
+    shell = dist / "index.html"
+    key = str(shell)
+    mtime = shell.stat().st_mtime
+    hit = _shell_cache.get(key)
+    if hit is None or hit[0] != mtime:
+        html = shell.read_text(encoding="utf-8")
+        head = html.find("</head>")
+        html = (html[:head] + _NOINDEX + "\n" + html[head:]) if head >= 0 else _NOINDEX + html
+        hit = _shell_cache[key] = (mtime, html)
+    return HTMLResponse(hit[1], status_code=404, headers=_NO_CACHE)
+
+
+def spa_response(full_path: str, dist: Path, share_live=None) -> Response:
     """What ``GET /<full_path>`` answers from the built frontend in ``dist``.
 
     A prerendered page (``dist/static/<route>/index.html``: the landing,
@@ -676,6 +753,17 @@ def spa_response(full_path: str, dist: Path) -> Response:
     then a built file (``/llms.txt``, ``/robots.txt``, images…); then the SPA
     shell, for the app's own routes (:data:`SPA_ROOTS`) only. Anything else is
     a real 404 (#118). Never serves a file from outside ``dist``.
+
+    Public content with no live page is a 404 too (#374), in a cloud build
+    (one with ``content.json``): an unknown slug in a collection
+    (``/blog/<slug>``, ``/learn/<slug>``…) gets the shell with a 404, so the
+    app's own "not found" page shows; anything else under a content root
+    (``/terms/x``, ``/blog/a/b``) gets the plain 404 page. The app's own
+    routes with ids (``/modelling/m/<id>``…) keep the shell and a 200: only
+    the browser knows whether the signed-in user has that id. With
+    ``share_live`` (the live app passes :func:`share_link_live`), a share page
+    ``/p/<token>`` whose link is unknown, expired or revoked gets the shell
+    with a 404; the page says the link is gone.
 
     A blog post or update prerendered ahead of its date is held back until
     that date (UTC): before then its path answers as an unknown one would
@@ -692,9 +780,18 @@ def spa_response(full_path: str, dist: Path) -> Response:
             and not content_gate.is_private(full_path)):
         headers = _NO_CACHE if candidate.suffix == ".html" else None
         return FileResponse(candidate, headers=headers)
-    if is_spa_route(full_path):
-        return FileResponse(dist / "index.html", headers=_NO_CACHE)
-    return not_found(full_path)
+    if not is_spa_route(full_path):
+        return not_found(full_path)
+    missing = content_status(full_path, dist)
+    if missing == "shell":
+        return not_found_shell(dist)
+    if missing == "missing":
+        return not_found(full_path)
+    parts = full_path.strip("/").split("/")
+    if share_live is not None and parts[0] == "p":
+        if len(parts) != 2 or not share_live(parts[1]):
+            return not_found_shell(dist)
+    return FileResponse(dist / "index.html", headers=_NO_CACHE)
 
 
 if FRONTEND_DIST.is_dir():
@@ -715,10 +812,11 @@ if FRONTEND_DIST.is_dir():
     )
 
     @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str) -> Response:
+    def serve_spa(full_path: str) -> Response:
         """Static files, prerendered pages and the SPA shell, or a real 404
-        (see :func:`spa_response`)."""
-        return spa_response(full_path, FRONTEND_DIST)
+        (see :func:`spa_response`). Sync, so the share-link lookup runs in
+        the thread pool."""
+        return spa_response(full_path, FRONTEND_DIST, share_live=share_link_live)
 
 else:  # pragma: no cover - only hit before the frontend is built
 

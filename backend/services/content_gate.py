@@ -7,8 +7,9 @@ names each dated page with its date::
     {"pages": {"/blog/<slug>": "2026-10-19", "/whats-new/<slug>": "2026-11-02"}}
 
 Until a page's date (UTC; 00:00 UTC is 10:00 in Brisbane) arrives, the server
-answers its path exactly as for an unknown path — the SPA shell, whose date
-gate says "Post not found" — and leaves it out of ``/sitemap.xml``. On the day
+answers its path exactly as for an unknown path — a 404 with the SPA shell,
+whose date gate says "Post not found" (#374) — and leaves it out of
+``/sitemap.xml``. On the day
 it serves the prerendered HTML, with no rebuild or redeploy.
 
 The build files that list queued items (``feeds.json``, ``content.json``) and
@@ -59,6 +60,14 @@ def pages(dist: Path) -> dict[str, str]:
     with _lock:
         _cache[str(file)] = (mtime, data)
     return data
+
+
+def indexed(dist: Path) -> bool:
+    """Whether the build has its content index: a cloud build's prerender
+    writes ``content.json`` alongside a prerendered page for every piece of
+    public content, so a public path with no live page doesn't exist (#374).
+    Self-host and dev builds have neither, and can't tell."""
+    return (Path(dist) / GATE_FILE).is_file()
 
 
 def held(path: str, dist: Path, on: str | None = None) -> bool:
