@@ -35,6 +35,10 @@ httpx
 defusedxml==0.7.1
 # Renders the "What's new" update emails (backend/scripts/send_update.py).
 markdown
+# Calendar rules for maintenance tasks (backend/services/maintenance_schedule.py:
+# the iCalendar standard's recurrences). Already installed with pandas; named
+# because the app imports it.
+python-dateutil>=2.8.2
 # Reads the content calendar for the admin page (backend/services/content_calendar.py).
 # Already installed by uvicorn[standard]; named because the app imports it.
 pyyaml
