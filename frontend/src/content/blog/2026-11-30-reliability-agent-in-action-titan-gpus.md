@@ -1,9 +1,17 @@
 ---
 title: "The Reliability Agent, in action: 30,000 GPUs and a temperature it wasn't told about"
-date: 2026-09-22
+date: 2026-11-30
 author: The Reliafy Team
 image: /blog/reliability-agent-titan-card.png
 summary: We pointed Reliafy's Reliability Agent at a hard, real, public dataset — the failure records of every GPU in the Titan supercomputer — and told it to find the best model. No hints. It worked out that only 41% of the old GPUs were ever going to fail, that the survivors were the cool ones, and that a reworked batch had cut the failure rate 27-fold. Here's the whole run, and the models reproduced in Reliafy.
+linkedin: |
+  We gave an AI agent the failure records of about 30,000 GPUs from the Titan supercomputer and one instruction: find the best model. No hints.
+
+  It found that only 41% of the old batch were ever going to fail, that the survivors ran cooler, and that a reworked batch cut the failure rate 27-fold. Nobody told it about temperature.
+
+  Every step is in the post, with the models reproduced in Reliafy.
+
+  #ReliabilityEngineering #SurvivalAnalysis #AI
 ---
 
 The best way to show what an agent can do is to give it a genuinely hard problem
@@ -188,9 +196,10 @@ the reasoning behind it, and objects you can open and check yourself.
 
 ## Try it on your own data
 
-The Reliability Agent is part of the Pro plan (and runs on your own API key if
-you self-host). Hand it a CSV of failure records — or just describe a system —
-and watch it propose a plan before it does anything. The
+The Reliability Agent is available on request: email hello@reliafy.com and
+we'll turn it on for your account. Hand it a CSV of failure records, or just
+describe a system, and it proposes a plan before it does anything. Everything it
+fitted here you can fit yourself in Reliafy today, and the
 [assistant](/blog/the-training-comes-with-the-software) is free from your first
 session.
 
