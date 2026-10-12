@@ -5,14 +5,17 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, Depends
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from backend.auth import get_current_user
 from backend.config import SAMPLE_OWNER
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.services import content_calendar
 from backend.services import content_report
 from backend.services import email_campaigns as email_campaigns_service
+from backend.services import library_status
 from backend.services import mcp_switch
 from backend.services import metrics as metrics_service
 from backend.services import usage as usage_service
@@ -178,3 +181,40 @@ def set_mcp(
     by = user.get("email") or user["uid"]
     reason = (reason or "").strip()[:200] or "set on the Admin page"
     return JSONResponse(content=mcp_switch.set_enabled(session, enabled, by, reason))
+
+
+@router.get("/content-calendar")
+def content_calendar_view(
+    month: str = "",
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """The publishing calendar for ``month`` (YYYY-MM; default this month,
+    UTC): blog posts, What's new (with its email's status), LinkedIn posts and
+    announcements, planned slots and LinkedIn gaps, the next item out, and the
+    pipeline's state (drafting job, scheduler, LinkedIn feed)."""
+    if not billing_service.is_admin_user(user):
+        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
+    now = datetime.now(timezone.utc)
+    month = month or now.strftime("%Y-%m")
+    try:
+        content_calendar.month_range(month)
+    except ValueError:
+        return JSONResponse(status_code=422, content={"detail": "month must be YYYY-MM."})
+    return JSONResponse(content=content_calendar.month_view(session, month, now=now))
+
+
+@router.get("/libraries")
+async def libraries_view(refresh: bool = False, user: dict = Depends(get_current_user)) -> JSONResponse:
+    """Where SurPyval, RePyability and this deployment stand (GitHub, PyPI and
+    the running process), with the next step first. GitHub and PyPI answers
+    are cached; ``refresh`` revalidates them, at most once a minute."""
+    if not billing_service.is_admin_user(user):
+        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
+    limited, wait = False, 0
+    if refresh:
+        allowed, wait = library_status.refresh_allowed()
+        refresh, limited = allowed, not allowed
+    body = await run_in_threadpool(library_status.status, refresh=refresh)
+    body["refresh"] = {"done": refresh, "limited": limited, "retry_in": wait}
+    return JSONResponse(content=body)

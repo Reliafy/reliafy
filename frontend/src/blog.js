@@ -47,6 +47,9 @@ export const allPosts = Object.entries(files)
       // Optional exact LinkedIn announcement text (a `linkedin: |` block); the
       // LinkedIn feed falls back to title + summary. Never shown on the site.
       linkedin: meta.linkedin || "",
+      // Optional calendar type (technical, commentary or tutorial) for the
+      // admin page's publishing calendar; absent, it takes its slot's.
+      type: meta.type || "",
       readingMinutes: readingTime(body),
       body,
     };

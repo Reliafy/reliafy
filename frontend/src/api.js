@@ -1797,6 +1797,18 @@ export function getAdminContentReport(month = "") {
   return request(`/api/admin/content-report${month ? `?month=${encodeURIComponent(month)}` : ""}`);
 }
 
+// Operator-only publishing calendar for one month (YYYY-MM): posts, What's
+// new and its email, LinkedIn items, planned slots, gaps, and the pipeline.
+export function getAdminContentCalendar(month = "") {
+  return request(`/api/admin/content-calendar${month ? `?month=${encodeURIComponent(month)}` : ""}`);
+}
+
+// Operator-only library status: SurPyval, RePyability and this deployment,
+// with the next step. `refresh` revalidates GitHub and PyPI (once a minute).
+export function getAdminLibraries(refresh = false) {
+  return request(`/api/admin/libraries${refresh ? "?refresh=true" : ""}`);
+}
+
 // Operator-only product usage (app / MCP / API, the MCP plan wall).
 export function getAdminUsage(days = 30, includeAdmin = false) {
   return request(`/api/admin/usage?days=${days}${includeAdmin ? "&include_admin=true" : ""}`);

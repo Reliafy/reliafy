@@ -154,6 +154,20 @@ signing up, by the daily visitor hash), update emails sent, and
 unsubscribes. The admin page shows the same tables for any of the last four
 months. Analytics are kept 90 days.
 
+### On the admin page
+
+**Admin → Content** (`/admin?tab=content`, `GET /api/admin/content-calendar`)
+shows a month of the calendar: every blog post, What's new and LinkedIn item
+as published, scheduled or planned (a slot with no file yet), the weekdays
+with no LinkedIn item, each What's new email's state (test copy, list sends
+from `update_sends`, the `UPDATE_AUTO_SEND` switch), and the pipeline: the
+next drafting run, the last `content/` pull request, whether the scheduler is
+configured, and the LinkedIn feed. It reads the build's `content.json` and
+`feeds.json` and the calendar, which the Dockerfile copies into the image.
+GitHub answers are cached for 12 minutes; set `GITHUB_TOKEN` on the service
+(a fine-grained token with read-only access to public repositories is enough)
+to lift GitHub's 60-requests-an-hour limit for unauthenticated calls.
+
 ## One-time setup
 
 Run the gcloud blocks in one shell, in order.
