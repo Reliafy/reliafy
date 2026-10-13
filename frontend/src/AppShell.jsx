@@ -40,6 +40,9 @@ const FleetForecastPage = lazy(() => import("./views/FleetForecastPage.jsx"));
 const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx"));
 const RcmHome = lazy(() => import("./views/RcmHome.jsx"));
 const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
+const MaintenanceHome = lazy(() => import("./views/MaintenanceHome.jsx"));
+const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx"));
+const MaintenanceWorkOrder = lazy(() => import("./views/MaintenanceWorkOrder.jsx"));
 const TeamSettingsPage = lazy(() => import("./views/TeamSettingsPage.jsx"));
 const SettingsPage = lazy(() => import("./views/SettingsPage.jsx"));
 const ApiDocsPage = lazy(() => import("./views/ApiDocsPage.jsx"));
@@ -119,7 +122,7 @@ export default function AppShell() {
   // Deployment capabilities: hide the assistant and billing entirely when this
   // deployment can't offer them (e.g. an open-source self-hosted instance).
   const config = useAppConfig();
-  const { ai, billing, reliability_agent: agentEnabled } = config;
+  const { ai, billing, reliability_agent: agentEnabled, maintenance: maintenanceEnabled } = config;
   // Keying the routed content on the workspace remounts every view on switch,
   // so all lists refetch under the new X-Workspace-Id without any per-view code.
   const { workspace } = useWorkspace();
@@ -195,6 +198,9 @@ export default function AppShell() {
             <Route path="/rcm" element={<RcmHome />} />
             <Route path="/rcm/studies" element={<Navigate to="/rcm" replace />} />
             <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />
+            {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
+            {maintenanceEnabled && <Route path="/maintenance/positions/:id" element={<MaintenancePosition />} />}
+            {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
             <Route path="/team" element={<TeamSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/api-docs" element={<ApiDocsPage />} />

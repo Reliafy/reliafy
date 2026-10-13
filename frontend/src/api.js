@@ -2027,3 +2027,89 @@ export function getWorkspaceChanges({ days = null, since = null } = {}) {
   const qs = q.toString();
   return request(`/api/changes${qs ? `?${qs}` : ""}`);
 }
+
+// ---- Reliafy Maintenance (local only for now) --------------------------------------
+
+function postJson(url, body) {
+  return request(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+}
+
+export function getMaintenanceOverview() {
+  return request("/api/maintenance/overview");
+}
+
+export function createMaintenancePosition(body) {
+  return postJson("/api/maintenance/positions", body);
+}
+
+export function getMaintenancePosition(id) {
+  return request(`/api/maintenance/positions/${id}`);
+}
+
+export function updateMaintenancePosition(id, body) {
+  return request(`/api/maintenance/positions/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function fitMaintenanceItem(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/fit`, body);
+}
+
+export function removeMaintenanceItem(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/remove`, body);
+}
+
+export function applyRcmToPosition(positionId, studyId) {
+  return postJson(`/api/maintenance/positions/${positionId}/apply-rcm`, { study_id: studyId });
+}
+
+export function maintenanceFromRcm(studyId, parentId) {
+  return postJson("/api/maintenance/from-rcm", { study_id: studyId, parent_id: parentId || null });
+}
+
+export function listMaintenanceItems() {
+  return request("/api/maintenance/items");
+}
+
+export function listMaintenanceLocations() {
+  return request("/api/maintenance/locations");
+}
+
+export function createMaintenanceLocation(body) {
+  return postJson("/api/maintenance/locations", body);
+}
+
+export function placeMaintenanceItem(itemId, locationId) {
+  return postJson(`/api/maintenance/items/${itemId}/place`, { location_id: locationId });
+}
+
+export function openWorkOrder(body) {
+  return postJson("/api/maintenance/work-orders", body);
+}
+
+export function generateWorkOrders(horizonDays = 30) {
+  return postJson("/api/maintenance/work-orders/generate", { horizon_days: horizonDays });
+}
+
+export function getWorkOrder(id) {
+  return request(`/api/maintenance/work-orders/${id}`);
+}
+
+export function closeWorkOrder(id, body) {
+  return postJson(`/api/maintenance/work-orders/${id}/close`, body);
+}
+
+export function setTaskLastDone(taskId, lastDone) {
+  return request(`/api/maintenance/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ last_done: lastDone }),
+  });
+}

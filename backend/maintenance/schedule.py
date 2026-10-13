@@ -192,7 +192,7 @@ class Window:
 
     Examples
     --------
-    >>> from backend.services.maintenance_schedule import Window
+    >>> from backend.maintenance.schedule import Window
     >>> shift = Window("Mon-Fri", "06:00", "22:00")
     >>> shift.hours
     16.0
@@ -252,7 +252,7 @@ class Asset:
 
     Examples
     --------
-    >>> from backend.services.maintenance_schedule import Asset, Window
+    >>> from backend.maintenance.schedule import Asset, Window
     >>> pump = Asset(
     ...     "pump 1",
     ...     runs=Window("Mon-Fri", "06:00", "22:00"),
@@ -537,7 +537,7 @@ class Monthly:
     --------
     On the 30th of every month, on 28 February in 2027:
 
-    >>> from backend.services.maintenance_schedule import Monthly, Task
+    >>> from backend.maintenance.schedule import Monthly, Task
     >>> readings = Task("meter reading", on=Monthly(day=30))
     >>> due = readings.due("2027-01-01", "2027-03-31")
     >>> [day.isoformat() for day in due.dates]
@@ -669,7 +669,7 @@ class Task:
     from Sunday 11 October to the end of 2026, at 250 each time 3000:
 
     >>> from datetime import timedelta
-    >>> from backend.services.maintenance_schedule import Task
+    >>> from backend.maintenance.schedule import Task
     >>> conveyor = Task(
     ...     "inspect conveyor",
     ...     every=timedelta(weeks=1),
@@ -684,7 +684,7 @@ class Task:
 
     On the 30th of each month (the last day of a shorter one):
 
-    >>> from backend.services.maintenance_schedule import Monthly
+    >>> from backend.maintenance.schedule import Monthly
     >>> readings = Task("meter reading", on=Monthly(day=30))
     >>> [day.isoformat() for day in readings.due(
     ...     "2027-01-01", "2027-03-31").dates]
@@ -694,7 +694,7 @@ class Task:
     500 running hours, its meter at 12,340 hours on Monday 12 October
     2026, before its start:
 
-    >>> from backend.services.maintenance_schedule import Asset, Hours, Window
+    >>> from backend.maintenance.schedule import Asset, Hours, Window
     >>> pump = Asset(
     ...     "pump 1",
     ...     runs=Window("Mon-Fri", "06:00", "22:00"),

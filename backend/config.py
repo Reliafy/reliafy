@@ -285,6 +285,18 @@ TOKEN_PRICES = {
 }
 TOKEN_PRICE_FALLBACK = {"in": 5.0, "out": 30.0}
 
+# ---- Maintenance (CMMS) --------------------------------------------------------
+# Reliafy Maintenance: positions, items, fitments, RCM tasks and work orders,
+# kept in a graph (backend/maintenance). Local only for now: off unless
+# MAINTENANCE_ENABLED is set, and refused on Cloud Run until it has a
+# production graph store.
+MAINTENANCE_ENABLED = _truthy(os.environ.get("MAINTENANCE_ENABLED")) and not os.environ.get("K_SERVICE")
+# The Python graph store's SQLite file (outside the repo, so `git clean` and
+# worktree removal never take the data with them).
+MAINTENANCE_DB_PATH = os.environ.get("MAINTENANCE_DB_PATH") or os.path.expanduser(
+    "~/.reliafy/maintenance.sqlite"
+)
+
 # ---- Reliability Agent (Anthropic Managed Agents) --------------------------
 # A separate, self-contained agent on Anthropic's Managed Agents runtime: Claude
 # runs in a managed cloud sandbox we provision with surpyval + the scientific

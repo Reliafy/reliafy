@@ -62,6 +62,12 @@ const RcmSectionIcon = () => (
   </svg>
 );
 
+const MaintenanceIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.4-.4-2.1z" />
+  </svg>
+);
+
 const DatasetsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <ellipse cx="12" cy="6" rx="8" ry="3" />
@@ -149,6 +155,11 @@ const ITEMS = [
     icon: <RcmSectionIcon />,
   },
   {
+    to: "/maintenance",
+    label: "Maintenance",
+    icon: <MaintenanceIcon />,
+  },
+  {
     to: "/agent",
     label: "Reliability Agent",
     icon: <AgentIcon />,
@@ -169,11 +180,12 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 export default function Sidebar({ collapsed, onToggle, phone = false, open = false, onClose }) {
   const asideRef = useRef(null);
   const { user, signOut } = useAuth();
-  const { ai, billing, reliability_agent: agentEnabled } = useAppConfig();
+  const { ai, billing, reliability_agent: agentEnabled, maintenance: maintenanceEnabled } = useAppConfig();
   // Credits only buy AI use; without it the page is plain billing.
   const billingLabel = ai || agentEnabled ? "Billing & credits" : "Billing";
   // The Reliability Agent surface is behind a feature flag (hidden until ready).
-  const items = ITEMS.filter((it) => it.to !== "/agent" || agentEnabled);
+  const items = ITEMS.filter((it) => (it.to !== "/agent" || agentEnabled)
+    && (it.to !== "/maintenance" || maintenanceEnabled));
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [confirmSignOut, setConfirmSignOut] = useState(false);

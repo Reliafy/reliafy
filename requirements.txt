@@ -35,7 +35,7 @@ httpx
 defusedxml==0.7.1
 # Renders the "What's new" update emails (backend/scripts/send_update.py).
 markdown
-# Calendar rules for maintenance tasks (backend/services/maintenance_schedule.py:
+# Calendar rules for maintenance tasks (backend/maintenance/schedule.py:
 # the iCalendar standard's recurrences). Already installed with pandas; named
 # because the app imports it.
 python-dateutil>=2.8.2

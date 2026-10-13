@@ -2,7 +2,7 @@
 
 This record moved here from RePyability (`repyability/maintenance/README.md`,
 derrynknife/RePyability #319), with the scheduling code it describes, now
-`backend/services/maintenance_schedule.py`. The split, agreed with the
+`backend/maintenance/schedule.py`. The split, agreed with the
 maintainer: **RePyability is about timelines, Reliafy about calendars.**
 RePyability works in model time, from a state (ages, phases, meter
 readings as numbers), and keeps the quantitative questions: RCM's per
@@ -12,7 +12,7 @@ financial years and the forecast by date belong here.
 
 So, below:
 
-- **here** (`maintenance_schedule.py`): calendar tasks and monthly rules
+- **here** (`backend/maintenance/schedule.py`): calendar tasks and monthly rules
   (UC-2 to UC-4), and tasks by use on an asset's operating schedule
   (UC-10);
 - **in RePyability**, in model time: a part's failures from its age (UC-5,
@@ -252,7 +252,7 @@ Keep to the project's rules (`CLAUDE.md`):
 
   ```python
   from datetime import timedelta
-  from backend.services.maintenance_schedule import Task
+  from backend.maintenance.schedule import Task
 
   conveyor = Task("inspect conveyor", first="2026-07-15", every=timedelta(weeks=1))
   due = conveyor.due("2026-10-11", "2026-12-31")
@@ -340,7 +340,7 @@ Keep to the project's rules (`CLAUDE.md`):
 - **Design, as built:**
 
   ```python
-  from backend.services.maintenance_schedule import Monthly, Task
+  from backend.maintenance.schedule import Monthly, Task
 
   Task("check pumps", on=Monthly(weekday="Tuesday", nth=1))
   Task("meter reading", on=Monthly(day=30))                        # February: the 28th
@@ -849,7 +849,7 @@ Keep to the project's rules (`CLAUDE.md`):
 - **Proposed API (to agree with the maintainer):**
 
   ```python
-  from backend.services.maintenance_schedule import Asset, Hours, Starts, Task, Window
+  from backend.maintenance.schedule import Asset, Hours, Starts, Task, Window
 
   pump = Asset(
       "pump 1",
@@ -896,7 +896,7 @@ Keep to the project's rules (`CLAUDE.md`):
 - **As built (the first step, every run going ahead):**
 
   ```python
-  from backend.services.maintenance_schedule import Asset, Hours, Task, Window
+  from backend.maintenance.schedule import Asset, Hours, Task, Window
 
   pump = Asset("pump 1", runs=Window("Mon-Fri", "06:00", "22:00"),
                meters={"hours": 12_340, "starts": 4_210},
