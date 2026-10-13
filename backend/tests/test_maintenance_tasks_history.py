@@ -284,9 +284,11 @@ def test_a_past_fitment_goes_in_before_the_current_one(m):
         [("2023-01-01", None, None), ("2019-06-01", "2022-12-31", "failure")]
     assert position["fitments"][1]["failure_mode"]["text"] == "Seal leaking"
     assert position["tasks"][0]["last_done"] == before and task["id"] == position["tasks"][0]["id"]
-    assert [r["c"] for r in position["life_data"]] == [0, 1]
+    # The start is known to the month, so the failure lies in a range (c = 2).
+    assert [r["c"] for r in position["life_data"]] == [2, 1]
     event = next(e for e in m.s.events(ORG, 50) if e["type"] == "fitment.added")
-    assert (event["payload"]["from_precision"], event["payload"]["to_precision"]) == ("month", "exact")
+    # Like the other fitment events, only a date that isn't exact carries its precision.
+    assert event["payload"]["from_precision"] == "month" and "to_precision" not in event["payload"]
 
     # Meeting the next one on the day is fine; overlapping isn't, and the error names the clash.
     m.add_past_fitment(pid, "2017-01-01", "2019-06-01", reason="planned", new_item={"name": "Old pump"})

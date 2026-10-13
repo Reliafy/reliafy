@@ -286,7 +286,7 @@ def test_tasks_failure_modes_and_past_fitments_through_mcp(env):
         past = _ok(await client.call_tool("add_past_fitment", {
             "position_id": pid, "start": "2020-01-01", "end": "2023-12-31", "item_name": "Old pump",
             "failure_mode_text": "Motor burnt out", "from_precision": "year"}))
-        assert [r["c"] for r in past["life_data"]] == [0, 0]
+        assert [r["c"] for r in past["life_data"]] == [2, 0]  # its start is known only to the year
         clash = await client.call_tool("add_past_fitment", {"position_id": pid, "start": "2021-01-01",
                                                             "end": "2021-06-01", "item_name": "Ghost"})
         assert clash.is_error and "Old pump" in clash.content[0].text
