@@ -3,7 +3,9 @@ each person a digest when there's new work.
 
 Called from the scheduled content job (backend/services/content_jobs.py), so
 it needs no scheduler of its own. Runs once a day: a ``maintenance_runs``
-document per date makes a repeat a no-op.
+document per date makes a repeat a no-op. The run's time is the same for
+everyone; each workspace's dates (what's due, what's overdue, the day a work
+order is opened) are worked out in its own time zone.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from backend import config
 from backend.maintenance import loop
 from backend.maintenance.access import allowed
 from backend.maintenance.service import Maintenance
+from backend.services import time_zones
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +58,7 @@ def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_sp
 
 def _run_org(db, store, org: str, result: dict, dry_run: bool, email_service) -> None:
     """The daily run for one organisation: its work orders, refits and digest."""
-    m = Maintenance(store, org, "scheduler", limited=False)
+    m = Maintenance(store, org, "scheduler", limited=False, time_zone=time_zones.of_owner(db, org))
     if dry_run:
         due = [t for t in m.due_tasks(HORIZON_DAYS) if not t["open_work_order"]]
         result["orgs"] += 1
@@ -89,7 +92,7 @@ def run(db, store, *, today: date | None = None, dry_run: bool = False) -> dict:
     """One daily run over every organisation with tasks."""
     from backend.services import email as email_service
 
-    day = (today or date.today()).isoformat()
+    day = (today or time_zones.today()).isoformat()
     if db.maintenance_runs.find_one({"_id": day}):
         return {"step": "maintenance", "skipped": "already ran today"}
     store.sync()

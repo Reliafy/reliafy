@@ -34,12 +34,13 @@ def register() -> None:
     from backend.routers.maintenance import get_store
     from backend.schema import RcmStudy
     from backend.services import access as access_service
+    from backend.services import time_zones
 
     def m_for(ctx: Context) -> Maintenance:
         user = _caller(ctx)
         if not allowed(user):
             raise ToolError("Reliafy Maintenance isn't available on your account yet.")
-        return Maintenance(get_store(), user["uid"], user["uid"])
+        return Maintenance(get_store(), user["uid"], user["uid"], time_zone=time_zones.of_owner(_db(), user["uid"]))
 
     def run(fn, *args, **kwargs):
         try:
@@ -60,11 +61,12 @@ def register() -> None:
         TOOL_NAMES.append(name)
         return _tool(name, annotations, title)
 
-    DateText = Annotated[str | None, Field(description="A date like 2026-10-13. Default: today.")]
+    DateText = Annotated[str | None, Field(description=(
+        "A date like 2026-10-13. Default: today (the workspace's, in its time zone)."))]
     Precision = Literal["exact", "month", "year", "estimated"]
     RoughDate = Annotated[str | None, Field(description=(
         "A date like 2026-10-13, or 2022-03 / 2022 when only the month or year is known "
-        "(the precision follows). Default: today."))]
+        "(the precision follows). Default: today (the workspace's)."))]
     ItemDate = Annotated[dict[str, str] | None, Field(description=(
         "{date: '2022' | '2022-03' | '2022-03-15', precision?: exact|month|year|estimated (from the "
         "date's form if left out; estimated = a guess, e.g. 'about 6 months ago'), source?: where it "
@@ -92,9 +94,14 @@ def register() -> None:
         a location_id (create_position / update_position); positions inside it inherit it
         unless one says otherwise. An item (a serial-numbered thing) is fitted to a position
         and is then where its position is: it needs no placement. place_item is only for
-        items that aren't fitted (a spare in a store, one away at a repairer)."""
+        items that aren't fitted (a spare in a store, one away at a repairer).
+
+        Dates are calendar days in the workspace's time zone (time_zone, an IANA name;
+        null means UTC, unset): today is the workspace's today, and a date left out
+        anywhere defaults to it."""
         m = m_for(ctx)
-        return run(lambda: {"summary": summary(m), "tree": m.tree(), "due": m.due_tasks(30),
+        return run(lambda: {"summary": summary(m), "time_zone": m.time_zone, "today": m.today(),
+                            "tree": m.tree(), "due": m.due_tasks(30),
                             "open_work_orders": m.work_orders("open"), "critical_spares": m.critical_spares_short()})
 
     @tool("get_position", _READ, "Read a maintenance position")
@@ -149,6 +156,19 @@ def register() -> None:
         positions (located there, set or inherited) and items (placed there, not fitted), and
         all_positions / all_items counting the locations inside it too."""
         return {"tree": run(m_for(ctx).location_tree)}
+
+    @tool("set_time_zone", _WRITE, "Set the workspace's time zone")
+    def set_time_zone(time_zone: str | None, ctx: Context) -> dict[str, Any]:
+        """Say where the workspace is, so today, due dates and overdue follow its local
+        calendar rather than UTC (a work order opened at 8 am in Brisbane is dated that day).
+        time_zone: an IANA name such as 'Australia/Brisbane', 'Europe/London' or
+        'America/Chicago'; null or '' clears it (UTC). Ask the user rather than guessing."""
+        user = _caller(ctx)
+        m_for(ctx)  # Maintenance is on for this account
+        try:
+            return {"time_zone": time_zones.set_personal(_db(), user["uid"], time_zone)}
+        except time_zones.BadTimeZone as err:
+            raise ToolError(str(err)) from None
 
     # ---- building the plant ------------------------------------------------------------
 

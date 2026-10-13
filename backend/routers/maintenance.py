@@ -25,6 +25,7 @@ from backend.maintenance.store import new_id
 from backend.maintenance.store import GraphStore, MongoEventLog
 from backend.schema import RcmStudy
 from backend.services import access as access_service
+from backend.services import time_zones
 from backend.services.access import AccessCtx, get_access
 
 router = APIRouter(prefix="/api/maintenance")
@@ -126,7 +127,7 @@ def get_store() -> GraphStore:
 def maintenance(ctx: AccessCtx = Depends(get_access)) -> Maintenance:
     if not allowed(ctx.user):
         raise HTTPException(status_code=404, detail="Not found.")
-    return Maintenance(get_store(), ctx.write_owner, ctx.uid)
+    return Maintenance(get_store(), ctx.write_owner, ctx.uid, time_zone=ctx.time_zone)
 
 
 class WriteDenied(Exception):
@@ -184,8 +185,8 @@ def _study(session, ctx: AccessCtx, study_id: str) -> RcmStudy:
 @router.get("/overview")
 def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {
-        "summary": summary(m), "tree": m.tree(), "due": m.due_tasks(30),
-        "open_work_orders": m.work_orders("open"), "proposals": m.proposals("pending"),
+        "summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
+        "due": m.due_tasks(30), "open_work_orders": m.work_orders("open"), "proposals": m.proposals("pending"),
         "critical_spares": m.critical_spares_short(),
     })
 
@@ -869,12 +870,17 @@ def _reserve(link_id: str, t: str) -> tuple[dict | None, JSONResponse | None]:
     return doc, None
 
 
+def _by_link(doc: dict) -> Maintenance:
+    """The workspace an upload link adds to, in its time zone."""
+    return Maintenance(get_store(), doc["org"], doc["uid"], time_zone=time_zones.of_owner(get_db(), doc["org"]))
+
+
 def _store_by_link(doc: dict, raw: bytes) -> JSONResponse:
     """Clean, store and record a photo sent through a link whose place is
     reserved; the place is given back if the photo isn't kept."""
     links = photo_links()
     try:
-        m = Maintenance(get_store(), doc["org"], doc["uid"])
+        m = _by_link(doc)
         result = ingest_photo(m, doc["target_id"], raw, doc.get("caption", ""), "link")
     except photos_mod.Busy as err:
         links.release(doc["_id"])
@@ -926,7 +932,7 @@ def answer_location(link_id: str, t: str = "", body: dict = Body(...)) -> JSONRe
     if offer is None:
         return JSONResponse(status_code=404, content={"detail": "No location to answer for that photo."})
     if save:
-        m = Maintenance(get_store(), doc["org"], doc["uid"])
+        m = _by_link(doc)
         try:
             m.set_coordinates(doc["target_id"], offer["lat"], offer["lon"], "photo")
         except (Invalid, NotFound) as err:

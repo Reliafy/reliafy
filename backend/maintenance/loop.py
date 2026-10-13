@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import io
 import math
-from datetime import date
 
 import pandas as pd
 
@@ -65,7 +64,7 @@ def fit_class_model(m: Maintenance, db, position_class: str, distribution: str =
     m._emit("class.model_fitted", {
         "id": class_id(m.org, name), "name": name, "model_id": model.id, "distribution": model.distribution_id,
         "params": params, "extras": (model.results.get("options") or None), "unit": "days",
-        "fitted_on": date.today().isoformat(), "failures": failures, "suspensions": len(rows) - failures,
+        "fitted_on": m.today(), "failures": failures, "suspensions": len(rows) - failures,
     })
     return {**m.position_class(name), "proposals": propose(m, name), "uncertain": data["uncertain"]}
 
@@ -164,7 +163,7 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
                 "id": pid, "task_id": task["id"], "kind": kind, "class_name": node["name"],
                 "current": {"interval": task["interval"], "unit": task["unit"]},
                 "proposed": {"interval": interval, "unit": unit} if interval is not None else None,
-                "reason": reason, "made_on": date.today().isoformat(),
+                "reason": reason, "made_on": m.today(),
             })
             made.append(next(p for p in m.proposals("pending") if p["id"] == pid))
     return made

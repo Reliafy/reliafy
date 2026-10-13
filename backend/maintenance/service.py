@@ -19,18 +19,22 @@ fitments follow from the actions: nobody edits a fitment directly.
 Each fitment is one row of life data: it ended in a failure, it was removed
 on purpose (a suspension), or it is still fitted (right-censored today).
 
-Dates are whole days, as ISO text (``"2026-10-13"``).
+Dates are whole days, as ISO text (``"2026-10-13"``), in the workspace's time
+zone (services/time_zones.py): "today" is the workspace's today, and a feed's
+reading is dated by the day it falls on there. Unset, that's the server's zone
+(UTC in production).
 """
 
 from __future__ import annotations
 
 import math
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from dateutil.relativedelta import relativedelta
 
 from backend.maintenance.store import GraphStore, new_id
+from backend.services import time_zones
 from backend.services.rcm import _norm_unit
 
 # Outcomes that schedule a task; the others (run to failure, redesign,
@@ -106,10 +110,14 @@ EARLIEST_DAY, LATEST_DAY = "1900-01-01", "2199-12-31"
 
 # ---- helpers -------------------------------------------------------------------
 
-def _day(value, what: str = "date") -> str:
-    """A date as ISO text; today when not given."""
+def _server_today() -> str:
+    return time_zones.today().isoformat()
+
+
+def _day(value, what: str = "date", today: str | None = None) -> str:
+    """A date as ISO text; ``today`` (the workspace's) when not given."""
     if value in (None, ""):
-        return date.today().isoformat()
+        return today or _server_today()
     try:
         day = date.fromisoformat(str(value)[:10]).isoformat()
     except ValueError:
@@ -199,14 +207,14 @@ def _precision(value, what: str = "date") -> str | None:
     return value
 
 
-def dated(value, precision=None, what: str = "date") -> tuple[str, str]:
+def dated(value, precision=None, what: str = "date", today: str | None = None) -> tuple[str, str]:
     """A date and its precision from a request: (ISO day, precision). The date may
     be "2022" or "2022-03" (precision year or month, unless said otherwise) or a
     full date; today when not given. A month or year is stored as its first day."""
     precision = _precision(precision, what)
     text = str(value or "").strip()
     if not text:
-        return _day(None, what), precision or "exact"
+        return _day(None, what, today), precision or "exact"
     parts = text[:10].split("-")
     if len(text) == 4 and text.isdigit():
         shown = "year"
@@ -261,7 +269,7 @@ def date_text(day: str | None, precision: str | None) -> str | None:
     return f"{int(day[8:10])} {month} {day[:4]}"
 
 
-def _dated_value(value, what: str) -> dict | None:
+def _dated_value(value, what: str, today: str | None = None) -> dict | None:
     """An item's date (purchase, in service, manufacture): {date, precision, source}
     from a date text or an object with them; None (or {}) clears it."""
     if value in (None, "", {}):
@@ -272,8 +280,8 @@ def _dated_value(value, what: str) -> dict | None:
         raise Invalid(f"The {what} is a date, or {{date, precision, source}}.")
     if not value.get("date"):
         raise Invalid(f"The {what} needs a date (2022, 2022-03 or 2022-03-15).")
-    day, precision = dated(value.get("date"), value.get("precision"), what)
-    if day > date.today().isoformat():
+    day, precision = dated(value.get("date"), value.get("precision"), what, today)
+    if day > (today or _server_today()):
         raise Invalid(f"The {what} can't be in the future.")
     return {"date": day, "precision": precision, "source": _text(value.get("source"), f"{what}'s source")}
 
@@ -295,7 +303,7 @@ def _currency(value) -> str:
     return text
 
 
-def _cost_value(value, what: str = "replacement cost") -> dict | None:
+def _cost_value(value, what: str = "replacement cost", today: str | None = None) -> dict | None:
     """A replacement cost: {amount, currency, source, as_of}; None (or {}) clears it."""
     if value in (None, "", {}):
         return None
@@ -303,8 +311,8 @@ def _cost_value(value, what: str = "replacement cost") -> dict | None:
         raise Invalid(f"The {what} is {{amount, currency, source, as_of}}.")
     if value.get("amount") in (None, ""):
         raise Invalid(f"The {what} needs an amount.")
-    as_of = _day(value.get("as_of"), f"{what}'s as-of date")
-    if as_of > date.today().isoformat():
+    as_of = _day(value.get("as_of"), f"{what}'s as-of date", today)
+    if as_of > (today or _server_today()):
         raise Invalid(f"The {what}'s as-of date can't be in the future.")
     return {"amount": _number(value["amount"], what, 0, MAX_AMOUNT), "currency": _currency(value.get("currency")),
             "source": _text(value.get("source"), f"{what}'s source"), "as_of": as_of}
@@ -346,11 +354,11 @@ def _warranty_value(value) -> dict | None:
 
 
 def warranty_view(w: dict | None, on: str | None = None) -> dict | None:
-    """A warranty with where it stands on ``on`` (today): in warranty or not, and any
-    registration still to do."""
+    """A warranty with where it stands on ``on`` (the workspace's today): in warranty
+    or not, and any registration still to do."""
     if not w:
         return None
-    on = on or date.today().isoformat()
+    on = on or _server_today()
     due = w["register_by"] if w.get("registration_required") and not w.get("registered") else None
     in_warranty = w["ends_on"] >= on
     words = [f"In warranty until {date_text(w['ends_on'], 'exact')}" if in_warranty
@@ -777,10 +785,11 @@ def _manual_readings(s: GraphStore, org: str, point_id: str) -> list[dict]:
     return sorted(rows, key=lambda r: (r["on"], r["value"]))
 
 
-def _readings(s: GraphStore, org: str, point: dict) -> list[dict]:
-    """A point's readings, oldest first, one per day for a feed (its last that day)."""
+def _readings(s: GraphStore, org: str, point: dict, tz=None) -> list[dict]:
+    """A point's readings, oldest first, one per day for a feed (its last that day,
+    the days as they fall in ``tz``, the workspace's zone)."""
     if point.get("source") == "automated":
-        return s.series.daily(org, point["id"])
+        return s.series.daily(org, point["id"], tz=tz)
     return _manual_readings(s, org, point["id"])
 
 
@@ -1104,16 +1113,25 @@ PROJECTORS = {
 class Maintenance:
     """One organisation's maintenance graph, acted on by one person."""
 
-    def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True):
+    def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
+                 time_zone: str | None = None):
         self.s = store
         self.org = org
         self.actor = actor
+        # The workspace's time zone (an IANA name, or None: the server's): "today"
+        # and the days feed readings fall on follow it.
+        self.time_zone = time_zones.zone_name(time_zone)
+        self.tz = time_zones.zone(self.time_zone)
         # The daily run isn't limited: it writes for every organisation.
         self.limited = limited
         self._checked = False
         # Where positions are and locations' paths, worked out once per read
         # (cleared by every change).
         self._memo: dict = {}
+
+    def today(self) -> str:
+        """Today's date in the workspace's time zone, as ISO text."""
+        return time_zones.today(self.time_zone).isoformat()
 
     def check_limits(self) -> None:
         """Before a change: refuse when the organisation has started too many
@@ -1164,7 +1182,7 @@ class Maintenance:
         self._emit("position.created", {
             "id": pid, "name": name, "tag": _text(tag, "tag"), "parent_id": parent_id or None,
             "position_class": _text(position_class, "class"), "description": _text(description, "description"),
-            "on": date.today().isoformat(),
+            "on": self.today(),
         } | ({"location_id": location_id} if location_id else {}))
         return self._get(pid, "Position")
 
@@ -1230,7 +1248,7 @@ class Maintenance:
             self._get(parent_id, "Position")
             if parent_id == position_id or position_id in self._ancestor_ids(parent_id):
                 raise Invalid("A position can't be copied into itself.")
-        today = date.today().isoformat()
+        today = self.today()
 
         # Read the whole subtree first, then write: what's copied is the tree as
         # it was, never the copy being made.
@@ -1478,13 +1496,13 @@ class Maintenance:
         warranty), as update_item takes them."""
         details = {k: v for k, v in details.items() if k in self.ITEM_DETAILS and v not in (None, "", {})}
         for key, value in details.items():
-            self.ITEM_DETAILS[key](value)  # checked before anything is written
+            self.ITEM_DETAILS[key](value, self.today())  # checked before anything is written
         self._quota("Item", MAX_ITEMS)
         iid = new_id()
         self._emit("item.created", {
             "id": iid, "name": _text(name, "item's name", required=True), "serial": _text(serial, "serial"),
             "part_number": _text(part_number, "part number"), "manufacturer": _text(manufacturer, "manufacturer"),
-            "model": _text(model, "model"), "notes": _text(notes, "notes"), "on": date.today().isoformat(),
+            "model": _text(model, "model"), "notes": _text(notes, "notes"), "on": self.today(),
         })
         if nameplate or details:
             self.update_item(iid, nameplate=nameplate, **details)
@@ -1521,9 +1539,9 @@ class Maintenance:
                      if p["label"] == "Placement" and p.get("to") is None), None)
         last = self._last_removal(item_id)
         if on in (None, ""):
-            day = max(date.today().isoformat(), here["from"] if here else "", last["to"] if last else "")
+            day = max(self.today(), here["from"] if here else "", last["to"] if last else "")
         else:
-            day = _day(on)
+            day = _day(on, today=self.today())
             if here and day < here["from"]:
                 where = self.s.out(self.org, here["id"], "AT")
                 raise Invalid(f"It has been at {where[0]['name'] if where else 'its location'} since {here['from']}; "
@@ -1590,7 +1608,7 @@ class Maintenance:
         if self.current_fitment(position_id):
             raise Invalid("Something is already fitted here. Replace it through a work order, "
                           "or remove it first.")
-        day, precision = dated(on, from_precision, "fitted date")
+        day, precision = dated(on, from_precision, "fitted date", today=self.today())
         iid = self._item_from(item_id, new_item)
         self._emit("item.fitted", {"fitment_id": new_id(), "item_id": iid, "position_id": position_id, "on": day,
                                    "task_readings": self._renewal_readings(position_id, day)}
@@ -1605,7 +1623,7 @@ class Maintenance:
         current = self.current_fitment(position_id)
         if current is None:
             raise Invalid("Nothing is fitted here.")
-        day, precision = dated(on, to_precision, "removal date")
+        day, precision = dated(on, to_precision, "removal date", today=self.today())
         _check_order(current["from"], current.get("from_precision"), day, precision)
         ref = self._mode_ref(position_id, failure_mode_id, failure_mode_text)
         reason = _end_reason(reason, ref)
@@ -1736,7 +1754,7 @@ class Maintenance:
             raise Invalid("Both failure modes must be on the same position.")
         if fm.get("rcm_mode_id"):
             raise Invalid(f"{fm['text']} comes from an RCM study, so it stays: merge {into['text']} into it instead.")
-        self._emit("failure_mode.merged", {"id": mode_id, "into_id": into_mode_id, "on": date.today().isoformat()})
+        self._emit("failure_mode.merged", {"id": mode_id, "into_id": into_mode_id, "on": self.today()})
         return self.position(position["id"])
 
     # ---- RCM -> failure modes and tasks ---------------------------------------------
@@ -1747,7 +1765,7 @@ class Maintenance:
         Applying again adds what's new and updates changed tasks; nothing is
         removed (work orders may already point at it)."""
         self._get(position_id, "Position")
-        today = date.today().isoformat()
+        today = self.today()
         modes = {m.get("rcm_mode_id"): m for m in self.s.out(self.org, position_id, "CAN_FAIL_AS")}
         tasks = {t.get("rcm_mode_id"): t for t in self.s.inn(self.org, position_id, "ON")
                  if t["label"] == "Task"}
@@ -1816,7 +1834,7 @@ class Maintenance:
         if meter is None:
             return {"limit": f"{interval:g} {unit}", "next_due": None,
                     "note": f"needs a {unit} counter on the position"}
-        readings = _readings(self.s, self.org, meter)
+        readings = _readings(self.s, self.org, meter, self.tz)
         if not readings:
             return {"limit": f"{interval:g} {unit}", "next_due": None, "note": "needs counter readings"}
         start = task.get("last_done_reading")
@@ -1860,7 +1878,7 @@ class Maintenance:
             "instructions": task.get("instructions", ""), "checklist": task.get("checklist") or [],
             "trade": task.get("trade", ""), "last_done": task.get("last_done"), "last_done_reading": task.get("last_done_reading"),
             "limits": limits, "next_due": nxt, "by_use": not _is_calendar(task["unit"]),
-            "overdue": bool(nxt and nxt < date.today().isoformat()),
+            "overdue": bool(nxt and nxt < self.today()),
             "open_work_order": open_wo and {"id": open_wo["id"], "number": open_wo["number"]},
             "proposal": next(({"id": p["id"], "proposed": p.get("proposed"), "kind": p.get("kind")}
                               for p in self.s.inn(self.org, task["id"], "ABOUT")
@@ -1879,7 +1897,7 @@ class Maintenance:
                                     "manufacturer": _text(manufacturer, "manufacturer")[:120],
                                     "unit": _text(unit, "unit")[:20] or "each",
                                     "unit_cost": self._amount(unit_cost, "unit cost"), "notes": _text(notes, "notes"),
-                                    "on": date.today().isoformat()})
+                                    "on": self.today()})
         return self.part(pid)
 
     def update_part(self, part_id: str, **changes) -> dict:
@@ -1920,7 +1938,7 @@ class Maintenance:
         if (stock or {}).get("quantity", 0) + delta < 0:
             raise Invalid(f"There are only {(stock or {}).get('quantity', 0):g} in stock there.")
         self._emit("stock.adjusted", {"part_id": part_id, "location_id": location_id, "delta": delta,
-                                      "reason": _text(reason, "reason")[:200], "on": _day(on),
+                                      "reason": _text(reason, "reason")[:200], "on": _day(on, today=self.today()),
                                       "work_order_id": work_order_id})
         return self.part(part_id)
 
@@ -1929,7 +1947,7 @@ class Maintenance:
         self._get(location_id, "Location")
         self._emit("stock.reorder_set", {"part_id": part_id, "location_id": location_id,
                                          "reorder_point": self._amount(reorder_point, "reorder point"),
-                                         "on": date.today().isoformat()})
+                                         "on": self.today()})
         return self.part(part_id)
 
     def _stocks(self, part_id: str) -> list[dict]:
@@ -1952,7 +1970,7 @@ class Maintenance:
         spare at one of them and fewer are usable than that position keeps."""
         pt = self._get(part_id, "Part")
         stocks = self._stocks(part_id)
-        today = date.fromisoformat(date.today().isoformat())
+        today = date.fromisoformat(self.today())
         year_ago = (today - timedelta(days=365)).isoformat()
         used = sum(-mv["delta"] for st in stocks for mv in st.get("moves") or []
                    if mv["delta"] < 0 and mv["on"] >= year_ago)
@@ -2124,7 +2142,7 @@ class Maintenance:
         self._emit("position_part.listed", {
             "id": new_id(), "position_id": position_id, "part_id": part_id, "role": role, "quantity": qty,
             "critical": critical, "min_on_hand": self._keep_on_hand(critical, min_on_hand, qty),
-            "notes": _text(notes, "notes"), "on": date.today().isoformat()})
+            "notes": _text(notes, "notes"), "on": self.today()})
         return self.position_parts(position_id)
 
     def _one_replacement(self, listings: list[dict], but: str | None = None) -> None:
@@ -2167,7 +2185,7 @@ class Maintenance:
         """Take a part off a position's parts list (the catalogue keeps it)."""
         self._listing(listing_id)
         position_id = self.s.out(self.org, listing_id, "LISTED_AT")[0]["id"]
-        self._emit("position_part.removed", {"id": listing_id, "on": date.today().isoformat()})
+        self._emit("position_part.removed", {"id": listing_id, "on": self.today()})
         return self.position_parts(position_id)
 
     def _critical_views(self) -> list[dict]:
@@ -2228,7 +2246,7 @@ class Maintenance:
         self._emit("point.added", {
             "id": pid, "position_id": position_id, "kind": kind, "source": source, "tag": tag, "unit": unit,
             "name": _text(name, "name") or (f"{unit.capitalize()} counter" if kind == "counter" else "Condition"),
-            "alarm_above": above, "alarm_below": below, "on": date.today().isoformat()})
+            "alarm_above": above, "alarm_below": below, "on": self.today()})
         return self.point(pid)
 
     def update_point(self, point_id: str, name=None, alarm_above=..., alarm_below=..., tag=None) -> dict:
@@ -2281,8 +2299,8 @@ class Maintenance:
         counter's in order with its other readings (leaving out ``instead_of``, the
         reading it would replace)."""
         value = _number(value, "reading", -MAX_AMOUNT, MAX_AMOUNT)
-        day = _day(on)
-        if day > date.today().isoformat():
+        day = _day(on, today=self.today())
+        if day > self.today():
             raise Invalid("A reading can't be in the future.")
         if point.get("kind") == "counter":
             if value < 0:
@@ -2325,7 +2343,7 @@ class Maintenance:
             grouped.setdefault(point["id"], []).append((when, value))
         total = sum(len(pts) for pts in grouped.values())
         if total and self.limited:
-            day = date.today().isoformat()
+            day = _server_today()  # the server's day: one counter for every workspace
             used = self.s.series_days.get((self.org, day), 0)
             if used + total > MAX_READINGS_PER_DAY:
                 raise RateLimited(f"This workspace has stored {used:,} automated readings today; the limit is "
@@ -2338,7 +2356,8 @@ class Maintenance:
             point = self.s.node(self.org, pid)
             if point.get("kind") == "condition":
                 latest = self.s.series.latest(self.org, pid)
-                wo = self._check_alarm(pid, latest["value"], latest["t"][:10])
+                day = time_zones.day_of(datetime.fromisoformat(latest["t"]), self.tz)
+                wo = self._check_alarm(pid, latest["value"], day)
                 if wo:
                     alarms.append(wo)
         return {"stored": stored, "points": len(grouped), "unknown_tags": unknown, "work_orders_raised": alarms}
@@ -2370,7 +2389,7 @@ class Maintenance:
         point's readings, marked voided; rates, due dates and alarms leave it out."""
         if self._get(reading_id, "Reading").get("voided"):
             raise Invalid("That reading was already struck out.")
-        self._emit("reading.voided", {"id": reading_id, "on": date.today().isoformat(),
+        self._emit("reading.voided", {"id": reading_id, "on": self.today(),
                                       "reason": _text(reason, "reason", required=True)})
         return self.point(self.s.out(self.org, reading_id, "OF")[0]["id"])
 
@@ -2389,7 +2408,7 @@ class Maintenance:
             raise Invalid("That's the reading as it is: give the right value, the right date, or both.")
         new = new_id()
         self._emit("reading.corrected", {"id": reading_id, "new_id": new, "on": day, "value": new_value,
-                                         "reason": reason, "corrected_on": date.today().isoformat()})
+                                         "reason": reason, "corrected_on": self.today()})
         if point.get("kind") == "condition":
             latest = _manual_readings(self.s, self.org, point["id"])[-1]
             if latest["id"] == new:
@@ -2429,7 +2448,7 @@ class Maintenance:
         trend and projected alarm date (condition), status against its limits, and its
         recent readings (a manual point's with the struck-out and corrected ones, marked)."""
         mp = self._get(point_id, "MeasurementPoint")
-        readings = _readings(self.s, self.org, mp)
+        readings = _readings(self.s, self.org, mp, self.tz)
         last = readings[-1] if readings else None
         if mp.get("source") == "automated":
             latest = self.s.series.latest(self.org, point_id)
@@ -2487,7 +2506,7 @@ class Maintenance:
         for task in self._tasks_on(position_id):
             point = _task_point(self.s, self.org, task)
             if point and point.get("source") == "automated":
-                value = _reading_at(_readings(self.s, self.org, point), day)
+                value = _reading_at(_readings(self.s, self.org, point, self.tz), day)
                 if value is not None:
                     out[task["id"]] = value
         return out
@@ -2496,14 +2515,14 @@ class Maintenance:
         """Record when a task was last done (before it was tracked here), so
         its next due date counts from then."""
         self._get(task_id, "Task")
-        day = _day(on)
-        if day > date.today().isoformat():
+        day = _day(on, today=self.today())
+        if day > self.today():
             raise Invalid("Last done can't be in the future.")
         self._emit("task.updated", {"id": task_id, "changes": {"last_done": day}})
         return self._task_view(self._get(task_id, "Task"))
 
     def due_tasks(self, horizon_days: int = 30) -> list[dict]:
-        until = (date.today() + timedelta(days=horizon_days)).isoformat()
+        until = (date.fromisoformat(self.today()) + timedelta(days=horizon_days)).isoformat()
         out = []
         for task in self.s.nodes(self.org, "Task"):
             if task.get("retired"):
@@ -2538,7 +2557,7 @@ class Maintenance:
             "id": wid, "number": self._next_number(), "title": _text(title, "title", required=True),
             "type": type, "position_id": position_id, "task_id": task_id or None,
             "due": _day(due, "due date") if due else None, "notes": _text(notes, "notes"),
-            "on": date.today().isoformat(),
+            "on": self.today(),
         } | ({"trade": trade} if trade else {}))
         return self.work_order(wid)
 
@@ -2561,7 +2580,7 @@ class Maintenance:
         wo = self._get(work_order_id, "WorkOrder")
         if wo["status"] not in OPEN_STATUSES:
             raise Invalid("This work order is already closed.")
-        day = _day(on)
+        day = _day(on, today=self.today())
         position_id = self.s.out(self.org, work_order_id, "ON")[0]["id"]
         actions, readings = _dicts(actions, "actions"), _dicts(readings, "readings")
         # Check everything before writing anything.
@@ -2647,11 +2666,11 @@ class Maintenance:
     ITEM_FIELDS = ("name", "serial", "part_number", "manufacturer", "model", "notes")
     # Structured details, each checked by its function; None (or {}) clears one.
     ITEM_DETAILS = {
-        "purchase_date": lambda v: _dated_value(v, "purchase date"),
-        "in_service_date": lambda v: _dated_value(v, "in-service date"),
-        "manufacture_date": lambda v: _dated_value(v, "manufacture date"),
-        "replacement_cost": _cost_value,
-        "warranty": _warranty_value,
+        "purchase_date": lambda v, today: _dated_value(v, "purchase date", today),
+        "in_service_date": lambda v, today: _dated_value(v, "in-service date", today),
+        "manufacture_date": lambda v, today: _dated_value(v, "manufacture date", today),
+        "replacement_cost": lambda v, today: _cost_value(v, today=today),
+        "warranty": lambda v, today: _warranty_value(v),
     }
 
     def update_item(self, item_id: str, nameplate: dict | None = None, append_note=None, **changes) -> dict:
@@ -2668,7 +2687,7 @@ class Maintenance:
         out = {k: _text(v, k) for k, v in changes.items() if k in self.ITEM_FIELDS and v is not None}
         for key, check in self.ITEM_DETAILS.items():
             if key in changes:
-                value = check(changes[key])
+                value = check(changes[key], self.today())
                 if value != item.get(key):
                     out[key] = value
         if "name" in out and not out["name"]:
@@ -2689,7 +2708,7 @@ class Maintenance:
             out["nameplate"] = plate
         appended = self._note_to_append(item if "notes" not in out else {**item, **out}, append_note)
         if out:
-            self._emit("item.updated", {"id": item_id, "changes": out, "on": date.today().isoformat()})
+            self._emit("item.updated", {"id": item_id, "changes": out, "on": self.today()})
         if appended:
             self._emit("note.appended", appended)
         return self.item(item_id)
@@ -2700,7 +2719,7 @@ class Maintenance:
         if text is None or not str(text).strip():
             return None
         text = _text(text, "note")
-        on = date.today().isoformat()
+        on = self.today()
         if len(node.get("notes") or "") + len(on) + len(text) + 3 > MAX_NOTES:
             raise Invalid(f"The notes would be over {MAX_NOTES:,} characters. Replace them with a shorter "
                           "summary first.")
@@ -2713,7 +2732,7 @@ class Maintenance:
         self._get(to_position_id, "Position")
         if self.current_fitment(to_position_id):
             raise Invalid("Something is already fitted there. Move or remove it first.")
-        day = _day(on)
+        day = _day(on, today=self.today())
         current = self._current_fitment_of_item(item_id)
         if current:
             if current["id"] and self.s.out(self.org, current["id"], "AT")[0]["id"] == to_position_id:
@@ -2733,7 +2752,7 @@ class Maintenance:
         f = self._get(fitment_id, "Fitment")
         if f.get("voided"):
             raise Invalid("That fitment was already struck out.")
-        self._emit("fitment.voided", {"id": fitment_id, "on": date.today().isoformat(),
+        self._emit("fitment.voided", {"id": fitment_id, "on": self.today(),
                                       "reason": _text(reason, "reason")})
 
     def correct_fitment(self, fitment_id: str, start=None, end=None, from_precision=None, to_precision=None) -> dict:
@@ -2743,11 +2762,13 @@ class Maintenance:
         f = self._get(fitment_id, "Fitment")
         changes = {}
         if start or from_precision:
-            changes["from"], changes["from_precision"] = dated(start or f["from"], from_precision, "start date")
+            changes["from"], changes["from_precision"] = dated(start or f["from"], from_precision, "start date",
+                                                               today=self.today())
         if end or to_precision:
             if f.get("to") is None:
                 raise Invalid("It's still fitted: remove it, or close a work order, to end it.")
-            changes["to"], changes["to_precision"] = dated(end or f["to"], to_precision, "end date")
+            changes["to"], changes["to_precision"] = dated(end or f["to"], to_precision, "end date",
+                                                           today=self.today())
         new_from, new_to = changes.get("from", f["from"]), changes.get("to", f.get("to"))
         if new_to:
             _check_order(new_from, changes.get("from_precision", f.get("from_precision")),
@@ -2769,10 +2790,10 @@ class Maintenance:
         self._get(position_id, "Position")
         if start in (None, "") or end in (None, ""):
             raise Invalid("A past fitment needs the date it went in (start) and the date it came out (end).")
-        start, from_precision = dated(start, from_precision, "start date")
-        end, to_precision = dated(end, to_precision, "end date")
+        start, from_precision = dated(start, from_precision, "start date", today=self.today())
+        end, to_precision = dated(end, to_precision, "end date", today=self.today())
         _check_order(start, from_precision, end, to_precision)
-        if end > date.today().isoformat():
+        if end > self.today():
             raise Invalid("A past fitment has ended: the end date can't be in the future.")
         precisions = {k: v for k, v in (("from_precision", from_precision), ("to_precision", to_precision))
                       if v != "exact"}
@@ -2849,7 +2870,7 @@ class Maintenance:
         appended = self._note_to_append({**wo, **changes}, append_note)
         if changes:
             self._emit("work_order.updated", {"id": work_order_id, "changes": changes,
-                                              "on": date.today().isoformat()})
+                                              "on": self.today()})
         if appended:
             self._emit("note.appended", appended)
         return self.work_order(work_order_id)
@@ -2871,7 +2892,7 @@ class Maintenance:
             raise Invalid(f"The status is one of {', '.join(self.WORK_STATUSES)}.")
         if status != wo["status"]:
             self._emit("work_order.status", {"id": work_order_id, "status": status,
-                                             "on": date.today().isoformat(), "note": _text(note, "note")})
+                                             "on": self.today(), "note": _text(note, "note")})
         return self.work_order(work_order_id)
 
     @staticmethod
@@ -2899,7 +2920,7 @@ class Maintenance:
             raise Invalid("Hours must be more than 0 (and at most 1000).")
         self._emit("work_order.labour", {"id": new_id(), "work_order_id": work_order_id, "hours": hours,
                                          "who": _text(who, "who")[:120], "rate": self._amount(rate, "rate"),
-                                         "on": _day(on), "note": _text(note, "note")})
+                                         "on": _day(on, today=self.today()), "note": _text(note, "note")})
         return self.work_order(work_order_id)
 
     def add_part_used(self, work_order_id: str, part=None, quantity=1, unit_cost=None, part_number="", note="",
@@ -2942,7 +2963,7 @@ class Maintenance:
         if node.get("removed"):
             raise Invalid("That entry was already removed.")
         wo = self.s.out(self.org, entry_id, "OF")[0]
-        self._emit("work_order.entry_removed", {"id": entry_id, "on": date.today().isoformat()})
+        self._emit("work_order.entry_removed", {"id": entry_id, "on": self.today()})
         return self.work_order(wo["id"])
 
     def check_item(self, work_order_id: str, index: int, done: bool = True) -> dict:
@@ -2982,7 +3003,7 @@ class Maintenance:
         wo = self._get(work_order_id, "WorkOrder")
         if wo["status"] not in OPEN_STATUSES:
             raise Invalid("Only an open work order can be cancelled.")
-        self._emit("work_order.cancelled", {"id": work_order_id, "on": date.today().isoformat(),
+        self._emit("work_order.cancelled", {"id": work_order_id, "on": self.today(),
                                             "reason": _text(reason, "reason")})
         return self.work_order(work_order_id)
 
@@ -3049,7 +3070,7 @@ class Maintenance:
         if source not in TASK_SOURCES:
             raise Invalid(f"The source is one of {', '.join(TASK_SOURCES)}.")
         payload = {"id": new_id(), "position_id": position_id, "name": name, "outcome": outcome,
-                   "interval": interval, "unit": unit, "start": date.today().isoformat(),
+                   "interval": interval, "unit": unit, "start": self.today(),
                    "source": source, "reference": _text(reference, "reference"),
                    "instructions": _text(instructions, "instructions"), "checklist": _checklist(checklist),
                    "trade": _text(trade, "trade")}
@@ -3067,7 +3088,7 @@ class Maintenance:
         done = None
         if last_done not in (None, ""):
             done = _day(last_done, "last done date")
-            if done > date.today().isoformat():
+            if done > self.today():
                 raise Invalid("Last done can't be in the future.")
         self._quota("Task", MAX_TASKS)
         self._emit("task.added", payload)
@@ -3132,7 +3153,7 @@ class Maintenance:
         task = self._get(task_id, "Task")
         if task.get("retired"):
             raise Invalid("That task was already retired.")
-        self._emit("task.retired", {"id": task_id, "on": date.today().isoformat(), "reason": _text(reason, "reason")})
+        self._emit("task.retired", {"id": task_id, "on": self.today(), "reason": _text(reason, "reason")})
 
     def retire_position(self, position_id: str, reason="") -> None:
         """Take a position out of the plant (it stays in the history). Nothing may be
@@ -3146,7 +3167,7 @@ class Maintenance:
             raise Invalid("Positions inside it are still in use. Retire or move them first.")
         if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES for w in self.s.inn(self.org, position_id, "ON")):
             raise Invalid("It has open work orders. Close or cancel them first.")
-        self._emit("position.retired", {"id": position_id, "on": date.today().isoformat(),
+        self._emit("position.retired", {"id": position_id, "on": self.today(),
                                         "reason": _text(reason, "reason")})
 
     def update_location(self, location_id: str, name=None, description=None, parent_id=...) -> dict:
@@ -3192,7 +3213,7 @@ class Maintenance:
             **{k: _dated_view(item.get(k)) for k in ("purchase_date", "in_service_date", "manufacture_date")},
             "replacement_cost": item.get("replacement_cost"),
             "class_replacement_cost": class_cost and {**class_cost, "position_class": cls},
-            "warranty": warranty_view(item.get("warranty")),
+            "warranty": warranty_view(item.get("warranty"), self.today()),
             "documents": self.documents_of(id),
             "fitted_to": fitted_to,
             **where,
@@ -3390,8 +3411,9 @@ class Maintenance:
         source, as_of}): the default for items with no replacement cost of their own.
         None clears it."""
         name = self._class_name(position_class)
+        cost = _cost_value(replacement_cost, today=self.today())
         self._emit("class.updated", {"id": class_id(self.org, name), "name": name,
-                                     "changes": {"replacement_cost": _cost_value(replacement_cost)}})
+                                     "changes": {"replacement_cost": cost}})
         return self.position_class(name)
 
     def position_class(self, position_class: str) -> dict:
@@ -3427,7 +3449,7 @@ class Maintenance:
             elif pr["kind"] == "retire":
                 self.retire_task(task["id"], "accepted proposal: " + (pr.get("reason") or "")[:200])
         self._emit("proposal.decided", {"id": proposal_id, "decision": "accepted" if accept else "rejected",
-                                        "on": date.today().isoformat(), "note": _text(note, "note")})
+                                        "on": self.today(), "note": _text(note, "note")})
         return next(p for p in self.proposals(None) if p["id"] == proposal_id)
 
     def explain_task(self, task_id: str) -> dict:
@@ -3480,13 +3502,13 @@ class Maintenance:
         self._emit("interface.added", {"id": iid, "from_id": from_id, "to_id": to_id, "kind": kind,
                                        "medium": _text(medium, "medium"), "name": _text(name, "name"),
                                        "rating": _text(rating, "rating"), "realised_by": realised_by or None,
-                                       "on": date.today().isoformat()})
+                                       "on": self.today()})
         return self._interface_view(self._get(iid, "Interface"))
 
     def disconnect(self, interface_id: str) -> None:
         if self._get(interface_id, "Interface").get("retired"):
             raise Invalid("That connection was already removed.")
-        self._emit("interface.removed", {"id": interface_id, "on": date.today().isoformat()})
+        self._emit("interface.removed", {"id": interface_id, "on": self.today()})
 
     def _interface_view(self, i: dict) -> dict:
         src = self.s.out(self.org, i["id"], "FROM")[0]
@@ -3524,7 +3546,7 @@ class Maintenance:
         gid = new_id()
         self._emit("group.created", {"id": gid, "name": _text(name, "group's name") or
                                      " / ".join(m["name"] for m in members), "k": k, "mode": mode,
-                                     "standby": standby, "on": date.today().isoformat()})
+                                     "standby": standby, "on": self.today()})
         for m in members:
             self._emit("group.member_added", {"group_id": gid, "position_id": m["id"]})
         return self.group(gid)
@@ -3571,12 +3593,12 @@ class Maintenance:
         if position_id not in {m["id"] for m in self._members(group_id)}:
             raise Invalid("That position isn't in the group.")
         self._emit("duty.changed", {"group_id": group_id, "position_id": position_id,
-                                    "on": date.today().isoformat()})
+                                    "on": self.today()})
         return self.group(group_id)
 
     def retire_group(self, group_id: str) -> None:
         self._get(group_id, "RedundancyGroup")
-        self._emit("group.retired", {"id": group_id, "on": date.today().isoformat()})
+        self._emit("group.retired", {"id": group_id, "on": self.today()})
 
     def _members(self, group_id: str) -> list[dict]:
         return [m for m in self.s.inn(self.org, group_id, "IN_GROUP") if m["label"] == "Position"]
@@ -3651,13 +3673,13 @@ class Maintenance:
             raise LimitReached(f"This maintenance workspace can hold at most {MAX_DOCUMENTS:,} documents.")
         did = new_id()
         self._emit("document.added", {"id": did, **ref, "title": title, "url": url, "kind": kind,
-                                      "on": date.today().isoformat()})
+                                      "on": self.today()})
         return self.document(did)
 
     def remove_document(self, document_id: str) -> dict:
         if self._get(document_id, "Document").get("removed"):
             raise Invalid("That document was already removed.")
-        self._emit("document.removed", {"id": document_id, "on": date.today().isoformat()})
+        self._emit("document.removed", {"id": document_id, "on": self.today()})
         return {"removed": document_id}
 
     def document(self, document_id: str) -> dict:
@@ -3688,7 +3710,7 @@ class Maintenance:
         self._emit("photo.added", {
             "id": photo_id, "target_id": target_id, "caption": _text(caption, "caption"),
             "taken_on": cleaned.get("taken_on"), "width": cleaned.get("width"),
-            "height": cleaned.get("height"), "via": via, "on": date.today().isoformat(),
+            "height": cleaned.get("height"), "via": via, "on": self.today(),
         })
         return self.photo(photo_id)
 
@@ -3734,7 +3756,7 @@ class Maintenance:
         if source not in ("manual", "photo"):
             raise Invalid("The source is manual or photo.")
         self._emit("coordinates.set", {"node_id": node["id"], "lat": round(lat, 6), "lon": round(lon, 6),
-                                       "source": source, "on": date.today().isoformat()})
+                                       "source": source, "on": self.today()})
         node = self.s.node(self.org, node["id"])
         return {"id": node["id"], "kind": node["label"], "name": node.get("name") or node.get("title"),
                 "coordinates": node["coordinates"]}
@@ -3954,7 +3976,7 @@ class Maintenance:
         the dates allow. A failure then is interval censored (``c`` = 2, ``x`` the
         middle); anything else is censored at the shortest (``x`` = ``xl``), the life
         it surely reached. Exact rows are as they always were."""
-        today = date.today().isoformat()
+        today = self.today()
         rows = []
         for f in self._fitments_at(position_id):
             end = f.get("to") or today

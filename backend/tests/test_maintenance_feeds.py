@@ -52,10 +52,10 @@ def test_an_automated_counter_drives_a_task_by_use(backend):
     m.fit(pos["id"], new_item={"name": "Pump"}, on=(date.today() - timedelta(days=20)).isoformat())
     task = m.position(pos["id"])["tasks"][0]
     assert task["last_done_reading"] == pytest.approx(2080, abs=8)
-    # Feed readings are dated by their UTC day and "today" is the machine's local date:
-    # where those differ (east of UTC in the morning), the due date can move by a day.
+    # Feed readings are dated by their day in the workspace's zone, and so is today (no
+    # zone here: the machine's own, both), so the due date is exact.
     due = date.today() + timedelta(days=round((2580 - 2240) / 8))
-    assert abs((date.fromisoformat(task["next_due"]) - due).days) <= 1
+    assert task["next_due"] == due.isoformat()
 
 
 def test_an_automated_condition_feed_raises_one_inspection():

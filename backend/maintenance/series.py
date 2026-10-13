@@ -11,14 +11,17 @@ with its source and tag.
 
 Both answer the same questions: append readings, the latest one, the last
 reading of each day (what the due-date and trend maths use), and recent raw
-readings.
+readings. Times are stored as they come (UTC); only the day a reading falls on
+follows the workspace's time zone.
 """
 
 from __future__ import annotations
 
 import sqlite3
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
+
+from backend.services.time_zones import day_of
 
 MAX_BATCH = 10_000
 
@@ -76,15 +79,17 @@ class SqliteSeries:
                                      (org, point)).fetchone()
         return row and {"t": row[0], "value": row[1]}
 
-    def daily(self, org: str, point: str, days: int = 400) -> list[dict]:
+    def daily(self, org: str, point: str, days: int = 400, tz: tzinfo | None = None) -> list[dict]:
+        """The last reading of each day, the days as they fall in ``tz`` (the
+        workspace's zone; the server's when None)."""
         since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with self._lock:
             rows = self._conn.execute(
-                "SELECT substr(t, 1, 10) AS d, v FROM series WHERE org = ? AND point = ? AND t >= ? ORDER BY t",
+                "SELECT t, v FROM series WHERE org = ? AND point = ? AND t >= ? ORDER BY t",
                 (org, point, since)).fetchall()
         last: dict[str, float] = {}
-        for d, v in rows:
-            last[d] = v
+        for t, v in rows:
+            last[day_of(datetime.fromisoformat(t), tz)] = v
         return [{"on": d, "value": v} for d, v in last.items()]
 
     def recent(self, org: str, point: str, n: int = 50) -> list[dict]:
@@ -117,11 +122,11 @@ class MongoSeries:
         doc = next(iter(self._c.find({"m.org": org, "m.point": point}).sort("t", -1).limit(1)), None)
         return doc and {"t": _iso(doc["t"]), "value": doc["v"]}
 
-    def daily(self, org: str, point: str, days: int = 400) -> list[dict]:
+    def daily(self, org: str, point: str, days: int = 400, tz: tzinfo | None = None) -> list[dict]:
         since = datetime.now(timezone.utc) - timedelta(days=days)
         last: dict[str, float] = {}
         for doc in self._c.find({"m.org": org, "m.point": point, "t": {"$gte": since}}).sort("t", 1):
-            last[_iso(doc["t"])[:10]] = doc["v"]
+            last[day_of(doc["t"], tz)] = doc["v"]
         return [{"on": d, "value": v} for d, v in last.items()]
 
     def recent(self, org: str, point: str, n: int = 50) -> list[dict]:

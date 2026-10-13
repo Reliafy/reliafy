@@ -414,3 +414,22 @@ def test_positions_and_locations_through_mcp(env):
         return True
 
     assert _session(env["token"], flow)
+
+
+def test_the_workspaces_time_zone_over_mcp(env):
+    async def flow(client):
+        before = _ok(await client.call_tool("maintenance_overview", {}))
+        assert before["time_zone"] is None and before["today"]
+        bad = await client.call_tool("set_time_zone", {"time_zone": "Mars/Olympus_Mons"})
+        assert bad.is_error and "isn't a time zone" in bad.content[0].text
+        assert _ok(await client.call_tool("set_time_zone", {"time_zone": "Australia/Brisbane"})) == {
+            "time_zone": "Australia/Brisbane"}
+        after = _ok(await client.call_tool("maintenance_overview", {}))
+        assert after["time_zone"] == "Australia/Brisbane"
+        return after
+
+    from backend.services import time_zones
+
+    after = _session(env["token"], flow)
+    assert after["today"] == time_zones.today("Australia/Brisbane").isoformat()
+    assert env["db"].users.find_one({"_id": UID})["time_zone"] == "Australia/Brisbane"
