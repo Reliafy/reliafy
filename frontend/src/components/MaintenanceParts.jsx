@@ -20,9 +20,8 @@ export function fmtDated(iso, precision) {
   return datedText(iso, precision, fmtDate);
 }
 
-export function today() {
-  return new Date().toISOString().slice(0, 10);
-}
+// Today in the workspace's time zone (what the server dates things by).
+export { workspaceToday as today } from "../workspaceDate.js";
 
 // Every position in a tree, depth-first, with its depth (for pickers).
 export function flatten(tree, depth = 0, out = []) {

@@ -5,6 +5,7 @@ import { useWorkspace } from "../WorkspaceProvider.jsx";
 import {
   getTeam,
   renameTeam,
+  setTeamTimeZone,
   deleteTeam,
   inviteTeamMember,
   removeTeamMember,
@@ -13,6 +14,7 @@ import {
 } from "../api.js";
 import Modal from "../components/Modal.jsx";
 import TeamInvites from "../components/TeamInvites.jsx";
+import TimeZonePicker from "../components/TimeZonePicker.jsx";
 import { CreateTeamModal } from "../components/NavBar.jsx";
 import Button from "../components/ui/Button.jsx";
 import Chip from "../components/ui/Chip.jsx";
@@ -265,6 +267,18 @@ export default function TeamSettingsPage() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="card" style={{ marginTop: "1rem" }}>
+        <CardHeader
+          title="Time zone"
+          subtitle="Where the team's workspace is. Today, due dates and overdue follow its calendar for everyone in the team; not set, they follow UTC."
+        />
+        <TimeZonePicker
+          value={team.time_zone}
+          readOnly={!isOwner}
+          onSave={(zone) => setTeamTimeZone(team.id, zone).then(() => { refresh(); refreshTeams(); })}
+        />
       </div>
 
       {confirmDelete && (

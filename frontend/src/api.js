@@ -119,6 +119,19 @@ export function getMe() {
   return request("/api/me");
 }
 
+// The personal workspace's time zone: { time_zone } (an IANA name, or null: UTC).
+export function getMyTimeZone() {
+  return request("/api/me/time-zone");
+}
+
+export function setMyTimeZone(timeZone) {
+  return request("/api/me/time-zone", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ time_zone: timeZone || null }),
+  });
+}
+
 // Deployment capabilities (public, no auth): { auth, ai, billing }.
 export function getAppConfig() {
   return request("/api/config");
@@ -1535,6 +1548,15 @@ export function renameTeam(id, name) {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
+  });
+}
+
+// A team workspace's time zone (owner only): an IANA name, or null for UTC.
+export function setTeamTimeZone(id, timeZone) {
+  return request(`/api/teams/${id}/time-zone`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ time_zone: timeZone || null }),
   });
 }
 

@@ -17,7 +17,25 @@ import { PlusIcon } from "../components/LibRows.jsx";
 import {
   DueChip, Field, FormModal, LocationPicker, MaintenanceTabs, PositionPicker, Proposals, flatten, fmtDate,
 } from "../components/MaintenanceParts.jsx";
+import { useWorkspace } from "../WorkspaceProvider.jsx";
+import { browserTimeZone, shouldSuggestTimeZone } from "../workspaceDate.js";
 import "./Maintenance.css";
+
+// One quiet line when the workspace has no time zone and this device isn't on
+// UTC: the dates here follow UTC until it's set.
+function TimeZoneNudge({ zone }) {
+  const { workspace, activeTeam } = useWorkspace();
+  const browser = browserTimeZone();
+  if (!shouldSuggestTimeZone(zone, browser)) return null;
+  const team = workspace !== "personal";
+  if (team && activeTeam?.role !== "owner") return null;
+  return (
+    <p className="muted-line">
+      Dates here follow UTC, so today turns over at UTC midnight.{" "}
+      <Link to={team ? "/team" : "/settings"}>Set this workspace's time zone</Link> ({browser.replaceAll("_", " ")}?).
+    </p>
+  );
+}
 
 // Reliafy Maintenance home: what's due, open work orders, and the plant as a
 // tree of positions with what's fitted in each.
@@ -84,6 +102,7 @@ export default function MaintenanceHome() {
       />
       <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
+      {data && <TimeZoneNudge zone={data.time_zone} />}
       {data === null ? (
         <div className="card empty">Loading…</div>
       ) : data.tree.length === 0 ? (
