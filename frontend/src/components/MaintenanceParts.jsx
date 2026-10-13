@@ -227,7 +227,7 @@ export function MaintenanceTabs() {
 
 export function LifeTable({ rows, showPosition = false, onFix }) {
   return (
-    <table className="lib-table">
+    <div style={{ overflowX: "auto" }}><table className="lib-table">
       <thead>
         <tr>
           {showPosition && <th>Position</th>}
@@ -250,7 +250,7 @@ export function LifeTable({ rows, showPosition = false, onFix }) {
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 

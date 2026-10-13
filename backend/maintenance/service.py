@@ -421,14 +421,6 @@ def _end_reason(reason, mode_ref) -> str:
     return reason
 
 
-def _precision(value, what: str) -> str | None:
-    if value in (None, ""):
-        return None
-    if value not in DATE_PRECISIONS:
-        raise Invalid(f"The {what} is one of {', '.join(DATE_PRECISIONS)}.")
-    return value
-
-
 def _unit(value, default: str) -> str:
     unit = _norm_unit(value) or default
     if len(unit) > 20:
@@ -609,7 +601,8 @@ def _failure_mode_merged(s: GraphStore, org: str, p: dict) -> None:
 
 # Task fields that only tasks added by hand (or edited since) carry: projected
 # only when the payload has them, so older events give the same tasks.
-_TASK_EXTRAS = ("source", "reference", "also_interval", "also_unit", "point_id", "instructions", "checklist")
+_TASK_EXTRAS = ("source", "reference", "also_interval", "also_unit", "point_id", "instructions", "checklist",
+               "trade")
 
 
 def _task_added(s: GraphStore, org: str, p: dict) -> None:
@@ -2230,13 +2223,13 @@ class Maintenance:
         self._get(position_id, "Position")
         if start in (None, "") or end in (None, ""):
             raise Invalid("A past fitment needs the date it went in (start) and the date it came out (end).")
-        start, end = _day(start, "start date"), _day(end, "end date")
-        if end < start:
-            raise Invalid("It can't come out before it went in.")
+        start, from_precision = dated(start, from_precision, "start date")
+        end, to_precision = dated(end, to_precision, "end date")
+        _check_order(start, from_precision, end, to_precision)
         if end > date.today().isoformat():
             raise Invalid("A past fitment has ended: the end date can't be in the future.")
-        precisions = {"from_precision": _precision(from_precision, "start date's precision"),
-                      "to_precision": _precision(to_precision, "end date's precision")}
+        precisions = {k: v for k, v in (("from_precision", from_precision), ("to_precision", to_precision))
+                      if v != "exact"}
         ref = self._mode_ref(position_id, failure_mode_id, failure_mode_text)
         reason = _end_reason(reason, ref)
         clash = self._overlapping(self._fitments_at(position_id), start, end)
@@ -2489,7 +2482,7 @@ class Maintenance:
 
     def create_task(self, position_id: str, name, interval, unit="months", outcome=None, also_interval=None,
                     also_unit=None, point_id=None, instructions="", checklist=None, source="manual", reference="",
-                    failure_mode_id=None, last_done=None) -> dict:
+                    failure_mode_id=None, last_done=None, trade="") -> dict:
         """A scheduled task on a position without an RCM study: from the maker's
         manual (source 'oem'), a law or standard ('statutory'), your own practice
         ('manual') or elsewhere ('other'). It's scheduled, raises work orders and
@@ -2512,7 +2505,8 @@ class Maintenance:
         payload = {"id": new_id(), "position_id": position_id, "name": name, "outcome": outcome,
                    "interval": interval, "unit": unit, "start": date.today().isoformat(),
                    "source": source, "reference": _text(reference, "reference"),
-                   "instructions": _text(instructions, "instructions"), "checklist": _checklist(checklist)}
+                   "instructions": _text(instructions, "instructions"), "checklist": _checklist(checklist),
+                   "trade": _text(trade, "trade")}
         payload |= {k: v for k, v in self._also_limit(also_interval, also_unit).items() if v is not None}
         if point_id:
             point = self._counter(point_id)
@@ -2777,7 +2771,7 @@ class Maintenance:
             position = task and self.s.out(self.org, task[0]["id"], "ON")
             out.append({k: pr.get(k) for k in ("id", "kind", "current", "proposed", "reason", "status",
                                                 "made_on", "decided_on", "class_name")} | {
-                "task": task and {"id": task[0]["id"], "name": task[0]["name"]},
+                "task": {"id": task[0]["id"], "name": task[0]["name"]} if task else None,
                 "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
             })
         return sorted(out, key=lambda p: p["made_on"] or "", reverse=True)
@@ -3246,7 +3240,7 @@ class Maintenance:
             actions.append({
                 "id": a["id"], "kind": a["kind"], "finding": a.get("finding"), "notes": a.get("notes", ""),
                 "failure_mode": fm and {"id": fm[0]["id"], "text": fm[0]["text"]},
-                "removed": ended and self._fitment_view(ended[0])["item"],
+                "removed": self._fitment_view(ended[0])["item"] if ended else None,
                 "fitted": started and self._fitment_view(started[0])["item"],
             })
         task = self.s.out(self.org, id, "FOR")
@@ -3255,7 +3249,7 @@ class Maintenance:
             **self._wo_brief(w), "notes": w.get("notes", ""), "note_history": w.get("note_history") or [],
             "close_notes": w.get("close_notes", ""), "cancel_reason": w.get("cancel_reason", ""),
             "actions": actions,
-            "task": task and {"id": task[0]["id"], "name": task[0]["name"]},
+            "task": {"id": task[0]["id"], "name": task[0]["name"]} if task else None,
             "fitted": position["fitted"], "failure_modes": position["failure_modes"],
             "class_failure_modes": position["class_failure_modes"],
             "measurements": [{k: mp[k] for k in ("id", "name", "kind", "unit", "reading")}

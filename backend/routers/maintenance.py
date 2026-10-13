@@ -244,7 +244,7 @@ def create_task(position_id: str, body: dict = Body(...), m: Maintenance = Depen
     return _run(m.create_task, position_id, body.get("name"), body.get("interval"), body.get("unit") or "months",
                 body.get("outcome"), body.get("also_interval"), body.get("also_unit"), body.get("point_id"),
                 body.get("instructions", ""), body.get("checklist"), body.get("source") or "manual",
-                body.get("reference", ""), body.get("failure_mode_id"), body.get("last_done"))
+                body.get("reference", ""), body.get("failure_mode_id"), body.get("last_done"), body.get("trade", ""))
 
 
 @router.post("/positions/{position_id}/failure-modes")

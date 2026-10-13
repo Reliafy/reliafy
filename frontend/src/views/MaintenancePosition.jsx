@@ -150,7 +150,7 @@ export default function MaintenancePosition() {
           <p className="lib-date">No scheduled tasks. Add one (from the maker's manual, a regulation or your own
             practice), or apply an RCM study whose decisions have intervals.</p>
         ) : (
-          <table className="lib-table">
+          <div style={{ overflowX: "auto" }}><table className="lib-table">
             <thead><tr><th>Task</th><th>Every</th><th>Last done</th><th>Next due</th><th>Work order</th><th><span className="sr-only">Edit</span></th></tr></thead>
             <tbody>
               {p.tasks.map((t) => (
@@ -173,7 +173,7 @@ export default function MaintenancePosition() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </section>
 
@@ -186,7 +186,7 @@ export default function MaintenancePosition() {
         {p.work_orders.length === 0 ? (
           <p className="lib-date">None yet.</p>
         ) : (
-          <table className="lib-table">
+          <div style={{ overflowX: "auto" }}><table className="lib-table">
             <thead><tr><th>#</th><th>Title</th><th>Type</th><th>Trade</th><th>Status</th><th>Opened</th><th>Closed</th></tr></thead>
             <tbody>
               {p.work_orders.map((w) => (
@@ -198,7 +198,7 @@ export default function MaintenancePosition() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </section>
 
@@ -211,7 +211,7 @@ export default function MaintenancePosition() {
           <p className="lib-date">None yet. They come from an RCM study, are added here, or are recorded when
             something fails.</p>
         ) : (
-          <table className="lib-table">
+          <div style={{ overflowX: "auto" }}><table className="lib-table">
             <thead><tr><th>Failure mode</th><th>Functional failure</th><th>Consequence</th><th>Decision</th><th><span className="sr-only">Edit</span></th></tr></thead>
             <tbody>
               {p.failure_modes.map((m) => (
@@ -224,7 +224,7 @@ export default function MaintenancePosition() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </section>
 
@@ -346,7 +346,7 @@ const UNITS = ["days", "weeks", "months", "years", "hours", "cycles", "km", "sta
 function AddTaskModal({ p, onClose, onDone }) {
   const [f, setF] = useState({
     name: "", interval: "", unit: "months", also: "", also_unit: "months", outcome: "", source: "manual",
-    reference: "", point_id: "", failure_mode_id: "", instructions: "", checklist: "", last_done: "",
+    reference: "", point_id: "", failure_mode_id: "", instructions: "", checklist: "", last_done: "", trade: "",
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const counters = p.measurements.filter((mp) => mp.kind === "counter");
@@ -355,7 +355,7 @@ function AddTaskModal({ p, onClose, onDone }) {
                onClose={onClose} onSubmit={async () => onDone(await createMaintenanceTask(p.id, {
                  name: f.name, interval: Number(f.interval), unit: f.unit, outcome: f.outcome || null,
                  also_interval: f.also ? Number(f.also) : null, also_unit: f.also ? f.also_unit : null,
-                 source: f.source, reference: f.reference, point_id: f.point_id || null,
+                 source: f.source, reference: f.reference, point_id: f.point_id || null, trade: f.trade,
                  failure_mode_id: f.failure_mode_id || null, instructions: f.instructions,
                  checklist: f.checklist.split("\n").map((x) => x.trim()).filter(Boolean), last_done: f.last_done || null,
                }))}>
@@ -402,6 +402,7 @@ function AddTaskModal({ p, onClose, onDone }) {
           </select>
         </Field>
       )}
+      <Field label="Who may do it (optional)"><input value={f.trade} placeholder="e.g. licensed electrician" onChange={set("trade")} /></Field>
       <Field label="Instructions (optional)"><textarea rows={3} value={f.instructions} onChange={set("instructions")} /></Field>
       <Field label="Checklist, one step per line (optional)"><textarea rows={3} value={f.checklist} onChange={set("checklist")} /></Field>
       <Field label="Last done (optional)"><input type="date" value={f.last_done} max={today()} onChange={set("last_done")} /></Field>
@@ -444,17 +445,22 @@ function FailureModeModal({ p, mode, onClose, onDone }) {
 // An earlier item into the history: in and out, with why it came out.
 function PastFitmentModal({ p, onClose, onDone }) {
   const [items, setItems] = useState(null);
-  const [f, setF] = useState({ item_id: "", name: "", serial: "", start: "", end: "", reason: "planned" });
+  const [f, setF] = useState({ item_id: "", name: "", serial: "", reason: "planned" });
+  const [start, setStart] = useState(roughDate(""));
+  const [end, setEnd] = useState(roughDate(""));
   const [mode, setMode] = useState(null);
+  const startText = roughDateValue(start.text, start.precision);
+  const endText = roughDateValue(end.text, end.precision);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   useEffect(() => {
     listMaintenanceItems().then((d) => setItems(d.items || [])).catch(() => setItems([]));
   }, []);
-  const ready = (f.item_id || f.name.trim()) && f.start && f.end && (f.reason !== "failure" || failureModeReady(mode));
+  const ready = (f.item_id || f.name.trim()) && startText && endText && (f.reason !== "failure" || failureModeReady(mode));
   return (
     <FormModal title="Add a past fitment" submitLabel="Add" canSubmit={!!ready} onClose={onClose}
                onSubmit={async () => onDone(await addPastFitment(p.id, {
-                 start: f.start, end: f.end, reason: f.reason, item_id: f.item_id || null,
+                 start: startText, end: endText, from_precision: start.precision, to_precision: end.precision,
+                 reason: f.reason, item_id: f.item_id || null,
                  new_item: f.item_id ? null : { name: f.name, serial: f.serial },
                  ...(f.reason === "failure" ? failureModeBody(mode) : {}),
                }))}>
@@ -472,8 +478,8 @@ function PastFitmentModal({ p, onClose, onDone }) {
         <Field label="New item"><input value={f.name} placeholder="e.g. Astral CTX 280" onChange={set("name")} /></Field>
         <Field label="Serial (optional)"><input value={f.serial} onChange={set("serial")} /></Field>
       </>}
-      <Field label="Went in"><input type="date" value={f.start} max={today()} onChange={set("start")} /></Field>
-      <Field label="Came out"><input type="date" value={f.end} max={today()} onChange={set("end")} /></Field>
+      <RoughDateField label="Went in" value={start} max={today()} onChange={setStart} />
+      <RoughDateField label="Came out" value={end} max={today()} onChange={setEnd} />
       <Field label="Why it came out">
         <select value={f.reason} onChange={set("reason")}>
           <option value="planned">Planned (still working)</option>

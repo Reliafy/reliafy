@@ -495,7 +495,7 @@ def register() -> None:
                     outcome: Outcome | None = None, also_interval: float | None = None, also_unit: str | None = None,
                     point_id: str | None = None, instructions: str = "", checklist: list[str] | None = None,
                     source: Source = "manual", reference: str = "", failure_mode_id: str | None = None,
-                    last_done: DateText = None) -> dict[str, Any]:
+                    last_done: DateText = None, trade: str = "") -> dict[str, Any]:
         """A scheduled task on a position without an RCM study (e.g. from the maker's manual or
         a regulation). It falls due, raises work orders (generate_work_orders) and renews when a
         new item is fitted, like a task from RCM. interval + unit: days, weeks, months, years, or
@@ -506,9 +506,10 @@ def register() -> None:
         (a condition check), or none for other routine work (lubrication, cleaning). source:
         oem, statutory, manual (own practice) or other, with reference (a manual section, a
         clause). failure_mode_id links it to a failure mode on the position (from RCM: it then
-        becomes that decision's task). last_done: when it was last done, if known."""
+        becomes that decision's task). last_done: when it was last done, if known. trade: who may
+        do it ('licensed electrician', 'gas fitter'); its work orders carry it."""
         return run(m_for(ctx).create_task, position_id, name, interval, unit, outcome, also_interval, also_unit,
-                   point_id, instructions, checklist, source, reference, failure_mode_id, last_done)
+                   point_id, instructions, checklist, source, reference, failure_mode_id, last_done, trade)
 
     @tool("update_task", _WRITE, "Update a task")
     def update_task(task_id: str, ctx: Context, name: str | None = None, interval: float | None = None,
