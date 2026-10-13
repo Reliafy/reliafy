@@ -189,7 +189,48 @@ def from_rcm(body: dict = Body(...), session=Depends(get_session), ctx: AccessCt
 
 @router.patch("/tasks/{task_id}")
 def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(m.set_last_done, task_id, body.get("last_done"))
+    """Set when it was last done, and/or change its name, interval or unit."""
+    def go():
+        view = None
+        if body.get("last_done"):
+            view = m.set_last_done(task_id, body["last_done"])
+        if any(k in body for k in ("name", "interval", "unit")):
+            view = m.update_task(task_id, body.get("name"), body.get("interval"), body.get("unit"))
+        if view is None:
+            raise Invalid("Nothing to change.")
+        return view
+    return _run(go)
+
+
+@router.post("/tasks/{task_id}/retire")
+def retire_task(task_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: (m.retire_task(task_id, body.get("reason", "")), {"retired": task_id})[1])
+
+
+@router.post("/positions/{position_id}/retire")
+def retire_position(position_id: str, body: dict = Body(default={}),
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: (m.retire_position(position_id, body.get("reason", "")), {"retired": position_id})[1])
+
+
+@router.post("/fitments/{fitment_id}/void")
+def void_fitment(fitment_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: (m.void_fitment(fitment_id, body.get("reason", "")), {"voided": fitment_id})[1])
+
+
+@router.patch("/fitments/{fitment_id}")
+def correct_fitment(fitment_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.correct_fitment, fitment_id, body.get("start"), body.get("end"))
+
+
+@router.get("/classes")
+def position_classes(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: {"classes": m.position_classes()})
+
+
+@router.get("/classes/life-data")
+def class_life_data(position_class: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.class_life_data, position_class)
 
 
 # ---- items and locations ---------------------------------------------------------------
@@ -205,6 +246,22 @@ def create_item(body: dict = Body(...), m: Maintenance = Depends(maintenance)) -
                                              body.get("manufacturer", ""), body.get("notes", ""))["id"]))
 
 
+@router.get("/items/{item_id}")
+def get_item(item_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.item, item_id)
+
+
+@router.patch("/items/{item_id}")
+def update_item(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.update_item, item_id, body.get("nameplate"),
+                **{k: body[k] for k in Maintenance.ITEM_FIELDS if k in body})
+
+
+@router.post("/items/{item_id}/move")
+def move_item(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.move_item, item_id, body.get("position_id"), body.get("on"))
+
+
 @router.post("/items/{item_id}/place")
 def place_item(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.place_item, item_id, body.get("location_id"), body.get("on"))
@@ -212,7 +269,18 @@ def place_item(item_id: str, body: dict = Body(...), m: Maintenance = Depends(ma
 
 @router.get("/locations")
 def list_locations(m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: {"locations": m.locations()})
+    return _run(lambda: {"locations": m.locations(), "tree": m.location_tree()})
+
+
+@router.get("/locations/{location_id}")
+def get_location(location_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.location, location_id)
+
+
+@router.patch("/locations/{location_id}")
+def update_location(location_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    kwargs = {k: body[k] for k in ("name", "description", "parent_id") if k in body}
+    return _run(m.update_location, location_id, **kwargs)
 
 
 @router.post("/locations")
@@ -237,6 +305,19 @@ def open_work_order(body: dict = Body(...), m: Maintenance = Depends(maintenance
 def generate_work_orders(horizon_days: int = Body(30, embed=True),
                          m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {"work_orders": m.generate_work_orders(max(0, min(horizon_days, 366)))})
+
+
+@router.patch("/work-orders/{work_order_id}")
+def update_work_order(work_order_id: str, body: dict = Body(...),
+                      m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.update_work_order, work_order_id, body.get("title"), body.get("due") if "due" in body else None,
+                body.get("notes"), body.get("type"))
+
+
+@router.post("/work-orders/{work_order_id}/cancel")
+def cancel_work_order(work_order_id: str, body: dict = Body(default={}),
+                      m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.cancel_work_order, work_order_id, body.get("reason", ""))
 
 
 @router.get("/work-orders/{work_order_id}")

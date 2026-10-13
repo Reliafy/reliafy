@@ -7,13 +7,19 @@ import {
   getMaintenancePosition,
   listRcmStudies,
   openWorkOrder,
+  correctMaintenanceFitment,
   removeMaintenanceItem,
+  retireMaintenancePosition,
+  retireMaintenanceTask,
   setTaskLastDone,
+  updateMaintenancePosition,
+  updateMaintenanceTask,
+  voidMaintenanceFitment,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DueChip, Field, FormModal, OUTCOME_LABELS, flatten, fmtDate, today,
+  DueChip, Field, FormModal, LifeTable, MaintenanceTabs, OUTCOME_LABELS, flatten, fmtDate, today,
 } from "../components/MaintenanceParts.jsx";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
@@ -56,10 +62,17 @@ export default function MaintenancePosition() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Maintenance", to: "/maintenance" }, ...p.path.map((a) => ({ label: a.name, to: `/maintenance/positions/${a.id}` }))]}
+        crumbs={[{ label: "Maintenance", to: "/maintenance" }, ...p.path.map((a) => ({
+          label: a.name, to: a.kind === "Item" ? `/maintenance/items/${a.id}` : `/maintenance/positions/${a.id}` }))]}
         title={p.name}
         meta={[p.tag, p.position_class, p.description].filter(Boolean).join(" · ") || "Position"}
         id={p.id}
+        menu={
+          <>
+            <button className="ovm-item" onClick={() => setModal("edit")}>Edit position</button>
+            <button className="ovm-item" onClick={() => setModal("retire")}>Retire position</button>
+          </>
+        }
         actions={
           <>
             <button className="secondary" onClick={openChild}><PlusIcon /> Position inside</button>
@@ -68,6 +81,7 @@ export default function MaintenancePosition() {
         }
         primary={<button onClick={() => setModal("wo")}>New work order</button>}
       />
+      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
 
       <section className="card">
@@ -81,7 +95,7 @@ export default function MaintenancePosition() {
         </div>
         {p.fitted ? (
           <p>
-            <strong>{p.fitted.item?.name}</strong>
+            <strong>{p.fitted.item ? <Link to={`/maintenance/items/${p.fitted.item.id}`}>{p.fitted.item.name}</Link> : "?"}</strong>
             {p.fitted.item?.serial && <span className="lib-date"> · serial {p.fitted.item.serial}</span>}
             <span className="lib-date"> · since {fmtDate(p.fitted.from)}</span>
           </p>
@@ -109,7 +123,7 @@ export default function MaintenancePosition() {
           <p className="lib-date">No scheduled tasks. Apply an RCM study whose decisions have intervals.</p>
         ) : (
           <table className="lib-table">
-            <thead><tr><th>Task</th><th>Every</th><th>Last done</th><th>Next due</th><th>Work order</th></tr></thead>
+            <thead><tr><th>Task</th><th>Every</th><th>Last done</th><th>Next due</th><th>Work order</th><th><span className="sr-only">Edit</span></th></tr></thead>
             <tbody>
               {p.tasks.map((t) => (
                 <tr key={t.id}>
@@ -125,6 +139,7 @@ export default function MaintenancePosition() {
                   <td>{t.open_work_order
                     ? <Link to={`/maintenance/work-orders/${t.open_work_order.id}`}>#{t.open_work_order.number}</Link>
                     : <button className="secondary" onClick={() => workOrderForTask(t)}>Create</button>}</td>
+                  <td><button className="crumb-link" onClick={() => setModal({ task: t })}>Edit</button></td>
                 </tr>
               ))}
             </tbody>
@@ -180,21 +195,7 @@ export default function MaintenancePosition() {
         {p.life_data.length === 0 ? (
           <p className="lib-date">No fitments yet.</p>
         ) : (
-          <table className="lib-table">
-            <thead><tr><th>Item</th><th>In</th><th>Out</th><th>Days</th><th>Outcome</th><th>Failure mode</th></tr></thead>
-            <tbody>
-              {p.life_data.map((r, i) => (
-                <tr key={i}>
-                  <td>{r.item}</td>
-                  <td className="lib-date">{fmtDate(r.from)}</td>
-                  <td className="lib-date">{fmtDate(r.to)}</td>
-                  <td>{r.x}</td>
-                  <td>{r.status}</td>
-                  <td className="lib-date">{r.failure_mode || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <LifeTable rows={p.life_data} onFix={(r) => setModal({ fix: r })} />
         )}
       </section>
 
@@ -207,6 +208,16 @@ export default function MaintenancePosition() {
         </section>
       )}
 
+      {modal === "edit" && <EditPositionModal p={p} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
+      {modal === "retire" && (
+        <FormModal title={`Retire ${p.name}`} submitLabel="Retire" onClose={() => setModal(null)}
+                   onSubmit={async () => { await retireMaintenancePosition(p.id, ""); navigate("/maintenance"); }}>
+          <p>It leaves the plant tree and stops scheduling tasks. Its history stays. Nothing may be fitted,
+            nothing inside it in use, and no work order open.</p>
+        </FormModal>
+      )}
+      {modal?.task && <TaskModal task={modal.task} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
+      {modal?.fix && <FixModal row={modal.fix} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.lastDone && (
         <LastDoneModal task={modal.lastDone} onClose={() => setModal(null)}
                        onDone={() => { setModal(null); refresh(); }} />
@@ -325,6 +336,61 @@ function LastDoneModal({ task, onClose, onDone }) {
                onSubmit={async () => onDone(await setTaskLastDone(task.id, on))}>
       <p className="lib-date">When this was last done, so the next due date counts from then.</p>
       <Field label="Last done on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
+    </FormModal>
+  );
+}
+
+function EditPositionModal({ p, onClose, onDone }) {
+  const [f, setF] = useState({ name: p.name, tag: p.tag || "", position_class: p.position_class || "", description: p.description || "" });
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  return (
+    <FormModal title="Edit position" submitLabel="Save" canSubmit={!!f.name.trim()} onClose={onClose}
+               onSubmit={async () => onDone(await updateMaintenancePosition(p.id, f))}>
+      <Field label="Name"><input value={f.name} onChange={set("name")} /></Field>
+      <Field label="Tag"><input value={f.tag} onChange={set("tag")} /></Field>
+      <Field label="Class (to compare like positions)"><input value={f.position_class} onChange={set("position_class")} /></Field>
+      <Field label="Description"><input value={f.description} onChange={set("description")} /></Field>
+    </FormModal>
+  );
+}
+
+function TaskModal({ task, onClose, onDone }) {
+  const [name, setName] = useState(task.name);
+  const [interval, setInterval] = useState(String(task.interval));
+  const [unit, setUnit] = useState(task.unit);
+  const [busy, setBusy] = useState(false);
+  return (
+    <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && Number(interval) > 0} onClose={onClose}
+               onSubmit={async () => onDone(await updateMaintenanceTask(task.id, { name, interval: Number(interval), unit }))}>
+      <Field label="Task"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Every">
+        <div className="maint-row" style={{ marginTop: 0 }}>
+          <input type="number" min="0" step="any" value={interval} onChange={(e) => setInterval(e.target.value)} style={{ width: "6rem" }} />
+          <select value={unit} onChange={(e) => setUnit(e.target.value)}>
+            {["days", "weeks", "months", "years", "hours", "cycles", "km"].map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+      </Field>
+      <button className="secondary" disabled={busy} onClick={async () => {
+        setBusy(true); await retireMaintenanceTask(task.id, ""); onDone();
+      }}>Retire this task</button>
+    </FormModal>
+  );
+}
+
+function FixModal({ row, onClose, onDone }) {
+  const [start, setStart] = useState(row.from);
+  const [end, setEnd] = useState(row.to || "");
+  const [busy, setBusy] = useState(false);
+  return (
+    <FormModal title={`Fix: ${row.item}`} submitLabel="Save dates" onClose={onClose}
+               onSubmit={async () => onDone(await correctMaintenanceFitment(row.fitment_id, { start, end: row.to ? end : null }))}>
+      <Field label="Went in"><input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></Field>
+      {row.to && <Field label="Came out"><input type="date" value={end} onChange={(e) => setEnd(e.target.value)} /></Field>}
+      <p className="lib-date">Recorded by mistake (wrong item or position)? Strike it out: it leaves the history and the life data.</p>
+      <button className="secondary" disabled={busy} onClick={async () => {
+        setBusy(true); await voidMaintenanceFitment(row.fitment_id, "recorded by mistake"); onDone();
+      }}>Strike it out</button>
     </FormModal>
   );
 }

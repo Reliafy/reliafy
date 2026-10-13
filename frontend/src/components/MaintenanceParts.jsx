@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NavLink } from "react-router-dom";
 import Modal from "./Modal.jsx";
 
 // Shared pieces for the Reliafy Maintenance pages.
@@ -92,3 +93,50 @@ export const OUTCOME_LABELS = {
   redesign: "Redesign",
   accept: "Accept",
 };
+
+// The Maintenance section's own tabs.
+export function MaintenanceTabs() {
+  const tabs = [
+    { to: "/maintenance", label: "Overview", end: true },
+    { to: "/maintenance/items", label: "Items" },
+    { to: "/maintenance/locations", label: "Locations" },
+    { to: "/maintenance/classes", label: "Classes" },
+  ];
+  return (
+    <nav className="maint-tabs" aria-label="Maintenance">
+      {tabs.map((t) => (
+        <NavLink key={t.to} to={t.to} end={t.end} className={({ isActive }) => (isActive ? "active" : "")}>
+          {t.label}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
+export function LifeTable({ rows, showPosition = false, onFix }) {
+  return (
+    <table className="lib-table">
+      <thead>
+        <tr>
+          {showPosition && <th>Position</th>}
+          <th>Item</th><th>In</th><th>Out</th><th>Days</th><th>Outcome</th><th>Failure mode</th>
+          {onFix && <th><span className="sr-only">Fix</span></th>}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.fitment_id || `${r.from}-${r.item}`}>
+            {showPosition && <td>{r.position}</td>}
+            <td>{r.item}</td>
+            <td className="lib-date">{fmtDate(r.from)}</td>
+            <td className="lib-date">{fmtDate(r.to)}</td>
+            <td>{r.x}</td>
+            <td>{r.status}</td>
+            <td className="lib-date">{r.failure_mode || "—"}</td>
+            {onFix && <td><button className="crumb-link" onClick={() => onFix(r)}>Fix</button></td>}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
