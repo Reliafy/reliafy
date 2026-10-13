@@ -31,7 +31,7 @@ Grandfathered: subscribers to the retired Agent plan (US$2/month, MCP only)
 keep what they had until their subscription ends — every tool except fitting
 and fleets (agents fit locally with SurPyval and save with ``save_model``),
 within a daily tool-call quota and the Agent storage caps. Availability
-simulation keeps the app's own paid gate (Pro or purchased credits). Every
+simulation keeps the app's own paid gate (Pro). Every
 refusal is a tool error that says what the limit is, when it resets and how
 to upgrade — never a transport failure.
 
@@ -212,7 +212,7 @@ def _simulation_message(plan: str) -> str:
     """Why analyze_rbd can't simulate for a Free or grandfathered Agent user, and the
     two ways forward: Pro, or run the same diagram locally for free."""
     return (f"Availability simulation isn't included on the {_PLAN_NAMES[plan]} plan: it needs Reliafy Pro "
-            f"({PRO_PRICE}; purchased AI credits unlock it too) — upgrade at {_billing_url()} (or call "
+            f"({PRO_PRICE}) — upgrade at {_billing_url()} (or call "
             "upgrade_link for a payment link). It's free to run "
             "locally: export_rbd_python (Download as Python in the app) gives a standalone script that runs "
             "this diagram's simulation with RePyability, plus the exact install-and-run command. A saved "
@@ -3948,7 +3948,7 @@ def analyze_rbd(
     recompute: Annotated[bool, Field(description=(
         "Repairable: re-run the simulation even when a saved result matches (paid feature)."))] = False,
     simulate: Annotated[Optional[bool], Field(description=(
-        "Repairable: the Monte-Carlo simulation (paid: Pro or credits), for distributions, P(no outage), "
+        "Repairable: the Monte-Carlo simulation (Pro), for distributions, P(no outage), "
         "percentiles and criticality. Omitted: only where a figure needs it — when every figure from new is "
         "exact or numerical, none runs (a matching saved one is still served) and simulation.on_request says "
         "so. true = run it; false = the exact figures only. Ignored without entitlement: the exact figures "
@@ -4012,7 +4012,7 @@ def analyze_rbd(
     numerical, each cost discounted from when it falls) — and by_horizon: both over 5, 10 and 20 years too, and
     for ever when discounted (the net present cost, horizon None). The Monte-Carlo simulation (distributions, criticality; from current_state,
     next_failure and mean_residual_life: the time to the next system failure and its cause) is a paid feature
-    (Pro or purchased credits) and, unless simulate=true, runs only where a figure needs it (a diagram whose
+    (Pro) and, unless simulate=true, runs only where a figure needs it (a diagram whose
     figures from new are all exact or numerical answers without one: simulation.on_request). Its per_node rows
     give each block's downtime per run (downtime_per_run; downtime_total_all_runs is over all n_simulations
     runs). A saved result is always served; otherwise, without entitlement, the
@@ -4021,7 +4021,7 @@ def analyze_rbd(
     'simulation_only', e.g. limited repair crews for wear-out lives) returns available=false without entitlement; asked
     with simulate=false (and no saved result matching the diagram as it is now) it returns available=false,
     needs_simulation=true, code 'needs_simulation' and a reason naming what needs the simulation, with no
-    figure fields — call again with simulate=true (Pro or credits) or offer export_rbd_python.
+    figure fields — call again with simulate=true (Pro) or offer export_rbd_python.
     Blocks with a capacity (create_rbd / edit_rbd capacity, and production's demand) add `production`, exact and
     free: the capacity distribution (levels), production_availability (the share of the demand delivered —
     report it beside the plain availability: it weighs partial outages), meets_demand, mean_capacity and, for a
@@ -4508,7 +4508,7 @@ def cheapest_design(
     are in the scoring wherever analyze_rbd has them: a grouped block's copies join its group (common_cause
     says; copies of a train holding a member are refused). Nothing is saved: add the copies with edit_rbd
     (add_node parallel_to; for a grouped block, remove_ccf then add_ccf its group with the copies too), or open
-    the diagram's Design tab to draw them. Pro (or purchased credits), as in the app."""
+    the diagram's Design tab to draw them. Pro, as in the app."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     rbd = _get_rbd(db, uid, rbd_id)
@@ -4520,8 +4520,8 @@ def cheapest_design(
     if not billing_service.premium_compute_allowed(db, user):
         _soft_refusal("pro_only")
         return {**head, "available": False, "code": "pro_required",
-                "message": (f"The cheapest design is part of Reliafy Pro ({PRO_PRICE}; purchased AI credits "
-                            f"unlock it too), as in the app — upgrade at {_billing_url()} (or call upgrade_link). "
+                "message": (f"The cheapest design is part of Reliafy Pro ({PRO_PRICE}), "
+                            f"as in the app — upgrade at {_billing_url()} (or call upgrade_link). "
                             "analyze_rbd's exact availability and cost figures stay free.")}
     owners = [*_owners(uid), rbd.owner_id]
     try:
@@ -4568,7 +4568,7 @@ def compare_rbds(
     the same id draw the same failures) and a confidence interval — with both long-run availabilities. With
     both designs priced, the difference in what owning each for the window costs, purchases included
     (differences.cost: acquisition is the difference in purchase prices, running the rest; b_higher means B
-    costs more) and the long-run cost-rate difference (exact, per unit time). Pro (or purchased credits), as
+    costs more) and the long-run cost-rate difference (exact, per unit time). Pro, as
     Compare with… in the app."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
@@ -4582,8 +4582,8 @@ def compare_rbds(
     if not billing_service.premium_compute_allowed(db, user):
         _soft_refusal("pro_only")
         return {**head, "available": False, "code": "pro_required",
-                "message": (f"Comparing designs is part of Reliafy Pro ({PRO_PRICE}; purchased AI credits unlock it "
-                            f"too), as in the app — upgrade at {_billing_url()} (or call upgrade_link). analyze_rbd "
+                "message": (f"Comparing designs is part of Reliafy Pro ({PRO_PRICE}), "
+                            f"as in the app — upgrade at {_billing_url()} (or call upgrade_link). analyze_rbd "
                             "on each design stays free.")}
     try:
         result = rbd_compare_service.compare_graphs(db, a.graph or {}, b.graph or {}, [*_owners(uid), a.owner_id],
@@ -4907,7 +4907,7 @@ def rbd_sensitivity(
         "benefit."))] = "benefit",
     simulate: Annotated[bool, Field(description=(
         "Where RePyability has no exact route (e.g. limited repair crews for wear-out lives), simulate the "
-        "effects (Pro or credits; a minute or two). False: say so instead."))] = True,
+        "effects (Pro; a minute or two). False: say so instead."))] = True,
     limit: Annotated[int, Field(ge=1, le=200, description="How many ranked levers to return.")] = 15,
     lever_limits: Annotated[Optional[dict[str, dict[str, float]]], Field(description=(
         "measure='levers': how far each lever may go, by lever id (from levers[].id), as {min, max} in the "
@@ -4929,10 +4929,10 @@ def rbd_sensitivity(
         "measure='shares': by block, or by kind of lever (lives, repair times, proof tests, ...)."))] = "block",
     uncertainty_method: Annotated[Literal["delta", "sobol"], Field(description=(
         "measure='uncertainty': delta (default; free, quick: the delta method) or sobol (first-order and total "
-        "Sobol indices from draws; Pro or credits, a compute job)."))] = "delta",
+        "Sobol indices from draws; Pro, a compute job)."))] = "delta",
     times: Annotated[Optional[list[float]], Field(max_length=6, description=(
         "measure='uncertainty': also the availability at these times from new, and the mean availability over "
-        "[0, t] for each, with their intervals, all from one run (Pro or credits, a compute job)."))] = None,
+        "[0, t] for each, with their intervals, all from one run (Pro, a compute job)."))] = None,
 ) -> dict[str, Any]:
     """What to improve first in a repairable diagram: every lever RePyability exposes — each block's mean life
     and mean repair time (and its other model parameters), its scheduled-replacement and proof-test intervals,
@@ -4943,7 +4943,7 @@ def rbd_sensitivity(
     the rest by benefit. `top` is the recommendation, following the ranking; quote it with its basis:
     exact or numerical (free, deterministic: the derivatives are central differences of the exact long-run
     values, a step's effect an exact difference — 'linear' when it is the derivative times the step) or
-    simulation (Pro or credits: each step simulated against the diagram with common random numbers, with a 95%
+    simulation (Pro: each step simulated against the diagram with common random numbers, with a 95%
     interval; say when an interval spans zero). Common-cause groups are in it as in analyze_rbd's availability:
     each group's beta is then a lever ('Common-cause β': a lower beta, fewer shared failures) and its members'
     life and repair move together; where they're refused, notes say why. A long calculation may come back as a
@@ -5149,7 +5149,7 @@ def optimise_maintenance_intervals(
         "repair started at once (the exact values can't include waiting for a crew)."))] = False,
     simulate_with_crews: Annotated[bool, Field(description=(
         "With limited crews: also simulate the diagram with the plan on it with its own crews, to show what "
-        "the waiting costs in availability (and PFDavg). Pro or credits, as analyze_rbd's simulation."))] = False,
+        "the waiting costs in availability (and PFDavg). Pro, as analyze_rbd's simulation."))] = False,
 ) -> dict[str, Any]:
     """Choose a repairable diagram's maintenance or proof-test intervals together (RePyability's
     optimal_replacement_intervals / optimal_inspection_intervals, scored by exact long-run values): the lowest

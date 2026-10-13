@@ -161,7 +161,7 @@ AGENT_MAX_RCM_STUDIES = _int("AGENT_MAX_RCM_STUDIES", 10)
 AGENT_MAX_FLEETS = _int("AGENT_MAX_FLEETS", 5)
 AGENT_MAX_OUTAGE_LOGS = _int("AGENT_MAX_OUTAGE_LOGS", 10)
 # Availability (Monte-Carlo) simulation is not part of the Agent plan: it stays
-# Pro / purchased credits (billing.premium_compute_allowed) on every surface.
+# Pro (billing.premium_compute_allowed) on every surface.
 
 # MCP tool calls (tools/list and initialize don't count): a small allowance
 # per UTC calendar month so Free users can try Reliafy from their AI agent,
