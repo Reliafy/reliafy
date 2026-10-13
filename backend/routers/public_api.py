@@ -215,7 +215,7 @@ def api_fit(
     name = str(body.get("name") or "").strip()
     if not name:
         return _err(422, "A 'name' is required.")
-    dataset = datasets_service.get_dataset(session, body.get("dataset_id", ""), user["uid"])
+    dataset = datasets_service.get_dataset(session, str(body.get("dataset_id") or ""), user["uid"])
     if dataset is None:
         return _err(404, "Dataset not found.")
     try:

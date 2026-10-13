@@ -119,12 +119,13 @@ def fit_preview(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    """Fit a recurrent model for preview (only the uploaded dataset is stored)."""
+    """Fit a recurrent model for preview. Nothing is stored: an uploaded CSV
+    is parsed in memory (``dataset_id`` is null) and stored on save."""
     try:
-        dataset = _resolve_dataset(session, ctx, dataset_id, file)
+        contents = read_upload(file) if (file is not None and not dataset_id) else None
+        df, preview_dataset_id = datasets_service.preview_frame(session, ctx.write_owner, dataset_id, contents)
         spec = _spec_from_form(i, x, model, unit, c=c, n=n, tl=tl, tr=tr, t=t, mode=mode, z=z, ws=ws, we=we,
                                windows=windows, baseline=baseline, m=m)
-        df = datasets_service.load_dataframe(dataset)
         payload, _ = recurrent_fit.fit_spec(df, spec)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
@@ -133,7 +134,7 @@ def fit_preview(
     except Exception:  # pragma: no cover - defensive
         logger.exception("Recurrent fit failed")
         return JSONResponse(status_code=500, content={"detail": "Fit failed. The error has been logged."})
-    return JSONResponse(content={"dataset_id": dataset.id, "spec": spec, "results": payload})
+    return JSONResponse(content={"dataset_id": preview_dataset_id, "spec": spec, "results": payload})
 
 
 @router.post("/recurrent/models")
@@ -161,6 +162,10 @@ def save_model(
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     denied = access_service.workspace_write_denial(ctx)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
+    denied = datasets_service.upload_denial(session, ctx, dataset_id, file)
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)

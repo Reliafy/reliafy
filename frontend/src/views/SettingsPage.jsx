@@ -5,6 +5,7 @@ import { useAppConfig } from "../ConfigProvider.jsx";
 import ApiAccessPanel from "../components/ApiAccessPanel.jsx";
 import ConnectedAppsPanel from "../components/ConnectedAppsPanel.jsx";
 import McpOnRequest from "../components/McpOnRequest.jsx";
+import TeamInvites from "../components/TeamInvites.jsx";
 import { initials } from "../components/Sidebar.jsx";
 import Button from "../components/ui/Button.jsx";
 import Card, { CardHeader } from "../components/ui/Card.jsx";
@@ -200,6 +201,8 @@ export default function SettingsPage() {
               </div>
             </div>
           </Card>
+
+          <TeamInvites style={{ marginTop: "1rem" }} />
 
           {billing && <PlanCard />}
 

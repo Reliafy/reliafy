@@ -312,7 +312,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
             <b>This diagram's effects need the simulation.</b> {data.basis_reason}
           </p>
           <p style={{ margin: "6px 0 0" }}>
-            Each lever's step is simulated against the diagram as it is — that's part of Pro, or buy AI credits.
+            Each lever's step is simulated against the diagram as it is — that's part of Pro.
           </p>
           <div className="rbd-upgrade-actions">
             <Link className="cta cta-solid" to="/billing">Upgrade to Pro</Link>

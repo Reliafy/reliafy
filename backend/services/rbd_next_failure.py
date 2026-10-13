@@ -9,7 +9,7 @@ whose system is down now starts down, with no change at 0, so its next
 failure is the one after the system is restored.
 
 These are the simulations ``availability(state=...)`` runs with the same
-seed, so they are the app's simulation gate's to give (Pro or credits).
+seed, so they are the app's simulation gate's to give (Pro).
 
 The window starts as the availability run's and is lengthened (by
 :data:`NEXT_FAILURE_GROWTH`, up to :data:`NEXT_FAILURE_MAX_GROWTH` times)

@@ -69,7 +69,8 @@ export function AuthProvider({ children }) {
         withAuth((m) => (m.auth.currentUser ? m.sendEmailVerification(m.auth.currentUser) : null)),
       // After the user follows the link in the email: reload the account,
       // refresh the ID token (it carries email_verified) and re-sync the
-      // profile so invites waiting for this address activate. Resolves to
+      // profile so shares waiting for this address arrive (team invitations
+      // then show for the user to accept). Resolves to
       // whether the address is now verified.
       refreshVerification: () =>
         withAuth(async (m) => {

@@ -476,13 +476,30 @@ def _availability(job):
     return (((job or {}).get("result") or {}).get("precision") or {}).get("window_availability")
 
 
-def _runs(db, rbd_docs: dict, since, until) -> list:
+def _run_uids(db, owners: list) -> list[str]:
+    """Who may have run the workspace's simulations: the user, for a personal
+    workspace; the members, for a team's."""
+    from backend.services import access
+
+    uids: set[str] = set()
+    for owner in owners:
+        if access.is_team_owner(owner):
+            team = db.teams.find_one({"_id": owner[len(access.TEAM_PREFIX):]}, {"members.uid": 1}) or {}
+            uids.update(m["uid"] for m in team.get("members") or [] if m.get("uid"))
+        else:
+            uids.add(owner)
+    return sorted(uids)
+
+
+def _runs(db, rbd_docs: dict, since, until, owners: list) -> list:
     """Diagrams whose availability simulation moved between the newest run
-    before the period and the newest in it."""
+    before the period and the newest in it. Only runs by the workspace's own
+    people count (someone a diagram is shared with may run it too)."""
     if not rbd_docs:
         return []
     out = []
-    query = {"kind": "availability", "status": "done", "rbd_id": {"$in": list(rbd_docs)}}
+    query = {"kind": "availability", "status": "done", "rbd_id": {"$in": list(rbd_docs)},
+             "uid": {"$in": _run_uids(db, owners)}}
     latest: dict[str, dict] = {}
     counts: dict[str, int] = {}
     for job in db.rbd_jobs.find({**query, "finished_at": {"$gte": since, "$lte": until}},
@@ -555,7 +572,7 @@ def summarize(db, list_owners, uid: str, period: dict, fleets: bool = True) -> d
     else:
         forecasts, unrecorded, alerts = [], 0, []
     rcm = _rcm(db, ids["rcm_studies"], ids["models"], refit_rows, owners)
-    runs = _runs(db, ids["rbds"], since, until)
+    runs = _runs(db, ids["rbds"], since, until, owners)
 
     counts = {
         "items": sum(len(docs) for docs in ids.values()),

@@ -162,18 +162,6 @@ def _app_url(path: str = "/") -> str:
 
 # ---- Notifications -------------------------------------------------------------
 
-def team_member_added(to: str, inviter_name: str, team_name: str) -> None:
-    inviter_name, team_name = clean_text(inviter_name), clean_text(team_name)
-    send(
-        to,
-        f"You've been added to {team_name} on Reliafy",
-        f"{inviter_name} added you to the team \"{team_name}\" on Reliafy.\n\n"
-        f"Everything in the team workspace is shared with you — open the workspace "
-        f"switcher (top right) after signing in:\n\n{_app_url('/login')}\n\n"
-        f"— Reliafy",
-    )
-
-
 def team_invite_pending(to: str, inviter_name: str, team_name: str) -> None:
     inviter_name, team_name = clean_text(inviter_name), clean_text(team_name)
     send(
@@ -181,8 +169,10 @@ def team_invite_pending(to: str, inviter_name: str, team_name: str) -> None:
         f"{inviter_name} invited you to {team_name} on Reliafy",
         f"{inviter_name} invited you to join the team \"{team_name}\" on Reliafy, "
         f"a reliability-engineering workbench.\n\n"
-        f"Create a free account with this email address and you'll join the team "
-        f"automatically:\n\n{_app_url('/login')}\n\n"
+        f"Sign in with this email address (or create a free account with it) and "
+        f"accept or decline the invitation in Settings:\n\n{_app_url('/settings')}\n\n"
+        f"If you weren't expecting this, you can ignore it: you won't join the team "
+        f"unless you accept.\n\n"
         f"— Reliafy",
     )
 
@@ -222,12 +212,18 @@ def new_signup(new_email: str | None, new_name: str | None) -> None:
         send(to, subject, body)
 
 
-def artifact_shared(to: str, sharer: str, artifact_name: str, link_path: str) -> None:
-    sharer, artifact_name = clean_text(sharer), clean_text(artifact_name, 120)
+def artifact_shared(to: str, sharer: str, artifact_name: str, link_path: str,
+                    sharer_email: str | None = None) -> None:
+    """Tell someone an artifact was shared with them. The names come from the
+    sharer, so they're cleaned and capped; the sharer's account address is
+    shown beside their name so the recipient can tell who sent it."""
+    sharer, artifact_name = clean_text(sharer, 60), clean_text(artifact_name, 80)
+    sharer_email = clean_text(sharer_email, 254)
+    who = f"{sharer} ({sharer_email})" if sharer_email and sharer_email.lower() != sharer.lower() else sharer
     send(
         to,
         f"{sharer} shared \"{artifact_name}\" with you on Reliafy",
-        f"{sharer} shared \"{artifact_name}\" with you on Reliafy (view-only).\n\n"
+        f"{who} shared \"{artifact_name}\" with you on Reliafy (view-only).\n\n"
         f"Open it here after signing in:\n\n{_app_url(link_path)}\n\n"
         f"— Reliafy",
     )

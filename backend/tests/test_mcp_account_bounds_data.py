@@ -161,8 +161,9 @@ def test_grandfathered_agent_account_shows_its_daily_quota_and_points_at_pro(pla
     assert "Reliafy Pro (US$19/month)" in out["upgrade"] and "Reliafy Agent (US$2" not in out["upgrade"]
     assert "retired" in out["note"]
     assert out["simulation_available"] is False
+    # Bought credits don't unlock simulations: they're Pro.
     billing.grant_credits(plans.db, AGENT, 500, "purchase")
-    assert _ok(_call(plans.oauth[AGENT], "get_account"))["simulation_available"] is True
+    assert _ok(_call(plans.oauth[AGENT], "get_account"))["simulation_available"] is False
 
 
 UNLIMITED_CALLS = {"unlimited": True, "period": None, "used": None, "limit": None, "left": None,

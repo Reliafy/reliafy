@@ -141,7 +141,7 @@ def evaluate(db, model_id: str, use_stress: list, owner_id, ref_stress=None, *,
 
 BOOTSTRAP_PRO_PAYLOAD = {
     "detail": ("Bootstrap bounds refit the model hundreds of times, so they're a paid feature: subscribe to "
-               "Pro or buy AI credits. Wald and likelihood-ratio bounds are free."),
+               "Pro. Wald and likelihood-ratio bounds are free."),
     "code": "pro_required",
     "upgrade": True,
 }
