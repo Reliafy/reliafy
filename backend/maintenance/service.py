@@ -34,6 +34,7 @@ CALENDAR_UNITS = ("days", "weeks", "months", "years")
 ACTION_KINDS = ("replace", "repair", "inspect", "other")
 FINDINGS = ("ok", "degraded", "found_failed")
 WORK_ORDER_TYPES = ("preventive", "corrective", "inspection", "other")
+OPEN_STATUSES = ("open", "planned", "in_progress", "waiting")
 
 
 class NotFound(KeyError):
@@ -194,13 +195,40 @@ def _task_updated(s: GraphStore, org: str, p: dict) -> None:
 
 
 def _work_order_opened(s: GraphStore, org: str, p: dict) -> None:
+    task = s.node(org, p["task_id"]) if p.get("task_id") else None
     s.put_node(org, p["id"], "WorkOrder", {
         "number": p["number"], "title": p["title"], "type": p["type"], "status": "open",
         "opened": p["on"], "due": p.get("due"), "closed": None, "notes": p.get("notes", ""),
+        # A task's instructions and checklist travel with the work it raises.
+        "instructions": (task or {}).get("instructions", ""),
+        "checklist": [{"text": t, "done": False} for t in (task or {}).get("checklist") or []],
+        "status_history": [{"status": "open", "on": p["on"]}],
     })
     s.put_edge(org, "ON", p["id"], p["position_id"])
     if p.get("task_id"):
         s.put_edge(org, "FOR", p["id"], p["task_id"])
+
+
+def _work_order_status(s: GraphStore, org: str, p: dict) -> None:
+    wo = s.node(org, p["id"])
+    history = list(wo.get("status_history") or []) + [{"status": p["status"], "on": p["on"], "note": p.get("note", "")}]
+    s.patch_node(org, p["id"], {"status": p["status"], "status_history": history})
+
+
+def _work_order_entry(label: str):
+    def project(s: GraphStore, org: str, p: dict) -> None:
+        s.put_node(org, p["id"], label, {k: v for k, v in p.items() if k not in ("id", "work_order_id")}
+                   | {"removed": False})
+        s.put_edge(org, "OF", p["id"], p["work_order_id"])
+    return project
+
+
+def _work_order_check(s: GraphStore, org: str, p: dict) -> None:
+    wo = s.node(org, p["id"])
+    checklist = [dict(c) for c in wo.get("checklist") or []]
+    if 0 <= p["index"] < len(checklist):
+        checklist[p["index"]]["done"] = p["done"]
+    s.patch_node(org, p["id"], {"checklist": checklist})
 
 
 def _action_recorded(s: GraphStore, org: str, p: dict) -> None:
@@ -422,6 +450,12 @@ PROJECTORS = {
     "group.retired": _flag("retired"),
     "duty.changed": _duty_changed,
     "position.rbd_linked": _patch,
+    "work_order.status": _work_order_status,
+    "work_order.labour": _work_order_entry("Labour"),
+    "work_order.part_used": _work_order_entry("PartUse"),
+    "work_order.cost": _work_order_entry("Cost"),
+    "work_order.entry_removed": _flag("removed"),
+    "work_order.check": _work_order_check,
     "photo.added": _photo_added,
     "photo.removed": _photo_removed,
     "coordinates.set": _coordinates_set,
@@ -727,11 +761,12 @@ class Maintenance:
             limits.append(self._due_by(task, task["also_interval"], task["also_unit"]))
         dues = [lim["next_due"] for lim in limits if lim["next_due"]]
         nxt = min(dues) if dues else None
-        open_wo = next((w for w in self.s.inn(self.org, task["id"], "FOR") if w.get("status") == "open"), None)
+        open_wo = next((w for w in self.s.inn(self.org, task["id"], "FOR") if w.get("status") in OPEN_STATUSES), None)
         return {
             "id": task["id"], "name": task["name"], "outcome": task.get("outcome"),
             "interval": task["interval"], "unit": task["unit"],
             "also_interval": task.get("also_interval"), "also_unit": task.get("also_unit"),
+            "instructions": task.get("instructions", ""), "checklist": task.get("checklist") or [],
             "last_done": task.get("last_done"), "last_done_reading": task.get("last_done_reading"),
             "limits": limits, "next_due": nxt, "by_use": not _is_calendar(task["unit"]),
             "overdue": bool(nxt and nxt < date.today().isoformat()),
@@ -858,7 +893,7 @@ class Maintenance:
         """Close a work order with what was done. Replacements end the fitted
         item's fitment and start the new one's."""
         wo = self._get(work_order_id, "WorkOrder")
-        if wo["status"] != "open":
+        if wo["status"] not in OPEN_STATUSES:
             raise Invalid("This work order is already closed.")
         day = _day(on)
         position_id = self.s.out(self.org, work_order_id, "ON")[0]["id"]
@@ -989,9 +1024,10 @@ class Maintenance:
             self._emit("fitment.corrected", {"id": fitment_id, **changes})
         return self._fitment_view(self._get(fitment_id, "Fitment"))
 
-    def update_work_order(self, work_order_id: str, title=None, due=None, notes=None, type=None) -> dict:
+    def update_work_order(self, work_order_id: str, title=None, due=None, notes=None, type=None,
+                          assignee=None, planned_for=None) -> dict:
         wo = self._get(work_order_id, "WorkOrder")
-        if wo["status"] != "open":
+        if wo["status"] not in OPEN_STATUSES:
             raise Invalid("Only an open work order can be changed.")
         changes = {}
         if title is not None:
@@ -1004,20 +1040,130 @@ class Maintenance:
             if type not in WORK_ORDER_TYPES:
                 raise Invalid(f"The type is one of {', '.join(WORK_ORDER_TYPES)}.")
             changes["type"] = type
+        if assignee is not None:
+            changes["assignee"] = _text(assignee, "assignee")[:120]
+        if planned_for is not None:
+            changes["planned_for"] = _day(planned_for, "planned date") if planned_for else None
         if changes:
             self._emit("work_order.updated", {"id": work_order_id, "changes": changes})
         return self.work_order(work_order_id)
 
+    WORK_STATUSES = {"open": "Open", "planned": "Planned", "in_progress": "In progress",
+                     "waiting": "Waiting (parts or access)"}
+
+    def _open_wo(self, work_order_id: str) -> dict:
+        wo = self._get(work_order_id, "WorkOrder")
+        if wo["status"] not in OPEN_STATUSES:
+            raise Invalid("This work order is already closed or cancelled.")
+        return wo
+
+    def set_work_status(self, work_order_id: str, status: str, note="") -> dict:
+        """Move an open work order along: open, planned, in_progress, waiting. (Close it
+        with close_work_order, or cancel it.)"""
+        wo = self._open_wo(work_order_id)
+        if status not in self.WORK_STATUSES:
+            raise Invalid(f"The status is one of {', '.join(self.WORK_STATUSES)}.")
+        if status != wo["status"]:
+            self._emit("work_order.status", {"id": work_order_id, "status": status,
+                                             "on": date.today().isoformat(), "note": _text(note, "note")})
+        return self.work_order(work_order_id)
+
+    @staticmethod
+    def _amount(value, what: str, allow_none=True):
+        if value in (None, ""):
+            if allow_none:
+                return None
+            raise Invalid(f"The {what} is required.")
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise Invalid(f"The {what} must be a number.")
+        if value < 0 or value != value:
+            raise Invalid(f"The {what} can't be negative.")
+        return value
+
+    def log_labour(self, work_order_id: str, hours, who="", rate=None, on=None, note="") -> dict:
+        self._open_or_closed(work_order_id)
+        hours = self._amount(hours, "hours", allow_none=False)
+        if hours <= 0 or hours > 1000:
+            raise Invalid("Hours must be more than 0 (and at most 1000).")
+        self._emit("work_order.labour", {"id": new_id(), "work_order_id": work_order_id, "hours": hours,
+                                         "who": _text(who, "who")[:120], "rate": self._amount(rate, "rate"),
+                                         "on": _day(on), "note": _text(note, "note")})
+        return self.work_order(work_order_id)
+
+    def add_part_used(self, work_order_id: str, part, quantity=1, unit_cost=None, part_number="", note="") -> dict:
+        self._open_or_closed(work_order_id)
+        qty = self._amount(quantity, "quantity", allow_none=False)
+        if qty <= 0:
+            raise Invalid("The quantity must be more than 0.")
+        self._emit("work_order.part_used", {"id": new_id(), "work_order_id": work_order_id,
+                                             "part": _text(part, "part", required=True)[:200],
+                                             "part_number": _text(part_number, "part number")[:120],
+                                             "quantity": qty, "unit_cost": self._amount(unit_cost, "unit cost"),
+                                             "note": _text(note, "note")})
+        return self.work_order(work_order_id)
+
+    def add_cost(self, work_order_id: str, description, amount) -> dict:
+        self._open_or_closed(work_order_id)
+        self._emit("work_order.cost", {"id": new_id(), "work_order_id": work_order_id,
+                                       "description": _text(description, "description", required=True)[:200],
+                                       "amount": self._amount(amount, "amount", allow_none=False)})
+        return self.work_order(work_order_id)
+
+    def remove_entry(self, entry_id: str) -> dict:
+        node = self.s.node(self.org, entry_id)
+        if node is None or node["label"] not in ("Labour", "PartUse", "Cost"):
+            raise NotFound(entry_id)
+        if node.get("removed"):
+            raise Invalid("That entry was already removed.")
+        wo = self.s.out(self.org, entry_id, "OF")[0]
+        self._emit("work_order.entry_removed", {"id": entry_id, "on": date.today().isoformat()})
+        return self.work_order(wo["id"])
+
+    def check_item(self, work_order_id: str, index: int, done: bool = True) -> dict:
+        wo = self._open_wo(work_order_id)
+        if not 0 <= int(index) < len(wo.get("checklist") or []):
+            raise Invalid("There's no checklist item with that number.")
+        self._emit("work_order.check", {"id": work_order_id, "index": int(index), "done": bool(done)})
+        return self.work_order(work_order_id)
+
+    def _open_or_closed(self, work_order_id: str) -> dict:
+        """Labour, parts and costs can be added after closing (timesheets come late),
+        but not to a cancelled work order."""
+        wo = self._get(work_order_id, "WorkOrder")
+        if wo["status"] == "cancelled":
+            raise Invalid("This work order was cancelled.")
+        return wo
+
+    def _wo_costs(self, work_order_id: str) -> dict:
+        entries = [e for e in self.s.inn(self.org, work_order_id, "OF")
+                   if e["label"] in ("Labour", "PartUse", "Cost") and not e.get("removed")]
+        labour = [e for e in entries if e["label"] == "Labour"]
+        parts = [e for e in entries if e["label"] == "PartUse"]
+        other = [e for e in entries if e["label"] == "Cost"]
+        labour_cost = sum((e.get("rate") or 0) * e["hours"] for e in labour)
+        parts_cost = sum((e.get("unit_cost") or 0) * e["quantity"] for e in parts)
+        other_cost = sum(e["amount"] for e in other)
+        strip = lambda e: {k: v for k, v in e.items() if k not in ("label", "removed")}
+        return {
+            "labour": [strip(e) for e in sorted(labour, key=lambda e: e["on"])],
+            "parts": [strip(e) for e in parts], "other_costs": [strip(e) for e in other],
+            "totals": {"hours": round(sum(e["hours"] for e in labour), 2), "labour": round(labour_cost, 2),
+                       "parts": round(parts_cost, 2), "other": round(other_cost, 2),
+                       "total": round(labour_cost + parts_cost + other_cost, 2)},
+        }
+
     def cancel_work_order(self, work_order_id: str, reason="") -> dict:
         wo = self._get(work_order_id, "WorkOrder")
-        if wo["status"] != "open":
+        if wo["status"] not in OPEN_STATUSES:
             raise Invalid("Only an open work order can be cancelled.")
         self._emit("work_order.cancelled", {"id": work_order_id, "on": date.today().isoformat(),
                                             "reason": _text(reason, "reason")})
         return self.work_order(work_order_id)
 
     def update_task(self, task_id: str, name=None, interval=None, unit=None, also_interval=None,
-                    also_unit=None, meter_id=None) -> dict:
+                    also_unit=None, meter_id=None, instructions=None, checklist=None) -> dict:
         """Change a task. also_interval / also_unit add a second limit, whichever comes
         first (500 hours or 6 months); also_interval 0 removes it. meter_id picks the
         meter a task by use goes by (otherwise the position's meter in its unit)."""
@@ -1039,6 +1185,14 @@ class Maintenance:
             if meter_id:
                 self._get(meter_id, "Meter")
             changes["meter_id"] = meter_id or None
+        if instructions is not None:
+            changes["instructions"] = _text(instructions, "instructions")[:4000]
+        if checklist is not None:
+            items = [_text(c, "checklist item")[:200] for c in (checklist or [])]
+            items = [c for c in items if c]
+            if len(items) > 50:
+                raise Invalid("At most 50 checklist items.")
+            changes["checklist"] = items
         if name is not None:
             changes["name"] = _text(name, "task's name", required=True)
         if interval is not None:
@@ -1071,7 +1225,7 @@ class Maintenance:
             raise Invalid("Something is still fitted. Remove or move it first.")
         if any(not c.get("retired") for c in self.s.inn(self.org, position_id, "PART_OF") if c["label"] == "Position"):
             raise Invalid("Positions inside it are still in use. Retire or move them first.")
-        if any(w["label"] == "WorkOrder" and w["status"] == "open" for w in self.s.inn(self.org, position_id, "ON")):
+        if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES for w in self.s.inn(self.org, position_id, "ON")):
             raise Invalid("It has open work orders. Close or cancel them first.")
         self._emit("position.retired", {"id": position_id, "on": date.today().isoformat(),
                                         "reason": _text(reason, "reason")})
@@ -1516,7 +1670,7 @@ class Maintenance:
                 "position_class": p.get("position_class", ""),
                 "item": self._item_brief(item[0] if item else None),
                 "tasks": len(tasks), "next_due": dues[0] if dues else None,
-                "open_work_orders": sum(1 for w in wos if w["status"] == "open"),
+                "open_work_orders": sum(1 for w in wos if w["status"] in OPEN_STATUSES),
                 "children": [build(c) for c in sorted(children.get(p["id"], []), key=lambda c: c["name"].lower())],
             }
 
@@ -1576,12 +1730,18 @@ class Maintenance:
 
     def _wo_brief(self, w: dict) -> dict:
         position = self.s.out(self.org, w["id"], "ON")
-        return {k: w.get(k) for k in ("id", "number", "title", "type", "status", "opened", "due", "closed")} | {
+        return {k: w.get(k) for k in ("id", "number", "title", "type", "status", "opened", "due", "closed",
+                                      "assignee", "planned_for")} | {
             "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
         }
 
     def work_orders(self, status: str | None = None) -> list[dict]:
-        wos = [w for w in self.s.nodes(self.org, "WorkOrder") if not status or w["status"] == status]
+        """Work orders, newest first. status 'open' means every not-yet-done status."""
+        def keep(w):
+            if not status:
+                return True
+            return w["status"] in OPEN_STATUSES if status == "open" else w["status"] == status
+        wos = [w for w in self.s.nodes(self.org, "WorkOrder") if keep(w)]
         return [self._wo_brief(w) for w in sorted(wos, key=lambda w: w["number"], reverse=True)]
 
     def work_order(self, id: str) -> dict:
@@ -1606,6 +1766,10 @@ class Maintenance:
             "fitted": position["fitted"], "failure_modes": position["failure_modes"],
             "meters": [{k: mt[k] for k in ("id", "name", "unit", "reading")} for mt in position["meters"]],
             "photos": self.photos_of(id),
+            "assignee": w.get("assignee", ""), "planned_for": w.get("planned_for"),
+            "instructions": w.get("instructions", ""), "checklist": w.get("checklist") or [],
+            "status_history": w.get("status_history") or [],
+            **self._wo_costs(id),
         }
 
     def items(self) -> list[dict]:
@@ -1657,7 +1821,7 @@ def summary(m: Maintenance) -> dict:
         "positions": sum(1 for p in m.s.nodes(m.org, "Position") if not p.get("retired")),
         "locations": len(m.s.nodes(m.org, "Location")),
         "items": len(m.s.nodes(m.org, "Item")),
-        "open_work_orders": sum(1 for w in m.s.nodes(m.org, "WorkOrder") if w["status"] == "open"),
+        "open_work_orders": sum(1 for w in m.s.nodes(m.org, "WorkOrder") if w["status"] in OPEN_STATUSES),
         "tasks": len(m.s.nodes(m.org, "Task")),
     }
 

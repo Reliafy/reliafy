@@ -400,12 +400,15 @@ function TaskModal({ task, onClose, onDone }) {
   const [unit, setUnit] = useState(task.unit);
   const [also, setAlso] = useState(task.also_interval ? String(task.also_interval) : "");
   const [alsoUnit, setAlsoUnit] = useState(task.also_unit || "months");
+  const [instructions, setInstructions] = useState(task.instructions || "");
+  const [checklist, setChecklist] = useState((task.checklist || []).join("\n"));
   const [busy, setBusy] = useState(false);
   const UNITS = ["days", "weeks", "months", "years", "hours", "cycles", "km", "starts"];
   return (
     <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && Number(interval) > 0} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenanceTask(task.id, {
                  name, interval: Number(interval), unit, also_interval: also ? Number(also) : 0, also_unit: alsoUnit,
+                 instructions, checklist: checklist.split("\n").map((x) => x.trim()).filter(Boolean),
                }))}>
       <Field label="Task"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Every">
@@ -424,6 +427,10 @@ function TaskModal({ task, onClose, onDone }) {
           </select>
         </div>
       </Field>
+      <Field label="Instructions (optional)"><textarea rows={3} value={instructions} onChange={(e) => setInstructions(e.target.value)} /></Field>
+      <Field label="Checklist, one step per line (optional)"><textarea rows={4} value={checklist}
+             placeholder={"Isolate power\nDrain 10 L\nFit the new anode"} onChange={(e) => setChecklist(e.target.value)} /></Field>
+      <p className="lib-date">Each work order this task raises gets the instructions and the checklist to tick off.</p>
       <button className="secondary" disabled={busy} onClick={async () => {
         setBusy(true); await retireMaintenanceTask(task.id, ""); onDone();
       }}>Retire this task</button>

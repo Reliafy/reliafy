@@ -77,8 +77,10 @@ def register() -> None:
         return run(m_for(ctx).position, position_id)
 
     @tool("list_work_orders", _READ, "List work orders")
-    def list_work_orders(ctx: Context, status: Literal["open", "closed"] | None = None) -> dict[str, Any]:
-        """Work orders, newest first, optionally only open or closed ones."""
+    def list_work_orders(ctx: Context, status: Literal["open", "planned", "in_progress", "waiting", "closed",
+                                                       "cancelled"] | None = None) -> dict[str, Any]:
+        """Work orders, newest first. status 'open' gives every one not yet done (open, planned, in
+        progress, waiting); or one status exactly."""
         return {"work_orders": run(m_for(ctx).work_orders, status)}
 
     @tool("get_work_order", _READ, "Read a work order")
@@ -265,10 +267,45 @@ def register() -> None:
     @tool("update_work_order", _WRITE, "Update a work order")
     def update_work_order(work_order_id: str, ctx: Context, title: str | None = None, due: str | None = None,
                           notes: str | None = None,
-                          type: Literal["corrective", "preventive", "inspection", "other"] | None = None
-                          ) -> dict[str, Any]:
-        """Change an open work order's title, due date (a date, or '' to clear it), notes or type."""
-        return run(m_for(ctx).update_work_order, work_order_id, title, due, notes, type)
+                          type: Literal["corrective", "preventive", "inspection", "other"] | None = None,
+                          assignee: str | None = None, planned_for: str | None = None) -> dict[str, Any]:
+        """Change an open work order's title, due date (a date, or '' to clear it), notes, type, who
+        it's assigned to, or the day it's planned for."""
+        return run(m_for(ctx).update_work_order, work_order_id, title, due, notes, type, assignee, planned_for)
+
+    @tool("set_work_status", _WRITE, "Move a work order along")
+    def set_work_status(work_order_id: str, status: Literal["open", "planned", "in_progress", "waiting"],
+                        ctx: Context, note: str = "") -> dict[str, Any]:
+        """Set an open work order's status: planned, in_progress, waiting (parts or access), or back to
+        open. Finish it with close_work_order."""
+        return run(m_for(ctx).set_work_status, work_order_id, status, note)
+
+    @tool("log_labour", _WRITE, "Log labour on a work order")
+    def log_labour(work_order_id: str, hours: float, ctx: Context, who: str = "", rate: float | None = None,
+                   on: DateText = None, note: str = "") -> dict[str, Any]:
+        """Hours worked on a work order, by whom, at an hourly rate if known (for its cost)."""
+        return run(m_for(ctx).log_labour, work_order_id, hours, who, rate, on, note)
+
+    @tool("add_part_used", _WRITE, "Record a part used")
+    def add_part_used(work_order_id: str, part: str, ctx: Context, quantity: float = 1,
+                      unit_cost: float | None = None, part_number: str = "", note: str = "") -> dict[str, Any]:
+        """A part or consumable used on a work order (bearings, a seal kit, oil), with its cost."""
+        return run(m_for(ctx).add_part_used, work_order_id, part, quantity, unit_cost, part_number, note)
+
+    @tool("add_work_cost", _WRITE, "Add another cost to a work order")
+    def add_work_cost(work_order_id: str, description: str, amount: float, ctx: Context) -> dict[str, Any]:
+        """Any other cost of the work (a contractor, hire, call-out)."""
+        return run(m_for(ctx).add_cost, work_order_id, description, amount)
+
+    @tool("remove_work_entry", _WRITE, "Remove a labour, part or cost entry")
+    def remove_work_entry(entry_id: str, ctx: Context) -> dict[str, Any]:
+        """Remove a labour, part or cost entry recorded by mistake (ids are in get_work_order)."""
+        return run(m_for(ctx).remove_entry, entry_id)
+
+    @tool("check_item", _WRITE, "Tick a checklist item")
+    def check_item(work_order_id: str, index: int, ctx: Context, done: bool = True) -> dict[str, Any]:
+        """Tick (or untick) a work order's checklist item, numbered from 0."""
+        return run(m_for(ctx).check_item, work_order_id, index, done)
 
     @tool("cancel_work_order", _WRITE, "Cancel a work order")
     def cancel_work_order(work_order_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
@@ -279,12 +316,15 @@ def register() -> None:
     @tool("update_task", _WRITE, "Update a task")
     def update_task(task_id: str, ctx: Context, name: str | None = None, interval: float | None = None,
                     unit: str | None = None, also_interval: float | None = None, also_unit: str | None = None,
-                    meter_id: str | None = None) -> dict[str, Any]:
+                    meter_id: str | None = None, instructions: str | None = None,
+                    checklist: list[str] | None = None) -> dict[str, Any]:
         """Rename a task or change its interval (unit: days, weeks, months, years, or a unit of use
         such as hours, cycles, km, read from a meter on the position). also_interval + also_unit
         add a second limit, whichever comes first (every 500 hours or 6 months); also_interval 0
-        removes it. meter_id picks a meter for a task by use."""
-        return run(m_for(ctx).update_task, task_id, name, interval, unit, also_interval, also_unit, meter_id)
+        removes it. meter_id picks a meter for a task by use. instructions and checklist (steps to
+        tick off) are copied onto each work order the task raises."""
+        return run(m_for(ctx).update_task, task_id, name, interval, unit, also_interval, also_unit, meter_id,
+                   instructions, checklist)
 
     @tool("add_meter", _WRITE, "Add a usage meter")
     def add_meter(position_id: str, unit: str, ctx: Context, name: str = "") -> dict[str, Any]:

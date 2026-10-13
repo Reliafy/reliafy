@@ -194,9 +194,11 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         view = None
         if body.get("last_done"):
             view = m.set_last_done(task_id, body["last_done"])
-        if any(k in body for k in ("name", "interval", "unit", "also_interval", "also_unit", "meter_id")):
+        if any(k in body for k in ("name", "interval", "unit", "also_interval", "also_unit", "meter_id",
+                                   "instructions", "checklist")):
             view = m.update_task(task_id, body.get("name"), body.get("interval"), body.get("unit"),
-                                 body.get("also_interval"), body.get("also_unit"), body.get("meter_id"))
+                                 body.get("also_interval"), body.get("also_unit"), body.get("meter_id"),
+                                 body.get("instructions"), body.get("checklist"))
         if view is None:
             raise Invalid("Nothing to change.")
         return view
@@ -434,7 +436,41 @@ def generate_work_orders(horizon_days: int = Body(30, embed=True),
 def update_work_order(work_order_id: str, body: dict = Body(...),
                       m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.update_work_order, work_order_id, body.get("title"), body.get("due") if "due" in body else None,
-                body.get("notes"), body.get("type"))
+                body.get("notes"), body.get("type"), body.get("assignee"),
+                body.get("planned_for") if "planned_for" in body else None)
+
+
+@router.post("/work-orders/{work_order_id}/status")
+def set_work_status(work_order_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.set_work_status, work_order_id, body.get("status"), body.get("note", ""))
+
+
+@router.post("/work-orders/{work_order_id}/labour")
+def log_labour(work_order_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.log_labour, work_order_id, body.get("hours"), body.get("who", ""), body.get("rate"),
+                body.get("on"), body.get("note", ""))
+
+
+@router.post("/work-orders/{work_order_id}/parts")
+def add_part_used(work_order_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.add_part_used, work_order_id, body.get("part"), body.get("quantity", 1), body.get("unit_cost"),
+                body.get("part_number", ""), body.get("note", ""))
+
+
+@router.post("/work-orders/{work_order_id}/costs")
+def add_cost(work_order_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.add_cost, work_order_id, body.get("description"), body.get("amount"))
+
+
+@router.post("/work-orders/{work_order_id}/checklist/{index}")
+def check_item(work_order_id: str, index: int, body: dict = Body(default={}),
+               m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.check_item, work_order_id, index, bool(body.get("done", True)))
+
+
+@router.post("/work-entries/{entry_id}/remove")
+def remove_entry(entry_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.remove_entry, entry_id)
 
 
 @router.post("/work-orders/{work_order_id}/cancel")

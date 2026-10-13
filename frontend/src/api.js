@@ -2253,3 +2253,22 @@ export function getPositionImpact(id) {
 export function generatePositionRbd(id) {
   return postJson(`/api/maintenance/positions/${id}/rbd`, {});
 }
+
+export function setWorkStatus(id, status, note = "") {
+  return postJson(`/api/maintenance/work-orders/${id}/status`, { status, note });
+}
+export function logLabour(id, body) {
+  return postJson(`/api/maintenance/work-orders/${id}/labour`, body);
+}
+export function addPartUsed(id, body) {
+  return postJson(`/api/maintenance/work-orders/${id}/parts`, body);
+}
+export function addWorkCost(id, body) {
+  return postJson(`/api/maintenance/work-orders/${id}/costs`, body);
+}
+export function checkWorkItem(id, index, done) {
+  return postJson(`/api/maintenance/work-orders/${id}/checklist/${index}`, { done });
+}
+export function removeWorkEntry(id) {
+  return postJson(`/api/maintenance/work-entries/${id}/remove`, {});
+}
