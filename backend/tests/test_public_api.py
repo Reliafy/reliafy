@@ -101,3 +101,11 @@ def test_strategy_calculators(client, auth):
     })
     assert r.status_code == 200, r.text
     assert "interval" in r.json()
+
+
+def test_fit_takes_the_dataset_id_as_a_string(client, auth):
+    r = client.post("/api/v1/datasets", headers=auth, json={"name": "d", "csv": "hours,failed\n1,1\n2,1\n3,0\n4,1\n5,1"})
+    assert r.status_code == 200, r.text
+    r = client.post("/api/v1/fit", headers=auth, json={"name": "m", "dataset_id": {"$ne": ""},
+                                                        "mapping": {"x": "hours"}})
+    assert r.status_code == 404

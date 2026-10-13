@@ -1288,7 +1288,8 @@ function degradationForm(file, { datasetId, mapping, threshold, path, distributi
   return form;
 }
 
-// Fit a degradation model for preview (nothing saved except an uploaded CSV).
+// Fit a degradation model for preview (nothing saved; an uploaded CSV is
+// stored by the save, so ``dataset_id`` is null for an upload).
 export function fitDegradation(file, opts) {
   return request("/api/degradation/fit", { method: "POST", body: degradationForm(file, opts) });
 }

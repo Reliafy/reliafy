@@ -122,14 +122,15 @@ def fit_preview(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    """Fit an ALT model for preview (only the uploaded dataset is stored)."""
+    """Fit an ALT model for preview. Nothing is stored: an uploaded CSV is
+    parsed in memory (``dataset_id`` is null) and stored on save."""
     try:
-        dataset = _resolve_dataset(session, ctx, dataset_id, file)
+        contents = read_upload(file) if (file is not None and not dataset_id) else None
+        df, preview_dataset_id = datasets_service.preview_frame(session, ctx.write_owner, dataset_id, contents)
         spec = _spec_from_form(x, s1, s2, distribution, life_model, unit,
                                c=c, n=n, xl=xl, xr=xr, tl=tl, tr=tr,
                                s1_label=s1_label, s2_label=s2_label,
                                s1_unit=s1_unit, s2_unit=s2_unit)
-        df = datasets_service.load_dataframe(dataset)
         payload, _ = alt_fit.fit(
             df, spec["mapping"], spec["stress_cols"],
             distribution_id=spec["distribution_id"], life_model_id=spec["life_model_id"],
@@ -143,7 +144,7 @@ def fit_preview(
     except Exception:  # pragma: no cover - defensive
         logger.exception("ALT fit failed")
         return JSONResponse(status_code=500, content={"detail": "Fit failed. The error has been logged."})
-    return JSONResponse(content={"dataset_id": dataset.id, "spec": spec, "results": payload})
+    return JSONResponse(content={"dataset_id": preview_dataset_id, "spec": spec, "results": payload})
 
 
 @router.post("/alt/models")
@@ -171,6 +172,10 @@ def save_model(
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     denied = access_service.workspace_write_denial(ctx)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
+    denied = datasets_service.upload_denial(session, ctx, dataset_id, file)
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
