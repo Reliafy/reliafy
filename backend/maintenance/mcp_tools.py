@@ -338,6 +338,26 @@ def register() -> None:
         meter is a new meter. Meter ids are in get_position (meters)."""
         return run(m_for(ctx).record_reading, meter_id, value, on, note)
 
+    @tool("add_condition_point", _WRITE, "Add a condition monitoring point")
+    def add_condition_point(position_id: str, name: str, ctx: Context, unit: str = "",
+                            alarm_above: float | None = None, alarm_below: float | None = None,
+                            source: str = "manual", tag: str = "") -> dict[str, Any]:
+        """Something measured on a position to see its condition (vibration mm/s, bearing temperature,
+        oil debris, wear), with alarm limits. A reading past a limit opens an inspection work order.
+        source / tag record where readings come from (e.g. a historian tag) for later."""
+        return run(m_for(ctx).add_condition_point, position_id, name, unit, alarm_above, alarm_below, source, tag)
+
+    @tool("record_condition", _WRITE, "Record a condition reading")
+    def record_condition(point_id: str, value: float, ctx: Context, on: DateText = None, note: str = "") -> dict[str, Any]:
+        """A condition reading. Returns the point's status (ok / high / low), its trend, the date it's
+        projected to reach an alarm limit, and any work order the reading raised."""
+        return run(m_for(ctx).record_condition, point_id, value, on, note)
+
+    @tool("get_condition_point", _READ, "Read a condition point")
+    def get_condition_point(point_id: str, ctx: Context) -> dict[str, Any]:
+        """A condition point: limits, latest reading and status, trend, projected alarm date, readings."""
+        return run(m_for(ctx).condition_point, point_id)
+
     @tool("get_meter", _READ, "Read a meter")
     def get_meter(meter_id: str, ctx: Context) -> dict[str, Any]:
         """A meter: its latest reading, the rate per day, and its recent readings."""

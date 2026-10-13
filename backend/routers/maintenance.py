@@ -283,6 +283,28 @@ def add_meter(position_id: str, body: dict = Body(...), m: Maintenance = Depends
     return _run(m.add_meter, position_id, body.get("name", ""), body.get("unit"))
 
 
+@router.post("/positions/{position_id}/condition-points")
+def add_condition_point(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.add_condition_point, position_id, body.get("name"), body.get("unit", ""), body.get("alarm_above"),
+                body.get("alarm_below"), body.get("source") or "manual", body.get("tag", ""))
+
+
+@router.patch("/condition-points/{point_id}")
+def update_condition_point(point_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    kwargs = {k: body[k] for k in ("name", "alarm_above", "alarm_below", "tag") if k in body}
+    return _run(m.update_condition_point, point_id, **kwargs)
+
+
+@router.get("/condition-points/{point_id}")
+def get_condition_point(point_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.condition_point, point_id)
+
+
+@router.post("/condition-points/{point_id}/readings")
+def record_condition(point_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.record_condition, point_id, body.get("value"), body.get("on"), body.get("note", ""))
+
+
 @router.get("/meters/{meter_id}")
 def get_meter(meter_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.meter, meter_id)

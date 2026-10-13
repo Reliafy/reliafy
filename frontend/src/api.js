@@ -2272,3 +2272,10 @@ export function checkWorkItem(id, index, done) {
 export function removeWorkEntry(id) {
   return postJson(`/api/maintenance/work-entries/${id}/remove`, {});
 }
+
+export function addConditionPoint(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/condition-points`, body);
+}
+export function recordCondition(pointId, value, on) {
+  return postJson(`/api/maintenance/condition-points/${pointId}/readings`, { value, on });
+}

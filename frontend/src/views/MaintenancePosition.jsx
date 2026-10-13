@@ -7,7 +7,9 @@ import {
   getMaintenancePosition,
   listRcmStudies,
   openWorkOrder,
+  addConditionPoint,
   addMaintenanceMeter,
+  recordCondition,
   connectPositions,
   createRedundancyGroup,
   disconnectPositions,
@@ -156,6 +158,8 @@ export default function MaintenancePosition() {
           </table>
         )}
       </section>
+
+      <ConditionCard p={p} onChanged={refresh} />
 
       <ConnectionsCard p={p} onChanged={refresh} />
 
@@ -632,5 +636,89 @@ function RbdCard({ p, onChanged }) {
       <p className="lib-date">The positions inside {p.name} become blocks, wired by their connections, with redundancy groups as k of n. Blocks take their class's fitted life model.</p>
       {result?.notes?.length > 0 && <ul className="maint-list">{result.notes.map((n, i) => <li key={i} className="lib-date">{n}</li>)}</ul>}
     </section>
+  );
+}
+
+// A small chart of a condition point's readings, with its alarm limits.
+function Sparkline({ point }) {
+  const rs = [...point.readings].reverse();
+  if (rs.length < 2) return null;
+  const W = 160, H = 40;
+  const vals = rs.map((r) => r.value).concat([point.alarm_above, point.alarm_below].filter((v) => v != null));
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const y = (v) => H - 4 - ((v - lo) / (hi - lo || 1)) * (H - 8);
+  const x = (i) => 2 + (i / (rs.length - 1)) * (W - 4);
+  const d = rs.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(r.value).toFixed(1)}`).join(" ");
+  return (
+    <svg width={W} height={H} role="img" aria-label={`${point.name} readings`}>
+      {point.alarm_above != null && <line x1="0" x2={W} y1={y(point.alarm_above)} y2={y(point.alarm_above)} stroke="var(--danger)" strokeDasharray="3 3" />}
+      {point.alarm_below != null && <line x1="0" x2={W} y1={y(point.alarm_below)} y2={y(point.alarm_below)} stroke="var(--danger)" strokeDasharray="3 3" />}
+      <path d={d} fill="none" stroke="var(--acc)" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function ConditionCard({ p, onChanged }) {
+  const [modal, setModal] = useState(null);
+  return (
+    <section className="card">
+      <div className="maint-head">
+        <h2>Condition monitoring</h2>
+        <button className="secondary" onClick={() => setModal("add")}>Add a measurement</button>
+      </div>
+      {p.condition.length === 0 ? (
+        <p className="lib-date">Nothing measured. Add vibration, temperature or wear with alarm limits: a reading past a limit opens an inspection.</p>
+      ) : (
+        <table className="lib-table">
+          <thead><tr><th>Measurement</th><th>Latest</th><th>Trend</th><th>Alarm</th><th /><th /></tr></thead>
+          <tbody>
+            {p.condition.map((c) => (
+              <tr key={c.id}>
+                <td>{c.name}</td>
+                <td>{c.reading != null ? `${c.reading} ${c.unit}` : "—"}
+                  {c.status !== "ok" && <span className="maint-overdue"> {c.status}</span>}
+                  <div className="lib-date">{fmtDate(c.read_on)}</div></td>
+                <td><Sparkline point={c} /></td>
+                <td className="lib-date">
+                  {[c.alarm_above != null && `above ${c.alarm_above}`, c.alarm_below != null && `below ${c.alarm_below}`].filter(Boolean).join(", ") || "—"}
+                  {c.projected_alarm && <div>reaches it about {fmtDate(c.projected_alarm)}</div>}
+                  {c.alarm_work_order && <div><Link to={`/maintenance/work-orders/${c.alarm_work_order.id}`}>#{c.alarm_work_order.number} open</Link></div>}
+                </td>
+                <td><button className="secondary" onClick={() => setModal({ read: c })}>Record</button></td>
+                <td />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {modal === "add" && <ConditionPointModal positionId={p.id} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); }} />}
+      {modal?.read && <ConditionReadingModal point={modal.read} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); }} />}
+    </section>
+  );
+}
+
+function ConditionPointModal({ positionId, onClose, onDone }) {
+  const [f, setF] = useState({ name: "", unit: "", alarm_above: "", alarm_below: "" });
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  return (
+    <FormModal title="Add a measurement" submitLabel="Add" canSubmit={!!f.name.trim()} onClose={onClose}
+               onSubmit={async () => onDone(await addConditionPoint(positionId, f))}>
+      <Field label="What"><input autoFocus value={f.name} placeholder="e.g. Vibration, Bearing temperature" onChange={set("name")} /></Field>
+      <Field label="Unit"><input value={f.unit} placeholder="e.g. mm/s, °C" onChange={set("unit")} /></Field>
+      <Field label="Alarm above (optional)"><input type="number" step="any" value={f.alarm_above} onChange={set("alarm_above")} /></Field>
+      <Field label="Alarm below (optional)"><input type="number" step="any" value={f.alarm_below} onChange={set("alarm_below")} /></Field>
+    </FormModal>
+  );
+}
+
+function ConditionReadingModal({ point, onClose, onDone }) {
+  const [value, setValue] = useState("");
+  const [on, setOn] = useState(today());
+  return (
+    <FormModal title={`Reading: ${point.name}`} submitLabel="Save" canSubmit={value !== ""} onClose={onClose}
+               onSubmit={async () => onDone(await recordCondition(point.id, Number(value), on))}>
+      <Field label={`Reading${point.unit ? ` (${point.unit})` : ""}`}><input type="number" step="any" autoFocus value={value} onChange={(e) => setValue(e.target.value)} /></Field>
+      <Field label="Read on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
+    </FormModal>
   );
 }

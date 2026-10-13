@@ -207,6 +207,19 @@ def _work_order_opened(s: GraphStore, org: str, p: dict) -> None:
     s.put_edge(org, "ON", p["id"], p["position_id"])
     if p.get("task_id"):
         s.put_edge(org, "FOR", p["id"], p["task_id"])
+    if p.get("alarm_point_id"):
+        s.put_edge(org, "ALARM_FOR", p["id"], p["alarm_point_id"])
+
+
+def _condition_point_added(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "ConditionPoint", {k: p.get(k) for k in (
+        "name", "unit", "alarm_above", "alarm_below", "source", "tag")} | {"created": p["on"]})
+    s.put_edge(org, "ON", p["id"], p["position_id"])
+
+
+def _condition_read(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "ConditionReading", {"on": p["on"], "value": p["value"], "note": p.get("note", "")})
+    s.put_edge(org, "OF", p["id"], p["point_id"])
 
 
 def _work_order_status(s: GraphStore, org: str, p: dict) -> None:
@@ -450,6 +463,9 @@ PROJECTORS = {
     "group.retired": _flag("retired"),
     "duty.changed": _duty_changed,
     "position.rbd_linked": _patch,
+    "condition_point.added": _condition_point_added,
+    "condition_point.updated": _patch,
+    "condition.read": _condition_read,
     "work_order.status": _work_order_status,
     "work_order.labour": _work_order_entry("Labour"),
     "work_order.part_used": _work_order_entry("PartUse"),
@@ -774,6 +790,126 @@ class Maintenance:
             "proposal": next(({"id": p["id"], "proposed": p.get("proposed"), "kind": p.get("kind")}
                               for p in self.s.inn(self.org, task["id"], "ABOUT")
                               if p["label"] == "Proposal" and p.get("status") == "pending"), None),
+        }
+
+    # ---- condition monitoring -----------------------------------------------------
+
+    def add_condition_point(self, position_id: str, name, unit="", alarm_above=None, alarm_below=None,
+                            source="manual", tag="") -> dict:
+        """Something measured on a position to see its condition (vibration, temperature,
+        pressure, wear), with alarm limits. A reading past a limit raises an inspection
+        work order. source and tag say where readings come from (a historian tag) for later
+        links; readings are entered here for now."""
+        self._get(position_id, "Position")
+        above, below = self._amount_or_none(alarm_above), self._amount_or_none(alarm_below)
+        if above is not None and below is not None and below >= above:
+            raise Invalid("The low alarm must be below the high alarm.")
+        pid = new_id()
+        self._emit("condition_point.added", {
+            "id": pid, "position_id": position_id, "name": _text(name, "point's name", required=True),
+            "unit": _text(unit, "unit")[:20], "alarm_above": above, "alarm_below": below,
+            "source": _text(source, "source")[:60] or "manual", "tag": _text(tag, "tag")[:200],
+            "on": date.today().isoformat()})
+        return self.condition_point(pid)
+
+    def update_condition_point(self, point_id: str, name=None, alarm_above=..., alarm_below=..., tag=None) -> dict:
+        point = self._get(point_id, "ConditionPoint")
+        changes = {}
+        if name is not None:
+            changes["name"] = _text(name, "point's name", required=True)
+        if alarm_above is not ...:
+            changes["alarm_above"] = self._amount_or_none(alarm_above)
+        if alarm_below is not ...:
+            changes["alarm_below"] = self._amount_or_none(alarm_below)
+        if tag is not None:
+            changes["tag"] = _text(tag, "tag")[:200]
+        above = changes.get("alarm_above", point.get("alarm_above"))
+        below = changes.get("alarm_below", point.get("alarm_below"))
+        if above is not None and below is not None and below >= above:
+            raise Invalid("The low alarm must be below the high alarm.")
+        if changes:
+            self._emit("condition_point.updated", {"id": point_id, "changes": changes})
+        return self.condition_point(point_id)
+
+    @staticmethod
+    def _amount_or_none(value):
+        if value in (None, ""):
+            return None
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise Invalid("An alarm limit must be a number.")
+        if value != value:
+            raise Invalid("An alarm limit must be a number.")
+        return value
+
+    def record_condition(self, point_id: str, value, on=None, note="") -> dict:
+        """A condition reading. Past an alarm limit, an inspection work order is opened
+        (one at a time per point)."""
+        point = self._get(point_id, "ConditionPoint")
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise Invalid("A reading is a number.")
+        if value != value:
+            raise Invalid("A reading is a number.")
+        day = _day(on)
+        if day > date.today().isoformat():
+            raise Invalid("A reading can't be in the future.")
+        self._emit("condition.read", {"id": new_id(), "point_id": point_id, "on": day, "value": value,
+                                      "note": _text(note, "note")})
+        view = self.condition_point(point_id)
+        if view["status"] != "ok" and not view["alarm_work_order"]:
+            position = self.s.out(self.org, point_id, "ON")[0]
+            limit = point["alarm_above"] if view["status"] == "high" else point["alarm_below"]
+            wid = new_id()
+            self._emit("work_order.opened", {
+                "id": wid, "number": self._next_number(), "type": "inspection", "position_id": position["id"],
+                "title": f"{point['name']} {value:g}{(' ' + point['unit']) if point.get('unit') else ''}: "
+                         f"{'above' if view['status'] == 'high' else 'below'} the {limit:g} alarm limit",
+                "task_id": None, "due": day, "notes": "Raised by a condition reading.", "on": day,
+                "alarm_point_id": point_id})
+            view = self.condition_point(point_id)
+        return view
+
+    def condition_point(self, point_id: str) -> dict:
+        point = self._get(point_id, "ConditionPoint")
+        readings = sorted([r for r in self.s.inn(self.org, point_id, "OF") if r["label"] == "ConditionReading"],
+                          key=lambda r: (r["on"], r["id"]))
+        last = readings[-1] if readings else None
+        above, below = point.get("alarm_above"), point.get("alarm_below")
+        status = "ok"
+        if last and above is not None and last["value"] >= above:
+            status = "high"
+        elif last and below is not None and last["value"] <= below:
+            status = "low"
+        trend = projection = None
+        recent = readings[-6:]
+        if len(recent) >= 3:
+            xs = [(date.fromisoformat(r["on"]) - date.fromisoformat(recent[0]["on"])).days for r in recent]
+            ys = [r["value"] for r in recent]
+            n = len(xs)
+            mx, my = sum(xs) / n, sum(ys) / n
+            sxx = sum((x - mx) ** 2 for x in xs)
+            if sxx > 0:
+                slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+                trend = round(slope, 4)
+                target = above if slope > 0 and above is not None else below if slope < 0 and below is not None else None
+                if status == "ok" and target is not None:
+                    days = (target - last["value"]) / slope
+                    if 0 < days < 3650:
+                        projection = (date.fromisoformat(last["on"]) + timedelta(days=round(days))).isoformat()
+        alarm_wo = next((w for w in self.s.inn(self.org, point_id, "ALARM_FOR")
+                         if w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES), None)
+        position = self.s.out(self.org, point_id, "ON")
+        return {
+            "id": point_id, "name": point["name"], "unit": point.get("unit", ""), "source": point.get("source"),
+            "tag": point.get("tag", ""), "alarm_above": above, "alarm_below": below,
+            "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
+            "reading": last and last["value"], "read_on": last and last["on"], "status": status,
+            "trend_per_day": trend, "projected_alarm": projection,
+            "alarm_work_order": alarm_wo and {"id": alarm_wo["id"], "number": alarm_wo["number"]},
+            "readings": [{"id": r["id"], "on": r["on"], "value": r["value"]} for r in reversed(readings[-50:])],
         }
 
     # ---- meters ------------------------------------------------------------------
@@ -1702,6 +1838,8 @@ class Maintenance:
             "life_data": self.life_data(id),
             "coordinates": p.get("coordinates"),
             "meters": [self.meter(mt["id"]) for mt in self.s.inn(self.org, id, "ON") if mt["label"] == "Meter"],
+            "condition": [self.condition_point(c["id"]) for c in self.s.inn(self.org, id, "ON")
+                          if c["label"] == "ConditionPoint"],
             "connections": self.connections(id),
             "groups": self.groups_of(id),
             "rbd_id": p.get("rbd_id"),
