@@ -16,6 +16,8 @@ _ORIGINAL: dict = {}
 # Tools that fit a life model on the server: Pro only, like the MCP server's
 # other fitting tools (added to its plan gating when registered).
 PRO_FIT_TOOLS = ("fit_class_model",)
+# Tools that can take a while: they share the MCP server's heavy-call slots.
+HEAVY_TOOLS = ("fit_class_model", "import_history", "plan_economics", "generate_rbd")
 
 
 def register() -> None:
@@ -658,6 +660,7 @@ def register() -> None:
 
     mcp_server._FIT_TOOLS.update(PRO_FIT_TOOLS)
     mcp_server.PRO_ONLY_TOOLS.update(PRO_FIT_TOOLS)
+    mcp_server.HEAVY_TOOLS.update(HEAVY_TOOLS)
 
 
 def unregister() -> None:
@@ -667,6 +670,7 @@ def unregister() -> None:
 
     mcp_server._FIT_TOOLS.difference_update(PRO_FIT_TOOLS)
     mcp_server.PRO_ONLY_TOOLS.difference_update(PRO_FIT_TOOLS)
+    mcp_server.HEAVY_TOOLS.difference_update(HEAVY_TOOLS)
     for name in TOOL_NAMES:
         mcp.remove_tool(name)
     TOOL_NAMES.clear()

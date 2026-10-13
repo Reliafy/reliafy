@@ -129,6 +129,19 @@ def maintenance(ctx: AccessCtx = Depends(get_access)) -> Maintenance:
     return Maintenance(get_store(), ctx.write_owner, ctx.uid)
 
 
+class WriteDenied(Exception):
+    """A write refused for the workspace (frozen team, view-only member):
+    answered with the same body as the rest of the app's write refusals."""
+
+    def __init__(self, status: int, payload: dict):
+        super().__init__(payload.get("detail", ""))
+        self.status, self.payload = status, payload
+
+
+async def write_denied_handler(request: Request, exc: WriteDenied) -> JSONResponse:
+    return JSONResponse(status_code=exc.status, content=exc.payload)
+
+
 def maintenance_write(ctx: AccessCtx = Depends(get_access)) -> Maintenance:
     """For a route that changes the workspace: as :func:`maintenance`, and
     refused like any other write in a frozen team or to a team member who may
@@ -136,8 +149,7 @@ def maintenance_write(ctx: AccessCtx = Depends(get_access)) -> Maintenance:
     m = maintenance(ctx)
     denied = access_service.workspace_write_denial(ctx)
     if denied is not None:
-        status, payload = denied
-        raise HTTPException(status_code=status, detail=payload["detail"])
+        raise WriteDenied(*denied)
     return m
 
 

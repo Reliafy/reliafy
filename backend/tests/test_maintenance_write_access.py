@@ -50,7 +50,9 @@ def test_view_only_and_frozen_team_members_cant_write(api):
                              read_owners=[UID, "team:t1"], list_owners=["team:t1"], frozen=frozen,
                              member_view_only=view_only)
         app.dependency_overrides[get_access] = ctx
-        assert client.post("/api/maintenance/positions", json={"name": "P"}).status_code == 402
+        r = client.post("/api/maintenance/positions", json={"name": "P"})
+        assert r.status_code == 402
+        assert r.json()["code"] == ("team_frozen" if frozen else "member_pro_required") and r.json()["upgrade"]
         assert client.post("/api/maintenance/photo-links", json={"target_id": "x"}).status_code == 402
         assert client.delete("/api/maintenance/photos/x").status_code == 402
         assert client.get("/api/maintenance/overview").status_code == 200  # reading still works

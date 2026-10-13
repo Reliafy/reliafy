@@ -412,3 +412,11 @@ def test_import_model_pro_gated_and_validated(client, monkeypatch):
     assert client.post("/api/import/models",
                        json={"distribution": "weibull", "params": [{"value": 1}]},
                        headers=hdr).status_code == 422
+
+
+@pytest.mark.parametrize("body", [b"5", b'"rows"', b"null", b"[1, 2]", b'{"rows": ["a"]}'])
+def test_rows_from_request_rejects_bodies_that_arent_rows(body):
+    from backend.services.ingest import IngestError, rows_from_request
+
+    with pytest.raises(IngestError):
+        rows_from_request("application/json", body, ("rows",))
