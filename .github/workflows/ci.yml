@@ -1,13 +1,13 @@
 name: CI
 
-# A PR's run is the gate (release.sh waits for it); main's run records what was
-# released. Not run again on the push to dev or on the dev -> main release PR,
-# which carry the same code.
+# Runs on the dev -> main release PR (the gate: release.sh waits for it before
+# merging and deploying) and on main (the record of what was released). Not on
+# PRs into dev or pushes to dev: tests run locally on request before then.
 on:
   push:
     branches: [main]
   pull_request:
-    branches-ignore: [main]
+    branches: [main]
 
 # Third-party actions are pinned to commit SHAs (the version tag each was
 # resolved from is in the comment). The jobs only read the repository.
