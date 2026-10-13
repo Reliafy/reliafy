@@ -8,6 +8,7 @@ Referenced artifacts resolve transitively at read time (services/access.py).
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -16,6 +17,8 @@ from backend.services import email as email_service
 from backend.services import email_trust
 from backend.services import rate_limit
 from backend.services import samples as samples_service
+
+logger = logging.getLogger(__name__)
 
 # Share requests per grantor, per hour and per day.
 SHARES_PER_HOUR = 30
@@ -92,13 +95,17 @@ def create_share(db, collection: str, artifact_id: str, email: str, grantor: dic
         }
         db.shares.insert_one(share)
         if recipient is not None:
-            email_service.artifact_shared(
-                recipient.get("email") or email_lc,
-                grantor.get("name") or grantor.get("email") or "A Reliafy user",
-                doc.get("name") or "an analysis",
-                link_path,
-                sharer_email=grantor.get("email"),
-            )
+            # The notification never decides the request: the share is made.
+            try:
+                email_service.artifact_shared(
+                    recipient.get("email") or email_lc,
+                    grantor.get("name") or grantor.get("email") or "A Reliafy user",
+                    doc.get("name") or "an analysis",
+                    link_path,
+                    sharer_email=grantor.get("email"),
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("share notification failed share=%s", share["_id"])
     else:
         share = existing
     if recipient is not None:
