@@ -192,3 +192,44 @@ export function Proposals({ proposals, onDecided, showPosition = true }) {
     </section>
   );
 }
+
+// Notes on an item or work order: read them, add a dated line without retyping
+// the rest (onAppend), and look back at every change (a replaced note included).
+export function NotesCard({ notes, history = [], onAppend, title = "Notes", canAppend = true }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const add = async () => {
+    setBusy(true); setError(null);
+    try { await onAppend(text.trim()); setText(""); } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+  const changes = [...history].reverse();
+  return (
+    <section className="card">
+      <div className="maint-head"><h2>{title}</h2></div>
+      {error && <div className="card error">{error}</div>}
+      {notes ? <p className="maint-notes">{notes}</p> : <p className="lib-date">No notes yet.</p>}
+      {canAppend && (
+        <div className="maint-row">
+          <textarea rows={2} value={text} placeholder="Add a note (dated today; the rest is kept)"
+                    aria-label="Add a note" onChange={(e) => setText(e.target.value)} style={{ flex: 1 }} />
+          <button className="secondary" onClick={add} disabled={busy || !text.trim()}>{busy ? "Adding…" : "Add note"}</button>
+        </div>
+      )}
+      {changes.length > 1 && (
+        <details className="maint-note-history">
+          <summary className="lib-date">Every change, newest first ({changes.length})</summary>
+          <ul className="maint-list">
+            {changes.map((h, i) => (
+              <li key={i}>
+                <span className="lib-date">{h.on ? fmtDate(h.on) : "date not recorded"} · {h.change === "appended" ? "added" : "set to"}</span>
+                <div className="maint-notes">{h.text || <em className="lib-date">(cleared)</em>}</div>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}

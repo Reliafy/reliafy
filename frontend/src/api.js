@@ -2330,3 +2330,11 @@ export function addMeasurementPoint(positionId, body) {
 export function recordMeasurementReading(pointId, value, on) {
   return postJson(`/api/maintenance/points/${pointId}/readings`, { value, on });
 }
+// Strike out a manual reading, or correct its value and/or date; each with a
+// reason. Both return the point, its readings list marking what was changed.
+export function voidMeasurementReading(readingId, reason) {
+  return postJson(`/api/maintenance/readings/${readingId}/void`, { reason });
+}
+export function correctMeasurementReading(readingId, { value, on, reason }) {
+  return postJson(`/api/maintenance/readings/${readingId}/correct`, { value, on, reason });
+}

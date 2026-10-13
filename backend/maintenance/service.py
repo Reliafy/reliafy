@@ -65,6 +65,8 @@ class RateLimited(LimitReached):
 
 SHORT_TEXT = 200  # names, titles, tags, serials
 LONG_TEXT = 4000  # descriptions, notes, instructions, reasons
+MAX_NOTES = 5 * LONG_TEXT  # an item's or work order's notes, grown by appended lines
+NOTE_HISTORY = 20  # earlier versions of a note kept on the node (the log keeps every one)
 _LONG_FIELDS = {"description", "notes", "note", "instructions", "reason"}
 
 MAX_COPY_NODES = 500  # positions, failure modes and tasks made by one copy
@@ -214,7 +216,38 @@ def _item_created(s: GraphStore, org: str, p: dict) -> None:
         "name": p["name"], "serial": p.get("serial", ""), "part_number": p.get("part_number", ""),
         "manufacturer": p.get("manufacturer", ""), "model": p.get("model", ""),
         "nameplate": p.get("nameplate") or {}, "notes": p.get("notes", ""), "created": p["on"],
+        "note_history": _note_entry([], p["on"], "set", p.get("notes", "")),
     })
+
+
+# ---- notes: an item's or a work order's, replaced or added to -------------------
+# Each change is kept in the node's note_history (date, how, text), so a note
+# replaced by mistake can be read back. Events logged before 13 Oct 2026 carry
+# no date on an edit: those versions have "on": None.
+
+def _note_entry(history: list, on, change: str, text: str) -> list:
+    if change == "set" and not text and not history:
+        return []
+    return (list(history) + [{"on": on, "change": change, "text": text}])[-NOTE_HISTORY:]
+
+
+def _patch_noted(s: GraphStore, org: str, p: dict) -> None:
+    """item.updated, work_order.updated: field changes; a new note is kept in the history."""
+    _patch(s, org, p)
+    if "notes" in p["changes"]:
+        node = s.node(org, p["id"])
+        s.patch_node(org, p["id"], {"note_history": _note_entry(node.get("note_history") or [], p.get("on"), "set",
+                                                                p["changes"]["notes"])})
+
+
+def _note_appended(s: GraphStore, org: str, p: dict) -> None:
+    """note.appended: a dated line added to the end of an item's or work order's notes."""
+    node = s.node(org, p["id"])
+    line = f"{p['on']}: {p['text']}"
+    notes = node.get("notes") or ""
+    s.patch_node(org, p["id"], {"notes": f"{notes}\n{line}" if notes else line,
+                                "note_history": _note_entry(node.get("note_history") or [], p["on"], "appended",
+                                                            p["text"])})
 
 
 def _patch(s: GraphStore, org: str, p: dict) -> None:
@@ -240,7 +273,12 @@ def _fitment_corrected(s: GraphStore, org: str, p: dict) -> None:
 
 
 def _work_order_cancelled(s: GraphStore, org: str, p: dict) -> None:
-    s.patch_node(org, p["id"], {"status": "cancelled", "closed": p["on"], "notes": p.get("reason", "")})
+    # The reason is its own field: the notes (the diagnosis so far) stay as they were.
+    wo = s.node(org, p["id"])
+    history = list(wo.get("status_history") or []) + [{"status": "cancelled", "on": p["on"],
+                                                       "note": p.get("reason", "")}]
+    s.patch_node(org, p["id"], {"status": "cancelled", "closed": p["on"], "cancel_reason": p.get("reason", ""),
+                                "status_history": history})
 
 
 def _item_placed(s: GraphStore, org: str, p: dict) -> None:
@@ -297,6 +335,7 @@ def _work_order_opened(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "WorkOrder", {
         "number": p["number"], "title": p["title"], "type": p["type"], "status": "open",
         "opened": p["on"], "due": p.get("due"), "closed": None, "notes": p.get("notes", ""),
+        "note_history": _note_entry([], p["on"], "set", p.get("notes", "")),
         # A task's instructions and checklist travel with the work it raises.
         "instructions": (task or {}).get("instructions", ""),
         "checklist": [{"text": t, "done": False} for t in (task or {}).get("checklist") or []],
@@ -322,8 +361,39 @@ def _point_added(s: GraphStore, org: str, p: dict) -> None:
 
 def _reading_added(s: GraphStore, org: str, p: dict) -> None:
     """reading.added, and the older meter.read / condition.read: a manual reading."""
+    point_id = p.get("point_id") or p.get("meter_id")
     s.put_node(org, p["id"], "Reading", {"on": p["on"], "value": p["value"], "note": p.get("note", "")})
-    s.put_edge(org, "OF", p["id"], p.get("point_id") or p.get("meter_id"))
+    s.put_edge(org, "OF", p["id"], point_id)
+    point = s.node(org, point_id)
+    # Up to now readings came in date order. One dated on or before the latest
+    # (backdated) can change the reading a task by use was last done at.
+    if point.get("latest_on") and p["on"] <= point["latest_on"]:
+        _reread_tasks(s, org, point_id, p["on"])
+    else:
+        s.patch_node(org, point_id, {"latest_on": p["on"]})
+
+
+def _reading_voided(s: GraphStore, org: str, p: dict) -> None:
+    _flag("voided")(s, org, p)
+    point = s.out(org, p["id"], "OF")[0]
+    _reread_tasks(s, org, point["id"], s.node(org, p["id"])["on"])
+
+
+def _reading_corrected(s: GraphStore, org: str, p: dict) -> None:
+    """A reading struck out and replaced by one with the right value or date,
+    each pointing at the other."""
+    old = s.node(org, p["id"])
+    point_id = s.out(org, p["id"], "OF")[0]["id"]
+    s.patch_node(org, p["id"], {"voided": True, "voided_on": p["corrected_on"], "voided_reason": p["reason"],
+                                "replaced_by": p["new_id"]})
+    s.put_node(org, p["new_id"], "Reading", {"on": p["on"], "value": p["value"], "note": old.get("note", ""),
+                                             "replaces": p["id"], "reason": p["reason"],
+                                             "corrected_on": p["corrected_on"]})
+    s.put_edge(org, "OF", p["new_id"], point_id)
+    point = s.node(org, point_id)
+    if p["on"] > (point.get("latest_on") or ""):
+        s.patch_node(org, point_id, {"latest_on": p["on"]})
+    _reread_tasks(s, org, point_id, min(old["on"], p["on"]))
 
 
 def _work_order_status(s: GraphStore, org: str, p: dict) -> None:
@@ -418,6 +488,26 @@ def _rate(readings: list[dict]) -> float | None:
     return (last["value"] - first["value"]) / days if days > 0 else None
 
 
+def _reread_tasks(s: GraphStore, org: str, point_id: str, day: str) -> None:
+    """A manual counter's readings changed on or before ``day`` (one backdated, struck
+    out or corrected): each task by use that goes by it and was last done since then
+    takes its last-done reading again, from the readings as they are now."""
+    point = s.node(org, point_id)
+    if point.get("source") == "automated" or point.get("kind") != "counter":
+        return
+    readings = None
+    for task in s.nodes(org, "Task"):
+        if not task.get("last_done") or task["last_done"] < day:
+            continue
+        if (_task_point(s, org, task) or {}).get("id") != point_id:
+            continue
+        if readings is None:
+            readings = _manual_readings(s, org, point_id)
+        value = _reading_at(readings, task["last_done"])
+        if value != task.get("last_done_reading"):
+            s.patch_node(org, task["id"], {"last_done_reading": value})
+
+
 def _task_point(s: GraphStore, org: str, task: dict) -> dict | None:
     """The use counter a task by use goes by: the one chosen, else the position's
     counter in the task's unit."""
@@ -455,8 +545,9 @@ def _work_order_closed(s: GraphStore, org: str, p: dict) -> None:
     wo = s.node(org, p["id"])
     # Work recorded after the fact: it was opened no later than it was done.
     opened = min(wo["opened"], p["on"])
+    # Closing notes are their own field: the notes from before stay.
     s.patch_node(org, p["id"], {"status": "closed", "closed": p["on"], "opened": opened,
-                                "notes": p.get("notes", "")})
+                                "close_notes": p.get("notes", "")})
     for task in s.out(org, p["id"], "FOR"):
         _renew_task(s, org, task, p["on"], (p.get("task_readings") or {}).get(task["id"]))
 
@@ -598,12 +689,12 @@ PROJECTORS = {
     "work_order.opened": _work_order_opened,
     "action.recorded": _action_recorded,
     "work_order.closed": _work_order_closed,
-    "item.updated": _patch,
+    "item.updated": _patch_noted,
     "task.retired": _flag("retired"),
     "position.retired": _flag("retired"),
     "fitment.voided": _flag("voided"),
     "fitment.corrected": _fitment_corrected,
-    "work_order.updated": _patch,
+    "work_order.updated": _patch_noted,
     "work_order.cancelled": _work_order_cancelled,
     "location.updated": _patch,
     "point.added": _point_added,
@@ -611,7 +702,9 @@ PROJECTORS = {
     "reading.added": _reading_added,
     "meter.added": _point_added,
     "meter.read": _reading_added,
-    "reading.voided": _flag("voided"),
+    "reading.voided": _reading_voided,
+    "reading.corrected": _reading_corrected,
+    "note.appended": _note_appended,
     "class.costs_set": _class_costs_set,
     "class.model_fitted": _class_model_fitted,
     "proposal.made": _proposal_made,
@@ -1178,6 +1271,17 @@ class Maintenance:
         if point.get("source") == "automated":
             raise Invalid(f"{point['name']} is fed automatically (tag {point.get('tag')}); its readings come in "
                           "through the feed.")
+        value, day = self._checked_reading(point, value, on)
+        self._emit("reading.added", {"id": new_id(), "point_id": point_id, "on": day, "value": value,
+                                     "note": _text(note, "note")})
+        if point.get("kind") == "condition":
+            self._check_alarm(point_id, value, day)
+        return self.point(point_id)
+
+    def _checked_reading(self, point: dict, value, on, instead_of: str | None = None) -> tuple[float, str]:
+        """A manual reading's value and date, checked: not in the future, and a
+        counter's in order with its other readings (leaving out ``instead_of``, the
+        reading it would replace)."""
         value = _number(value, "reading", -MAX_AMOUNT, MAX_AMOUNT)
         day = _day(on)
         if day > date.today().isoformat():
@@ -1185,7 +1289,7 @@ class Maintenance:
         if point.get("kind") == "counter":
             if value < 0:
                 raise Invalid("A counter can't be negative.")
-            readings = _manual_readings(self.s, self.org, point_id)
+            readings = [r for r in _manual_readings(self.s, self.org, point["id"]) if r["id"] != instead_of]
             before = [r for r in readings if r["on"] <= day]
             after = [r for r in readings if r["on"] > day]
             if before and value < before[-1]["value"]:
@@ -1193,11 +1297,7 @@ class Maintenance:
                               "If the counter was replaced, add a new one.")
             if after and value > after[0]["value"]:
                 raise Invalid(f"It's higher than the later reading of {after[0]['value']:g} on {after[0]['on']}.")
-        self._emit("reading.added", {"id": new_id(), "point_id": point_id, "on": day, "value": value,
-                                     "note": _text(note, "note")})
-        if point.get("kind") == "condition":
-            self._check_alarm(point_id, value, day)
-        return self.point(point_id)
+        return value, day
 
     def ingest(self, rows) -> dict:
         """Automated readings from a feed: rows of {tag, value, time?}. Each lands in the
@@ -1267,15 +1367,69 @@ class Maintenance:
             "alarm_point_id": point_id})
         return {"id": wid, "point": point["name"], "position": position["name"]}
 
-    def void_reading(self, reading_id: str) -> None:
+    def void_reading(self, reading_id: str, reason) -> dict:
+        """Strike out a manual reading entered by mistake, saying why. It stays in the
+        point's readings, marked voided; rates, due dates and alarms leave it out."""
         if self._get(reading_id, "Reading").get("voided"):
             raise Invalid("That reading was already struck out.")
-        self._emit("reading.voided", {"id": reading_id, "on": date.today().isoformat()})
+        self._emit("reading.voided", {"id": reading_id, "on": date.today().isoformat(),
+                                      "reason": _text(reason, "reason", required=True)})
+        return self.point(self.s.out(self.org, reading_id, "OF")[0]["id"])
+
+    def correct_reading(self, reading_id: str, value=None, on=None, reason="") -> dict:
+        """Correct a manual reading's value, or move it to the date it was really
+        read: the original is struck out and the corrected one recorded in its place,
+        each linked to the other, with the reason."""
+        old = self._get(reading_id, "Reading")
+        if old.get("voided"):
+            raise Invalid("That reading was struck out; correct the one that replaced it.")
+        reason = _text(reason, "reason", required=True)
+        point = self._get(self.s.out(self.org, reading_id, "OF")[0]["id"], "MeasurementPoint")
+        new_value, day = self._checked_reading(point, old["value"] if value in (None, "") else value,
+                                               on or old["on"], instead_of=reading_id)
+        if new_value == old["value"] and day == old["on"]:
+            raise Invalid("That's the reading as it is: give the right value, the right date, or both.")
+        new = new_id()
+        self._emit("reading.corrected", {"id": reading_id, "new_id": new, "on": day, "value": new_value,
+                                         "reason": reason, "corrected_on": date.today().isoformat()})
+        if point.get("kind") == "condition":
+            latest = _manual_readings(self.s, self.org, point["id"])[-1]
+            if latest["id"] == new:
+                self._check_alarm(point["id"], new_value, day)
+        return self.point(point["id"])
+
+    def _reading_trail(self, point_id: str, limit: int = 50) -> list[dict]:
+        """A manual point's latest readings, newest first, struck-out ones included and
+        marked: status 'ok', 'correction' (it replaces another: replaces, reason),
+        'voided' (void_reason, voided_on) or 'replaced' (by a correction: replaced_by)."""
+        rows = sorted((r for r in self.s.inn(self.org, point_id, "OF") if r["label"] == "Reading"),
+                      key=lambda r: (r["on"], r["value"]))[-limit:]
+        by_id = {r["id"]: r for r in rows}
+
+        def brief(rid):
+            r = by_id.get(rid) or self.s.node(self.org, rid) or {}
+            return {"id": rid, "at": r.get("on"), "value": r.get("value")}
+
+        out = []
+        for r in reversed(rows):
+            entry = {"id": r["id"], "at": r["on"], "value": r["value"], "note": r.get("note", "")}
+            if r.get("voided"):
+                entry |= {"status": "replaced" if r.get("replaced_by") else "voided",
+                          "voided_on": r.get("voided_on"), "void_reason": r.get("voided_reason", "")}
+                if r.get("replaced_by"):
+                    entry["replaced_by"] = brief(r["replaced_by"])
+            elif r.get("replaces"):
+                entry |= {"status": "correction", "replaces": brief(r["replaces"]), "reason": r.get("reason", ""),
+                          "corrected_on": r.get("corrected_on")}
+            else:
+                entry["status"] = "ok"
+            out.append(entry)
+        return out
 
     def point(self, point_id: str) -> dict:
         """A measurement point: its latest reading and when, the rate (a counter) or the
         trend and projected alarm date (condition), status against its limits, and its
-        recent readings."""
+        recent readings (a manual point's with the struck-out and corrected ones, marked)."""
         mp = self._get(point_id, "MeasurementPoint")
         readings = _readings(self.s, self.org, mp)
         last = readings[-1] if readings else None
@@ -1285,8 +1439,7 @@ class Maintenance:
             recent = [{"at": r["t"], "value": r["value"]} for r in self.s.series.recent(self.org, point_id, 50)]
         else:
             current = last and {"value": last["value"], "at": last["on"]}
-            recent = [{"id": r["id"], "at": r["on"], "value": r["value"], "note": r.get("note", "")}
-                      for r in reversed(readings[-50:])]
+            recent = self._reading_trail(point_id)
         above, below = mp.get("alarm_above"), mp.get("alarm_below")
         status = "ok"
         if current and above is not None and current["value"] >= above:
@@ -1464,11 +1617,14 @@ class Maintenance:
 
     ITEM_FIELDS = ("name", "serial", "part_number", "manufacturer", "model", "notes")
 
-    def update_item(self, item_id: str, nameplate: dict | None = None, **changes) -> dict:
+    def update_item(self, item_id: str, nameplate: dict | None = None, append_note=None, **changes) -> dict:
         """Change an item's details: name, serial, part number, manufacturer, model,
         notes, and nameplate fields (ratings, year, anything on the plate: merged in;
-        a field set to "" is removed)."""
+        a field set to "" is removed). ``notes`` replaces the whole note; ``append_note``
+        adds a dated line to the end of it. Every version is kept in note_history."""
         item = self._get(item_id, "Item")
+        if changes.get("notes") is not None and str(changes["notes"]).strip() == (item.get("notes") or ""):
+            changes.pop("notes")  # unchanged (a form sending everything back)
         out = {k: _text(v, k) for k, v in changes.items() if k in self.ITEM_FIELDS and v is not None}
         if "name" in out and not out["name"]:
             raise Invalid("The item's name is required.")
@@ -1486,9 +1642,24 @@ class Maintenance:
             if len(plate) > 60:
                 raise Invalid("At most 60 nameplate fields.")
             out["nameplate"] = plate
+        appended = self._note_to_append(item if "notes" not in out else {**item, **out}, append_note)
         if out:
-            self._emit("item.updated", {"id": item_id, "changes": out})
+            self._emit("item.updated", {"id": item_id, "changes": out, "on": date.today().isoformat()})
+        if appended:
+            self._emit("note.appended", appended)
         return self.item(item_id)
+
+    def _note_to_append(self, node: dict, text) -> dict | None:
+        """The note.appended payload for adding ``text`` as a dated line to a node's
+        notes (checked before anything is written), or None with no text."""
+        if text is None or not str(text).strip():
+            return None
+        text = _text(text, "note")
+        on = date.today().isoformat()
+        if len(node.get("notes") or "") + len(on) + len(text) + 3 > MAX_NOTES:
+            raise Invalid(f"The notes would be over {MAX_NOTES:,} characters. Replace them with a shorter "
+                          "summary first.")
+        return {"id": node["id"], "on": on, "text": text}
 
     def move_item(self, item_id: str, to_position_id: str, on=None) -> dict:
         """Move an item from wherever it's fitted to an empty position (a planned
@@ -1538,10 +1709,17 @@ class Maintenance:
         return self._fitment_view(self._get(fitment_id, "Fitment"))
 
     def update_work_order(self, work_order_id: str, title=None, due=None, notes=None, type=None,
-                          assignee=None, planned_for=None) -> dict:
+                          assignee=None, planned_for=None, append_note=None) -> dict:
+        """Change an open work order. ``notes`` replaces the whole note; ``append_note``
+        adds a dated line to the end of it (on any work order, closed or cancelled too).
+        Every version is kept in note_history."""
         wo = self._get(work_order_id, "WorkOrder")
-        if wo["status"] not in OPEN_STATUSES:
-            raise Invalid("Only an open work order can be changed.")
+        if notes is not None and str(notes).strip() == (wo.get("notes") or ""):
+            notes = None  # unchanged (a form sending everything back)
+        editing = any(v is not None for v in (title, due, notes, type, assignee, planned_for))
+        if editing and wo["status"] not in OPEN_STATUSES:
+            raise Invalid("Only an open work order can be changed. A closed or cancelled one can still "
+                          "take an appended note.")
         changes = {}
         if title is not None:
             changes["title"] = _text(title, "title", required=True)
@@ -1557,8 +1735,12 @@ class Maintenance:
             changes["assignee"] = _text(assignee, "assignee")[:120]
         if planned_for is not None:
             changes["planned_for"] = _day(planned_for, "planned date") if planned_for else None
+        appended = self._note_to_append({**wo, **changes}, append_note)
         if changes:
-            self._emit("work_order.updated", {"id": work_order_id, "changes": changes})
+            self._emit("work_order.updated", {"id": work_order_id, "changes": changes,
+                                              "on": date.today().isoformat()})
+        if appended:
+            self._emit("note.appended", appended)
         return self.work_order(work_order_id)
 
     WORK_STATUSES = {"open": "Open", "planned": "Planned", "in_progress": "In progress",
@@ -1790,6 +1972,7 @@ class Maintenance:
         own = [c for c in self.s.inn(self.org, id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
         return {
             **{k: item.get(k, "") for k in self.ITEM_FIELDS}, "id": id, "nameplate": item.get("nameplate") or {},
+            "note_history": item.get("note_history") or [],
             "created": item.get("created"), "coordinates": item.get("coordinates"),
             "fitted_to": current and self._fitment_view(current)["position"],
             "location": location and {"id": location[0]["id"], "name": location[0]["name"]},
@@ -2303,7 +2486,9 @@ class Maintenance:
         task = self.s.out(self.org, id, "FOR")
         position = self.position(position_id)
         return {
-            **self._wo_brief(w), "notes": w.get("notes", ""), "actions": actions,
+            **self._wo_brief(w), "notes": w.get("notes", ""), "note_history": w.get("note_history") or [],
+            "close_notes": w.get("close_notes", ""), "cancel_reason": w.get("cancel_reason", ""),
+            "actions": actions,
             "task": task and {"id": task[0]["id"], "name": task[0]["name"]},
             "fitted": position["fitted"], "failure_modes": position["failure_modes"],
             "measurements": [{k: mp[k] for k in ("id", "name", "kind", "unit", "reading")}
@@ -2374,4 +2559,6 @@ def summary(m: Maintenance) -> dict:
 
 # 2: meters and condition points became measurement points
 # 3: nodes and edges keyed by (org, id); position class ids include the org
-PROJECTION_VERSION = 3
+# 4: cancelling or closing a work order no longer replaces its notes (the reason and
+#    closing notes are their own fields); note history; tasks re-read a corrected counter
+PROJECTION_VERSION = 4
