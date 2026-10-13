@@ -146,7 +146,7 @@ async def receive_upload(upload_id: str, request: Request) -> JSONResponse:
     return JSONResponse(content={
         **out,
         "filename": doc.get("filename"),
-        "next": _next_step(doc.get("purpose")),
+        "next": uploads_service.next_step(doc.get("purpose")),
     }, headers=_NO_STORE)
 
 
@@ -155,8 +155,3 @@ def _too_large(doc: dict) -> JSONResponse:
     return _json(413, f"The file is larger than this upload allows ({mb:.0f} MB). Export just the part you "
                       "need (one project, one sheet) and send that.", max_bytes=doc["max_bytes"])
 
-
-def _next_step(purpose: str | None) -> str:
-    tool = {"rbd_import": "import_rbd", "excel": "import_excel", "dataset": "upload_dataset",
-            "outage_log": "upload_outage_log"}.get(purpose or "", "the import tool")
-    return f"Uploaded. Now call {tool} with this upload_id (inspect_upload first to see sheets and columns)."
