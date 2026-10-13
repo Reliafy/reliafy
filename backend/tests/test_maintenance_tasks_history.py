@@ -249,22 +249,25 @@ def test_rcm_modes_are_changed_in_the_study_and_never_merged_away(m):
     assert m.apply_rcm(pid, _Study())["failure_modes_added"] == 0
 
 
-# ---- placements follow the fitment ------------------------------------------------------------
+# ---- placements are for items that aren't fitted ---------------------------------------------
 
-def test_placing_a_fitted_item_with_no_date_uses_its_fit_date(m):
+def test_a_fitted_item_is_where_its_position_is_and_cant_be_placed(m):
     pid = m.create_position("Hot water system")["id"]
     plant_room = m.create_location("Plant room")["id"]
     store = m.create_location("Store")["id"]
     m.fit(pid, new_item={"name": "Rheem 315"}, on="2019-03-01")
     item = m.position(pid)["fitted"]["item"]["id"]
-    assert m.place_item(item, plant_room)["placements"][0]["from"] == "2019-03-01"
-    with pytest.raises(Invalid, match="since 2019-03-01"):
-        m.place_item(item, store, on="2018-01-01")
+    with pytest.raises(Invalid, match="fitted to Hot water system.*no location set.*position's location"):
+        m.place_item(item, plant_room)
+    m.update_position(pid, location_id=plant_room)
+    with pytest.raises(Invalid, match=r"\(Plant room\)"):
+        m.place_item(item, store)
     spare = m.create_item("Spare anode")["id"]
     assert m.place_item(spare, store)["placements"][0]["from"] == date.today().isoformat()
     # Never before where it is now.
-    m.place_item(item, store, on=_ago(10))
-    assert m.place_item(item, plant_room)["placements"][0]["from"] == _ago(10)
+    m.place_item(spare, plant_room, on=_ago(0))
+    with pytest.raises(Invalid, match="since"):
+        m.place_item(spare, store, on=_ago(10))
 
 
 # ---- past fitments ------------------------------------------------------------------------------

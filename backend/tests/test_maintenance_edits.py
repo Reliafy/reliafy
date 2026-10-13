@@ -112,8 +112,10 @@ def test_locations_tree_and_what_is_where(m):
     garage = m.create_location("Garage", parent_id=house)["id"]
     spare = m.create_item("Spare anode")
     m.place_item(spare["id"], garage)
-    assert m.location_tree() == [{"id": house, "name": "House", "items": 0,
-                                  "children": [{"id": garage, "name": "Garage", "items": 1, "children": []}]}]
+    assert m.location_tree() == [{"id": house, "name": "House", "positions": 0, "items": 0, "all_positions": 0,
+                                  "all_items": 1,
+                                  "children": [{"id": garage, "name": "Garage", "positions": 0, "items": 1,
+                                                "all_positions": 0, "all_items": 1, "children": []}]}]
     shed = m.update_location(garage, name="Shed")
     assert shed["name"] == "Shed" and shed["items"][0]["name"] == "Spare anode" and shed["path"][0]["name"] == "House"
     with pytest.raises(Invalid):

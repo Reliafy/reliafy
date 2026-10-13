@@ -81,7 +81,17 @@ def register() -> None:
         """The maintenance workspace at a glance: counts, the tree of positions (the
         functional hierarchy, each with what's fitted, its task count, next due date
         and open work orders), tasks due in the next 30 days, and open work orders.
-        Start here; use the ids with the other maintenance tools."""
+        Start here; use the ids with the other maintenance tools.
+
+        The model: a position is a functional location (SAP's FLOC): the slot, by what it
+        does (Electrical > MCC-3 > Feeder 12; House > Pool > Pump). A location is a physical
+        place (Site > Area X > Substation 2; House > Laundry; Store A). The two are separate
+        trees that cut across each other, so build each once: never copy the functional tree
+        into locations or the physical tree into positions. Link them by giving a position
+        a location_id (create_position / update_position); positions inside it inherit it
+        unless one says otherwise. An item (a serial-numbered thing) is fitted to a position
+        and is then where its position is: it needs no placement. place_item is only for
+        items that aren't fitted (a spare in a store, one away at a repairer)."""
         m = m_for(ctx)
         return run(lambda: {"summary": summary(m), "tree": m.tree(), "due": m.due_tasks(30),
                             "open_work_orders": m.work_orders("open")})
@@ -94,15 +104,21 @@ def register() -> None:
         class_failure_modes (modes seen at other positions of its class, to offer when it
         fails), its tasks with last-done and next-due dates and the trade each needs, its work
         orders, its document links, and its life data (one row per item fitted: days in
-        service, c = 0 failed or 1 censored, 2 failed within xl..xr days)."""
+        service, c = 0 failed or 1 censored, 2 failed within xl..xr days). location: where it
+        physically is (display: 'Site › Area X › Substation 2'), with inherited true and
+        inherited_from when it comes from a position above it (or from the item it's inside);
+        null when no location is set on it or above it."""
         return run(m_for(ctx).position, position_id)
 
     @tool("list_work_orders", _READ, "List work orders")
     def list_work_orders(ctx: Context, status: Literal["open", "planned", "in_progress", "waiting", "closed",
-                                                       "cancelled"] | None = None) -> dict[str, Any]:
-        """Work orders, newest first. status 'open' gives every one not yet done (open, planned, in
-        progress, waiting); or one status exactly."""
-        return {"work_orders": run(m_for(ctx).work_orders, status)}
+                                                       "cancelled"] | None = None,
+                         location_id: str | None = None) -> dict[str, Any]:
+        """Work orders, newest first, each with its position and that position's location. status
+        'open' gives every one not yet done (open, planned, in progress, waiting); or one status
+        exactly. location_id: only work in that area (positions located there or in a location
+        inside it, set or inherited), e.g. everything open in Substation 2."""
+        return {"work_orders": run(m_for(ctx).work_orders, status, location_id)}
 
     @tool("get_work_order", _READ, "Read a work order")
     def get_work_order(work_order_id: str, ctx: Context) -> dict[str, Any]:
@@ -116,47 +132,61 @@ def register() -> None:
 
     @tool("list_maintenance_items", _READ, "List items")
     def list_maintenance_items(ctx: Context) -> dict[str, Any]:
-        """Every physical item (serial-numbered thing), with the position it's fitted to
-        and the location it's placed at, if any."""
+        """Every physical item (serial-numbered thing), with the position it's fitted to and
+        where it is: location (how: fitted = its position's location, or placed = a placement
+        while not fitted), or last_at (taken out of a position and not placed since: where
+        that position is)."""
         return {"items": run(m_for(ctx).items)}
 
     @tool("list_locations", _READ, "List locations")
     def list_locations(ctx: Context) -> dict[str, Any]:
-        """Physical locations (sites, buildings, rooms, stores) as a tree, with how many items are
-        placed in each."""
+        """Physical locations (sites, areas, buildings, rooms, stores) as a tree, each with
+        positions (located there, set or inherited) and items (placed there, not fitted), and
+        all_positions / all_items counting the locations inside it too."""
         return {"tree": run(m_for(ctx).location_tree)}
 
     # ---- building the plant ------------------------------------------------------------
 
     @tool("create_position", _WRITE, "Create a position")
     def create_position(name: str, ctx: Context, parent_id: str | None = None, tag: str = "",
-                        position_class: str = "", description: str = "") -> dict[str, Any]:
-        """A position: a job something does in the plant (the functional hierarchy),
-        such as 'Hot water system' or 'Pump A'. Items are fitted to positions. Put it
+                        position_class: str = "", description: str = "",
+                        location_id: str | None = None) -> dict[str, Any]:
+        """A position: a functional location (SAP's FLOC), the job something does in the plant,
+        such as 'Hot water system', 'MCC-3' or 'Pump A'. Items are fitted to positions. Put it
         inside another position with parent_id, or inside an item (parent_id = an item id) for
         a position that travels with that item, like an engine's turbo. position_class groups
-        like positions for comparison and pooled life data (e.g. 'Centrifugal pump')."""
+        like positions for comparison and pooled life data (e.g. 'Centrifugal pump').
+        location_id: where it physically is (a location from create_location / list_locations);
+        leave it out to inherit its parent's, and set it only where a child is somewhere else
+        (Feeder 12 is under MCC-3 but out in the conveyor gallery)."""
         m = m_for(ctx)
-        return run(lambda: m.position(m.create_position(name, tag, parent_id, position_class, description)["id"]))
+        return run(lambda: m.position(m.create_position(name, tag, parent_id, position_class, description,
+                                                        location_id)["id"]))
 
     @tool("update_position", _WRITE, "Update a position")
     def update_position(position_id: str, ctx: Context, name: str | None = None, tag: str | None = None,
                         position_class: str | None = None, description: str | None = None,
-                        parent_id: str | None = None, move_to_top_level: bool = False) -> dict[str, Any]:
-        """Rename a position, change its tag, class or description, or move it inside
-        another position (parent_id) or to the top level (move_to_top_level)."""
+                        parent_id: str | None = None, move_to_top_level: bool = False,
+                        location_id: str | None = None, clear_location: bool = False) -> dict[str, Any]:
+        """Rename a position, change its tag, class or description, move it inside another
+        position (parent_id) or to the top level (move_to_top_level), or say where it physically
+        is: location_id (positions inside it that have none of their own follow), or
+        clear_location to inherit its parent's again. The item fitted to it is where it is."""
         m = m_for(ctx)
         changes = {k: v for k, v in (("name", name), ("tag", tag), ("position_class", position_class),
                                      ("description", description)) if v is not None}
         if parent_id or move_to_top_level:
             changes["parent_id"] = None if move_to_top_level else parent_id
+        if location_id or clear_location:
+            changes["location_id"] = None if clear_location else location_id
         return run(lambda: (m.update_position(position_id, **changes), m.position(position_id))[1])
 
     @tool("copy_position", _WRITE, "Copy a position")
     def copy_position(position_id: str, name: str, ctx: Context, parent_id: str | None = None) -> dict[str, Any]:
         """Copy a position and everything inside it (the positions, their failure modes
-        and tasks; not items or work orders) under a new name, optionally inside another
-        position. Call it repeatedly to build many like structures."""
+        and tasks, and any location set on them; not items or work orders) under a new name,
+        optionally inside another position. Call it repeatedly to build many like structures;
+        then update_position the copy's location_id if it's somewhere else."""
         return run(m_for(ctx).copy_position, position_id, name, parent_id)
 
     @tool("position_from_rcm", _WRITE, "Create a position from an RCM study")
@@ -258,14 +288,18 @@ def register() -> None:
 
     @tool("create_location", _WRITE, "Create a location")
     def create_location(name: str, ctx: Context, parent_id: str | None = None, description: str = "") -> dict[str, Any]:
-        """A physical place (site, building, room, store), optionally inside another."""
+        """A physical place (site, area, building, room, substation, store), optionally inside
+        another: the physical tree, separate from the positions (the functional tree). Don't
+        mirror the positions here: make the places, then give positions a location_id."""
         return run(m_for(ctx).create_location, name, parent_id, description)
 
     @tool("place_item", _WRITE, "Place an item at a location")
     def place_item(item_id: str, location_id: str, ctx: Context, on: DateText = None) -> dict[str, Any]:
-        """Record where an item physically is (a store, the workshop, the plant room),
-        separately from what job it's fitted to. With no date ('on'), a fitted item has been
-        there since it was fitted; otherwise it's today."""
+        """Record where an item that ISN'T fitted is: a spare in a store, one away at a
+        repairer or in the workshop. A fitted item is where its position is and is refused here:
+        set the position's location instead (update_position location_id). An item taken out of
+        a position stays 'last at' that position's location until it's placed. 'on' defaults to
+        today."""
         return run(m_for(ctx).place_item, item_id, location_id, on)
 
     # ---- work ---------------------------------------------------------------------------
@@ -316,8 +350,10 @@ def register() -> None:
         note_history: every earlier version, dated); purchase, in-service and manufacture dates
         (each with its precision and source); replacement cost (its own, and its position class's
         default); warranty (with a summary: in warranty until, registration due by); document
-        links; where it's fitted and placed now, every
-        position it has been fitted to, its own positions (an engine's turbos) and its photos."""
+        links; where it's fitted and where it is (location: how fitted, from its position, or
+        placed; or last_at: the position it last came out of, until it's placed), every position
+        it has been fitted to, its placements (current marks the one in force), its own positions
+        (an engine's turbos) and its photos."""
         return run(m_for(ctx).item, item_id)
 
     @tool("update_item", _WRITE, "Update an item's details")
@@ -613,9 +649,23 @@ def register() -> None:
 
     @tool("get_location", _READ, "Read a location")
     def get_location(location_id: str, ctx: Context) -> dict[str, Any]:
-        """A location: its path, the locations inside it, the items placed there now, its
-        coordinates and photos."""
+        """A location (the physical tree): its path, the locations inside it (with counts), the
+        positions there, set on them or inherited, here or in a location inside it, grouped by
+        system (each group's top position), each with its fitted item, whether its location is
+        set on it (direct) or inherited_from, and its open work orders; the items placed there
+        (not fitted: spares, repairs); and counts (positions, fitted_items, items,
+        open_work_orders). At most 500 positions are listed (positions_truncated); counts cover
+        all. For the work there, list_work_orders with this location_id."""
         return run(m_for(ctx).location, location_id)
+
+    @tool("adopt_item_placements", _WRITE, "Turn fitted items' placements into position locations")
+    def adopt_item_placements(ctx: Context, dry_run: bool = True) -> dict[str, Any]:
+        """A one-off tidy-up for a workspace that placed fitted items at locations (before a
+        fitted item was simply where its position is): each fitted item placed while fitted gives
+        its position that location, where the position has none of its own and doesn't already
+        inherit it. Placements from before an item went in (where a spare was kept) are skipped.
+        dry_run (the default) only lists the changes: show them, then run with dry_run false."""
+        return run(m_for(ctx).adopt_placements, dry_run)
 
     @tool("update_location", _WRITE, "Update a location")
     def update_location(location_id: str, ctx: Context, name: str | None = None, description: str | None = None,
