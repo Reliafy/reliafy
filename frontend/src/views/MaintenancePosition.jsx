@@ -388,7 +388,7 @@ function TaskModal({ task, onClose, onDone }) {
       <Field label="Task"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Every">
         <div className="maint-row" style={{ marginTop: 0 }}>
-          <input type="number" min="0" step="any" value={interval} onChange={(e) => setInterval(e.target.value)} style={{ width: "6rem" }} />
+          <input type="number" inputMode="decimal" min="0" step="any" value={interval} onChange={(e) => setInterval(e.target.value)} style={{ width: "6rem" }} />
           <select value={unit} onChange={(e) => setUnit(e.target.value)}>
             {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
           </select>
@@ -396,7 +396,7 @@ function TaskModal({ task, onClose, onDone }) {
       </Field>
       <Field label="Or every (whichever comes first, optional)">
         <div className="maint-row" style={{ marginTop: 0 }}>
-          <input type="number" min="0" step="any" value={also} placeholder="none" onChange={(e) => setAlso(e.target.value)} style={{ width: "6rem" }} />
+          <input type="number" inputMode="decimal" min="0" step="any" value={also} placeholder="none" onChange={(e) => setAlso(e.target.value)} style={{ width: "6rem" }} />
           <select value={alsoUnit} onChange={(e) => setAlsoUnit(e.target.value)}>
             {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
           </select>
@@ -546,7 +546,7 @@ function GroupModal({ p, positions, onClose, onDone }) {
           </label>
         ))}
       </div>
-      <Field label={`How many of the ${n} are needed`}><input type="number" min="1" max={Math.max(1, n - 1)} value={k}
+      <Field label={`How many of the ${n} are needed`}><input type="number" inputMode="numeric" min="1" max={Math.max(1, n - 1)} value={k}
              onChange={(e) => setK(Number(e.target.value))} /></Field>
       <Field label="The others">
         <select value={mode} onChange={(e) => setMode(e.target.value)}>
