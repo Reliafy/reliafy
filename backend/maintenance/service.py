@@ -113,8 +113,35 @@ def _location_created(s: GraphStore, org: str, p: dict) -> None:
 def _item_created(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "Item", {
         "name": p["name"], "serial": p.get("serial", ""), "part_number": p.get("part_number", ""),
-        "manufacturer": p.get("manufacturer", ""), "notes": p.get("notes", ""), "created": p["on"],
+        "manufacturer": p.get("manufacturer", ""), "model": p.get("model", ""),
+        "nameplate": p.get("nameplate") or {}, "notes": p.get("notes", ""), "created": p["on"],
     })
+
+
+def _patch(s: GraphStore, org: str, p: dict) -> None:
+    """item.updated, task.updated, work_order.updated, location.updated: plain field changes."""
+    changes = {k: v for k, v in p["changes"].items() if k != "parent_id"}
+    if changes:
+        s.patch_node(org, p["id"], changes)
+    if "parent_id" in p["changes"]:
+        for parent in s.out(org, p["id"], "PART_OF"):
+            s.delete_edge(org, "PART_OF", p["id"], parent["id"])
+        if p["changes"]["parent_id"]:
+            s.put_edge(org, "PART_OF", p["id"], p["changes"]["parent_id"])
+
+
+def _flag(field: str):
+    def project(s: GraphStore, org: str, p: dict) -> None:
+        s.patch_node(org, p["id"], {field: True, f"{field}_on": p.get("on"), f"{field}_reason": p.get("reason", "")})
+    return project
+
+
+def _fitment_corrected(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {k: p[k] for k in ("from", "to") if k in p})
+
+
+def _work_order_cancelled(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"status": "cancelled", "closed": p["on"], "notes": p.get("reason", "")})
 
 
 def _item_placed(s: GraphStore, org: str, p: dict) -> None:
@@ -233,6 +260,14 @@ PROJECTORS = {
     "work_order.opened": _work_order_opened,
     "action.recorded": _action_recorded,
     "work_order.closed": _work_order_closed,
+    "item.updated": _patch,
+    "task.retired": _flag("retired"),
+    "position.retired": _flag("retired"),
+    "fitment.voided": _flag("voided"),
+    "fitment.corrected": _fitment_corrected,
+    "work_order.updated": _patch,
+    "work_order.cancelled": _work_order_cancelled,
+    "location.updated": _patch,
     "photo.added": _photo_added,
     "photo.removed": _photo_removed,
     "coordinates.set": _coordinates_set,
@@ -263,7 +298,7 @@ class Maintenance:
     def create_position(self, name, tag="", parent_id=None, position_class="", description="") -> dict:
         name = _text(name, "position's name", required=True)
         if parent_id:
-            self._get(parent_id, "Position")
+            self._parent_node(parent_id)
         pid = new_id()
         self._emit("position.created", {
             "id": pid, "name": name, "tag": _text(tag, "tag"), "parent_id": parent_id or None,
@@ -281,13 +316,23 @@ class Maintenance:
         if "parent_id" in changes:
             parent = changes["parent_id"] or None
             if parent:
-                self._get(parent, "Position")
+                self._parent_node(parent)
                 if parent == id or id in self._ancestor_ids(parent):
                     raise Invalid("A position can't sit inside itself.")
             allowed["parent_id"] = parent
         if allowed:
             self._emit("position.updated", {"id": id, "changes": allowed})
         return self._get(id, "Position")
+
+    def _parent_node(self, id: str) -> dict:
+        """What a position can sit inside: another position, or an item (an item
+        position: it moves with the item, like an engine's turbo positions)."""
+        node = self.s.node(self.org, id)
+        if node is None or node["label"] not in ("Position", "Item"):
+            raise NotFound(id)
+        if node.get("retired"):
+            raise Invalid("That position has been retired.")
+        return node
 
     def _parent(self, id: str) -> dict | None:
         parents = self.s.out(self.org, id, "PART_OF")
@@ -354,13 +399,16 @@ class Maintenance:
 
     # ---- items, fitments, placements --------------------------------------------
 
-    def create_item(self, name, serial="", part_number="", manufacturer="", notes="") -> dict:
+    def create_item(self, name, serial="", part_number="", manufacturer="", notes="", model="",
+                    nameplate=None) -> dict:
         iid = new_id()
         self._emit("item.created", {
             "id": iid, "name": _text(name, "item's name", required=True), "serial": _text(serial, "serial"),
             "part_number": _text(part_number, "part number"), "manufacturer": _text(manufacturer, "manufacturer"),
-            "notes": _text(notes, "notes"), "on": date.today().isoformat(),
+            "model": _text(model, "model"), "notes": _text(notes, "notes"), "on": date.today().isoformat(),
         })
+        if nameplate:
+            self.update_item(iid, nameplate=nameplate)
         return self._get(iid, "Item")
 
     def _item_from(self, item_id=None, new_item=None) -> str:
@@ -371,7 +419,8 @@ class Maintenance:
             return item_id
         if new_item:
             return self.create_item(**{k: new_item.get(k) for k in
-                                       ("name", "serial", "part_number", "manufacturer", "notes")})["id"]
+                                       ("name", "serial", "part_number", "manufacturer", "notes", "model",
+                                        "nameplate")})["id"]
         raise Invalid("Say which item: an existing one, or a new one with a name.")
 
     def place_item(self, item_id: str, location_id: str, on=None) -> dict:
@@ -381,17 +430,17 @@ class Maintenance:
                                    "placement_id": new_id(), "on": _day(on)})
         return self.item(item_id)
 
+    def _fitments_at(self, position_id: str) -> list[dict]:
+        return [f for f in self.s.inn(self.org, position_id, "AT") if f["label"] == "Fitment" and not f.get("voided")]
+
+    def _fitments_of(self, item_id: str) -> list[dict]:
+        return [f for f in self.s.out(self.org, item_id, "IN") if f["label"] == "Fitment" and not f.get("voided")]
+
     def current_fitment(self, position_id: str) -> dict | None:
-        for f in self.s.inn(self.org, position_id, "AT"):
-            if f["label"] == "Fitment" and f.get("to") is None:
-                return f
-        return None
+        return next((f for f in self._fitments_at(position_id) if f.get("to") is None), None)
 
     def _current_fitment_of_item(self, item_id: str) -> dict | None:
-        for f in self.s.out(self.org, item_id, "IN"):
-            if f["label"] == "Fitment" and f.get("to") is None:
-                return f
-        return None
+        return next((f for f in self._fitments_of(item_id) if f.get("to") is None), None)
 
     def fit(self, position_id: str, item_id=None, new_item=None, on=None) -> dict:
         """Fit an item to an empty position (a first install, or after a removal)."""
@@ -483,6 +532,9 @@ class Maintenance:
 
     # ---- tasks and when they're due ------------------------------------------------
 
+    def _tasks_on(self, position_id: str) -> list[dict]:
+        return [t for t in self.s.inn(self.org, position_id, "ON") if t["label"] == "Task" and not t.get("retired")]
+
     def _task_view(self, task: dict) -> dict:
         base = task.get("last_done") or task["start"]
         nxt = add_interval(base, task["interval"], task["unit"])
@@ -509,6 +561,11 @@ class Maintenance:
         until = (date.today() + timedelta(days=horizon_days)).isoformat()
         out = []
         for task in self.s.nodes(self.org, "Task"):
+            if task.get("retired"):
+                continue
+            position = self.s.out(self.org, task["id"], "ON")
+            if not position or position[0].get("retired"):
+                continue
             view = self._task_view(task)
             if view["next_due"] and view["next_due"] <= until:
                 position = self.s.out(self.org, task["id"], "ON")
@@ -601,6 +658,260 @@ class Maintenance:
         self._emit("work_order.closed", {"id": work_order_id, "on": day, "notes": _text(notes, "notes")})
         return self.work_order(work_order_id)
 
+    # ---- corrections and edits ------------------------------------------------------
+    # Mistakes are fixed with events too, so the history shows what changed.
+
+    ITEM_FIELDS = ("name", "serial", "part_number", "manufacturer", "model", "notes")
+
+    def update_item(self, item_id: str, nameplate: dict | None = None, **changes) -> dict:
+        """Change an item's details: name, serial, part number, manufacturer, model,
+        notes, and nameplate fields (ratings, year, anything on the plate: merged in;
+        a field set to "" is removed)."""
+        item = self._get(item_id, "Item")
+        out = {k: _text(v, k) for k, v in changes.items() if k in self.ITEM_FIELDS and v is not None}
+        if "name" in out and not out["name"]:
+            raise Invalid("The item's name is required.")
+        if nameplate:
+            if not isinstance(nameplate, dict):
+                raise Invalid("Nameplate fields are name: value pairs.")
+            plate = dict(item.get("nameplate") or {})
+            for k, v in nameplate.items():
+                key = _text(k, "nameplate field")[:60]
+                value = _text(v, "nameplate value")[:200]
+                if key and value:
+                    plate[key] = value
+                elif key:
+                    plate.pop(key, None)
+            if len(plate) > 60:
+                raise Invalid("At most 60 nameplate fields.")
+            out["nameplate"] = plate
+        if out:
+            self._emit("item.updated", {"id": item_id, "changes": out})
+        return self.item(item_id)
+
+    def move_item(self, item_id: str, to_position_id: str, on=None) -> dict:
+        """Move an item from wherever it's fitted to an empty position (a planned
+        removal there, a fit here): a rotable going round."""
+        self._get(item_id, "Item")
+        self._get(to_position_id, "Position")
+        if self.current_fitment(to_position_id):
+            raise Invalid("Something is already fitted there. Move or remove it first.")
+        day = _day(on)
+        current = self._current_fitment_of_item(item_id)
+        if current:
+            if current["id"] and self.s.out(self.org, current["id"], "AT")[0]["id"] == to_position_id:
+                raise Invalid("It's already fitted there.")
+            if day < current["from"]:
+                raise Invalid("It can't move before it was fitted where it is.")
+            self._emit("item.removed", {"fitment_id": current["id"], "on": day, "reason": "planned",
+                                        "failure_mode_id": None})
+        self._emit("item.fitted", {"fitment_id": new_id(), "item_id": item_id,
+                                   "position_id": to_position_id, "on": day})
+        return self.item(item_id)
+
+    def void_fitment(self, fitment_id: str, reason="") -> None:
+        """Strike out a fitment recorded by mistake: it leaves the life data and the
+        position's history (the event log keeps it)."""
+        f = self._get(fitment_id, "Fitment")
+        if f.get("voided"):
+            raise Invalid("That fitment was already struck out.")
+        self._emit("fitment.voided", {"id": fitment_id, "on": date.today().isoformat(),
+                                      "reason": _text(reason, "reason")})
+
+    def correct_fitment(self, fitment_id: str, start=None, end=None) -> dict:
+        """Correct the dates an item went in (start) or came out (end)."""
+        f = self._get(fitment_id, "Fitment")
+        changes = {}
+        if start:
+            changes["from"] = _day(start, "start date")
+        if end:
+            if f.get("to") is None:
+                raise Invalid("It's still fitted: remove it, or close a work order, to end it.")
+            changes["to"] = _day(end, "end date")
+        new_from, new_to = changes.get("from", f["from"]), changes.get("to", f.get("to"))
+        if new_to and new_to < new_from:
+            raise Invalid("It can't come out before it went in.")
+        if changes:
+            self._emit("fitment.corrected", {"id": fitment_id, **changes})
+        return self._fitment_view(self._get(fitment_id, "Fitment"))
+
+    def update_work_order(self, work_order_id: str, title=None, due=None, notes=None, type=None) -> dict:
+        wo = self._get(work_order_id, "WorkOrder")
+        if wo["status"] != "open":
+            raise Invalid("Only an open work order can be changed.")
+        changes = {}
+        if title is not None:
+            changes["title"] = _text(title, "title", required=True)
+        if due is not None:
+            changes["due"] = _day(due, "due date") if due else None
+        if notes is not None:
+            changes["notes"] = _text(notes, "notes")
+        if type is not None:
+            if type not in WORK_ORDER_TYPES:
+                raise Invalid(f"The type is one of {', '.join(WORK_ORDER_TYPES)}.")
+            changes["type"] = type
+        if changes:
+            self._emit("work_order.updated", {"id": work_order_id, "changes": changes})
+        return self.work_order(work_order_id)
+
+    def cancel_work_order(self, work_order_id: str, reason="") -> dict:
+        wo = self._get(work_order_id, "WorkOrder")
+        if wo["status"] != "open":
+            raise Invalid("Only an open work order can be cancelled.")
+        self._emit("work_order.cancelled", {"id": work_order_id, "on": date.today().isoformat(),
+                                            "reason": _text(reason, "reason")})
+        return self.work_order(work_order_id)
+
+    def update_task(self, task_id: str, name=None, interval=None, unit=None) -> dict:
+        task = self._get(task_id, "Task")
+        if task.get("retired"):
+            raise Invalid("That task has been retired.")
+        changes = {}
+        if name is not None:
+            changes["name"] = _text(name, "task's name", required=True)
+        if interval is not None:
+            try:
+                interval = float(interval)
+            except (TypeError, ValueError):
+                raise Invalid("The interval must be a number.")
+            if interval <= 0:
+                raise Invalid("The interval must be positive.")
+            changes["interval"] = interval
+        if unit is not None:
+            changes["unit"] = _norm_unit(unit) or "days"
+        if changes:
+            self._emit("task.updated", {"id": task_id, "changes": changes})
+        return self._task_view(self._get(task_id, "Task"))
+
+    def retire_task(self, task_id: str, reason="") -> None:
+        task = self._get(task_id, "Task")
+        if task.get("retired"):
+            raise Invalid("That task was already retired.")
+        self._emit("task.retired", {"id": task_id, "on": date.today().isoformat(), "reason": _text(reason, "reason")})
+
+    def retire_position(self, position_id: str, reason="") -> None:
+        """Take a position out of the plant (it stays in the history). Nothing may be
+        fitted to it, and no position inside it still in use."""
+        p = self._get(position_id, "Position")
+        if p.get("retired"):
+            raise Invalid("That position was already retired.")
+        if self.current_fitment(position_id):
+            raise Invalid("Something is still fitted. Remove or move it first.")
+        if any(not c.get("retired") for c in self.s.inn(self.org, position_id, "PART_OF") if c["label"] == "Position"):
+            raise Invalid("Positions inside it are still in use. Retire or move them first.")
+        if any(w["label"] == "WorkOrder" and w["status"] == "open" for w in self.s.inn(self.org, position_id, "ON")):
+            raise Invalid("It has open work orders. Close or cancel them first.")
+        self._emit("position.retired", {"id": position_id, "on": date.today().isoformat(),
+                                        "reason": _text(reason, "reason")})
+
+    def update_location(self, location_id: str, name=None, description=None, parent_id=...) -> dict:
+        self._get(location_id, "Location")
+        changes = {}
+        if name is not None:
+            changes["name"] = _text(name, "location's name", required=True)
+        if description is not None:
+            changes["description"] = _text(description, "description")
+        if parent_id is not ...:
+            if parent_id:
+                self._get(parent_id, "Location")
+                if parent_id == location_id or location_id in self._ancestor_ids(parent_id):
+                    raise Invalid("A location can't sit inside itself.")
+            changes["parent_id"] = parent_id or None
+        if changes:
+            self._emit("location.updated", {"id": location_id, "changes": changes})
+        return self.location(location_id)
+
+    # ---- items, locations and classes: reading ---------------------------------------
+
+    def item(self, id: str) -> dict:
+        """An item: its details and nameplate, where it's fitted and placed now, every
+        position it has been fitted to, its own positions (an engine's turbos) and photos."""
+        item = self._get(id, "Item")
+        fitments = sorted(self._fitments_of(id), key=lambda f: f["from"], reverse=True)
+        current = next((f for f in fitments if f.get("to") is None), None)
+        placements = sorted([p for p in self.s.out(self.org, id, "IN") if p["label"] == "Placement"],
+                            key=lambda p: p["from"], reverse=True)
+        here = next((p for p in placements if p.get("to") is None), None)
+        location = here and self.s.out(self.org, here["id"], "AT")
+        own = [c for c in self.s.inn(self.org, id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
+        return {
+            **{k: item.get(k, "") for k in self.ITEM_FIELDS}, "id": id, "nameplate": item.get("nameplate") or {},
+            "created": item.get("created"), "coordinates": item.get("coordinates"),
+            "fitted_to": current and self._fitment_view(current)["position"],
+            "location": location and {"id": location[0]["id"], "name": location[0]["name"]},
+            "history": [self._fitment_view(f) for f in fitments],
+            "placements": [{"from": p["from"], "to": p.get("to"),
+                            "location": (lambda l: l and {"id": l[0]["id"], "name": l[0]["name"]})(
+                                self.s.out(self.org, p["id"], "AT"))} for p in placements],
+            "positions": [{"id": c["id"], "name": c["name"],
+                           "item": (lambda f: f and self._fitment_view(f)["item"])(self.current_fitment(c["id"]))}
+                          for c in sorted(own, key=lambda c: c["name"].lower())],
+            "photos": self.photos_of(id),
+        }
+
+    def location(self, id: str) -> dict:
+        loc = self._get(id, "Location")
+        path = [self.s.node(self.org, a) for a in reversed(self._ancestor_ids(id))]
+        here = []
+        for placement in self.s.inn(self.org, id, "AT"):
+            if placement["label"] == "Placement" and placement.get("to") is None:
+                item = self.s.inn(self.org, placement["id"], "IN")
+                if item:
+                    here.append({**self._item_brief(item[0]), "since": placement["from"]})
+        kids = [c for c in self.s.inn(self.org, id, "PART_OF") if c["label"] == "Location"]
+        return {
+            "id": id, "name": loc["name"], "description": loc.get("description", ""),
+            "coordinates": loc.get("coordinates"),
+            "path": [{"id": a["id"], "name": a["name"]} for a in path],
+            "children": [{"id": c["id"], "name": c["name"]} for c in sorted(kids, key=lambda c: c["name"].lower())],
+            "items": sorted(here, key=lambda i: i["name"].lower()),
+            "photos": self.photos_of(id),
+        }
+
+    def location_tree(self) -> list[dict]:
+        locs = self.s.nodes(self.org, "Location")
+        children: dict[str | None, list] = {}
+        for loc in locs:
+            parent = self._parent(loc["id"])
+            children.setdefault(parent["id"] if parent else None, []).append(loc)
+
+        def build(loc):
+            items = sum(1 for p in self.s.inn(self.org, loc["id"], "AT")
+                        if p["label"] == "Placement" and p.get("to") is None)
+            return {"id": loc["id"], "name": loc["name"], "items": items,
+                    "children": [build(c) for c in sorted(children.get(loc["id"], []), key=lambda c: c["name"].lower())]}
+
+        return [build(loc) for loc in sorted(children.get(None, []), key=lambda c: c["name"].lower())]
+
+    def position_classes(self) -> list[dict]:
+        """Each class of position ('Centrifugal pump'), with how many positions and
+        how much life data it pools."""
+        classes: dict[str, dict] = {}
+        for p in self.s.nodes(self.org, "Position"):
+            name = (p.get("position_class") or "").strip()
+            if not name or p.get("retired"):
+                continue
+            entry = classes.setdefault(name, {"position_class": name, "positions": 0, "fitments": 0, "failures": 0})
+            entry["positions"] += 1
+            for f in self._fitments_at(p["id"]):
+                entry["fitments"] += 1
+                entry["failures"] += f.get("end_reason") == "failure"
+        return sorted(classes.values(), key=lambda c: c["position_class"].lower())
+
+    def class_life_data(self, position_class: str) -> dict:
+        """Every fitment at every position of a class, pooled: the data for one life
+        model of that kind of position."""
+        wanted = (position_class or "").strip().lower()
+        rows = []
+        for p in self.s.nodes(self.org, "Position"):
+            if (p.get("position_class") or "").strip().lower() == wanted and not p.get("retired"):
+                rows += [{**r, "position": p["name"], "position_id": p["id"]} for r in self.life_data(p["id"])]
+        if not rows and not any((p.get("position_class") or "").strip().lower() == wanted
+                                for p in self.s.nodes(self.org, "Position")):
+            raise NotFound(position_class)
+        return {"position_class": position_class, "rows": sorted(rows, key=lambda r: r["from"]),
+                "failures": sum(1 for r in rows if r["c"] == 0), "suspensions": sum(1 for r in rows if r["c"] == 1)}
+
     # ---- photos and coordinates ------------------------------------------------------
 
     def photo_target(self, node_id: str) -> dict:
@@ -662,7 +973,7 @@ class Maintenance:
     def _item_brief(self, item: dict | None) -> dict | None:
         if not item:
             return None
-        return {k: item.get(k) for k in ("id", "name", "serial", "part_number", "manufacturer")}
+        return {k: item.get(k) for k in ("id", "name", "serial", "part_number", "manufacturer", "model")}
 
     def _fitment_view(self, f: dict) -> dict:
         item = self.s.inn(self.org, f["id"], "IN")
@@ -676,7 +987,7 @@ class Maintenance:
         }
 
     def tree(self) -> list[dict]:
-        positions = self.s.nodes(self.org, "Position")
+        positions = [p for p in self.s.nodes(self.org, "Position") if not p.get("retired")]
         children: dict[str | None, list] = {}
         for p in positions:
             parent = self._parent(p["id"])
@@ -685,7 +996,7 @@ class Maintenance:
         def build(p):
             fitted = self.current_fitment(p["id"])
             item = fitted and self.s.inn(self.org, fitted["id"], "IN")
-            tasks = [self._task_view(t) for t in self.s.inn(self.org, p["id"], "ON") if t["label"] == "Task"]
+            tasks = [self._task_view(t) for t in self._tasks_on(p["id"])]
             dues = sorted(t["next_due"] for t in tasks if t["next_due"])
             wos = [w for w in self.s.inn(self.org, p["id"], "ON") if w["label"] == "WorkOrder"]
             return {
@@ -701,21 +1012,21 @@ class Maintenance:
 
     def position(self, id: str) -> dict:
         p = self._get(id, "Position")
-        path = [self.s.node(self.org, a) for a in reversed(self._ancestor_ids(id))]
-        fitments = [f for f in self.s.inn(self.org, id, "AT") if f["label"] == "Fitment"]
+        path = self._position_path(id)
+        fitments = self._fitments_at(id)
         fitments.sort(key=lambda f: (f["from"], f.get("to") or "9999"), reverse=True)
         current = next((f for f in fitments if f.get("to") is None), None)
         fitted = current and self._fitment_view(current)
         modes = self.s.out(self.org, id, "CAN_FAIL_AS")
-        tasks = [self._task_view(t) for t in self.s.inn(self.org, id, "ON") if t["label"] == "Task"]
+        tasks = [self._task_view(t) for t in self._tasks_on(id)]
         wos = [w for w in self.s.inn(self.org, id, "ON") if w["label"] == "WorkOrder"]
         wos.sort(key=lambda w: w["number"], reverse=True)
         kids = sorted(self.s.inn(self.org, id, "PART_OF"), key=lambda c: c["name"].lower())
         return {
             "id": p["id"], "name": p["name"], "tag": p.get("tag", ""),
             "position_class": p.get("position_class", ""), "description": p.get("description", ""),
-            "path": [{"id": a["id"], "name": a["name"]} for a in path],
-            "children": [{"id": c["id"], "name": c["name"]} for c in kids],
+            "path": path, "retired": bool(p.get("retired")),
+            "children": [{"id": c["id"], "name": c["name"]} for c in kids if not c.get("retired")],
             "fitted": fitted,
             "fitments": [self._fitment_view(f) for f in fitments],
             "failure_modes": [{k: m.get(k) for k in ("id", "text", "function", "failure", "consequence", "outcome")}
@@ -727,6 +1038,25 @@ class Maintenance:
             "photos": self.photos_of(id),
             "item_photos": self.photos_of(fitted["item"]["id"]) if fitted and fitted["item"] else [],
         }
+
+    def _position_path(self, id: str) -> list[dict]:
+        """The way down to a position, top first. An item position's path runs
+        through its item and on up from wherever the item is fitted (Truck 14 >
+        Engine E123 > Turbo 1)."""
+        out, seen, node = [], {id}, self._parent(id)
+        while node and node["id"] not in seen:
+            seen.add(node["id"])
+            out.append({"id": node["id"], "name": node["name"], "kind": node["label"]})
+            if node["label"] == "Item":
+                fitment = self._current_fitment_of_item(node["id"])
+                node = fitment and self.s.out(self.org, fitment["id"], "AT")[0]
+                if node and node["id"] not in seen:
+                    seen.add(node["id"])
+                    out.append({"id": node["id"], "name": node["name"], "kind": node["label"]})
+                    node = self._parent(node["id"])
+                continue
+            node = self._parent(node["id"])
+        return list(reversed(out))
 
     def _wo_brief(self, w: dict) -> dict:
         position = self.s.out(self.org, w["id"], "ON")
@@ -775,10 +1105,6 @@ class Maintenance:
             })
         return out
 
-    def item(self, id: str) -> dict:
-        self._get(id, "Item")
-        return next(i for i in self.items() if i["id"] == id)
-
     def locations(self) -> list[dict]:
         out = []
         for loc in sorted(self.s.nodes(self.org, "Location"), key=lambda n: n["name"].lower()):
@@ -793,13 +1119,12 @@ class Maintenance:
         still fitted, censored today). Reliafy's censoring convention."""
         today = date.today().isoformat()
         rows = []
-        for f in self.s.inn(self.org, position_id, "AT"):
-            if f["label"] != "Fitment":
-                continue
+        for f in self._fitments_at(position_id):
             end = f.get("to") or today
             days = (date.fromisoformat(end) - date.fromisoformat(f["from"])).days
             view = self._fitment_view(f)
             rows.append({
+                "fitment_id": f["id"],
                 "item": view["item"] and view["item"]["name"], "from": f["from"], "to": f.get("to"),
                 "x": days, "c": 0 if f.get("end_reason") == "failure" else 1,
                 "failure_mode": view["failure_mode"] and view["failure_mode"]["text"],
@@ -812,7 +1137,8 @@ class Maintenance:
 def summary(m: Maintenance) -> dict:
     """Counts for the home page."""
     return {
-        "positions": len(m.s.nodes(m.org, "Position")),
+        "positions": sum(1 for p in m.s.nodes(m.org, "Position") if not p.get("retired")),
+        "locations": len(m.s.nodes(m.org, "Location")),
         "items": len(m.s.nodes(m.org, "Item")),
         "open_work_orders": sum(1 for w in m.s.nodes(m.org, "WorkOrder") if w["status"] == "open"),
         "tasks": len(m.s.nodes(m.org, "Task")),

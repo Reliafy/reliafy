@@ -43,6 +43,11 @@ const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
 const MaintenanceHome = lazy(() => import("./views/MaintenanceHome.jsx"));
 const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx"));
 const MaintenanceWorkOrder = lazy(() => import("./views/MaintenanceWorkOrder.jsx"));
+const MaintenanceItem = lazy(() => import("./views/MaintenanceItem.jsx"));
+const MaintenanceItems = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceItems })));
+const MaintenanceLocations = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocations })));
+const MaintenanceLocation = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocation })));
+const MaintenanceClasses = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceClasses })));
 const TeamSettingsPage = lazy(() => import("./views/TeamSettingsPage.jsx"));
 const SettingsPage = lazy(() => import("./views/SettingsPage.jsx"));
 const ApiDocsPage = lazy(() => import("./views/ApiDocsPage.jsx"));
@@ -201,6 +206,11 @@ export default function AppShell() {
             {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
             {maintenanceEnabled && <Route path="/maintenance/positions/:id" element={<MaintenancePosition />} />}
             {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
+            {maintenanceEnabled && <Route path="/maintenance/items" element={<MaintenanceItems />} />}
+            {maintenanceEnabled && <Route path="/maintenance/items/:id" element={<MaintenanceItem />} />}
+            {maintenanceEnabled && <Route path="/maintenance/locations" element={<MaintenanceLocations />} />}
+            {maintenanceEnabled && <Route path="/maintenance/locations/:id" element={<MaintenanceLocation />} />}
+            {maintenanceEnabled && <Route path="/maintenance/classes" element={<MaintenanceClasses />} />}
             <Route path="/team" element={<TeamSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/api-docs" element={<ApiDocsPage />} />

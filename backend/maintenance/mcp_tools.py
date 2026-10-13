@@ -96,8 +96,9 @@ def register() -> None:
 
     @tool("list_locations", _READ, "List locations")
     def list_locations(ctx: Context) -> dict[str, Any]:
-        """Physical locations (sites, buildings, stores) and their parents."""
-        return {"locations": run(m_for(ctx).locations)}
+        """Physical locations (sites, buildings, rooms, stores) as a tree, with how many items are
+        placed in each."""
+        return {"tree": run(m_for(ctx).location_tree)}
 
     # ---- building the plant ------------------------------------------------------------
 
@@ -106,8 +107,9 @@ def register() -> None:
                         position_class: str = "", description: str = "") -> dict[str, Any]:
         """A position: a job something does in the plant (the functional hierarchy),
         such as 'Hot water system' or 'Pump A'. Items are fitted to positions. Put it
-        inside another position with parent_id. position_class groups like positions
-        for comparison (e.g. 'Centrifugal pump')."""
+        inside another position with parent_id, or inside an item (parent_id = an item id) for
+        a position that travels with that item, like an engine's turbo. position_class groups
+        like positions for comparison and pooled life data (e.g. 'Centrifugal pump')."""
         m = m_for(ctx)
         return run(lambda: m.position(m.create_position(name, tag, parent_id, position_class, description)["id"]))
 
@@ -214,6 +216,112 @@ def register() -> None:
         action is invalid."""
         return run(m_for(ctx).close_work_order, work_order_id, actions, on, notes)
 
+    # ---- items, locations, classes and corrections --------------------------------------
+
+    @tool("get_item", _READ, "Read an item")
+    def get_item(item_id: str, ctx: Context) -> dict[str, Any]:
+        """An item (a physical, serial-numbered thing): details and nameplate fields, where it's
+        fitted and placed now, every position it has been fitted to, its own positions (an
+        engine's turbos) and its photos."""
+        return run(m_for(ctx).item, item_id)
+
+    @tool("update_item", _WRITE, "Update an item's details")
+    def update_item(item_id: str, ctx: Context, name: str | None = None, serial: str | None = None,
+                    part_number: str | None = None, manufacturer: str | None = None, model: str | None = None,
+                    notes: str | None = None,
+                    nameplate: Annotated[dict[str, str] | None, Field(description=(
+                        "Other fields from the nameplate, as label: value (e.g. {'Capacity': '315 L', "
+                        "'Element': '3.6 kW', 'Year': '2019'}). Merged into what's there; a value of '' "
+                        "removes that field."))] = None) -> dict[str, Any]:
+        """Change an item's details. After reading a nameplate photo (get_photo), put the make in
+        manufacturer, the model, the serial, and everything else on the plate in nameplate. Say
+        what you read and what you couldn't."""
+        return run(m_for(ctx).update_item, item_id, nameplate,
+                   **{k: v for k, v in (("name", name), ("serial", serial), ("part_number", part_number),
+                                        ("manufacturer", manufacturer), ("model", model), ("notes", notes))
+                      if v is not None})
+
+    @tool("move_item", _WRITE, "Move an item to another position")
+    def move_item(item_id: str, position_id: str, ctx: Context, on: DateText = None) -> dict[str, Any]:
+        """Move an item from wherever it's fitted to an empty position (a planned removal there and
+        a fit here), keeping its one history: a rotable going round, a pump swapped to standby."""
+        return run(m_for(ctx).move_item, item_id, position_id, on)
+
+    @tool("void_fitment", _WRITE, "Strike out a mistaken fitment")
+    def void_fitment(fitment_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
+        """Strike out a fitment recorded by mistake (wrong item or position): it leaves the
+        position's history and life data; the event log keeps it. Fitment ids are in
+        get_position (fitments, life_data)."""
+        m = m_for(ctx)
+        return run(lambda: (m.void_fitment(fitment_id, reason), {"voided": fitment_id})[1])
+
+    @tool("correct_fitment", _WRITE, "Correct a fitment's dates")
+    def correct_fitment(fitment_id: str, ctx: Context, start: DateText = None, end: DateText = None) -> dict[str, Any]:
+        """Correct the date an item went in (start) or came out (end) of a position."""
+        return run(m_for(ctx).correct_fitment, fitment_id, start, end)
+
+    @tool("update_work_order", _WRITE, "Update a work order")
+    def update_work_order(work_order_id: str, ctx: Context, title: str | None = None, due: str | None = None,
+                          notes: str | None = None,
+                          type: Literal["corrective", "preventive", "inspection", "other"] | None = None
+                          ) -> dict[str, Any]:
+        """Change an open work order's title, due date (a date, or '' to clear it), notes or type."""
+        return run(m_for(ctx).update_work_order, work_order_id, title, due, notes, type)
+
+    @tool("cancel_work_order", _WRITE, "Cancel a work order")
+    def cancel_work_order(work_order_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
+        """Cancel an open work order that won't be done (a duplicate, raised by mistake). Use
+        close_work_order for work that was done."""
+        return run(m_for(ctx).cancel_work_order, work_order_id, reason)
+
+    @tool("update_task", _WRITE, "Update a task")
+    def update_task(task_id: str, ctx: Context, name: str | None = None, interval: float | None = None,
+                    unit: str | None = None) -> dict[str, Any]:
+        """Rename a task or change its interval (unit: days, weeks, months, years, or a unit of use
+        such as hours)."""
+        return run(m_for(ctx).update_task, task_id, name, interval, unit)
+
+    @tool("retire_task", _WRITE, "Retire a task")
+    def retire_task(task_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
+        """Stop scheduling a task (it stays in the history)."""
+        m = m_for(ctx)
+        return run(lambda: (m.retire_task(task_id, reason), {"retired": task_id})[1])
+
+    @tool("retire_position", _WRITE, "Retire a position")
+    def retire_position(position_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
+        """Take a position out of the plant (it stays in the history). Nothing may be fitted, no
+        position inside it in use, and no work order open."""
+        m = m_for(ctx)
+        return run(lambda: (m.retire_position(position_id, reason), {"retired": position_id})[1])
+
+    @tool("get_location", _READ, "Read a location")
+    def get_location(location_id: str, ctx: Context) -> dict[str, Any]:
+        """A location: its path, the locations inside it, the items placed there now, its
+        coordinates and photos."""
+        return run(m_for(ctx).location, location_id)
+
+    @tool("update_location", _WRITE, "Update a location")
+    def update_location(location_id: str, ctx: Context, name: str | None = None, description: str | None = None,
+                        parent_id: str | None = None, move_to_top_level: bool = False) -> dict[str, Any]:
+        """Rename a location, change its description, or move it inside another (parent_id) or to
+        the top level."""
+        kwargs = {k: v for k, v in (("name", name), ("description", description)) if v is not None}
+        if parent_id or move_to_top_level:
+            kwargs["parent_id"] = None if move_to_top_level else parent_id
+        return run(m_for(ctx).update_location, location_id, **kwargs)
+
+    @tool("list_position_classes", _READ, "List position classes")
+    def list_position_classes(ctx: Context) -> dict[str, Any]:
+        """Each class of position (e.g. 'Centrifugal pump'), with its positions, fitments and
+        failures: what can be compared and pooled."""
+        return {"classes": run(m_for(ctx).position_classes)}
+
+    @tool("class_life_data", _READ, "Life data for a position class")
+    def class_life_data(position_class: str, ctx: Context) -> dict[str, Any]:
+        """Every fitment at every position of a class, pooled: x = days in service, c = 0 failed
+        or 1 censored (removed on purpose, or still fitted). Ready for fit_distribution."""
+        return run(m_for(ctx).class_life_data, position_class)
+
     # ---- photos ------------------------------------------------------------------------
 
     from mcp.server.mcpserver import Image
@@ -254,8 +362,8 @@ def register() -> None:
 
     @tool("get_photo", _READ, "Look at a photo")
     def get_photo(photo_id: str, ctx: Context, size: Literal["full", "thumb"] = "full") -> Image:
-        """The photo itself, to look at: read a nameplate (make, model, serial, ratings) or
-        check a condition. 'full' is up to 1600 px; 'thumb' 400 px."""
+        """The photo itself, to look at: read a nameplate (make, model, serial, ratings; then
+        update_item) or check a condition. 'full' is up to 1600 px; 'thumb' 400 px."""
         m = m_for(ctx)
         run(m.photo, photo_id)
         data = get_photo_store().get(photo_id, size)

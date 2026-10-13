@@ -117,3 +117,40 @@
 .maint-ask p {
   margin: 0 0 0.5rem;
 }
+
+.maint-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0 0 1rem;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.maint-tabs a {
+  padding: 0.5rem 0.85rem;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.maint-tabs a.active {
+  color: var(--ink);
+  border-bottom-color: var(--acc);
+  font-weight: 600;
+}
+
+.maint-plate {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.3rem 1rem;
+  margin: 0;
+}
+
+.maint-plate dt {
+  color: var(--muted);
+}
+
+.maint-plate dd {
+  margin: 0;
+}

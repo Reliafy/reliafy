@@ -52,7 +52,7 @@ def test_hierarchy_and_tree(m):
     assert [t["name"] for t in tree] == ["House"]
     assert [c["name"] for c in tree[0]["children"]] == ["Hot water system", "Pool pump"]
     detail = m.position(hws["id"])
-    assert detail["path"] == [{"id": house["id"], "name": "House"}]
+    assert detail["path"] == [{"id": house["id"], "name": "House", "kind": "Position"}]
     with pytest.raises(Invalid):
         m.update_position(house["id"], parent_id=hws["id"])  # no cycles
 

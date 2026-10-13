@@ -10,7 +10,7 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DueChip, Field, FormModal, PositionPicker, flatten, fmtDate,
+  DueChip, Field, FormModal, MaintenanceTabs, PositionPicker, flatten, fmtDate,
 } from "../components/MaintenanceParts.jsx";
 import "./Maintenance.css";
 
@@ -51,6 +51,7 @@ export default function MaintenanceHome() {
         actions={<button className="secondary" onClick={() => setModal("rcm")}>From an RCM study</button>}
         primary={<button onClick={() => setModal("position")}><PlusIcon /> New position</button>}
       />
+      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
       {data === null ? (
         <div className="card empty">Loading…</div>
@@ -155,7 +156,9 @@ function TreeNode({ node }) {
       <div className="maint-node">
         <Link to={`/maintenance/positions/${node.id}`} className="maint-node-name">{node.name}</Link>
         {node.tag && <span className="lib-date">{node.tag}</span>}
-        <span className="maint-node-item">{node.item ? node.item.name : <span className="lib-date">nothing fitted</span>}</span>
+        <span className="maint-node-item">{node.item
+          ? <Link to={`/maintenance/items/${node.item.id}`}>{node.item.name}</Link>
+          : <span className="lib-date">nothing fitted</span>}</span>
         {node.next_due && <span className="lib-date">next due {fmtDate(node.next_due)}</span>}
         {node.open_work_orders > 0 && <span className="maint-badge">{node.open_work_orders} open</span>}
       </div>
