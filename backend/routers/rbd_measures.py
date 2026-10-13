@@ -6,7 +6,7 @@ whose parameter uncertainty widens the answer. See
 Gating follows the rest of What to improve: the exact and numerical measures
 are free for everyone, answered in the request. The heavy uncertainty runs —
 the Sobol indices, and the availability over time over draws of the fitted
-models — are Pro (or purchased credits), as the simulation is, and run as a
+models — are Pro, as the simulation is, and run as a
 compute job (#149) to poll at ``GET /api/rbd-jobs/{job_id}``.
 """
 
@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api")
 
 PRO_MESSAGE = (
     "The Sobol indices and the availability over time over draws of the fitted models take thousands of "
-    "evaluations of the diagram: that's part of Pro, or buy AI credits. The long-run interval and the "
+    "evaluations of the diagram: that's part of Pro. The long-run interval and the "
     "delta method's shares are free."
 )
 

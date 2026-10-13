@@ -716,7 +716,7 @@ const POLL_MAX_MS = 6000;
 // "~3 s" from a quick-run offer's seconds.
 const quickSeconds = (offer) => (offer ? Number(Number(offer.seconds).toPrecision(2)) : 3);
 
-// The way to run the simulation (Pro, or credits) — for a user without Pro, a
+// The way to run the simulation (Pro) — for a user without Pro, a
 // free quick run (#147) a few times a day. While a simulation is queued or
 // running on the calculation service (#146), its place in the queue.
 // ``primary``: the simulation is this view's next step (no exact figures).
@@ -1194,7 +1194,7 @@ function AvailabilityUpgrade({ graph, offer = null, capMessage = null, onQuick =
       ) : (
         <p>
           <b>The simulation runs thousands of histories — it's part of Pro.</b>{" "}
-          Subscribe to Pro or buy AI credits to run it here.
+          Subscribe to Pro to run it here.
         </p>
       )}
       <div className="rbd-upgrade-actions">

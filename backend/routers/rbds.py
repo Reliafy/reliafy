@@ -276,8 +276,8 @@ def delete_rbd(
 # Pro can run a quick, time-capped simulation (#147), a few a day.
 AVAILABILITY_PRO_PAYLOAD = {
     "detail": (
-        "Availability simulation is a paid feature. Subscribe to Pro or buy AI "
-        "credits — or download the diagram and run it locally with RePyability."
+        "Availability simulation is part of Pro. Subscribe to Pro — or download "
+        "the diagram and run it locally with RePyability."
     ),
     "code": "pro_required",
     "upgrade": True,
@@ -294,7 +294,7 @@ def quick_sims_allowed(surface: str) -> bool:
 
 SIMULATION_PRO_MESSAGE = (
     "The simulation adds what only it gives (the spread of outcomes, the chance of no outage, "
-    "percentiles and criticality indices): it's part of Pro, or buy AI credits — or download the "
+    "percentiles and criticality indices): it's part of Pro — or download the "
     "diagram and run it locally with RePyability."
 )
 
@@ -375,8 +375,8 @@ def availability_payload(
     RePyability's ``analysis_routes()`` has an exact or numerical route, the
     availability over time and the window's expected failures, outages,
     downtime and cost (``payload["exact"]``), from new or from
-    ``current_state`` (#155). The Monte-Carlo simulation stays paid (Pro or
-    purchased credits): ``simulate`` None runs it when the user is entitled
+    ``current_state`` (#155). The Monte-Carlo simulation stays paid (Pro):
+    ``simulate`` None runs it when the user is entitled
     and no saved result matches (the API's behaviour before #154), False
     never runs it (a saved result is still served), True runs it; ``force``
     re-runs over a saved one. A user who isn't entitled gets the exact

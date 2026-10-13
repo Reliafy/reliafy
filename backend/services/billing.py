@@ -127,7 +127,8 @@ def has_purchased_credits(db, uid: str) -> bool:
     opposed to only the free starter grant. Purchases are ledgered with
     reason ``"purchase"`` (routers/billing.py checkout webhook); the starter
     grant uses ``"starter"``. Used to entitle non-Pro payers to premium AI
-    features like the Reliability Agent."""
+    features like the Reliability Agent (``reliability_agent_allowed``), not
+    to compute features, which don't debit credits."""
     return db.credit_ledger.find_one({"uid": uid, "kind": "grant", "reason": "purchase"}) is not None
 
 
@@ -526,12 +527,14 @@ def mcp_plan(db, user: dict) -> str:
 
 
 def premium_compute_allowed(db, user: dict) -> bool:
-    """Whether this user may run the paid, CPU-heavy features (the Reliability
-    Agent, the Monte-Carlo availability simulation).
+    """Whether this user may run the CPU-heavy compute features (the
+    Monte-Carlo availability simulation, simulated what-to-improve,
+    comparisons and design search, bootstrap bounds, ...).
 
-    Entitled: operator accounts, every user when billing is off (self-hosted),
-    Pro subscribers, and anyone who has *bought* AI credits. A purely
-    free-tier user (only the starter grant, never paid) is not.
+    Entitled: operator accounts, every user when billing is off (self-hosted)
+    and Pro subscribers. Credits don't entitle: these runs don't debit the
+    credit balance, so a credit purchase can't stand in for Pro here (credits
+    pay for the metered AI features; see ``reliability_agent_allowed``).
     """
     if is_admin_user(user):
         return True
@@ -540,7 +543,18 @@ def premium_compute_allowed(db, user: dict) -> bool:
     uid = user.get("uid")
     if not uid:
         return False
-    return account(db, uid)["is_pro"] or has_purchased_credits(db, uid)
+    return account(db, uid)["is_pro"]
+
+
+def reliability_agent_allowed(db, user: dict) -> bool:
+    """Whether this user may use the Reliability Agent, a metered AI feature
+    paid from the credit balance: everyone ``premium_compute_allowed``, plus
+    anyone who has *bought* AI credits. A purely free-tier user (only the
+    starter grant, never paid) is not. The balance check still applies."""
+    if premium_compute_allowed(db, user):
+        return True
+    uid = user.get("uid")
+    return bool(uid) and has_purchased_credits(db, uid)
 
 
 # ---- MCP tool-call quotas (Free allowance, grandfathered Agent plan) -----

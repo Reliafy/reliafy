@@ -940,7 +940,7 @@ def test_what_if_run_never_replaces_a_saved_result_keyed_on_a_model(client):
     assert rbds_service.save_availability_result(db, rbd_id, saved_key, rerun, PRO, owners)
 
 
-@pytest.mark.parametrize("who", [PRO, BUYER, ADMIN])
+@pytest.mark.parametrize("who", [PRO, ADMIN])
 def test_entitled_users_keep_full_runs(client, who):
     client.act_as(who)
     graph = _graph()

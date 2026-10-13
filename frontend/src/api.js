@@ -1256,7 +1256,7 @@ export function evaluateAlt(id, useStress, refStress, opts = {}) {
 
 // Confidence bounds at a use stress by method (wald | lr | bootstrap, #231):
 // the bounds, or (bootstrap with the compute queue) ``{ job }`` to poll at
-// getRbdJob. A 402 (code pro_required) means bootstrap needs Pro or credits.
+// getRbdJob. A 402 (code pro_required) means bootstrap needs Pro.
 export function altBounds(id, { useStress, method, confidence, missionTime, tMax }) {
   return request(`/api/alt/models/${id}/bounds`, {
     method: "POST",

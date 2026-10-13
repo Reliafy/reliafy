@@ -5,7 +5,7 @@ sensitivity. See :mod:`backend.services.rbd_sensitivity`.
 Gating follows the availability analysis: the exact and numerical answers
 are free for everyone; where RePyability has no exact or numerical route
 (limited repair crews for wear-out lives, say) the effects are simulated,
-and that is Pro (or purchased credits), as the simulation is. The exact long
+and that is Pro, as the simulation is. The exact long
 run of a diagram up to ``INLINE_MAX_BLOCKS`` blocks answers in the request;
 the rest (numerical, over a window, simulated, larger) runs as a compute job
 (#149) to poll at ``GET /api/rbd-jobs/{job_id}``, within the block limits of
@@ -38,7 +38,7 @@ router = APIRouter(prefix="/api")
 
 SIMULATION_PRO_MESSAGE = (
     "This diagram has no exact long-run route (RePyability's reason is above), so each lever's effect "
-    "is simulated — that's part of Pro, or buy AI credits. Or download the diagram as Python and run "
+    "is simulated — that's part of Pro. Or download the diagram as Python and run "
     "RePyability's parameter_sensitivity on a simplified copy locally."
 )
 NEEDS_SIMULATION_MESSAGE = (
@@ -125,7 +125,7 @@ def rbd_sensitivity_endpoint(
     alone, costs or not, and "benefit_per_cost" puts the costed levers first
     by benefit per unit spent, then the rest by benefit. ``window`` takes the mean over
     ``[0, window)`` from new instead of the long run. ``simulate`` runs the
-    simulated route where the diagram needs it (Pro or credits). ``limits``
+    simulated route where the diagram needs it (Pro). ``limits``
     ({lever id: {"min", "max"}}, in the values shown: a mean repair time in
     the diagram's unit) stops each lever's step at the user's limit, as the
     lever's own range stops it (#324)."""

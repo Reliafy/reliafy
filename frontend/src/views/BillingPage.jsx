@@ -92,7 +92,8 @@ export default function BillingPage() {
   // Every value here reflects how the backend actually gates the feature:
   // caps from usage_summary, api_access_allowed (Pro only — the REST API; MCP
   // is unlimited on Pro, a small monthly allowance on Free), teams.py (create
-  // is Pro only), and reliability_agent.py (Pro or any purchased credits).
+  // is Pro only), and reliability_agent.py (Pro or any purchased credits;
+  // simulations and other heavy compute are Pro only).
   const compareRows = [
     ...ARTIFACTS.map(([label, key]) => ({ label, free: caps[key] ?? "—", pro: "Unlimited", mono: true })),
     ai && {
