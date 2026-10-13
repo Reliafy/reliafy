@@ -50,6 +50,10 @@ def measures_payload(session, ctx: AccessCtx, graph: dict, rbd: Optional[Rbd], r
     Raises :class:`AnalysisError` for bad input or a diagram the availability
     analysis can't build."""
     require_blocks(graph)
+    # A graph other than the diagram as saved resolves in the caller's own
+    # scope: the diagram owner's saved models are only for its saved graph.
+    if rbd is not None and not rbds_service.is_saved_graph(rbd, graph):
+        resolve_owners = [o for o in resolve_owners if o in ctx.read_owners]
     if not (graph or {}).get("repairable"):
         raise AnalysisError("These measures are for repairable (availability) diagrams — give the blocks "
                             "repair times and mark the diagram repairable.")
@@ -105,8 +109,8 @@ def rbd_measures_endpoint(
     rbd = None
     if rbd_id:
         rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
-        if rbd is not None:
-            owners = [*ctx.read_owners, rbd.owner_id]
+        # The diagram owner's saved models only for the diagram as saved.
+        owners = rbds_service.graph_owners(ctx.read_owners, rbd, graph)
     try:
         status, payload = measures_payload(session, ctx, graph, rbd, owners, measure=measure, window=window,
                                            group_by=group_by, method=method, times=times, level=level)
