@@ -344,6 +344,56 @@ def register() -> None:
         or 1 censored (removed on purpose, or still fitted). Ready for fit_distribution."""
         return run(m_for(ctx).class_life_data, position_class)
 
+    # ---- closing the loop -------------------------------------------------------------
+
+    from backend.maintenance import loop
+
+    @tool("set_class_costs", _WRITE, "Set a position class's costs")
+    def set_class_costs(position_class: str, ctx: Context, planned_cost: float | None = None,
+                        failure_cost: float | None = None, availability_target: float | None = None) -> dict[str, Any]:
+        """What a planned replacement and a failure cost for a class of position (any currency, the
+        same for both), and the availability a hidden (protective) function must reach (e.g. 0.99).
+        Proposed intervals are optimised against these."""
+        return run(m_for(ctx).set_class_costs, position_class, planned_cost, failure_cost, availability_target)
+
+    @tool("fit_class_model", _WRITE, "Fit a life model for a position class")
+    def fit_class_model(position_class: str, ctx: Context,
+                        distribution: Literal["weibull", "best", "lognormal", "exponential", "gamma"] = "weibull"
+                        ) -> dict[str, Any]:
+        """Fit a life distribution (SurPyval) to every fitment of a class's positions (failures and
+        suspensions, in days), save it as a model in the workspace, and propose task intervals from
+        it and the class's costs. Needs at least 2 failures on record."""
+        from backend import fitting
+
+        m = m_for(ctx)
+        try:
+            return run(loop.fit_class_model, m, _db(), position_class, distribution)
+        except fitting.FitError as err:
+            raise ToolError(f"The fit didn't work: {err}") from None
+
+    @tool("review_updates", _READ, "List proposed changes")
+    def review_updates(ctx: Context, status: Literal["pending", "accepted", "rejected", "superseded", "all"] = "pending"
+                       ) -> dict[str, Any]:
+        """Changes the life models propose to the plan (a task's interval, or retiring a task), each
+        with its reason. Show them to the user and let them decide; accept_update or reject_update."""
+        return {"proposals": run(m_for(ctx).proposals, None if status == "all" else status)}
+
+    @tool("accept_update", _WRITE, "Accept a proposed change")
+    def accept_update(proposal_id: str, ctx: Context, note: str = "") -> dict[str, Any]:
+        """Apply a proposed change (only when the user says so)."""
+        return run(m_for(ctx).decide_proposal, proposal_id, True, note)
+
+    @tool("reject_update", _WRITE, "Reject a proposed change")
+    def reject_update(proposal_id: str, ctx: Context, note: str = "") -> dict[str, Any]:
+        """Turn down a proposed change, optionally saying why."""
+        return run(m_for(ctx).decide_proposal, proposal_id, False, note)
+
+    @tool("explain_task", _READ, "Explain a task's history")
+    def explain_task(task_id: str, ctx: Context) -> dict[str, Any]:
+        """Why a task is what it is: where it came from (RCM), every change, and the proposals
+        behind them."""
+        return run(m_for(ctx).explain_task, task_id)
+
     # ---- photos ------------------------------------------------------------------------
 
     from mcp.server.mcpserver import Image

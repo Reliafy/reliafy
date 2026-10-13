@@ -322,6 +322,41 @@ def _coordinates_set(s: GraphStore, org: str, p: dict) -> None:
                                                      "source": p.get("source", "manual"), "on": p["on"]}})
 
 
+def class_id(name: str) -> str:
+    """A position class's node id: one per class name (case and spacing aside)."""
+    import hashlib
+
+    return "class-" + hashlib.sha1(" ".join(name.lower().split()).encode()).hexdigest()[:16]
+
+
+def _class_upsert(s: GraphStore, org: str, p: dict, changes: dict) -> None:
+    if s.node(org, p["id"]) is None:
+        s.put_node(org, p["id"], "PositionClass", {"name": p["name"]})
+    s.patch_node(org, p["id"], changes)
+
+
+def _class_costs_set(s: GraphStore, org: str, p: dict) -> None:
+    _class_upsert(s, org, p, {k: p.get(k) for k in ("planned_cost", "failure_cost", "availability_target")})
+
+
+def _class_model_fitted(s: GraphStore, org: str, p: dict) -> None:
+    _class_upsert(s, org, p, {"model": {k: p.get(k) for k in (
+        "model_id", "distribution", "params", "extras", "unit", "fitted_on", "failures", "suspensions")}})
+
+
+def _proposal_made(s: GraphStore, org: str, p: dict) -> None:
+    for old in s.inn(org, p["task_id"], "ABOUT"):
+        if old["label"] == "Proposal" and old.get("status") == "pending":
+            s.patch_node(org, old["id"], {"status": "superseded"})
+    s.put_node(org, p["id"], "Proposal", {k: p.get(k) for k in (
+        "kind", "current", "proposed", "reason", "made_on", "class_name")} | {"status": "pending"})
+    s.put_edge(org, "ABOUT", p["id"], p["task_id"])
+
+
+def _proposal_decided(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"status": p["decision"], "decided_on": p["on"], "note": p.get("note", "")})
+
+
 PROJECTORS = {
     "position.created": _position_created,
     "position.updated": _position_updated,
@@ -347,6 +382,10 @@ PROJECTORS = {
     "meter.added": _meter_added,
     "meter.read": _meter_read,
     "reading.voided": _flag("voided"),
+    "class.costs_set": _class_costs_set,
+    "class.model_fitted": _class_model_fitted,
+    "proposal.made": _proposal_made,
+    "proposal.decided": _proposal_decided,
     "photo.added": _photo_added,
     "photo.removed": _photo_removed,
     "coordinates.set": _coordinates_set,
@@ -661,6 +700,9 @@ class Maintenance:
             "limits": limits, "next_due": nxt, "by_use": not _is_calendar(task["unit"]),
             "overdue": bool(nxt and nxt < date.today().isoformat()),
             "open_work_order": open_wo and {"id": open_wo["id"], "number": open_wo["number"]},
+            "proposal": next(({"id": p["id"], "proposed": p.get("proposed"), "kind": p.get("kind")}
+                              for p in self.s.inn(self.org, task["id"], "ABOUT")
+                              if p["label"] == "Proposal" and p.get("status") == "pending"), None),
         }
 
     # ---- meters ------------------------------------------------------------------
@@ -1086,11 +1128,94 @@ class Maintenance:
             if not name or p.get("retired"):
                 continue
             entry = classes.setdefault(name, {"position_class": name, "positions": 0, "fitments": 0, "failures": 0})
+            if "costs" not in entry:
+                node = self.s.node(self.org, class_id(name)) or {}
+                entry["costs"] = {k: node.get(k) for k in ("planned_cost", "failure_cost", "availability_target")}
+                entry["model"] = node.get("model")
             entry["positions"] += 1
             for f in self._fitments_at(p["id"]):
                 entry["fitments"] += 1
                 entry["failures"] += f.get("end_reason") == "failure"
         return sorted(classes.values(), key=lambda c: c["position_class"].lower())
+
+    # ---- closing the loop: costs, proposals -------------------------------------------
+
+    def set_class_costs(self, position_class: str, planned_cost=None, failure_cost=None,
+                        availability_target=None) -> dict:
+        """What a planned replacement and a failure cost for this class of position,
+        and the availability a hidden (protective) function must reach: what the
+        proposed intervals are optimised against."""
+        name = _text(position_class, "class", required=True)
+        if not any((p.get("position_class") or "").strip().lower() == name.lower()
+                   for p in self.s.nodes(self.org, "Position")):
+            raise NotFound(name)
+        node = self.s.node(self.org, class_id(name)) or {}
+        out = {}
+        for key, value in (("planned_cost", planned_cost), ("failure_cost", failure_cost),
+                           ("availability_target", availability_target)):
+            if value is None or value == "":
+                out[key] = node.get(key)
+                continue
+            try:
+                out[key] = float(value)
+            except (TypeError, ValueError):
+                raise Invalid(f"{key.replace('_', ' ').capitalize()} must be a number.")
+        if out["planned_cost"] is not None and out["failure_cost"] is not None:
+            if out["planned_cost"] < 0 or out["failure_cost"] <= out["planned_cost"]:
+                raise Invalid("A failure must cost more than a planned replacement (and neither below 0).")
+        if out["availability_target"] is not None and not (0 < out["availability_target"] < 1):
+            raise Invalid("The availability target is between 0 and 1, e.g. 0.99.")
+        self._emit("class.costs_set", {"id": class_id(name), "name": name, **out})
+        return self.position_class(name)
+
+    def position_class(self, position_class: str) -> dict:
+        found = next((c for c in self.position_classes()
+                      if c["position_class"].lower() == (position_class or "").strip().lower()), None)
+        if found is None:
+            raise NotFound(position_class)
+        return {**found, "proposals": [p for p in self.proposals("pending")
+                                       if (p.get("class_name") or "").lower() == found["position_class"].lower()]}
+
+    def proposals(self, status: str | None = "pending") -> list[dict]:
+        out = []
+        for pr in self.s.nodes(self.org, "Proposal"):
+            if status and pr.get("status") != status:
+                continue
+            task = self.s.out(self.org, pr["id"], "ABOUT")
+            position = task and self.s.out(self.org, task[0]["id"], "ON")
+            out.append({k: pr.get(k) for k in ("id", "kind", "current", "proposed", "reason", "status",
+                                                "made_on", "decided_on", "class_name")} | {
+                "task": task and {"id": task[0]["id"], "name": task[0]["name"]},
+                "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
+            })
+        return sorted(out, key=lambda p: p["made_on"] or "", reverse=True)
+
+    def decide_proposal(self, proposal_id: str, accept: bool, note="") -> dict:
+        pr = self._get(proposal_id, "Proposal")
+        if pr.get("status") != "pending":
+            raise Invalid("That proposal has already been decided or superseded.")
+        task = self.s.out(self.org, proposal_id, "ABOUT")[0]
+        if accept:
+            if pr["kind"] == "interval":
+                self.update_task(task["id"], interval=pr["proposed"]["interval"], unit=pr["proposed"]["unit"])
+            elif pr["kind"] == "retire":
+                self.retire_task(task["id"], "accepted proposal: " + (pr.get("reason") or "")[:200])
+        self._emit("proposal.decided", {"id": proposal_id, "decision": "accepted" if accept else "rejected",
+                                        "on": date.today().isoformat(), "note": _text(note, "note")})
+        return next(p for p in self.proposals(None) if p["id"] == proposal_id)
+
+    def explain_task(self, task_id: str) -> dict:
+        """Why a task is what it is now: where it came from, every change to it and the
+        proposals behind them, newest first."""
+        task = self._get(task_id, "Task")
+        mine = []
+        for e in self.s.events(self.org, 5000):
+            pl = e["payload"]
+            if pl.get("id") == task_id or pl.get("task_id") == task_id:
+                mine.append({"on": e["at"][:10], "type": e["type"], "by": e.get("actor"),
+                             "detail": {k: v for k, v in pl.items() if k not in ("id", "task_id", "position_id")}})
+        decided = [p for p in self.proposals(None) if p["task"] and p["task"]["id"] == task_id]
+        return {"task": self._task_view(task), "history": mine, "proposals": decided}
 
     def class_life_data(self, position_class: str) -> dict:
         """Every fitment at every position of a class, pooled: the data for one life

@@ -137,7 +137,7 @@ export default function MaintenancePosition() {
                       {t.last_done ? fmtDate(t.last_done) : "set"}
                     </button>
                   </td>
-                  <td><DueChip task={t} /></td>
+                  <td><DueChip task={t} />{t.proposal && <div><span className="maint-badge">change proposed</span></div>}</td>
                   <td>{t.open_work_order
                     ? <Link to={`/maintenance/work-orders/${t.open_work_order.id}`}>#{t.open_work_order.number}</Link>
                     : <button className="secondary" onClick={() => workOrderForTask(t)}>Create</button>}</td>

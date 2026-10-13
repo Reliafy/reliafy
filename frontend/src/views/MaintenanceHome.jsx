@@ -12,7 +12,7 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DueChip, Field, FormModal, MaintenanceTabs, PositionPicker, flatten, fmtDate,
+  DueChip, Field, FormModal, MaintenanceTabs, PositionPicker, Proposals, flatten, fmtDate,
 } from "../components/MaintenanceParts.jsx";
 import "./Maintenance.css";
 
@@ -76,6 +76,7 @@ export default function MaintenanceHome() {
         </div>
       ) : (
         <>
+          <Proposals proposals={data.proposals} onDecided={refresh} />
           <section className="card">
             <div className="maint-head">
               <h2>Due in the next 30 days</h2>

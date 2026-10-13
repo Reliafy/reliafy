@@ -2216,3 +2216,18 @@ export function getMaintenanceSettings() {
 export function setMaintenanceSettings(body) {
   return patchJson("/api/maintenance/settings", body);
 }
+
+export function getPositionClass(name) {
+  return request(`/api/maintenance/classes/one?position_class=${encodeURIComponent(name)}`);
+}
+export function setClassCosts(body) {
+  return request("/api/maintenance/classes/costs", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+export function fitClassModel(positionClass, distribution = "weibull") {
+  return postJson("/api/maintenance/classes/fit", { position_class: positionClass, distribution });
+}
+export function decideProposal(id, accept, note = "") {
+  return postJson(`/api/maintenance/proposals/${id}/${accept ? "accept" : "reject"}`, { note });
+}

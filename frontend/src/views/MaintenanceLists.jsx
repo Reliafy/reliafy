@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   createMaintenanceLocation,
+  fitClassModel,
   getClassLifeData,
+  getPositionClass,
+  setClassCosts,
   getMaintenanceLocation,
   getPositionClasses,
   listMaintenanceItems,
@@ -13,7 +16,7 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
-import { Field, FormModal, LifeTable, MaintenanceTabs, fmtDate } from "../components/MaintenanceParts.jsx";
+import { Field, FormModal, LifeTable, MaintenanceTabs, Proposals, fmtDate } from "../components/MaintenanceParts.jsx";
 import "./Maintenance.css";
 
 const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
@@ -222,6 +225,7 @@ export function MaintenanceClasses() {
           </table>
         </div>
       )}
+      {open && <ClassPanel name={open} onChanged={() => getPositionClasses().then((d) => setClasses(d.classes))} />}
       {open && (
         <section className="card">
           <div className="maint-head">
@@ -232,5 +236,72 @@ export function MaintenanceClasses() {
         </section>
       )}
     </div>
+  );
+}
+
+function ClassPanel({ name, onChanged }) {
+  const [c, setC] = useState(null);
+  const [costs, setCosts] = useState({ planned_cost: "", failure_cost: "", availability_target: "" });
+  const [distribution, setDistribution] = useState("weibull");
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
+  const [made, setMade] = useState(null);
+  const load = useCallback(() => {
+    getPositionClass(name).then((d) => {
+      setC(d);
+      setCosts({
+        planned_cost: d.costs?.planned_cost ?? "", failure_cost: d.costs?.failure_cost ?? "",
+        availability_target: d.costs?.availability_target ?? "",
+      });
+    }).catch((e) => setError(e.message));
+  }, [name]);
+  useEffect(() => { setMade(null); load(); }, [load]);
+  const save = async () => {
+    setBusy("costs"); setError(null);
+    try { setC(await setClassCosts({ position_class: name, ...costs })); onChanged?.(); } catch (e) { setError(e.message); }
+    setBusy(null);
+  };
+  const fit = async () => {
+    setBusy("fit"); setError(null);
+    try { const d = await fitClassModel(name, distribution); setMade(d.proposals.length); load(); onChanged?.(); } catch (e) { setError(e.message); }
+    setBusy(null);
+  };
+  if (!c) return <section className="card">{error ? <div className="card error">{error}</div> : <p className="lib-date">Loading…</p>}</section>;
+  const model = c.model;
+  return (
+    <>
+      <section className="card">
+        <div className="maint-head"><h2>{name}: life model and costs</h2></div>
+        {error && <div className="card error">{error}</div>}
+        <div className="rcm-form">
+          <Field label="A planned replacement costs"><input type="number" min="0" step="any" value={costs.planned_cost}
+                 onChange={(e) => setCosts({ ...costs, planned_cost: e.target.value })} /></Field>
+          <Field label="A failure costs (repair, downtime, damage)"><input type="number" min="0" step="any" value={costs.failure_cost}
+                 onChange={(e) => setCosts({ ...costs, failure_cost: e.target.value })} /></Field>
+          <Field label="Hidden functions must be available (e.g. 0.99)"><input type="number" min="0" max="1" step="any"
+                 value={costs.availability_target} onChange={(e) => setCosts({ ...costs, availability_target: e.target.value })} /></Field>
+        </div>
+        <div className="maint-row">
+          <button className="secondary" onClick={save} disabled={busy === "costs"}>{busy === "costs" ? "Saving…" : "Save costs"}</button>
+          <select value={distribution} onChange={(e) => setDistribution(e.target.value)}>
+            <option value="weibull">Weibull</option><option value="best">Best fit</option>
+            <option value="lognormal">Lognormal</option><option value="exponential">Exponential</option>
+          </select>
+          <button onClick={fit} disabled={busy === "fit" || c.failures < 2}>
+            {busy === "fit" ? "Fitting…" : model ? "Refit the life model" : "Fit a life model"}
+          </button>
+          {c.failures < 2 && <span className="lib-date">Needs at least 2 failures on record ({c.failures} so far).</span>}
+        </div>
+        {model && (
+          <p className="lib-date" style={{ marginTop: "0.75rem" }}>
+            {model.distribution} fitted {fmtDate(model.fitted_on)} to {model.failures} failures and {model.suspensions} suspensions:{" "}
+            {(model.params || []).map((p) => `${p.name} ${Number(p.value).toPrecision(4)}`).join(", ")} (days).{" "}
+            <Link to={`/modelling/m/${model.model_id}`}>Open the model</Link>
+          </p>
+        )}
+        {made !== null && <p className="lib-date">{made ? `${made} change${made === 1 ? "" : "s"} proposed.` : "No changes to propose: the tasks already match."}</p>}
+      </section>
+      <Proposals proposals={c.proposals} onDecided={load} />
+    </>
   );
 }

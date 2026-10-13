@@ -131,7 +131,7 @@ def _study(session, ctx: AccessCtx, study_id: str) -> RcmStudy:
 def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {
         "summary": summary(m), "tree": m.tree(), "due": m.due_tasks(30),
-        "open_work_orders": m.work_orders("open"),
+        "open_work_orders": m.work_orders("open"), "proposals": m.proposals("pending"),
     })
 
 
@@ -222,6 +222,48 @@ def void_fitment(fitment_id: str, body: dict = Body(default={}), m: Maintenance 
 @router.patch("/fitments/{fitment_id}")
 def correct_fitment(fitment_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.correct_fitment, fitment_id, body.get("start"), body.get("end"))
+
+
+@router.get("/classes/one")
+def get_class(position_class: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.position_class, position_class)
+
+
+@router.put("/classes/costs")
+def set_class_costs(body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.set_class_costs, body.get("position_class"), body.get("planned_cost"), body.get("failure_cost"),
+                body.get("availability_target"))
+
+
+@router.post("/classes/fit")
+def fit_class_model(body: dict = Body(...), session=Depends(get_session),
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    from backend import fitting
+    from backend.maintenance import loop
+
+    try:
+        return _run(loop.fit_class_model, m, session, str(body.get("position_class") or ""),
+                    body.get("distribution") or "weibull")
+    except fitting.FitError as err:
+        return JSONResponse(status_code=422, content={"detail": f"The fit didn't work: {err}"})
+
+
+@router.get("/proposals")
+def list_proposals(status: str = "pending", m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: {"proposals": m.proposals(None if status == "all" else status)})
+
+
+@router.post("/proposals/{proposal_id}/{decision}")
+def decide_proposal(proposal_id: str, decision: str, body: dict = Body(default={}),
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    if decision not in ("accept", "reject"):
+        return JSONResponse(status_code=404, content={"detail": "Not found."})
+    return _run(m.decide_proposal, proposal_id, decision == "accept", body.get("note", ""))
+
+
+@router.get("/tasks/{task_id}/explain")
+def explain_task(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.explain_task, task_id)
 
 
 @router.get("/classes")
