@@ -384,8 +384,18 @@ def record_reading(point_id: str, body: dict = Body(...), m: Maintenance = Depen
 
 
 @router.post("/readings/{reading_id}/void")
-def void_reading(reading_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(lambda: (m.void_reading(reading_id), {"voided": reading_id})[1])
+def void_reading(reading_id: str, body: dict = Body(default={}),
+                 m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Strike out a manual reading, with the reason (required). Returns the point."""
+    return _run(m.void_reading, reading_id, body.get("reason", ""))
+
+
+@router.post("/readings/{reading_id}/correct")
+def correct_reading(reading_id: str, body: dict = Body(...),
+                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Correct a manual reading's value and/or date (``value``, ``on``), with the reason
+    (required): the original is struck out and the corrected one recorded. Returns the point."""
+    return _run(m.correct_reading, reading_id, body.get("value"), body.get("on"), body.get("reason", ""))
 
 
 @router.get("/settings")
@@ -468,7 +478,7 @@ def get_item(item_id: str, m: Maintenance = Depends(maintenance)) -> JSONRespons
 
 @router.patch("/items/{item_id}")
 def update_item(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.update_item, item_id, body.get("nameplate"),
+    return _run(m.update_item, item_id, body.get("nameplate"), body.get("append_note"),
                 **{k: body[k] for k in Maintenance.ITEM_FIELDS if k in body})
 
 
@@ -527,7 +537,7 @@ def update_work_order(work_order_id: str, body: dict = Body(...),
                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.update_work_order, work_order_id, body.get("title"), body.get("due") if "due" in body else None,
                 body.get("notes"), body.get("type"), body.get("assignee"),
-                body.get("planned_for") if "planned_for" in body else None)
+                body.get("planned_for") if "planned_for" in body else None, body.get("append_note"))
 
 
 @router.post("/work-orders/{work_order_id}/status")

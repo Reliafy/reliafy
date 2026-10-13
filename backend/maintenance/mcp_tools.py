@@ -91,9 +91,10 @@ def register() -> None:
 
     @tool("get_work_order", _READ, "Read a work order")
     def get_work_order(work_order_id: str, ctx: Context) -> dict[str, Any]:
-        """A work order: its position, task, status and dates, the actions recorded when
-        it closed, and (for an open one) the item fitted now and the position's failure
-        modes, which close_work_order's actions can name."""
+        """A work order: its position, task, status and dates, its notes (with note_history:
+        every earlier version), the actions and close_notes recorded when it closed, the
+        cancel_reason if cancelled, and (for an open one) the item fitted now and the
+        position's failure modes, which close_work_order's actions can name."""
         return run(m_for(ctx).work_order, work_order_id)
 
     @tool("list_maintenance_items", _READ, "List items")
@@ -230,23 +231,27 @@ def register() -> None:
 
     @tool("get_item", _READ, "Read an item")
     def get_item(item_id: str, ctx: Context) -> dict[str, Any]:
-        """An item (a physical, serial-numbered thing): details and nameplate fields, where it's
-        fitted and placed now, every position it has been fitted to, its own positions (an
-        engine's turbos) and its photos."""
+        """An item (a physical, serial-numbered thing): details and nameplate fields, notes (with
+        note_history: every earlier version, dated), where it's fitted and placed now, every
+        position it has been fitted to, its own positions (an engine's turbos) and its photos."""
         return run(m_for(ctx).item, item_id)
 
     @tool("update_item", _WRITE, "Update an item's details")
     def update_item(item_id: str, ctx: Context, name: str | None = None, serial: str | None = None,
                     part_number: str | None = None, manufacturer: str | None = None, model: str | None = None,
-                    notes: str | None = None,
+                    notes: Annotated[str | None, Field(description=(
+                        "Replaces the WHOLE note. To add to it, use append_note."))] = None,
+                    append_note: Annotated[str | None, Field(description=(
+                        "A line to add to the end of the notes, dated today; the rest is kept."))] = None,
                     nameplate: Annotated[dict[str, str] | None, Field(description=(
                         "Other fields from the nameplate, as label: value (e.g. {'Capacity': '315 L', "
                         "'Element': '3.6 kW', 'Year': '2019'}). Merged into what's there; a value of '' "
                         "removes that field."))] = None) -> dict[str, Any]:
         """Change an item's details. After reading a nameplate photo (get_photo), put the make in
         manufacturer, the model, the serial, and everything else on the plate in nameplate. Say
-        what you read and what you couldn't."""
-        return run(m_for(ctx).update_item, item_id, nameplate,
+        what you read and what you couldn't. To add an observation, use append_note rather than
+        retyping notes; every version of the note is kept in note_history."""
+        return run(m_for(ctx).update_item, item_id, nameplate, append_note,
                    **{k: v for k, v in (("name", name), ("serial", serial), ("part_number", part_number),
                                         ("manufacturer", manufacturer), ("model", model), ("notes", notes))
                       if v is not None})
@@ -272,12 +277,19 @@ def register() -> None:
 
     @tool("update_work_order", _WRITE, "Update a work order")
     def update_work_order(work_order_id: str, ctx: Context, title: str | None = None, due: str | None = None,
-                          notes: str | None = None,
+                          notes: Annotated[str | None, Field(description=(
+                              "Replaces the WHOLE note. To add to it, use append_note."))] = None,
                           type: Literal["corrective", "preventive", "inspection", "other"] | None = None,
-                          assignee: str | None = None, planned_for: str | None = None) -> dict[str, Any]:
+                          assignee: str | None = None, planned_for: str | None = None,
+                          append_note: Annotated[str | None, Field(description=(
+                              "A line to add to the end of the notes, dated today; the rest is kept."))] = None
+                          ) -> dict[str, Any]:
         """Change an open work order's title, due date (a date, or '' to clear it), notes, type, who
-        it's assigned to, or the day it's planned for."""
-        return run(m_for(ctx).update_work_order, work_order_id, title, due, notes, type, assignee, planned_for)
+        it's assigned to, or the day it's planned for. append_note adds a dated line to the notes
+        (a finding, progress) and works on closed and cancelled work orders too; every version of
+        the note is kept in note_history."""
+        return run(m_for(ctx).update_work_order, work_order_id, title, due, notes, type, assignee, planned_for,
+                   append_note)
 
     @tool("set_work_status", _WRITE, "Move a work order along")
     def set_work_status(work_order_id: str, status: Literal["open", "planned", "in_progress", "waiting"],
@@ -366,8 +378,9 @@ def register() -> None:
 
     @tool("cancel_work_order", _WRITE, "Cancel a work order")
     def cancel_work_order(work_order_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
-        """Cancel an open work order that won't be done (a duplicate, raised by mistake). Use
-        close_work_order for work that was done."""
+        """Cancel an open work order that won't be done (a duplicate, raised by mistake). The reason
+        is kept as cancel_reason; the notes are left as they are. Use close_work_order for work
+        that was done."""
         return run(m_for(ctx).cancel_work_order, work_order_id, reason)
 
     @tool("update_task", _WRITE, "Update a task")
@@ -398,14 +411,38 @@ def register() -> None:
     @tool("record_reading", _WRITE, "Record a manual reading")
     def record_reading(point_id: str, value: float, ctx: Context, on: DateText = None, note: str = "") -> dict[str, Any]:
         """A manual reading of a measurement point (the hour meter says 12,340; vibration 4.2 mm/s).
-        Counters only go up. Returns the point: latest, rate or trend, status, any alarm work order."""
+        Counters only go up. 'on' is the day it was read (a past date backdates it). To fix one already
+        recorded, use correct_reading or void_reading. Returns the point: latest, rate or trend,
+        status, any alarm work order."""
         return run(m_for(ctx).record_reading, point_id, value, on, note)
 
     @tool("get_measurement_point", _READ, "Read a measurement point")
     def get_measurement_point(point_id: str, ctx: Context) -> dict[str, Any]:
         """A measurement point: kind, source and tag, latest reading, rate (counter) or trend and the date
-        it should reach an alarm limit (condition), status, recent readings. Ids are in get_position."""
+        it should reach an alarm limit (condition), status, recent readings. Ids are in get_position.
+        A manual point's readings include struck-out ones, each with a status: ok, correction (replaces
+        another: replaces, reason), voided (void_reason) or replaced (by a correction: replaced_by).
+        Rates, due dates and alarms use only ok and correction readings."""
         return run(m_for(ctx).point, point_id)
+
+    @tool("void_reading", _WRITE, "Strike out a reading")
+    def void_reading(reading_id: str, reason: str, ctx: Context) -> dict[str, Any]:
+        """Strike out a manual reading entered by mistake (a duplicate, the wrong meter), saying why.
+        It stays in the point's readings, marked voided; rates, due dates and alarms leave it out.
+        If the value or date was just wrong, use correct_reading instead. Reading ids are in
+        get_measurement_point. Returns the point."""
+        return run(m_for(ctx).void_reading, reading_id, reason)
+
+    @tool("correct_reading", _WRITE, "Correct a reading")
+    def correct_reading(reading_id: str, reason: str, ctx: Context, value: float | None = None,
+                        on: Annotated[str | None, Field(description=(
+                            "The date it was really read, like 2026-10-13. Default: unchanged."))] = None
+                        ) -> dict[str, Any]:
+        """Correct a manual reading: its value (a typo: 3,774 for 4,774), its date (an old reading
+        entered as today: move it to the day it was read), or both. The original is struck out and
+        the corrected reading recorded in its place, linked both ways, with the reason. Rates and
+        the due dates of tasks by use are worked out again. Returns the point."""
+        return run(m_for(ctx).correct_reading, reading_id, value, on, reason)
 
     @tool("update_measurement_point", _WRITE, "Change a measurement point")
     def update_measurement_point(point_id: str, ctx: Context, name: str | None = None,

@@ -167,6 +167,49 @@ def test_nameplate_and_moves_over_mcp(env):
     assert classes["classes"][0]["fitments"] == 2 and len(pooled["rows"]) == 2
 
 
+def test_notes_and_reading_corrections_over_mcp(env):
+    from datetime import date, timedelta
+
+    today = date.today().isoformat()
+    ago = lambda n: (date.today() - timedelta(days=n)).isoformat()  # noqa: E731
+
+    async def flow(client):
+        names = {t.name for t in (await client.list_tools()).tools}
+        assert {"void_reading", "correct_reading"} <= names
+        pos = _ok(await client.call_tool("create_position", {"name": "Pump"}))
+        point = _ok(await client.call_tool("add_measurement_point", {
+            "position_id": pos["id"], "name": "Hours", "kind": "counter", "unit": "hours"}))
+        _ok(await client.call_tool("record_reading", {"point_id": point["id"], "value": 3000, "on": ago(400)}))
+        stale = _ok(await client.call_tool("record_reading", {"point_id": point["id"], "value": 3774}))
+        moved = _ok(await client.call_tool("correct_reading", {
+            "reading_id": stale["readings"][0]["id"], "on": ago(200), "reason": "old reading entered as today"}))
+        correction = next(r for r in moved["readings"] if r["status"] == "correction")
+        no_reason = await client.call_tool("void_reading", {"reading_id": correction["id"], "reason": ""})
+        voided = _ok(await client.call_tool("void_reading", {"reading_id": correction["id"], "reason": "duplicate"}))
+        read = _ok(await client.call_tool("get_measurement_point", {"point_id": point["id"]}))
+
+        fitted = _ok(await client.call_tool("fit_item", {"position_id": pos["id"], "item_name": "Pump"}))
+        item_id = fitted["fitted"]["item"]["id"]
+        _ok(await client.call_tool("update_item", {"item_id": item_id, "notes": "Diagnosis: worn bearing"}))
+        item = _ok(await client.call_tool("update_item", {"item_id": item_id, "append_note": "Bearing ordered"}))
+        wo = _ok(await client.call_tool("open_work_order", {"position_id": pos["id"], "title": "Noisy",
+                                                            "notes": "Grinding at start"}))
+        cancelled = _ok(await client.call_tool("cancel_work_order", {"work_order_id": wo["id"],
+                                                                     "reason": "duplicate"}))
+        noted = _ok(await client.call_tool("update_work_order", {"work_order_id": wo["id"], "append_note": "see #1"}))
+        return moved, no_reason, voided, read, item, cancelled, noted
+
+    moved, no_reason, voided, read, item, cancelled, noted = _session(env["token"], flow)
+    assert moved["read_at"] == ago(200)
+    assert no_reason.is_error and "reason" in no_reason.content[0].text
+    assert voided["reading"] == 3000
+    assert [r["status"] for r in read["readings"]] == ["replaced", "voided", "ok"]
+    assert item["notes"] == f"Diagnosis: worn bearing\n{today}: Bearing ordered"
+    assert len(item["note_history"]) == 2
+    assert cancelled["notes"] == "Grinding at start" and cancelled["cancel_reason"] == "duplicate"
+    assert noted["notes"] == f"Grinding at start\n{today}: see #1"
+
+
 def test_class_model_fitting_is_pro_only_over_mcp():
     from backend import mcp_server
     from backend.maintenance import mcp_tools
