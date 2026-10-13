@@ -18,14 +18,26 @@ from backend.services import email as email_service
 from backend.services import email_trust
 from backend.services import rate_limit
 
+# Every collection whose documents a team's workspace owns (``owner_id``),
+# Maintenance aside: deleting the team deletes them.
 ARTIFACT_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models",
     "tracked_items", "tracked_fleets", "strategy_analyses", "rcm_studies", "fleets",
-    "outage_logs", "recurrent_models",
+    "outage_logs", "recurrent_models", "alt_models", "model_refits",
 )
+
+# Records kept by the id of a team artifact rather than by owner: deleted
+# with that artifact's team. ``{collection: (field, artifact collection)}``.
+DEPENDENT_COLLECTIONS = {
+    "rbd_jobs": ("rbd_id", "rbds"),
+    "fleet_alerts": ("fleet_id", "fleets"),
+    "fleet_forecasts": ("fleet_id", "fleets"),
+    "fleet_alert_events": ("fleet_id", "fleets"),
+}
 
 
 MAX_NAME = 80
+MAX_EMAIL = 254
 
 # Invites sent (added or staged) per window: per inviting user across all
 # their teams, and per team.
@@ -126,6 +138,11 @@ def rename_team(db, team: dict, name: str) -> dict:
 def delete_team(db, team: dict) -> None:
     """Delete the team and every artifact in its workspace."""
     principal = access.team_principal(team["_id"])
+    ids = {coll: [d["_id"] for d in db[coll].find({"owner_id": principal}, {"_id": 1})]
+           for coll in {parent for _, parent in DEPENDENT_COLLECTIONS.values()}}
+    for coll, (field, parent) in DEPENDENT_COLLECTIONS.items():
+        if ids[parent]:
+            db[coll].delete_many({field: {"$in": ids[parent]}})
     for coll in ARTIFACT_COLLECTIONS:
         db[coll].delete_many({"owner_id": principal})
     db.teams.delete_one({"_id": team["_id"]})
